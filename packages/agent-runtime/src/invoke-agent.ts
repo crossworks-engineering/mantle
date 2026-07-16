@@ -40,7 +40,12 @@ import { MAX_AGENT_DEPTH } from '@mantle/tools';
 import { getChatAdapter } from '@mantle/voice';
 import { resolveAgentTools, runToolLoop } from './tool-loop';
 import { resolveBackupAdapter, resolveChatKey } from './chat-failover';
-import { resolveAgentSkills, resolveAgentToolGroups, composeSystemPromptWithSkills, effectiveToolSlugs } from './skills';
+import {
+  resolveAgentSkills,
+  resolveAgentToolGroups,
+  composeSystemPromptWithSkills,
+  effectiveToolSlugs,
+} from './skills';
 import type { ChatMessage } from './messages';
 
 export const invokeAgent: AgentInvoker = async ({
@@ -66,13 +71,7 @@ export const invokeAgent: AgentInvoker = async ({
   const [target] = await db
     .select()
     .from(agents)
-    .where(
-      and(
-        eq(agents.ownerId, ownerId),
-        eq(agents.slug, agentSlug),
-        eq(agents.enabled, true),
-      ),
-    )
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, agentSlug), eq(agents.enabled, true)))
     .limit(1);
   if (!target) {
     return {
@@ -152,9 +151,10 @@ export const invokeAgent: AgentInvoker = async ({
       // worst-case bounded.
       const mc = (target.memoryConfig as AgentMemoryConfig | null) ?? null;
       const requestedMaxIters = typeof mc?.max_iterations === 'number' ? mc.max_iterations : null;
-      const maxIterations = requestedMaxIters && requestedMaxIters > 0
-        ? Math.min(30, Math.floor(requestedMaxIters))
-        : undefined;
+      const maxIterations =
+        requestedMaxIters && requestedMaxIters > 0
+          ? Math.min(30, Math.floor(requestedMaxIters))
+          : undefined;
 
       const result = await runToolLoop({
         adapter: childAdapter,
@@ -179,7 +179,9 @@ export const invokeAgent: AgentInvoker = async ({
         tools: allowedTools,
         ...(maxIterations !== undefined ? { maxIterations } : {}),
         // Tool-volume overrides travel raw; runToolLoop validates + clamps.
-        ...(typeof mc?.max_tool_calls === 'number' ? { maxToolCallsPerTurn: mc.max_tool_calls } : {}),
+        ...(typeof mc?.max_tool_calls === 'number'
+          ? { maxToolCallsPerTurn: mc.max_tool_calls }
+          : {}),
         ...(typeof mc?.max_calls_per_tool === 'number'
           ? { maxCallsPerToolPerTurn: mc.max_calls_per_tool }
           : {}),

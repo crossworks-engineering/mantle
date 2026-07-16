@@ -65,7 +65,9 @@ function readCanonicalFile(id) {
 /** Resolve a (possibly composite, e.g. "MIT AND ISC") SPDX id to bundled canonical
  *  text. For AND-expressions, concatenate every part we have; for OR, take the first. */
 function canonicalLicenseText(licenseId) {
-  const raw = String(licenseId).replace(/^\(|\)$/g, '').trim();
+  const raw = String(licenseId)
+    .replace(/^\(|\)$/g, '')
+    .trim();
   const isAnd = /\bAND\b/i.test(raw);
   const parts = raw.split(/\s+(?:AND|OR)\s+/i).map((p) => p.trim());
   const resolved = parts
@@ -114,7 +116,10 @@ function readLicenseText(pkgPath) {
 
 /** Escape a value for safe use inside a Markdown table cell. */
 function td(s) {
-  return String(s ?? '').replace(/\|/g, '\\|').replace(/\n+/g, ' ').trim();
+  return String(s ?? '')
+    .replace(/\|/g, '\\|')
+    .replace(/\n+/g, ' ')
+    .trim();
 }
 
 function authorName(author) {
@@ -169,7 +174,9 @@ function main() {
   // ---- Summary table -------------------------------------------------------
   out.push('## Summary');
   out.push('');
-  out.push(`A total of **${total}** ${scope} packages across **${licenseIds.length}** license types.`);
+  out.push(
+    `A total of **${total}** ${scope} packages across **${licenseIds.length}** license types.`,
+  );
   out.push('');
   out.push('| License | Packages |');
   out.push('| --- | ---: |');
@@ -225,7 +232,13 @@ function main() {
 
     const lic = readLicenseText(pkg.paths && pkg.paths[0]);
     if (lic) {
-      out.push('<details><summary>License text</summary>', '', ...fence(lic.text), '', '</details>');
+      out.push(
+        '<details><summary>License text</summary>',
+        '',
+        ...fence(lic.text),
+        '',
+        '</details>',
+      );
     } else {
       const canonical = canonicalLicenseText(pkg.licenseId);
       if (canonical) {
@@ -256,7 +269,7 @@ function main() {
       : '';
   out.push(
     `_${total} components attributed; license text embedded for ${total - missingText} ` +
-      '(each package\'s own file where present, otherwise the standard SPDX text).' +
+      "(each package's own file where present, otherwise the standard SPDX text)." +
       `${remainder}_`,
   );
   out.push('');

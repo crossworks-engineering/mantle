@@ -20,9 +20,13 @@ function relayWouldAccept(ticket: string, instanceToken: string, nowSeconds: num
   if (dot <= 0) return false;
   const payloadB64 = ticket.slice(0, dot);
   const sigB64 = ticket.slice(dot + 1);
-  const expected = createHmac('sha256', hashToken(instanceToken)).update(payloadB64).digest('base64url');
+  const expected = createHmac('sha256', hashToken(instanceToken))
+    .update(payloadB64)
+    .digest('base64url');
   if (sigB64 !== expected) return false;
-  const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8')) as { exp: number };
+  const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8')) as {
+    exp: number;
+  };
   return nowSeconds <= payload.exp;
 }
 
@@ -44,7 +48,9 @@ describe('mintTicket', () => {
       JSON.stringify({ iid: IID, osPushToken: OS_TOKEN, exp: now + 300 }),
       'utf8',
     ).toString('base64url');
-    const expectedSig = createHmac('sha256', hashToken(INSTANCE_TOKEN)).update(expectedPayload).digest('base64url');
+    const expectedSig = createHmac('sha256', hashToken(INSTANCE_TOKEN))
+      .update(expectedPayload)
+      .digest('base64url');
     expect(ticket).toBe(`${expectedPayload}.${expectedSig}`);
   });
 
@@ -64,14 +70,25 @@ describe('mintTicket', () => {
     vi.setSystemTime(new Date('2026-06-14T00:00:00Z'));
     const now = Math.floor(Date.UTC(2026, 5, 14) / 1000);
 
-    expect(decode(mintTicket({ iid: IID, osPushToken: OS_TOKEN, instanceToken: INSTANCE_TOKEN })).exp).toBe(now + 300);
     expect(
-      decode(mintTicket({ iid: IID, osPushToken: OS_TOKEN, instanceToken: INSTANCE_TOKEN, ttlSeconds: 60 })).exp,
+      decode(mintTicket({ iid: IID, osPushToken: OS_TOKEN, instanceToken: INSTANCE_TOKEN })).exp,
+    ).toBe(now + 300);
+    expect(
+      decode(
+        mintTicket({
+          iid: IID,
+          osPushToken: OS_TOKEN,
+          instanceToken: INSTANCE_TOKEN,
+          ttlSeconds: 60,
+        }),
+      ).exp,
     ).toBe(now + 60);
   });
 
   it('binds the payload to the given iid + osPushToken', () => {
-    const payload = decode(mintTicket({ iid: 'iid-2', osPushToken: 'tok-2', instanceToken: INSTANCE_TOKEN }));
+    const payload = decode(
+      mintTicket({ iid: 'iid-2', osPushToken: 'tok-2', instanceToken: INSTANCE_TOKEN }),
+    );
     expect(payload.iid).toBe('iid-2');
     expect(payload.osPushToken).toBe('tok-2');
   });

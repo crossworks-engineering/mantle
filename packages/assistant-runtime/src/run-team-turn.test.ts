@@ -70,13 +70,25 @@ describe('private-reads switch', () => {
     expect(gated.has('journal_get')).toBe(true);
     expect(gated.has('journal_list')).toBe(true);
     // Brain-knowledge + the write tool are NOT gated.
-    for (const keep of ['search_chunks', 'file_read', 'page_get', 'table_query', 'team_request_create']) {
+    for (const keep of [
+      'search_chunks',
+      'file_read',
+      'page_get',
+      'table_query',
+      'team_request_create',
+    ]) {
       expect(gated.has(keep)).toBe(false);
     }
   });
 
   it('strips only the gated slugs when the switch is off', () => {
-    const resolved = ['search_chunks', 'file_read', 'email_get', 'journal_list', 'team_request_create'];
+    const resolved = [
+      'search_chunks',
+      'file_read',
+      'email_get',
+      'journal_list',
+      'team_request_create',
+    ];
     const gated = new Set(TEAM_PRIVATE_READ_SLUGS);
     const off = resolved.filter((s) => !gated.has(s));
     expect(off).toEqual(['search_chunks', 'file_read', 'team_request_create']);

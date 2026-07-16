@@ -107,10 +107,11 @@ export async function POST(req: Request): Promise<NextResponse> {
           );
         }
         const originalName =
-          'name' in file && typeof (file as File).name === 'string' ? (file as File).name : 'upload';
+          'name' in file && typeof (file as File).name === 'string'
+            ? (file as File).name
+            : 'upload';
         const ext = extOf(originalName);
-        const isImage =
-          file.type.startsWith('image/') || mimeForExt(ext).startsWith('image/');
+        const isImage = file.type.startsWith('image/') || mimeForExt(ext).startsWith('image/');
         if (!isImage && !INGESTABLE_EXTS.has(ext)) {
           return NextResponse.json(
             {
@@ -204,9 +205,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       contactName,
       channel,
       ...(streamId ? { streamId } : {}),
-      ...(attachments.length
-        ? { displayText: userText, attachments }
-        : {}),
+      ...(attachments.length ? { displayText: userText, attachments } : {}),
     };
     const input: TeamTurnInput = { ownerId, text: llmText || userText, options };
 

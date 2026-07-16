@@ -57,10 +57,7 @@ const THINKING_TIERS = [0, 1024, 4096, 8000] as const;
  *  of rendering blank for an unlisted number. 0/unset ⇒ Off. */
 function snapThinkingTier(v: number | undefined): number {
   if (!v || v <= 0) return 0;
-  return THINKING_TIERS.reduce(
-    (best, t) => (Math.abs(t - v) < Math.abs(best - v) ? t : best),
-    0,
-  );
+  return THINKING_TIERS.reduce((best, t) => (Math.abs(t - v) < Math.abs(best - v) ? t : best), 0);
 }
 
 /** `GET /api/profile` payload. */
@@ -108,15 +105,15 @@ function ProfileForm({ data }: { data: ProfileData }) {
   const toast = useToast();
   const [tz, setTz] = useState(defaults.timezone);
   const [loc, setLoc] = useState(defaults.locale);
-  const [reminderAgent, setReminderAgent] = useState(
-    defaults.reminderAgentSlug ?? REMINDER_AUTO,
-  );
+  const [reminderAgent, setReminderAgent] = useState(defaults.reminderAgentSlug ?? REMINDER_AUTO);
   // Effective default is 'telegram' when unset (matches the reminder worker).
   const [reminderChannel, setReminderChannel] = useState<string>(
     defaults.reminderChannel ?? 'telegram',
   );
   const [avatar, setAvatar] = useState<AvatarValue | null>(
-    defaults.avatarStyle ? { style: defaults.avatarStyle, seed: defaults.avatarSeed || userId } : null,
+    defaults.avatarStyle
+      ? { style: defaults.avatarStyle, seed: defaults.avatarSeed || userId }
+      : null,
   );
   const [purpose, setPurpose] = useState(defaults.purpose ?? '');
   const [siteName, setSiteName] = useState(defaults.siteName ?? '');
@@ -124,9 +121,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
     defaults.purposeArchetype ?? PURPOSE_ARCHETYPES[0]!.key,
   );
   // Default ON: undefined (never set) → on, matching isStreamThoughtsEnabled.
-  const [streamThoughts, setStreamThoughts] = useState<boolean>(
-    defaults.streamThoughts !== false,
-  );
+  const [streamThoughts, setStreamThoughts] = useState<boolean>(defaults.streamThoughts !== false);
   // Switch on = 'replace' (single line); off = 'list' (stacking, default).
   const [replaceTrail, setReplaceTrail] = useState<boolean>(
     defaults.thoughtTrailMode === 'replace',
@@ -173,9 +168,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
     // approximation we have to "where this person actually is."
     const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const detectedLoc =
-      typeof navigator !== 'undefined' && navigator.language
-        ? navigator.language
-        : 'en-GB';
+      typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en-GB';
     setTz(detectedTz);
     setLoc(detectedLoc);
   };
@@ -213,8 +206,8 @@ function ProfileForm({ data }: { data: ProfileData }) {
         <input type="hidden" name="avatarStyle" value={avatar?.style ?? ''} />
         <input type="hidden" name="avatarSeed" value={avatar?.seed ?? ''} />
         <p className="text-xs text-muted-foreground">
-          A geometric avatar generated from a style + seed. Shows in the header
-          and across the app; clear it to fall back to your initials.
+          A geometric avatar generated from a style + seed. Shows in the header and across the app;
+          clear it to fall back to your initials.
         </p>
       </section>
 
@@ -230,9 +223,9 @@ function ProfileForm({ data }: { data: ProfileData }) {
             placeholder="mantle"
           />
           <p className="text-xs text-muted-foreground">
-            Replaces the &ldquo;mantle&rdquo; wordmark in the top-left header — e.g. the
-            site or team name (&ldquo;Refinery&rdquo;) — so it&apos;s obvious at a glance
-            which brain you&apos;re on. Leave blank for the default.
+            Replaces the &ldquo;mantle&rdquo; wordmark in the top-left header — e.g. the site or
+            team name (&ldquo;Refinery&rdquo;) — so it&apos;s obvious at a glance which brain
+            you&apos;re on. Leave blank for the default.
           </p>
         </div>
         <div className="space-y-1.5">
@@ -262,8 +255,8 @@ function ProfileForm({ data }: { data: ProfileData }) {
             placeholder="A sentence or two on what this brain is mainly used for."
           />
           <p className="text-xs text-muted-foreground">
-            Grounds every assistant in the brain&apos;s mission — injected at the top of
-            each conversation. Leave blank to clear it.
+            Grounds every assistant in the brain&apos;s mission — injected at the top of each
+            conversation. Leave blank to clear it.
           </p>
         </div>
       </section>
@@ -302,8 +295,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
           </datalist>
           <p className="text-xs text-muted-foreground">
             Any IANA timezone (e.g. <code className="font-mono">Africa/Johannesburg</code>,{' '}
-            <code className="font-mono">Europe/London</code>). Invalid values are rejected on
-            save.
+            <code className="font-mono">Europe/London</code>). Invalid values are rejected on save.
           </p>
         </div>
 
@@ -351,10 +343,9 @@ function ProfileForm({ data }: { data: ProfileData }) {
         </Select>
         <input type="hidden" name="reminderChannel" value={reminderChannel} />
         <p className="text-xs text-muted-foreground">
-          Where event reminders are delivered. This follows the last surface you
-          messaged from automatically; set it here to override until you next
-          message from the other one. A reminder set to the mobile app shows in
-          your chat and pushes to enrolled devices.
+          Where event reminders are delivered. This follows the last surface you messaged from
+          automatically; set it here to override until you next message from the other one. A
+          reminder set to the mobile app shows in your chat and pushes to enrolled devices.
         </p>
       </section>
 
@@ -365,9 +356,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={REMINDER_AUTO}>
-              Most recent chat (default)
-            </SelectItem>
+            <SelectItem value={REMINDER_AUTO}>Most recent chat (default)</SelectItem>
             {reminderAgents.map((a) => (
               <SelectItem key={a.slug} value={a.slug}>
                 {a.name}
@@ -381,9 +370,8 @@ function ProfileForm({ data }: { data: ProfileData }) {
           value={reminderAgent === REMINDER_AUTO ? '' : reminderAgent}
         />
         <p className="text-xs text-muted-foreground">
-          Which assistant&apos;s Telegram bot sends event reminders. Default
-          uses whichever bot you last messaged; pin one (e.g. Saskia) so
-          reminders always come from the same persona.
+          Which assistant&apos;s Telegram bot sends event reminders. Default uses whichever bot you
+          last messaged; pin one (e.g. Saskia) so reminders always come from the same persona.
         </p>
       </section>
 
@@ -397,9 +385,9 @@ function ProfileForm({ data }: { data: ProfileData }) {
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          Show the assistant&apos;s live &ldquo;thinking&rdquo; trail and stream the reply
-          as it&apos;s written. Turn off for a static thinking indicator with the reply
-          appearing all at once when it&apos;s done.
+          Show the assistant&apos;s live &ldquo;thinking&rdquo; trail and stream the reply as
+          it&apos;s written. Turn off for a static thinking indicator with the reply appearing all
+          at once when it&apos;s done.
         </p>
 
         {/* Sub-options — only meaningful while streaming is on. */}
@@ -417,8 +405,8 @@ function ProfileForm({ data }: { data: ProfileData }) {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              Show only the current action, each one replacing the last. Off stacks
-              completed steps in a list above the live line.
+              Show only the current action, each one replacing the last. Off stacks completed steps
+              in a list above the live line.
             </p>
           </div>
 
@@ -435,8 +423,8 @@ function ProfileForm({ data }: { data: ProfileData }) {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              Save the thought trail onto each reply so it&apos;s still there after a
-              page reload. Off keeps it only until you refresh.
+              Save the thought trail onto each reply so it&apos;s still there after a page reload.
+              Off keeps it only until you refresh.
             </p>
           </div>
 
@@ -462,9 +450,8 @@ function ProfileForm({ data }: { data: ProfileData }) {
               </Select>
             </div>
             <p className="text-xs text-muted-foreground">
-              How hard the model reasons before answering. Needs live thinking on and a
-              budget above Off. Off = no extra thinking. Large budgets are trimmed to
-              leave room for the reply.
+              How hard the model reasons before answering. Needs live thinking on and a budget above
+              Off. Off = no extra thinking. Large budgets are trimmed to leave room for the reply.
             </p>
           </div>
         </div>

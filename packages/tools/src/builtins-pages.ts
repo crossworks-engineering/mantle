@@ -91,7 +91,8 @@ const page_create: BuiltinToolDef = {
       parent_id: {
         type: 'string',
         format: 'uuid',
-        description: 'optional — id of an existing page to nest this new page UNDER (creates a sub-page). Omit for a top-level page.',
+        description:
+          'optional — id of an existing page to nest this new page UNDER (creates a sub-page). Omit for a top-level page.',
       },
     },
     required: ['title'],
@@ -126,13 +127,24 @@ const page_create: BuiltinToolDef = {
         },
         snippet: markdown,
       });
-      return { ok: true, output: { id: page.id, title: page.title, tags: page.tags, ...(parentId ? { parent_id: parentId } : {}) } };
+      return {
+        ok: true,
+        output: {
+          id: page.id,
+          title: page.title,
+          tags: page.tags,
+          ...(parentId ? { parent_id: parentId } : {}),
+        },
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // createPage throws ParentPageNotFoundError ("…parent page not found") when
       // parent_id isn't one of the owner's pages — surface that plainly.
       if (parentId && msg.includes('parent page not found')) {
-        return { ok: false, error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).` };
+        return {
+          ok: false,
+          error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).`,
+        };
       }
       return { ok: false, error: msg };
     }
@@ -149,9 +161,17 @@ const page_replace_from_file: BuiltinToolDef = {
     type: 'object',
     properties: {
       page_id: { type: 'string', description: 'id of the existing page to rebuild' },
-      file_id: { type: 'string', format: 'uuid', description: 'id of the file node holding the new body' },
+      file_id: {
+        type: 'string',
+        format: 'uuid',
+        description: 'id of the file node holding the new body',
+      },
       title: { type: 'string', description: 'optional new page title; omit to keep current' },
-      tags: { type: 'array', items: { type: 'string' }, description: 'optional new tags; omit to keep current' },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'optional new tags; omit to keep current',
+      },
       icon: { type: 'string', description: 'optional new emoji icon' },
     },
     required: ['page_id', 'file_id'],
@@ -247,7 +267,8 @@ const page_update: BuiltinToolDef = {
       tags: {
         type: 'array',
         items: { type: 'string' },
-        description: "Labels for organisation and filtering, e.g. ['work']. Replaces the current tag set.",
+        description:
+          "Labels for organisation and filtering, e.g. ['work']. Replaces the current tag set.",
       },
       icon: { type: 'string', description: 'new emoji icon, e.g. "📄"' },
     },
@@ -285,7 +306,10 @@ const page_update_draft: BuiltinToolDef = {
     type: 'object',
     properties: {
       id: { type: 'string', description: 'page node id' },
-      title: { type: 'string', description: 'new page title; replaces the current one (applies directly, not via draft)' },
+      title: {
+        type: 'string',
+        description: 'new page title; replaces the current one (applies directly, not via draft)',
+      },
       markdown: {
         type: 'string',
         description: `Replacement body — written to draft_doc, NOT the published doc. ${MARKDOWN_HINT}`,
@@ -293,9 +317,13 @@ const page_update_draft: BuiltinToolDef = {
       tags: {
         type: 'array',
         items: { type: 'string' },
-        description: "Labels for organisation and filtering, e.g. ['work']. Replaces the current tag set (applies directly, not via draft).",
+        description:
+          "Labels for organisation and filtering, e.g. ['work']. Replaces the current tag set (applies directly, not via draft).",
       },
-      icon: { type: 'string', description: 'new emoji icon, e.g. "📄" (applies directly, not via draft)' },
+      icon: {
+        type: 'string',
+        description: 'new emoji icon, e.g. "📄" (applies directly, not via draft)',
+      },
     },
     required: ['id'],
   },
@@ -432,7 +460,7 @@ const page_get: BuiltinToolDef = {
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Get a page',
   description:
-    "Read one page by id. Returns the title, tags, summary, and the document as plaintext (`content`). To edit metadata only (title / tags / icon), use `page_update`. **For body styling or restyling on an existing page, delegate to the `pages` agent via `invoke_agent` — it writes to draft_doc only (preserves the live page) and is configured with the right model + safety rules for whole-doc transforms.** For block-level structure (which blocks exist, addressable by id) use `page_blocks_list` instead — lighter, no body returned. Returns a `url` permalink — link the page as a markdown `[title](url)` when you reference it to the user.",
+    'Read one page by id. Returns the title, tags, summary, and the document as plaintext (`content`). To edit metadata only (title / tags / icon), use `page_update`. **For body styling or restyling on an existing page, delegate to the `pages` agent via `invoke_agent` — it writes to draft_doc only (preserves the live page) and is configured with the right model + safety rules for whole-doc transforms.** For block-level structure (which blocks exist, addressable by id) use `page_blocks_list` instead — lighter, no body returned. Returns a `url` permalink — link the page as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -734,7 +762,8 @@ const page_from_notes: BuiltinToolDef = {
     if (!title) {
       return {
         ok: false,
-        error: 'title is required when combining multiple notes (no single source note to borrow it from).',
+        error:
+          'title is required when combining multiple notes (no single source note to borrow it from).',
       };
     }
 
@@ -753,9 +782,7 @@ const page_from_notes: BuiltinToolDef = {
     const parentId = str(input.parent_id).trim();
     const withHeadings = input.headings === undefined ? true : input.headings === true;
     const tagsArg = strArr(input.tags);
-    const tags = tagsArg.length
-      ? tagsArg
-      : [...new Set(notes.flatMap((n) => n.tags))];
+    const tags = tagsArg.length ? tagsArg : [...new Set(notes.flatMap((n) => n.tags))];
     const icon = str(input.icon).trim();
 
     const markdown = notes
@@ -834,17 +861,20 @@ const page_from_journal: BuiltinToolDef = {
         type: 'array',
         items: { type: 'string', format: 'uuid' },
         minItems: 1,
-        description: 'ids of the journal entries to compile, in the order they should appear (see journal_list)',
+        description:
+          'ids of the journal entries to compile, in the order they should appear (see journal_list)',
       },
       title: { type: 'string', description: 'title for the compiled page (required)' },
       parent_id: {
         type: 'string',
         format: 'uuid',
-        description: 'optional id of an existing page to nest the new page UNDER; omit for top-level',
+        description:
+          'optional id of an existing page to nest the new page UNDER; omit for top-level',
       },
       headings: {
         type: 'boolean',
-        description: "section each entry under a date(+title) `## ` heading (default true); set false to concatenate bodies raw",
+        description:
+          'section each entry under a date(+title) `## ` heading (default true); set false to concatenate bodies raw',
       },
       tags: {
         type: 'array',
@@ -866,7 +896,8 @@ const page_from_journal: BuiltinToolDef = {
     if (!title) {
       return {
         ok: false,
-        error: 'title is required when compiling journal entries (no single source to borrow it from).',
+        error:
+          'title is required when compiling journal entries (no single source to borrow it from).',
       };
     }
 
@@ -1015,7 +1046,11 @@ const page_blocks_list: BuiltinToolDef = {
     });
 
     const hasDraft = page.draft !== null;
-    ctx.step?.setOutput({ id: page.id, block_count: blocks.length, baseline: hasDraft ? 'draft' : 'published' });
+    ctx.step?.setOutput({
+      id: page.id,
+      block_count: blocks.length,
+      baseline: hasDraft ? 'draft' : 'published',
+    });
     return {
       ok: true,
       output: {
@@ -1044,7 +1079,10 @@ const page_blocks_list: BuiltinToolDef = {
  * autosave land there), else the published doc. Block edits always
  * write back to draft_doc; the user reviews + commits.
  */
-function pickEditingBaseline(page: { doc: Record<string, unknown>; draft: Record<string, unknown> | null }): Record<string, unknown> {
+function pickEditingBaseline(page: {
+  doc: Record<string, unknown>;
+  draft: Record<string, unknown> | null;
+}): Record<string, unknown> {
   return (page.draft ?? page.doc) as Record<string, unknown>;
 }
 
@@ -1124,7 +1162,11 @@ const page_block_update: BuiltinToolDef = {
     const blockId = str(input.block_id).trim();
     const markdown = str(input.markdown);
     if (!pageId || !blockId) return { ok: false, error: 'page_id and block_id are required' };
-    if (!markdown) return { ok: false, error: 'markdown is required (cannot replace with nothing — use page_block_delete)' };
+    if (!markdown)
+      return {
+        ok: false,
+        error: 'markdown is required (cannot replace with nothing — use page_block_delete)',
+      };
 
     const page = await getPage(ctx.ownerId, pageId);
     if (!page) return notFound('page', pageId, 'page_list / search_nodes');
@@ -1134,18 +1176,17 @@ const page_block_update: BuiltinToolDef = {
       const parsed = markdownToDoc(markdown) as { content?: unknown[] };
       parsedBlocks = Array.isArray(parsed.content) ? parsed.content : [];
     } catch (err) {
-      return { ok: false, error: `markdown parse failed: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        ok: false,
+        error: `markdown parse failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
     if (parsedBlocks.length === 0) {
       return { ok: false, error: 'markdown produced no blocks — nothing to splice' };
     }
 
     const baseline = pickEditingBaseline(page);
-    const result = replaceBlock(
-      baseline,
-      blockId,
-      parsedBlocks as PMBlockNode[],
-    );
+    const result = replaceBlock(baseline, blockId, parsedBlocks as PMBlockNode[]);
     if (!result.found) {
       return {
         ok: false,
@@ -1181,7 +1222,7 @@ const page_block_insert_after: BuiltinToolDef = {
   preconditions: PAGE_ID_PRE,
   name: 'Insert blocks after a target block',
   description:
-    "Insert one or more new blocks (parsed from markdown) directly after the block with the given id. Useful for adding a callout after a quote, or a new section heading after the previous section ends. Writes to DRAFT only. New blocks get fresh ids on save.",
+    'Insert one or more new blocks (parsed from markdown) directly after the block with the given id. Useful for adding a callout after a quote, or a new section heading after the previous section ends. Writes to DRAFT only. New blocks get fresh ids on save.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1209,18 +1250,17 @@ const page_block_insert_after: BuiltinToolDef = {
       const parsed = markdownToDoc(markdown) as { content?: unknown[] };
       parsedBlocks = Array.isArray(parsed.content) ? parsed.content : [];
     } catch (err) {
-      return { ok: false, error: `markdown parse failed: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        ok: false,
+        error: `markdown parse failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
     if (parsedBlocks.length === 0) {
       return { ok: false, error: 'markdown produced no blocks' };
     }
 
     const baseline = pickEditingBaseline(page);
-    const result = insertAfterBlock(
-      baseline,
-      afterId,
-      parsedBlocks as PMBlockNode[],
-    );
+    const result = insertAfterBlock(baseline, afterId, parsedBlocks as PMBlockNode[]);
     if (!result.found) {
       return {
         ok: false,
@@ -1253,7 +1293,7 @@ const page_block_delete: BuiltinToolDef = {
   preconditions: PAGE_ID_PRE,
   name: 'Delete one block from a page',
   description:
-    "Remove a single block (by id) from a page. Writes to DRAFT only. **Refuses** when removing the block would leave a container (callout / column / listItem / tableCell) empty — most ProseMirror schemas reject that. In that case, target the container itself instead.",
+    'Remove a single block (by id) from a page. Writes to DRAFT only. **Refuses** when removing the block would leave a container (callout / column / listItem / tableCell) empty — most ProseMirror schemas reject that. In that case, target the container itself instead.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1328,7 +1368,8 @@ const page_blocks_apply: BuiltinToolDef = {
             op: {
               type: 'string',
               enum: ['update', 'insert_after', 'delete'],
-              description: "the edit to perform at `block_id`; 'update' and 'insert_after' also need `markdown`",
+              description:
+                "the edit to perform at `block_id`; 'update' and 'insert_after' also need `markdown`",
             },
             block_id: {
               type: 'string',
@@ -1680,7 +1721,11 @@ const page_mention: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      page_id: { type: 'string', format: 'uuid', description: 'id of the page to add the mention into' },
+      page_id: {
+        type: 'string',
+        format: 'uuid',
+        description: 'id of the page to add the mention into',
+      },
       target_id: {
         type: 'string',
         format: 'uuid',
@@ -1790,8 +1835,7 @@ const page_share: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
-    const mode =
-      input.mode === 'team' ? 'team' : input.mode === 'public' ? 'public' : undefined;
+    const mode = input.mode === 'team' ? 'team' : input.mode === 'public' ? 'public' : undefined;
     const children = typeof input.children === 'boolean' ? input.children : undefined;
     try {
       const page = await getPage(ctx.ownerId, id);

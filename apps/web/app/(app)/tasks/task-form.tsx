@@ -129,7 +129,11 @@ export function TaskForm({
 
       <div className="space-y-1.5">
         <Label>Tags</Label>
-        <TagInput value={form.tags} onChange={(tags) => setForm({ ...form, tags })} placeholder="Add tags…" />
+        <TagInput
+          value={form.tags}
+          onChange={(tags) => setForm({ ...form, tags })}
+          placeholder="Add tags…"
+        />
       </div>
 
       <div className="space-y-1.5">
@@ -143,7 +147,8 @@ export function TaskForm({
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
         />
         <p className="text-xs text-muted-foreground">
-          Plain markdown — lists, links, <code>`code`</code>, **bold** — rendered on the detail view.
+          Plain markdown — lists, links, <code>`code`</code>, **bold** — rendered on the detail
+          view.
         </p>
       </div>
 

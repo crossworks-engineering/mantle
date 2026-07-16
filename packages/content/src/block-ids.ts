@@ -89,7 +89,10 @@ function newId(): string {
 }
 
 function fallbackId(): string {
-  const r = () => Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
+  const r = () =>
+    Math.floor(Math.random() * 0xffffffff)
+      .toString(16)
+      .padStart(8, '0');
   return `${r()}-${r().slice(0, 4)}-4${r().slice(1, 4)}-${r().slice(0, 4)}-${r()}${r().slice(0, 4)}`;
 }
 
@@ -177,7 +180,12 @@ function wrapInCell(child: AnyNode): AnyNode {
 }
 
 function repairWalk(node: AnyNode): AnyNode {
-  if (!node || typeof node !== 'object' || !Array.isArray(node.content) || node.content.length === 0) {
+  if (
+    !node ||
+    typeof node !== 'object' ||
+    !Array.isArray(node.content) ||
+    node.content.length === 0
+  ) {
     return node;
   }
   // Recurse first so deeply-nested tables get repaired as well.

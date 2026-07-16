@@ -157,12 +157,15 @@ describe('page_blocks_apply', () => {
     }
   });
 
-  it('a second batch anchored on the previous batch\'s created_ids succeeds without re-listing', async () => {
+  it("a second batch anchored on the previous batch's created_ids succeeds without re-listing", async () => {
     const { doc, ids } = makeBaseline();
     vi.mocked(getPage).mockResolvedValue({ doc, draft: null } as never);
 
     const first = await apply.handler(
-      { page_id: PAGE_ID, ops: [{ op: 'insert_after', block_id: ids[3], markdown: 'New section' }] },
+      {
+        page_id: PAGE_ID,
+        ops: [{ op: 'insert_after', block_id: ids[3], markdown: 'New section' }],
+      },
       ctx,
     );
     expect(first.ok).toBe(true);
@@ -175,7 +178,10 @@ describe('page_blocks_apply', () => {
     vi.mocked(getPage).mockResolvedValue({ doc, draft: savedDraft } as never);
 
     const second = await apply.handler(
-      { page_id: PAGE_ID, ops: [{ op: 'insert_after', block_id: newId, markdown: 'Chained onto it' }] },
+      {
+        page_id: PAGE_ID,
+        ops: [{ op: 'insert_after', block_id: newId, markdown: 'Chained onto it' }],
+      },
       ctx,
     );
     expect(second.ok).toBe(true);
@@ -255,7 +261,13 @@ describe('page_blocks_apply', () => {
     });
     const corrupted = {
       type: 'doc',
-      content: [p(DUP, 'Step 1'), p(DUP, 'Step 2'), p(DUP, 'Step 3'), p('u-78', 'Note'), p(DUP, 'Step 4')],
+      content: [
+        p(DUP, 'Step 1'),
+        p(DUP, 'Step 2'),
+        p(DUP, 'Step 3'),
+        p('u-78', 'Note'),
+        p(DUP, 'Step 4'),
+      ],
     };
     vi.mocked(getPage).mockResolvedValue({ doc: corrupted, draft: null } as never);
 
@@ -361,6 +373,7 @@ describe('page_blocks_apply', () => {
       ctx,
     );
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toContain("op must be one of: 'update', 'insert_after', 'delete'");
+    if (!res.ok)
+      expect(res.error).toContain("op must be one of: 'update', 'insert_after', 'delete'");
   });
 });

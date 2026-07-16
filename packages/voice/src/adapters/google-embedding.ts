@@ -35,7 +35,7 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
     id: 'models/text-embedding-004',
     label: 'text-embedding-004',
     description:
-      '768-dim native — fits the brain\'s vector(768) column exactly (migration 0060). A cloud alternative to the local EmbeddingGemma default if you want Google retrieval.',
+      "768-dim native — fits the brain's vector(768) column exactly (migration 0060). A cloud alternative to the local EmbeddingGemma default if you want Google retrieval.",
     contextTokens: 2048,
     dimensions: 768,
     inputPricePer1M: 0,
@@ -44,7 +44,7 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
     id: 'models/gemini-embedding-001',
     label: 'gemini-embedding-001',
     description:
-      '3072-dim native but supports `outputDimensionality` (MRL) to truncate down to 768 — set the worker\'s output_dimensions param. Strong English + multilingual recall.',
+      "3072-dim native but supports `outputDimensionality` (MRL) to truncate down to 768 — set the worker's output_dimensions param. Strong English + multilingual recall.",
     contextTokens: 2048,
     dimensions: 3072,
     inputPricePer1M: 0.15,
@@ -131,10 +131,10 @@ export const googleEmbedding: EmbeddingDispatcher = {
 
   async discoverModels(apiKey: string): Promise<DiscoveryResult<EmbeddingModelInfo>> {
     try {
-      const res = await fetch(
-        `${BASE}/models?key=${encodeURIComponent(apiKey)}`,
-        { signal: AbortSignal.timeout(8_000), headers: { accept: 'application/json' } },
-      );
+      const res = await fetch(`${BASE}/models?key=${encodeURIComponent(apiKey)}`, {
+        signal: AbortSignal.timeout(8_000),
+        headers: { accept: 'application/json' },
+      });
       if (!res.ok) {
         return {
           available: [...STATIC_CATALOG],

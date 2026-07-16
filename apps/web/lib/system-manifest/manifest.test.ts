@@ -13,7 +13,12 @@ import {
   ASSIST_SURFACE_DEFAULTS,
   type ManifestAgent,
 } from './manifest';
-import { BUILTIN_TOOLS, buildHttpRequest, collectParamNames, collectSecretRefs } from '@mantle/tools';
+import {
+  BUILTIN_TOOLS,
+  buildHttpRequest,
+  collectParamNames,
+  collectSecretRefs,
+} from '@mantle/tools';
 
 /**
  * Manifest drift guard (modeled on packages/voice/.../catalog-consistency.test.ts).
@@ -58,7 +63,10 @@ describe('system manifest integrity', () => {
       // manifest agent anymore (enforced by the type; the column was dropped in
       // migration 0083). Every agent must grant at least one group to act.
       const groups = agent.toolGroupSlugs ?? [];
-      expect(groups.length, `agent '${agent.slug}' grants no tool groups — cannot act`).toBeGreaterThan(0);
+      expect(
+        groups.length,
+        `agent '${agent.slug}' grants no tool groups — cannot act`,
+      ).toBeGreaterThan(0);
 
       const unknownGroups = groups.filter((g) => !KNOWN_TOOL_GROUP_SLUGS.has(g));
       expect(unknownGroups, `agent '${agent.slug}' references unknown tool groups`).toEqual([]);
@@ -107,11 +115,21 @@ describe('system manifest integrity', () => {
     const persona = MANIFEST_AGENTS.find((a) => a.isPersona)!;
     const grant = effectiveTools(persona);
     expect(grant.has('run_terminal'), 'run_terminal stays out').toBe(false);
-    expect(grant.has('page_create'), 'page authoring is delegated to the Pages specialist').toBe(false);
-    expect(grant.has('page_delete'), 'page delete is delegated to the Pages specialist').toBe(false);
-    expect(grant.has('table_from_text'), 'grid work is delegated to the Ledger specialist').toBe(false);
-    expect(grant.has('contact_delete'), 'destructive contact delete is deliberate-only').toBe(false);
-    expect(grant.has('journal_delete'), 'destructive journal delete is deliberate-only').toBe(false);
+    expect(grant.has('page_create'), 'page authoring is delegated to the Pages specialist').toBe(
+      false,
+    );
+    expect(grant.has('page_delete'), 'page delete is delegated to the Pages specialist').toBe(
+      false,
+    );
+    expect(grant.has('table_from_text'), 'grid work is delegated to the Ledger specialist').toBe(
+      false,
+    );
+    expect(grant.has('contact_delete'), 'destructive contact delete is deliberate-only').toBe(
+      false,
+    );
+    expect(grant.has('journal_delete'), 'destructive journal delete is deliberate-only').toBe(
+      false,
+    );
     expect(grant.has('invoke_agent'), 'persona must be able to delegate').toBe(true);
     expect(grant.has('page_share'), 'persona keeps page sharing').toBe(true);
     // Files: the persona CAN rename/update (non-destructive — closes the audit
@@ -157,7 +175,9 @@ describe('system manifest integrity', () => {
     // the switch has something to gate — a regression that DROPS them would
     // silently make the switch a no-op.
     for (const gated of ['email_get', 'email_list', 'journal_get', 'journal_list']) {
-      expect(grant.has(gated), `${gated} stays in team-read (runtime-gated, not removed)`).toBe(true);
+      expect(grant.has(gated), `${gated} stays in team-read (runtime-gated, not removed)`).toBe(
+        true,
+      );
     }
     // Baseline brain-knowledge reads are always present.
     for (const read of ['search_chunks', 'read_section', 'file_read', 'page_get', 'table_query']) {
@@ -180,7 +200,10 @@ describe('system manifest integrity', () => {
         expect(props.has(p), `${tool.slug}: placeholder {${p}} is not in input_schema`).toBe(true);
       }
       // Auth rides a vault ref, never an inline key.
-      expect(collectSecretRefs(tool.handler).length, `${tool.slug} must reference a vault key`).toBeGreaterThan(0);
+      expect(
+        collectSecretRefs(tool.handler).length,
+        `${tool.slug} must reference a vault key`,
+      ).toBeGreaterThan(0);
     }
   });
 
@@ -194,7 +217,13 @@ describe('system manifest integrity', () => {
     const tool = MANIFEST_HTTP_TOOLS.find((t) => t.slug === 'mapbox_directions')!;
     const req = buildHttpRequest(
       tool.handler,
-      { profile: 'driving', from_longitude: 18.4241, from_latitude: -33.9249, to_longitude: 18.45, to_latitude: -33.9 },
+      {
+        profile: 'driving',
+        from_longitude: 18.4241,
+        from_latitude: -33.9249,
+        to_longitude: 18.45,
+        to_latitude: -33.9,
+      },
       new Map([['mapbox/default', 'pk.TEST-KEY']]),
     );
     // The `,`/`;` separators must survive as literals (numbers URL-encode to
@@ -228,7 +257,10 @@ describe('system manifest integrity', () => {
 
   it('every skill has a non-empty instruction body', () => {
     for (const skill of MANIFEST_SKILLS) {
-      expect(skill.instructions?.trim().length, `skill '${skill.slug}' has no instructions`).toBeGreaterThan(0);
+      expect(
+        skill.instructions?.trim().length,
+        `skill '${skill.slug}' has no instructions`,
+      ).toBeGreaterThan(0);
     }
   });
 
@@ -244,9 +276,15 @@ describe('system manifest integrity', () => {
   it('every specialist agent has a system prompt; the persona has none (persona-bank)', () => {
     for (const agent of MANIFEST_AGENTS) {
       if (agent.isPersona) {
-        expect(agent.systemPrompt, `persona '${agent.slug}' should not carry a manifest prompt`).toBeUndefined();
+        expect(
+          agent.systemPrompt,
+          `persona '${agent.slug}' should not carry a manifest prompt`,
+        ).toBeUndefined();
       } else {
-        expect(agent.systemPrompt?.trim().length, `agent '${agent.slug}' has no system prompt`).toBeGreaterThan(0);
+        expect(
+          agent.systemPrompt?.trim().length,
+          `agent '${agent.slug}' has no system prompt`,
+        ).toBeGreaterThan(0);
       }
     }
   });

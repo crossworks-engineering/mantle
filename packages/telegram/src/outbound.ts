@@ -280,8 +280,14 @@ export function sniffImageMime(buf: Buffer): string | null {
   if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'image/gif';
   // WEBP: 'RIFF' .... 'WEBP'
   if (
-    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
-    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
   ) {
     return 'image/webp';
   }
@@ -297,7 +303,12 @@ export function sniffImageMime(buf: Buffer): string | null {
 export async function sendChatAction(
   account: TelegramAccount,
   chatId: string,
-  action: 'typing' | 'upload_photo' | 'record_voice' | 'upload_voice' | 'upload_document' = 'typing',
+  action:
+    | 'typing'
+    | 'upload_photo'
+    | 'record_voice'
+    | 'upload_voice'
+    | 'upload_document' = 'typing',
 ): Promise<void> {
   const bot = await botFor(account);
   await bot.api.sendChatAction(chatId, action);

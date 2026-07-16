@@ -63,7 +63,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   }
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
+  if (!parsed.success)
+    return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
 
   const app = await getApp(share.ownerId, share.nodeId);
   if (!app || !app.publishedBuild?.ok) {
@@ -80,7 +81,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
 
   const tool = await resolveTool(share.ownerId, parsed.data.slug);
   if (!tool) {
-    return NextResponse.json({ ok: false, error: `tool '${parsed.data.slug}' not found` }, { status: 404 });
+    return NextResponse.json(
+      { ok: false, error: `tool '${parsed.data.slug}' not found` },
+      { status: 404 },
+    );
   }
 
   // Even for an identified team member, a share never dispatches an http/shell/
@@ -105,6 +109,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     detail: { slug: parsed.data.slug },
   });
 
-  const result = await dispatchTool(tool, parsed.data.input, { ownerId: share.ownerId, surface: { kind: 'web' } });
+  const result = await dispatchTool(tool, parsed.data.input, {
+    ownerId: share.ownerId,
+    surface: { kind: 'web' },
+  });
   return NextResponse.json(result);
 }

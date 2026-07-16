@@ -67,6 +67,9 @@ export function safeDelta(onDelta: ChatStreamSink, delta: ChatStreamDelta): void
   try {
     onDelta(delta);
   } catch (err) {
-    console.warn('[chat-stream] delta sink threw (ignored):', err instanceof Error ? err.message : err);
+    console.warn(
+      '[chat-stream] delta sink threw (ignored):',
+      err instanceof Error ? err.message : err,
+    );
   }
 }

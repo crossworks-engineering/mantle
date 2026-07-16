@@ -38,10 +38,7 @@ export async function POST(req: Request) {
       const parentPath = String(form.get('parentPath') ?? '');
       const file = form.get('file');
       if (!parentPath || !(file instanceof File)) {
-        return NextResponse.json(
-          { error: 'parentPath and file required' },
-          { status: 400 },
-        );
+        return NextResponse.json({ error: 'parentPath and file required' }, { status: 400 });
       }
       if (file.size === 0) {
         return NextResponse.json({ error: 'empty file' }, { status: 400 });

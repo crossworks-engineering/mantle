@@ -54,10 +54,13 @@ function escapeHtml(s: string): string {
 }
 
 function htmlError(message: string, status = 400): Response {
-  return new Response(consentShell(`<h1>Can't connect</h1><p class="muted">${escapeHtml(message)}</p>`), {
-    status,
-    headers: { 'content-type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
-  });
+  return new Response(
+    consentShell(`<h1>Can't connect</h1><p class="muted">${escapeHtml(message)}</p>`),
+    {
+      status,
+      headers: { 'content-type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    },
+  );
 }
 
 /** Bind the consent form to (user, client, redirect, challenge) so only a POST
@@ -91,7 +94,8 @@ async function validate(p: AuthorizeParams): Promise<{ clientName: string } | Re
 }
 
 export async function GET(req: Request) {
-  if (!(await isRemoteMcpEnabled())) return htmlError('Remote MCP is not enabled on this Mantle.', 404);
+  if (!(await isRemoteMcpEnabled()))
+    return htmlError('Remote MCP is not enabled on this Mantle.', 404);
   const url = new URL(req.url);
   const p = readParams(url.searchParams);
   const validated = await validate(p);
@@ -111,7 +115,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  if (!(await isRemoteMcpEnabled())) return htmlError('Remote MCP is not enabled on this Mantle.', 404);
+  if (!(await isRemoteMcpEnabled()))
+    return htmlError('Remote MCP is not enabled on this Mantle.', 404);
   const form = await req.formData();
   const get = (k: string) => {
     const v = form.get(k);

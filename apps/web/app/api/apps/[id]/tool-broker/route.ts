@@ -26,7 +26,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
+  if (!parsed.success)
+    return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
 
   const app = await getApp(user.id, id);
   if (!app) return NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
@@ -44,9 +45,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const tool = await resolveTool(user.id, parsed.data.slug);
   if (!tool) {
-    return NextResponse.json({ ok: false, error: `tool '${parsed.data.slug}' not found` }, { status: 404 });
+    return NextResponse.json(
+      { ok: false, error: `tool '${parsed.data.slug}' not found` },
+      { status: 404 },
+    );
   }
 
-  const result = await dispatchTool(tool, parsed.data.input, { ownerId: user.id, surface: { kind: 'web' } });
+  const result = await dispatchTool(tool, parsed.data.input, {
+    ownerId: user.id,
+    surface: { kind: 'web' },
+  });
   return NextResponse.json(result);
 }

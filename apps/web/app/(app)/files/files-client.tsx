@@ -318,7 +318,12 @@ function FilesView({
         onDrop={onDrop}
       >
         {openFileId ? (
-          <FileEditor key={openFileId} fileId={openFileId} onClose={() => openFile(null)} onSaved={refresh} />
+          <FileEditor
+            key={openFileId}
+            fileId={openFileId}
+            onClose={() => openFile(null)}
+            onSaved={refresh}
+          />
         ) : (
           <>
             <SetPageTitle title={currentFolder?.slug ?? 'files'} />
@@ -349,7 +354,11 @@ function FilesView({
                     size="sm"
                     className="h-7"
                     onClick={() =>
-                      setRenameTarget({ kind: 'folder', id: currentFolder.id, slug: currentFolder.slug })
+                      setRenameTarget({
+                        kind: 'folder',
+                        id: currentFolder.id,
+                        slug: currentFolder.slug,
+                      })
                     }
                     disabled={busy}
                   >
@@ -975,7 +984,9 @@ function ChildFolders({
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">{f.slug}</div>
                 {f.description && (
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{f.description}</div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {f.description}
+                  </div>
                 )}
                 <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
                   {f.childFolderCount} folders · {f.fileCount} files

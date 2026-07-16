@@ -96,7 +96,9 @@ function resolveRef(ref: string, scope: RecipeScope): unknown {
   if (!(head in scope.steps)) {
     throw new RecipeRefError(
       `recipe references $${ref} but step '${head}' has no output (steps so far: ${
-        Object.keys(scope.steps).filter((k) => !/^\d+$/.test(k)).join(', ') || '—'
+        Object.keys(scope.steps)
+          .filter((k) => !/^\d+$/.test(k))
+          .join(', ') || '—'
       })`,
     );
   }
@@ -167,9 +169,7 @@ const STEP_AS_RE = /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/;
 /** Parse + structurally validate raw `steps` input from a tool call. Does not
  *  check that referenced tools exist or are allowed — that needs the registry
  *  (done by the authoring builtin). Returns normalized steps or an error. */
-export function parseRecipeSteps(
-  raw: unknown,
-): { steps: RecipeStep[] } | { error: string } {
+export function parseRecipeSteps(raw: unknown): { steps: RecipeStep[] } | { error: string } {
   if (!Array.isArray(raw) || raw.length === 0) {
     return { error: 'steps must be a non-empty array' };
   }
@@ -196,10 +196,14 @@ export function parseRecipeSteps(
     let as: string | undefined;
     if (obj.as !== undefined) {
       if (typeof obj.as !== 'string' || !STEP_AS_RE.test(obj.as)) {
-        return { error: `step ${i} ('${tool}') 'as' must be a name like 'note' (letter then letters/digits/_)` };
+        return {
+          error: `step ${i} ('${tool}') 'as' must be a name like 'note' (letter then letters/digits/_)`,
+        };
       }
-      if (/^\d+$/.test(obj.as)) return { error: `step ${i} 'as' cannot be a number (those are reserved for indices)` };
-      if (names.has(obj.as)) return { error: `step ${i} reuses the name '${obj.as}' — names must be unique` };
+      if (/^\d+$/.test(obj.as))
+        return { error: `step ${i} 'as' cannot be a number (those are reserved for indices)` };
+      if (names.has(obj.as))
+        return { error: `step ${i} reuses the name '${obj.as}' — names must be unique` };
       names.add(obj.as);
       as = obj.as;
     }

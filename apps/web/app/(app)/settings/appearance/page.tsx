@@ -69,7 +69,9 @@ function Controls() {
                 className={cn(
                   'flex w-full items-center justify-between gap-2 rounded-lg border p-2 text-left text-sm transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  active ? 'border-primary ring-1 ring-primary' : 'border-border hover:bg-accent/40',
+                  active
+                    ? 'border-primary ring-1 ring-primary'
+                    : 'border-border hover:bg-accent/40',
                 )}
               >
                 <span className="flex min-w-0 items-center gap-2">

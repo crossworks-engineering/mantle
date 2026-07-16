@@ -22,12 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -256,10 +251,7 @@ export function RequestBuilder() {
   const [saveToolOpen, setSaveToolOpen] = useState(false);
 
   const vars = useMemo(() => buildVarMap(activeEnv), [activeEnv]);
-  const placeholders = useMemo(
-    () => collectDraftParams(draft, vars),
-    [draft, vars],
-  );
+  const placeholders = useMemo(() => collectDraftParams(draft, vars), [draft, vars]);
 
   const formatBody = () => {
     try {
@@ -305,7 +297,13 @@ export function RequestBuilder() {
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {draft.kind === 'http' && <EnvironmentControls />}
-          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={openSave}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={openSave}
+          >
             <Save /> Save
           </Button>
           {draft.kind === 'http' && (
@@ -399,10 +397,14 @@ export function RequestBuilder() {
             <Tabs defaultValue="params">
               <TabsList className="h-8">
                 <TabsTrigger value="params" className="text-xs">
-                  Params{draft.params.filter((p) => p.enabled && p.key).length > 0 && ` (${draft.params.filter((p) => p.enabled && p.key).length})`}
+                  Params
+                  {draft.params.filter((p) => p.enabled && p.key).length > 0 &&
+                    ` (${draft.params.filter((p) => p.enabled && p.key).length})`}
                 </TabsTrigger>
                 <TabsTrigger value="headers" className="text-xs">
-                  Headers{draft.headers.filter((h) => h.enabled && h.key).length > 0 && ` (${draft.headers.filter((h) => h.enabled && h.key).length})`}
+                  Headers
+                  {draft.headers.filter((h) => h.enabled && h.key).length > 0 &&
+                    ` (${draft.headers.filter((h) => h.enabled && h.key).length})`}
                 </TabsTrigger>
                 <TabsTrigger value="body" className="text-xs">
                   Body{draft.body.mode !== 'none' && ' ●'}
@@ -449,9 +451,15 @@ export function RequestBuilder() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none" className="text-xs">None</SelectItem>
-                      <SelectItem value="json" className="text-xs">JSON</SelectItem>
-                      <SelectItem value="raw" className="text-xs">Raw</SelectItem>
+                      <SelectItem value="none" className="text-xs">
+                        None
+                      </SelectItem>
+                      <SelectItem value="json" className="text-xs">
+                        JSON
+                      </SelectItem>
+                      <SelectItem value="raw" className="text-xs">
+                        Raw
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   {draft.body.mode === 'json' && (
@@ -474,7 +482,9 @@ export function RequestBuilder() {
                     }
                     rows={10}
                     className="font-mono text-xs"
-                    placeholder={draft.body.mode === 'json' ? '{\n  "key": "value"\n}' : 'request body'}
+                    placeholder={
+                      draft.body.mode === 'json' ? '{\n  "key": "value"\n}' : 'request body'
+                    }
                   />
                 )}
               </TabsContent>
@@ -518,8 +528,8 @@ export function RequestBuilder() {
                   </div>
                 )}
                 <p className="text-[11px] text-muted-foreground">
-                  Session auth rides the same-origin cookie — built-in API calls just work.
-                  Saved requests and history never store tokens.
+                  Session auth rides the same-origin cookie — built-in API calls just work. Saved
+                  requests and history never store tokens.
                 </p>
               </TabsContent>
             </Tabs>

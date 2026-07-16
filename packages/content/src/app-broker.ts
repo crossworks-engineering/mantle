@@ -165,7 +165,11 @@ async function ensureRegistry(
   appNodeId: string,
 ): Promise<{ id: string; storagePath: string; schemaVersion: number }> {
   const [existing] = await db
-    .select({ id: appDatabases.id, storagePath: appDatabases.storagePath, schemaVersion: appDatabases.schemaVersion })
+    .select({
+      id: appDatabases.id,
+      storagePath: appDatabases.storagePath,
+      schemaVersion: appDatabases.schemaVersion,
+    })
     .from(appDatabases)
     .where(eq(appDatabases.appNodeId, appNodeId))
     .limit(1);
@@ -186,7 +190,11 @@ async function ensureRegistry(
     .onConflictDoNothing({ target: appDatabases.appNodeId });
 
   const [row] = await db
-    .select({ id: appDatabases.id, storagePath: appDatabases.storagePath, schemaVersion: appDatabases.schemaVersion })
+    .select({
+      id: appDatabases.id,
+      storagePath: appDatabases.storagePath,
+      schemaVersion: appDatabases.schemaVersion,
+    })
     .from(appDatabases)
     .where(eq(appDatabases.appNodeId, appNodeId))
     .limit(1);
@@ -440,7 +448,11 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
     try {
       await stat(r.storagePath);
     } catch {
-      report.missing.push({ ownerId: r.ownerId, appNodeId: r.appNodeId, storagePath: r.storagePath });
+      report.missing.push({
+        ownerId: r.ownerId,
+        appNodeId: r.appNodeId,
+        storagePath: r.storagePath,
+      });
       continue;
     }
     const destFile = snapshotDestPath(destDir, r.ownerId, r.appNodeId);

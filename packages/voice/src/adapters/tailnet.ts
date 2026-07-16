@@ -63,9 +63,10 @@ export async function tailnetFetch(url: string, init?: RequestInit): Promise<Res
   if (!agent || !_undiciFetch) return fetch(url, init);
   // undici's RequestInit accepts `dispatcher`; the global RequestInit type
   // doesn't, hence the cast at this boundary.
-  const res = await _undiciFetch(url, { ...(init as object), dispatcher: agent } as Parameters<
-    UndiciFetch
-  >[1]);
+  const res = await _undiciFetch(url, {
+    ...(init as object),
+    dispatcher: agent,
+  } as Parameters<UndiciFetch>[1]);
   return res as unknown as Response;
 }
 

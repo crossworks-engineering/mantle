@@ -14,7 +14,9 @@ import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'dri
 export const pushInstance = pgTable(
   'push_instance',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     /** base64( @mantle/crypto seal(instanceToken) ). */
     instanceTokenEnc: text('instance_token_enc').notNull(),
     /** The relay's opaque id for this install (from POST /instances). */
@@ -40,7 +42,9 @@ export type NewPushInstance = typeof pushInstance.$inferInsert;
 export const pushSubscriptions = pgTable(
   'push_subscriptions',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     /** The relay's deviceId (from /enroll), kept for reference/unpair. */
     relayDeviceId: text('relay_device_id'),
@@ -68,7 +72,9 @@ export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
 export const pushPrefs = pgTable(
   'push_prefs',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     /** Push outbound assistant turns (the assistant reaching out). */
     assistantMessages: boolean('assistant_messages').notNull().default(true),
     /** Push when a tool call needs approval. */

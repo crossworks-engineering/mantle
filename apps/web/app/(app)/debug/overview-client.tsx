@@ -181,7 +181,10 @@ export function OverviewClient() {
             Models that emit byte-identical parallel <code>tool_use</code> blocks for the same write
             — only the first is dispatched, duplicates are suppressed. A high count here = the model
             is misbehaving; an empty list = the guard never had to fire. See{' '}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">architecture.md §9n</code>.
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+              architecture.md §9n
+            </code>
+            .
           </p>
           <ul className="divide-y divide-border rounded-md border border-border">
             {dupCalls7d.map((d) => (
@@ -357,8 +360,8 @@ export function OverviewClient() {
                   return (
                     <li key={row.type} className="flex items-baseline justify-between gap-3">
                       <span>
-                        <code className="font-mono">{row.type}</code> · <strong>{row.indexed}</strong>
-                        /{row.total}
+                        <code className="font-mono">{row.type}</code> ·{' '}
+                        <strong>{row.indexed}</strong>/{row.total}
                       </span>
                       <span className={pct === 100 ? 'text-emerald-700 dark:text-emerald-300' : ''}>
                         {pct.toFixed(0)}%

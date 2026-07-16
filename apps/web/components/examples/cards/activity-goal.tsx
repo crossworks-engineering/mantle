@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { MinusIcon, PlusIcon } from "lucide-react";
-import * as React from "react";
-import { Bar, BarChart } from "recharts";
+import { MinusIcon, PlusIcon } from 'lucide-react';
+import * as React from 'react';
+import { Bar, BarChart } from 'recharts';
 
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -12,8 +12,8 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { ChartConfig, ChartContainer } from "@/components/ui/chart";
+} from '@/components/ui/card';
+import { ChartConfig, ChartContainer } from '@/components/ui/chart';
 
 const data = [
   {
@@ -59,8 +59,8 @@ const data = [
 
 const chartConfig = {
   goal: {
-    label: "Tokens",
-    color: "var(--primary)",
+    label: 'Tokens',
+    color: 'var(--primary)',
   },
 } satisfies ChartConfig;
 

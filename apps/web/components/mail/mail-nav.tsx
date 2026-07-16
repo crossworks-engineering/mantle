@@ -67,7 +67,12 @@ export function MailNav({ isCollapsed, folders }: { isCollapsed: boolean; folder
               <Icon className="mr-2 h-4 w-4" />
               <span className="truncate">{label}</span>
               {badge && (
-                <span className={cn('ml-auto', f.active && 'text-background dark:text-muted-foreground')}>
+                <span
+                  className={cn(
+                    'ml-auto',
+                    f.active && 'text-background dark:text-muted-foreground',
+                  )}
+                >
                   {badge}
                 </span>
               )}

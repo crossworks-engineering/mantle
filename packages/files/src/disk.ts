@@ -9,12 +9,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import {
-  diskPathForFile,
-  diskPathForLtree,
-  filesRoot,
-  isFilesPath,
-} from './paths';
+import { diskPathForFile, diskPathForLtree, filesRoot, isFilesPath } from './paths';
 
 /** Ensure the root + an arbitrary descendant directory exist. mkdir -p. */
 export async function ensureDir(ltreePath: string): Promise<string> {
@@ -66,10 +61,7 @@ export async function writeFile(
   return { path: filePath, sha256, size: bytes.byteLength };
 }
 
-export async function readFile(
-  parentLtreePath: string,
-  filename: string,
-): Promise<Buffer> {
+export async function readFile(parentLtreePath: string, filename: string): Promise<Buffer> {
   const filePath = diskPathForFile(parentLtreePath, filename);
   if (!filePath) {
     throw new Error(`readFile: cannot resolve disk path for ${parentLtreePath}/${filename}`);
@@ -77,10 +69,7 @@ export async function readFile(
   return fs.readFile(filePath);
 }
 
-export async function deleteFile(
-  parentLtreePath: string,
-  filename: string,
-): Promise<void> {
+export async function deleteFile(parentLtreePath: string, filename: string): Promise<void> {
   const filePath = diskPathForFile(parentLtreePath, filename);
   if (!filePath) return;
   try {
@@ -117,10 +106,7 @@ export async function renameFile(
  *  `fromLtree`/`toLtree` are the OLD and NEW full ltree paths of the folder.
  *  Throws on collision; refuses to rename the root. The caller pairs this with
  *  the DB ltree cascade. */
-export async function renameFolder(
-  fromLtree: string,
-  toLtree: string,
-): Promise<{ path: string }> {
+export async function renameFolder(fromLtree: string, toLtree: string): Promise<{ path: string }> {
   const from = diskPathForLtree(fromLtree);
   const to = diskPathForLtree(toLtree);
   if (!from || !to) throw new Error('renameFolder: path resolution failed');

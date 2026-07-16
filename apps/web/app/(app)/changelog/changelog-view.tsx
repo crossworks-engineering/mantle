@@ -5,11 +5,7 @@ import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Badge } from '@/components/ui/badge';
-import {
-  APP_VERSION,
-  CHANGELOG_LAST_SEEN_VERSION_KEY,
-  CHANGELOG_SEEN_EVENT,
-} from '@/lib/version';
+import { APP_VERSION, CHANGELOG_LAST_SEEN_VERSION_KEY, CHANGELOG_SEEN_EVENT } from '@/lib/version';
 
 /**
  * Changelog reader body. Visiting any /changelog page counts as "read": it

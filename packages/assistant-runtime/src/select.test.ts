@@ -59,10 +59,7 @@ describe('pickWebDefaultAgent', () => {
   });
 
   it('does not mutate the input array order', () => {
-    const rows = [
-      a({ slug: 'b', priority: 1 }),
-      a({ slug: 'a', priority: 9 }),
-    ];
+    const rows = [a({ slug: 'b', priority: 1 }), a({ slug: 'a', priority: 9 })];
     pickWebDefaultAgent(rows);
     expect(rows.map((r) => r.slug)).toEqual(['b', 'a']);
   });

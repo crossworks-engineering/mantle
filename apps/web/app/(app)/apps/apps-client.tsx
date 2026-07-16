@@ -45,28 +45,36 @@ type AppsPage = { apps: AppRow[]; total: number; page: number; pageSize: number 
  */
 function ExposureBadge({ app }: { app: Pick<AppRow, 'shareMode' | 'isHub'> }) {
   if (app.isHub) {
-    return <Badge title="Designated Team Hub — renders full-screen at /team for members">hub</Badge>;
+    return (
+      <Badge title="Designated Team Hub — renders full-screen at /team for members">hub</Badge>
+    );
   }
   if (app.shareMode === 'team') {
-    return <Badge variant="secondary" title="Team-shared — members reach it with their team token; listed on the /team hub">team</Badge>;
+    return (
+      <Badge
+        variant="secondary"
+        title="Team-shared — members reach it with their team token; listed on the /team hub"
+      >
+        team
+      </Badge>
+    );
   }
   if (app.shareMode === 'public') {
-    return <Badge variant="outline" title="Publicly shared — anyone with the link can open it (read-only tools)">public</Badge>;
+    return (
+      <Badge
+        variant="outline"
+        title="Publicly shared — anyone with the link can open it (read-only tools)"
+      >
+        public
+      </Badge>
+    );
   }
   return null;
 }
 
 /** Outer query-gate so the page stays data-free. The URL params (driven by
  *  `useListNav` in the list) key the query, so navigating refetches. */
-export function AppsClient({
-  page,
-  query,
-  sort,
-}: {
-  page: number;
-  query: string;
-  sort: string;
-}) {
+export function AppsClient({ page, query, sort }: { page: number; query: string; sort: string }) {
   const appsQuery = useQuery({
     queryKey: ['apps', { query, sort, page }],
     queryFn: () => {
@@ -201,7 +209,13 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
             </ul>
           )}
         </div>
-        <ListPager page={page} total={total} pageSize={pageSize} pending={pending} onGo={(p) => go({ page: p })} />
+        <ListPager
+          page={page}
+          total={total}
+          pageSize={pageSize}
+          pending={pending}
+          onGo={(p) => go({ page: p })}
+        />
       </div>
 
       {/* Right: preview — the app gets the full pane (viewport frame) and
@@ -313,7 +327,13 @@ function CreateAppDialog({ onCreated }: { onCreated: (id: string) => void }) {
       <form onSubmit={submit} className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="app-name">Name</Label>
-          <Input id="app-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Weather" autoFocus />
+          <Input
+            id="app-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Weather"
+            autoFocus
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="app-desc">Description</Label>

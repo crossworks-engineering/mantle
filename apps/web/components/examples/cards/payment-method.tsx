@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -8,30 +8,30 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+} from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 
 const plans = [
   {
-    id: "starter",
-    name: "Starter Plan",
-    description: "Perfect for small businesses.",
-    price: "$10",
+    id: 'starter',
+    name: 'Starter Plan',
+    description: 'Perfect for small businesses.',
+    price: '$10',
   },
   {
-    id: "pro",
-    name: "Pro Plan",
-    description: "Advanced features with more storage.",
-    price: "$20",
+    id: 'pro',
+    name: 'Pro Plan',
+    description: 'Advanced features with more storage.',
+    price: '$20',
   },
 ] as const;
 

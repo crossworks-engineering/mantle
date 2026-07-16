@@ -260,10 +260,7 @@ export {
   OPENROUTER_VISION_MODELS,
   OPENROUTER_BASE_URL,
 } from '../catalogs/openrouter';
-export {
-  DEEPSEEK_CHAT_MODELS,
-  DEEPSEEK_BASE_URL,
-} from '../catalogs/deepseek';
+export { DEEPSEEK_CHAT_MODELS, DEEPSEEK_BASE_URL } from '../catalogs/deepseek';
 export {
   GOOGLE_CHAT_MODELS,
   GOOGLE_BASE_URL,
@@ -278,10 +275,7 @@ export {
   type GoogleTtsModelId,
 } from '../catalogs/google';
 export { OPENAI_VISION_MODELS } from '../catalogs/openai-vision';
-export {
-  OPENAI_IMAGE_MODELS,
-  OPENAI_IMAGE_DEFAULT_MODEL,
-} from '../catalogs/openai-image';
+export { OPENAI_IMAGE_MODELS, OPENAI_IMAGE_DEFAULT_MODEL } from '../catalogs/openai-image';
 export {
   ELEVENLABS_TTS_MODELS,
   ELEVENLABS_STT_MODELS,
@@ -292,10 +286,7 @@ export {
   type ElevenLabsTtsModel,
   type ElevenLabsOutputFormat,
 } from '../catalogs/elevenlabs';
-export {
-  DEEPGRAM_BASE_URL,
-  DEEPGRAM_STT_MODELS,
-} from '../catalogs/deepgram';
+export { DEEPGRAM_BASE_URL, DEEPGRAM_STT_MODELS } from '../catalogs/deepgram';
 export {
   ASSEMBLYAI_BASE_URL,
   ASSEMBLYAI_STT_MODELS,

@@ -45,8 +45,14 @@ const note_create: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      title: { type: 'string', description: 'short title, e.g. "Research: best e-bike under R30k"' },
-      content: { type: 'string', description: 'markdown body (include sources/links where relevant)' },
+      title: {
+        type: 'string',
+        description: 'short title, e.g. "Research: best e-bike under R30k"',
+      },
+      content: {
+        type: 'string',
+        description: 'markdown body (include sources/links where relevant)',
+      },
       tags: {
         type: 'array',
         items: { type: 'string' },
@@ -97,12 +103,12 @@ const note_list: BuiltinToolDef = {
   name: 'List notes',
   description:
     "List the owner's notes, newest first. `query` substring-matches title/body/summary; `tag` " +
-    "narrows to notes carrying that tag. Agent conversation digests are excluded unless `tag` is " +
-    "one of their tags (`conversation-digest`, `agent:*`, `topic:*`). " +
+    'narrows to notes carrying that tag. Agent conversation digests are excluded unless `tag` is ' +
+    'one of their tags (`conversation-digest`, `agent:*`, `topic:*`). ' +
     "**Use this for 'recent notes', 'notes mentioning X by literal substring', or to browse by tag.** " +
-    "For semantic/embedding search across the whole brain (notes alongside emails, files, pages, etc.) " +
+    'For semantic/embedding search across the whole brain (notes alongside emails, files, pages, etc.) ' +
     "use `search_nodes` — that's similarity-ranked and cross-type. For a single note's full markdown body " +
-    "use `note_get`.",
+    'use `note_get`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -127,9 +133,9 @@ const note_get: BuiltinToolDef = {
   slug: 'note_get',
   name: 'Get one note by id',
   description:
-    "Fetch a single note by id — full row including the markdown content. Use after `note_list` or " +
-    "`search_nodes` returns the id you want to read in full. For listing/browsing notes use `note_list`; " +
-    "for semantic search across all content (not just notes) use `search_nodes`. " +
+    'Fetch a single note by id — full row including the markdown content. Use after `note_list` or ' +
+    '`search_nodes` returns the id you want to read in full. For listing/browsing notes use `note_list`; ' +
+    'for semantic search across all content (not just notes) use `search_nodes`. ' +
     'Returns a `url` permalink — link the note as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',

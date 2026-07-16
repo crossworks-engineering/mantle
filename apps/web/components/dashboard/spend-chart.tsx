@@ -37,7 +37,9 @@ export function SpendChart({ data }: { data: DailySpend[] }) {
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <div className="space-y-1">
           <CardTitle className="text-base">LLM spend</CardTitle>
-          <CardDescription>{formatMicroUsd(total)} over last {range} days</CardDescription>
+          <CardDescription>
+            {formatMicroUsd(total)} over last {range} days
+          </CardDescription>
         </div>
         <ToggleGroup
           type="single"

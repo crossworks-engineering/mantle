@@ -71,8 +71,20 @@ describe('OpenAI-compat chatStream (xAI / HF / DeepSeek / local)', () => {
 
   it('assembles tool calls from fragmented tool_call deltas (by index)', async () => {
     streamFetch([
-      sse({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', function: { name: 'note_create', arguments: '{"ti' } }] } }] }),
-      sse({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'tle":"hi"}' } }] } }] }),
+      sse({
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'call_1', function: { name: 'note_create', arguments: '{"ti' } },
+              ],
+            },
+          },
+        ],
+      }),
+      sse({
+        choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'tle":"hi"}' } }] } }],
+      }),
       'data: [DONE]\n\n',
     ]);
     const r = await xaiChatAdapter.chatStream!(
@@ -80,7 +92,11 @@ describe('OpenAI-compat chatStream (xAI / HF / DeepSeek / local)', () => {
       () => {},
     );
     expect(r.toolCalls).toEqual([
-      { id: 'call_1', type: 'function', function: { name: 'note_create', arguments: '{"title":"hi"}' } },
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'note_create', arguments: '{"title":"hi"}' },
+      },
     ]);
   });
 
@@ -130,7 +146,12 @@ describe('OpenAI-compat chatStream (xAI / HF / DeepSeek / local)', () => {
     ]);
     // Abort the moment the first delta lands — the loop breaks before the rest.
     const r = await xaiChatAdapter.chatStream!(
-      { apiKey: 'k', model: 'grok-4', messages: [{ role: 'user', content: 'hi' }], signal: ac.signal },
+      {
+        apiKey: 'k',
+        model: 'grok-4',
+        messages: [{ role: 'user', content: 'hi' }],
+        signal: ac.signal,
+      },
       () => ac.abort(),
     );
     expect(r.text).toBe('Partial');
@@ -146,7 +167,12 @@ describe('OpenAI-compat chatStream (xAI / HF / DeepSeek / local)', () => {
       return { ok: true, status: 200, body: new ReadableStream() } as unknown as Response;
     }) as unknown as typeof fetch;
     const r = await xaiChatAdapter.chatStream!(
-      { apiKey: 'k', model: 'grok-4', messages: [{ role: 'user', content: 'hi' }], signal: ac.signal },
+      {
+        apiKey: 'k',
+        model: 'grok-4',
+        messages: [{ role: 'user', content: 'hi' }],
+        signal: ac.signal,
+      },
       () => {},
     );
     expect(r.text).toBe('');
@@ -160,11 +186,29 @@ describe('Anthropic chatStream', () => {
   it('parses message_start/content_block_delta/message_delta into text + usage', async () => {
     const calls = streamFetch([
       'event: message_start\n' +
-        sse({ type: 'message_start', message: { model: 'claude-opus-4-8', usage: { input_tokens: 25, output_tokens: 1, cache_read_input_tokens: 10 } } }),
-      'event: content_block_start\n' + sse({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
-      'event: content_block_delta\n' + sse({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hello' } }),
-      'event: content_block_delta\n' + sse({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '!' } }),
-      'event: message_delta\n' + sse({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 15 } }),
+        sse({
+          type: 'message_start',
+          message: {
+            model: 'claude-opus-4-8',
+            usage: { input_tokens: 25, output_tokens: 1, cache_read_input_tokens: 10 },
+          },
+        }),
+      'event: content_block_start\n' +
+        sse({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+      'event: content_block_delta\n' +
+        sse({
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'text_delta', text: 'Hello' },
+        }),
+      'event: content_block_delta\n' +
+        sse({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '!' } }),
+      'event: message_delta\n' +
+        sse({
+          type: 'message_delta',
+          delta: { stop_reason: 'end_turn' },
+          usage: { output_tokens: 15 },
+        }),
       'event: message_stop\n' + sse({ type: 'message_stop' }),
     ]);
     const deltas: ChatStreamDelta[] = [];
@@ -185,25 +229,63 @@ describe('Anthropic chatStream', () => {
 
   it('assembles a tool_use call from content_block_start + input_json_delta fragments', async () => {
     streamFetch([
-      'event: message_start\n' + sse({ type: 'message_start', message: { model: 'claude-opus-4-8', usage: { input_tokens: 5 } } }),
-      'event: content_block_start\n' + sse({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'get_weather' } }),
-      'event: content_block_delta\n' + sse({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"location":' } }),
-      'event: content_block_delta\n' + sse({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '"SF"}' } }),
-      'event: message_delta\n' + sse({ type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 9 } }),
+      'event: message_start\n' +
+        sse({
+          type: 'message_start',
+          message: { model: 'claude-opus-4-8', usage: { input_tokens: 5 } },
+        }),
+      'event: content_block_start\n' +
+        sse({
+          type: 'content_block_start',
+          index: 0,
+          content_block: { type: 'tool_use', id: 'toolu_1', name: 'get_weather' },
+        }),
+      'event: content_block_delta\n' +
+        sse({
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'input_json_delta', partial_json: '{"location":' },
+        }),
+      'event: content_block_delta\n' +
+        sse({
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'input_json_delta', partial_json: '"SF"}' },
+        }),
+      'event: message_delta\n' +
+        sse({
+          type: 'message_delta',
+          delta: { stop_reason: 'tool_use' },
+          usage: { output_tokens: 9 },
+        }),
     ]);
     const r = await anthropicChatAdapter.chatStream!(
       { apiKey: 'k', model: 'claude-opus-4-8', messages: [{ role: 'user', content: 'weather?' }] },
       () => {},
     );
     expect(r.toolCalls).toEqual([
-      { id: 'toolu_1', type: 'function', function: { name: 'get_weather', arguments: '{"location":"SF"}' } },
+      {
+        id: 'toolu_1',
+        type: 'function',
+        function: { name: 'get_weather', arguments: '{"location":"SF"}' },
+      },
     ]);
   });
 
   it('surfaces thinking_delta as reasoning deltas (not visible text)', async () => {
     streamFetch([
-      'event: content_block_delta\n' + sse({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'let me think' } }),
-      'event: content_block_delta\n' + sse({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'answer' } }),
+      'event: content_block_delta\n' +
+        sse({
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'thinking_delta', thinking: 'let me think' },
+        }),
+      'event: content_block_delta\n' +
+        sse({
+          type: 'content_block_delta',
+          index: 1,
+          delta: { type: 'text_delta', text: 'answer' },
+        }),
     ]);
     const deltas: ChatStreamDelta[] = [];
     const r = await anthropicChatAdapter.chatStream!(
@@ -217,11 +299,26 @@ describe('Anthropic chatStream', () => {
   it('on a user Stop returns the partial text without throwing', async () => {
     const ac = new AbortController();
     streamFetch([
-      'event: content_block_delta\n' + sse({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'partial' } }),
-      'event: content_block_delta\n' + sse({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ' more' } }),
+      'event: content_block_delta\n' +
+        sse({
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'text_delta', text: 'partial' },
+        }),
+      'event: content_block_delta\n' +
+        sse({
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'text_delta', text: ' more' },
+        }),
     ]);
     const r = await anthropicChatAdapter.chatStream!(
-      { apiKey: 'k', model: 'claude-opus-4-8', messages: [{ role: 'user', content: 'hi' }], signal: ac.signal },
+      {
+        apiKey: 'k',
+        model: 'claude-opus-4-8',
+        messages: [{ role: 'user', content: 'hi' }],
+        signal: ac.signal,
+      },
       () => ac.abort(),
     );
     expect(r.text).toBe('partial');
@@ -233,9 +330,14 @@ describe('Anthropic chatStream', () => {
 describe('Google chatStream', () => {
   it('hits :streamGenerateContent?alt=sse and accumulates text parts + usage', async () => {
     const calls = streamFetch([
-      sse({ candidates: [{ content: { parts: [{ text: 'Ocean ' }] } }], modelVersion: 'gemini-3-flash' }),
+      sse({
+        candidates: [{ content: { parts: [{ text: 'Ocean ' }] } }],
+        modelVersion: 'gemini-3-flash',
+      }),
       sse({ candidates: [{ content: { parts: [{ text: 'currents' }] } }] }),
-      sse({ usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 4, cachedContentTokenCount: 2 } }),
+      sse({
+        usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 4, cachedContentTokenCount: 2 },
+      }),
     ]);
     const deltas: ChatStreamDelta[] = [];
     const r = await googleChatAdapter.chatStream!(
@@ -255,7 +357,11 @@ describe('Google chatStream', () => {
 
   it('collects whole functionCall parts into tool calls', async () => {
     streamFetch([
-      sse({ candidates: [{ content: { parts: [{ functionCall: { name: 'get_time', args: { tz: 'UTC' } } }] } }] }),
+      sse({
+        candidates: [
+          { content: { parts: [{ functionCall: { name: 'get_time', args: { tz: 'UTC' } } }] } },
+        ],
+      }),
       sse({ usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2 } }),
     ]);
     const r = await googleChatAdapter.chatStream!(
@@ -273,7 +379,12 @@ describe('Google chatStream', () => {
       sse({ candidates: [{ content: { parts: [{ text: ' answer' }] } }] }),
     ]);
     const r = await googleChatAdapter.chatStream!(
-      { apiKey: 'k', model: 'gemini-3-flash', messages: [{ role: 'user', content: 'hi' }], signal: ac.signal },
+      {
+        apiKey: 'k',
+        model: 'gemini-3-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+        signal: ac.signal,
+      },
       () => ac.abort(),
     );
     expect(r.text).toBe('half');

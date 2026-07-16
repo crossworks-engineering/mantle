@@ -68,7 +68,10 @@ export function DateTimePicker({
           id={id}
           type="button"
           variant="outline"
-          className={cn('w-full justify-start gap-2 font-normal', !value && 'text-muted-foreground')}
+          className={cn(
+            'w-full justify-start gap-2 font-normal',
+            !value && 'text-muted-foreground',
+          )}
         >
           <CalendarIcon className="size-4 shrink-0" aria-hidden />
           {value ? label(value) : placeholder}

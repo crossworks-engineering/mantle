@@ -131,7 +131,12 @@ export async function resolveExport(
     // Markdown pipe-table + CSV are lossy text renders (like the brain index);
     // xlsx (the default) preserves cell types + totals formatting.
     if (opts.format === 'md') {
-      return result(Buffer.from(tableToText(table.data, { title: table.title }), 'utf8'), 'md', 'table', table.title);
+      return result(
+        Buffer.from(tableToText(table.data, { title: table.title }), 'utf8'),
+        'md',
+        'table',
+        table.title,
+      );
     }
     if (opts.format === 'csv') {
       return result(Buffer.from(tableToCsv(table.data), 'utf8'), 'csv', 'table', table.title);
@@ -143,7 +148,12 @@ export async function resolveExport(
   return null;
 }
 
-function result(bytes: Buffer, format: ExportFormat, kind: ExportKind, title: string): ExportResult {
+function result(
+  bytes: Buffer,
+  format: ExportFormat,
+  kind: ExportKind,
+  title: string,
+): ExportResult {
   return {
     bytes,
     filename: `${slugifyTitle(title)}.${format}`,

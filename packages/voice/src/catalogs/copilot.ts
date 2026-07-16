@@ -26,7 +26,8 @@ export const COPILOT_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
     id: 'gpt-5',
     label: 'GPT-5 (Copilot)',
-    description: 'OpenAI GPT-5 via GitHub Copilot. Reasoning model — depth set by reasoning_effort.',
+    description:
+      'OpenAI GPT-5 via GitHub Copilot. Reasoning model — depth set by reasoning_effort.',
     contextTokens: 264_000,
     capabilities: ['reasoning', 'function_calling', 'vision'],
   },
@@ -40,7 +41,8 @@ export const COPILOT_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
     id: 'claude-sonnet-4.5',
     label: 'Claude Sonnet 4.5 (Copilot)',
-    description: 'Anthropic Claude Sonnet 4.5 via Copilot. Strong agentic + tool use, reasoning-capable.',
+    description:
+      'Anthropic Claude Sonnet 4.5 via Copilot. Strong agentic + tool use, reasoning-capable.',
     contextTokens: 200_000,
     capabilities: ['reasoning', 'function_calling', 'vision'],
   },

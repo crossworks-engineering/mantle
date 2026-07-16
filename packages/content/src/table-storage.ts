@@ -78,7 +78,9 @@ export async function withTableRegistryLock<T>(
                  jsonb_array_length(stats->'tabs') AS tab_count
           FROM tables WHERE node_id = ${nodeId} FOR UPDATE`,
     );
-    const rows = (Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? [])) as {
+    const rows = (
+      Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? [])
+    ) as {
       shape_hash: string | null;
       storage_path: string | null;
       draft_rev: number;
@@ -122,7 +124,11 @@ export function loadDocsFromFile(storagePath: string, opts: { tabId?: string } =
     published = readDocClipped(abs, MATERIALIZE_MAX, opts.tabId);
   } catch (err) {
     if (opts.tabId && err instanceof Error && /no tab/.test(err.message)) {
-      published = { doc: { columns: [], rows: [], aggregates: {}, views: [] }, total: 0, clipped: false };
+      published = {
+        doc: { columns: [], rows: [], aggregates: {}, views: [] },
+        total: 0,
+        clipped: false,
+      };
     } else {
       throw err;
     }
@@ -207,7 +213,11 @@ export async function ensureFileBacked(
     .limit(1);
   const doc = ensureTableDoc(row?.data ?? { columns: [], rows: [] });
   const publishedAbs = publishedPath(node.ownerId, node.id);
-  const res = writeDocFile(publishedAbs, doc, { nodeId: node.id, ownerId: node.ownerId, fts: true });
+  const res = writeDocFile(publishedAbs, doc, {
+    nodeId: node.id,
+    ownerId: node.ownerId,
+    fts: true,
+  });
   const back = readDocClipped(publishedAbs, 0);
   if (back.total !== doc.rows.length) {
     removeTableFile(publishedAbs);
@@ -243,7 +253,10 @@ export function removeTableFile(abs: string): void {
 
 /** The registry columns a successful file write updates, in drizzle `set`
  *  shape — one place so create/draft/commit can't drift apart. */
-export function registryFileColumns(res: { sizeBytes: number; stats: WorkbookStats; shapeHash: string }, storagePath: string) {
+export function registryFileColumns(
+  res: { sizeBytes: number; stats: WorkbookStats; shapeHash: string },
+  storagePath: string,
+) {
   return {
     storagePath,
     sizeBytes: res.sizeBytes,
@@ -285,7 +298,11 @@ export const DATA_TEXT_ROW_WINDOW = 200;
  * The `doc` param is accepted for callers that have one (ignored — kept so
  * call sites read naturally) — the file is always the source of truth here.
  */
-export function buildTableDataText(publishedAbs: string, _doc: TableDoc | null, title: string): string {
+export function buildTableDataText(
+  publishedAbs: string,
+  _doc: TableDoc | null,
+  title: string,
+): string {
   const profiles = profileFile(publishedAbs);
   const head = profileToText(profiles, { title });
   const total = profiles.reduce((a, t) => a + t.rowCount, 0);
@@ -305,9 +322,10 @@ export function buildTableDataText(publishedAbs: string, _doc: TableDoc | null, 
     budget -= window.doc.rows.length;
     shown += window.doc.rows.length;
   }
-  const note = shown < total
-    ? `\n\n(First ${shown} of ${total} rows shown — query the full data with table_sql.)`
-    : '';
+  const note =
+    shown < total
+      ? `\n\n(First ${shown} of ${total} rows shown — query the full data with table_sql.)`
+      : '';
   return `${head}\n\n${parts.join('\n\n')}${note}`;
 }
 
@@ -335,7 +353,10 @@ export async function sweepLegacyTables(batch = 5): Promise<number> {
     } catch (err) {
       // A failing table must not wedge the sweep — log and let the next tick
       // retry (the verify inside ensureFileBacked keeps it on the JSONB path).
-      console.error(`[tables] migration sweep failed for ${n.id}:`, err instanceof Error ? err.message : err);
+      console.error(
+        `[tables] migration sweep failed for ${n.id}:`,
+        err instanceof Error ? err.message : err,
+      );
     }
   }
   if (converted > 0) console.log(`[tables] migration sweep converted ${converted} legacy table(s)`);
@@ -373,7 +394,10 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
     try {
       abs = resolveStoragePath(storagePath);
     } catch (err) {
-      report.failed.push({ nodeId: r.nodeId, error: err instanceof Error ? err.message : String(err) });
+      report.failed.push({
+        nodeId: r.nodeId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       continue;
     }
     if (!existsSync(abs)) {
@@ -388,9 +412,17 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
       try {
         const dest = path.join(destDir, r.ownerId, path.basename(file));
         snapshotFile(file, dest);
-        report.snapshotted.push({ ownerId: r.ownerId, nodeId: r.nodeId, bytes: statSync(dest).size, draft });
+        report.snapshotted.push({
+          ownerId: r.ownerId,
+          nodeId: r.nodeId,
+          bytes: statSync(dest).size,
+          draft,
+        });
       } catch (err) {
-        report.failed.push({ nodeId: r.nodeId, error: err instanceof Error ? err.message : String(err) });
+        report.failed.push({
+          nodeId: r.nodeId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   }

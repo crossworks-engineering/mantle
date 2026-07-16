@@ -155,7 +155,10 @@ export function NewCollectionDialog() {
 
           <div className="space-y-1.5">
             <Label htmlFor="nc-depth">Brain depth</Label>
-            <Select value={brainDepth} onValueChange={(v) => setBrainDepth(v as 'retrieval' | 'full')}>
+            <Select
+              value={brainDepth}
+              onValueChange={(v) => setBrainDepth(v as 'retrieval' | 'full')}
+            >
               <SelectTrigger id="nc-depth">
                 <SelectValue />
               </SelectTrigger>
@@ -171,7 +174,12 @@ export function NewCollectionDialog() {
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={pending}
+            >
               Cancel
             </Button>
             <SubmitButton pending={pending}>Create collection</SubmitButton>

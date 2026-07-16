@@ -27,7 +27,8 @@ type StepInfo = NonNullable<Awaited<ReturnType<DBOSClient['listWorkflowSteps']>>
 /** Pull a human message out of DBOS's serialized error shape. */
 function errorMessage(err: unknown): string | undefined {
   if (err == null) return undefined;
-  if (typeof err === 'object' && 'message' in err) return String((err as { message: unknown }).message);
+  if (typeof err === 'object' && 'message' in err)
+    return String((err as { message: unknown }).message);
   return String(err);
 }
 
@@ -124,7 +125,12 @@ export async function getRunDetail(workflowID: string): Promise<RunnerRunDetail 
   const client = await getDbosClient();
   const [statuses, steps] = await Promise.all([
     // loadInput/loadOutput pull the payloads (owner-only screen; we truncate).
-    client.listWorkflows({ workflowIDs: [workflowID], loadInput: true, loadOutput: true, limit: 1 }),
+    client.listWorkflows({
+      workflowIDs: [workflowID],
+      loadInput: true,
+      loadOutput: true,
+      limit: 1,
+    }),
     client.listWorkflowSteps(workflowID),
   ]);
   const s = statuses[0];

@@ -26,7 +26,8 @@ describe('write/action tool labels', () => {
 
   it('enriches a create with the subject title', () => {
     expect(
-      stageLabelForStep('tool: note_create', { slug: 'note_create', args: { title: 'Q3 plan' } })?.label,
+      stageLabelForStep('tool: note_create', { slug: 'note_create', args: { title: 'Q3 plan' } })
+        ?.label,
     ).toBe('Saving “Q3 plan” to your notes…');
   });
 

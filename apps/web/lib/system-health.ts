@@ -117,8 +117,14 @@ async function pgHealth() {
     ORDER BY pg_total_relation_size(c.oid) DESC
     LIMIT 6
   `);
-  const stats = (Array.isArray(statsResult) ? statsResult : (statsResult as { rows?: PgStatsRow[] }).rows ?? [])[0];
-  const tables = (Array.isArray(tablesResult) ? tablesResult : (tablesResult as { rows?: PgTableRow[] }).rows ?? []) as PgTableRow[];
+  const stats = (
+    Array.isArray(statsResult) ? statsResult : ((statsResult as { rows?: PgStatsRow[] }).rows ?? [])
+  )[0];
+  const tables = (
+    Array.isArray(tablesResult)
+      ? tablesResult
+      : ((tablesResult as { rows?: PgTableRow[] }).rows ?? [])
+  ) as PgTableRow[];
   return {
     dbSizeBytes: stats ? Number(stats.db_size) : null,
     connections: stats ? Number(stats.connections) : null,
@@ -177,13 +183,25 @@ async function embedderHealth(userId: string): Promise<SystemHealth['embedder']>
       return { up: false, provider, model, detail, scope: 'remote' };
     }
   }
-  const base = (cfg.primary.baseUrl || process.env.MANTLE_LOCAL_EMBEDDING_URL || DEFAULT_LOCAL_EMBED_URL).replace(/\/+$/, '');
+  const base = (
+    cfg.primary.baseUrl ||
+    process.env.MANTLE_LOCAL_EMBEDDING_URL ||
+    DEFAULT_LOCAL_EMBED_URL
+  ).replace(/\/+$/, '');
   try {
     const res = await fetch(`${base}/models`, { signal: AbortSignal.timeout(1_200) });
     if (!res.ok)
-      return { up: false, provider, model, detail: `unreachable · HTTP ${res.status}`, scope: 'local' };
+      return {
+        up: false,
+        provider,
+        model,
+        detail: `unreachable · HTTP ${res.status}`,
+        scope: 'local',
+      };
     const body = (await res.json()) as { data?: Array<{ id?: string }> };
-    const ids = (body.data ?? []).map((m) => m.id).filter((x): x is string => typeof x === 'string');
+    const ids = (body.data ?? [])
+      .map((m) => m.id)
+      .filter((x): x is string => typeof x === 'string');
     // Ollama reports ids like `embeddinggemma:latest`; tolerate the `:latest`
     // suffix on either side so a bare-name config still matches.
     const norm = (s: string) => s.replace(/:latest$/, '');

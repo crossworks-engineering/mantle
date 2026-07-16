@@ -188,7 +188,12 @@ export async function listPageTags(ownerId: string): Promise<{ tag: string; coun
 
 export async function getPage(ownerId: string, id: string): Promise<PageDetail | null> {
   const [row] = await db
-    .select({ node: nodes, doc: pages.doc, draft: pages.draftDoc, draftUpdatedAt: pages.draftUpdatedAt })
+    .select({
+      node: nodes,
+      doc: pages.doc,
+      draft: pages.draftDoc,
+      draftUpdatedAt: pages.draftUpdatedAt,
+    })
     .from(nodes)
     .leftJoin(pages, eq(pages.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
@@ -287,9 +292,7 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
     const [parent] = await db
       .select({ id: nodes.id, path: nodes.path })
       .from(nodes)
-      .where(
-        and(eq(nodes.id, input.parentId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')),
-      )
+      .where(and(eq(nodes.id, input.parentId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
       .limit(1);
     if (!parent) throw new ParentPageNotFoundError();
     parentId = parent.id;
@@ -353,7 +356,7 @@ export async function countPageDescendants(ownerId: string, id: string): Promise
     SELECT count(*)::int AS count FROM descendants
   `);
   const rows = (
-    Array.isArray(result) ? result : (result as { rows?: Array<{ count: number }> }).rows ?? []
+    Array.isArray(result) ? result : ((result as { rows?: Array<{ count: number }> }).rows ?? [])
   ) as Array<{ count: number }>;
   return rows[0]?.count ?? 0;
 }
@@ -387,7 +390,7 @@ async function isDescendantPage(
     SELECT EXISTS(SELECT 1 FROM descendants WHERE id = ${maybeDescendantId}) AS hit
   `);
   const rows = (
-    Array.isArray(result) ? result : (result as { rows?: Array<{ hit: boolean }> }).rows ?? []
+    Array.isArray(result) ? result : ((result as { rows?: Array<{ hit: boolean }> }).rows ?? [])
   ) as Array<{ hit: boolean }>;
   return rows[0]?.hit === true;
 }
@@ -896,10 +899,7 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return false;
-  await db
-    .update(pages)
-    .set({ draftDoc: null, draftUpdatedAt: null })
-    .where(eq(pages.nodeId, id));
+  await db.update(pages).set({ draftDoc: null, draftUpdatedAt: null }).where(eq(pages.nodeId, id));
   return true;
 }
 

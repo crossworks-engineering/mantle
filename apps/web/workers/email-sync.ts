@@ -132,7 +132,10 @@ async function main() {
     }
   });
 
-  console.log('[email-sync] worker up. Queues:', [SYNC_QUEUE, BACKFILL_QUEUE, SCHEDULER_QUEUE].join(', '));
+  console.log(
+    '[email-sync] worker up. Queues:',
+    [SYNC_QUEUE, BACKFILL_QUEUE, SCHEDULER_QUEUE].join(', '),
+  );
 
   const shutdown = async () => {
     console.log('[email-sync] shutting down…');

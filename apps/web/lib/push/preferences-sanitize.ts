@@ -7,7 +7,8 @@ import type { PushPreferences } from './store';
 
 export function sanitizePushPrefs(body: Record<string, unknown>): Partial<PushPreferences> {
   const patch: Partial<PushPreferences> = {};
-  if (typeof body['assistantMessages'] === 'boolean') patch.assistantMessages = body['assistantMessages'];
+  if (typeof body['assistantMessages'] === 'boolean')
+    patch.assistantMessages = body['assistantMessages'];
   if (typeof body['approvals'] === 'boolean') patch.approvals = body['approvals'];
   return patch;
 }

@@ -161,10 +161,7 @@ export async function listJournals(
 }
 
 /** Total journal entries matching the same filters as `listJournals`. */
-export async function countJournals(
-  ownerId: string,
-  opts: ListJournalsOpts = {},
-): Promise<number> {
+export async function countJournals(ownerId: string, opts: ListJournalsOpts = {}): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(nodes)
@@ -173,9 +170,7 @@ export async function countJournals(
 }
 
 /** All distinct tags across the user's journal entries with usage counts. */
-export async function listJournalTags(
-  ownerId: string,
-): Promise<{ tag: string; count: number }[]> {
+export async function listJournalTags(ownerId: string): Promise<{ tag: string; count: number }[]> {
   const rows = await db
     .select({ tags: nodes.tags })
     .from(nodes)

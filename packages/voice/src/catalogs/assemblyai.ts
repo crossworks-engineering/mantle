@@ -40,8 +40,7 @@ export const ASSEMBLYAI_STT_MODELS: readonly SttModelInfo[] = [
   {
     id: 'best',
     label: 'Best',
-    description:
-      'Highest-accuracy tier. Slower + pricier than universal; good for hard audio.',
+    description: 'Highest-accuracy tier. Slower + pricier than universal; good for hard audio.',
     supportsLanguageHint: true,
     supportsTimestamps: true,
   },

@@ -31,19 +31,9 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import {
-  accountForChat,
-  downloadTelegramFile,
-  sendPhoto,
-  sendVoice,
-} from '@mantle/telegram';
+import { accountForChat, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
 import { createFolder, dashToLtree, fileById, readFileById, upsertFile } from '@mantle/files';
-import {
-  getChatAdapter,
-  getImageGenAdapter,
-  getTtsAdapter,
-  getVisionAdapter,
-} from '@mantle/voice';
+import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
 import type {
   BuiltinToolDef,
   ToolArtifact,
@@ -132,7 +122,7 @@ const synthesize_speech: BuiltinToolDef = {
       voice: {
         type: 'string',
         description:
-          'Optional voice id override. Defaults to the worker\'s configured voice. Use ONLY when the user names a specific voice — otherwise omit.',
+          "Optional voice id override. Defaults to the worker's configured voice. Use ONLY when the user names a specific voice — otherwise omit.",
       },
     },
     required: ['text'],
@@ -144,7 +134,7 @@ const synthesize_speech: BuiltinToolDef = {
       return {
         ok: false,
         error:
-          'synthesize_speech needs a delivery surface (Telegram chat or web /assistant). Background callers (reflector/extractor) shouldn\'t invoke this.',
+          "synthesize_speech needs a delivery surface (Telegram chat or web /assistant). Background callers (reflector/extractor) shouldn't invoke this.",
       };
     }
     const resolved = await resolveDefaultWorker(ctx.ownerId, 'tts');
@@ -265,12 +255,12 @@ const extract_from_image: BuiltinToolDef = {
       node_id: {
         type: 'string',
         description:
-          "A node id pointing to a file row whose stored object is an image. Use this for previously-uploaded images.",
+          'A node id pointing to a file row whose stored object is an image. Use this for previously-uploaded images.',
       },
       telegram_file_id: {
         type: 'string',
         description:
-          "A Telegram file_id (from message attachments). Only useful inside a Telegram turn — refuses on the web surface.",
+          'A Telegram file_id (from message attachments). Only useful inside a Telegram turn — refuses on the web surface.',
       },
       prompt: {
         type: 'string',
@@ -395,13 +385,12 @@ const summarize_text: BuiltinToolDef = {
     properties: {
       text: {
         type: 'string',
-        description:
-          'Inline text to summarize. Provide this OR `node_id`, not both.',
+        description: 'Inline text to summarize. Provide this OR `node_id`, not both.',
       },
       node_id: {
         type: 'string',
         description:
-          "The id (UUID) of a node whose content to summarize — from `search_nodes` / `note_list`. Works on any node carrying text content, not just notes. Provide this OR `text`, not both.",
+          'The id (UUID) of a node whose content to summarize — from `search_nodes` / `note_list`. Works on any node carrying text content, not just notes. Provide this OR `text`, not both.',
       },
       focus: {
         type: 'string',
@@ -462,9 +451,7 @@ const summarize_text: BuiltinToolDef = {
     const systemPrompt =
       worker.systemPrompt?.trim() ||
       `You are a precise summarizer. Output a clean ${maxWords}-word summary in the same language as the source. No preamble, no closing remarks — just the summary.`;
-    const userPrompt = focus
-      ? `${source}\n\n---\n\nFocus the summary on: ${focus}`
-      : source;
+    const userPrompt = focus ? `${source}\n\n---\n\nFocus the summary on: ${focus}` : source;
 
     const params = (worker.params ?? {}) as {
       temperature?: number;
@@ -711,15 +698,10 @@ const generate_image: BuiltinToolDef = {
             result.revisedPrompt && result.revisedPrompt !== prompt
               ? `🎨 ${prompt}\n(rendered as: ${result.revisedPrompt})`
               : `🎨 ${prompt}`;
-          telegramMessageId = await sendPhoto(
-            account,
-            ctx.surface.telegramChatId,
-            result.bytes,
-            {
-              replyTo: ctx.surface.replyToTelegramMessageId,
-              caption,
-            },
-          );
+          telegramMessageId = await sendPhoto(account, ctx.surface.telegramChatId, result.bytes, {
+            replyTo: ctx.surface.replyToTelegramMessageId,
+            caption,
+          });
         }
       } catch (err) {
         // Mirror the file-save handling — failure to deliver doesn't

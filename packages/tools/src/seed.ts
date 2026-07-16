@@ -30,14 +30,11 @@ import { listBuiltins } from './registry';
  * User-authored tools (http/recipe rows) are untouched — theirs stay open
  * unless the author closes them.
  */
-export function closeToolInputSchema(
-  schema: Record<string, unknown>,
-): Record<string, unknown> {
+export function closeToolInputSchema(schema: Record<string, unknown>): Record<string, unknown> {
   if (schema.type !== 'object') return schema;
   if ('additionalProperties' in schema) return schema;
   const props = schema.properties;
-  const hasProps =
-    props !== null && typeof props === 'object' && Object.keys(props).length > 0;
+  const hasProps = props !== null && typeof props === 'object' && Object.keys(props).length > 0;
   if (!hasProps) return schema; // zero-arg tools: nothing to protect
   return { ...schema, additionalProperties: false };
 }

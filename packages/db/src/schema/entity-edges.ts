@@ -14,7 +14,9 @@ import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-cor
 export const entityEdges = pgTable(
   'entity_edges',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     sourceId: uuid('source_id').notNull(),
     /** 'entity' | 'fact' | 'node' */
@@ -23,7 +25,10 @@ export const entityEdges = pgTable(
     targetKind: text('target_kind').notNull(),
     /** 'married_to' | 'works_at' | 'mentioned_in' | 'parent_of' | … */
     relation: text('relation').notNull(),
-    data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    data: jsonb('data')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     validFrom: timestamp('valid_from', { withTimezone: true }),
     validTo: timestamp('valid_to', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

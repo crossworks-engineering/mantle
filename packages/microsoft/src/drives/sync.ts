@@ -44,7 +44,10 @@ async function downloadItem(
     }
     const token = await getValidAccessToken(ownerId, accountId);
     if (!token) return null;
-    const res = await graphFetchRaw(`${GRAPH_BASE}/drives/${driveId}/items/${item.id}/content`, token);
+    const res = await graphFetchRaw(
+      `${GRAPH_BASE}/drives/${driveId}/items/${item.id}/content`,
+      token,
+    );
     return Buffer.from(await res.arrayBuffer());
   } catch {
     return null;
@@ -167,7 +170,12 @@ export async function syncDrive(account: MsAccount, drive: MsDrive): Promise<Dri
 
   await db
     .update(msDrives)
-    .set({ deltaLink: deltaLink ?? drive.deltaLink, lastSyncAt: new Date(), lastError: null, updatedAt: new Date() })
+    .set({
+      deltaLink: deltaLink ?? drive.deltaLink,
+      lastSyncAt: new Date(),
+      lastError: null,
+      updatedAt: new Date(),
+    })
     .where(eq(msDrives.id, drive.id));
 
   return { scanned, ingested, removed };

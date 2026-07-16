@@ -79,7 +79,10 @@ export function ResponseViewer() {
             {response.artifacts && response.artifacts.length > 0 && (
               <div className="mb-2 space-y-1">
                 {response.artifacts.map((a, i) => (
-                  <p key={i} className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+                  <p
+                    key={i}
+                    className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground"
+                  >
                     produced {a.kind} ({a.mimeType}){a.caption ? ` — ${a.caption}` : ''}
                   </p>
                 ))}

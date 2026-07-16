@@ -21,8 +21,7 @@ export async function POST() {
       .filter((e) => e.adoptable)
       .filter((e) => !(e.kind === 'worker' && e.status === 'modified'))
       .sort(
-        (a, b) =>
-          KIND_ORDER.indexOf(a.kind as AdoptKind) - KIND_ORDER.indexOf(b.kind as AdoptKind),
+        (a, b) => KIND_ORDER.indexOf(a.kind as AdoptKind) - KIND_ORDER.indexOf(b.kind as AdoptKind),
       );
     for (const e of items) await adoptManifestItem(user.id, e.kind as AdoptKind, e.slug);
     return NextResponse.json({ ok: true, count: items.length });

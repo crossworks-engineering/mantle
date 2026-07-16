@@ -200,10 +200,7 @@ export async function updateAiWorker(
  *  before flipping the new one — otherwise the partial unique index
  *  refuses the update. Returns the updated row or null if the id is
  *  not found / not owned. */
-export async function setDefaultWorker(
-  ownerId: string,
-  id: string,
-): Promise<AiWorker | null> {
+export async function setDefaultWorker(ownerId: string, id: string): Promise<AiWorker | null> {
   return await db.transaction(async (tx) => {
     const [target] = await tx
       .select()
@@ -238,10 +235,7 @@ export async function deleteAiWorker(ownerId: string, id: string): Promise<boole
   return res.length > 0;
 }
 
-export async function getAiWorker(
-  ownerId: string,
-  id: string,
-): Promise<AiWorker | null> {
+export async function getAiWorker(ownerId: string, id: string): Promise<AiWorker | null> {
   const [row] = await db
     .select()
     .from(aiWorkers)

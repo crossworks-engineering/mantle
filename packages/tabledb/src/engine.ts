@@ -3,7 +3,16 @@ import { mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { storeCell, loadCell, sqlTypeFor } from './cells';
-import type { AggregateKind, Column, ColumnType, Row, TableDocLike, View, WorkbookDocLike, WorkbookTabDoc } from './doc-types';
+import type {
+  AggregateKind,
+  Column,
+  ColumnType,
+  Row,
+  TableDocLike,
+  View,
+  WorkbookDocLike,
+  WorkbookTabDoc,
+} from './doc-types';
 import { storageType } from './doc-types';
 import { createFtsShadow, ftsColumns, ftsTableName } from './fts';
 import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './names';
@@ -51,9 +60,9 @@ export class TableTooLargeError extends Error {
     super(
       what === 'import'
         ? `import exceeds the ${limit.toLocaleString()}-row table ceiling (${rowCount.toLocaleString()} rows). ` +
-          `Import it as a file instead, or raise TABLE_IMPORT_MAX_ROWS on this box. Nothing was imported.`
+            `Import it as a file instead, or raise TABLE_IMPORT_MAX_ROWS on this box. Nothing was imported.`
         : `table too large to load whole (${rowCount.toLocaleString()} rows > ${limit.toLocaleString()}). ` +
-          `Use windowed reads.`,
+            `Use windowed reads.`,
     );
     this.name = 'TableTooLargeError';
   }
@@ -105,7 +114,10 @@ export function shapeHashOf(doc: TableDocLike | WorkbookDocLike, tabName = 'Shee
 /** Normalize the write shape: a bare TableDocLike becomes a one-tab workbook
  *  (name from the caller's tabName, id 't1' — byte-identical files to pre-v2.1
  *  writes). Multi-tab docs get positional ids where absent. */
-export function asWorkbookTabs(doc: TableDocLike | WorkbookDocLike, fallbackTabName = 'Sheet1'): (WorkbookTabDoc & { id: string })[] {
+export function asWorkbookTabs(
+  doc: TableDocLike | WorkbookDocLike,
+  fallbackTabName = 'Sheet1',
+): (WorkbookTabDoc & { id: string })[] {
   const tabs: WorkbookTabDoc[] =
     'tabs' in doc ? doc.tabs : [{ ...doc, id: 't1', name: fallbackTabName }];
   if (tabs.length === 0) throw new Error('tabledb: a workbook needs at least one tab');
@@ -123,7 +135,9 @@ export function asWorkbookTabs(doc: TableDocLike | WorkbookDocLike, fallbackTabN
 export function shapeHashOfFile(absPath: string): string {
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const tabs = db.prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position`).all();
+    const tabs = db
+      .prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position`)
+      .all();
     const names = tabs.map((t) => String(t.name));
     const columns: [string, string][] = [];
     let rows = 0;
@@ -133,7 +147,9 @@ export function shapeHashOfFile(absPath: string): string {
         .all(String(t.tab_id))) {
         columns.push([String(c.name), String(c.type)]);
       }
-      rows += Number(db.prepare(`SELECT count(*) AS n FROM ${String(t.physical_table)}`).get()?.n ?? 0);
+      rows += Number(
+        db.prepare(`SELECT count(*) AS n FROM ${String(t.physical_table)}`).get()?.n ?? 0,
+      );
     }
     return hashShape({ tabs: names, columns, rows: rowBucket(rows) });
   } finally {
@@ -187,13 +203,9 @@ function createTab(
 ): { physicalTable: string; viewName: string } {
   const physicalTable = physicalName('t', tabId);
   const viewName = opts.viewName ?? viewNameForTab(tabName);
-  db.prepare(`INSERT INTO _tabs (tab_id, name, position, physical_table, view_name) VALUES (?, ?, ?, ?, ?)`).run(
-    tabId,
-    tabName,
-    opts.position ?? 0,
-    physicalTable,
-    viewName,
-  );
+  db.prepare(
+    `INSERT INTO _tabs (tab_id, name, position, physical_table, view_name) VALUES (?, ?, ?, ?, ?)`,
+  ).run(tabId, tabName, opts.position ?? 0, physicalTable, viewName);
   const insCol = db.prepare(
     `INSERT INTO _columns (tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position, ref_json)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -224,7 +236,11 @@ function createTab(
   db.exec(`CREATE INDEX ${physicalTable}_pos ON ${physicalTable}(_pos)`);
   // Auto-indexes for range-y types (plan §3.2).
   for (const p of stored) {
-    if (['date', 'datetime', 'number', 'currency', 'percent', 'select', 'reference'].includes(p.col.type)) {
+    if (
+      ['date', 'datetime', 'number', 'currency', 'percent', 'select', 'reference'].includes(
+        p.col.type,
+      )
+    ) {
       db.exec(`CREATE INDEX ${physicalTable}_${p.physical} ON ${physicalTable}(${p.physical})`);
     }
   }
@@ -259,9 +275,17 @@ function insertRows(db: SqliteDb, physicalTable: string, plans: ColumnPlan[], ro
 }
 
 function writeViewsAndAggregates(db: SqliteDb, tabId: string, doc: TableDocLike): void {
-  const insView = db.prepare(`INSERT INTO _views (view_id, tab_id, name, spec_json, position) VALUES (?, ?, ?, ?, ?)`);
+  const insView = db.prepare(
+    `INSERT INTO _views (view_id, tab_id, name, spec_json, position) VALUES (?, ?, ?, ?, ?)`,
+  );
   (doc.views ?? []).forEach((v, i) => {
-    insView.run(v.id || randomUUID(), tabId, v.name, JSON.stringify({ sort: v.sort ?? [], filters: v.filters ?? [] }), i);
+    insView.run(
+      v.id || randomUUID(),
+      tabId,
+      v.name,
+      JSON.stringify({ sort: v.sort ?? [], filters: v.filters ?? [] }),
+      i,
+    );
   });
   const insAgg = db.prepare(`INSERT INTO _aggregates (tab_id, col_id, kind) VALUES (?, ?, ?)`);
   for (const [colId, kind] of Object.entries(doc.aggregates ?? {})) {
@@ -274,7 +298,11 @@ function writeViewsAndAggregates(db: SqliteDb, tabId: string, doc: TableDocLike)
  * checkpoint, close, atomic rename over `destAbs`. Used by create, import,
  * draft rebuild (P1 autosave), commit promotion, and lazy migration.
  */
-export function writeDocFile(destAbs: string, doc: TableDocLike | WorkbookDocLike, meta: WriteDocMeta): WriteResult {
+export function writeDocFile(
+  destAbs: string,
+  doc: TableDocLike | WorkbookDocLike,
+  meta: WriteDocMeta,
+): WriteResult {
   mkdirSync(path.dirname(destAbs), { recursive: true });
   const tabs = asWorkbookTabs(doc, meta.tabName ?? 'Sheet1');
   // View names are display-derived and must be unique across the whole file —
@@ -309,7 +337,11 @@ export function writeDocFile(destAbs: string, doc: TableDocLike | WorkbookDocLik
           // Before the bulk insert: the insert trigger populates the index in
           // the same pass.
           const wanted = new Set(ftsColumns(tab.columns).map((c) => c.id));
-          createFtsShadow(db, physicalTable, plans.filter((p) => wanted.has(p.col.id)).map((p) => p.physical));
+          createFtsShadow(
+            db,
+            physicalTable,
+            plans.filter((p) => wanted.has(p.col.id)).map((p) => p.physical),
+          );
         }
         insertRows(db, physicalTable, plans, tab.rows);
         writeViewsAndAggregates(db, tab.id, tab);
@@ -347,12 +379,13 @@ export function writeDocFile(destAbs: string, doc: TableDocLike | WorkbookDocLik
 
 type TabRow = { tab_id: string; name: string; physical_table: string };
 
-function readColumns(db: SqliteDb, tabId: string): { columns: Column[]; physicals: Map<string, string> } {
+function readColumns(
+  db: SqliteDb,
+  tabId: string,
+): { columns: Column[]; physicals: Map<string, string> } {
   // SELECT * — pre-v2.1 files have no ref_json column; a missing field reads
   // as undefined instead of erroring the whole open.
-  const rows = db
-    .prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`)
-    .all(tabId);
+  const rows = db.prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`).all(tabId);
   const physicals = new Map<string, string>();
   const columns = rows.map((r) => {
     const col: Column = {
@@ -383,12 +416,23 @@ export type ClippedDoc = {
 /** Like readDocFile but CLIPS instead of throwing: doc.rows carries the first
  *  `maxRows` rows (0 = schema only) and `total`/`clipped` say what was left
  *  behind. The read path for tables past the materialize window. */
-export function readDocClipped(absPath: string, maxRows = MATERIALIZE_MAX, tabId?: string): ClippedDoc {
+export function readDocClipped(
+  absPath: string,
+  maxRows = MATERIALIZE_MAX,
+  tabId?: string,
+): ClippedDoc {
   const db = openTableFile(absPath, { readOnly: true });
   try {
     const tab = resolveTabRow(db, tabId);
-    if (!tab) return { doc: { columns: [], rows: [], aggregates: {}, views: [] }, total: 0, clipped: false };
-    const total = Number(db.prepare(`SELECT count(*) AS n FROM ${tab.physical_table}`).get()?.n ?? 0);
+    if (!tab)
+      return {
+        doc: { columns: [], rows: [], aggregates: {}, views: [] },
+        total: 0,
+        clipped: false,
+      };
+    const total = Number(
+      db.prepare(`SELECT count(*) AS n FROM ${tab.physical_table}`).get()?.n ?? 0,
+    );
     const doc = readTabDoc(db, tab, Math.min(maxRows, total));
     return { doc, total, clipped: total > maxRows };
   } finally {
@@ -401,13 +445,13 @@ export function readDocClipped(absPath: string, maxRows = MATERIALIZE_MAX, tabId
  *  a fall-back-to-first situation. */
 function resolveTabRow(db: SqliteDb, tabId?: string): TabRow | undefined {
   if (tabId === undefined) {
-    return db.prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position LIMIT 1`).get() as
-      | TabRow
-      | undefined;
+    return db
+      .prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position LIMIT 1`)
+      .get() as TabRow | undefined;
   }
-  const tab = db.prepare(`SELECT tab_id, name, physical_table FROM _tabs WHERE tab_id = ?`).get(tabId) as
-    | TabRow
-    | undefined;
+  const tab = db
+    .prepare(`SELECT tab_id, name, physical_table FROM _tabs WHERE tab_id = ?`)
+    .get(tabId) as TabRow | undefined;
   if (!tab) throw new Error(`tabledb: no tab '${tabId}' in this workbook`);
   return tab;
 }
@@ -419,8 +463,12 @@ export function readWorkbookDoc(absPath: string, opts: { maxRows?: number } = {}
   const maxRows = opts.maxRows ?? MATERIALIZE_MAX;
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const tabRows = db.prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position`).all() as unknown as TabRow[];
-    const counts = tabRows.map((t) => Number(db.prepare(`SELECT count(*) AS n FROM ${t.physical_table}`).get()?.n ?? 0));
+    const tabRows = db
+      .prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position`)
+      .all() as unknown as TabRow[];
+    const counts = tabRows.map((t) =>
+      Number(db.prepare(`SELECT count(*) AS n FROM ${t.physical_table}`).get()?.n ?? 0),
+    );
     const total = counts.reduce((a, n) => a + n, 0);
     if (total > maxRows) throw new TableTooLargeError(total, maxRows);
     const tabs: WorkbookTabDoc[] = tabRows.map((t, i) => ({
@@ -441,7 +489,9 @@ function readTabDoc(db: SqliteDb, tab: TabRow, limit: number): TableDocLike {
   const raw =
     limit > 0
       ? db
-          .prepare(`SELECT _rid${select ? ', ' + select : ''} FROM ${tab.physical_table} ORDER BY _pos, _rid LIMIT ?`)
+          .prepare(
+            `SELECT _rid${select ? ', ' + select : ''} FROM ${tab.physical_table} ORDER BY _pos, _rid LIMIT ?`,
+          )
           .all(limit)
       : [];
   const rows: Row[] = raw.map((r) => {
@@ -453,14 +503,19 @@ function readTabDoc(db: SqliteDb, tab: TabRow, limit: number): TableDocLike {
     return { id: String(r._rid), cells };
   });
   const aggregates: Record<string, AggregateKind> = {};
-  for (const a of db.prepare(`SELECT col_id, kind FROM _aggregates WHERE tab_id = ?`).all(tab.tab_id)) {
+  for (const a of db
+    .prepare(`SELECT col_id, kind FROM _aggregates WHERE tab_id = ?`)
+    .all(tab.tab_id)) {
     aggregates[String(a.col_id)] = String(a.kind) as AggregateKind;
   }
   const views: View[] = db
     .prepare(`SELECT view_id, name, spec_json FROM _views WHERE tab_id = ? ORDER BY position`)
     .all(tab.tab_id)
     .map((v) => {
-      const spec = JSON.parse(String(v.spec_json)) as { sort?: View['sort']; filters?: View['filters'] };
+      const spec = JSON.parse(String(v.spec_json)) as {
+        sort?: View['sort'];
+        filters?: View['filters'];
+      };
       const view: View = { id: String(v.view_id), name: String(v.name) };
       if (spec.sort?.length) view.sort = spec.sort;
       if (spec.filters?.length) view.filters = spec.filters;
@@ -475,7 +530,10 @@ function readTabDoc(db: SqliteDb, tab: TabRow, limit: number): TableDocLike {
  * tables. Draft-first callers decide WHICH file to read; this reads one file.
  * Throws TableTooLargeError past `maxRows` (default MATERIALIZE_MAX).
  */
-export function readDocFile(absPath: string, opts: { maxRows?: number; tabId?: string } = {}): TableDocLike {
+export function readDocFile(
+  absPath: string,
+  opts: { maxRows?: number; tabId?: string } = {},
+): TableDocLike {
   const maxRows = opts.maxRows ?? MATERIALIZE_MAX;
   const db = openTableFile(absPath, { readOnly: true });
   try {
@@ -516,13 +574,18 @@ export type WorkbookTabRef = {
 export function describeWorkbook(absPath: string): WorkbookTabRef[] {
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const tabs = db.prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs ORDER BY position`).all();
+    const tabs = db
+      .prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs ORDER BY position`)
+      .all();
     const tabNameById = new Map(tabs.map((t) => [String(t.tab_id), String(t.name)]));
     // col_id → display name across the whole file, for resolving ref edges.
     const colNameById = new Map(
-      (db.prepare(`SELECT col_id, name FROM _columns`).all() as unknown as { col_id: string; name: string }[]).map(
-        (c) => [c.col_id, c.name],
-      ),
+      (
+        db.prepare(`SELECT col_id, name FROM _columns`).all() as unknown as {
+          col_id: string;
+          name: string;
+        }[]
+      ).map((c) => [c.col_id, c.name]),
     );
     return tabs.map((t) => {
       const physicalTable = String(t.physical_table);
@@ -568,10 +631,14 @@ export function describeWorkbook(absPath: string): WorkbookTabRef[] {
 export function fileStats(absPath: string): WorkbookStats {
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const tabs = db.prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position`).all() as unknown as TabRow[];
+    const tabs = db
+      .prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position`)
+      .all() as unknown as TabRow[];
     const out: TabStats[] = tabs.map((t) => {
       const n = Number(db.prepare(`SELECT count(*) AS n FROM ${t.physical_table}`).get()?.n ?? 0);
-      const cols = Number(db.prepare(`SELECT count(*) AS n FROM _columns WHERE tab_id = ?`).get(t.tab_id)?.n ?? 0);
+      const cols = Number(
+        db.prepare(`SELECT count(*) AS n FROM _columns WHERE tab_id = ?`).get(t.tab_id)?.n ?? 0,
+      );
       return { tabId: t.tab_id, name: t.name, rows: n, columns: cols };
     });
     return { tabs: out, totalRows: out.reduce((a, t) => a + t.rows, 0) };

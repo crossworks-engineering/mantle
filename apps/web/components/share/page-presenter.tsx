@@ -13,7 +13,12 @@ export function PagePresenter({
   view,
   assetUrl,
 }: {
-  view: { title: string; icon: string | null; width: 'narrow' | 'wide'; doc: Record<string, unknown> };
+  view: {
+    title: string;
+    icon: string | null;
+    width: 'narrow' | 'wide';
+    doc: Record<string, unknown>;
+  };
   assetUrl: (fileId: string) => string;
 }) {
   const html = renderPageDoc(view.doc, { assetUrl });

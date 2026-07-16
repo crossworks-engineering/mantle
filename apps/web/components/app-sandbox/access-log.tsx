@@ -26,9 +26,15 @@ function describe(e: AccessEntry): { icon: typeof KeyRound; label: string } {
     case 'auth':
       return { icon: KeyRound, label: 'Entered their team token' };
     case 'tool':
-      return { icon: Wrench, label: `Used tool ${typeof e.detail.slug === 'string' ? e.detail.slug : ''}`.trim() };
+      return {
+        icon: Wrench,
+        label: `Used tool ${typeof e.detail.slug === 'string' ? e.detail.slug : ''}`.trim(),
+      };
     case 'db':
-      return { icon: Database, label: e.detail.op === 'exec' ? 'Wrote to the app database' : 'Queried the app database' };
+      return {
+        icon: Database,
+        label: e.detail.op === 'exec' ? 'Wrote to the app database' : 'Queried the app database',
+      };
   }
 }
 
@@ -54,8 +60,8 @@ export function AppAccessLog({ appId }: { appId: string }) {
   if (entries.length === 0) {
     return (
       <div className="mx-auto max-w-md p-8 text-center text-sm text-muted-foreground">
-        No external activity yet. When you share this app and someone opens it, their actions
-        (token entry, tool calls, database access) show up here.
+        No external activity yet. When you share this app and someone opens it, their actions (token
+        entry, tool calls, database access) show up here.
       </div>
     );
   }
@@ -65,7 +71,8 @@ export function AppAccessLog({ appId }: { appId: string }) {
       <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
         {entries.map((e) => {
           const { icon: Icon, label } = describe(e);
-          const who = e.contactName ?? (e.contactId ? 'Removed contact' : 'Anonymous (public link)');
+          const who =
+            e.contactName ?? (e.contactId ? 'Removed contact' : 'Anonymous (public link)');
           return (
             <li key={e.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
               <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />

@@ -43,10 +43,29 @@ function orderedPair(a: string, b: string): [low: string, high: string] {
  *  which can distinguish genuinely different orgs (those go to the review
  *  tier, not auto). */
 const ORG_LEGAL_SUFFIXES = [
-  'pty ltd', '(pty) ltd', 'pty limited', 'proprietary limited',
-  'ltd', 'limited', 'inc', 'inc.', 'incorporated', 'llc', 'l.l.c.',
-  'cc', 'gmbh', 'co', 'co.', 'corp', 'corp.', 'corporation',
-  'ltda', 'bv', 'b.v.', 'ag', 'plc',
+  'pty ltd',
+  '(pty) ltd',
+  'pty limited',
+  'proprietary limited',
+  'ltd',
+  'limited',
+  'inc',
+  'inc.',
+  'incorporated',
+  'llc',
+  'l.l.c.',
+  'cc',
+  'gmbh',
+  'co',
+  'co.',
+  'corp',
+  'corp.',
+  'corporation',
+  'ltda',
+  'bv',
+  'b.v.',
+  'ag',
+  'plc',
   // NOT 'sa'/'s.a.': in this (South African) corpus "SA" overwhelmingly means
   // South Africa, not the French/Spanish legal form — stripping it merged
   // "3D Printing SA" into generic "3D printing". The cost of missing a real SA
@@ -85,12 +104,16 @@ export function isEmailName(name: string): boolean {
 export function isPhoneName(name: string): boolean {
   const t = name.trim();
   if (!/^[0-9 +()\-]{7,}$/.test(t)) return false;
-  return (t.replace(/\D/g, '').length) >= 7;
+  return t.replace(/\D/g, '').length >= 7;
 }
 
 /** Tokens of a name, lowercased, alphanumerics only, length ≥ 2. */
 function nameTokens(name: string): string[] {
-  return name.toLowerCase().split(/\s+/).map((t) => t.replace(/[^a-z0-9]/g, '')).filter((t) => t.length >= 2);
+  return name
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.replace(/[^a-z0-9]/g, ''))
+    .filter((t) => t.length >= 2);
 }
 
 /** True if `shorter` is a strict, fewer-token subset of `longer` AND shares
@@ -167,12 +190,14 @@ export async function findDuplicateCandidates(ownerId: string): Promise<MergeCan
   const contactByPhone = new Map<string, string>();
   for (const c of contactRows) {
     const d = (c.data ?? {}) as Record<string, unknown>;
-    if (typeof d.email === 'string' && d.email.trim()) contactByEmail.set(d.email.trim().toLowerCase(), c.title);
+    if (typeof d.email === 'string' && d.email.trim())
+      contactByEmail.set(d.email.trim().toLowerCase(), c.title);
     if (typeof d.cell === 'string' && d.cell.replace(/\D/g, '').length >= 7)
       contactByPhone.set(d.cell.replace(/\D/g, ''), c.title);
   }
   const personByLowerName = new Map<string, EntRow>();
-  for (const e of ents) if (e.kind === 'person') personByLowerName.set(e.name.trim().toLowerCase(), e);
+  for (const e of ents)
+    if (e.kind === 'person') personByLowerName.set(e.name.trim().toLowerCase(), e);
 
   // Pairs the operator has rejected — never re-suggest them.
   const dismissedRows = await db
@@ -227,7 +252,10 @@ export async function findDuplicateCandidates(ownerId: string): Promise<MergeCan
     const key = orgCompactKey(e.name);
     if (!key) continue;
     let g = orgGroups.get(key);
-    if (!g) { g = []; orgGroups.set(key, g); }
+    if (!g) {
+      g = [];
+      orgGroups.set(key, g);
+    }
     g.push(e);
   }
   for (const group of orgGroups.values()) {
@@ -235,7 +263,14 @@ export async function findDuplicateCandidates(ownerId: string): Promise<MergeCan
     // canonical = the strongest in the group
     let canon = group[0]!;
     for (const e of group) [canon] = pickCanonical(canon, e);
-    for (const e of group) if (e.id !== canon.id) add(canon, e, 'auto', `same org ignoring spacing/punctuation/legal-suffix ("${orgCompactKey(e.name)}")`);
+    for (const e of group)
+      if (e.id !== canon.id)
+        add(
+          canon,
+          e,
+          'auto',
+          `same org ignoring spacing/punctuation/legal-suffix ("${orgCompactKey(e.name)}")`,
+        );
   }
 
   // REVIEW 1 — person name token-subset ("Alex" ⊂ "Alex Carter").
@@ -274,7 +309,12 @@ export async function mergeEntities(
     const rows = await tx
       .select()
       .from(entities)
-      .where(and(eq(entities.ownerId, ownerId), or(eq(entities.id, canonicalId), eq(entities.id, dupId))));
+      .where(
+        and(
+          eq(entities.ownerId, ownerId),
+          or(eq(entities.id, canonicalId), eq(entities.id, dupId)),
+        ),
+      );
     const canon = rows.find((r) => r.id === canonicalId);
     const dup = rows.find((r) => r.id === dupId);
     if (!canon || !dup) return false;
@@ -321,8 +361,5 @@ export async function dismissMergeCandidate(
 ): Promise<void> {
   if (idA === idB) return;
   const [lowId, highId] = orderedPair(idA, idB);
-  await db
-    .insert(entityMergeDismissals)
-    .values({ ownerId, lowId, highId })
-    .onConflictDoNothing();
+  await db.insert(entityMergeDismissals).values({ ownerId, lowId, highId }).onConflictDoNothing();
 }

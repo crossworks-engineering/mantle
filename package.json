@@ -27,6 +27,8 @@
     "apps:push": "pnpm -C apps/web apps:push",
     "licenses:notices": "node scripts/generate-notices.mjs",
     "lint": "pnpm -r lint",
+    "format": "prettier --write \"**/*.{ts,tsx,mjs,cjs}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,mjs,cjs}\"",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "test:watch": "vitest",

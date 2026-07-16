@@ -168,7 +168,8 @@ async function customDiscover(_apiKey: string): Promise<DiscoveryResult<ChatMode
   return {
     available: [],
     filtered: false,
-    error: 'Custom endpoint: type the model id your provider serves (live discovery needs the route Base URL).',
+    error:
+      'Custom endpoint: type the model id your provider serves (live discovery needs the route Base URL).',
   };
 }
 

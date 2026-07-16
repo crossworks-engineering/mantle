@@ -50,14 +50,13 @@ declare global {
 }
 
 // Survive Next.js dev HMR (module re-eval) so we never stack up listeners.
-const bridge: Bridge =
-  globalThis.__mantleRealtime ?? {
-    subs: new Set<Subscriber>(),
-    convSubs: new Set<ConvSubscriber>(),
-    turnSubs: new Set<TurnStreamSubscriber>(),
-    starting: null,
-    stop: null,
-  };
+const bridge: Bridge = globalThis.__mantleRealtime ?? {
+  subs: new Set<Subscriber>(),
+  convSubs: new Set<ConvSubscriber>(),
+  turnSubs: new Set<TurnStreamSubscriber>(),
+  starting: null,
+  stop: null,
+};
 // A bridge persisted from before a field existed (dev HMR re-eval) won't have
 // it — backfill so subscribe* can't hit `undefined`.
 bridge.convSubs ??= new Set<ConvSubscriber>();

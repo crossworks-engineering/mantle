@@ -1,0 +1,12 @@
+# Build output & deps (also in .gitignore; listed so `prettier --check` globs skip them)
+**/node_modules
+**/.next
+**/out
+**/dist
+**/coverage
+*.tsbuildinfo
+
+# Generated / vendored — not ours to format
+pnpm-lock.yaml
+packages/db/migrations/**
+THIRD-PARTY-NOTICES.md

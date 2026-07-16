@@ -39,9 +39,7 @@ describe('sanitizeEmailHtml', () => {
   });
 
   it('strips <form>, <input>, <button>', () => {
-    const out = sanitizeEmailHtml(
-      '<form action="x"><input name="u"><button>go</button></form>',
-    );
+    const out = sanitizeEmailHtml('<form action="x"><input name="u"><button>go</button></form>');
     expect(out).not.toContain('<form');
     expect(out).not.toContain('<input');
     expect(out).not.toContain('<button');
@@ -77,8 +75,7 @@ describe('sanitizeEmailHtml', () => {
   });
 
   it('preserves typography and tables', () => {
-    const html =
-      '<table><tr><td><strong>Bold</strong> and <em>italic</em></td></tr></table>';
+    const html = '<table><tr><td><strong>Bold</strong> and <em>italic</em></td></tr></table>';
     const out = sanitizeEmailHtml(html);
     expect(out).toContain('<strong>Bold</strong>');
     expect(out).toContain('<em>italic</em>');

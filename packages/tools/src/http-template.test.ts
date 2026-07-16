@@ -159,7 +159,9 @@ describe('scrubSecrets', () => {
   it('replaces plaintext and URL-encoded plaintext with the ref name', () => {
     const s = new Map([['svc/key', 'se cret']]);
     const text = 'failed: https://x.test/?t=se%20cret raw=se cret';
-    expect(scrubSecrets(text, s)).toBe('failed: https://x.test/?t=[secret:svc/key] raw=[secret:svc/key]');
+    expect(scrubSecrets(text, s)).toBe(
+      'failed: https://x.test/?t=[secret:svc/key] raw=[secret:svc/key]',
+    );
   });
 
   it('replaces the base64 form too (how Basic-auth secrets travel)', () => {

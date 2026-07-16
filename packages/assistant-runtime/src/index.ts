@@ -15,11 +15,7 @@ export {
   type RunAssistantTurnOptions,
 } from './run-turn';
 export { stageLabelForStep, type StageLabel } from './stage-label';
-export {
-  pickWebDefaultAgent,
-  ROLE_TIEBREAK,
-  type WebDefaultCandidate,
-} from './select';
+export { pickWebDefaultAgent, ROLE_TIEBREAK, type WebDefaultCandidate } from './select';
 export {
   runTeamTurn,
   TEAM_RESPONDER_SLUG,

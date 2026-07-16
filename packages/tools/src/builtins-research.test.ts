@@ -3,15 +3,16 @@ import { extractCitations } from './builtins-research';
 
 describe('extractCitations', () => {
   it('reads a top-level citations string array (Perplexity classic shape)', () => {
-    expect(
-      extractCitations({ citations: ['https://a.com', 'https://b.com'] }),
-    ).toEqual(['https://a.com', 'https://b.com']);
+    expect(extractCitations({ citations: ['https://a.com', 'https://b.com'] })).toEqual([
+      'https://a.com',
+      'https://b.com',
+    ]);
   });
 
   it('reads top-level citation objects with a url field', () => {
-    expect(
-      extractCitations({ citations: [{ url: 'https://a.com', title: 'A' }] }),
-    ).toEqual(['https://a.com']);
+    expect(extractCitations({ citations: [{ url: 'https://a.com', title: 'A' }] })).toEqual([
+      'https://a.com',
+    ]);
   });
 
   it('reads per-message url_citation annotations (OpenRouter web shape)', () => {
@@ -35,7 +36,11 @@ describe('extractCitations', () => {
     const resp = {
       citations: ['https://a.com'],
       choices: [
-        { message: { annotations: [{ url_citation: { url: 'https://a.com' } }, { url: 'https://e.com' }] } },
+        {
+          message: {
+            annotations: [{ url_citation: { url: 'https://a.com' } }, { url: 'https://e.com' }],
+          },
+        },
       ],
     };
     expect(extractCitations(resp)).toEqual(['https://a.com', 'https://e.com']);

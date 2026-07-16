@@ -68,7 +68,11 @@ async function main(): Promise<void> {
     )) as unknown as Array<{ n: number }>;
     const n = rows[0]?.n ?? -1;
     console.log(`[crash-test] result=${result} side_effect_executions=${n}`);
-    console.log(n === 1 ? '[crash-test] PASS ✅ (side effect ran exactly once)' : `[crash-test] FAIL ❌ (expected 1, got ${n})`);
+    console.log(
+      n === 1
+        ? '[crash-test] PASS ✅ (side effect ran exactly once)'
+        : `[crash-test] FAIL ❌ (expected 1, got ${n})`,
+    );
     await db.execute(sql`delete from _crash_test where marker = ${MARKER}`);
     await DBOS.shutdown();
     process.exit(n === 1 ? 0 : 1);

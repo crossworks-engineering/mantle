@@ -9,7 +9,10 @@ import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts, msAccounts, type EmailAccount } from '@mantle/db';
 
 /** The companion mailbox account for an MS account, if one exists. */
-export async function getMailAccount(ownerId: string, msAccountId: string): Promise<EmailAccount | null> {
+export async function getMailAccount(
+  ownerId: string,
+  msAccountId: string,
+): Promise<EmailAccount | null> {
   const [row] = await db
     .select()
     .from(emailAccounts)
@@ -54,7 +57,11 @@ export async function ensureMailAccount(ownerId: string, msAccountId: string): P
 }
 
 /** Turn mail sync on/off for an MS account. */
-export async function setMailEnabled(ownerId: string, msAccountId: string, enabled: boolean): Promise<boolean> {
+export async function setMailEnabled(
+  ownerId: string,
+  msAccountId: string,
+  enabled: boolean,
+): Promise<boolean> {
   if (enabled) return ensureMailAccount(ownerId, msAccountId);
   await db
     .update(emailAccounts)

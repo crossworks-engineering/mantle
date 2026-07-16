@@ -40,7 +40,7 @@ export function emptySource(): AppSource {
     entry: DEFAULT_ENTRY,
     files: {
       [DEFAULT_ENTRY]:
-        "export default function App() {\n  return <div className=\"p-4 text-foreground\">New app</div>;\n}\n",
+        'export default function App() {\n  return <div className="p-4 text-foreground">New app</div>;\n}\n',
     },
   };
 }
@@ -69,11 +69,15 @@ export function assertSourceWithinLimits(source: AppSource): void {
   }
   for (const p of paths) {
     if (p.length > MAX_APP_PATH_LEN) {
-      throw new AppSourceLimitError(`file path too long (max ${MAX_APP_PATH_LEN} chars): ${p.slice(0, 80)}`);
+      throw new AppSourceLimitError(
+        `file path too long (max ${MAX_APP_PATH_LEN} chars): ${p.slice(0, 80)}`,
+      );
     }
     const bytes = Buffer.byteLength(source.files[p] ?? '', 'utf8');
     if (bytes > MAX_APP_FILE_BYTES) {
-      throw new AppSourceLimitError(`file '${p}' too large (${bytes} bytes; max ${MAX_APP_FILE_BYTES})`);
+      throw new AppSourceLimitError(
+        `file '${p}' too large (${bytes} bytes; max ${MAX_APP_FILE_BYTES})`,
+      );
     }
   }
 }
@@ -466,7 +470,10 @@ export async function setDraftBuild(
   build: BuildRef,
 ): Promise<boolean> {
   if (!(await ownsApp(ownerId, id))) return false;
-  await db.update(apps).set({ draftBuild: build, updatedAt: new Date() }).where(eq(apps.nodeId, id));
+  await db
+    .update(apps)
+    .set({ draftBuild: build, updatedAt: new Date() })
+    .where(eq(apps.nodeId, id));
   return true;
 }
 

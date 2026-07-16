@@ -59,7 +59,14 @@ async function main(): Promise<void> {
 
   // 1) Crypto round-trip with a realistic payload.
   const device = await generateDeviceKeypair();
-  const samplePayload = JSON.stringify({ v: 1, t: 'Saskia', b: 'You have 3 emails worth a look…', agentSlug: AGENT_SLUG, deepLink: `/chat/${AGENT_SLUG}`, ts: 1 });
+  const samplePayload = JSON.stringify({
+    v: 1,
+    t: 'Saskia',
+    b: 'You have 3 emails worth a look…',
+    agentSlug: AGENT_SLUG,
+    deepLink: `/chat/${AGENT_SLUG}`,
+    ts: 1,
+  });
   const ct = await sealToDevice(device.publicKey, samplePayload);
   const opened = await openSealed(ct, device.publicKey, device.secretKey);
   ok(opened === samplePayload, 'libsodium sealed-box seals + opens (device key round-trip)');
@@ -74,12 +81,22 @@ async function main(): Promise<void> {
   const routingToken = await enroll(ticket, osPushToken);
   ok(typeof routingToken === 'string', "relay accepted Mantle's enrollment ticket → routing token");
 
-  const directNotify = await relayNotify(RELAY, instanceToken, { routingToken, ciphertext: ct, collapseKey: AGENT_SLUG });
+  const directNotify = await relayNotify(RELAY, instanceToken, {
+    routingToken,
+    ciphertext: ct,
+    collapseKey: AGENT_SLUG,
+  });
   ok(directNotify.ok, `relay accepted /notify of a sealed payload (status ${directNotify.status})`);
 
   // 3) DB-driven pushOutbound() — seal the latest real outbound turn + deliver.
   await savePushInstance({ instanceToken, relayInstanceId: instanceId, relayUrl: RELAY });
-  await insertSubscription({ ownerId: OWNER, routingToken, publicKey: device.publicKey, platform: 'ios', label: 'verify-device' });
+  await insertSubscription({
+    ownerId: OWNER,
+    routingToken,
+    publicKey: device.publicKey,
+    platform: 'ios',
+    label: 'verify-device',
+  });
   const result = await pushOutbound(OWNER, AGENT_SLUG);
   ok(
     result.delivered === 1 && result.attempted === 1,
@@ -87,8 +104,12 @@ async function main(): Promise<void> {
   );
 
   console.log(`\nall ${passed} checks passed ✅`);
-  console.log(`\nseeded for worker test — instance ${instanceId}, routing ${routingToken.slice(0, 8)}…`);
-  console.log(`fire:   docker exec mantle_dev_pg psql -U postgres -d postgres -c "select pg_notify('conversation_changed','{\\"ownerId\\":\\"${OWNER}\\",\\"agentSlug\\":\\"${AGENT_SLUG}\\",\\"direction\\":\\"outbound\\"}')"`);
+  console.log(
+    `\nseeded for worker test — instance ${instanceId}, routing ${routingToken.slice(0, 8)}…`,
+  );
+  console.log(
+    `fire:   docker exec mantle_dev_pg psql -U postgres -d postgres -c "select pg_notify('conversation_changed','{\\"ownerId\\":\\"${OWNER}\\",\\"agentSlug\\":\\"${AGENT_SLUG}\\",\\"direction\\":\\"outbound\\"}')"`,
+  );
   console.log(`then:   pnpm -C apps/web exec tsx scripts/verify-push-m2.ts --cleanup`);
 }
 

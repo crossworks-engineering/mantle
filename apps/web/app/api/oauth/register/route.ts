@@ -37,7 +37,11 @@ export async function POST(req: Request) {
     return error(400, 'invalid_redirect_uri', 'redirect_uris is required');
   }
   if (!redirectUris.every((u) => typeof u === 'string' && isAllowedRedirectUri(u))) {
-    return error(400, 'invalid_redirect_uri', 'each redirect_uri must be https (or http on loopback)');
+    return error(
+      400,
+      'invalid_redirect_uri',
+      'each redirect_uri must be https (or http on loopback)',
+    );
   }
 
   const clientName = typeof b.client_name === 'string' ? b.client_name : null;

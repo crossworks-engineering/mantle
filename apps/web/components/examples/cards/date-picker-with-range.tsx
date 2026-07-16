@@ -1,15 +1,15 @@
-"use client";
+'use client';
 
-import { addDays, format } from "date-fns";
-import { Calendar as CalendarIcon } from "lucide-react";
-import * as React from "react";
-import { DateRange } from "react-day-picker";
+import { addDays, format } from 'date-fns';
+import { Calendar as CalendarIcon } from 'lucide-react';
+import * as React from 'react';
+import { DateRange } from 'react-day-picker';
 
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 export function DatePickerWithRange({ className }: React.HTMLAttributes<HTMLDivElement>) {
   const [date, setDate] = React.useState<DateRange | undefined>({
@@ -18,7 +18,7 @@ export function DatePickerWithRange({ className }: React.HTMLAttributes<HTMLDivE
   });
 
   return (
-    <Card className={cn("grid gap-2", className)}>
+    <Card className={cn('grid gap-2', className)}>
       <CardHeader>
         <CardTitle>Recall window</CardTitle>
         <CardDescription>Pick a time range for Remy to replay.</CardDescription>
@@ -29,20 +29,20 @@ export function DatePickerWithRange({ className }: React.HTMLAttributes<HTMLDivE
           <PopoverTrigger asChild>
             <Button
               id="date"
-              variant={"outline"}
+              variant={'outline'}
               className={cn(
-                "w-full max-w-[300px] justify-start text-left font-normal",
-                !date && "text-muted-foreground"
+                'w-full max-w-[300px] justify-start text-left font-normal',
+                !date && 'text-muted-foreground',
               )}
             >
               <CalendarIcon />
               {date?.from ? (
                 date.to ? (
                   <>
-                    {format(date.from, "LLL dd, y")} - {format(date.to, "LLL dd, y")}
+                    {format(date.from, 'LLL dd, y')} - {format(date.to, 'LLL dd, y')}
                   </>
                 ) : (
-                  format(date.from, "LLL dd, y")
+                  format(date.from, 'LLL dd, y')
                 )
               ) : (
                 <span>Pick a date</span>

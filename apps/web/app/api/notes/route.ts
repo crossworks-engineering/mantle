@@ -27,7 +27,13 @@ export async function GET(req: Request) {
   const includeDigests = sp.get('digests') === '1' || (!!tag && isDigestTag(tag));
 
   const [notes, total, tags] = await Promise.all([
-    listNotes(user.id, { query, tag, includeDigests, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    listNotes(user.id, {
+      query,
+      tag,
+      includeDigests,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
+    }),
     countNotes(user.id, { query, tag, includeDigests }),
     listNoteTags(user.id, { includeDigests }),
   ]);

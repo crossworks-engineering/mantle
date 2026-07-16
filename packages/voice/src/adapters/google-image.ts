@@ -32,11 +32,7 @@
  * point operators at the right console page.
  */
 
-import type {
-  GenerateImageOptions,
-  GenerateImageResult,
-  ImageGenDispatcher,
-} from './types';
+import type { GenerateImageOptions, GenerateImageResult, ImageGenDispatcher } from './types';
 import {
   GOOGLE_BASE_URL,
   GOOGLE_IMAGE_DEFAULT_MODEL,

@@ -103,9 +103,9 @@ const event_get: BuiltinToolDef = {
   slug: 'event_get',
   name: 'Get a calendar event',
   description:
-    "Read one event by id — full row including body, location, starts_at, ends_at. " +
-    "Use after `event_list` or `search_nodes` returns the id you want details on. " +
-    "For browsing/filtering events use `event_list`. " +
+    'Read one event by id — full row including body, location, starts_at, ends_at. ' +
+    'Use after `event_list` or `search_nodes` returns the id you want details on. ' +
+    'For browsing/filtering events use `event_list`. ' +
     'Returns a `url` permalink — link the event as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
@@ -139,7 +139,8 @@ const event_create: BuiltinToolDef = {
         type: 'string',
         minLength: 1,
         maxLength: 200,
-        description: "Short event title as shown in lists and reminders, e.g. 'Dentist appointment'.",
+        description:
+          "Short event title as shown in lists and reminders, e.g. 'Dentist appointment'.",
       },
       startsAt: {
         type: 'string',
@@ -184,7 +185,7 @@ const event_create: BuiltinToolDef = {
       tags: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Optional tag list — e.g. [\'work\', \'meeting\'].',
+        description: "Optional tag list — e.g. ['work', 'meeting'].",
       },
     },
     required: ['title', 'startsAt'],
@@ -255,8 +256,7 @@ const event_update: BuiltinToolDef = {
         type: 'integer',
         minimum: 0,
         maximum: 60 * 24 * 30,
-        description:
-          'Minutes before startsAt to fire the Telegram reminder; omit to keep current.',
+        description: 'Minutes before startsAt to fire the Telegram reminder; omit to keep current.',
       },
       timezone: {
         type: 'string',
@@ -327,9 +327,7 @@ const event_delete: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id required' };
     const ok = await deleteEvent(ctx.ownerId, id);
     ctx.step?.setMeta({ eventId: id, deleted: ok });
-    return ok
-      ? { ok: true, output: { deleted: true, id } }
-      : notFound('event', id, 'event_list');
+    return ok ? { ok: true, output: { deleted: true, id } } : notFound('event', id, 'event_list');
   },
 };
 

@@ -5,12 +5,7 @@
  */
 
 import { and, desc, eq } from 'drizzle-orm';
-import {
-  db,
-  pendingToolCalls,
-  type PendingToolCall,
-  tools as toolsTable,
-} from '@mantle/db';
+import { db, pendingToolCalls, type PendingToolCall, tools as toolsTable } from '@mantle/db';
 import { dispatchTool } from './dispatch';
 import { notifyPendingChanged } from './pending-notify';
 import { startTrace, step } from '@mantle/tracing';
@@ -69,19 +64,11 @@ export async function countPending(ownerId: string): Promise<number> {
   const rows = await db
     .select({ id: pendingToolCalls.id })
     .from(pendingToolCalls)
-    .where(
-      and(
-        eq(pendingToolCalls.ownerId, ownerId),
-        eq(pendingToolCalls.status, 'pending'),
-      ),
-    );
+    .where(and(eq(pendingToolCalls.ownerId, ownerId), eq(pendingToolCalls.status, 'pending')));
   return rows.length;
 }
 
-export async function getPendingCall(
-  ownerId: string,
-  id: string,
-): Promise<PendingSummary | null> {
+export async function getPendingCall(ownerId: string, id: string): Promise<PendingSummary | null> {
   const [row] = await db
     .select()
     .from(pendingToolCalls)
@@ -195,19 +182,15 @@ export async function approvePendingCall(
           input: { slug: claimed.toolSlug, args: claimed.args },
         },
         async (handle) => {
-          const res = await dispatchTool(
-            tool,
-            (claimed.args ?? {}) as Record<string, unknown>,
-            {
-              ownerId,
-              step: {
-                setMeta: (m) => handle.setMeta(m),
-                setOutput: (o) => handle.setOutput(o),
-                addTokens: (d) => handle.addTokens(d),
-                addCost: (mu) => handle.addCost(mu),
-              },
+          const res = await dispatchTool(tool, (claimed.args ?? {}) as Record<string, unknown>, {
+            ownerId,
+            step: {
+              setMeta: (m) => handle.setMeta(m),
+              setOutput: (o) => handle.setOutput(o),
+              addTokens: (d) => handle.addTokens(d),
+              addCost: (mu) => handle.addCost(mu),
             },
-          );
+          });
           if (res.ok) {
             outputJson =
               typeof res.output === 'object' && res.output !== null

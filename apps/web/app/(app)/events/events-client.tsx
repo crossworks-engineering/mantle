@@ -182,12 +182,19 @@ export function EventsClient() {
       >
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{e.title}</span>
-          <span className={cn('ml-auto shrink-0 text-xs tabular-nums', live ? 'font-medium text-primary' : 'text-muted-foreground')}>
+          <span
+            className={cn(
+              'ml-auto shrink-0 text-xs tabular-nums',
+              live ? 'font-medium text-primary' : 'text-muted-foreground',
+            )}
+          >
             {now ? (live ? 'now' : formatRelativeShort(e.startsAt, now)) : ''}
           </span>
         </div>
         <div className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-          {e.recur !== 'none' && <Repeat className="size-3 shrink-0" aria-label={`repeats ${e.recur}`} />}
+          {e.recur !== 'none' && (
+            <Repeat className="size-3 shrink-0" aria-label={`repeats ${e.recur}`} />
+          )}
           <span className="truncate">{fmt(e.startsAt)}</span>
         </div>
         {(e.location || e.tags.length > 0) && (
@@ -252,7 +259,9 @@ export function EventsClient() {
           </div>
           <select
             value={window}
-            onChange={(e) => go({ window: e.target.value === 'upcoming' ? null : e.target.value, page: null })}
+            onChange={(e) =>
+              go({ window: e.target.value === 'upcoming' ? null : e.target.value, page: null })
+            }
             className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
             aria-label="Filter events"
           >

@@ -24,7 +24,9 @@ export interface SavedFilterQuery {
 export const savedFilters = pgTable(
   'saved_filters',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     userId: uuid('user_id').notNull(),
     name: text('name').notNull(),
     query: jsonb('query').$type<SavedFilterQuery>().notNull(),

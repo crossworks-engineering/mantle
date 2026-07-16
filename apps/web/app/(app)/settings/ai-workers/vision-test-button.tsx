@@ -136,11 +136,7 @@ export function VisionTestButton({ workerId }: { workerId: string }) {
         <div className="overflow-hidden rounded-md border border-border bg-muted/30">
           {/* Bounded preview so a 4K photo doesn't blow up the form. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={previewUrl}
-            alt="image preview"
-            className="max-h-64 w-full object-contain"
-          />
+          <img src={previewUrl} alt="image preview" className="max-h-64 w-full object-contain" />
           <p className="px-3 py-1.5 text-xs text-muted-foreground">
             {file?.name} · {file?.type} · {file && (file.size / 1024).toFixed(0)} KB
           </p>

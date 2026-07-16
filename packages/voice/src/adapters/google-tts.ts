@@ -23,10 +23,7 @@
  * NL-steering path stays available via the worker's system_prompt.
  */
 
-import type {
-  SynthesizeOptions,
-  SynthesizeResult,
-} from '../types';
+import type { SynthesizeOptions, SynthesizeResult } from '../types';
 import type { TtsDispatcher } from './types';
 import type { TtsModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
@@ -60,8 +57,7 @@ async function googleTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeR
   // Default to the cheaper flash model; consumers override via the
   // worker's `model` column.
   const modelId = opts.model || 'gemini-2.5-flash-preview-tts';
-  const voiceName =
-    typeof opts.voice === 'string' && opts.voice.length > 0 ? opts.voice : 'Kore';
+  const voiceName = typeof opts.voice === 'string' && opts.voice.length > 0 ? opts.voice : 'Kore';
 
   const body: Record<string, unknown> = {
     contents: [{ parts: [{ text }] }],
@@ -75,18 +71,15 @@ async function googleTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeR
     },
   };
 
-  const res = await fetch(
-    `${GOOGLE_BASE_URL}/models/${modelId}:generateContent`,
-    {
-      method: 'POST',
-      headers: {
-        'x-goog-api-key': opts.apiKey,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
+  const res = await fetch(`${GOOGLE_BASE_URL}/models/${modelId}:generateContent`, {
+    method: 'POST',
+    headers: {
+      'x-goog-api-key': opts.apiKey,
+      'content-type': 'application/json',
     },
-  );
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new Error(`google tts ${res.status}: ${errBody.slice(0, 400)}`);
@@ -136,12 +129,13 @@ async function googleTtsDiscover(apiKey: string): Promise<DiscoveryResult<TtsMod
     const parsed = (await res.json()) as Resp;
     const ids = new Set(
       (parsed.models ?? [])
-        .filter((m) =>
-          // TTS models always have 'generateContent' in their supported
-          // methods (since the audio path uses the same endpoint).
-          // We filter by name suffix '-tts' to scope.
-          m.name.endsWith('-tts') &&
-          (m.supportedGenerationMethods ?? []).includes('generateContent'),
+        .filter(
+          (m) =>
+            // TTS models always have 'generateContent' in their supported
+            // methods (since the audio path uses the same endpoint).
+            // We filter by name suffix '-tts' to scope.
+            m.name.endsWith('-tts') &&
+            (m.supportedGenerationMethods ?? []).includes('generateContent'),
         )
         .map((m) => m.name.replace(/^models\//, '')),
     );

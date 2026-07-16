@@ -30,7 +30,14 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, agents, type Agent, type ConversationAttachment, type TeamChannel, type TeamMessage } from '@mantle/db';
+import {
+  db,
+  agents,
+  type Agent,
+  type ConversationAttachment,
+  type TeamChannel,
+  type TeamMessage,
+} from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import {
   buildChatMessages,
@@ -113,7 +120,10 @@ async function resolveTeamResponder(ownerId: string): Promise<Agent | null> {
 export function teamThreadToHistory(rows: TeamMessage[]): HistoryTurn[] {
   return rows
     .filter((r) => r.status === 'complete' && r.text.trim().length > 0)
-    .map((r) => ({ role: r.direction === 'inbound' ? ('user' as const) : ('assistant' as const), text: r.text }));
+    .map((r) => ({
+      role: r.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
+      text: r.text,
+    }));
 }
 
 export async function runTeamTurn(
@@ -219,7 +229,9 @@ export async function runTeamTurn(
 
   const adapter = getChatAdapter(agent.provider);
   if (!adapter) {
-    throw new Error(`team turn: no chat adapter for provider '${agent.provider}' (agent ${agent.slug})`);
+    throw new Error(
+      `team turn: no chat adapter for provider '${agent.provider}' (agent ${agent.slug})`,
+    );
   }
 
   const messages = buildChatMessages({
@@ -310,9 +322,13 @@ export async function runTeamTurn(
     );
   } catch (err) {
     if (abortController?.signal.aborted) {
-      loopOutcome = { reply: '', artifacts: [], iterations: 0, toolCalls: [], tokensOut: 0 } as unknown as Awaited<
-        ReturnType<typeof runToolLoop>
-      >;
+      loopOutcome = {
+        reply: '',
+        artifacts: [],
+        iterations: 0,
+        toolCalls: [],
+        tokensOut: 0,
+      } as unknown as Awaited<ReturnType<typeof runToolLoop>>;
     } else {
       const msg = err instanceof Error ? err.message : String(err);
       await runDurableStep('fail_team_outbound', () =>
@@ -348,8 +364,12 @@ export async function runTeamTurn(
       traceId: capturedTraceId,
     }),
   );
-  const outbound: TeamMessage =
-    finalized ?? { ...outboundPending, text: reply, status: 'complete', traceId: capturedTraceId };
+  const outbound: TeamMessage = finalized ?? {
+    ...outboundPending,
+    text: reply,
+    status: 'complete',
+    traceId: capturedTraceId,
+  };
 
   retireAbort();
   if (options.streamId) {

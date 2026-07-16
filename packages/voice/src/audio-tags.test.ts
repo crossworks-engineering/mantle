@@ -89,7 +89,7 @@ describe('composeAudioTagInstructions', () => {
 
   it('renders both vocabularies together when both are passed', () => {
     const out = composeAudioTagInstructions(ELEVENLABS_V3_AUDIO_TAGS, XAI_WRAPPING_TAGS);
-    expect(out).toContain('[');            // an inline tag
+    expect(out).toContain('['); // an inline tag
     expect(out).toContain('<whisper>…</whisper>'); // a wrapping tag
     // One combined paragraph — single header, not two.
     expect(out.match(/## Voice expression/g)?.length).toBe(1);
@@ -122,9 +122,7 @@ describe('stripAudioTags', () => {
     // The negative lookahead on `(` is the critical mechanism. If
     // this breaks, replies with markdown links lose their visible
     // text.
-    const { text, stripped } = stripAudioTags(
-      'See the [docs](https://example.com) for details.',
-    );
+    const { text, stripped } = stripAudioTags('See the [docs](https://example.com) for details.');
     expect(text).toBe('See the [docs](https://example.com) for details.');
     expect(stripped).toBe(0);
   });
@@ -132,9 +130,7 @@ describe('stripAudioTags', () => {
   it('preserves citation markers — [1] [2,3] are NOT tags', () => {
     // Citation markers contain digits/commas; our pattern requires
     // letters only. Lock down the behaviour.
-    const { text, stripped } = stripAudioTags(
-      'Per [1] and [2,3], the result holds.',
-    );
+    const { text, stripped } = stripAudioTags('Per [1] and [2,3], the result holds.');
     expect(text).toBe('Per [1] and [2,3], the result holds.');
     expect(stripped).toBe(0);
   });
@@ -205,9 +201,7 @@ describe('stripAudioTags', () => {
   });
 
   it('handles inline and wrapping tags mixed in one reply', () => {
-    const { text } = stripAudioTags(
-      "[sigh] fine. <whisper>but keep it quiet</whisper> [laughs]",
-    );
+    const { text } = stripAudioTags('[sigh] fine. <whisper>but keep it quiet</whisper> [laughs]');
     expect(text).toBe('fine. but keep it quiet');
   });
 

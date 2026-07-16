@@ -33,13 +33,7 @@ export async function resolveAgentSkills(
   const rows = await db
     .select()
     .from(skills)
-    .where(
-      and(
-        eq(skills.ownerId, ownerId),
-        eq(skills.enabled, true),
-        inArray(skills.slug, slugs),
-      ),
-    );
+    .where(and(eq(skills.ownerId, ownerId), eq(skills.enabled, true), inArray(skills.slug, slugs)));
   return rows.map(toRuntime);
 }
 
@@ -48,10 +42,7 @@ export async function resolveAgentSkills(
  * tool slugs (ENABLED groups only, matching the runtime's resolve-or-omit rule).
  * Empty in ⇒ empty out (no DB hit). See docs/tools-and-skills.md (Phase 3).
  */
-export async function resolveAgentToolGroups(
-  ownerId: string,
-  slugs: string[],
-): Promise<string[]> {
+export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): Promise<string[]> {
   if (slugs.length === 0) return [];
   const rows = await db
     .select({ toolSlugs: toolGroups.toolSlugs })

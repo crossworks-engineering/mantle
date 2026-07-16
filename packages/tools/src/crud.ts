@@ -41,10 +41,7 @@ export async function listToolsForOwner(ownerId: string): Promise<ToolSummary[]>
   return rows.map(toSummary);
 }
 
-export async function getToolById(
-  ownerId: string,
-  id: string,
-): Promise<ToolSummary | null> {
+export async function getToolById(ownerId: string, id: string): Promise<ToolSummary | null> {
   const [row] = await db
     .select()
     .from(tools)
@@ -63,10 +60,7 @@ export type CreateToolInput = {
   enabled?: boolean;
 };
 
-export async function createTool(
-  ownerId: string,
-  input: CreateToolInput,
-): Promise<ToolSummary> {
+export async function createTool(ownerId: string, input: CreateToolInput): Promise<ToolSummary> {
   if (input.handler.kind === 'builtin') {
     throw new Error('cannot register builtin tools via API — they are seeded by the agent');
   }
@@ -115,7 +109,12 @@ export async function updateTool(
   ) {
     // Allow toggling enabled / requiresConfirm on builtins; everything else
     // is overwritten by seedBuiltinTools on next boot anyway.
-    if (patch.name !== undefined || patch.description !== undefined || patch.inputSchema !== undefined || patch.handler !== undefined) {
+    if (
+      patch.name !== undefined ||
+      patch.description !== undefined ||
+      patch.inputSchema !== undefined ||
+      patch.handler !== undefined
+    ) {
       throw new Error(
         'cannot edit name/description/schema/handler of a builtin tool — edit packages/tools/src/builtins.ts and restart',
       );
@@ -140,7 +139,9 @@ export async function deleteTool(ownerId: string, id: string): Promise<boolean> 
   const existing = await getToolById(ownerId, id);
   if (!existing) return false;
   if (existing.handler.kind === 'builtin') {
-    throw new Error('cannot delete a builtin tool — remove from packages/tools/src/builtins.ts and restart');
+    throw new Error(
+      'cannot delete a builtin tool — remove from packages/tools/src/builtins.ts and restart',
+    );
   }
   const rows = await db
     .delete(tools)

@@ -178,17 +178,13 @@ function taskListToMd(node: PMNode): string {
 /** A table cell's content flattened to a single inline string (cells are
  *  single paragraphs; `|` is already inline-escaped, breaks collapse to space). */
 function cellText(cell: PMNode): string {
-  return blocksToMd(cell.content)
-    .replace(/\\\n/g, ' ')
-    .replace(/\n+/g, ' ')
-    .trim();
+  return blocksToMd(cell.content).replace(/\\\n/g, ' ').replace(/\n+/g, ' ').trim();
 }
 
 function tableToMd(node: PMNode): string {
   const rows = node.content ?? [];
   if (rows.length === 0) return '';
-  const renderRow = (row: PMNode) =>
-    `| ${(row.content ?? []).map(cellText).join(' | ')} |`;
+  const renderRow = (row: PMNode) => `| ${(row.content ?? []).map(cellText).join(' | ')} |`;
   const header = rows[0]!;
   const cols = (header.content ?? []).length || 1;
   const sep = `| ${Array(cols).fill('---').join(' | ')} |`;
@@ -210,7 +206,9 @@ function blockToMd(node: PMNode): string {
       const lang = s(node.attrs?.language);
       const text = (node.content ?? []).map((c) => s(c.text)).join('');
       const runs = text.match(/`+/g);
-      const fence = '`'.repeat(Math.max(3, (runs ? Math.max(...runs.map((r) => r.length)) : 0) + 1));
+      const fence = '`'.repeat(
+        Math.max(3, (runs ? Math.max(...runs.map((r) => r.length)) : 0) + 1),
+      );
       return `${fence}${lang}\n${text}\n${fence}`;
     }
     case 'blockquote':

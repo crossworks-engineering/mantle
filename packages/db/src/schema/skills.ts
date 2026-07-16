@@ -20,7 +20,9 @@ import {
 export const skills = pgTable(
   'skills',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     slug: text('slug').notNull(),
     name: text('name').notNull(),
@@ -34,7 +36,10 @@ export const skills = pgTable(
      *  source of truth (this column is a template, not a live ref).
      *  See docs/heartbeats.md §10 for the well-known state keys
      *  engine code reads. */
-    defaultState: jsonb('default_state').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    defaultState: jsonb('default_state')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     enabled: boolean('enabled').default(true).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

@@ -399,9 +399,7 @@ export type HeartbeatScheduleSpecDTO =
   | { kind: 'manual' };
 
 /** Where a heartbeat's reply is delivered (jsonb). */
-export type HeartbeatSurfaceDTO =
-  | { kind: 'telegram'; chat_id: string }
-  | { kind: 'web' };
+export type HeartbeatSurfaceDTO = { kind: 'telegram'; chat_id: string } | { kind: 'web' };
 
 /** Optional quiet-hours window (jsonb). null tz = use the profile timezone. */
 export interface HeartbeatQuietHoursDTO {

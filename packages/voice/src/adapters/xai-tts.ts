@@ -24,10 +24,7 @@
  * bubble UI until xAI adds Opus output.
  */
 
-import type {
-  SynthesizeOptions,
-  SynthesizeResult,
-} from '../types';
+import type { SynthesizeOptions, SynthesizeResult } from '../types';
 import type { TtsDispatcher } from './types';
 import type { TtsModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
@@ -81,8 +78,7 @@ async function xaiTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeResu
     text = stripAudioTags(text).text;
   }
 
-  const voiceId =
-    typeof opts.voice === 'string' && opts.voice.length > 0 ? opts.voice : 'eve';
+  const voiceId = typeof opts.voice === 'string' && opts.voice.length > 0 ? opts.voice : 'eve';
   const { codec, mime } = xaiCodecFor(opts.format);
 
   // Language: honour the per-worker hint if set, else auto-detect.
@@ -166,13 +162,9 @@ export const xaiTtsAdapter: TtsDispatcher = {
   discoverModels: xaiTtsDiscover,
   voicesForModel: xaiTtsVoicesForModel,
   supportedAudioTags(modelId) {
-    return modelId === XAI_TTS_MODEL_ID || modelId === 'grok-voice'
-      ? XAI_AUDIO_TAGS
-      : [];
+    return modelId === XAI_TTS_MODEL_ID || modelId === 'grok-voice' ? XAI_AUDIO_TAGS : [];
   },
   supportedWrappingTags(modelId) {
-    return modelId === XAI_TTS_MODEL_ID || modelId === 'grok-voice'
-      ? XAI_WRAPPING_TAGS
-      : [];
+    return modelId === XAI_TTS_MODEL_ID || modelId === 'grok-voice' ? XAI_WRAPPING_TAGS : [];
   },
 };

@@ -90,7 +90,9 @@ export function secureCookies(req: Request): boolean {
 export function requestOrigin(req: Request): string {
   const first = (v: string | null) => v?.split(',')[0]?.trim() || undefined;
   const host =
-    first(req.headers.get('x-forwarded-host')) ?? first(req.headers.get('host')) ?? 'localhost:3000';
+    first(req.headers.get('x-forwarded-host')) ??
+    first(req.headers.get('host')) ??
+    'localhost:3000';
   const proto =
     first(req.headers.get('x-forwarded-proto'))?.toLowerCase() ??
     (host.startsWith('localhost') ? 'http' : 'https');

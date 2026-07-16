@@ -20,7 +20,15 @@ import type { SqliteDb } from './sqlite';
  */
 
 /** Column types whose values are text-shaped enough to be worth indexing. */
-const FTS_TYPES = new Set(['text', 'select', 'url', 'multiselect', 'date', 'datetime', 'reference']);
+const FTS_TYPES = new Set([
+  'text',
+  'select',
+  'url',
+  'multiselect',
+  'date',
+  'datetime',
+  'reference',
+]);
 
 export function ftsColumns(columns: Column[]): Column[] {
   // A linked column indexes by its STORAGE type — a reference stores as

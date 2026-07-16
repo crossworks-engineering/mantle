@@ -26,7 +26,12 @@ import {
 import type { ToolPrecondition, BuiltinToolDef, ToolHandlerResult } from './types';
 
 const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
-  { kind: 'node_exists', param: 'contactId', nodeType: 'contact', lookup: 'team_chat_list / contact_find' },
+  {
+    kind: 'node_exists',
+    param: 'contactId',
+    nodeType: 'contact',
+    lookup: 'team_chat_list / contact_find',
+  },
 ];
 
 function str(v: unknown): string {
@@ -55,7 +60,8 @@ const team_request_create: BuiltinToolDef = {
         type: 'string',
         minLength: 1,
         maxLength: 200,
-        description: "Short imperative summary of the requested change, e.g. 'Update RBI report 30257 with revised inspection dates'.",
+        description:
+          "Short imperative summary of the requested change, e.g. 'Update RBI report 30257 with revised inspection dates'.",
       },
       body: {
         type: 'string',
@@ -158,8 +164,17 @@ const team_chat_read: BuiltinToolDef = {
         type: 'string',
         description: "The member's contact id, from `team_chat_list` or `contact_find`.",
       },
-      before: { type: 'string', description: 'ISO timestamp cursor — return messages older than this.' },
-      limit: { type: 'integer', minimum: 1, maximum: 200, default: 50, description: 'Max messages to return.' },
+      before: {
+        type: 'string',
+        description: 'ISO timestamp cursor — return messages older than this.',
+      },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 200,
+        default: 50,
+        description: 'Max messages to return.',
+      },
     },
     required: ['contactId'],
   },
@@ -202,9 +217,16 @@ const team_access_list: BuiltinToolDef = {
     properties: {
       contactId: {
         type: 'string',
-        description: "Narrow the log to one member — a contact id from `team_chat_list` or `contact_find`.",
+        description:
+          'Narrow the log to one member — a contact id from `team_chat_list` or `contact_find`.',
       },
-      limit: { type: 'integer', minimum: 1, maximum: 500, default: 100, description: 'Max entries to return.' },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 500,
+        default: 100,
+        description: 'Max entries to return.',
+      },
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {

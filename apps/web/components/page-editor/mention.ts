@@ -76,8 +76,7 @@ export const PageMention = Mention.extend({
         const margin = 6;
         const w = popup.offsetWidth;
         const h = popup.offsetHeight;
-        const flipUp =
-          rect.bottom + margin + h > window.innerHeight && rect.top - margin - h > 0;
+        const flipUp = rect.bottom + margin + h > window.innerHeight && rect.top - margin - h > 0;
         let top = flipUp ? rect.top - margin - h : rect.bottom + margin;
         let left = rect.left;
         // Clamp fully on-screen so the list never overflows the viewport (which

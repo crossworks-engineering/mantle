@@ -3,8 +3,7 @@
  * name from a From header. Provider adapters all normalize to this shape.
  */
 
-const BRACKETED_RE =
-  /^(?:"(?<qname>[^"]*)"|(?<uname>[^<]*?))\s*<(?<addr>[^<>\s,]+@[^<>\s,]+)>$/;
+const BRACKETED_RE = /^(?:"(?<qname>[^"]*)"|(?<uname>[^<]*?))\s*<(?<addr>[^<>\s,]+@[^<>\s,]+)>$/;
 const BARE_RE = /^[^<>\s,]+@[^<>\s,]+$/;
 
 export interface ParsedAddress {
@@ -42,9 +41,7 @@ const ENTRY_RE = /(?:"[^"]*"|[^,])+/g;
 export function parseAddressList(raw: string | string[] | undefined): ParsedAddress[] {
   if (!raw) return [];
   const items = Array.isArray(raw) ? raw : Array.from(raw.matchAll(ENTRY_RE), (m) => m[0]);
-  return items
-    .map((s) => parseAddress(s))
-    .filter((x): x is ParsedAddress => !!x);
+  return items.map((s) => parseAddress(s)).filter((x): x is ParsedAddress => !!x);
 }
 
 export function domainOf(address: string): string {

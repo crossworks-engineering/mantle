@@ -1,5 +1,5 @@
-import { BlogPost } from "./blog-post";
-import { DemoFontShowcase } from "./font-showcase";
+import { BlogPost } from './blog-post';
+import { DemoFontShowcase } from './font-showcase';
 
 export default function TypographyDemo() {
   return (

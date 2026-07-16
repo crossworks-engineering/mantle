@@ -20,8 +20,12 @@ import { msAccounts } from './microsoft';
 export const msDrives = pgTable(
   'ms_drives',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    accountId: uuid('account_id').notNull().references(() => msAccounts.id, { onDelete: 'cascade' }),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => msAccounts.id, { onDelete: 'cascade' }),
     /** Graph drive id. */
     driveId: text('drive_id').notNull(),
     /** `personal` (OneDrive) | `documentLibrary` (SharePoint) | other Graph driveType. */
@@ -50,13 +54,21 @@ export const msDrives = pgTable(
 export const msDriveItems = pgTable(
   'ms_drive_items',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    accountId: uuid('account_id').notNull().references(() => msAccounts.id, { onDelete: 'cascade' }),
-    driveDbId: uuid('drive_db_id').notNull().references(() => msDrives.id, { onDelete: 'cascade' }),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => msAccounts.id, { onDelete: 'cascade' }),
+    driveDbId: uuid('drive_db_id')
+      .notNull()
+      .references(() => msDrives.id, { onDelete: 'cascade' }),
     /** The deduped `file` node these bytes live in (shared if the same sha256
      *  already arrived via another source). `restrict` so a node can't vanish
      *  out from under a live mapping. */
-    nodeId: uuid('node_id').notNull().references(() => nodes.id, { onDelete: 'restrict' }),
+    nodeId: uuid('node_id')
+      .notNull()
+      .references(() => nodes.id, { onDelete: 'restrict' }),
     /** Graph driveItem id — stable within a drive; the dedup key for "seen". */
     itemId: text('item_id').notNull(),
     /** Graph eTag — a cheap "did this change" check across syncs. */
@@ -86,8 +98,12 @@ export const msDriveItems = pgTable(
 export const msDriveScopes = pgTable(
   'ms_drive_scopes',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    driveDbId: uuid('drive_db_id').notNull().references(() => msDrives.id, { onDelete: 'cascade' }),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    driveDbId: uuid('drive_db_id')
+      .notNull()
+      .references(() => msDrives.id, { onDelete: 'cascade' }),
     /** Graph driveItem id of the selected folder/file. */
     itemId: text('item_id').notNull(),
     /** Item path after `root:`, always starting with `/` (e.g. `/Reports/2026`). */

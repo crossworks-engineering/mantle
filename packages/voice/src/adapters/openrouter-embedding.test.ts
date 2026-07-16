@@ -74,7 +74,10 @@ describe('openrouter-embedding dimensions', () => {
 
   it('never truncates a non-MRL model', async () => {
     const big = new Array(1024).fill(0.25);
-    const calls = captureFetch({ data: [{ embedding: big, index: 0 }], model: 'mistralai/mistral-embed' });
+    const calls = captureFetch({
+      data: [{ embedding: big, index: 0 }],
+      model: 'mistralai/mistral-embed',
+    });
     const res = await openrouterEmbedding.embed({
       apiKey: 'k',
       model: 'mistralai/mistral-embed',

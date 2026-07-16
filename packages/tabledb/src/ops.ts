@@ -23,11 +23,23 @@ import { openTableFile, type SqliteDb } from './sqlite';
  */
 
 export type TableOp =
-  | { op: 'row_add'; tabId?: string; rowId?: string; cells?: Record<string, CellValue>; afterRowId?: string | null; atStart?: boolean }
+  | {
+      op: 'row_add';
+      tabId?: string;
+      rowId?: string;
+      cells?: Record<string, CellValue>;
+      afterRowId?: string | null;
+      atStart?: boolean;
+    }
   | { op: 'row_update'; tabId?: string; rowId: string; cells: Record<string, CellValue> }
   | { op: 'row_delete'; tabId?: string; rowId: string }
   | { op: 'cell_set'; tabId?: string; rowId: string; columnId: string; value: CellValue }
-  | { op: 'column_add'; tabId?: string; column: Omit<Column, 'id'> & { id?: string }; afterColumnId?: string | null }
+  | {
+      op: 'column_add';
+      tabId?: string;
+      column: Omit<Column, 'id'> & { id?: string };
+      afterColumnId?: string | null;
+    }
   | { op: 'column_update'; tabId?: string; columnId: string; patch: ColumnPatch }
   | { op: 'column_delete'; tabId?: string; columnId: string }
   | { op: 'aggregate_set'; tabId?: string; columnId: string; kind: AggregateKind }
@@ -83,9 +95,9 @@ type TabRow = { tab_id: string; name: string; physical_table: string; view_name:
 const POS_EPSILON = 1e-9;
 
 function firstTab(db: SqliteDb): TabRow {
-  const tab = db.prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs ORDER BY position LIMIT 1`).get() as
-    | TabRow
-    | undefined;
+  const tab = db
+    .prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs ORDER BY position LIMIT 1`)
+    .get() as TabRow | undefined;
   if (!tab) throw new Error('tabledb ops: workbook has no tabs');
   return tab;
 }
@@ -94,9 +106,9 @@ function firstTab(db: SqliteDb): TabRow {
  *  pre-v2.1 contract every existing caller relies on). Unknown ids throw. */
 function resolveTab(db: SqliteDb, tabId?: string): TabRow {
   if (tabId === undefined) return firstTab(db);
-  const tab = db.prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs WHERE tab_id = ?`).get(tabId) as
-    | TabRow
-    | undefined;
+  const tab = db
+    .prepare(`SELECT tab_id, name, physical_table, view_name FROM _tabs WHERE tab_id = ?`)
+    .get(tabId) as TabRow | undefined;
   if (!tab) throw new Error(`tabledb ops: no tab '${tabId}' in this workbook`);
   return tab;
 }
@@ -114,7 +126,9 @@ function uniqueViewName(db: SqliteDb, wanted: string, excludeTabId?: string): st
   const taken = new Set(
     tabRows.filter((t) => t.tab_id !== excludeTabId).map((t) => t.view_name.toLowerCase()),
   );
-  const master = db.prepare(`SELECT name FROM sqlite_master WHERE type IN ('table', 'view')`).all() as unknown as {
+  const master = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type IN ('table', 'view')`)
+    .all() as unknown as {
     name: string;
   }[];
   for (const m of master) {
@@ -149,17 +163,27 @@ function ensureRefColumn(db: SqliteDb): void {
 /** type='reference' columns must point at an EXISTING (tab, column) in this
  *  workbook — never cross-file (ATTACH is denied in table_sql by design) and
  *  never at themselves. */
-function validateRef(db: SqliteDb, ref: unknown, selfColId?: string): { tabId: string; columnId: string } {
+function validateRef(
+  db: SqliteDb,
+  ref: unknown,
+  selfColId?: string,
+): { tabId: string; columnId: string } {
   const r = (ref ?? {}) as { tabId?: unknown; columnId?: unknown };
   const tabId = String(r.tabId ?? '');
   const columnId = String(r.columnId ?? '');
-  if (!tabId || !columnId) throw new Error('tabledb ops: a reference column needs ref {tabId, columnId}');
-  if (columnId === selfColId) throw new Error('tabledb ops: a reference column cannot reference itself');
+  if (!tabId || !columnId)
+    throw new Error('tabledb ops: a reference column needs ref {tabId, columnId}');
+  if (columnId === selfColId)
+    throw new Error('tabledb ops: a reference column cannot reference itself');
   const hit = db
     .prepare(`SELECT type FROM _columns WHERE tab_id = ? AND col_id = ?`)
     .get(tabId, columnId) as { type?: string } | undefined;
-  if (!hit) throw new Error(`tabledb ops: reference target ${tabId}/${columnId} does not exist in this workbook`);
-  if (hit.type === 'formula') throw new Error('tabledb ops: a reference column cannot target a formula column');
+  if (!hit)
+    throw new Error(
+      `tabledb ops: reference target ${tabId}/${columnId} does not exist in this workbook`,
+    );
+  if (hit.type === 'formula')
+    throw new Error('tabledb ops: a reference column cannot target a formula column');
   return { tabId, columnId };
 }
 
@@ -228,7 +252,9 @@ export function rebuildFtsShadow(db: SqliteDb, tab: TabRow): void {
   if (physicals.length === 0) return;
   createFtsShadow(db, tab.physical_table, physicals);
   const colList = physicals.join(', ');
-  db.exec(`INSERT INTO ${fts}(rowid, ${colList}) SELECT rowid, ${colList} FROM ${tab.physical_table}`);
+  db.exec(
+    `INSERT INTO ${fts}(rowid, ${colList}) SELECT rowid, ${colList} FROM ${tab.physical_table}`,
+  );
 }
 
 function renumberPositions(db: SqliteDb, physicalTable: string): void {
@@ -241,7 +267,12 @@ function renumberPositions(db: SqliteDb, physicalTable: string): void {
   `);
 }
 
-function posForInsert(db: SqliteDb, physicalTable: string, afterRowId?: string | null, atStart?: boolean): number {
+function posForInsert(
+  db: SqliteDb,
+  physicalTable: string,
+  afterRowId?: string | null,
+  atStart?: boolean,
+): number {
   if (atStart) {
     // Explicit front insert (the differ's "new first row"). `afterRowId:
     // null/undefined` must stay append — the tool path depends on it.
@@ -330,10 +361,9 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
       const anchor = op.afterColumnId ? byId.get(op.afterColumnId) : undefined;
       const position = anchor ? anchor.position + 1 : cols.length;
       if (anchor) {
-        db.prepare(`UPDATE _columns SET position = position + 1 WHERE tab_id = ? AND position > ?`).run(
-          tab.tab_id,
-          anchor.position,
-        );
+        db.prepare(
+          `UPDATE _columns SET position = position + 1 WHERE tab_id = ? AND position > ?`,
+        ).run(tab.tab_id, anchor.position);
       }
       const isRef = op.column.type === 'reference';
       const ref = isRef ? validateRef(db, op.column.ref, colId) : null;
@@ -379,7 +409,10 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
           op.columnId,
         );
       } else if (!willRef && wasRef) {
-        db.prepare(`UPDATE _columns SET ref_json = NULL WHERE tab_id = ? AND col_id = ?`).run(tab.tab_id, op.columnId);
+        db.prepare(`UPDATE _columns SET ref_json = NULL WHERE tab_id = ? AND col_id = ?`).run(
+          tab.tab_id,
+          op.columnId,
+        );
       }
       // `null` = explicit CLEAR (JSON drops undefined keys, so the differ
       // signals property removal with null); absent key = keep current.
@@ -389,16 +422,28 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
       ).run(
         patch.name ?? col.name,
         nextType,
-        patch.format !== undefined ? (patch.format ? JSON.stringify(patch.format) : null) : (db
-          .prepare(`SELECT format_json FROM _columns WHERE tab_id = ? AND col_id = ?`)
-          .get(tab.tab_id, op.columnId)?.format_json as string | null) ?? null,
-        patch.options !== undefined ? (patch.options ? JSON.stringify(patch.options) : null) : col.options_json,
-        patch.formula !== undefined ? patch.formula : (db
-          .prepare(`SELECT formula_src FROM _columns WHERE tab_id = ? AND col_id = ?`)
-          .get(tab.tab_id, op.columnId)?.formula_src as string | null) ?? null,
-        patch.width !== undefined ? patch.width : (db
-          .prepare(`SELECT width FROM _columns WHERE tab_id = ? AND col_id = ?`)
-          .get(tab.tab_id, op.columnId)?.width as number | null) ?? null,
+        patch.format !== undefined
+          ? patch.format
+            ? JSON.stringify(patch.format)
+            : null
+          : ((db
+              .prepare(`SELECT format_json FROM _columns WHERE tab_id = ? AND col_id = ?`)
+              .get(tab.tab_id, op.columnId)?.format_json as string | null) ?? null),
+        patch.options !== undefined
+          ? patch.options
+            ? JSON.stringify(patch.options)
+            : null
+          : col.options_json,
+        patch.formula !== undefined
+          ? patch.formula
+          : ((db
+              .prepare(`SELECT formula_src FROM _columns WHERE tab_id = ? AND col_id = ?`)
+              .get(tab.tab_id, op.columnId)?.formula_src as string | null) ?? null),
+        patch.width !== undefined
+          ? patch.width
+          : ((db
+              .prepare(`SELECT width FROM _columns WHERE tab_id = ? AND col_id = ?`)
+              .get(tab.tab_id, op.columnId)?.width as number | null) ?? null),
         tab.tab_id,
         op.columnId,
       );
@@ -429,7 +474,11 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
       // dynamically typed); values rewrite in place. Keyed on STORAGE type so
       // text↔select (same storage) is a no-op and select↔checkbox re-coerces.
       if (col.type !== 'formula' && nextType !== 'formula' && prevStorage !== nextStorage) {
-        const rows = db.prepare(`SELECT _rid, ${col.physical} AS v FROM ${table} WHERE ${col.physical} IS NOT NULL`).all();
+        const rows = db
+          .prepare(
+            `SELECT _rid, ${col.physical} AS v FROM ${table} WHERE ${col.physical} IS NOT NULL`,
+          )
+          .all();
         const upd = db.prepare(`UPDATE ${table} SET ${col.physical} = ? WHERE _rid = ?`);
         for (const r of rows) {
           const docValue = loadCell(r.v, prevStorage);
@@ -444,8 +493,14 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
     case 'column_delete': {
       const col = byId.get(op.columnId);
       if (!col) return null;
-      db.prepare(`DELETE FROM _columns WHERE tab_id = ? AND col_id = ?`).run(tab.tab_id, op.columnId);
-      db.prepare(`DELETE FROM _aggregates WHERE tab_id = ? AND col_id = ?`).run(tab.tab_id, op.columnId);
+      db.prepare(`DELETE FROM _columns WHERE tab_id = ? AND col_id = ?`).run(
+        tab.tab_id,
+        op.columnId,
+      );
+      db.prepare(`DELETE FROM _aggregates WHERE tab_id = ? AND col_id = ?`).run(
+        tab.tab_id,
+        op.columnId,
+      );
       if (col.type !== 'formula') {
         // The display view references the column — drop it BEFORE the column
         // (SQLite refuses to drop a column a view depends on), then rebuild.
@@ -458,7 +513,10 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
       return null;
     }
     case 'aggregate_set': {
-      db.prepare(`DELETE FROM _aggregates WHERE tab_id = ? AND col_id = ?`).run(tab.tab_id, op.columnId);
+      db.prepare(`DELETE FROM _aggregates WHERE tab_id = ? AND col_id = ?`).run(
+        tab.tab_id,
+        op.columnId,
+      );
       if (op.kind !== 'none') {
         db.prepare(`INSERT INTO _aggregates (tab_id, col_id, kind) VALUES (?, ?, ?)`).run(
           tab.tab_id,
@@ -473,16 +531,18 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
       const spec = JSON.stringify({ sort: op.view.sort ?? [], filters: op.view.filters ?? [] });
       const existing = db.prepare(`SELECT position FROM _views WHERE view_id = ?`).get(viewId);
       if (existing) {
-        db.prepare(`UPDATE _views SET name = ?, spec_json = ? WHERE view_id = ?`).run(op.view.name, spec, viewId);
-      } else {
-        const posRow = db.prepare(`SELECT count(*) AS n FROM _views WHERE tab_id = ?`).get(tab.tab_id);
-        db.prepare(`INSERT INTO _views (view_id, tab_id, name, spec_json, position) VALUES (?, ?, ?, ?, ?)`).run(
-          viewId,
-          tab.tab_id,
+        db.prepare(`UPDATE _views SET name = ?, spec_json = ? WHERE view_id = ?`).run(
           op.view.name,
           spec,
-          Number(posRow?.n ?? 0),
+          viewId,
         );
+      } else {
+        const posRow = db
+          .prepare(`SELECT count(*) AS n FROM _views WHERE tab_id = ?`)
+          .get(tab.tab_id);
+        db.prepare(
+          `INSERT INTO _views (view_id, tab_id, name, spec_json, position) VALUES (?, ?, ?, ?, ?)`,
+        ).run(viewId, tab.tab_id, op.view.name, spec, Number(posRow?.n ?? 0));
       }
       return viewId;
     }
@@ -491,9 +551,15 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
       if (!col) return null;
       const trimmed = op.label.trim();
       if (!trimmed) return null;
-      const options = (col.options_json ? (JSON.parse(col.options_json) as { id: string; label: string }[]) : []) ?? [];
+      const options =
+        (col.options_json
+          ? (JSON.parse(col.options_json) as { id: string; label: string }[])
+          : []) ?? [];
       if (options.some((o) => o.label.toLowerCase() === trimmed.toLowerCase())) return null;
-      const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      const slug = trimmed
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
       const optId = slug && !options.some((o) => o.id === slug) ? slug : randomUUID();
       db.prepare(`UPDATE _columns SET options_json = ? WHERE tab_id = ? AND col_id = ?`).run(
         JSON.stringify([...options, { id: optId, label: trimmed }]),
@@ -512,9 +578,11 @@ function writeTabOrder(db: SqliteDb, order: string[]): void {
 }
 
 function tabOrder(db: SqliteDb): string[] {
-  return (db.prepare(`SELECT tab_id FROM _tabs ORDER BY position`).all() as unknown as { tab_id: string }[]).map(
-    (t) => t.tab_id,
-  );
+  return (
+    db.prepare(`SELECT tab_id FROM _tabs ORDER BY position`).all() as unknown as {
+      tab_id: string;
+    }[]
+  ).map((t) => t.tab_id);
 }
 
 /** Tab CRUD ops (v2.1 P1). Runs inside the batch transaction like applyOne. */
@@ -527,13 +595,9 @@ function applyTabOp(db: SqliteDb, op: Extract<TableOp, { op: `tab_${string}` }>)
       }
       const physicalTable = physicalName('t', tabId);
       const viewName = uniqueViewName(db, viewNameForTab(op.name));
-      db.prepare(`INSERT INTO _tabs (tab_id, name, position, physical_table, view_name) VALUES (?, ?, ?, ?, ?)`).run(
-        tabId,
-        op.name,
-        tabOrder(db).length,
-        physicalTable,
-        viewName,
-      );
+      db.prepare(
+        `INSERT INTO _tabs (tab_id, name, position, physical_table, view_name) VALUES (?, ?, ?, ?, ?)`,
+      ).run(tabId, op.name, tabOrder(db).length, physicalTable, viewName);
       db.exec(`CREATE TABLE ${physicalTable} (_rid TEXT PRIMARY KEY, _pos REAL NOT NULL)`);
       db.exec(`CREATE INDEX ${physicalTable}_pos ON ${physicalTable}(_pos)`);
       db.exec(`CREATE VIEW ${quoteIdent(viewName)} AS SELECT _rid, _pos FROM ${physicalTable}`);
@@ -551,7 +615,11 @@ function applyTabOp(db: SqliteDb, op: Extract<TableOp, { op: `tab_${string}` }>)
       const tab = resolveTab(db, op.tabId);
       const viewName = uniqueViewName(db, viewNameForTab(op.name), tab.tab_id);
       db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tab.view_name)}`);
-      db.prepare(`UPDATE _tabs SET name = ?, view_name = ? WHERE tab_id = ?`).run(op.name, viewName, tab.tab_id);
+      db.prepare(`UPDATE _tabs SET name = ?, view_name = ? WHERE tab_id = ?`).run(
+        op.name,
+        viewName,
+        tab.tab_id,
+      );
       rebuildView(db, { ...tab, name: op.name, view_name: viewName });
       return null;
     }
@@ -559,14 +627,16 @@ function applyTabOp(db: SqliteDb, op: Extract<TableOp, { op: `tab_${string}` }>)
       const tab = resolveTab(db, op.tabId);
       const order = tabOrder(db).filter((id) => id !== tab.tab_id);
       const at = op.afterTabId == null ? 0 : order.indexOf(op.afterTabId) + 1;
-      if (op.afterTabId != null && at === 0) throw new Error(`tabledb ops: no tab '${op.afterTabId}' to reorder after`);
+      if (op.afterTabId != null && at === 0)
+        throw new Error(`tabledb ops: no tab '${op.afterTabId}' to reorder after`);
       order.splice(at, 0, tab.tab_id);
       writeTabOrder(db, order);
       return null;
     }
     case 'tab_delete': {
       const tab = resolveTab(db, op.tabId);
-      if (tabOrder(db).length <= 1) throw new Error('tabledb ops: a workbook needs at least one tab');
+      if (tabOrder(db).length <= 1)
+        throw new Error('tabledb ops: a workbook needs at least one tab');
       // FTS shadow (published files only) + triggers, then view, then data.
       dropFtsShadow(db, tab);
       db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tab.view_name)}`);

@@ -29,9 +29,7 @@ describe('OPENAI_TTS_MODELS', () => {
   it('contains all currently-published TTS models', () => {
     const ids = OPENAI_TTS_MODELS.map((m) => m.id);
     // Lock down the exact set so a model rename or drop is loud.
-    expect(new Set(ids)).toEqual(
-      new Set(['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd']),
-    );
+    expect(new Set(ids)).toEqual(new Set(['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd']));
   });
 
   it('lists gpt-4o-mini-tts first (recommended)', () => {
@@ -45,9 +43,7 @@ describe('OPENAI_TTS_MODELS', () => {
     // It's silently ignored by tts-1 / tts-1-hd; the UI greys out the
     // input when those models are selected, so this flag must be
     // accurate.
-    const flags = Object.fromEntries(
-      OPENAI_TTS_MODELS.map((m) => [m.id, m.supportsInstructions]),
-    );
+    const flags = Object.fromEntries(OPENAI_TTS_MODELS.map((m) => [m.id, m.supportsInstructions]));
     expect(flags['gpt-4o-mini-tts']).toBe(true);
     expect(flags['tts-1']).toBe(false);
     expect(flags['tts-1-hd']).toBe(false);

@@ -35,11 +35,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { db, heartbeats, type Heartbeat } from '@mantle/db';
-import {
-  registerBuiltin,
-  type BuiltinToolDef,
-  type ToolHandlerResult,
-} from '@mantle/tools';
+import { registerBuiltin, type BuiltinToolDef, type ToolHandlerResult } from '@mantle/tools';
 import { currentHeartbeat, MAX_HEARTBEAT_DEPTH } from './context';
 import { forceFire } from './fire';
 import { computeNextFireAt } from './schedule';
@@ -73,10 +69,7 @@ async function loadOwnedHeartbeatBySlug(ownerId: string, slug: string): Promise<
 async function resolveTargetHeartbeat(
   input: Record<string, unknown>,
   ownerId: string,
-): Promise<
-  | { ok: true; hb: Heartbeat; via: 'slug' | 'als' }
-  | { ok: false; error: string }
-> {
+): Promise<{ ok: true; hb: Heartbeat; via: 'slug' | 'als' } | { ok: false; error: string }> {
   const slugInput = typeof input.slug === 'string' && input.slug.trim() ? input.slug.trim() : null;
   if (slugInput) {
     const hb = await loadOwnedHeartbeatBySlug(ownerId, slugInput);
@@ -101,14 +94,14 @@ const heartbeat_complete: BuiltinToolDef = {
   slug: 'heartbeat_complete',
   name: 'Mark a heartbeat complete',
   description:
-    "Permanently stop a heartbeat. Use this when the skill has accomplished what it set out to do (e.g. all interview questions answered) OR when the user explicitly asks you to stop. Pass `slug` to target a specific heartbeat — required when called from a regular responder turn; optional inside a heartbeat fire (the firing one is the default). After this call, the heartbeat never fires again unless an operator re-activates it. Takes an optional `reason` string stored on the row for the operator to see.",
+    'Permanently stop a heartbeat. Use this when the skill has accomplished what it set out to do (e.g. all interview questions answered) OR when the user explicitly asks you to stop. Pass `slug` to target a specific heartbeat — required when called from a regular responder turn; optional inside a heartbeat fire (the firing one is the default). After this call, the heartbeat never fires again unless an operator re-activates it. Takes an optional `reason` string stored on the row for the operator to see.',
   inputSchema: {
     type: 'object',
     properties: {
       slug: {
         type: 'string',
         description:
-          "Heartbeat slug to complete. Required when not inside a heartbeat fire. Inside a fire, omit to default to the firing heartbeat.",
+          'Heartbeat slug to complete. Required when not inside a heartbeat fire. Inside a fire, omit to default to the firing heartbeat.',
       },
       reason: {
         type: 'string',
@@ -134,7 +127,10 @@ const heartbeat_complete: BuiltinToolDef = {
       })
       .where(and(eq(heartbeats.id, target.hb.id), eq(heartbeats.ownerId, ctx.ownerId)));
     ctx.step?.setMeta({ branch: 'completed', via: target.via, heartbeat_id: target.hb.id, reason });
-    return { ok: true, output: { heartbeat_id: target.hb.id, slug: target.hb.slug, status: 'completed', reason } };
+    return {
+      ok: true,
+      output: { heartbeat_id: target.hb.id, slug: target.hb.slug, status: 'completed', reason },
+    };
   },
 };
 
@@ -148,8 +144,7 @@ const heartbeat_snooze: BuiltinToolDef = {
     properties: {
       slug: {
         type: 'string',
-        description:
-          "Heartbeat slug to snooze. Required when not inside a heartbeat fire.",
+        description: 'Heartbeat slug to snooze. Required when not inside a heartbeat fire.',
       },
       for_hours: { type: 'number', description: 'How many hours from now to defer.' },
       until: { type: 'string', description: 'ISO-8601 instant to defer until.' },
@@ -188,7 +183,14 @@ const heartbeat_snooze: BuiltinToolDef = {
       heartbeat_id: target.hb.id,
       next_fire_at: next.toISOString(),
     });
-    return { ok: true, output: { heartbeat_id: target.hb.id, slug: target.hb.slug, next_fire_at: next.toISOString() } };
+    return {
+      ok: true,
+      output: {
+        heartbeat_id: target.hb.id,
+        slug: target.hb.slug,
+        next_fire_at: next.toISOString(),
+      },
+    };
   },
 };
 
@@ -203,7 +205,7 @@ const heartbeat_update_state: BuiltinToolDef = {
       slug: {
         type: 'string',
         description:
-          "Heartbeat slug whose state to update. Required when reacting to a user reply (responder turn). Inside a fire, omit to default to the firing one.",
+          'Heartbeat slug whose state to update. Required when reacting to a user reply (responder turn). Inside a fire, omit to default to the firing one.',
       },
       patch: {
         type: 'object',
@@ -272,7 +274,7 @@ const heartbeat_list: BuiltinToolDef = {
       include_state: {
         type: 'boolean',
         description:
-          'Include each heartbeat\'s full state jsonb. Off by default to keep the LLM\'s context lean — flip on when reasoning about progress / answered topics / etc.',
+          "Include each heartbeat's full state jsonb. Off by default to keep the LLM's context lean — flip on when reasoning about progress / answered topics / etc.",
       },
     },
   },

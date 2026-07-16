@@ -44,7 +44,13 @@
  * closed pair is an intentional, bounded construct.
  */
 
-const OPEN_TAG_NAMES = ['think', 'thinking', 'reasoning', 'thought', 'REASONING_SCRATCHPAD'] as const;
+const OPEN_TAG_NAMES = [
+  'think',
+  'thinking',
+  'reasoning',
+  'thought',
+  'REASONING_SCRATCHPAD',
+] as const;
 
 /** Literal tag strings, materialised once so the hot path is string ops. */
 const OPEN_TAGS: readonly string[] = OPEN_TAG_NAMES.map((n) => `<${n}>`);
@@ -286,7 +292,10 @@ function stripOrphanCloseTags(text: string): string {
         const tagLen = tagLower.length;
         if (textLower.slice(i, i + tagLen) === tagLower) {
           let j = i + tagLen;
-          while (j < text.length && (text[j] === ' ' || text[j] === '\t' || text[j] === '\n' || text[j] === '\r')) {
+          while (
+            j < text.length &&
+            (text[j] === ' ' || text[j] === '\t' || text[j] === '\n' || text[j] === '\r')
+          ) {
             j++;
           }
           i = j;

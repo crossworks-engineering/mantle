@@ -42,8 +42,7 @@ export async function POST(req: Request) {
   // (Safari sends 'application/octet-stream' on MediaRecorder Blobs).
   // Fall back to webm — the most common MediaRecorder output —
   // and let the STT adapter sniff filename-by-extension from there.
-  const mimeType =
-    file.type && file.type.length > 0 ? file.type : 'audio/webm';
+  const mimeType = file.type && file.type.length > 0 ? file.type : 'audio/webm';
   const language = (formData.get('language') as string | null) ?? undefined;
 
   const worker = await getDefaultWorker(user.id, 'stt');

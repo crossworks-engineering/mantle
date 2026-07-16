@@ -44,8 +44,8 @@ export function DisconnectButton({ accountId, upn }: { accountId: string; upn: s
         <AlertDialogHeader>
           <AlertDialogTitle>Disconnect {upn}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Mantle will delete its stored access for this Microsoft account and stop syncing it.
-            You can reconnect any time. Content already ingested is not removed.
+            Mantle will delete its stored access for this Microsoft account and stop syncing it. You
+            can reconnect any time. Content already ingested is not removed.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

@@ -52,7 +52,9 @@ export const toolResults = pgTable(
 export const toolResultChunks = pgTable(
   'tool_result_chunks',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     resultId: text('result_id')
       .notNull()
       .references(() => toolResults.id, { onDelete: 'cascade' }),

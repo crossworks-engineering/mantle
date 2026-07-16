@@ -24,7 +24,9 @@ export type TeamChannel = 'web' | 'api' | 'msteams';
 export const teamMessages = pgTable(
   'team_messages',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     contactId: uuid('contact_id')
       .notNull()
@@ -43,10 +45,7 @@ export const teamMessages = pgTable(
     /** The turn's trace (kind 'responder_turn', subject_kind 'team_turn') —
      *  the admin's deep link from a reply to what the brain actually did. */
     traceId: uuid('trace_id'),
-    status: text('status')
-      .$type<'pending' | 'complete' | 'failed'>()
-      .default('complete')
-      .notNull(),
+    status: text('status').$type<'pending' | 'complete' | 'failed'>().default('complete').notNull(),
     error: text('error'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },

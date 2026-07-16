@@ -40,7 +40,9 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 export const mantlePeers = pgTable(
   'mantle_peers',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     nodeId: uuid('node_id')
       .notNull()

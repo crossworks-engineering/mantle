@@ -5,8 +5,18 @@ import { EMBED_TEXT_PER_FILE, EMBED_TEXT_TOTAL, foldEmbeddedText } from './pages
 describe('foldEmbeddedText', () => {
   it('returns empty for no items / all-empty text', () => {
     expect(foldEmbeddedText([])).toBe('');
-    expect(foldEmbeddedText([{ title: 'a.png', text: '' }, { title: 'b.png', text: '   ' }])).toBe('');
-    expect(foldEmbeddedText([{ title: 'a.png', text: null }, { title: 'b.png', text: undefined }])).toBe('');
+    expect(
+      foldEmbeddedText([
+        { title: 'a.png', text: '' },
+        { title: 'b.png', text: '   ' },
+      ]),
+    ).toBe('');
+    expect(
+      foldEmbeddedText([
+        { title: 'a.png', text: null },
+        { title: 'b.png', text: undefined },
+      ]),
+    ).toBe('');
   });
 
   it('labels each file and preserves order', () => {

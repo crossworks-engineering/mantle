@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { Area, AreaChart, Line, LineChart } from "recharts";
+import { Area, AreaChart, Line, LineChart } from 'recharts';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartConfig, ChartContainer } from "@/components/ui/chart";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChartConfig, ChartContainer } from '@/components/ui/chart';
 
 const data = [
   { tokens: 10400, traces: 40 },
@@ -18,12 +18,12 @@ const data = [
 
 const chartConfig = {
   tokens: {
-    label: "Tokens",
-    color: "var(--primary)",
+    label: 'Tokens',
+    color: 'var(--primary)',
   },
   traces: {
-    label: "Traces",
-    color: "var(--primary)",
+    label: 'Traces',
+    color: 'var(--primary)',
   },
 } satisfies ChartConfig;
 

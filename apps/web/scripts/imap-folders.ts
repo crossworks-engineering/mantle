@@ -17,9 +17,9 @@ async function main() {
       console.log(`  ${a.address}: skipped (incomplete config)`);
       continue;
     }
-    const { password } = JSON.parse(
-      open(a.imapConfigEnc, `imap:${a.userId}:${a.address}`),
-    ) as { password: string };
+    const { password } = JSON.parse(open(a.imapConfigEnc, `imap:${a.userId}:${a.address}`)) as {
+      password: string;
+    };
 
     console.log(`\n${a.address}  (${a.imapHost}:${a.imapPort})`);
     console.log(`  excluded: ${JSON.stringify(a.imapExcludedFolders)}`);

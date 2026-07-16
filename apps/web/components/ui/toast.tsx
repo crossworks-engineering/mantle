@@ -38,14 +38,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const push = useCallback<ToastApi['push']>((t) => {
-    const id = Date.now() + Math.random();
-    const durationMs = t.durationMs ?? 5000;
-    setToasts((prev) => [...prev, { ...t, id, durationMs }]);
-    if (durationMs > 0) {
-      setTimeout(() => remove(id), durationMs);
-    }
-  }, [remove]);
+  const push = useCallback<ToastApi['push']>(
+    (t) => {
+      const id = Date.now() + Math.random();
+      const durationMs = t.durationMs ?? 5000;
+      setToasts((prev) => [...prev, { ...t, id, durationMs }]);
+      if (durationMs > 0) {
+        setTimeout(() => remove(id), durationMs);
+      }
+    },
+    [remove],
+  );
 
   const api: ToastApi = {
     push,
@@ -86,7 +89,8 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
       : toast.kind === 'error'
         ? 'border-destructive/50 bg-destructive/10 text-destructive'
         : 'border-border bg-card text-foreground';
-  const Icon = toast.kind === 'success' ? CheckCircle2 : toast.kind === 'error' ? AlertCircle : Info;
+  const Icon =
+    toast.kind === 'success' ? CheckCircle2 : toast.kind === 'error' ? AlertCircle : Info;
 
   return (
     <div

@@ -40,10 +40,13 @@ if (!(target >= 0 && target <= 1)) {
 }
 
 const UNSUB = /unsubscrib/i;
-const VIEW_BROWSER = /view (this )?(email |message )?(in|on) (your |the )?browser|view (it )?online/i;
-const RECEIVED = /you('?re| are)? receiving this|you received this (email|message)|manage (your )?(email )?(preferences|subscription)|update (your )?(email )?preferences|email preferences|opt[\s-]?out/i;
+const VIEW_BROWSER =
+  /view (this )?(email |message )?(in|on) (your |the )?browser|view (it )?online/i;
+const RECEIVED =
+  /you('?re| are)? receiving this|you received this (email|message)|manage (your )?(email )?(preferences|subscription)|update (your )?(email )?preferences|email preferences|opt[\s-]?out/i;
 const LINK = /https?:\/\//gi;
-const TRACKING = /(\/track\/|\/click\?|[?&]utm_|list-manage|mailchimp|sendgrid|hubspotlinks|sparkpostmail|\/ss\/c\/|\.list-manage\.com|sendibm|mandrillapp)/gi;
+const TRACKING =
+  /(\/track\/|\/click\?|[?&]utm_|list-manage|mailchimp|sendgrid|hubspotlinks|sparkpostmail|\/ss\/c\/|\.list-manage\.com|sendibm|mandrillapp)/gi;
 
 /** Transactional veto. The header classifier separates `automated` (receipts,
  *  OTPs, invoices) from `marketing`; this body fallback can't see headers, so a
@@ -65,10 +68,7 @@ export function looksBulk(subject: string, body: string): boolean {
   const viewBrowser = VIEW_BROWSER.test(text);
   const received = RECEIVED.test(text);
   return (
-    tracking >= 5 ||
-    links >= 30 ||
-    (unsub && links >= 8) ||
-    (unsub && (viewBrowser || received))
+    tracking >= 5 || links >= 30 || (unsub && links >= 8) || (unsub && (viewBrowser || received))
   );
 }
 
@@ -94,9 +94,7 @@ async function main() {
       ),
     );
 
-  const hits = rows.filter((r) =>
-    looksBulk(r.subject ?? '', r.bodyHtml || r.bodyText || ''),
-  );
+  const hits = rows.filter((r) => looksBulk(r.subject ?? '', r.bodyHtml || r.bodyText || ''));
 
   console.log(
     `Scanned ${rows.length} unknown-kind email node(s); ${hits.length} look bulk by body signal.`,

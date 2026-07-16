@@ -189,7 +189,9 @@ export type PersonaNote = {
 export const agents = pgTable(
   'agents',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     slug: text('slug').notNull(),
     name: text('name').notNull(),
@@ -219,7 +221,9 @@ export const agents = pgTable(
      *  so the primary cols are always the active route. See migration 0062. */
     backupProvider: text('backup_provider'),
     backupModel: text('backup_model'),
-    backupApiKeyId: uuid('backup_api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    backupApiKeyId: uuid('backup_api_key_id').references(() => apiKeys.id, {
+      onDelete: 'set null',
+    }),
     backupEnabled: boolean('backup_enabled').default(false).notNull(),
     /** Per-route host + tailnet flag (migration 0063). `baseUrl` overrides the
      *  provider's default host for this route (e.g. a self-hosted OpenAI-compat
@@ -240,16 +244,31 @@ export const agents = pgTable(
     systemPrompt: text('system_prompt').notNull(),
     /** Slugs of `skills` rows attached to this agent. Instructions are
      *  always-loaded into the system prompt (v1 activation model). */
-    skillSlugs: text('skill_slugs').array().default(sql`'{}'::text[]`).notNull(),
+    skillSlugs: text('skill_slugs')
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
     /** Slugs of `tool_groups` rows granted to this agent — named tool bundles.
      *  P6: the SOLE tool-grant mechanism. The runtime effective tool set is
      *  exactly the union of these groups' tools (the `tool_slugs` column was
      *  dropped in migration 0083). See docs/tools-and-skills.md. */
-    toolGroupSlugs: text('tool_group_slugs').array().default(sql`'{}'::text[]`).notNull(),
-    memoryConfig: jsonb('memory_config').$type<AgentMemoryConfig>().default(sql`'{}'::jsonb`).notNull(),
-    params: jsonb('params').$type<AgentParams>().default(sql`'{}'::jsonb`).notNull(),
+    toolGroupSlugs: text('tool_group_slugs')
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
+    memoryConfig: jsonb('memory_config')
+      .$type<AgentMemoryConfig>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    params: jsonb('params')
+      .$type<AgentParams>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     /** Reflector appends notes here. */
-    personaNotes: jsonb('persona_notes').$type<PersonaNote[]>().default(sql`'[]'::jsonb`).notNull(),
+    personaNotes: jsonb('persona_notes')
+      .$type<PersonaNote[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
     /** Avatar {style, seed}. Null → derived initials/accent avatar. */
     avatar: jsonb('avatar').$type<AgentAvatar | null>(),
     /** Higher = wins. Convention: 100 default. */

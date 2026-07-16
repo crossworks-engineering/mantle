@@ -23,7 +23,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const app = await getApp(user.id, id);
   if (!app) return new NextResponse('not found', { status: 404 });
 
-  const build = app.draftBuild?.ok ? app.draftBuild : app.publishedBuild?.ok ? app.publishedBuild : null;
+  const build = app.draftBuild?.ok
+    ? app.draftBuild
+    : app.publishedBuild?.ok
+      ? app.publishedBuild
+      : null;
   if (!build) return new NextResponse('no build', { status: 404 });
 
   const { body, contentLength } = await getContent(build.storageKey);

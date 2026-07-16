@@ -34,10 +34,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid user id.' }, { status: 400 });
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: 'Password must be at least 8 characters.' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 });
   }
   const targetId = idParsed.data.id;
 

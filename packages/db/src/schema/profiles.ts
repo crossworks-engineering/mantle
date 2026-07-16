@@ -11,7 +11,10 @@ export const profiles = pgTable('profiles', {
   // lives in the SQL migration since auth.users sits in a different schema.
   userId: uuid('user_id').primaryKey(),
   displayName: text('display_name'),
-  preferences: jsonb('preferences').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  preferences: jsonb('preferences')
+    .$type<Record<string, unknown>>()
+    .default(sql`'{}'::jsonb`)
+    .notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

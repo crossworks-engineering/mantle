@@ -76,10 +76,7 @@ export async function listSkillBackrefs(
 // insensitive name search).
 void sql;
 
-export async function getSkill(
-  ownerId: string,
-  id: string,
-): Promise<SkillSummary | null> {
+export async function getSkill(ownerId: string, id: string): Promise<SkillSummary | null> {
   const [row] = await db
     .select()
     .from(skills)
@@ -97,10 +94,7 @@ export type CreateSkillInput = {
   enabled?: boolean;
 };
 
-export async function createSkill(
-  ownerId: string,
-  input: CreateSkillInput,
-): Promise<SkillSummary> {
+export async function createSkill(ownerId: string, input: CreateSkillInput): Promise<SkillSummary> {
   const [row] = await db
     .insert(skills)
     .values({
@@ -150,21 +144,12 @@ export async function deleteSkill(ownerId: string, id: string): Promise<boolean>
  * Resolve a batch of skill slugs to enabled rows. Used by the tool-loop
  * callers to compose the agent's effective prompt + tool set.
  */
-export async function resolveSkills(
-  ownerId: string,
-  slugs: string[],
-): Promise<SkillSummary[]> {
+export async function resolveSkills(ownerId: string, slugs: string[]): Promise<SkillSummary[]> {
   if (slugs.length === 0) return [];
   const rows = await db
     .select()
     .from(skills)
-    .where(
-      and(
-        eq(skills.ownerId, ownerId),
-        eq(skills.enabled, true),
-        inArray(skills.slug, slugs),
-      ),
-    );
+    .where(and(eq(skills.ownerId, ownerId), eq(skills.enabled, true), inArray(skills.slug, slugs)));
   return rows.map(toSummary);
 }
 

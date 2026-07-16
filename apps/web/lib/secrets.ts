@@ -33,14 +33,7 @@ export const SECRETS_ROOT_LABEL = 'secrets';
 /** Kinds are a free-form hint for the UI/filtering. They DON'T constrain
  *  the field shape — the hybrid model lets each secret carry an
  *  arbitrary set of {label, value} fields plus a free-form note. */
-export const SECRET_KINDS = [
-  'password',
-  'token',
-  'server',
-  'card',
-  'note',
-  'other',
-] as const;
+export const SECRET_KINDS = ['password', 'token', 'server', 'card', 'note', 'other'] as const;
 export type SecretKind = (typeof SECRET_KINDS)[number];
 
 export type SecretRow = {
@@ -75,9 +68,10 @@ function nodeToRow(node: Node): SecretRow {
     id: node.id,
     title: node.title,
     description: typeof data.description === 'string' ? data.description : '',
-    kind: (typeof data.kind === 'string' && (SECRET_KINDS as readonly string[]).includes(data.kind)
-      ? (data.kind as SecretKind)
-      : 'other'),
+    kind:
+      typeof data.kind === 'string' && (SECRET_KINDS as readonly string[]).includes(data.kind)
+        ? (data.kind as SecretKind)
+        : 'other',
     tags: node.tags ?? [],
     hasNote: Boolean(data.has_note),
     fieldCount: typeof data.field_count === 'number' ? data.field_count : 0,
@@ -100,7 +94,8 @@ async function ensureSecretsRoot(ownerId: string): Promise<void> {
       slug: SECRETS_ROOT_LABEL,
       path: SECRETS_ROOT_LABEL,
       data: {
-        description: 'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
+        description:
+          'Encrypted credentials, tokens, and other sensitive notes. Metadata is searchable; values stay sealed until you click reveal.',
       },
     })
     .onConflictDoNothing({
@@ -161,10 +156,7 @@ export async function countSecrets(ownerId: string, filters: ListFilters = {}): 
   return row?.n ?? 0;
 }
 
-export async function getSecretMetadata(
-  ownerId: string,
-  id: string,
-): Promise<SecretRow | null> {
+export async function getSecretMetadata(ownerId: string, id: string): Promise<SecretRow | null> {
   const [row] = await db
     .select()
     .from(nodes)
@@ -196,10 +188,7 @@ export type CreateSecretInput = {
   fields: SecretField[];
 };
 
-export async function createSecret(
-  ownerId: string,
-  input: CreateSecretInput,
-): Promise<SecretRow> {
+export async function createSecret(ownerId: string, input: CreateSecretInput): Promise<SecretRow> {
   await ensureSecretsRoot(ownerId);
   const sanitisedFields = sanitiseFields(input.fields);
   const payload: SecretPayload = {

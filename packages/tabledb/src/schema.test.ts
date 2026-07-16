@@ -22,8 +22,14 @@ function carsDoc(): TableDocLike {
       { id: 'c-total', name: 'Total', type: 'formula', formula: '{Year} * 2' },
     ],
     rows: [
-      { id: 'r1', cells: { 'c-model': 'Corolla', 'c-make': 'Toyota', 'c-year': 2024, 'c-ev': false } },
-      { id: 'r2', cells: { 'c-model': 'Model 3', 'c-make': 'Tesla', 'c-year': 2025, 'c-ev': true } },
+      {
+        id: 'r1',
+        cells: { 'c-model': 'Corolla', 'c-make': 'Toyota', 'c-year': 2024, 'c-ev': false },
+      },
+      {
+        id: 'r2',
+        cells: { 'c-model': 'Model 3', 'c-make': 'Tesla', 'c-year': 2025, 'c-ev': true },
+      },
     ],
   };
 }

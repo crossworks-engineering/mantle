@@ -1,13 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getOwnerOr401, getOwnerForAsset } from '@/lib/auth';
-import {
-  deleteFileById,
-  fileById,
-  readFileById,
-  renameFileById,
-  upsertFile,
-} from '@/lib/files';
+import { deleteFileById, fileById, readFileById, renameFileById, upsertFile } from '@/lib/files';
 import { recordIngest } from '@mantle/tracing';
 import { safeDownloadHeaders } from '@/lib/safe-download';
 

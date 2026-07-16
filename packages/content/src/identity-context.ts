@@ -38,10 +38,7 @@ export type IdentityEntry = { body: string; mood: string | null; category: strin
  * block. Deterministic and DB-free (unit-tested). Returns '' for a blank
  * purpose. The optional archetype label renders as a "Speciality:" line.
  */
-export function renderPurposeBlock(
-  purpose: string,
-  archetypeLabel: string | null,
-): string {
+export function renderPurposeBlock(purpose: string, archetypeLabel: string | null): string {
   const raw = (purpose ?? '').replace(/\s+/g, ' ').trim();
   if (!raw) return '';
   const p =
@@ -72,8 +69,7 @@ export function renderIdentityBlock(entries: IdentityEntry[]): string {
       body:
         body.length > MAX_ENTRY_CHARS ? `${body.slice(0, MAX_ENTRY_CHARS - 1).trimEnd()}…` : body,
       mood: typeof e.mood === 'string' && e.mood.trim() ? e.mood.trim() : null,
-      category:
-        typeof e.category === 'string' && e.category.trim() ? e.category.trim() : null,
+      category: typeof e.category === 'string' && e.category.trim() ? e.category.trim() : null,
     };
   });
 

@@ -1,12 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import {
-  createFolder,
-  ensureFilesRootBranch,
-  listAllFolders,
-  listFolders,
-} from '@/lib/files';
+import { createFolder, ensureFilesRootBranch, listAllFolders, listFolders } from '@/lib/files';
 
 const ListQuery = z.object({
   parent: z.string().optional(),

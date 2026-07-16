@@ -6,11 +6,7 @@ import { PageDetailClient } from './page-detail-client';
  * client-fetched via `GET /api/pages/[id]` and `…/backlinks` (Phase 2 · Task 4).
  * No wrapper: the client owns its chromeless, width-toggling canvas.
  */
-export default async function PageEditorRoute({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function PageEditorRoute({ params }: { params: Promise<{ id: string }> }) {
   await requireOwner();
   const { id } = await params;
   return <PageDetailClient pageId={id} />;

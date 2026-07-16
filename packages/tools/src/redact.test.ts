@@ -16,10 +16,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  getBuiltinRedactFields,
-  redactArgsForLogging,
-} from './registry';
+import { getBuiltinRedactFields, redactArgsForLogging } from './registry';
 
 describe('getBuiltinRedactFields', () => {
   it('returns the declared sensitive fields for secret_create', () => {
@@ -39,10 +36,9 @@ describe('getBuiltinRedactFields', () => {
 
 describe('redactArgsForLogging', () => {
   it('replaces named fields with [REDACTED]', () => {
-    const out = redactArgsForLogging(
-      { title: 'Safe PIN', value: '4827', kind: 'password' },
-      ['value'],
-    );
+    const out = redactArgsForLogging({ title: 'Safe PIN', value: '4827', kind: 'password' }, [
+      'value',
+    ]);
     expect(out.value).toBe('[REDACTED]');
     expect(out.title).toBe('Safe PIN');
     expect(out.kind).toBe('password');
@@ -82,10 +78,10 @@ describe('redactArgsForLogging', () => {
     // Defence in depth: if a future tool declares a sensitive field
     // that happens to come through as a number (PIN sent as integer)
     // or an object (a credential bundle), it still gets masked.
-    const out = redactArgsForLogging(
-      { pin: 4827, bundle: { user: 'x', pass: 'y' } },
-      ['pin', 'bundle'],
-    );
+    const out = redactArgsForLogging({ pin: 4827, bundle: { user: 'x', pass: 'y' } }, [
+      'pin',
+      'bundle',
+    ]);
     expect(out.pin).toBe('[REDACTED]');
     expect(out.bundle).toBe('[REDACTED]');
   });
@@ -94,10 +90,7 @@ describe('redactArgsForLogging', () => {
     // The whole point — `trace_steps.input` is a jsonb column, so
     // whatever we hand off must survive JSON.stringify without
     // leaking the plaintext.
-    const out = redactArgsForLogging(
-      { title: 'Safe PIN', value: '4827-MUST-NOT-LEAK' },
-      ['value'],
-    );
+    const out = redactArgsForLogging({ title: 'Safe PIN', value: '4827-MUST-NOT-LEAK' }, ['value']);
     const serialised = JSON.stringify(out);
     expect(serialised).not.toContain('4827');
     expect(serialised).not.toContain('MUST-NOT-LEAK');

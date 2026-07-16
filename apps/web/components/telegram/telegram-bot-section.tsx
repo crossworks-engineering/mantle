@@ -64,9 +64,13 @@ export function TelegramBotSection({ agentId }: { agentId: string }) {
     setBusy(true);
     let b: { binding?: AgentTelegramBinding };
     try {
-      b = await apiSend<{ binding?: AgentTelegramBinding }>(`/api/agents/${agentId}/telegram`, 'POST', {
-        token: token.trim(),
-      });
+      b = await apiSend<{ binding?: AgentTelegramBinding }>(
+        `/api/agents/${agentId}/telegram`,
+        'POST',
+        {
+          token: token.trim(),
+        },
+      );
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
       toast.error(e instanceof Error ? e.message : 'Could not link the bot.');
@@ -211,13 +215,7 @@ export function TelegramBotSection({ agentId }: { agentId: string }) {
           {binding ? 'Update token' : 'Connect bot'}
         </Button>
         {binding && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={disconnect}
-            disabled={busy}
-          >
+          <Button type="button" size="sm" variant="outline" onClick={disconnect} disabled={busy}>
             Disconnect
           </Button>
         )}

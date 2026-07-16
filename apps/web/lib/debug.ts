@@ -95,9 +95,7 @@ export async function listDigests(userId: string, opts: ListOpts = {}): Promise<
       summary: String(d.summary ?? ''),
       topic: typeof d.topic === 'string' && d.topic.trim() ? String(d.topic) : null,
       topicSlug:
-        typeof d.topic_slug === 'string' && d.topic_slug.trim()
-          ? String(d.topic_slug)
-          : null,
+        typeof d.topic_slug === 'string' && d.topic_slug.trim() ? String(d.topic_slug) : null,
     };
   });
 }
@@ -479,7 +477,9 @@ export async function duplicateEdgeStats(userId: string): Promise<DuplicateEdgeS
   const entName = new Map(ents.map((e) => [e.id, e.name]));
   const nodeTitle = new Map(nds.map((n) => [n.id, n.title]));
   const label = (id: string, kind: string) =>
-    kind === 'entity' ? (entName.get(id) ?? '(deleted entity)') : (nodeTitle.get(id) ?? '(deleted)');
+    kind === 'entity'
+      ? (entName.get(id) ?? '(deleted entity)')
+      : (nodeTitle.get(id) ?? '(deleted)');
 
   const samples = sampleRows.map((r) => ({
     relation: r.relation,
@@ -518,7 +518,6 @@ export async function listPersonaNotes(userId: string): Promise<PersonaNotesRow[
     }))
     .filter((r) => r.notes.length > 0);
 }
-
 
 // ─── /debug/context — per-turn retrieval audit ────────────────────────────────
 
@@ -571,9 +570,7 @@ function contextTurnWhere(userId: string, query?: string) {
 }
 
 function executeRows<T>(result: unknown): T[] {
-  return (
-    Array.isArray(result) ? result : ((result as { rows?: T[] }).rows ?? [])
-  ) as T[];
+  return (Array.isArray(result) ? result : ((result as { rows?: T[] }).rows ?? [])) as T[];
 }
 
 export async function listContextTurns(

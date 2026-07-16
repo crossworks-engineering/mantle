@@ -85,9 +85,7 @@ type AnthropicToolResultBlock = {
  *  split into the base64 source shape Anthropic expects. */
 type AnthropicImageBlock = {
   type: 'image';
-  source:
-    | { type: 'base64'; media_type: string; data: string }
-    | { type: 'url'; url: string };
+  source: { type: 'base64'; media_type: string; data: string } | { type: 'url'; url: string };
   /** Cache marker for vision turns whose image is the last content
    *  block of a user message (runtime emits this shape on
    *  responder turns with image attachments). */
@@ -185,9 +183,11 @@ type AnthropicListModelsResponse = {
  * separate user messages each carrying one tool_result also works but
  * adds turn overhead).
  */
-function splitSystemAndMessages(
-  messages: ChatOptions['messages'],
-): { system: string; systemBlocks: AnthropicTextBlock[]; rest: AnthropicMessage[] } {
+function splitSystemAndMessages(messages: ChatOptions['messages']): {
+  system: string;
+  systemBlocks: AnthropicTextBlock[];
+  rest: AnthropicMessage[];
+} {
   const sys: string[] = [];
   // When ANY system message arrives in block form (carrying its own
   // cache_control markers), we accumulate blocks here and return them
@@ -262,8 +262,7 @@ function splitSystemAndMessages(
       continue;
     }
     // assistant — may have content, toolCalls, or both
-    const hasToolCalls =
-      'toolCalls' in m && Array.isArray(m.toolCalls) && m.toolCalls.length > 0;
+    const hasToolCalls = 'toolCalls' in m && Array.isArray(m.toolCalls) && m.toolCalls.length > 0;
     if (!hasToolCalls) {
       rest.push({
         role: 'assistant',
@@ -282,8 +281,7 @@ function splitSystemAndMessages(
       let parsedInput: Record<string, unknown>;
       try {
         const obj = JSON.parse(tc.function.arguments || '{}');
-        parsedInput =
-          obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : {};
+        parsedInput = obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : {};
       } catch {
         // Anthropic requires `input` to be a parsed object. If the
         // upstream caller's stringified args don't parse, send {} —
@@ -323,9 +321,7 @@ function buildAnthropicTools(opts: ChatOptions): AnthropicTool[] | undefined {
 }
 
 /** Pull tool_use blocks off the Anthropic response and normalise. */
-function extractAnthropicToolCalls(
-  parsed: AnthropicResponse,
-): ChatToolCall[] | undefined {
+function extractAnthropicToolCalls(parsed: AnthropicResponse): ChatToolCall[] | undefined {
   const uses = parsed.content.filter(
     (c): c is { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> } =>
       c.type === 'tool_use',
@@ -465,7 +461,12 @@ async function anthropicChat(opts: ChatOptions): Promise<ChatResult> {
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new ChatHttpError({ provider: 'anthropic', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
+    throw new ChatHttpError({
+      provider: 'anthropic',
+      status: res.status,
+      body: errBody,
+      retryAfterMs: parseRetryAfterMs(res.headers),
+    });
   }
   const parsed = (await res.json()) as AnthropicResponse;
   // Response shape: content is an array of blocks; collect every text
@@ -559,9 +560,7 @@ function toAnthropicImageBlock(url: string): AnthropicImageBlock | null {
   return null;
 }
 
-async function anthropicDiscover(
-  apiKey: string,
-): Promise<DiscoveryResult<ChatModelInfo>> {
+async function anthropicDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
     const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/models?limit=100`, {
       headers: {
@@ -635,7 +634,10 @@ type AnthropicStreamEvent = {
  * same `ChatResult`. Honours `opts.signal`: threaded into the fetch, and on abort
  * it returns the partial reply (dropping half-formed tool blocks) without throwing.
  */
-async function anthropicChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> {
+async function anthropicChatStream(
+  opts: ChatOptions,
+  onDelta: ChatStreamSink,
+): Promise<ChatResult> {
   if (!opts.apiKey) throw new Error('anthropic-chat: apiKey required');
   if (!opts.model) throw new Error('anthropic-chat: model required');
 
@@ -654,7 +656,12 @@ async function anthropicChatStream(opts: ChatOptions, onDelta: ChatStreamSink): 
   });
   if (!res.ok || !res.body) {
     const errBody = await res.text().catch(() => '');
-    throw new ChatHttpError({ provider: 'anthropic', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
+    throw new ChatHttpError({
+      provider: 'anthropic',
+      status: res.status,
+      body: errBody,
+      retryAfterMs: parseRetryAfterMs(res.headers),
+    });
   }
 
   let text = '';
@@ -684,7 +691,11 @@ async function anthropicChatStream(opts: ChatOptions, onDelta: ChatStreamSink): 
           cacheRead = u.cache_read_input_tokens ?? cacheRead;
           cacheWrite = u.cache_creation_input_tokens ?? cacheWrite;
         }
-      } else if (ev.type === 'content_block_start' && typeof ev.index === 'number' && ev.content_block) {
+      } else if (
+        ev.type === 'content_block_start' &&
+        typeof ev.index === 'number' &&
+        ev.content_block
+      ) {
         blocks.set(ev.index, {
           type: ev.content_block.type,
           id: ev.content_block.id ?? '',
@@ -696,9 +707,17 @@ async function anthropicChatStream(opts: ChatOptions, onDelta: ChatStreamSink): 
         if (d.type === 'text_delta' && typeof d.text === 'string' && d.text.length > 0) {
           text += d.text;
           safeDelta(onDelta, { type: 'text', text: d.text });
-        } else if (d.type === 'thinking_delta' && typeof d.thinking === 'string' && d.thinking.length > 0) {
+        } else if (
+          d.type === 'thinking_delta' &&
+          typeof d.thinking === 'string' &&
+          d.thinking.length > 0
+        ) {
           safeDelta(onDelta, { type: 'reasoning', text: d.thinking });
-        } else if (d.type === 'input_json_delta' && typeof d.partial_json === 'string' && typeof ev.index === 'number') {
+        } else if (
+          d.type === 'input_json_delta' &&
+          typeof d.partial_json === 'string' &&
+          typeof ev.index === 'number'
+        ) {
           const b = blocks.get(ev.index);
           if (b) b.args += d.partial_json;
         }
@@ -711,7 +730,14 @@ async function anthropicChatStream(opts: ChatOptions, onDelta: ChatStreamSink): 
   }
 
   if (opts.signal?.aborted) {
-    return { text: text.trim(), model, tokensIn, tokensOut, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite };
+    return {
+      text: text.trim(),
+      model,
+      tokensIn,
+      tokensOut,
+      cacheReadTokens: cacheRead,
+      cacheWriteTokens: cacheWrite,
+    };
   }
 
   const toolCalls: ChatToolCall[] = [...blocks.entries()]

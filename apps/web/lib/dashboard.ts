@@ -127,7 +127,7 @@ export async function graphIntegrity(userId: string): Promise<GraphIntegrity> {
   const rows = (
     Array.isArray(result)
       ? result
-      : (result as { rows?: Array<{ dup_groups: number; redundant_rows: number }> }).rows ?? []
+      : ((result as { rows?: Array<{ dup_groups: number; redundant_rows: number }> }).rows ?? [])
   ) as Array<{ dup_groups: number; redundant_rows: number }>;
   const row = rows[0] ?? { dup_groups: 0, redundant_rows: 0 };
   return {
@@ -154,18 +154,12 @@ export type VectorCounts = {
 export async function vectorCounts(userId: string): Promise<VectorCounts> {
   const indexed = sql<number>`count(*) filter (where embedding is not null)::int`;
   const [nodeRow, factRow, entityRow, cacheRow] = await Promise.all([
-    db
-      .select({ total: COUNT, indexed })
-      .from(nodes)
-      .where(eq(nodes.ownerId, userId)),
+    db.select({ total: COUNT, indexed }).from(nodes).where(eq(nodes.ownerId, userId)),
     db
       .select({ total: COUNT, indexed })
       .from(facts)
       .where(and(eq(facts.ownerId, userId), isNull(facts.validTo))),
-    db
-      .select({ total: COUNT, indexed })
-      .from(entities)
-      .where(eq(entities.ownerId, userId)),
+    db.select({ total: COUNT, indexed }).from(entities).where(eq(entities.ownerId, userId)),
     db.select({ total: COUNT }).from(embeddingCache),
   ]);
 
@@ -287,7 +281,7 @@ export async function emailStats(userId: string): Promise<EmailStats> {
   ]);
 
   const syncRows = (
-    Array.isArray(syncResult) ? syncResult : (syncResult as { rows?: SyncRow[] }).rows ?? []
+    Array.isArray(syncResult) ? syncResult : ((syncResult as { rows?: SyncRow[] }).rows ?? [])
   ) as SyncRow[];
 
   return {

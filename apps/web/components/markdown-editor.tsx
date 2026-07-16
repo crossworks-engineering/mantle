@@ -63,7 +63,11 @@ export function MarkdownEditor({
   const wrap = (token: string) =>
     transform((sel) =>
       sel
-        ? { text: `${token}${sel}${token}`, selStart: token.length, selEnd: token.length + sel.length }
+        ? {
+            text: `${token}${sel}${token}`,
+            selStart: token.length,
+            selEnd: token.length + sel.length,
+          }
         : { text: `${token}${token}`, selStart: token.length, selEnd: token.length },
     );
 

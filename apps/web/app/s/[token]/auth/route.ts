@@ -57,10 +57,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   if (!share) return invalid();
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
+  if (!parsed.success)
+    return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
 
-  const member =
-    shareModeOf(share) === 'team' ? await verifyTeamToken(parsed.data.token) : null;
+  const member = shareModeOf(share) === 'team' ? await verifyTeamToken(parsed.data.token) : null;
   if (!member || member.ownerId !== share.ownerId) return invalid();
 
   // Mark used only now that the token is confirmed to belong to THIS share's

@@ -42,7 +42,7 @@ describe('Anthropic chat adapter', () => {
     expect(isProviderWired('anthropic', 'chat')).toBe(true);
   });
 
-  it("catalog contains current generation models (4.6/4.7)", () => {
+  it('catalog contains current generation models (4.6/4.7)', () => {
     const ids = ANTHROPIC_CHAT_MODELS.map((m) => m.id);
     expect(ids).toContain('claude-opus-4-7');
     expect(ids).toContain('claude-sonnet-4-6');

@@ -43,7 +43,11 @@ function parseArgs(argv: string[]): Args {
   for (const arg of argv) {
     if (arg === '--go') out.go = true;
     else if (arg.startsWith('--types=')) {
-      out.types = arg.slice('--types='.length).split(',').map((s) => s.trim()).filter(Boolean);
+      out.types = arg
+        .slice('--types='.length)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     } else if (arg.startsWith('--since=')) {
       const d = new Date(arg.slice('--since='.length));
       if (!isNaN(d.getTime())) out.since = d;
@@ -92,7 +96,9 @@ async function main() {
   );
 
   if (!args.go) {
-    console.log('[relations-backfill] DRY RUN — pass --go to clear summaries + re-fire. No changes made.');
+    console.log(
+      '[relations-backfill] DRY RUN — pass --go to clear summaries + re-fire. No changes made.',
+    );
     await sql.end();
     return;
   }
@@ -101,7 +107,9 @@ async function main() {
     return;
   }
 
-  console.log(`[relations-backfill] firing at ${args.rateSec}s intervals — each is a full re-extract.`);
+  console.log(
+    `[relations-backfill] firing at ${args.rateSec}s intervals — each is a full re-extract.`,
+  );
   let i = 0;
   for (const row of rows) {
     i++;
@@ -113,7 +121,9 @@ async function main() {
     }
     if (i < rows.length) await new Promise((r) => setTimeout(r, args.rateSec * 1000));
   }
-  console.log(`[relations-backfill] done. ${rows.length} fired. Watch the agent logs / /debug/journey.`);
+  console.log(
+    `[relations-backfill] done. ${rows.length} fired. Watch the agent logs / /debug/journey.`,
+  );
   await sql.end();
 }
 

@@ -29,7 +29,9 @@ export async function GET(req: Request) {
   const query = url.searchParams.get('q') ?? undefined;
   const tag = url.searchParams.get('tag') ?? undefined;
   const sortParam = url.searchParams.get('sort');
-  const sort: TableSort = SORTS.includes(sortParam as TableSort) ? (sortParam as TableSort) : 'edited';
+  const sort: TableSort = SORTS.includes(sortParam as TableSort)
+    ? (sortParam as TableSort)
+    : 'edited';
 
   const [tables, total, tags] = await Promise.all([
     listTables(user.id, { query, tag, sort, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),

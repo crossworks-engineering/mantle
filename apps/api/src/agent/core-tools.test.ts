@@ -35,7 +35,8 @@ describe('CORE_AUTO_GRANT_GROUP_SLUGS — floor membership', () => {
 
   it('expands to a tool set that passes the persona integrity gate', () => {
     const tools = new Set<string>();
-    for (const g of CORE_AUTO_GRANT_GROUP_SLUGS) for (const t of GROUP_TOOLS.get(g) ?? []) tools.add(t);
+    for (const g of CORE_AUTO_GRANT_GROUP_SLUGS)
+      for (const t of GROUP_TOOLS.get(g) ?? []) tools.add(t);
     // integrity.ts check 1: persona must be able to delegate + actually act.
     expect(tools.has('invoke_agent')).toBe(true);
     // tool_grounding skill: the agent must be able to search the brain.

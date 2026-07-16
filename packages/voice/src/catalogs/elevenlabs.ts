@@ -44,16 +44,28 @@ export const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io';
  */
 export const ELEVENLABS_V3_AUDIO_TAGS: readonly AudioTag[] = [
   // Human reactions — the most useful for conversational warmth.
-  { tag: '[laughs]', description: 'a warm chuckle; use for genuine amusement', category: 'reaction' },
+  {
+    tag: '[laughs]',
+    description: 'a warm chuckle; use for genuine amusement',
+    category: 'reaction',
+  },
   { tag: '[laughs softly]', description: 'a quiet, intimate chuckle', category: 'reaction' },
   { tag: '[chuckles]', description: 'short, dry amusement', category: 'reaction' },
   { tag: '[snorts]', description: 'a short, derisive or surprised exhale', category: 'reaction' },
   { tag: '[sighs]', description: 'resigned exhale; reflective or weary', category: 'reaction' },
   { tag: '[gasps]', description: 'sharp inhale of surprise', category: 'reaction' },
-  { tag: '[clears throat]', description: 'transitional beat, often before a serious point', category: 'reaction' },
+  {
+    tag: '[clears throat]',
+    description: 'transitional beat, often before a serious point',
+    category: 'reaction',
+  },
 
   // Delivery / performance.
-  { tag: '[whispers]', description: 'intimate, lowered voice for secrets or asides', category: 'delivery' },
+  {
+    tag: '[whispers]',
+    description: 'intimate, lowered voice for secrets or asides',
+    category: 'delivery',
+  },
   { tag: '[shouts]', description: 'raised voice; use sparingly', category: 'delivery' },
 
   // Cognitive / pacing beats.
@@ -78,7 +90,11 @@ export const ELEVENLABS_V3_AUDIO_TAGS: readonly AudioTag[] = [
   { tag: '[flatly]', description: 'unaffected, monotone', category: 'tone' },
   { tag: '[deadpan]', description: 'expressionless; great for dry humour', category: 'tone' },
   { tag: '[playfully]', description: 'light, teasing', category: 'tone' },
-  { tag: '[resigned tone]', description: 'accepting the inevitable; soft sigh implicit', category: 'tone' },
+  {
+    tag: '[resigned tone]',
+    description: 'accepting the inevitable; soft sigh implicit',
+    category: 'tone',
+  },
 ];
 
 /** TTS model metadata. ElevenLabs swaps the OpenAI {model,voice}
@@ -128,8 +144,7 @@ export const ELEVENLABS_TTS_MODELS: readonly ElevenLabsTtsModel[] = [
   {
     id: 'eleven_flash_v2_5',
     label: 'Flash v2.5',
-    description:
-      'Lowest latency (~75ms). 32 languages. Best for streaming. No inline audio tags.',
+    description: 'Lowest latency (~75ms). 32 languages. Best for streaming. No inline audio tags.',
     multilingual: true,
     speed: 'fast',
     supportsAudioTags: false,

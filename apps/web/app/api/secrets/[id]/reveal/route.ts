@@ -9,10 +9,7 @@ import { NextResponse } from 'next/server';
 import { getOwnerOr401 } from '@/lib/auth';
 import { revealSecret } from '@/lib/secrets';
 
-export async function POST(
-  _req: Request,
-  ctx: { params: Promise<{ id: string }> },
-) {
+export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;

@@ -34,8 +34,7 @@ type ThreadData = {
  * writes the cookie + navigates to ?agent=<slug>, which re-keys this query.
  */
 export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
-  const { minimize, pinnedContext, surfaceSelection, surfaceChanges } =
-    useAssistantDock();
+  const { minimize, pinnedContext, surfaceSelection, surfaceChanges } = useAssistantDock();
   const threadQuery = useQuery({
     queryKey: ['assistant', 'thread', slugHint ?? ''],
     queryFn: () =>
@@ -81,7 +80,12 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
             accent && (
               <span
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white ring-2"
-                style={{ backgroundColor: accent.solid, '--tw-ring-color': accent.border } as React.CSSProperties}
+                style={
+                  {
+                    backgroundColor: accent.solid,
+                    '--tw-ring-color': accent.border,
+                  } as React.CSSProperties
+                }
                 aria-hidden
               >
                 {agentInitials(agent.name)}
@@ -93,7 +97,8 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
               {agent ? (
                 <>
                   <code className="font-mono">{agent.slug}</code> ·{' '}
-                  <code className="font-mono">{agent.model}</code> — separate thread per agent, shared brain.
+                  <code className="font-mono">{agent.model}</code> — separate thread per agent,
+                  shared brain.
                 </>
               ) : (
                 <span className="text-destructive">
@@ -132,7 +137,8 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
           <span className="inline-flex min-w-0 items-center gap-1.5">
             <MapPin className="size-3.5 shrink-0 text-primary" aria-hidden />
             <span className="truncate">
-              Working on <span className="font-medium text-foreground">{pinnedContext[0]?.label}</span>
+              Working on{' '}
+              <span className="font-medium text-foreground">{pinnedContext[0]?.label}</span>
             </span>
           </span>
           {surfaceSelection && surfaceSelection.items.length > 0 && (

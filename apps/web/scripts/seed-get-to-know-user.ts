@@ -48,10 +48,14 @@ async function resolveAgentSlug(): Promise<string> {
       .where(and(eq(agents.ownerId, USER_ID!), eq(agents.slug, AGENT_SLUG_OVERRIDE)))
       .limit(1);
     if (!row) {
-      throw new Error(`AGENT_SLUG='${AGENT_SLUG_OVERRIDE}' not found for this owner. Pick from /settings/agents.`);
+      throw new Error(
+        `AGENT_SLUG='${AGENT_SLUG_OVERRIDE}' not found for this owner. Pick from /settings/agents.`,
+      );
     }
     if (!row.enabled) {
-      throw new Error(`AGENT_SLUG='${AGENT_SLUG_OVERRIDE}' exists but is disabled. Enable it at /settings/agents.`);
+      throw new Error(
+        `AGENT_SLUG='${AGENT_SLUG_OVERRIDE}' exists but is disabled. Enable it at /settings/agents.`,
+      );
     }
     return AGENT_SLUG_OVERRIDE;
   }
@@ -153,7 +157,7 @@ async function upsertSkill(): Promise<void> {
       .set({
         name: 'Profile interview',
         description:
-          "Ask one topical question at a time to build a profile of the user. Self-terminates when all topics are answered.",
+          'Ask one topical question at a time to build a profile of the user. Self-terminates when all topics are answered.',
         instructions: SKILL_INSTRUCTIONS,
         defaultState: SKILL_DEFAULT_STATE,
         enabled: true,
@@ -167,7 +171,7 @@ async function upsertSkill(): Promise<void> {
       slug: SKILL_SLUG,
       name: 'Profile interview',
       description:
-        "Ask one topical question at a time to build a profile of the user. Self-terminates when all topics are answered.",
+        'Ask one topical question at a time to build a profile of the user. Self-terminates when all topics are answered.',
       instructions: SKILL_INSTRUCTIONS,
       defaultState: SKILL_DEFAULT_STATE,
       enabled: true,
@@ -228,15 +232,22 @@ async function upsertHeartbeat(agentSlug: string): Promise<void> {
   };
 
   if (existing) {
-    await db.update(heartbeats).set({ ...common, updatedAt: new Date() }).where(eq(heartbeats.id, existing.id));
-    console.log(`[seed] updated heartbeat ${HEARTBEAT_SLUG} (next fire ${nextFireAt?.toISOString()})`);
+    await db
+      .update(heartbeats)
+      .set({ ...common, updatedAt: new Date() })
+      .where(eq(heartbeats.id, existing.id));
+    console.log(
+      `[seed] updated heartbeat ${HEARTBEAT_SLUG} (next fire ${nextFireAt?.toISOString()})`,
+    );
   } else {
     await db.insert(heartbeats).values({
       ownerId: USER_ID!,
       slug: HEARTBEAT_SLUG,
       ...common,
     });
-    console.log(`[seed] inserted heartbeat ${HEARTBEAT_SLUG} (next fire ${nextFireAt?.toISOString()})`);
+    console.log(
+      `[seed] inserted heartbeat ${HEARTBEAT_SLUG} (next fire ${nextFireAt?.toISOString()})`,
+    );
   }
 }
 
@@ -250,7 +261,7 @@ async function main() {
   await upsertHeartbeat(agentSlug);
   console.log('[seed] done — single welcome-invitation fire scheduled ~6h from now.');
   console.log('[seed] use the /heartbeats page or the heartbeat_fire tool to test sooner.');
-  console.log('[seed] the skill self-terminates on the user\'s first substantive reply.');
+  console.log("[seed] the skill self-terminates on the user's first substantive reply.");
   process.exit(0);
 }
 

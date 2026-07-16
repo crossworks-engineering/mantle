@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -8,23 +8,23 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Textarea } from "@/components/ui/textarea";
+} from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Textarea } from '@/components/ui/textarea';
 
 const tiers = [
   {
-    id: "cloud",
-    name: "Cloud model",
-    description: "Anthropic / OpenRouter. Best reasoning.",
+    id: 'cloud',
+    name: 'Cloud model',
+    description: 'Anthropic / OpenRouter. Best reasoning.',
   },
   {
-    id: "local",
-    name: "Local model",
-    description: "Runs on-box. Private, no token cost.",
+    id: 'local',
+    name: 'Local model',
+    description: 'Runs on-box. Private, no token cost.',
   },
 ] as const;
 
@@ -89,7 +89,10 @@ export function CardsForms() {
           </fieldset>
           <div className="flex flex-col gap-2">
             <Label htmlFor="agent-prompt">System prompt</Label>
-            <Textarea id="agent-prompt" placeholder="You are the Researcher. Search the web and return cited synthesis…" />
+            <Textarea
+              id="agent-prompt"
+              placeholder="You are the Researcher. Search the web and return cited synthesis…"
+            />
           </div>
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">

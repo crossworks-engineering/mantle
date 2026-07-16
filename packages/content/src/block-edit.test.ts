@@ -12,12 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { ensureBlockIds } from './block-ids';
-import {
-  deleteBlock,
-  findBlock,
-  insertAfterBlock,
-  replaceBlock,
-} from './block-edit';
+import { deleteBlock, findBlock, insertAfterBlock, replaceBlock } from './block-edit';
 
 function blocked(doc: Record<string, unknown>): Record<string, unknown> {
   return ensureBlockIds(doc);
@@ -48,9 +43,7 @@ describe('findBlock', () => {
         {
           type: 'callout',
           attrs: { variant: 'info' },
-          content: [
-            { type: 'paragraph', content: [{ type: 'text', text: 'inside' }] },
-          ],
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'inside' }] }],
         },
       ],
     });
@@ -76,9 +69,7 @@ describe('replaceBlock', () => {
   it('inherits the old id on the first new block (agent continuity)', () => {
     const doc = blocked({
       type: 'doc',
-      content: [
-        { type: 'paragraph', content: [{ type: 'text', text: 'old' }] },
-      ],
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'old' }] }],
     });
     const oldId = (doc as { content: { attrs: { id: string } }[] }).content[0]!.attrs.id;
 
@@ -128,7 +119,11 @@ describe('replaceBlock', () => {
     const targetId = (doc as { content: N[] }).content[0]!.attrs.id;
 
     const r = replaceBlock(doc, targetId, [
-      { type: 'paragraph', attrs: { id: 'parse-minted-id' }, content: [{ type: 'text', text: 'new' }] },
+      {
+        type: 'paragraph',
+        attrs: { id: 'parse-minted-id' },
+        content: [{ type: 'text', text: 'new' }],
+      },
     ]);
     expect(r.found).toBe(true);
     expect((r.doc as { content: N[] }).content[0]!.attrs.id).toBe(targetId);
@@ -153,9 +148,7 @@ describe('replaceBlock', () => {
         {
           type: 'callout',
           attrs: { variant: 'info' },
-          content: [
-            { type: 'paragraph', content: [{ type: 'text', text: 'old' }] },
-          ],
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'old' }] }],
         },
       ],
     });
@@ -257,9 +250,7 @@ describe('deleteBlock', () => {
         {
           type: 'callout',
           attrs: { variant: 'info' },
-          content: [
-            { type: 'paragraph', content: [{ type: 'text', text: 'only' }] },
-          ],
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'only' }] }],
         },
       ],
     });

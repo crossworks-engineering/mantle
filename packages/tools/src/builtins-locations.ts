@@ -63,7 +63,7 @@ const location_save: BuiltinToolDef = {
       latitude: { type: 'number', description: 'decimal degrees, −90..90' },
       longitude: { type: 'number', description: 'decimal degrees, −180..180' },
       address: { type: 'string', description: 'reverse-geocoded address (place_name)' },
-      title: { type: 'string', description: "optional label; defaults to the address" },
+      title: { type: 'string', description: 'optional label; defaults to the address' },
       source: { type: 'string', description: "provider that resolved it, e.g. 'mapbox'" },
       body: { type: 'string', description: 'optional notes about the place' },
       tags: {
@@ -120,8 +120,14 @@ const location_nearby: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      latitude: { type: 'number', description: 'latitude of the point to search around, e.g. -33.918' },
-      longitude: { type: 'number', description: 'longitude of the point to search around, e.g. 18.423' },
+      latitude: {
+        type: 'number',
+        description: 'latitude of the point to search around, e.g. -33.918',
+      },
+      longitude: {
+        type: 'number',
+        description: 'longitude of the point to search around, e.g. 18.423',
+      },
       radius_meters: { type: 'number', description: 'search radius in metres', default: 150 },
       limit: {
         type: 'integer',
@@ -217,15 +223,21 @@ const route_map: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      polyline: { type: 'string', description: "encoded polyline (precision 5) from mapbox_directions `geometry`" },
+      polyline: {
+        type: 'string',
+        description: 'encoded polyline (precision 5) from mapbox_directions `geometry`',
+      },
       from_longitude: { type: 'number', description: 'origin longitude' },
       from_latitude: { type: 'number', description: 'origin latitude' },
       to_longitude: { type: 'number', description: 'destination longitude' },
       to_latitude: { type: 'number', description: 'destination latitude' },
-      from_label: { type: 'string', description: "optional caption label for the start (e.g. 'You')" },
-      to_label: { type: 'string', description: "optional caption label for the destination" },
-      distance_meters: { type: 'number', description: "optional route distance for the caption" },
-      duration_seconds: { type: 'number', description: "optional route duration for the caption" },
+      from_label: {
+        type: 'string',
+        description: "optional caption label for the start (e.g. 'You')",
+      },
+      to_label: { type: 'string', description: 'optional caption label for the destination' },
+      distance_meters: { type: 'number', description: 'optional route distance for the caption' },
+      duration_seconds: { type: 'number', description: 'optional route duration for the caption' },
       profile: { type: 'string', description: "optional: 'driving' | 'walking', for the caption" },
     },
     required: ['polyline', 'from_longitude', 'from_latitude', 'to_longitude', 'to_latitude'],
@@ -236,7 +248,8 @@ const route_map: BuiltinToolDef = {
     const fromLat = num(input.from_latitude);
     const toLon = num(input.to_longitude);
     const toLat = num(input.to_latitude);
-    if (!polyline) return { ok: false, error: 'polyline is required (pass mapbox_directions geometry)' };
+    if (!polyline)
+      return { ok: false, error: 'polyline is required (pass mapbox_directions geometry)' };
     if (fromLon === null || fromLat === null || toLon === null || toLat === null) {
       return { ok: false, error: 'from/to longitude and latitude must be finite numbers' };
     }
@@ -245,7 +258,8 @@ const route_map: BuiltinToolDef = {
     if (!key) {
       return {
         ok: false,
-        error: "No Mapbox key on file. Add one under Settings → API keys (service 'mapbox', label 'default') to plot routes.",
+        error:
+          "No Mapbox key on file. Add one under Settings → API keys (service 'mapbox', label 'default') to plot routes.",
       };
     }
 
@@ -281,8 +295,14 @@ const route_map: BuiltinToolDef = {
       const mimeType = res.headers.get('content-type')?.split(';')[0] || 'image/png';
       const bytes = Buffer.from(await res.arrayBuffer());
 
-      const km = num(input.distance_meters) !== null ? Math.round((input.distance_meters as number) / 100) / 10 : null;
-      const mins = num(input.duration_seconds) !== null ? Math.round((input.duration_seconds as number) / 60) : null;
+      const km =
+        num(input.distance_meters) !== null
+          ? Math.round((input.distance_meters as number) / 100) / 10
+          : null;
+      const mins =
+        num(input.duration_seconds) !== null
+          ? Math.round((input.duration_seconds as number) / 60)
+          : null;
       const fromLabel = strOpt(input.from_label);
       const toLabel = strOpt(input.to_label);
       const captionParts = [
@@ -300,7 +320,9 @@ const route_map: BuiltinToolDef = {
           rendered: true,
           width: w,
           height: h,
-          ...(droppedPath ? { note: 'route line omitted (too long for a static URL); pins only' } : {}),
+          ...(droppedPath
+            ? { note: 'route line omitted (too long for a static URL); pins only' }
+            : {}),
         },
         artifacts: [
           {
@@ -313,7 +335,12 @@ const route_map: BuiltinToolDef = {
         ],
       };
     } catch (err) {
-      const msg = err instanceof Error && err.name === 'AbortError' ? 'static map request timed out' : err instanceof Error ? err.message : String(err);
+      const msg =
+        err instanceof Error && err.name === 'AbortError'
+          ? 'static map request timed out'
+          : err instanceof Error
+            ? err.message
+            : String(err);
       return { ok: false, error: msg };
     }
   },

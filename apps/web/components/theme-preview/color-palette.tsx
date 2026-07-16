@@ -63,17 +63,12 @@ const GROUPS: Array<{ label: string; tokens: Array<[string, string]> }> = [
 function Swatch({ name, value }: { name: string; value: string }) {
   const [resolved, setResolved] = useState('');
   useEffect(() => {
-    const v = getComputedStyle(document.documentElement)
-      .getPropertyValue(`--${name}`)
-      .trim();
+    const v = getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();
     setResolved(v);
   }, [name]);
   return (
     <div className="flex items-center gap-2 rounded-md p-1 transition-colors hover:bg-muted/60">
-      <div
-        className="size-12 shrink-0 rounded-md border"
-        style={{ backgroundColor: value }}
-      />
+      <div className="size-12 shrink-0 rounded-md border" style={{ backgroundColor: value }} />
       <div className="min-w-0 flex-1 space-y-0.5">
         <p className="truncate text-sm font-medium leading-tight">{name}</p>
         <p className="truncate font-mono text-xs text-muted-foreground">{resolved || value}</p>

@@ -98,7 +98,8 @@ async function main() {
     ownerId: USER_ID!,
     slug: 'docs',
     name: 'Docs',
-    description: "Documentation agent — answers how the system works from its indexed docs, with citations.",
+    description:
+      'Documentation agent — answers how the system works from its indexed docs, with citations.',
     role: 'custom' as const,
     model: MODEL,
     apiKeyId,

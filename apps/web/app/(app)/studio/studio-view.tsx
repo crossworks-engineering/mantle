@@ -14,7 +14,15 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, ChevronLeft, Cpu, Layers, Sparkles, Star } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronLeft,
+  Cpu,
+  Layers,
+  Sparkles,
+  Star,
+} from 'lucide-react';
 import { apiFetch } from '@/lib/api-fetch';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
@@ -51,7 +59,9 @@ function Prose({ text }: { text: string }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+      <p className="text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </p>
       {children}
     </div>
   );
@@ -92,10 +102,24 @@ function AgentInspector({
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-[13px]">
-        <div><span className="text-muted-foreground">Model</span><div className="truncate font-medium">{agent.model}</div></div>
-        <div><span className="text-muted-foreground">Role</span><div className="font-medium">{agent.role}</div></div>
-        <div><span className="text-muted-foreground">Tools</span><div className="font-medium">{agent.toolCount}</div></div>
-        <div><span className="text-muted-foreground">Delegates</span><div className="font-medium">{agent.delegateSlugs.length ? agent.delegateSlugs.join(', ') : '—'}</div></div>
+        <div>
+          <span className="text-muted-foreground">Model</span>
+          <div className="truncate font-medium">{agent.model}</div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Role</span>
+          <div className="font-medium">{agent.role}</div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Tools</span>
+          <div className="font-medium">{agent.toolCount}</div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Delegates</span>
+          <div className="font-medium">
+            {agent.delegateSlugs.length ? agent.delegateSlugs.join(', ') : '—'}
+          </div>
+        </div>
       </div>
 
       <StructureEditor
@@ -106,7 +130,11 @@ function AgentInspector({
       />
 
       {agent.missingSkillSlugs.length > 0 && (
-        <Issues issues={agent.missingSkillSlugs.map((s) => `attached skill '${s}' is missing or disabled — silently dropped at runtime`)} />
+        <Issues
+          issues={agent.missingSkillSlugs.map(
+            (s) => `attached skill '${s}' is missing or disabled — silently dropped at runtime`,
+          )}
+        />
       )}
 
       <Section title="Composed prompt — what the model receives">
@@ -126,7 +154,9 @@ function AgentInspector({
         ) : (
           <div className="flex flex-col gap-2">
             <div className="flex flex-col gap-1">
-              <p className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/80">System prompt</p>
+              <p className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                System prompt
+              </p>
               <ProseEditor
                 entityType="agent"
                 entityId={agent.id}
@@ -139,7 +169,9 @@ function AgentInspector({
               <div key={b.slug} className="flex flex-col gap-1">
                 <p className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/80">
                   <Sparkles className="size-3" aria-hidden /> Skill: {b.name}
-                  <span className="ml-1 normal-case tracking-normal text-muted-foreground/60">(edit on the skill)</span>
+                  <span className="ml-1 normal-case tracking-normal text-muted-foreground/60">
+                    (edit on the skill)
+                  </span>
                 </p>
                 <Prose text={b.instructions.trim() || '(no instructions — contributes nothing)'} />
               </div>
@@ -164,11 +196,15 @@ function SkillInspector({ skill, onSaved }: { skill: StudioSkillDetail; onSaved:
         <h2 className="text-base font-semibold">{skill.name}</h2>
         {!skill.enabled && <Badge variant="secondary">disabled</Badge>}
       </div>
-      <Section title={`Used by ${skill.usedByAgentSlugs.length} agent${skill.usedByAgentSlugs.length === 1 ? '' : 's'}`}>
+      <Section
+        title={`Used by ${skill.usedByAgentSlugs.length} agent${skill.usedByAgentSlugs.length === 1 ? '' : 's'}`}
+      >
         {skill.usedByAgentSlugs.length ? (
           <div className="flex flex-wrap gap-1.5">
             {skill.usedByAgentSlugs.map((a) => (
-              <Badge key={a} variant="outline">{a}</Badge>
+              <Badge key={a} variant="outline">
+                {a}
+              </Badge>
             ))}
           </div>
         ) : (
@@ -196,27 +232,38 @@ function GroupInspector({ group }: { group: StudioToolGroupDetail }) {
         <h2 className="text-base font-semibold">{group.name}</h2>
         {!group.enabled && <Badge variant="secondary">disabled</Badge>}
       </div>
-      <Section title={`Granted to ${group.usedByAgentSlugs.length} agent${group.usedByAgentSlugs.length === 1 ? '' : 's'}`}>
+      <Section
+        title={`Granted to ${group.usedByAgentSlugs.length} agent${group.usedByAgentSlugs.length === 1 ? '' : 's'}`}
+      >
         {group.usedByAgentSlugs.length ? (
           <div className="flex flex-wrap gap-1.5">
             {group.usedByAgentSlugs.map((a) => (
-              <Badge key={a} variant="outline">{a}</Badge>
+              <Badge key={a} variant="outline">
+                {a}
+              </Badge>
             ))}
           </div>
         ) : (
           <p className="text-[13px] text-muted-foreground">Not granted to any agent yet.</p>
         )}
       </Section>
-      <Section title={`Bundles ${group.toolSlugs.length} tool${group.toolSlugs.length === 1 ? '' : 's'}`}>
+      <Section
+        title={`Bundles ${group.toolSlugs.length} tool${group.toolSlugs.length === 1 ? '' : 's'}`}
+      >
         <div className="flex flex-wrap gap-1.5">
           {group.toolSlugs.map((t) => (
-            <Badge key={t} variant="secondary" className="font-mono text-[12px]">{t}</Badge>
+            <Badge key={t} variant="secondary" className="font-mono text-[12px]">
+              {t}
+            </Badge>
           ))}
         </div>
       </Section>
       <p className="text-[13px] text-muted-foreground">
         Tool groups are capability bundles — edit their membership in{' '}
-        <a href="/settings/tool-groups" className="text-primary hover:underline">Settings → Tool groups</a>.
+        <a href="/settings/tool-groups" className="text-primary hover:underline">
+          Settings → Tool groups
+        </a>
+        .
       </p>
     </div>
   );
@@ -232,8 +279,14 @@ function WorkerInspector({ worker, onSaved }: { worker: StudioWorkerDetail; onSa
         {!worker.enabled && <Badge variant="secondary">disabled</Badge>}
       </div>
       <div className="grid grid-cols-2 gap-2 text-[13px]">
-        <div><span className="text-muted-foreground">Kind</span><div className="font-medium">{worker.kind}</div></div>
-        <div><span className="text-muted-foreground">Model</span><div className="truncate font-medium">{worker.model}</div></div>
+        <div>
+          <span className="text-muted-foreground">Kind</span>
+          <div className="font-medium">{worker.kind}</div>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Model</span>
+          <div className="truncate font-medium">{worker.model}</div>
+        </div>
       </div>
       <Issues issues={worker.issues} />
       {worker.systemPrompt != null && (
@@ -272,7 +325,10 @@ function HealthReport({ graph }: { graph: StudioGraph }) {
         System health — the config-integrity checks
       </p>
       {graph.report.checks.map((c) => (
-        <div key={c.key} className="flex items-start gap-2 rounded-md border border-border p-2.5 text-[13px]">
+        <div
+          key={c.key}
+          className="flex items-start gap-2 rounded-md border border-border p-2.5 text-[13px]"
+        >
           {c.ok ? (
             <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-500" aria-hidden />
           ) : (
@@ -282,7 +338,9 @@ function HealthReport({ graph }: { graph: StudioGraph }) {
             <span className="font-medium">{c.label}</span>
             <span className="text-muted-foreground">{c.detail}</span>
             {c.samples?.map((s) => (
-              <span key={s.id} className="mt-0.5 text-destructive">· {s.id}: {s.detail}</span>
+              <span key={s.id} className="mt-0.5 text-destructive">
+                · {s.id}: {s.detail}
+              </span>
             ))}
           </div>
         </div>
@@ -354,7 +412,9 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
     for (const g of focusedAgent.toolGroupSlugs) keep.add(`group:${g}`);
     return {
       nodes: graph.nodes.filter((n) => keep.has(n.id)),
-      edges: graph.edges.filter((e) => e.source === `agent:${focusedAgent.slug}` && keep.has(e.target)),
+      edges: graph.edges.filter(
+        (e) => e.source === `agent:${focusedAgent.slug}` && keep.has(e.target),
+      ),
     };
   }, [graph, focusedAgent]);
 
@@ -401,7 +461,11 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                 {graph.agents.map((a) => (
                   <SelectItem key={a.slug} value={`agent:${a.slug}`}>
                     <span className="font-medium">{a.name}</span>
-                    {a.isPersona && <span className="ml-2 text-[12px] uppercase tracking-wider text-amber-500">persona</span>}
+                    {a.isPersona && (
+                      <span className="ml-2 text-[12px] uppercase tracking-wider text-amber-500">
+                        persona
+                      </span>
+                    )}
                   </SelectItem>
                 ))}
               </SelectGroup>
@@ -414,7 +478,8 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
             </SelectContent>
           </Select>
           <span className="hidden text-[13px] text-muted-foreground sm:inline">
-            {graph.agents.length} agents · {graph.skills.length} skills · {graph.toolGroups.length} groups · {graph.workers.length} workers
+            {graph.agents.length} agents · {graph.skills.length} skills · {graph.toolGroups.length}{' '}
+            groups · {graph.workers.length} workers
           </span>
         </div>
         {graph.report.problems === 0 ? (
@@ -427,7 +492,8 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
             onClick={() => changeSelection('view:health')}
             className="flex items-center gap-1.5 text-[13px] font-medium text-destructive hover:underline"
           >
-            <AlertTriangle className="size-3.5" aria-hidden /> {graph.report.problems} issue{graph.report.problems === 1 ? '' : 's'}
+            <AlertTriangle className="size-3.5" aria-hidden /> {graph.report.problems} issue
+            {graph.report.problems === 1 ? '' : 's'}
           </button>
         )}
       </header>
@@ -448,15 +514,27 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                   aria-current={workerIndex === i ? 'true' : undefined}
                   className={
                     'flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left text-[13px] ' +
-                    (workerIndex === i ? 'border-primary bg-accent/60' : 'border-border hover:bg-accent/60')
+                    (workerIndex === i
+                      ? 'border-primary bg-accent/60'
+                      : 'border-border hover:bg-accent/60')
                   }
                 >
                   <span className="flex items-center gap-1.5">
-                    <span className={'size-2 rounded-full ' + (w.enabled ? 'bg-emerald-500' : 'bg-muted-foreground/40')} aria-hidden />
+                    <span
+                      className={
+                        'size-2 rounded-full ' +
+                        (w.enabled ? 'bg-emerald-500' : 'bg-muted-foreground/40')
+                      }
+                      aria-hidden
+                    />
                     <span className="font-medium">{w.name}</span>
                     <span className="text-muted-foreground">· {w.kind}</span>
                   </span>
-                  {w.isDefault && <Badge variant="outline" className="text-[11px]">default</Badge>}
+                  {w.isDefault && (
+                    <Badge variant="outline" className="text-[11px]">
+                      default
+                    </Badge>
+                  )}
                 </button>
               ))}
             </div>
@@ -465,7 +543,9 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
             {selectedWorker ? (
               <WorkerInspector key={selectedWorker.id} worker={selectedWorker} onSaved={onSaved} />
             ) : (
-              <p className="text-[13px] text-muted-foreground">Select a worker to see its model + prose.</p>
+              <p className="text-[13px] text-muted-foreground">
+                Select a worker to see its model + prose.
+              </p>
             )}
           </aside>
         </div>
@@ -475,7 +555,15 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
             <StudioCanvas
               nodes={sub.nodes}
               edges={sub.edges}
-              selectedId={inspectedSkill ? `skill:${inspectedSkill}` : inspectedGroup ? `group:${inspectedGroup}` : focusedSlug ? `agent:${focusedSlug}` : null}
+              selectedId={
+                inspectedSkill
+                  ? `skill:${inspectedSkill}`
+                  : inspectedGroup
+                    ? `group:${inspectedGroup}`
+                    : focusedSlug
+                      ? `agent:${focusedSlug}`
+                      : null
+              }
               onSelect={onCanvasSelect}
             />
           </div>
@@ -489,7 +577,11 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
                 >
                   <ChevronLeft className="size-3.5" aria-hidden /> {focusedAgent?.name ?? 'agent'}
                 </button>
-                <SkillInspector key={inspectedSkillDetail.slug} skill={inspectedSkillDetail} onSaved={onSaved} />
+                <SkillInspector
+                  key={inspectedSkillDetail.slug}
+                  skill={inspectedSkillDetail}
+                  onSaved={onSaved}
+                />
               </>
             ) : inspectedGroupDetail ? (
               <>

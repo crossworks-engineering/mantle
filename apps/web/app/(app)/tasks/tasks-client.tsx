@@ -22,7 +22,12 @@ type Selection = { mode: 'create' } | { mode: 'view'; id: string } | null;
 function dueLabel(iso: string): string {
   const diff = new Date(iso).getTime() - Date.now();
   const days = Math.round(diff / 86_400_000);
-  if (Math.abs(days) < 1) return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (Math.abs(days) < 1)
+    return new Date(iso).toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
   if (days < 0) return `${Math.abs(days)}d ago`;
   if (days < 7) return `in ${days}d`;
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -154,7 +159,9 @@ export function TasksClient() {
     setTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, status: next } : x))); // optimistic
     let task: TaskRow;
     try {
-      ({ task } = await apiSend<{ task: TaskRow }>(`/api/tasks/${t.id}`, 'PATCH', { status: next }));
+      ({ task } = await apiSend<{ task: TaskRow }>(`/api/tasks/${t.id}`, 'PATCH', {
+        status: next,
+      }));
     } catch (e) {
       setTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, status: t.status } : x))); // revert
       if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
@@ -211,7 +218,9 @@ export function TasksClient() {
       {/* ── Left: task list ──────────────────────────────────────── */}
       <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
         <div className="flex items-center justify-between gap-2 border-b border-border p-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Tasks</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Tasks
+          </h2>
           <Button type="button" size="sm" onClick={() => setSel({ mode: 'create' })}>
             <Plus /> New
           </Button>
@@ -242,7 +251,9 @@ export function TasksClient() {
             </select>
             <select
               value={priority}
-              onChange={(e) => go({ priority: e.target.value === 'all' ? null : e.target.value, page: null })}
+              onChange={(e) =>
+                go({ priority: e.target.value === 'all' ? null : e.target.value, page: null })
+              }
               className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm"
               aria-label="Filter by priority"
             >
@@ -285,7 +296,9 @@ export function TasksClient() {
                     onClick={() => toggleStatus(t)}
                     className={cn(
                       'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors',
-                      done ? 'border-primary bg-primary text-primary-foreground' : 'border-input hover:bg-muted',
+                      done
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-input hover:bg-muted',
                     )}
                     aria-label={done ? 'Mark open' : 'Mark done'}
                     aria-pressed={done}
@@ -301,7 +314,12 @@ export function TasksClient() {
                     className="min-w-0 flex-1 text-left"
                   >
                     <div className="flex items-baseline gap-2">
-                      <span className={cn('truncate text-sm font-medium', done && 'text-muted-foreground line-through')}>
+                      <span
+                        className={cn(
+                          'truncate text-sm font-medium',
+                          done && 'text-muted-foreground line-through',
+                        )}
+                      >
                         {t.title}
                       </span>
                       {t.dueAt && (
@@ -316,12 +334,17 @@ export function TasksClient() {
                       )}
                     </div>
                     {(t.body || t.summary) && (
-                      <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{t.body || t.summary}</p>
+                      <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                        {t.body || t.summary}
+                      </p>
                     )}
                     {t.tags.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {t.tags.map((tag) => (
-                          <span key={tag} className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          <span
+                            key={tag}
+                            className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                          >
                             {tag}
                           </span>
                         ))}

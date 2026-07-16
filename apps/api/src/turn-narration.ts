@@ -40,7 +40,10 @@ export function isTurnNarrationEnabled(): boolean {
  *  this is just a runaway guard. */
 function tidy(raw: string): string {
   let s = raw.trim().replace(/\s+/g, ' ');
-  s = s.replace(/^["“”'']+/, '').replace(/["“”'']+$/, '').trim();
+  s = s
+    .replace(/^["“”'']+/, '')
+    .replace(/["“”'']+$/, '')
+    .trim();
   if (s.length > 400) s = `${s.slice(0, 399)}…`;
   return s;
 }
@@ -83,7 +86,10 @@ export async function narrateStatus(ownerId: string, grounded: string): Promise<
     const text = tidy(result.text ?? '');
     return text || null;
   } catch (err) {
-    console.warn('[narrator] failed (keeping grounded line):', err instanceof Error ? err.message : err);
+    console.warn(
+      '[narrator] failed (keeping grounded line):',
+      err instanceof Error ? err.message : err,
+    );
     return null;
   }
 }

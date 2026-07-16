@@ -49,7 +49,9 @@ function DiffView({ from, to }: { from: string; to: string }) {
                 : 'text-muted-foreground'
           }
         >
-          <span className="select-none opacity-60">{l.type === 'add' ? '+ ' : l.type === 'del' ? '- ' : '  '}</span>
+          <span className="select-none opacity-60">
+            {l.type === 'add' ? '+ ' : l.type === 'del' ? '- ' : '  '}
+          </span>
           {l.text || ' '}
         </div>
       ))}
@@ -167,8 +169,17 @@ export function ProseEditor({
     return (
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <p className="text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">History</p>
-          <Button size="sm" variant="ghost" onClick={() => { setMode('view'); setDiffFrom(null); }}>
+          <p className="text-[13px] font-semibold uppercase tracking-wider text-muted-foreground">
+            History
+          </p>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setMode('view');
+              setDiffFrom(null);
+            }}
+          >
             <X /> Close
           </Button>
         </div>
@@ -176,7 +187,9 @@ export function ProseEditor({
         {versions === null ? (
           <p className="text-[13px] text-muted-foreground">Loading…</p>
         ) : versions.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">No saved versions yet — this field hasn’t been edited in the Studio.</p>
+          <p className="text-[13px] text-muted-foreground">
+            No saved versions yet — this field hasn’t been edited in the Studio.
+          </p>
         ) : (
           <div className="flex flex-col gap-1">
             {versions.map((v) => (
@@ -184,7 +197,9 @@ export function ProseEditor({
                 <div className="flex items-center justify-between gap-2 text-[13px]">
                   <span className="flex items-center gap-1.5">
                     <span className="font-semibold tabular-nums">v{v.version}</span>
-                    <span className="text-muted-foreground">{new Date(v.createdAt).toLocaleString()}</span>
+                    <span className="text-muted-foreground">
+                      {new Date(v.createdAt).toLocaleString()}
+                    </span>
                     {v.note && <span className="italic text-muted-foreground">· {v.note}</span>}
                   </span>
                   <span className="flex gap-1">
@@ -220,14 +235,25 @@ export function ProseEditor({
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex justify-end gap-1">
-        <Button size="sm" variant="ghost" className="h-6 px-2 text-[13px]" onClick={() => { setDraft(value); setMode('edit'); }}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[13px]"
+          onClick={() => {
+            setDraft(value);
+            setMode('edit');
+          }}
+        >
           <Pencil className="size-3" /> Edit
         </Button>
         <Button
           size="sm"
           variant="ghost"
           className="h-6 px-2 text-[13px]"
-          onClick={() => { setMode('history'); void loadVersions(); }}
+          onClick={() => {
+            setMode('history');
+            void loadVersions();
+          }}
         >
           <History className="size-3" /> History
         </Button>

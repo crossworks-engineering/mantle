@@ -15,7 +15,11 @@ function mockEmbed(vec: number[]): Call[] {
     calls.push({ url: String(url), body: JSON.parse(init?.body ?? '{}') });
     return {
       ok: true,
-      json: async () => ({ data: [{ embedding: vec, index: 0 }], model: 'm', usage: { prompt_tokens: 3 } }),
+      json: async () => ({
+        data: [{ embedding: vec, index: 0 }],
+        model: 'm',
+        usage: { prompt_tokens: 3 },
+      }),
     };
   }) as unknown as typeof fetch;
   return calls;
@@ -97,7 +101,10 @@ describe('local-embedding adapter', () => {
       calls.push({ input: body.input });
       return {
         ok: true,
-        json: async () => ({ data: body.input.map((_, i) => ({ embedding: [i], index: i })), model: 'm' }),
+        json: async () => ({
+          data: body.input.map((_, i) => ({ embedding: [i], index: i })),
+          model: 'm',
+        }),
       };
     }) as unknown as typeof fetch;
     const a = getEmbeddingAdapter('local')!;

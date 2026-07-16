@@ -5,12 +5,7 @@
  * (verified against their docs).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  getTtsAdapter,
-  getSttAdapter,
-  getImageGenAdapter,
-  isProviderWired,
-} from './index';
+import { getTtsAdapter, getSttAdapter, getImageGenAdapter, isProviderWired } from './index';
 
 afterEach(() => {
   vi.restoreAllMocks();

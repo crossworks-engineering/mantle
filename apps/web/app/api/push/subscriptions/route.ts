@@ -23,7 +23,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }
   const label = typeof body?.['label'] === 'string' ? (body['label'] as string) : null;
-  const relayDeviceId = typeof body?.['deviceId'] === 'string' ? (body['deviceId'] as string) : null;
+  const relayDeviceId =
+    typeof body?.['deviceId'] === 'string' ? (body['deviceId'] as string) : null;
 
   const { id } = await insertSubscription({
     ownerId: owner.id,

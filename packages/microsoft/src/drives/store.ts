@@ -36,7 +36,13 @@ export async function storeRemoteFileAsNode(args: {
   const [existing] = await db
     .select({ id: nodes.id })
     .from(nodes)
-    .where(and(eq(nodes.ownerId, args.ownerId), eq(nodes.type, 'file'), sql`${nodes.data}->>'sha256' = ${sha256}`))
+    .where(
+      and(
+        eq(nodes.ownerId, args.ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.data}->>'sha256' = ${sha256}`,
+      ),
+    )
     .limit(1);
   if (existing) return { nodeId: existing.id, sha256, deduped: true };
 

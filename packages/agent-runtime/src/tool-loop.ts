@@ -115,7 +115,11 @@ export function resolveMaxTokens(
  * logic doesn't care which path ran. Streaming is pure decoration around the
  * durable result. `round` tags each delta so the client can scope the live reply.
  */
-function dispatchChat(adapter: ChatDispatcher, opts: ChatOptions, round: number): Promise<ChatResult> {
+function dispatchChat(
+  adapter: ChatDispatcher,
+  opts: ChatOptions,
+  round: number,
+): Promise<ChatResult> {
   // Thread the current turn's cancellation signal into every LLM call so a user
   // Stop aborts generation (the streaming adapter returns its partial reply).
   const withSignal = { ...opts, signal: currentTurnAbortSignal() };
@@ -179,7 +183,9 @@ const NO_PROGRESS_LIMIT = 5; // identical call returned the identical result N t
 // and 'enforce' is flipped per box once the violation rate is understood.
 export type ToolValidationMode = 'off' | 'warn' | 'enforce';
 
-export function resolveToolValidationMode(env: string | undefined = process.env.MANTLE_TOOL_VALIDATION): ToolValidationMode {
+export function resolveToolValidationMode(
+  env: string | undefined = process.env.MANTLE_TOOL_VALIDATION,
+): ToolValidationMode {
   const raw = (env ?? '').trim().toLowerCase();
   return raw === 'off' || raw === 'enforce' ? raw : 'warn';
 }
@@ -187,7 +193,8 @@ export function resolveToolValidationMode(env: string | undefined = process.env.
 /** Resolve a per-agent cap override: positive ints only, floored, clamped to
  *  the hard ceiling; anything else falls back to the flat default. */
 function resolveCap(requested: number | undefined, fallback: number, ceiling: number): number {
-  if (typeof requested !== 'number' || !Number.isFinite(requested) || requested < 1) return fallback;
+  if (typeof requested !== 'number' || !Number.isFinite(requested) || requested < 1)
+    return fallback;
   return Math.min(ceiling, Math.floor(requested));
 }
 
@@ -273,10 +280,7 @@ function formatOutcomeSummary(stats: ToolOutcomeStats): string {
   if (stats.skipped > 0) parts.push(`${stats.skipped} blocked by guards (never ran)`);
   let line = `Tool-call record for this turn (runtime ledger, not memory): ${stats.calls} issued — ${parts.join(', ')}.`;
   if (stats.failures.length > 0) {
-    line +=
-      ` Failed: ` +
-      stats.failures.map((f) => `${f.slug} (${f.error})`).join('; ') +
-      `.`;
+    line += ` Failed: ` + stats.failures.map((f) => `${f.slug} (${f.error})`).join('; ') + `.`;
   }
   return line;
 }
@@ -431,10 +435,7 @@ export type ToolLoopArgs = {
  * that have slugs (from the agent's granted tool groups; P6) but not the
  * full rows yet.
  */
-export async function resolveAgentTools(
-  ownerId: string,
-  slugs: string[],
-): Promise<Tool[]> {
+export async function resolveAgentTools(ownerId: string, slugs: string[]): Promise<Tool[]> {
   if (slugs.length === 0) return [];
   return resolveTools(ownerId, slugs);
 }
@@ -461,8 +462,10 @@ export async function buildToolsForModel(
 ): Promise<ChatToolDefinition[]> {
   return Promise.all(
     tools.map(async (t) => {
-      let parameters =
-        (t.inputSchema as Record<string, unknown>) ?? { type: 'object', properties: {} };
+      let parameters = (t.inputSchema as Record<string, unknown>) ?? {
+        type: 'object',
+        properties: {},
+      };
       let description = t.description;
       const hook = getDynamicSchema(t.slug);
       if (hook) {
@@ -613,7 +616,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           messages,
           toolChoice: 'none',
           cacheControl: { systemPrompt: true },
-          ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
+          ...(typeof args.params.max_retries === 'number'
+            ? { maxRetries: args.params.max_retries }
+            : {}),
         });
         recordChatUsage(h, r, active.model);
         tokensOut += r.tokensOut ?? 0;
@@ -682,16 +687,22 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           ...(thinkingBudget === 0 && typeof args.params.top_p === 'number'
             ? { topP: args.params.top_p }
             : {}),
-          ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
+          ...(typeof args.params.max_retries === 'number'
+            ? { maxRetries: args.params.max_retries }
+            : {}),
         };
         try {
-          const r = await dispatchChat(active.adapter, {
-            apiKey: active.apiKey,
-            model: active.model,
-            ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
-            ...(active.viaTailnet ? { viaTailnet: true } : {}),
-            ...chatOpts,
-          }, iter);
+          const r = await dispatchChat(
+            active.adapter,
+            {
+              apiKey: active.apiKey,
+              model: active.model,
+              ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
+              ...(active.viaTailnet ? { viaTailnet: true } : {}),
+              ...chatOpts,
+            },
+            iter,
+          );
           recordChatUsage(h, r, active.model);
           tokensOut += r.tokensOut ?? 0;
           return r;
@@ -713,13 +724,17 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
             viaTailnet: args.backup.viaTailnet ?? false,
           };
           failedOver = true;
-          const r = await dispatchChat(active.adapter, {
-            apiKey: active.apiKey,
-            model: active.model,
-            ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
-            ...(active.viaTailnet ? { viaTailnet: true } : {}),
-            ...chatOpts,
-          }, iter);
+          const r = await dispatchChat(
+            active.adapter,
+            {
+              apiKey: active.apiKey,
+              model: active.model,
+              ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
+              ...(active.viaTailnet ? { viaTailnet: true } : {}),
+              ...chatOpts,
+            },
+            iter,
+          );
           recordChatUsage(h, r, active.model);
           tokensOut += r.tokensOut ?? 0;
           return r;
@@ -734,7 +749,15 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       let text = result.text;
       if (!text.trim()) text = await retryEmptyReply('final_round_empty');
       messages.push({ role: 'assistant', content: text });
-      return { reply: text, messages, iterations: iter + 1, toolCalls, pendingIds, artifacts, tokensOut };
+      return {
+        reply: text,
+        messages,
+        iterations: iter + 1,
+        toolCalls,
+        pendingIds,
+        artifacts,
+        tokensOut,
+      };
     }
 
     // Push the assistant message verbatim so the next LLM call sees its
@@ -1101,11 +1124,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         argsJson: call.function.arguments ?? '{}',
         durationMs: duration,
         status: queuedForApproval ? 'skipped' : outcome.ok ? 'success' : 'error',
-        error: queuedForApproval
-          ? 'queued_for_approval'
-          : outcome.ok
-            ? undefined
-            : outcome.error,
+        error: queuedForApproval ? 'queued_for_approval' : outcome.ok ? undefined : outcome.error,
       });
 
       // Harvest any sidecar artifacts the tool emitted (audio bytes,
@@ -1261,20 +1280,26 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       },
     },
     async (h) => {
-      const r = await dispatchChat(active.adapter, {
-        apiKey: active.apiKey,
-        model: active.model,
-        ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
-        ...(active.viaTailnet ? { viaTailnet: true } : {}),
-        messages: messages,
-        // toolChoice: 'none' explicitly disables tool calling for the
-        // final pass — force a text answer. Adapters whose providers
-        // don't honour 'none' fall back to dropping the tools field
-        // (Anthropic) or no-op (xAI/HF treat it as auto).
-        toolChoice: 'none',
-        cacheControl: { systemPrompt: true },
-        ...(typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {}),
-      }, maxIters);
+      const r = await dispatchChat(
+        active.adapter,
+        {
+          apiKey: active.apiKey,
+          model: active.model,
+          ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
+          ...(active.viaTailnet ? { viaTailnet: true } : {}),
+          messages: messages,
+          // toolChoice: 'none' explicitly disables tool calling for the
+          // final pass — force a text answer. Adapters whose providers
+          // don't honour 'none' fall back to dropping the tools field
+          // (Anthropic) or no-op (xAI/HF treat it as auto).
+          toolChoice: 'none',
+          cacheControl: { systemPrompt: true },
+          ...(typeof args.params.max_retries === 'number'
+            ? { maxRetries: args.params.max_retries }
+            : {}),
+        },
+        maxIters,
+      );
       recordChatUsage(h, r, active.model);
       tokensOut += r.tokensOut ?? 0;
       return r;
@@ -1283,5 +1308,13 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   let text = finalResult.text;
   if (!text.trim()) text = await retryEmptyReply('force_final_empty');
   messages.push({ role: 'assistant', content: text });
-  return { reply: text, messages, iterations: maxIters + 1, toolCalls, pendingIds, artifacts, tokensOut };
+  return {
+    reply: text,
+    messages,
+    iterations: maxIters + 1,
+    toolCalls,
+    pendingIds,
+    artifacts,
+    tokensOut,
+  };
 }

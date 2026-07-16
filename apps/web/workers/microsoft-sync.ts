@@ -77,9 +77,17 @@ async function main() {
   // ── sync worker ──────────────────────────────────────────────────────
   await boss.work<DriveSyncJob>(SYNC_QUEUE, async (jobs) => {
     for (const job of jobs) {
-      const [drive] = await db.select().from(msDrives).where(eq(msDrives.id, job.data.driveDbId)).limit(1);
+      const [drive] = await db
+        .select()
+        .from(msDrives)
+        .where(eq(msDrives.id, job.data.driveDbId))
+        .limit(1);
       if (!drive || !drive.enabled) continue;
-      const [account] = await db.select().from(msAccounts).where(eq(msAccounts.id, drive.accountId)).limit(1);
+      const [account] = await db
+        .select()
+        .from(msAccounts)
+        .where(eq(msAccounts.id, drive.accountId))
+        .limit(1);
       if (!account || !account.enabled) continue;
 
       try {
@@ -127,7 +135,10 @@ async function main() {
     }
   });
 
-  console.log('[microsoft-sync] worker up. Queues:', [SYNC_QUEUE, MAIL_QUEUE, SCHEDULER_QUEUE].join(', '));
+  console.log(
+    '[microsoft-sync] worker up. Queues:',
+    [SYNC_QUEUE, MAIL_QUEUE, SCHEDULER_QUEUE].join(', '),
+  );
 
   const shutdown = async () => {
     console.log('[microsoft-sync] shutting down…');

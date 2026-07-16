@@ -97,7 +97,14 @@ const colorSpanExtension: TokenizerAndRendererExtension = {
     if (!m) return undefined;
     const { color, highlight } = parseColorAttrs(m[2]!);
     if (!color && !highlight) return undefined; // not a colour span — let link/text handle it
-    return { type: 'colorSpan', raw: m[0], text: m[1]!, tokens: this.lexer.inlineTokens(m[1]!), color, highlight };
+    return {
+      type: 'colorSpan',
+      raw: m[0],
+      text: m[1]!,
+      tokens: this.lexer.inlineTokens(m[1]!),
+      color,
+      highlight,
+    };
   },
   renderer() {
     return ''; // unused — this converter reads the token, not rendered HTML
@@ -158,7 +165,10 @@ function inline(tokens: Tok[] | undefined, marks: PMMark[] = []): PMNode[] {
       case 'escape':
       case 'html': {
         const text = t.text ?? '';
-        if (text) out.push(marks.length ? { type: 'text', text, marks: [...marks] } : { type: 'text', text });
+        if (text)
+          out.push(
+            marks.length ? { type: 'text', text, marks: [...marks] } : { type: 'text', text },
+          );
         break;
       }
       case 'strong':
@@ -186,7 +196,9 @@ function inline(tokens: Tok[] | undefined, marks: PMMark[] = []): PMNode[] {
         break;
       }
       case 'link':
-        out.push(...inline(t.tokens, withMark(marks, { type: 'link', attrs: { href: t.href ?? '' } })));
+        out.push(
+          ...inline(t.tokens, withMark(marks, { type: 'link', attrs: { href: t.href ?? '' } })),
+        );
         break;
       case 'inlineMath':
         out.push({ type: 'inlineMath', attrs: { latex: t.latex ?? t.text ?? '' } });
@@ -200,7 +212,11 @@ function inline(tokens: Tok[] | undefined, marks: PMMark[] = []): PMNode[] {
         break;
       default:
         if (t.text)
-          out.push(marks.length ? { type: 'text', text: t.text, marks: [...marks] } : { type: 'text', text: t.text });
+          out.push(
+            marks.length
+              ? { type: 'text', text: t.text, marks: [...marks] }
+              : { type: 'text', text: t.text },
+          );
     }
   }
   return out;
@@ -441,7 +457,11 @@ export function markdownToDoc(source: string): Record<string, unknown> {
         content.push(asideNode(body, color, 135));
       } else {
         const variant = CALLOUT_VARIANTS.has(kind) ? kind : 'info';
-        content.push({ type: 'callout', attrs: { variant }, content: nonEmpty(blocks(lex(body.join('\n')))) });
+        content.push({
+          type: 'callout',
+          attrs: { variant },
+          content: nonEmpty(blocks(lex(body.join('\n')))),
+        });
       }
       continue;
     }

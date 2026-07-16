@@ -59,7 +59,8 @@ export async function safeFetch(
     if (next.origin !== new URL(currentUrl).origin) {
       headers = Object.fromEntries(
         Object.entries(headers).filter(
-          ([k, v]) => !CROSS_ORIGIN_STRIP.has(k.toLowerCase()) && !carriers.some((s) => v.includes(s)),
+          ([k, v]) =>
+            !CROSS_ORIGIN_STRIP.has(k.toLowerCase()) && !carriers.some((s) => v.includes(s)),
         ),
       );
     }

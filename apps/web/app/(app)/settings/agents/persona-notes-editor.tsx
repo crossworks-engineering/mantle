@@ -211,8 +211,8 @@ export function PersonaNotesEditor({
 
       {active.length === 0 ? (
         <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-          Nothing learned yet. As you chat, the reflector will note durable preferences here — or add
-          one yourself.
+          Nothing learned yet. As you chat, the reflector will note durable preferences here — or
+          add one yourself.
         </p>
       ) : filtered.length === 0 ? (
         <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
@@ -222,7 +222,7 @@ export function PersonaNotesEditor({
         <ul className="space-y-1.5">
           {pageItems.map((n, i) => {
             const k = n.id ?? `idx-${i}`;
-            const isEditing = editingRef !== null && (n.id === editingRef);
+            const isEditing = editingRef !== null && n.id === editingRef;
             return (
               <li
                 key={k}
@@ -251,11 +251,7 @@ export function PersonaNotesEditor({
                         onClick={saveEdit}
                         disabled={busy || !editText.trim()}
                       >
-                        {busy ? (
-                          <Loader2 className="animate-spin" />
-                        ) : (
-                          <Check />
-                        )}
+                        {busy ? <Loader2 className="animate-spin" /> : <Check />}
                       </Button>
                     </div>
                   </div>

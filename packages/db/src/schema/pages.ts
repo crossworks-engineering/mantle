@@ -13,7 +13,10 @@ export const pages = pgTable('pages', {
   nodeId: uuid('node_id')
     .primaryKey()
     .references(() => nodes.id, { onDelete: 'cascade' }),
-  doc: jsonb('doc').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  doc: jsonb('doc')
+    .$type<Record<string, unknown>>()
+    .default(sql`'{}'::jsonb`)
+    .notNull(),
   docText: text('doc_text').default('').notNull(),
   // Autosaved working copy (null when there are no uncommitted edits). Never
   // rendered or indexed; promoted into `doc` on commit.

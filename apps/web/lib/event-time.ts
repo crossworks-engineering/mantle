@@ -52,7 +52,12 @@ export function formatRelativeShort(iso: string, now: number): string {
   const abs = Math.abs(diff);
   if (abs < MIN) return 'now';
   const unit = abs >= DAY ? 'd' : abs >= HOUR ? 'h' : 'm';
-  const n = abs >= DAY ? Math.round(abs / DAY) : abs >= HOUR ? Math.round(abs / HOUR) : Math.round(abs / MIN);
+  const n =
+    abs >= DAY
+      ? Math.round(abs / DAY)
+      : abs >= HOUR
+        ? Math.round(abs / HOUR)
+        : Math.round(abs / MIN);
   return diff > 0 ? `in ${n}${unit}` : `${n}${unit} ago`;
 }
 
@@ -107,7 +112,10 @@ function dayIndex(ms: number, tz: string): number {
 
 /** RFC5545 UTC stamp: 20260524T143000Z. */
 function icsStamp(iso: string): string {
-  return new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  return new Date(iso)
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}/, '');
 }
 function icsEscape(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');

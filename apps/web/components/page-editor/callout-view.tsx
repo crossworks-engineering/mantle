@@ -1,13 +1,7 @@
 'use client';
 
 import { NodeViewContent, NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Info,
-  OctagonAlert,
-  type LucideIcon,
-} from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, OctagonAlert, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { CALLOUT_VARIANTS, type CalloutVariant } from './callout';
 
@@ -32,7 +26,8 @@ export function CalloutView({ node, updateAttributes, editor }: NodeViewProps) {
 
   // Click the icon to cycle info → success → warning → danger.
   const cycle = () => {
-    const next = CALLOUT_VARIANTS[(CALLOUT_VARIANTS.indexOf(variant) + 1) % CALLOUT_VARIANTS.length];
+    const next =
+      CALLOUT_VARIANTS[(CALLOUT_VARIANTS.indexOf(variant) + 1) % CALLOUT_VARIANTS.length];
     updateAttributes({ variant: next });
   };
 

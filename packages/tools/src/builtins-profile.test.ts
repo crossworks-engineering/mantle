@@ -42,12 +42,16 @@ describe('set_timezone', () => {
     >;
 
     expect(res.ok).toBe(true);
-    expect(updateProfilePreferences).toHaveBeenCalledWith('owner-1', { timezone: 'America/New_York' });
+    expect(updateProfilePreferences).toHaveBeenCalledWith('owner-1', {
+      timezone: 'America/New_York',
+    });
     expect(res.output).toMatchObject({
       timezone: 'America/New_York',
       previous_timezone: 'Africa/Johannesburg',
     });
-    expect((res.output as { current_time_local: string }).current_time_local.length).toBeGreaterThan(0);
+    expect(
+      (res.output as { current_time_local: string }).current_time_local.length,
+    ).toBeGreaterThan(0);
   });
 
   it('rejects an invalid timezone without writing', async () => {

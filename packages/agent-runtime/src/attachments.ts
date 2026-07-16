@@ -163,7 +163,12 @@ export async function runDocumentWorker(opts: {
     (await getDefaultWorker(opts.ownerId, 'document')) ??
     (await getDefaultWorker(opts.ownerId, 'vision'));
   if (!worker?.apiKeyId) {
-    return { ran: false, text: '', note: 'No default document or vision worker configured.', model: null };
+    return {
+      ran: false,
+      text: '',
+      note: 'No default document or vision worker configured.',
+      model: null,
+    };
   }
   const adapter = getVisionAdapter(worker.provider);
   if (!adapter?.extractDocument) {
@@ -286,7 +291,9 @@ async function ocrPdfForTurn(opts: {
       },
     );
     if (res.text.trim()) {
-      parts.push(pages.length > 1 ? `[Page ${pg.pageNumber}]\n${res.text.trim()}` : res.text.trim());
+      parts.push(
+        pages.length > 1 ? `[Page ${pg.pageNumber}]\n${res.text.trim()}` : res.text.trim(),
+      );
     }
   }
 
@@ -333,8 +340,7 @@ export async function extractAttachmentForTurn(opts: {
   question?: string;
 }): Promise<AttachmentExtract> {
   const ext = extOf(opts.filename);
-  const isImage =
-    opts.mimeType.startsWith('image/') || mimeForExt(ext).startsWith('image/');
+  const isImage = opts.mimeType.startsWith('image/') || mimeForExt(ext).startsWith('image/');
 
   if (isImage) {
     const question = opts.question?.trim();
@@ -368,7 +374,13 @@ export async function extractAttachmentForTurn(opts: {
             mimeType: 'application/pdf',
             filename: opts.filename,
           });
-          h.setMeta({ ran: r.ran, note: r.note, model: r.model, textLength: r.text.length, tokensOut: r.tokensOut });
+          h.setMeta({
+            ran: r.ran,
+            note: r.note,
+            model: r.model,
+            textLength: r.text.length,
+            tokensOut: r.tokensOut,
+          });
           return r;
         },
       );
@@ -425,7 +437,11 @@ export async function extractAttachmentForTurn(opts: {
           });
           if (ocr) return { kind: 'file', text: ocr.text, note: ocr.note };
         }
-        return { kind: 'file', text: '', note: `No text could be extracted from ${opts.filename}.` };
+        return {
+          kind: 'file',
+          text: '',
+          note: `No text could be extracted from ${opts.filename}.`,
+        };
       }
       const text =
         raw.length > DOC_TEXT_MAX

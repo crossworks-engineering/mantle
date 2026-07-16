@@ -298,7 +298,10 @@ export function PagesClient() {
     const targetParent = over.id === TOP_LEVEL_DROP_ID ? null : String(over.id);
     if (targetParent === (src.parentId ?? null)) return; // already there — no-op
     // Belt-and-braces with the disabled drop targets + the server cycle guard.
-    if (targetParent && (targetParent === sourceId || descendantIdsOf(sourceId).has(targetParent))) {
+    if (
+      targetParent &&
+      (targetParent === sourceId || descendantIdsOf(sourceId).has(targetParent))
+    ) {
       toast.error("Can't move a page into one of its own sub-pages");
       return;
     }
@@ -575,42 +578,42 @@ export function PagesClient() {
             </DndContext>
           ) : (
             pages.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelectedId(p.id)}
-                    data-mark-id={p.id}
-                    data-mark-kind="page"
-                    data-mark-label={p.title}
-                    className={cn(
-                      'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-muted/50',
-                      selected?.id === p.id && 'border-l-primary',
-                    )}
+              <button
+                key={p.id}
+                onClick={() => setSelectedId(p.id)}
+                data-mark-id={p.id}
+                data-mark-kind="page"
+                data-mark-label={p.title}
+                className={cn(
+                  'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-muted/50',
+                  selected?.id === p.id && 'border-l-primary',
+                )}
+              >
+                <div className="flex items-start gap-2">
+                  <span
+                    className="mt-0.5 size-4 shrink-0 text-center text-sm leading-4"
+                    aria-hidden
                   >
-                    <div className="flex items-start gap-2">
-                      <span
-                        className="mt-0.5 size-4 shrink-0 text-center text-sm leading-4"
-                        aria-hidden
-                      >
-                        {p.icon ?? '📄'}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{p.title}</div>
-                        {p.summary && (
-                          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                            {p.summary}
-                          </p>
-                        )}
-                        {p.tags.length > 0 && (
-                          <div className="mt-1.5 flex flex-wrap gap-1">
-                            {p.tags.map((t) => (
-                              <TagPill key={t} tag={t} />
-                            ))}
-                          </div>
-                        )}
+                    {p.icon ?? '📄'}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{p.title}</div>
+                    {p.summary && (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                        {p.summary}
+                      </p>
+                    )}
+                    {p.tags.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {p.tags.map((t) => (
+                          <TagPill key={t} tag={t} />
+                        ))}
                       </div>
-                    </div>
-                  </button>
-                ))
+                    )}
+                  </div>
+                </div>
+              </button>
+            ))
           )}
         </div>
 
@@ -653,7 +656,11 @@ export function PagesClient() {
       {/* ── Right: preview ─────────────────────────────────────────── */}
       <div className="md:h-full md:overflow-y-auto md:scrollbar-thin">
         {selected ? (
-          <PagePreview key={selected.id} row={selected} onDelete={() => setDeleteTarget(selected)} />
+          <PagePreview
+            key={selected.id}
+            row={selected}
+            onDelete={() => setDeleteTarget(selected)}
+          />
         ) : (
           <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
             Select a page to preview.
@@ -764,11 +771,7 @@ function TreeRow({
   onMove: (parentId: string | null) => void;
 }) {
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: row.id, disabled: disabledDrop });
-  const {
-    setNodeRef: setDragRef,
-    attributes,
-    listeners,
-  } = useDraggable({ id: row.id });
+  const { setNodeRef: setDragRef, attributes, listeners } = useDraggable({ id: row.id });
 
   // Valid "Move to…" parents: every other page except this one and its own
   // descendants (those would cycle). Built lazily — the menu mounts on open.

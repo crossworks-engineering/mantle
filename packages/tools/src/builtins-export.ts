@@ -58,10 +58,16 @@ const export_node: BuiltinToolDef = {
         },
       });
     } catch (err) {
-      return { ok: false, error: `export failed: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        ok: false,
+        error: `export failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
     if (!result) {
-      return { ok: false, error: `node ${nodeId} not found, or it isn't an exportable page/note/table` };
+      return {
+        ok: false,
+        error: `node ${nodeId} not found, or it isn't an exportable page/note/table`,
+      };
     }
 
     // Honour a caller-supplied name but force the correct extension.
@@ -76,7 +82,12 @@ const export_node: BuiltinToolDef = {
         topSlug: 'exports',
         topDescription: 'Documents exported from pages, notes, and tables.',
       });
-      const file = await upsertFile({ ownerId: ctx.ownerId, parentPath, filename, bytes: result.bytes });
+      const file = await upsertFile({
+        ownerId: ctx.ownerId,
+        parentPath,
+        filename,
+        bytes: result.bytes,
+      });
       ctx.step?.setOutput({ file_id: file.id, filename: file.filename, kind: result.kind });
       void recordIngest({
         source: 'agent_tool',

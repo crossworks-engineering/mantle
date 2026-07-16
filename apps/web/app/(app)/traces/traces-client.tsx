@@ -178,7 +178,11 @@ export function TracesClient({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <FilterRow label="Window">
             {HOURS_OPTIONS.map(([value, label]) => (
-              <FilterChip key={value} href={href({ hours: value, page: 1 })} active={hours === value}>
+              <FilterChip
+                key={value}
+                href={href({ hours: value, page: 1 })}
+                active={hours === value}
+              >
                 {label}
               </FilterChip>
             ))}
@@ -281,7 +285,11 @@ export function TracesClient({
                 <span className="tabular-nums">
                   {page} / {totalPages}
                 </span>
-                <PagerLink href={href({ page: page - 1 })} disabled={page <= 1} label="Previous page">
+                <PagerLink
+                  href={href({ page: page - 1 })}
+                  disabled={page <= 1}
+                  label="Previous page"
+                >
                   <ChevronLeft />
                 </PagerLink>
                 <PagerLink
@@ -387,7 +395,14 @@ function PagerLink({
 }) {
   if (disabled) {
     return (
-      <Button type="button" size="icon" variant="outline" className="size-7" disabled aria-label={label}>
+      <Button
+        type="button"
+        size="icon"
+        variant="outline"
+        className="size-7"
+        disabled
+        aria-label={label}
+      >
         {children}
       </Button>
     );

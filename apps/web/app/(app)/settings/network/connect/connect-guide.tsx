@@ -46,7 +46,12 @@ export function ConnectGuide() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 p-1">
       <div>
-        <Button asChild variant="ghost" size="sm" className="-ml-2 mb-2 gap-1.5 text-muted-foreground">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="-ml-2 mb-2 gap-1.5 text-muted-foreground"
+        >
           <Link href="/settings/network">
             <ArrowLeft className="size-4" />
             Local network
@@ -94,8 +99,8 @@ export function ConnectGuide() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground sm:col-span-2">
-            They&apos;re linked by being signed into the <strong>same Tailscale account</strong>. The
-            free tier covers up to 100 devices.
+            They&apos;re linked by being signed into the <strong>same Tailscale account</strong>.
+            The free tier covers up to 100 devices.
           </p>
         </CardContent>
       </Card>
@@ -121,7 +126,9 @@ export function ConnectGuide() {
             </TabsList>
 
             <TabsContent value="linux" className="space-y-3">
-              <p className="text-sm text-muted-foreground">Install, then bring it up and sign in:</p>
+              <p className="text-sm text-muted-foreground">
+                Install, then bring it up and sign in:
+              </p>
               <CopyBlock
                 code={`curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up        # prints a URL — open it, sign in
@@ -141,8 +148,8 @@ tailscale status         # confirm it joined`}
 
             <TabsContent value="macos" className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Install the menu-bar app — it runs the background service for you — then sign in from
-                its icon:
+                Install the menu-bar app — it runs the background service for you — then sign in
+                from its icon:
               </p>
               <CopyBlock
                 code={`brew install --cask tailscale   # the menu-bar app (recommended)
@@ -153,10 +160,10 @@ open -a Tailscale                # then click the icon → Log in`}
                 <Ext href={TS_DOWNLOAD_URL}>Tailscale site</Ext> or the Mac App Store — same thing.
               </p>
               <p className="text-xs text-muted-foreground">
-                Heads-up: the CLI-only formula (<code className="font-mono">brew install tailscale</code>){' '}
-                does <strong>not</strong> start the background daemon, so{' '}
-                <code className="font-mono">tailscale up</code> fails with “is Tailscale running?”. If
-                you hit that, switch to the app:
+                Heads-up: the CLI-only formula (
+                <code className="font-mono">brew install tailscale</code>) does <strong>not</strong>{' '}
+                start the background daemon, so <code className="font-mono">tailscale up</code>{' '}
+                fails with “is Tailscale running?”. If you hit that, switch to the app:
               </p>
               <CopyBlock
                 code={`brew uninstall tailscale
@@ -167,9 +174,8 @@ open -a Tailscale`}
 
             <TabsContent value="windows" className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Download the installer from the{' '}
-                <Ext href={TS_DOWNLOAD_URL}>Tailscale site</Ext>, run it, then sign in from the
-                system-tray icon. That&apos;s the whole join.
+                Download the installer from the <Ext href={TS_DOWNLOAD_URL}>Tailscale site</Ext>,
+                run it, then sign in from the system-tray icon. That&apos;s the whole join.
               </p>
               <p className="text-xs text-muted-foreground">
                 If Windows Defender Firewall is on, allow inbound on your model server&apos;s port
@@ -194,10 +200,10 @@ open -a Tailscale`}
             <p className="text-muted-foreground">
               Bind it to <code className="font-mono">0.0.0.0</code>, not{' '}
               <code className="font-mono">127.0.0.1</code> — otherwise it only answers the box
-              itself and the tailnet can&apos;t reach it. Ollama does this by default; in LM
-              Studio, enable <em>serve on local network</em>. Note the port (
-              <code className="font-mono">11434</code> Ollama, <code className="font-mono">1234</code>{' '}
-              LM Studio).
+              itself and the tailnet can&apos;t reach it. Ollama does this by default; in LM Studio,
+              enable <em>serve on local network</em>. Note the port (
+              <code className="font-mono">11434</code> Ollama,{' '}
+              <code className="font-mono">1234</code> LM Studio).
             </p>
           </div>
           <div className="space-y-1.5">
@@ -254,8 +260,11 @@ docker compose --profile tailnet up -d`}
           <ol className="space-y-3">
             <Step n={1} title="Check the connection">
               <p>
-                Open <Link href="/settings/network" className="underline">Local network</Link>. It
-                should read <strong>Running</strong>, with your model box listed under{' '}
+                Open{' '}
+                <Link href="/settings/network" className="underline">
+                  Local network
+                </Link>
+                . It should read <strong>Running</strong>, with your model box listed under{' '}
                 <strong>Reachable devices</strong> (green dot = online). Names also appear in the{' '}
                 <Ext href={TS_MACHINES_URL}>admin console</Ext>.
               </p>

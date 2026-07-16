@@ -23,7 +23,11 @@ function providerFor(account: CalendarAccount): CalendarProvider {
 /** Slug of the calendar name, applied as a tag so synced events are filterable
  *  by source in the events UI. */
 function calTag(name: string): string {
-  const t = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  const t = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
   return t || 'calendar';
 }
 

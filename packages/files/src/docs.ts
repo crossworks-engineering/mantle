@@ -106,9 +106,8 @@ export function ltreeForDocPath(
   const filename = parts.pop();
   if (!filename) return null;
   const segments = parts.map(dashToLtree);
-  const parentPath = segments.length === 0
-    ? DOCS_ROOT_LABEL
-    : `${DOCS_ROOT_LABEL}.${segments.join('.')}`;
+  const parentPath =
+    segments.length === 0 ? DOCS_ROOT_LABEL : `${DOCS_ROOT_LABEL}.${segments.join('.')}`;
   return { parentPath, filename, relPath };
 }
 
@@ -473,7 +472,13 @@ const BUILTIN_COLLECTIONS: ReadonlyArray<{
   rootPath: string | null;
   brainDepth: DocBrainDepth;
 }> = [
-  { key: 'system', label: 'System docs', origin: 'system', rootPath: null, brainDepth: 'retrieval' },
+  {
+    key: 'system',
+    label: 'System docs',
+    origin: 'system',
+    rootPath: null,
+    brainDepth: 'retrieval',
+  },
   { key: 'guide', label: 'User Guide', origin: 'user', rootPath: 'guide', brainDepth: 'retrieval' },
   {
     key: CHANGELOG_COLLECTION_KEY,

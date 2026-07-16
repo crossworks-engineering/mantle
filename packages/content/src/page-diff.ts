@@ -92,7 +92,7 @@ export function computeDiffOverlay(
     if (isChanged && !descChanged && !nowInsideAdded && id) changeBorder.add(id);
     return isChanged || descChanged;
   };
-  for (const top of ((draft as AnyNode).content ?? [])) walk(top, false);
+  for (const top of (draft as AnyNode).content ?? []) walk(top, false);
 
   // Top-level removals → ghost cards, anchored after the nearest surviving
   // top-level block (by id) so they appear where they used to be.
@@ -100,7 +100,7 @@ export function computeDiffOverlay(
   collectIds(draft as AnyNode, draftIds);
   const removed: RemovedGhost[] = [];
   let lastSurviving: string | null = null;
-  for (const top of ((committed as AnyNode).content ?? [])) {
+  for (const top of (committed as AnyNode).content ?? []) {
     const id = typeof top.attrs?.id === 'string' ? (top.attrs.id as string) : null;
     if (id && draftIds.has(id)) {
       lastSurviving = id;

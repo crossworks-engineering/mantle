@@ -1,6 +1,11 @@
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { agents, db, traceSteps, traces } from '@mantle/db';
-import { contextLimitFor, contextSourceFor, refreshModelCatalog, type ContextSource } from '@mantle/tracing';
+import {
+  contextLimitFor,
+  contextSourceFor,
+  refreshModelCatalog,
+  type ContextSource,
+} from '@mantle/tracing';
 
 /**
  * Aggregate metrics computed over the traces + trace_steps tables.
@@ -114,7 +119,9 @@ export async function recentAgentContext(userId: string): Promise<AgentContext[]
     JOIN agents a ON a.id = lt.agent_id
     ORDER BY lt.started_at DESC
   `);
-  const rows = (Array.isArray(result) ? result : (result as { rows?: AgentContextRow[] }).rows ?? []) as AgentContextRow[];
+  const rows = (
+    Array.isArray(result) ? result : ((result as { rows?: AgentContextRow[] }).rows ?? [])
+  ) as AgentContextRow[];
   return rows.map((r) => {
     const limit = contextLimitFor(r.model);
     const tokensIn = Number(r.max_tokens_in);
@@ -206,10 +213,7 @@ export type CacheHitStats = {
   apiCalls: number;
 };
 
-export async function embedderCacheStats(
-  userId: string,
-  daysBack: number,
-): Promise<CacheHitStats> {
+export async function embedderCacheStats(userId: string, daysBack: number): Promise<CacheHitStats> {
   const since = new Date(Date.now() - daysBack * 86_400_000);
   const rows = await db
     .select({
@@ -341,11 +345,7 @@ export type TopError = {
   lastTraceId: string;
 };
 
-export async function topErrors(
-  userId: string,
-  daysBack: number,
-  limit = 5,
-): Promise<TopError[]> {
+export async function topErrors(userId: string, daysBack: number, limit = 5): Promise<TopError[]> {
   const since = new Date(Date.now() - daysBack * 86_400_000);
   // Group by the first 80 chars of the error message — keeps similar
   // failures clustered without overfitting to stack-trace specifics.
@@ -640,8 +640,7 @@ export async function toolValidationRecent(
           }))
         : [],
       violations: Array.isArray(av.violations) ? (av.violations as unknown[]).map(String) : [],
-      startedAt:
-        r.startedAt instanceof Date ? r.startedAt.toISOString() : String(r.startedAt),
+      startedAt: r.startedAt instanceof Date ? r.startedAt.toISOString() : String(r.startedAt),
     };
   });
 }

@@ -38,7 +38,7 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
     id: 'embed-english-v3.0',
     label: 'embed-english-v3.0',
     description:
-      '1024-dim — does NOT fit the brain\'s vector(768) column. Excellent English retrieval; needs a schema migration to use as Mantle\'s embedding.',
+      "1024-dim — does NOT fit the brain's vector(768) column. Excellent English retrieval; needs a schema migration to use as Mantle's embedding.",
     contextTokens: 512,
     dimensions: 1024,
     inputPricePer1M: 0.1,
@@ -46,8 +46,7 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
   {
     id: 'embed-multilingual-v3.0',
     label: 'embed-multilingual-v3.0',
-    description:
-      '1024-dim — same dim caveat. Strong 100+ language coverage.',
+    description: '1024-dim — same dim caveat. Strong 100+ language coverage.',
     contextTokens: 512,
     dimensions: 1024,
     inputPricePer1M: 0.1,
@@ -154,7 +153,14 @@ export const cohereEmbedding: EmbeddingDispatcher = {
             Array.isArray(m.endpoints) &&
             m.endpoints.includes('embed'),
         )
-        .map((m) => byId.get(m.name) ?? { id: m.name, label: m.name, description: 'Embedding model returned by /v1/models — verify dimensions with Test.' });
+        .map(
+          (m) =>
+            byId.get(m.name) ?? {
+              id: m.name,
+              label: m.name,
+              description: 'Embedding model returned by /v1/models — verify dimensions with Test.',
+            },
+        );
       return { available, filtered: true, error: null };
     } catch (err) {
       return {

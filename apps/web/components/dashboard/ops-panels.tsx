@@ -45,15 +45,25 @@ export function OpsPanels({
           <CardTitle className="flex items-center gap-1.5 text-base">
             <Mail className="size-4 text-muted-foreground" aria-hidden /> Email sync
           </CardTitle>
-          <Link href="/settings/accounts" className="text-xs text-primary underline-offset-2 hover:underline">
+          <Link
+            href="/settings/accounts"
+            className="text-xs text-primary underline-offset-2 hover:underline"
+          >
             Accounts
           </Link>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span><b className="text-foreground">{formatCount(email.total)}</b> emails</span>
-            <span><b className="text-foreground">{formatCount(email.unread)}</b> unread</span>
-            <span><b className="text-foreground">{formatCount(email.withAttachments)}</b> with attachments</span>
+            <span>
+              <b className="text-foreground">{formatCount(email.total)}</b> emails
+            </span>
+            <span>
+              <b className="text-foreground">{formatCount(email.unread)}</b> unread
+            </span>
+            <span>
+              <b className="text-foreground">{formatCount(email.withAttachments)}</b> with
+              attachments
+            </span>
           </div>
           {email.latestSync.length === 0 ? (
             <Empty>No syncs yet.</Empty>
@@ -82,8 +92,12 @@ export function OpsPanels({
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span><b className="text-foreground">{formatCount(telegram.messagesTotal)}</b> messages</span>
-            <span><b className="text-foreground">{formatCount(telegram.unprocessed)}</b> unprocessed</span>
+            <span>
+              <b className="text-foreground">{formatCount(telegram.messagesTotal)}</b> messages
+            </span>
+            <span>
+              <b className="text-foreground">{formatCount(telegram.unprocessed)}</b> unprocessed
+            </span>
           </div>
           {telegram.chatsByStatus.length === 0 ? (
             <Empty>No chats paired.</Empty>
@@ -105,7 +119,10 @@ export function OpsPanels({
           <CardTitle className="flex items-center gap-1.5 text-base">
             <HeartPulse className="size-4 text-muted-foreground" aria-hidden /> Heartbeats
           </CardTitle>
-          <Link href="/settings/heartbeats" className="text-xs text-primary underline-offset-2 hover:underline">
+          <Link
+            href="/settings/heartbeats"
+            className="text-xs text-primary underline-offset-2 hover:underline"
+          >
             Manage
           </Link>
         </CardHeader>
@@ -179,5 +196,9 @@ export function OpsPanels({
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">{children}</p>;
+  return (
+    <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+      {children}
+    </p>
+  );
 }

@@ -1,14 +1,5 @@
 import { sql } from 'drizzle-orm';
-import {
-  index,
-  integer,
-  jsonb,
-  pgEnum,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-} from 'drizzle-orm/pg-core';
+import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { traces } from './traces';
 
 export const traceStepKind = pgEnum('trace_step_kind', [
@@ -38,7 +29,9 @@ export const traceStepStatus = pgEnum('trace_step_status', [
 export const traceSteps = pgTable(
   'trace_steps',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     traceId: uuid('trace_id')
       .notNull()
       .references(() => traces.id, { onDelete: 'cascade' }),
@@ -50,9 +43,18 @@ export const traceSteps = pgTable(
     startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
     durationMs: integer('duration_ms'),
-    input: jsonb('input').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
-    output: jsonb('output').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
-    meta: jsonb('meta').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    input: jsonb('input')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    output: jsonb('output')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    meta: jsonb('meta')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     error: text('error'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },

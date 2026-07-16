@@ -50,7 +50,10 @@ export function CodeEditor({
 
   return (
     <div className={cn('code-view relative overflow-auto bg-card', className)}>
-      <pre aria-hidden className={cn('hljs pointer-events-none min-h-full text-card-foreground', TEXT)}>
+      <pre
+        aria-hidden
+        className={cn('hljs pointer-events-none min-h-full text-card-foreground', TEXT)}
+      >
         <code>
           {highlighted}
           {'\n'}

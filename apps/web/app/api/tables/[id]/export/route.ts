@@ -43,7 +43,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       },
     });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'export failed' }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'export failed' },
+      { status: 500 },
+    );
   } finally {
     await rm(snap, { force: true }).catch(() => {});
   }

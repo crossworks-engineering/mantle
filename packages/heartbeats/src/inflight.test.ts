@@ -18,7 +18,7 @@ describe('inflight — basic state', () => {
     expect(isFireInflight('unused-id')).toBe(false);
   });
 
-  it('runWithInflightLock returns its function\'s value', async () => {
+  it("runWithInflightLock returns its function's value", async () => {
     const result = await runWithInflightLock('hb-1', async () => 42);
     expect(result).toBe(42);
   });
@@ -84,10 +84,7 @@ describe('inflight — serialisation under contention', () => {
     };
 
     // Same id — should serialise.
-    await Promise.all([
-      runWithInflightLock('hb-same', fn),
-      runWithInflightLock('hb-same', gn),
-    ]);
+    await Promise.all([runWithInflightLock('hb-same', fn), runWithInflightLock('hb-same', gn)]);
 
     // The exit of the first MUST come before the enter of the second.
     // Without this, parallelism slipped through and the lock failed.
@@ -145,13 +142,13 @@ describe('inflight — serialisation under contention', () => {
 });
 
 describe('inflight — return-value passthrough', () => {
-  it('returns the inner function\'s exact value (no wrapping)', async () => {
+  it("returns the inner function's exact value (no wrapping)", async () => {
     const obj = { nested: { ok: true } };
     const r = await runWithInflightLock('hb-pass', async () => obj);
     expect(r).toBe(obj); // identity, not just equal
   });
 
-  it('propagates the inner function\'s thrown error verbatim', async () => {
+  it("propagates the inner function's thrown error verbatim", async () => {
     class CustomError extends Error {
       readonly tag = 'custom';
     }

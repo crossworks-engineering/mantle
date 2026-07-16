@@ -34,7 +34,10 @@ function strOpt(v: unknown): string | undefined {
 }
 /** Split a comma-separated recipient string into one-or-many. */
 function recipients(raw: string): string | string[] {
-  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  const parts = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   return parts.length <= 1 ? (parts[0] ?? raw) : parts;
 }
 
@@ -43,7 +46,11 @@ function flatRecipients(...raws: (string | undefined)[]): string[] {
   const out: string[] = [];
   for (const raw of raws) {
     if (!raw) continue;
-    for (const p of raw.split(',').map((s) => s.trim()).filter(Boolean)) out.push(p);
+    for (const p of raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean))
+      out.push(p);
   }
   return out;
 }
@@ -63,10 +70,7 @@ async function blockedRecipients(ownerId: string, addrs: string[]): Promise<stri
     .select({ address: emailAccounts.address })
     .from(emailAccounts)
     .where(eq(emailAccounts.userId, ownerId));
-  const allowed = new Set<string>([
-    ...contacts,
-    ...accounts.map((a) => a.address.toLowerCase()),
-  ]);
+  const allowed = new Set<string>([...contacts, ...accounts.map((a) => a.address.toLowerCase())]);
   return addrs.filter((a) => !allowed.has(normalizeEmail(a)));
 }
 
@@ -95,7 +99,9 @@ async function noteContactActivity(
   method: 'email',
   raws: (string | undefined)[],
 ): Promise<void> {
-  const addrs = flatRecipients(...raws).map(normalizeEmail).filter(Boolean);
+  const addrs = flatRecipients(...raws)
+    .map(normalizeEmail)
+    .filter(Boolean);
   if (addrs.length === 0) return;
   try {
     const idsByEmail = await findContactsByEmails(ownerId, addrs);
@@ -142,7 +148,10 @@ const email_send: BuiltinToolDef = {
     type: 'object',
     properties: {
       to: { type: 'string', description: 'recipient email (comma-separate for multiple)' },
-      subject: { type: 'string', description: 'subject line, e.g. "Quote request: aluminium profiles"' },
+      subject: {
+        type: 'string',
+        description: 'subject line, e.g. "Quote request: aluminium profiles"',
+      },
       body: { type: 'string', description: 'plain-text body' },
       cc: { type: 'string', description: 'optional cc (comma-separate for multiple)' },
       bcc: { type: 'string', description: 'optional bcc (comma-separate for multiple)' },
@@ -221,7 +230,10 @@ const email_page: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      pageId: { type: 'string', description: "The page's id (UUID) — from `page_list` / `search_nodes`." },
+      pageId: {
+        type: 'string',
+        description: "The page's id (UUID) — from `page_list` / `search_nodes`.",
+      },
       to: { type: 'string', description: 'recipient email (comma-separate for multiple)' },
       subject: { type: 'string', description: 'optional — defaults to the page title' },
       cc: { type: 'string', description: 'optional cc (comma-separate for multiple)' },
@@ -304,7 +316,13 @@ const email_page: BuiltinToolDef = {
         ...(bcc ? { bcc: recipients(bcc) } : {}),
         ...(attachments.length ? { attachments } : {}),
       });
-      ctx.step?.setMeta({ from: account.address, to, subject, page_id: pageId, message_id: res.messageId });
+      ctx.step?.setMeta({
+        from: account.address,
+        to,
+        subject,
+        page_id: pageId,
+        message_id: res.messageId,
+      });
       ctx.step?.setOutput({
         messageId: res.messageId,
         accepted: res.accepted,
@@ -341,10 +359,10 @@ const email_list: BuiltinToolDef = {
   slug: 'email_list',
   name: 'List recent emails',
   description:
-    "Recent emails newest-first (sorted by `internal_date` desc, NOT by ingest time). " +
+    'Recent emails newest-first (sorted by `internal_date` desc, NOT by ingest time). ' +
     "**Use this for any time-windowed email question** — 'what came in today / last 5 days', " +
     "'any new mail from X', 'this week's billing', 'anything urgent recently'. Pass `since` " +
-    "for a window; `accountId` to filter to one mailbox. " +
+    'for a window; `accountId` to filter to one mailbox. ' +
     "For topic/keyword searches across emails ('emails about the Lister contract') use " +
     "`search_nodes` with `type='email'` — that's similarity-ranked, not date-sorted, and won't " +
     "respect a time window. For a single email's full body/headers use `email_get`.",
@@ -354,7 +372,8 @@ const email_list: BuiltinToolDef = {
       accountId: { type: 'string', description: 'uuid of an email_accounts row to filter to' },
       since: {
         type: 'string',
-        description: "ISO date or datetime (e.g. '2026-05-21' or '2026-05-21T00:00:00Z') — returns emails with internal_date ≥ this",
+        description:
+          "ISO date or datetime (e.g. '2026-05-21' or '2026-05-21T00:00:00Z') — returns emails with internal_date ≥ this",
       },
       limit: {
         type: 'integer',
@@ -368,9 +387,10 @@ const email_list: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const accountId = strOpt(input.accountId);
     const since = strOpt(input.since);
-    const limit = typeof input.limit === 'number' && Number.isFinite(input.limit)
-      ? Math.min(Math.max(1, Math.floor(input.limit)), 200)
-      : 50;
+    const limit =
+      typeof input.limit === 'number' && Number.isFinite(input.limit)
+        ? Math.min(Math.max(1, Math.floor(input.limit)), 200)
+        : 50;
 
     const conds = [] as ReturnType<typeof eq>[];
     if (accountId) conds.push(eq(emails.accountId, accountId));
@@ -434,10 +454,10 @@ const email_get: BuiltinToolDef = {
   slug: 'email_get',
   name: 'Get one email by id',
   description:
-    "Fetch a single email by id — headers (from/to/cc, subject, date, folder, flags) plus the " +
-    "plain-text body. HTML-only emails are converted to text; raw markup is never returned. " +
-    "Use after `email_list` or `search_nodes` returns the id you want to read in full. " +
-    "For a date-windowed list of recent emails use `email_list`; for searching emails by topic/content " +
+    'Fetch a single email by id — headers (from/to/cc, subject, date, folder, flags) plus the ' +
+    'plain-text body. HTML-only emails are converted to text; raw markup is never returned. ' +
+    'Use after `email_list` or `search_nodes` returns the id you want to read in full. ' +
+    'For a date-windowed list of recent emails use `email_list`; for searching emails by topic/content ' +
     "use `search_nodes` with `type='email'`.",
   inputSchema: {
     type: 'object',

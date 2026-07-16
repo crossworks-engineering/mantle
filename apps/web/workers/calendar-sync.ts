@@ -65,7 +65,10 @@ async function main() {
         console.error('[cal-sync] error on', account.displayName, err);
         await db
           .update(calendarAccounts)
-          .set({ lastSyncError: String((err as Error).message).slice(0, 500), updatedAt: new Date() })
+          .set({
+            lastSyncError: String((err as Error).message).slice(0, 500),
+            updatedAt: new Date(),
+          })
           .where(eq(calendarAccounts.id, account.id))
           .catch(() => {});
         throw err; // let pg-boss record failure + retry

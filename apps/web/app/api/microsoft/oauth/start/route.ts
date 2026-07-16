@@ -27,7 +27,9 @@ export async function GET(req: NextRequest) {
 
   const cfg = await resolveOAuthConfig(user.id);
   if (!cfg) {
-    return NextResponse.redirect(new URL('/settings/microsoft?error=not_configured', requestOrigin(req)));
+    return NextResponse.redirect(
+      new URL('/settings/microsoft?error=not_configured', requestOrigin(req)),
+    );
   }
 
   const { verifier, challenge } = createPkce();

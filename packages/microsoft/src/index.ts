@@ -32,19 +32,28 @@ export {
   type PkcePair,
   type TokenSet,
 } from './oauth';
-export {
-  upsertAccountFromTokens,
-  getValidAccessToken,
-  deleteAccount,
-} from './token-store';
+export { upsertAccountFromTokens, getValidAccessToken, deleteAccount } from './token-store';
 export { graphGet, graphGetAll, graphFetchRaw, type GraphError } from './client';
 
 // ── M1: SharePoint / OneDrive drive sync ───────────────────────────────────
 export { discoverDrives } from './drives/discover';
 export { syncDrive, type DriveSyncResult } from './drives/sync';
 export { storeRemoteFileAsNode, type StoredFile } from './drives/store';
-export { discoverForAccount, setDriveEnabled, listDrives, browseDrive, type DriveChild } from './drives/manage';
-export { listScopes, setDriveScopes, ownedDrive, inScope, itemPathAfterRoot, type ScopeInput } from './drives/scope';
+export {
+  discoverForAccount,
+  setDriveEnabled,
+  listDrives,
+  browseDrive,
+  type DriveChild,
+} from './drives/manage';
+export {
+  listScopes,
+  setDriveScopes,
+  ownedDrive,
+  inScope,
+  itemPathAfterRoot,
+  type ScopeInput,
+} from './drives/scope';
 export { listAccounts, redactMsAccount, type PublicMsAccount } from './accounts';
 // Re-export the row types the settings page renders, so it doesn't reach into
 // @mantle/db directly.

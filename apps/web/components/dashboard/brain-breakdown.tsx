@@ -12,10 +12,21 @@ import {
 } from '@/components/ui/chart';
 
 type Bucket = { key: string; count: number };
-const PALETTE = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
+const PALETTE = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+];
 const MAX_SLICES = 5;
 
-function Donut({ title, description, buckets, centerLabel }: {
+function Donut({
+  title,
+  description,
+  buckets,
+  centerLabel,
+}: {
   title: string;
   description?: string;
   buckets: Bucket[];
@@ -60,11 +71,24 @@ function Donut({ title, description, buckets, centerLabel }: {
                   content={({ viewBox }) => {
                     if (viewBox && 'cx' in viewBox && 'cy' in viewBox) {
                       return (
-                        <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
-                          <tspan x={viewBox.cx} y={viewBox.cy} className="fill-foreground text-2xl font-bold">
+                        <text
+                          x={viewBox.cx}
+                          y={viewBox.cy}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                        >
+                          <tspan
+                            x={viewBox.cx}
+                            y={viewBox.cy}
+                            className="fill-foreground text-2xl font-bold"
+                          >
                             {formatCount(total)}
                           </tspan>
-                          <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 20} className="fill-muted-foreground text-xs">
+                          <tspan
+                            x={viewBox.cx}
+                            y={(viewBox.cy ?? 0) + 20}
+                            className="fill-muted-foreground text-xs"
+                          >
                             {centerLabel}
                           </tspan>
                         </text>

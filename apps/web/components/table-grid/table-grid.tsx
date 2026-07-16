@@ -167,7 +167,9 @@ function displayValue(value: CellValue, col: Column): string {
   if (value === null || value === undefined || value === '') return '';
   if (col.type === 'currency') {
     const n = Number(value);
-    return Number.isFinite(n) ? `${col.format?.currency ?? 'USD'} ${n.toFixed(col.format?.decimals ?? 2)}` : String(value);
+    return Number.isFinite(n)
+      ? `${col.format?.currency ?? 'USD'} ${n.toFixed(col.format?.decimals ?? 2)}`
+      : String(value);
   }
   if (col.type === 'percent') {
     const n = Number(value);
@@ -208,9 +210,13 @@ export function TableGrid({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  const structureKey = doc.columns
-    .map((c) => `${c.id}:${c.type}:${c.name}:${c.formula ?? ''}:${(c.options ?? []).map((o) => o.label).join(',')}:${JSON.stringify(c.format ?? {})}:${c.ref ? `${c.ref.tabId}/${c.ref.columnId}` : ''}`)
-    .join('|') + `#${JSON.stringify(doc.aggregates ?? {})}`;
+  const structureKey =
+    doc.columns
+      .map(
+        (c) =>
+          `${c.id}:${c.type}:${c.name}:${c.formula ?? ''}:${(c.options ?? []).map((o) => o.label).join(',')}:${JSON.stringify(c.format ?? {})}:${c.ref ? `${c.ref.tabId}/${c.ref.columnId}` : ''}`,
+      )
+      .join('|') + `#${JSON.stringify(doc.aggregates ?? {})}`;
 
   const columns = useMemo<ColumnDef<Row>[]>(() => {
     return docRef.current.columns.map((col) => ({
@@ -227,7 +233,9 @@ export function TableGrid({
           onRename={(name) => onChangeRef.current(updateColumn(docRef.current, col.id, { name }))}
           // Retype through the standard menu is never 'reference' — it UNLINKS:
           // clear the ref so a linked column becomes a clean plain column.
-          onType={(type) => onChangeRef.current(updateColumn(docRef.current, col.id, { type, ref: undefined }))}
+          onType={(type) =>
+            onChangeRef.current(updateColumn(docRef.current, col.id, { type, ref: undefined }))
+          }
           // Link / change source (dialog).
           onReference={(ref) =>
             onChangeRef.current(
@@ -248,7 +256,11 @@ export function TableGrid({
             )
           }
           onAggregate={(kind) => onChangeRef.current(setAggregate(docRef.current, col.id, kind))}
-          onInsertRight={() => onChangeRef.current(addColumn(docRef.current, { name: 'New column', type: 'text' }, col.id).doc)}
+          onInsertRight={() =>
+            onChangeRef.current(
+              addColumn(docRef.current, { name: 'New column', type: 'text' }, col.id).doc,
+            )
+          }
           onDelete={() => onChangeRef.current(deleteColumn(docRef.current, col.id))}
           tableId={tableId}
           tabs={tabs}
@@ -261,7 +273,9 @@ export function TableGrid({
           tableId={tableId}
           value={info.getValue() as CellValue}
           rawValue={(info.row.original.cells[col.id] ?? null) as CellValue}
-          onSet={(v) => onChangeRef.current(setCell(docRef.current, info.row.original.id, col.id, v))}
+          onSet={(v) =>
+            onChangeRef.current(setCell(docRef.current, info.row.original.id, col.id, v))
+          }
           onApplyOption={({ value, newOption }) => {
             let d = docRef.current;
             if (newOption) d = addSelectOption(d, col.id, newOption);
@@ -301,7 +315,9 @@ export function TableGrid({
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
   const padTop = virtualRows.length ? virtualRows[0]!.start : 0;
-  const padBottom = virtualRows.length ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1]!.end : 0;
+  const padBottom = virtualRows.length
+    ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1]!.end
+    : 0;
   const colSpanAll = doc.columns.length + 2;
 
   return (
@@ -310,7 +326,10 @@ export function TableGrid({
         <thead>
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id} className="border-b border-border">
-              <th className="w-10 px-2 py-1.5 text-left font-normal text-muted-foreground" aria-hidden />
+              <th
+                className="w-10 px-2 py-1.5 text-left font-normal text-muted-foreground"
+                aria-hidden
+              />
               {hg.headers.map((header) => (
                 <th
                   key={header.id}
@@ -324,7 +343,12 @@ export function TableGrid({
                   size="icon"
                   variant="ghost"
                   className="size-7 text-muted-foreground"
-                  onClick={() => onChange(addColumn(doc, { name: `Column ${doc.columns.length + 1}`, type: 'text' }).doc)}
+                  onClick={() =>
+                    onChange(
+                      addColumn(doc, { name: `Column ${doc.columns.length + 1}`, type: 'text' })
+                        .doc,
+                    )
+                  }
                   aria-label="Add column"
                 >
                   <Plus />
@@ -374,7 +398,10 @@ export function TableGrid({
           )}
           {doc.rows.length === 0 && (
             <tr>
-              <td colSpan={doc.columns.length + 2} className="px-3 py-6 text-center text-sm text-muted-foreground">
+              <td
+                colSpan={doc.columns.length + 2}
+                className="px-3 py-6 text-center text-sm text-muted-foreground"
+              >
                 No rows yet.
               </td>
             </tr>
@@ -391,8 +418,13 @@ export function TableGrid({
                   <td key={col.id} className="border-l border-border px-2 py-1.5 text-xs">
                     {value !== null ? (
                       <span>
-                        <span className="text-muted-foreground">{AGG_LABEL[kind!].toLowerCase()} </span>
-                        {displayValue(value, col.type === 'formula' ? { ...col, type: 'number' } : col)}
+                        <span className="text-muted-foreground">
+                          {AGG_LABEL[kind!].toLowerCase()}{' '}
+                        </span>
+                        {displayValue(
+                          value,
+                          col.type === 'formula' ? { ...col, type: 'number' } : col,
+                        )}
                       </span>
                     ) : null}
                   </td>
@@ -405,7 +437,12 @@ export function TableGrid({
       </table>
 
       <div className="px-2 py-2">
-        <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => onChange(addRow(doc).doc)}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-muted-foreground"
+          onClick={() => onChange(addRow(doc).doc)}
+        >
           <Plus /> Add row
         </Button>
       </div>
@@ -471,8 +508,12 @@ function HeaderCell({
         className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none focus:ring-0"
         aria-label="Column name"
       />
-      {sortDir === 'asc' && <ArrowUp className="size-3 shrink-0 text-muted-foreground" aria-hidden />}
-      {sortDir === 'desc' && <ArrowDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />}
+      {sortDir === 'asc' && (
+        <ArrowUp className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+      )}
+      {sortDir === 'desc' && (
+        <ArrowDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+      )}
       {/* Linked-column indicator + its own menu, left of the type menu. */}
       {linked && (
         <DropdownMenu>
@@ -488,14 +529,19 @@ function HeaderCell({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuLabel className="text-xs text-muted-foreground">Linked column</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              Linked column
+            </DropdownMenuLabel>
             {canReference && (
               <DropdownMenuItem className={MENU_RADIO_ITEM} onSelect={() => setRefDlgOpen(true)}>
                 <ArrowUpRight className="mr-2 size-3.5" aria-hidden /> Change source…
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDeleteLink}>
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={onDeleteLink}
+            >
               <Unlink className="mr-2 size-3.5" /> Delete link
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -503,7 +549,10 @@ function HeaderCell({
       )}
       {AggIcon && (
         <span className="shrink-0" title={`Total: ${AGG_LABEL[aggregate]}`}>
-          <AggIcon className="size-3 text-muted-foreground" aria-label={`Total: ${AGG_LABEL[aggregate]}`} />
+          <AggIcon
+            className="size-3 text-muted-foreground"
+            aria-label={`Total: ${AGG_LABEL[aggregate]}`}
+          />
         </span>
       )}
       <DropdownMenu>
@@ -519,11 +568,18 @@ function HeaderCell({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuLabel className="text-xs text-muted-foreground">{TYPE_LABEL[col.type]} column</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-xs text-muted-foreground">
+            {TYPE_LABEL[col.type]} column
+          </DropdownMenuLabel>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}><Type className="mr-2 size-3.5" /> Type</DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}>
+              <Type className="mr-2 size-3.5" /> Type
+            </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              <DropdownMenuRadioGroup value={col.type} onValueChange={(v) => onType(v as ColumnType)}>
+              <DropdownMenuRadioGroup
+                value={col.type}
+                onValueChange={(v) => onType(v as ColumnType)}
+              >
                 {COLUMN_TYPES.filter((t) => t !== 'reference').map((t) => {
                   const Icon = TYPE_ICON[t];
                   return (
@@ -543,9 +599,14 @@ function HeaderCell({
             </DropdownMenuItem>
           )}
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}><Sigma className="mr-2 size-3.5" /> Total</DropdownMenuSubTrigger>
+            <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}>
+              <Sigma className="mr-2 size-3.5" /> Total
+            </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              <DropdownMenuRadioGroup value={aggregate} onValueChange={(v) => onAggregate(v as AggregateKind)}>
+              <DropdownMenuRadioGroup
+                value={aggregate}
+                onValueChange={(v) => onAggregate(v as AggregateKind)}
+              >
                 {AGGREGATE_KINDS.map((k) => {
                   const Icon = AGG_ICON[k];
                   return (
@@ -559,11 +620,21 @@ function HeaderCell({
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => onSort('asc')}><ArrowUp className="mr-2 size-3.5" /> Sort ascending</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => onSort('desc')}><ArrowDown className="mr-2 size-3.5" /> Sort descending</DropdownMenuItem>
-          {sortDir && <DropdownMenuItem onClick={onClearSort}><ChevronsUpDown className="mr-2 size-3.5" /> Clear sort</DropdownMenuItem>}
+          <DropdownMenuItem onClick={() => onSort('asc')}>
+            <ArrowUp className="mr-2 size-3.5" /> Sort ascending
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onSort('desc')}>
+            <ArrowDown className="mr-2 size-3.5" /> Sort descending
+          </DropdownMenuItem>
+          {sortDir && (
+            <DropdownMenuItem onClick={onClearSort}>
+              <ChevronsUpDown className="mr-2 size-3.5" /> Clear sort
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={onInsertRight}><ListPlus className="mr-2 size-3.5" /> Insert column right</DropdownMenuItem>
+          <DropdownMenuItem onClick={onInsertRight}>
+            <ListPlus className="mr-2 size-3.5" /> Insert column right
+          </DropdownMenuItem>
           <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDelete}>
             <Trash2 className="mr-2 size-3.5" /> Delete column
           </DropdownMenuItem>
@@ -634,9 +705,12 @@ function ReferenceColumnDialog({
     setCols(null);
     void (async () => {
       try {
-        const j = await apiFetch<{ table: { data?: { columns?: { id: string; name: string; type: string }[] }; draft?: { columns?: { id: string; name: string; type: string }[] } } }>(
-          `/api/tables/${tableId}?tab=${encodeURIComponent(tabId)}`,
-        );
+        const j = await apiFetch<{
+          table: {
+            data?: { columns?: { id: string; name: string; type: string }[] };
+            draft?: { columns?: { id: string; name: string; type: string }[] };
+          };
+        }>(`/api/tables/${tableId}?tab=${encodeURIComponent(tabId)}`);
         const source = j.table.draft?.columns ?? j.table.data?.columns ?? [];
         const usable = source.filter(
           (c) => c.type !== 'formula' && !(tabId === activeTabId && c.id === currentColumnId),
@@ -659,8 +733,8 @@ function ReferenceColumnDialog({
         <DialogHeader>
           <DialogTitle>{currentRef ? 'Change linked source' : 'Select column'}</DialogTitle>
           <DialogDescription>
-            This column offers values from another tab’s column — picked values are copied as plain text (a convenience
-            picker, not a live link).
+            This column offers values from another tab’s column — picked values are copied as plain
+            text (a convenience picker, not a live link).
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -679,7 +753,12 @@ function ReferenceColumnDialog({
                         setColId(undefined);
                       }}
                     >
-                      <Check className={cn('mr-2 size-3.5', tabId === t.id ? 'opacity-100' : 'opacity-0')} />
+                      <Check
+                        className={cn(
+                          'mr-2 size-3.5',
+                          tabId === t.id ? 'opacity-100' : 'opacity-0',
+                        )}
+                      />
                       {t.name}
                     </CommandItem>
                   ))}
@@ -694,7 +773,9 @@ function ReferenceColumnDialog({
             ) : loading ? (
               <p className="px-1 py-2 text-sm text-muted-foreground">Loading columns…</p>
             ) : (cols ?? []).length === 0 ? (
-              <p className="px-1 py-2 text-sm text-muted-foreground">No linkable columns on this tab.</p>
+              <p className="px-1 py-2 text-sm text-muted-foreground">
+                No linkable columns on this tab.
+              </p>
             ) : (
               <Command className="rounded border border-border">
                 <CommandInput placeholder="Search columns…" />
@@ -703,7 +784,12 @@ function ReferenceColumnDialog({
                   <CommandGroup>
                     {(cols ?? []).map((c) => (
                       <CommandItem key={c.id} value={c.name} onSelect={() => setColId(c.id)}>
-                        <Check className={cn('mr-2 size-3.5', colId === c.id ? 'opacity-100' : 'opacity-0')} />
+                        <Check
+                          className={cn(
+                            'mr-2 size-3.5',
+                            colId === c.id ? 'opacity-100' : 'opacity-0',
+                          )}
+                        />
                         {c.name}
                         <span className="ml-auto text-xs text-muted-foreground">{c.type}</span>
                       </CommandItem>
@@ -731,7 +817,8 @@ function ReferenceColumnDialog({
   );
 }
 
-const CELL_INPUT = 'w-full border-0 bg-transparent px-2 py-1.5 text-sm outline-none focus:bg-muted/50 focus:ring-0';
+const CELL_INPUT =
+  'w-full border-0 bg-transparent px-2 py-1.5 text-sm outline-none focus:bg-muted/50 focus:ring-0';
 
 // Type/Total menu items: mark the current choice in the theme's primary (not a
 // saturated accent fill that hides the label), and keep the keyboard/hover
@@ -761,17 +848,32 @@ function EditableCell({
   tableId?: string;
 }) {
   if (col.type === 'formula') {
-    return <span className="block px-2 py-1.5 text-sm text-muted-foreground">{displayValue(value, col)}</span>;
+    return (
+      <span className="block px-2 py-1.5 text-sm text-muted-foreground">
+        {displayValue(value, col)}
+      </span>
+    );
   }
   if (col.type === 'checkbox') {
     return (
       <span className="flex items-center justify-center py-1.5">
-        <Checkbox checked={Boolean(rawValue)} onCheckedChange={(c) => onSet(c === true)} aria-label={col.name} />
+        <Checkbox
+          checked={Boolean(rawValue)}
+          onCheckedChange={(c) => onSet(c === true)}
+          aria-label={col.name}
+        />
       </span>
     );
   }
   if (col.type === 'select' || col.type === 'multiselect') {
-    return <OptionCell col={col} rawValue={rawValue} multi={col.type === 'multiselect'} apply={onApplyOption} />;
+    return (
+      <OptionCell
+        col={col}
+        rawValue={rawValue}
+        multi={col.type === 'multiselect'}
+        apply={onApplyOption}
+      />
+    );
   }
   if (col.type === 'reference' && col.ref && tableId) {
     return <ReferenceCell col={col} rawValue={rawValue} onSet={onSet} tableId={tableId} />;
@@ -794,19 +896,38 @@ function parseDateValue(v: CellValue): Date | null {
   const d = new Date(v.length <= 10 ? `${v}T00:00:00` : v);
   return Number.isNaN(d.getTime()) ? null : d;
 }
-const formatDateOnly = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const formatDateOnly = (d: Date) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
 /** Date-only cell — the shadcn Calendar in a Popover (no native input). */
-function DateCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; onSet: (v: CellValue) => void }) {
+function DateCell({
+  col,
+  rawValue,
+  onSet,
+}: {
+  col: Column;
+  rawValue: CellValue;
+  onSet: (v: CellValue) => void;
+}) {
   const [open, setOpen] = useState(false);
   const date = parseDateValue(rawValue);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm outline-none hover:bg-muted/40" aria-label={col.name}>
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm outline-none hover:bg-muted/40"
+          aria-label={col.name}
+        >
           <Calendar className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           {date ? (
-            <span className="truncate">{date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+            <span className="truncate">
+              {date.toLocaleDateString('en-GB', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })}
+            </span>
           ) : (
             <span className="text-muted-foreground">—</span>
           )}
@@ -814,7 +935,11 @@ function DateCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; 
             <span
               role="button"
               tabIndex={-1}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSet(null); }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSet(null);
+              }}
               className="ml-auto text-muted-foreground hover:text-foreground"
               aria-label="Clear date"
             >
@@ -827,7 +952,10 @@ function DateCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; 
         <CalendarPicker
           mode="single"
           selected={date ?? undefined}
-          onSelect={(d) => { onSet(d ? formatDateOnly(d) : null); setOpen(false); }}
+          onSelect={(d) => {
+            onSet(d ? formatDateOnly(d) : null);
+            setOpen(false);
+          }}
           autoFocus
         />
       </PopoverContent>
@@ -836,11 +964,24 @@ function DateCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; 
 }
 
 /** Date + time cell — the shared DateTimePicker (Calendar + time field). */
-function DateTimeCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; onSet: (v: CellValue) => void }) {
+function DateTimeCell({
+  col,
+  rawValue,
+  onSet,
+}: {
+  col: Column;
+  rawValue: CellValue;
+  onSet: (v: CellValue) => void;
+}) {
   const date = parseDateValue(rawValue);
   return (
     <div className="px-1.5 py-1" aria-label={col.name}>
-      <DateTimePicker value={date} onChange={(d) => onSet(d ? d.toISOString() : null)} placeholder="—" clearable />
+      <DateTimePicker
+        value={date}
+        onChange={(d) => onSet(d ? d.toISOString() : null)}
+        placeholder="—"
+        clearable
+      />
     </div>
   );
 }
@@ -863,8 +1004,12 @@ function OptionCell({
   const [query, setQuery] = useState('');
   const options = col.options ?? [];
   const selected: string[] = multi
-    ? Array.isArray(rawValue) ? rawValue.map(String) : []
-    : typeof rawValue === 'string' && rawValue ? [rawValue] : [];
+    ? Array.isArray(rawValue)
+      ? rawValue.map(String)
+      : []
+    : typeof rawValue === 'string' && rawValue
+      ? [rawValue]
+      : [];
 
   const q = query.trim();
   const ql = q.toLowerCase();
@@ -873,7 +1018,9 @@ function OptionCell({
 
   const choose = (label: string) => {
     if (multi) {
-      const next = selected.includes(label) ? selected.filter((s) => s !== label) : [...selected, label];
+      const next = selected.includes(label)
+        ? selected.filter((s) => s !== label)
+        : [...selected, label];
       apply({ value: next });
       setQuery('');
     } else {
@@ -895,14 +1042,28 @@ function OptionCell({
   };
 
   return (
-    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQuery(''); }}>
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setQuery('');
+      }}
+    >
       <PopoverTrigger asChild>
-        <button type="button" className="flex min-h-[2.1rem] w-full items-center gap-1 px-2 py-1 text-left text-sm outline-none hover:bg-muted/40" aria-label={col.name}>
+        <button
+          type="button"
+          className="flex min-h-[2.1rem] w-full items-center gap-1 px-2 py-1 text-left text-sm outline-none hover:bg-muted/40"
+          aria-label={col.name}
+        >
           {selected.length === 0 ? (
             <span className="text-muted-foreground">—</span>
           ) : multi ? (
             <span className="flex flex-wrap gap-1">
-              {selected.map((s) => <Badge key={s} variant="secondary" className="font-normal">{s}</Badge>)}
+              {selected.map((s) => (
+                <Badge key={s} variant="secondary" className="font-normal">
+                  {s}
+                </Badge>
+              ))}
             </span>
           ) : (
             <span className="truncate">{selected[0]}</span>
@@ -911,13 +1072,25 @@ function OptionCell({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-56 p-0">
         <Command shouldFilter={false}>
-          <CommandInput value={query} onValueChange={setQuery} placeholder={multi ? 'Search or add…' : 'Select or add…'} />
+          <CommandInput
+            value={query}
+            onValueChange={setQuery}
+            placeholder={multi ? 'Search or add…' : 'Select or add…'}
+          />
           <CommandList>
-            {filtered.length === 0 && !canCreate && <CommandEmpty>Type to add an option.</CommandEmpty>}
+            {filtered.length === 0 && !canCreate && (
+              <CommandEmpty>Type to add an option.</CommandEmpty>
+            )}
             <CommandGroup>
               {filtered.map((o) => (
                 <CommandItem key={o.id} value={o.label} onSelect={() => choose(o.label)}>
-                  <Check className={cn('mr-2 size-3.5', selected.includes(o.label) ? 'opacity-100' : 'opacity-0')} aria-hidden />
+                  <Check
+                    className={cn(
+                      'mr-2 size-3.5',
+                      selected.includes(o.label) ? 'opacity-100' : 'opacity-0',
+                    )}
+                    aria-hidden
+                  />
                   {o.label}
                 </CommandItem>
               ))}
@@ -959,7 +1132,8 @@ function ReferenceCell({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [options, setOptions] = useState<string[] | null>(null);
-  const current = typeof rawValue === 'string' ? rawValue : rawValue == null ? '' : String(rawValue);
+  const current =
+    typeof rawValue === 'string' ? rawValue : rawValue == null ? '' : String(rawValue);
 
   // Re-pointing the reference source (via the header dialog) changes col.ref
   // while this cell instance stays mounted — drop the cached option list so
@@ -999,14 +1173,24 @@ function ReferenceCell({
   };
 
   return (
-    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQuery(''); }}>
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setQuery('');
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"
           className="flex min-h-[2.1rem] w-full items-center gap-1 px-2 py-1 text-left text-sm outline-none hover:bg-muted/40"
           aria-label={col.name}
         >
-          {current ? <span className="truncate">{current}</span> : <span className="text-muted-foreground">—</span>}
+          {current ? (
+            <span className="truncate">{current}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
           <ChevronsUpDown className="ml-auto size-3 shrink-0 text-muted-foreground" aria-hidden />
         </button>
       </PopoverTrigger>
@@ -1027,7 +1211,11 @@ function ReferenceCell({
           ) : (
             <>
               {current && (
-                <button type="button" className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted" onClick={() => choose('')}>
+                <button
+                  type="button"
+                  className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted"
+                  onClick={() => choose('')}
+                >
                   <X className="mr-2 size-3.5" aria-hidden /> Clear
                 </button>
               )}
@@ -1039,14 +1227,20 @@ function ReferenceCell({
                   onClick={() => choose(v)}
                 >
                   <span className="truncate">{v}</span>
-                  {v === current && <Check className="ml-auto size-3.5 shrink-0 text-primary" aria-hidden />}
+                  {v === current && (
+                    <Check className="ml-auto size-3.5 shrink-0 text-primary" aria-hidden />
+                  )}
                 </button>
               ))}
               {filtered.length === 0 && !canFreeText && (
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">No values</div>
               )}
               {canFreeText && (
-                <button type="button" className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted" onClick={() => choose(q)}>
+                <button
+                  type="button"
+                  className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
+                  onClick={() => choose(q)}
+                >
                   <ListPlus className="mr-2 size-3.5 shrink-0" aria-hidden />
                   Use “{q}”
                 </button>
@@ -1059,14 +1253,23 @@ function ReferenceCell({
   );
 }
 
-function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; onSet: (v: CellValue) => void }) {
+function TextCell({
+  col,
+  rawValue,
+  onSet,
+}: {
+  col: Column;
+  rawValue: CellValue;
+  onSet: (v: CellValue) => void;
+}) {
   const isNumeric = col.type === 'number' || col.type === 'currency' || col.type === 'percent';
   // Long free text (text/url) gets an Excel-style expander: the row height is
   // fixed (the grid virtualizes on it), so the whole value can't grow the cell
   // in place — instead a portal popover shows/edits the full string without
   // touching layout. Numeric/short types keep the plain inline input.
   const expandable = col.type === 'text' || col.type === 'url';
-  const external = rawValue == null ? '' : Array.isArray(rawValue) ? rawValue.join(', ') : String(rawValue);
+  const external =
+    rawValue == null ? '' : Array.isArray(rawValue) ? rawValue.join(', ') : String(rawValue);
   const [local, setLocal] = useState(external);
   const [expanded, setExpanded] = useState(false);
   const editing = useRef(false);
@@ -1100,12 +1303,17 @@ function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; 
     <input
       value={local}
       inputMode={isNumeric ? 'decimal' : undefined}
-      onFocus={() => { editing.current = true; }}
+      onFocus={() => {
+        editing.current = true;
+      }}
       onChange={(e) => setLocal(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-        if (e.key === 'Escape') { cancel(); (e.target as HTMLInputElement).blur(); }
+        if (e.key === 'Escape') {
+          cancel();
+          (e.target as HTMLInputElement).blur();
+        }
       }}
       placeholder={isNumeric ? '0' : ''}
       className={cn(CELL_INPUT, isNumeric && 'text-right tabular-nums', expandable && 'pr-7')}
@@ -1133,7 +1341,10 @@ function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; 
           <button
             type="button"
             tabIndex={-1}
-            onClick={() => { editing.current = true; setExpanded(true); }}
+            onClick={() => {
+              editing.current = true;
+              setExpanded(true);
+            }}
             title="Expand cell"
             aria-label="Expand cell"
             className="absolute right-1 rounded bg-background/80 p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/cell:opacity-100 group-focus-within/cell:opacity-100 data-[state=open]:opacity-100"
@@ -1141,24 +1352,35 @@ function TextCell({ col, rawValue, onSet }: { col: Column; rawValue: CellValue; 
             <Maximize2 className="size-3.5" aria-hidden />
           </button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-[22rem] p-2" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <PopoverContent
+          align="start"
+          className="w-[22rem] p-2"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <div className="mb-1 text-xs font-medium text-muted-foreground">{col.name}</div>
           <textarea
             autoFocus
             value={local}
-            onFocus={() => { editing.current = true; }}
+            onFocus={() => {
+              editing.current = true;
+            }}
             onChange={(e) => setLocal(e.target.value)}
             // No onBlur commit: the popover close (onOpenChange) is the one
             // commit point, so there's no blur-vs-close double-save race.
             onKeyDown={(e) => {
-              if (e.key === 'Escape') { cancel(); setExpanded(false); }
+              if (e.key === 'Escape') {
+                cancel();
+                setExpanded(false);
+              }
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) setExpanded(false);
             }}
             rows={Math.min(14, Math.max(3, local.split('\n').length + 1))}
             className="max-h-[60vh] w-full resize-y rounded border border-border bg-background p-2 text-sm outline-none focus:ring-0"
             aria-label={`${col.name} (expanded)`}
           />
-          <div className="mt-1 text-right text-[11px] text-muted-foreground">⌘↵ save · Esc cancel</div>
+          <div className="mt-1 text-right text-[11px] text-muted-foreground">
+            ⌘↵ save · Esc cancel
+          </div>
         </PopoverContent>
       </Popover>
     </div>

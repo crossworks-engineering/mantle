@@ -134,11 +134,7 @@ export {
   type CreateAppInput,
   type UpdateAppInput,
 } from './apps';
-export {
-  computeDiffOverlay,
-  type DiffOverlay,
-  type RemovedGhost,
-} from './page-diff';
+export { computeDiffOverlay, type DiffOverlay, type RemovedGhost } from './page-diff';
 
 export {
   PEERS_ROOT_LABEL,
@@ -420,11 +416,7 @@ export {
 } from './export-node';
 
 export { chunkDocText, type DocChunk } from './chunk';
-export {
-  chunkSpreadsheetProfile,
-  hasSheetMarkers,
-  isSpreadsheetTitle,
-} from './chunk-spreadsheet';
+export { chunkSpreadsheetProfile, hasSheetMarkers, isSpreadsheetTitle } from './chunk-spreadsheet';
 export { fileFamilyKey } from './file-family';
 
 export {

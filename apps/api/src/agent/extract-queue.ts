@@ -156,7 +156,9 @@ export async function startExtractQueue(databaseUrl: string, ownerId: string): P
 
   const redriven = await redriveDeadLetters();
   if (redriven > 0) {
-    console.log(`[extract-queue] re-drove ${redriven} dead-lettered job(s) for a fresh retry round`);
+    console.log(
+      `[extract-queue] re-drove ${redriven} dead-lettered job(s) for a fresh retry round`,
+    );
   }
 
   const concurrency = resolveConcurrency(cfg?.extractionConcurrency);
@@ -176,9 +178,11 @@ export async function startExtractQueue(databaseUrl: string, ownerId: string): P
         const run = prev
           ? prev.catch(() => {}).then(() => extractNode(nodeId, ownerId))
           : extractNode(nodeId, ownerId);
-        const tracked: Promise<unknown> = run.catch(() => {}).finally(() => {
-          if (inflightByNode.get(nodeId) === tracked) inflightByNode.delete(nodeId);
-        });
+        const tracked: Promise<unknown> = run
+          .catch(() => {})
+          .finally(() => {
+            if (inflightByNode.get(nodeId) === tracked) inflightByNode.delete(nodeId);
+          });
         inflightByNode.set(nodeId, tracked);
         // Let it throw: a thrown error propagates to pg-boss and triggers the
         // queue's retry/backoff. A swallowed error is the bug we're fixing.

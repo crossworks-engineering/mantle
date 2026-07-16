@@ -24,7 +24,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     table = await commitTable(user.id, id, parsed.data.data as TableDoc | undefined);
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'commit failed' }, { status: 400 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'commit failed' },
+      { status: 400 },
+    );
   }
   if (!table) return NextResponse.json({ error: 'not found' }, { status: 404 });
 

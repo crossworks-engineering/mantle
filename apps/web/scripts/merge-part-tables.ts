@@ -26,7 +26,10 @@ async function main() {
     .from(nodes)
     .where(and(eq(nodes.type, 'table'), sql`${nodes.title} ~ ' \\(part \\d+/\\d+\\)$'`));
 
-  const families = new Map<string, { base: string; total: number; parts: { id: string; ownerId: string; part: number }[] }>();
+  const families = new Map<
+    string,
+    { base: string; total: number; parts: { id: string; ownerId: string; part: number }[] }
+  >();
   for (const r of rows) {
     const m = PART_RE.exec(r.title);
     if (!m) continue;
@@ -39,7 +42,9 @@ async function main() {
   for (const fam of families.values()) {
     fam.parts.sort((a, b) => a.part - b.part);
     const complete = fam.parts.length === fam.total && fam.parts[0]!.part === 1;
-    console.log(`\nfamily "${fam.base}": ${fam.parts.length}/${fam.total} parts${complete ? '' : ' (INCOMPLETE — skipped)'}`);
+    console.log(
+      `\nfamily "${fam.base}": ${fam.parts.length}/${fam.total} parts${complete ? '' : ' (INCOMPLETE — skipped)'}`,
+    );
     if (!complete) continue;
 
     const head = await getTable(fam.parts[0]!.ownerId, fam.parts[0]!.id);
@@ -62,23 +67,30 @@ async function main() {
       const ops: TableOp[] = t.data.rows.map((r) => ({
         op: 'row_add',
         cells: Object.fromEntries(
-          Object.entries(r.cells).flatMap(([cid, v]) => (colMap.has(cid) ? [[colMap.get(cid)!, v]] : [])),
+          Object.entries(r.cells).flatMap(([cid, v]) =>
+            colMap.has(cid) ? [[colMap.get(cid)!, v]] : [],
+          ),
         ),
       }));
       for (let i = 0; i < ops.length; i += 500) {
         const res = await applyTableOps(part.ownerId, fam.parts[0]!.id, ops.slice(i, i + 500));
-        if (!res || !res.ok) throw new Error(`append failed for part ${part.part} of "${fam.base}"`);
+        if (!res || !res.ok)
+          throw new Error(`append failed for part ${part.part} of "${fam.base}"`);
       }
     }
     if (mismatch) continue;
     if (!apply) {
-      console.log(`  · would merge into one ${merged}-row table "${fam.base}" and delete ${fam.parts.length - 1} part(s)`);
+      console.log(
+        `  · would merge into one ${merged}-row table "${fam.base}" and delete ${fam.parts.length - 1} part(s)`,
+      );
       continue;
     }
     await commitTable(fam.parts[0]!.ownerId, fam.parts[0]!.id);
     await updateTable(fam.parts[0]!.ownerId, fam.parts[0]!.id, { title: fam.base });
     for (const part of fam.parts.slice(1)) await deleteTable(part.ownerId, part.id);
-    console.log(`  ✓ merged ${merged} rows into "${fam.base}"; deleted ${fam.parts.length - 1} part table(s)`);
+    console.log(
+      `  ✓ merged ${merged} rows into "${fam.base}"; deleted ${fam.parts.length - 1} part table(s)`,
+    );
   }
   if (families.size === 0) console.log('No "(part N/M)" tables found — nothing to merge.');
   if (!apply && families.size > 0) console.log('\nDry run. Re-run with --apply to merge.');

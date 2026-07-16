@@ -42,7 +42,10 @@ async function attachToAgent(ownerId: string, agentSlug: string): Promise<void> 
     console.log(`[seed] agent ${agentSlug} already has skill ${SKILL_SLUG}`);
     return;
   }
-  await db.update(agents).set({ skillSlugs: [...current, SKILL_SLUG], updatedAt: new Date() }).where(eq(agents.id, row.id));
+  await db
+    .update(agents)
+    .set({ skillSlugs: [...current, SKILL_SLUG], updatedAt: new Date() })
+    .where(eq(agents.id, row.id));
   console.log(`[seed] attached skill ${SKILL_SLUG} to agent ${agentSlug}`);
 }
 

@@ -12,7 +12,9 @@ export const syncStatus = pgEnum('sync_status', ['running', 'ok', 'error']);
 export const syncRuns = pgTable(
   'sync_runs',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     accountId: uuid('account_id')
       .notNull()
       .references(() => emailAccounts.id, { onDelete: 'cascade' }),
@@ -25,9 +27,7 @@ export const syncRuns = pgTable(
     ingested: integer('ingested').default(0).notNull(),
     error: text('error'),
   },
-  (t) => [
-    index('sync_runs_account_started_idx').on(t.accountId, t.startedAt),
-  ],
+  (t) => [index('sync_runs_account_started_idx').on(t.accountId, t.startedAt)],
 );
 
 export type SyncRun = typeof syncRuns.$inferSelect;

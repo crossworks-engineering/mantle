@@ -32,7 +32,9 @@ export function EventDetailClient({ eventId }: { eventId: string }) {
     const notFound = q.error instanceof Error && /not found|404/i.test(q.error.message);
     return (
       <div className="flex flex-col items-center gap-3 py-16 text-center text-sm">
-        <p className="text-muted-foreground">{notFound ? 'Event not found.' : 'Failed to load event.'}</p>
+        <p className="text-muted-foreground">
+          {notFound ? 'Event not found.' : 'Failed to load event.'}
+        </p>
         <BackLink href="/events">All events</BackLink>
       </div>
     );

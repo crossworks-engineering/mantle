@@ -15,7 +15,9 @@ for (const r of report.results) {
   console.log(`[${mark}] ${r.key} — ${r.detail}`);
 }
 if (!report.ok) {
-  console.error('table-storage probes FAILED — node:sqlite behavior drifted; do not ship table storage on this image');
+  console.error(
+    'table-storage probes FAILED — node:sqlite behavior drifted; do not ship table storage on this image',
+  );
   process.exitCode = 1;
 } else {
   console.log(`table-storage probes passed (node ${process.version})`);

@@ -123,7 +123,11 @@ async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<stri
         .select({ slug: skills.slug })
         .from(skills)
         .where(
-          and(eq(skills.ownerId, ownerId), eq(skills.enabled, true), inArray(skills.slug, wantSkills)),
+          and(
+            eq(skills.ownerId, ownerId),
+            eq(skills.enabled, true),
+            inArray(skills.slug, wantSkills),
+          ),
         )
     : [];
   const addable = present.map((p) => p.slug);
@@ -163,7 +167,12 @@ async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<stri
  */
 async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
   const rows = await db
-    .select({ id: agents.id, slug: agents.slug, groups: agents.toolGroupSlugs, skills: agents.skillSlugs })
+    .select({
+      id: agents.id,
+      slug: agents.slug,
+      groups: agents.toolGroupSlugs,
+      skills: agents.skillSlugs,
+    })
     .from(agents)
     .where(and(eq(agents.ownerId, ownerId), eq(agents.enabled, true)));
   const bySlug = new Map(rows.map((r) => [r.slug, r] as const));
@@ -224,7 +233,7 @@ async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
   const bySlug = new Map(rows.map((r) => [r.slug, r] as const));
   // memoryConfig comparison ignores delegate_to (grant-owned, preserved as-is).
   const mcForCompare = (mc: unknown): Record<string, unknown> => {
-    const { delegate_to: _dt, ...rest } = ((mc ?? {}) as Record<string, unknown>);
+    const { delegate_to: _dt, ...rest } = (mc ?? {}) as Record<string, unknown>;
     return Object.fromEntries(Object.entries(rest).sort(([x], [y]) => x.localeCompare(y)));
   };
   const synced: string[] = [];
@@ -272,7 +281,9 @@ async function provisionMissingSpecialists(ownerId: string): Promise<string[]> {
     .from(agents)
     .where(eq(agents.ownerId, ownerId));
   const have = new Set(rows.map((r) => r.slug));
-  const missing = MANIFEST_AGENTS.filter((a) => !a.isPersona && !have.has(a.slug)).map((a) => a.slug);
+  const missing = MANIFEST_AGENTS.filter((a) => !a.isPersona && !have.has(a.slug)).map(
+    (a) => a.slug,
+  );
   if (missing.length === 0) return [];
   // only:<missing> seeds just those agents (create) + wires delegation for the
   // ones that are isDelegate. Existing agents are untouched.
@@ -344,9 +355,6 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     );
   } catch (err) {
     // Best-effort: a reconcile failure must never take the server down.
-    console.error(
-      '[reconcile] skipped (non-fatal):',
-      err instanceof Error ? err.message : err,
-    );
+    console.error('[reconcile] skipped (non-fatal):', err instanceof Error ? err.message : err);
   }
 }

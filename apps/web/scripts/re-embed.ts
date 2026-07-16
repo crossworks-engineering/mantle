@@ -33,11 +33,7 @@
  */
 
 import postgres from 'postgres';
-import {
-  DEFAULT_EMBEDDING_MODEL,
-  runReembed,
-  type ReembedOpts,
-} from '@mantle/embeddings';
+import { DEFAULT_EMBEDDING_MODEL, runReembed, type ReembedOpts } from '@mantle/embeddings';
 
 const USER_ID = process.env.ALLOWED_USER_ID;
 if (!USER_ID) {
@@ -121,13 +117,9 @@ async function main() {
     ...args,
     onProgress: (event) => {
       if (event.kind === 'table_start') {
-        console.log(
-          `[re-embed] ${event.table}: ${event.rows} rows, ${event.chars} chars`,
-        );
+        console.log(`[re-embed] ${event.table}: ${event.rows} rows, ${event.chars} chars`);
       } else if (event.kind === 'table_done') {
-        console.log(
-          `[re-embed] ${event.table}: wrote ${event.written} in ${event.durationMs}ms`,
-        );
+        console.log(`[re-embed] ${event.table}: wrote ${event.written} in ${event.durationMs}ms`);
       }
     },
   });

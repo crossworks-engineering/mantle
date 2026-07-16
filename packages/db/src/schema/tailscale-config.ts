@@ -20,7 +20,9 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 export const tailscaleConfig = pgTable(
   'tailscale_config',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull().unique(),
     authKeyEnc: bytea('auth_key_enc').notNull(),
     keyVersion: integer('key_version').notNull().default(1),

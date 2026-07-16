@@ -15,13 +15,18 @@ import { nodes } from './nodes';
 export const teamAccessLog = pgTable(
   'team_access_log',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     contactId: uuid('contact_id').references(() => nodes.id, { onDelete: 'set null' }),
     /** 'auth' | 'turn' | 'api' | 'denied' */
     kind: text('kind').notNull(),
     /** e.g. { channel } for turns, { reason } for denials. */
-    detail: jsonb('detail').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    detail: jsonb('detail')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

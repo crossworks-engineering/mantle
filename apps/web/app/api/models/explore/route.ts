@@ -30,7 +30,9 @@ export async function GET(req: Request) {
     : 'openrouter';
   const q = url.searchParams.get('q')?.trim() || undefined;
   const sortParam = url.searchParams.get('sort') ?? '';
-  const sort: ModelSort = SORTS.includes(sortParam as ModelSort) ? (sortParam as ModelSort) : 'name';
+  const sort: ModelSort = SORTS.includes(sortParam as ModelSort)
+    ? (sortParam as ModelSort)
+    : 'name';
   const kind = url.searchParams.get('kind')?.trim() || 'all';
   const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1);
 

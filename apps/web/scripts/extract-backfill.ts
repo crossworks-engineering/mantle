@@ -104,7 +104,9 @@ async function main() {
   for (const row of rows) {
     i++;
     await sql`select pg_notify('node_ingested', ${row.id}::text)`;
-    console.log(`[backfill] (${i}/${rows.length}) ${row.type} ${row.id.slice(0, 8)} — ${row.title.slice(0, 60)}`);
+    console.log(
+      `[backfill] (${i}/${rows.length}) ${row.type} ${row.id.slice(0, 8)} — ${row.title.slice(0, 60)}`,
+    );
     if (i < rows.length) {
       await new Promise((r) => setTimeout(r, args.rateSec * 1000));
     }

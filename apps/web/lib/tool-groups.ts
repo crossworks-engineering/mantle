@@ -42,9 +42,7 @@ export async function listToolGroups(ownerId: string): Promise<ToolGroupSummary[
  * agent. Used by the Tools manager to show "granted to N agents" and a meaningful
  * delete confirmation. Single owner-scoped query; absence ⇒ zero grants.
  */
-export async function listToolGroupBackrefs(
-  ownerId: string,
-): Promise<Map<string, string[]>> {
+export async function listToolGroupBackrefs(ownerId: string): Promise<Map<string, string[]>> {
   const rows = await db
     .select({ slug: agents.slug, groups: agents.toolGroupSlugs })
     .from(agents)
@@ -60,10 +58,7 @@ export async function listToolGroupBackrefs(
   return out;
 }
 
-export async function getToolGroup(
-  ownerId: string,
-  id: string,
-): Promise<ToolGroupSummary | null> {
+export async function getToolGroup(ownerId: string, id: string): Promise<ToolGroupSummary | null> {
   const [row] = await db
     .select()
     .from(toolGroups)
@@ -128,9 +123,7 @@ export async function deleteToolGroup(ownerId: string, id: string): Promise<bool
   const existing = await getToolGroup(ownerId, id);
   if (!existing) return false;
   await db.transaction(async (tx) => {
-    await tx
-      .delete(toolGroups)
-      .where(and(eq(toolGroups.id, id), eq(toolGroups.ownerId, ownerId)));
+    await tx.delete(toolGroups).where(and(eq(toolGroups.id, id), eq(toolGroups.ownerId, ownerId)));
     // Remove the slug from any agent that granted it.
     await tx
       .update(agents)
@@ -138,7 +131,9 @@ export async function deleteToolGroup(ownerId: string, id: string): Promise<bool
         toolGroupSlugs: sql`array_remove(${agents.toolGroupSlugs}, ${existing.slug})`,
         updatedAt: new Date(),
       })
-      .where(and(eq(agents.ownerId, ownerId), sql`${existing.slug} = ANY(${agents.toolGroupSlugs})`));
+      .where(
+        and(eq(agents.ownerId, ownerId), sql`${existing.slug} = ANY(${agents.toolGroupSlugs})`),
+      );
   });
   return true;
 }

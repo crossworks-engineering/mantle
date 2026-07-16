@@ -1,61 +1,61 @@
-"use client";
+'use client';
 
-import { CartesianGrid, Line, LineChart, XAxis } from "recharts";
+import { CartesianGrid, Line, LineChart, XAxis } from 'recharts';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from "@/components/ui/chart";
+} from '@/components/ui/chart';
 
 const data = [
   {
     average: 400,
     today: 240,
-    day: "Monday",
+    day: 'Monday',
   },
   {
     average: 300,
     today: 139,
-    day: "Tuesday",
+    day: 'Tuesday',
   },
   {
     average: 200,
     today: 980,
-    day: "Wednesday",
+    day: 'Wednesday',
   },
   {
     average: 278,
     today: 390,
-    day: "Thursday",
+    day: 'Thursday',
   },
   {
     average: 189,
     today: 480,
-    day: "Friday",
+    day: 'Friday',
   },
   {
     average: 239,
     today: 380,
-    day: "Saturday",
+    day: 'Saturday',
   },
   {
     average: 349,
     today: 430,
-    day: "Sunday",
+    day: 'Sunday',
   },
 ];
 
 const chartConfig = {
   today: {
-    label: "Today",
-    color: "var(--primary)",
+    label: 'Today',
+    color: 'var(--primary)',
   },
   average: {
-    label: "Average",
-    color: "var(--primary)",
+    label: 'Average',
+    color: 'var(--primary)',
   },
 } satisfies ChartConfig;
 
@@ -64,9 +64,7 @@ export function CardsExerciseMinutes() {
     <Card>
       <CardHeader>
         <CardTitle>Token Usage</CardTitle>
-        <CardDescription>
-          Your token usage is ahead of where you normally are.
-        </CardDescription>
+        <CardDescription>Your token usage is ahead of where you normally are.</CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig} className="w-full @3xl:h-[200px]">
@@ -94,7 +92,7 @@ export function CardsExerciseMinutes() {
               strokeWidth={2}
               stroke="var(--color-today)"
               dot={{
-                fill: "var(--color-today)",
+                fill: 'var(--color-today)',
               }}
               activeDot={{
                 r: 5,
@@ -107,7 +105,7 @@ export function CardsExerciseMinutes() {
               stroke="var(--color-average)"
               strokeOpacity={0.5}
               dot={{
-                fill: "var(--color-average)",
+                fill: 'var(--color-average)',
                 opacity: 0.5,
               }}
               activeDot={{

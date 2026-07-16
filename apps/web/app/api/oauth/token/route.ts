@@ -47,7 +47,10 @@ export async function POST(req: Request) {
     const clientId = get('client_id');
     const codeVerifier = get('code_verifier');
     if (!code || !redirectUri || !clientId || !codeVerifier) {
-      return oauthError('invalid_request', 'code, redirect_uri, client_id, code_verifier are required');
+      return oauthError(
+        'invalid_request',
+        'code, redirect_uri, client_id, code_verifier are required',
+      );
     }
     const res = await exchangeAuthCode({ code, redirectUri, clientId, codeVerifier });
     return res.ok ? tokenOk(res.tokens) : oauthError(res.error);

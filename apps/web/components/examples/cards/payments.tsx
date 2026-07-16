@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import {
   ColumnDef,
@@ -11,13 +11,13 @@ import {
   SortingState,
   useReactTable,
   VisibilityState,
-} from "@tanstack/react-table";
-import { MoreHorizontalIcon } from "lucide-react";
-import * as React from "react";
+} from '@tanstack/react-table';
+import { MoreHorizontalIcon } from 'lucide-react';
+import * as React from 'react';
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +25,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from '@/components/ui/dropdown-menu';
 import {
   Table,
   TableBody,
@@ -33,62 +33,62 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from '@/components/ui/table';
 import { copyText } from '@/lib/secure-context-fallbacks';
 
 const data: Trace[] = [
   {
-    id: "m5gr84i9",
+    id: 'm5gr84i9',
     tokens: 3160,
-    status: "done",
-    agent: "Saskia",
+    status: 'done',
+    agent: 'Saskia',
   },
   {
-    id: "3u1reuv4",
+    id: '3u1reuv4',
     tokens: 2420,
-    status: "done",
-    agent: "Remy",
+    status: 'done',
+    agent: 'Remy',
   },
   {
-    id: "derv1ws0",
+    id: 'derv1ws0',
     tokens: 8370,
-    status: "running",
-    agent: "Researcher",
+    status: 'running',
+    agent: 'Researcher',
   },
   {
-    id: "bhqecj4p",
+    id: 'bhqecj4p',
     tokens: 7210,
-    status: "failed",
-    agent: "Ingest",
+    status: 'failed',
+    agent: 'Ingest',
   },
   {
-    id: "k9f2m3n4",
+    id: 'k9f2m3n4',
     tokens: 4500,
-    status: "queued",
-    agent: "Heartbeat",
+    status: 'queued',
+    agent: 'Heartbeat',
   },
   {
-    id: "p5q6r7s8",
+    id: 'p5q6r7s8',
     tokens: 12800,
-    status: "done",
-    agent: "Saskia",
+    status: 'done',
+    agent: 'Saskia',
   },
 ];
 
 export type Trace = {
   id: string;
   tokens: number;
-  status: "queued" | "running" | "done" | "failed";
+  status: 'queued' | 'running' | 'done' | 'failed';
   agent: string;
 };
 
 export const columns: ColumnDef<Trace>[] = [
   {
-    id: "select",
+    id: 'select',
     header: ({ table }) => (
       <Checkbox
         checked={
-          table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")
+          table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && 'indeterminate')
         }
         onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
         aria-label="Select all"
@@ -105,26 +105,26 @@ export const columns: ColumnDef<Trace>[] = [
     enableHiding: false,
   },
   {
-    accessorKey: "status",
-    header: "Status",
-    cell: ({ row }) => <div className="capitalize">{row.getValue("status")}</div>,
+    accessorKey: 'status',
+    header: 'Status',
+    cell: ({ row }) => <div className="capitalize">{row.getValue('status')}</div>,
   },
   {
-    accessorKey: "agent",
-    header: "Agent",
-    cell: ({ row }) => <div>{row.getValue("agent")}</div>,
+    accessorKey: 'agent',
+    header: 'Agent',
+    cell: ({ row }) => <div>{row.getValue('agent')}</div>,
   },
   {
-    accessorKey: "tokens",
+    accessorKey: 'tokens',
     header: () => <div className="text-right">Tokens</div>,
     cell: ({ row }) => {
-      const tokens = parseFloat(row.getValue("tokens"));
-      const formatted = new Intl.NumberFormat("en-US").format(tokens);
+      const tokens = parseFloat(row.getValue('tokens'));
+      const formatted = new Intl.NumberFormat('en-US').format(tokens);
       return <div className="text-right font-medium tabular-nums">{formatted}</div>;
     },
   },
   {
-    id: "actions",
+    id: 'actions',
     enableHiding: false,
     cell: ({ row }) => {
       const trace = row.original;
@@ -139,9 +139,7 @@ export const columns: ColumnDef<Trace>[] = [
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => copyText(trace.id)}>
-              Copy trace ID
-            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => copyText(trace.id)}>Copy trace ID</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem>View agent</DropdownMenuItem>
             <DropdownMenuItem>Open trace</DropdownMenuItem>
@@ -208,7 +206,7 @@ export function CardsPayments() {
             <TableBody>
               {table.getRowModel().rows?.length ? (
                 table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
+                  <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
                     {row.getVisibleCells().map((cell) => (
                       <TableCell
                         key={cell.id}
@@ -232,7 +230,7 @@ export function CardsPayments() {
         </div>
         <div className="flex items-center justify-end gap-2">
           <div className="text-muted-foreground flex-1 text-sm">
-            {table.getFilteredSelectedRowModel().rows.length} of{" "}
+            {table.getFilteredSelectedRowModel().rows.length} of{' '}
             {table.getFilteredRowModel().rows.length} row(s) selected.
           </div>
           <div className="flex gap-2">

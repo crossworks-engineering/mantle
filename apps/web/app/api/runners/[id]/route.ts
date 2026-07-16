@@ -36,7 +36,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const parsed = ActionBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'invalid action' }, { status: 400 });
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? 'invalid action' },
+      { status: 400 },
+    );
   }
   const body = parsed.data;
 

@@ -257,7 +257,11 @@ export function verifyTeamVisitorValue(
   try {
     const data = JSON.parse(b64urlDecode(payload).toString('utf8'));
     if (data.k !== 't') return null;
-    if (typeof data.sh !== 'string' || typeof data.cid !== 'string' || typeof data.exp !== 'number') {
+    if (
+      typeof data.sh !== 'string' ||
+      typeof data.cid !== 'string' ||
+      typeof data.exp !== 'number'
+    ) {
       return null;
     }
     if (Date.now() / 1000 > data.exp) return null;
@@ -295,9 +299,7 @@ export function buildTeamChatCookie(
 
 /** Verify a team-chat cookie value: signature, expiry, kind (`k:'c'`). No DB —
  *  callers must still confirm membership is live (isTeamMember). */
-export function verifyTeamChatValue(
-  value: string,
-): { ownerId: string; contactId: string } | null {
+export function verifyTeamChatValue(value: string): { ownerId: string; contactId: string } | null {
   const dot = value.lastIndexOf('.');
   if (dot < 0) return null;
   const payload = value.slice(0, dot);
@@ -308,7 +310,11 @@ export function verifyTeamChatValue(
   try {
     const data = JSON.parse(b64urlDecode(payload).toString('utf8'));
     if (data.k !== 'c') return null;
-    if (typeof data.own !== 'string' || typeof data.cid !== 'string' || typeof data.exp !== 'number') {
+    if (
+      typeof data.own !== 'string' ||
+      typeof data.cid !== 'string' ||
+      typeof data.exp !== 'number'
+    ) {
       return null;
     }
     if (Date.now() / 1000 > data.exp) return null;
@@ -471,9 +477,10 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
 /** Resolve the current user AND how they authenticated. Cookie first ('web'),
  *  then a mobile bearer ('mobile'). Returns null when neither resolves. The
  *  source is what lets a turn be tagged with the right ConversationChannel. */
-export async function getSessionUserWithSource(): Promise<
-  { user: SessionUser; source: AuthSource } | null
-> {
+export async function getSessionUserWithSource(): Promise<{
+  user: SessionUser;
+  source: AuthSource;
+} | null> {
   // DB-less dev: a detached frontend has no local Postgres, so the configured
   // remote identity stands in for the cookie→authUsers lookup. No-op in prod.
   const dev = detachedDevUser();

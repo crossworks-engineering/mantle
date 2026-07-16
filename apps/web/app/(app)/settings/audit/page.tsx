@@ -15,7 +15,13 @@ const PAGE_SIZE = 50;
 export default async function AuditSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ actor?: string; action?: string; from?: string; to?: string; page?: string }>;
+  searchParams: Promise<{
+    actor?: string;
+    action?: string;
+    from?: string;
+    to?: string;
+    page?: string;
+  }>;
 }) {
   await requireOwner();
   const sp = await searchParams;
@@ -25,7 +31,8 @@ export default async function AuditSettingsPage({
   const action = sp.action?.trim() || '';
   // Dates arrive as yyyy-mm-dd from <input type="date">; `to` is inclusive, so
   // the query bounds at the start of the NEXT day.
-  const from = sp.from && /^\d{4}-\d{2}-\d{2}$/.test(sp.from) ? new Date(`${sp.from}T00:00:00`) : null;
+  const from =
+    sp.from && /^\d{4}-\d{2}-\d{2}$/.test(sp.from) ? new Date(`${sp.from}T00:00:00`) : null;
   const toExclusive =
     sp.to && /^\d{4}-\d{2}-\d{2}$/.test(sp.to)
       ? new Date(new Date(`${sp.to}T00:00:00`).getTime() + 24 * 60 * 60 * 1000)
@@ -46,7 +53,10 @@ export default async function AuditSettingsPage({
       .orderBy(desc(auditLog.createdAt))
       .limit(PAGE_SIZE)
       .offset((page - 1) * PAGE_SIZE),
-    db.select({ count: sql<number>`count(*)::int` }).from(auditLog).where(filters),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(auditLog)
+      .where(filters),
     db.selectDistinct({ email: auditLog.actorEmail }).from(auditLog).orderBy(auditLog.actorEmail),
     db.selectDistinct({ action: auditLog.action }).from(auditLog).orderBy(auditLog.action),
   ]);

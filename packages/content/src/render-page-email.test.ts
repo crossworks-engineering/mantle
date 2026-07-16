@@ -26,8 +26,16 @@ describe('renderPageEmail', () => {
         {
           type: 'paragraph',
           content: [
-            { type: 'text', text: 'hot', marks: [{ type: 'highlight', attrs: { color: 'chart-2' } }] },
-            { type: 'text', text: 'red', marks: [{ type: 'textColor', attrs: { color: 'chart-1' } }] },
+            {
+              type: 'text',
+              text: 'hot',
+              marks: [{ type: 'highlight', attrs: { color: 'chart-2' } }],
+            },
+            {
+              type: 'text',
+              text: 'red',
+              marks: [{ type: 'textColor', attrs: { color: 'chart-1' } }],
+            },
           ],
         },
       ],
@@ -54,8 +62,14 @@ describe('renderPageEmail', () => {
         {
           type: 'columnList',
           content: [
-            { type: 'column', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'L' }] }] },
-            { type: 'column', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'R' }] }] },
+            {
+              type: 'column',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'L' }] }],
+            },
+            {
+              type: 'column',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'R' }] }],
+            },
           ],
         },
       ],
@@ -80,7 +94,11 @@ describe('renderPageEmail', () => {
         {
           type: 'paragraph',
           content: [
-            { type: 'text', text: 'x', marks: [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }] },
+            {
+              type: 'text',
+              text: 'x',
+              marks: [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }],
+            },
           ],
         },
         { type: 'paragraph', content: [{ type: 'text', text: '<script>' }] },

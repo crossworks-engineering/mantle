@@ -1,12 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import {
-  deleteFolder,
-  folderById,
-  renameFolderById,
-  updateFolderDescription,
-} from '@/lib/files';
+import { deleteFolder, folderById, renameFolderById, updateFolderDescription } from '@/lib/files';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([

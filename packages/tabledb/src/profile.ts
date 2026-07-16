@@ -76,9 +76,9 @@ function profileColumn(db: SqliteDb, table: string, rowCount: number, col: ColRo
   out.nullRate = Math.round(((rowCount - Number(base.filled)) / rowCount) * 1000) / 1000;
 
   if (RANGED.has(type)) {
-    const mm = db.prepare(`SELECT min(${p}) AS lo, max(${p}) AS hi FROM ${table} WHERE ${p} IS NOT NULL`).get() as
-      | { lo: string | number | null; hi: string | number | null }
-      | undefined;
+    const mm = db
+      .prepare(`SELECT min(${p}) AS lo, max(${p}) AS hi FROM ${table} WHERE ${p} IS NOT NULL`)
+      .get() as { lo: string | number | null; hi: string | number | null } | undefined;
     if (mm?.lo != null) out.min = mm.lo;
     if (mm?.hi != null) out.max = mm.hi;
   }
@@ -102,7 +102,9 @@ function profileColumn(db: SqliteDb, table: string, rowCount: number, col: ColRo
     out.topValues = top.map((t) => ({ value: String(t.v).slice(0, 120), count: Number(t.n) }));
   }
   if (TEXTY.has(type)) {
-    const len = db.prepare(`SELECT avg(length(${p})) AS l FROM ${table} WHERE ${p} IS NOT NULL`).get() as {
+    const len = db
+      .prepare(`SELECT avg(length(${p})) AS l FROM ${table} WHERE ${p} IS NOT NULL`)
+      .get() as {
       l: number | null;
     };
     if (len.l != null) {
@@ -117,17 +119,23 @@ function profileColumn(db: SqliteDb, table: string, rowCount: number, col: ColRo
 export function profileFile(absPath: string): TabProfile[] {
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const tabs = db.prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position`).all() as unknown as {
+    const tabs = db
+      .prepare(`SELECT tab_id, name, physical_table FROM _tabs ORDER BY position`)
+      .all() as unknown as {
       tab_id: string;
       name: string;
       physical_table: string;
     }[];
     const tabNameById = new Map(tabs.map((t) => [t.tab_id, t.name]));
     const tableByTabId = new Map(tabs.map((t) => [t.tab_id, t.physical_table]));
-    const allCols = db.prepare(`SELECT * FROM _columns`).all() as unknown as (ColRow & { ref_json?: string | null })[];
+    const allCols = db.prepare(`SELECT * FROM _columns`).all() as unknown as (ColRow & {
+      ref_json?: string | null;
+    })[];
     const colById = new Map(allCols.map((c) => [c.col_id, c]));
     return tabs.map((tab) => {
-      const rowCount = Number(db.prepare(`SELECT count(*) AS n FROM ${tab.physical_table}`).get()?.n ?? 0);
+      const rowCount = Number(
+        db.prepare(`SELECT count(*) AS n FROM ${tab.physical_table}`).get()?.n ?? 0,
+      );
       // SELECT * — pre-v2.1 files have no ref_json column.
       const cols = db
         .prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`)
@@ -174,12 +182,16 @@ export function profileFile(absPath: string): TabProfile[] {
 export function sampleRows(absPath: string, n = 20): { tabId: string; rows: Row[] }[] {
   const db = openTableFile(absPath, { readOnly: true });
   try {
-    const tabs = db.prepare(`SELECT tab_id, physical_table FROM _tabs ORDER BY position`).all() as unknown as {
+    const tabs = db
+      .prepare(`SELECT tab_id, physical_table FROM _tabs ORDER BY position`)
+      .all() as unknown as {
       tab_id: string;
       physical_table: string;
     }[];
     return tabs.map((tab) => {
-      const total = Number(db.prepare(`SELECT count(*) AS c FROM ${tab.physical_table}`).get()?.c ?? 0);
+      const total = Number(
+        db.prepare(`SELECT count(*) AS c FROM ${tab.physical_table}`).get()?.c ?? 0,
+      );
       const cols = db
         // SELECT * — pre-v2.1 files lack ref_json; a named SELECT would throw
         // on old published files (see window.tabMeta).
@@ -221,9 +233,14 @@ function fmtRange(p: ColumnProfile): string {
  * the L2 overview). Sections split on '## ' headings so the chunker can emit
  * one chunk per tab.
  */
-export function profileToText(profiles: TabProfile[], opts: { title: string; columns?: Column[] }): string {
+export function profileToText(
+  profiles: TabProfile[],
+  opts: { title: string; columns?: Column[] },
+): string {
   const lines: string[] = [];
-  const tabSummary = profiles.map((t) => `${t.name} (${t.rowCount} rows × ${t.columns.length} cols)`).join(', ');
+  const tabSummary = profiles
+    .map((t) => `${t.name} (${t.rowCount} rows × ${t.columns.length} cols)`)
+    .join(', ');
   lines.push(`# ${opts.title} — table profile`);
   lines.push(`Tabs: ${tabSummary || 'none'}.`);
   for (const tab of profiles) {
@@ -240,10 +257,15 @@ export function profileToText(profiles: TabProfile[], opts: { title: string; col
       const range = fmtRange(c);
       if (range) bits.push(range.slice(2));
       if (c.prose) bits.push(`long text (avg ${c.avgTextLen} chars)`);
-      if (c.identifierLike) bits.push('mostly unique values (identifier-like — look up specific values with table_sql)');
+      if (c.identifierLike)
+        bits.push(
+          'mostly unique values (identifier-like — look up specific values with table_sql)',
+        );
       if (c.mixedDates) bits.push('MIXED DATE FORMATS (some values not ISO)');
-      if (c.refersTo) bits.push(`references ${c.refersTo.tab}.${c.refersTo.column} (cross-tab join key)`);
-      if (c.danglingRefs) bits.push(`DANGLING REFS (${c.danglingRefs} value(s) missing from the source column)`);
+      if (c.refersTo)
+        bits.push(`references ${c.refersTo.tab}.${c.refersTo.column} (cross-tab join key)`);
+      if (c.danglingRefs)
+        bits.push(`DANGLING REFS (${c.danglingRefs} value(s) missing from the source column)`);
       let line = `- ${c.name} (${c.type}): ${bits.join(', ')}`;
       if (c.topValues.length > 0) {
         line += `. Top values: ${c.topValues.map((t) => `${t.value} (${t.count})`).join(', ')}`;

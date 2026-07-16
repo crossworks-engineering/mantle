@@ -89,7 +89,8 @@ const PROBES: Probe[] = [
         }
         if (!blocked) throw new Error('write on a readOnly handle succeeded');
         const row = ro.prepare('SELECT count(*) AS n FROM t').get();
-        if (Number(row?.n) !== 1) throw new Error(`read on readOnly handle returned ${String(row?.n)} rows, expected 1`);
+        if (Number(row?.n) !== 1)
+          throw new Error(`read on readOnly handle returned ${String(row?.n)} rows, expected 1`);
         return 'readOnly handle rejects writes and serves reads';
       } finally {
         ro.close();
@@ -129,10 +130,15 @@ const PROBES: Probe[] = [
       const db = new Db(path.join(dir, 'fts.sqlite'));
       try {
         db.exec("CREATE VIRTUAL TABLE f USING fts5(body, tokenize='trigram')");
-        db.exec("INSERT INTO f (body) VALUES ('pressure vessel weld inspection'), ('rotating equipment vibration')");
+        db.exec(
+          "INSERT INTO f (body) VALUES ('pressure vessel weld inspection'), ('rotating equipment vibration')",
+        );
         const hits = db.prepare("SELECT rowid FROM f WHERE body LIKE '%vessel weld%'").all();
-        if (hits.length !== 1) throw new Error(`trigram LIKE returned ${hits.length} rows, expected 1`);
-        const plan = db.prepare("EXPLAIN QUERY PLAN SELECT rowid FROM f WHERE body LIKE '%vessel weld%'").all();
+        if (hits.length !== 1)
+          throw new Error(`trigram LIKE returned ${hits.length} rows, expected 1`);
+        const plan = db
+          .prepare("EXPLAIN QUERY PLAN SELECT rowid FROM f WHERE body LIKE '%vessel weld%'")
+          .all();
         const planText = plan.map((r) => String(r.detail ?? '')).join(' | ');
         if (!/VIRTUAL TABLE INDEX/i.test(planText)) {
           throw new Error(`LIKE on the trigram table is not index-accelerated — plan: ${planText}`);
@@ -161,10 +167,13 @@ const PROBES: Probe[] = [
           unquotedThrew = true;
         }
         if (!unquotedThrew) {
-          throw new Error("bare MATCH 'K-101' no longer errors — quoting behavior changed, re-verify the term quoter");
+          throw new Error(
+            "bare MATCH 'K-101' no longer errors — quoting behavior changed, re-verify the term quoter",
+          );
         }
         const quoted = db.prepare('SELECT rowid FROM f WHERE f MATCH ?').all('"K-101"');
-        if (quoted.length !== 1) throw new Error(`double-quoted MATCH returned ${quoted.length} rows, expected 1`);
+        if (quoted.length !== 1)
+          throw new Error(`double-quoted MATCH returned ${quoted.length} rows, expected 1`);
         return "bare '-' terms error, double-quoted terms match (quoter contract holds)";
       } finally {
         db.close();
@@ -194,7 +203,8 @@ const PROBES: Probe[] = [
       const snap = new Db(dest, { readOnly: true });
       try {
         const row = snap.prepare('SELECT count(*) AS n FROM t').get();
-        if (Number(row?.n) !== 4) throw new Error(`snapshot has ${String(row?.n)} rows, expected 4 (WAL rows missing)`);
+        if (Number(row?.n) !== 4)
+          throw new Error(`snapshot has ${String(row?.n)} rows, expected 4 (WAL rows missing)`);
         return 'VACUUM INTO under WAL captures un-checkpointed rows';
       } finally {
         snap.close();
@@ -209,7 +219,9 @@ const PROBES: Probe[] = [
     required: false,
     run: () => {
       if (typeof moduleBackup !== 'function') {
-        throw new Error('sqlite.backup() not exported on this Node — VACUUM INTO remains the snapshot path');
+        throw new Error(
+          'sqlite.backup() not exported on this Node — VACUUM INTO remains the snapshot path',
+        );
       }
       return 'sqlite.backup() available (unused; VACUUM INTO is the default)';
     },

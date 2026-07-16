@@ -19,7 +19,17 @@
  */
 
 const PERSON_TITLES = new Set([
-  'mr', 'mrs', 'ms', 'mx', 'dr', 'prof', 'rev', 'sir', 'lady', 'lord', 'fr',
+  'mr',
+  'mrs',
+  'ms',
+  'mx',
+  'dr',
+  'prof',
+  'rev',
+  'sir',
+  'lady',
+  'lord',
+  'fr',
 ]);
 
 function stripTrailingDot(s: string): string {

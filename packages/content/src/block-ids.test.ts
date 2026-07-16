@@ -61,8 +61,14 @@ describe('ensureBlockIds', () => {
         {
           type: 'bulletList',
           content: [
-            { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }] },
-            { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }] },
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }],
+            },
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }],
+            },
           ],
         },
       ],
@@ -176,7 +182,11 @@ describe('ensureBlockIds — duplicate-id self-heal', () => {
   const stepDoc = () => ({
     type: 'doc',
     content: [
-      { type: 'heading', attrs: { id: 'h-55', level: 3 }, content: [{ type: 'text', text: '5.5 Service Import' }] },
+      {
+        type: 'heading',
+        attrs: { id: 'h-55', level: 3 },
+        content: [{ type: 'text', text: '5.5 Service Import' }],
+      },
       { type: 'paragraph', attrs: { id: DUP }, content: [{ type: 'text', text: 'Step 1' }] },
       { type: 'paragraph', attrs: { id: DUP }, content: [{ type: 'text', text: 'Step 2' }] },
       { type: 'paragraph', attrs: { id: DUP }, content: [{ type: 'text', text: 'Step 3' }] },
@@ -205,12 +215,17 @@ describe('ensureBlockIds — duplicate-id self-heal', () => {
         {
           type: 'callout',
           attrs: { id: 'c', variant: 'info' },
-          content: [{ type: 'paragraph', attrs: { id: 'x' }, content: [{ type: 'text', text: 'inner' }] }],
+          content: [
+            { type: 'paragraph', attrs: { id: 'x' }, content: [{ type: 'text', text: 'inner' }] },
+          ],
         },
       ],
     };
     const out = ensureBlockIds(doc) as unknown as {
-      content: [{ attrs: { id: string } }, { attrs: { id: string }; content: { attrs: { id: string } }[] }];
+      content: [
+        { attrs: { id: string } },
+        { attrs: { id: string }; content: { attrs: { id: string } }[] },
+      ];
     };
     expect(out.content[0].attrs.id).toBe('x');
     expect(out.content[1].content[0]!.attrs.id).not.toBe('x');
@@ -234,7 +249,7 @@ describe('allBlocksHaveIds', () => {
     expect(allBlocksHaveIds(doc)).toBe(false);
   });
 
-  it('returns true on a fully-id\'d doc', () => {
+  it("returns true on a fully-id'd doc", () => {
     const doc = {
       type: 'doc',
       content: [
@@ -274,7 +289,10 @@ describe('allBlocksHaveIds', () => {
 });
 
 describe('repairTableRows', () => {
-  const cell = (t: string) => ({ type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: t }] }] });
+  const cell = (t: string) => ({
+    type: 'tableCell',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text: t }] }],
+  });
   const para = (t: string) => ({ type: 'paragraph', content: [{ type: 'text', text: t }] });
 
   it('wraps a bare paragraph child of a tableRow back into a tableCell', () => {
@@ -282,11 +300,20 @@ describe('repairTableRows', () => {
     const doc = {
       type: 'doc',
       content: [
-        { type: 'table', content: [{ type: 'tableRow', content: [cell('SOP / Procedure'), para('Refinery SOP Rev.0'), para('✅ Complete')] }] },
+        {
+          type: 'table',
+          content: [
+            {
+              type: 'tableRow',
+              content: [cell('SOP / Procedure'), para('Refinery SOP Rev.0'), para('✅ Complete')],
+            },
+          ],
+        },
       ],
     };
     const fixed = repairTableRows(doc) as typeof doc;
-    const row = (fixed.content[0] as { content: Array<{ type: string; content: unknown[] }> }).content[0] as {
+    const row = (fixed.content[0] as { content: Array<{ type: string; content: unknown[] }> })
+      .content[0] as {
       content: Array<{ type: string; content: Array<{ type: string }> }>;
     };
     // All three children are now cells (the intended 3-column row).
@@ -298,7 +325,9 @@ describe('repairTableRows', () => {
   it('leaves a valid table untouched (same reference)', () => {
     const doc = {
       type: 'doc',
-      content: [{ type: 'table', content: [{ type: 'tableRow', content: [cell('A'), cell('B')] }] }],
+      content: [
+        { type: 'table', content: [{ type: 'tableRow', content: [cell('A'), cell('B')] }] },
+      ],
     };
     expect(repairTableRows(doc)).toBe(doc);
   });
@@ -309,12 +338,21 @@ describe('repairTableRows', () => {
       content: [
         {
           type: 'columnList',
-          content: [{ type: 'column', content: [{ type: 'table', content: [{ type: 'tableRow', content: [cell('X'), para('Y')] }] }] }],
+          content: [
+            {
+              type: 'column',
+              content: [
+                { type: 'table', content: [{ type: 'tableRow', content: [cell('X'), para('Y')] }] },
+              ],
+            },
+          ],
         },
       ],
     };
     const fixed = repairTableRows(doc) as typeof doc;
-    const row = (((fixed.content[0] as any).content[0].content[0].content[0]) as { content: Array<{ type: string }> });
+    const row = (fixed.content[0] as any).content[0].content[0].content[0] as {
+      content: Array<{ type: string }>;
+    };
     expect(row.content.map((c) => c.type)).toEqual(['tableCell', 'tableCell']);
   });
 });

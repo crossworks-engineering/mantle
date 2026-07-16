@@ -83,8 +83,8 @@ describe('safeFetch', () => {
   });
 
   it('applies the SSRF egress guard by default (blocks the metadata IP)', async () => {
-    await expect(
-      safeFetch('http://169.254.169.254/latest/meta-data/', {}, []),
-    ).rejects.toThrow(/private\/internal address/);
+    await expect(safeFetch('http://169.254.169.254/latest/meta-data/', {}, [])).rejects.toThrow(
+      /private\/internal address/,
+    );
   });
 });

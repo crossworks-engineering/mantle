@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  renderIdentityBlock,
-  renderPurposeBlock,
-  type IdentityEntry,
-} from './identity-context';
+import { renderIdentityBlock, renderPurposeBlock, type IdentityEntry } from './identity-context';
 
 const e = (
   body: string,
@@ -73,10 +69,7 @@ describe('renderIdentityBlock', () => {
   });
 
   it('buckets unknown / blank categories into a trailing "Other"', () => {
-    const block = renderIdentityBlock([
-      e('knows aluminium', 'hobbies'),
-      e('a work thing', 'work'),
-    ]);
+    const block = renderIdentityBlock([e('knows aluminium', 'hobbies'), e('a work thing', 'work')]);
     expect(block).toContain('## Other');
     expect(block.indexOf('## Work')).toBeLessThan(block.indexOf('## Other'));
   });
@@ -88,7 +81,16 @@ describe('renderIdentityBlock', () => {
   });
 
   it('caps the total at 30 entries across all categories', () => {
-    const cats = ['identity', 'work', 'family', 'relationships', 'faith', 'health', 'emotion', 'goal'];
+    const cats = [
+      'identity',
+      'work',
+      'family',
+      'relationships',
+      'faith',
+      'health',
+      'emotion',
+      'goal',
+    ];
     // 8 categories × 6 each = 48 eligible; total cap should clamp to 30.
     const many: IdentityEntry[] = [];
     for (const c of cats) for (let i = 0; i < 6; i++) many.push(e(`${c} note ${i}`, c));

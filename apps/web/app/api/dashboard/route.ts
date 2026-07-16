@@ -24,21 +24,33 @@ export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
 
-  const [brain, vectors, ingest, spend30, email, telegram, heartbeats, pendingTools, errs, fails, integrity, capacity] =
-    await Promise.all([
-      brainCounts(user.id),
-      vectorCounts(user.id),
-      nodesCreatedByDay(user.id, 30),
-      spendByDay(user.id, 30),
-      emailStats(user.id),
-      telegramStats(user.id),
-      heartbeatStats(user.id),
-      pendingToolCount(user.id),
-      topErrors(user.id, 7),
-      recentFailures(user.id, 10),
-      graphIntegrity(user.id),
-      corpusCapacity(user.id),
-    ]);
+  const [
+    brain,
+    vectors,
+    ingest,
+    spend30,
+    email,
+    telegram,
+    heartbeats,
+    pendingTools,
+    errs,
+    fails,
+    integrity,
+    capacity,
+  ] = await Promise.all([
+    brainCounts(user.id),
+    vectorCounts(user.id),
+    nodesCreatedByDay(user.id, 30),
+    spendByDay(user.id, 30),
+    emailStats(user.id),
+    telegramStats(user.id),
+    heartbeatStats(user.id),
+    pendingToolCount(user.id),
+    topErrors(user.id, 7),
+    recentFailures(user.id, 10),
+    graphIntegrity(user.id),
+    corpusCapacity(user.id),
+  ]);
 
   return NextResponse.json({
     brain,

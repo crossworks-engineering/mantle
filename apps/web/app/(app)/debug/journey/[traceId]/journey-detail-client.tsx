@@ -119,7 +119,9 @@ export function JourneyDetailClient({ traceId }: { traceId: string }) {
               return (
                 <li key={s.id} className="relative py-2">
                   <span
-                    className={'absolute -left-[1.30rem] top-3 h-2.5 w-2.5 rounded-full ' + stepDot(s.status)}
+                    className={
+                      'absolute -left-[1.30rem] top-3 h-2.5 w-2.5 rounded-full ' + stepDot(s.status)
+                    }
                   />
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                     <span className="font-mono text-sm">{s.name}</span>
@@ -222,7 +224,9 @@ export function JourneyDetailClient({ traceId }: { traceId: string }) {
                       {f.kind}
                     </span>{' '}
                     <span className="text-foreground">{f.content}</span>
-                    {f.entityName && <span className="text-muted-foreground"> — {f.entityName}</span>}
+                    {f.entityName && (
+                      <span className="text-muted-foreground"> — {f.entityName}</span>
+                    )}
                   </li>
                 ))}
               </ul>

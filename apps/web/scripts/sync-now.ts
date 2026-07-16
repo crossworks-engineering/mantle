@@ -11,10 +11,7 @@ import { imap, syncAccount } from '@mantle/email';
 import { db, emailAccounts } from '@mantle/db';
 
 async function main() {
-  const accounts = await db
-    .select()
-    .from(emailAccounts)
-    .where(eq(emailAccounts.enabled, true));
+  const accounts = await db.select().from(emailAccounts).where(eq(emailAccounts.enabled, true));
 
   for (const a of accounts) {
     if (a.provider !== 'imap') {

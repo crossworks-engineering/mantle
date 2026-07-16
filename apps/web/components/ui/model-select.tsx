@@ -111,8 +111,7 @@ export function ModelSelect({
   // Fallback summary when the current value isn't in `models` — e.g. edit
   // mode opening on a model the catalog has since dropped, or a custom
   // slug the operator pinned manually.
-  const phantom: ExplorerModel | null =
-    !selected && value ? { id: value, raw: null } : null;
+  const phantom: ExplorerModel | null = !selected && value ? { id: value, raw: null } : null;
   const commit = (next: string) => {
     onValueChange(next);
     setOpen(false);
@@ -158,10 +157,7 @@ export function ModelSelect({
             <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent
-          align="start"
-          className="w-[var(--radix-popover-trigger-width)] p-0"
-        >
+        <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] p-0">
           <Command shouldFilter>
             <div className="flex items-center gap-1 border-b border-border">
               <CommandInput
@@ -214,8 +210,7 @@ export function ModelSelect({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm">
-                        Use{' '}
-                        <span className="font-medium tabular-nums">{trimmed}</span>
+                        Use <span className="font-medium tabular-nums">{trimmed}</span>
                       </div>
                       <div className="text-[11px] text-muted-foreground">
                         Save as a custom slug — make sure your key has access.
@@ -258,17 +253,10 @@ function SelectedSummary({ model }: { model: ExplorerModel }) {
 function ModelRow({ model, selected }: { model: ExplorerModel; selected: boolean }) {
   return (
     <div className="flex w-full min-w-0 items-start gap-2">
-      <Check
-        className={cn(
-          'mt-1 size-4 shrink-0',
-          selected ? 'opacity-100' : 'opacity-0',
-        )}
-      />
+      <Check className={cn('mt-1 size-4 shrink-0', selected ? 'opacity-100' : 'opacity-0')} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="truncate text-sm font-medium">
-            {model.name ?? model.id}
-          </span>
+          <span className="truncate text-sm font-medium">{model.name ?? model.id}</span>
           {model.contextTokens != null && (
             <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground">
               {formatContext(model.contextTokens)}
@@ -317,4 +305,3 @@ function SortDropdown({
     </select>
   );
 }
-

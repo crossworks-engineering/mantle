@@ -24,7 +24,12 @@
  */
 
 import { db, emailAccounts, emails, nodes, type EmailAccount } from '@mantle/db';
-import { decodeMsgId, reclassifyByRefs, salienceForDeliveryKind, type DeliveryKind } from '@mantle/email';
+import {
+  decodeMsgId,
+  reclassifyByRefs,
+  salienceForDeliveryKind,
+  type DeliveryKind,
+} from '@mantle/email';
 import { and, eq, sql } from 'drizzle-orm';
 
 const OWNER_ID = process.env.ALLOWED_USER_ID;
@@ -120,7 +125,9 @@ async function main() {
 
   console.log(`\nResolved ${totalResolved}/${totalSeen} (rest: moved/deleted/stale-uidvalidity).`);
   console.log('New delivery_kind distribution:', tally);
-  console.log(apply ? `Applied — ${totalChanged} email(s) reclassified.` : `\nDry run — re-run with --apply.`);
+  console.log(
+    apply ? `Applied — ${totalChanged} email(s) reclassified.` : `\nDry run — re-run with --apply.`,
+  );
   process.exit(0);
 }
 

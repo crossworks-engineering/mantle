@@ -51,16 +51,25 @@ export function tableDbRoot(): string {
 
 /** Ids come from our own DB (UUIDs), but never trust them as path segments. */
 function safeSegment(id: string, label: string): string {
-  if (!/^[A-Za-z0-9-]+$/.test(id)) throw new Error(`tabledb: unsafe ${label} for a path segment: ${JSON.stringify(id)}`);
+  if (!/^[A-Za-z0-9-]+$/.test(id))
+    throw new Error(`tabledb: unsafe ${label} for a path segment: ${JSON.stringify(id)}`);
   return id;
 }
 
 export function publishedPath(ownerId: string, nodeId: string, root = tableDbRoot()): string {
-  return path.join(root, safeSegment(ownerId, 'ownerId'), `${safeSegment(nodeId, 'nodeId')}.sqlite`);
+  return path.join(
+    root,
+    safeSegment(ownerId, 'ownerId'),
+    `${safeSegment(nodeId, 'nodeId')}.sqlite`,
+  );
 }
 
 export function draftPath(ownerId: string, nodeId: string, root = tableDbRoot()): string {
-  return path.join(root, safeSegment(ownerId, 'ownerId'), `${safeSegment(nodeId, 'nodeId')}.draft.sqlite`);
+  return path.join(
+    root,
+    safeSegment(ownerId, 'ownerId'),
+    `${safeSegment(nodeId, 'nodeId')}.draft.sqlite`,
+  );
 }
 
 /** The registry's storage_path holds a ROOT-RELATIVE published path (e.g.

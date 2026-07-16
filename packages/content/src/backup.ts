@@ -226,8 +226,7 @@ async function runBackupInner(
   // Carried into both outcomes: a failed run must not erase the record of
   // when the last GOOD dump happened (the staleness check keys on it).
   const prior = await loadBackupStatus(userId);
-  const priorSuccessAt =
-    prior?.lastSuccessAt ?? (prior?.ok ? prior.lastRunAt : undefined);
+  const priorSuccessAt = prior?.lastSuccessAt ?? (prior?.ok ? prior.lastRunAt : undefined);
   const fail = async (error: string): Promise<BackupStatus> => {
     const status: BackupStatus = {
       lastRunAt: new Date().toISOString(),
@@ -320,7 +319,11 @@ async function runBackupInner(
   let tableDbs: BackupStatus['tableDbs'];
   try {
     const r = await snapshotAllTableDatabases(path.join(dir, `mantle-table-dbs-${ts}`));
-    tableDbs = { snapshotted: r.snapshotted.length, missing: r.missing.length, failed: r.failed.length };
+    tableDbs = {
+      snapshotted: r.snapshotted.length,
+      missing: r.missing.length,
+      failed: r.failed.length,
+    };
     if (r.failed.length > 0 || r.missing.length > 0) {
       console.error(
         `[backup] ⚠ table workbooks: ${r.failed.map((f) => `${f.nodeId}: ${f.error}`).join('; ')}` +
@@ -340,7 +343,11 @@ async function runBackupInner(
   let appDbs: BackupStatus['appDbs'];
   try {
     const r = await snapshotAllAppDatabases(path.join(dir, `mantle-app-dbs-${ts}`));
-    appDbs = { snapshotted: r.snapshotted.length, missing: r.missing.length, failed: r.failed.length };
+    appDbs = {
+      snapshotted: r.snapshotted.length,
+      missing: r.missing.length,
+      failed: r.failed.length,
+    };
     if (r.failed.length > 0 || r.missing.length > 0) {
       console.error(
         `[backup] ⚠ app databases: ${r.failed.map((f) => `${f.appNodeId}: ${f.error}`).join('; ')}` +
@@ -359,8 +366,12 @@ async function runBackupInner(
   for (const old of existing.slice(Math.max(1, cfg.keep))) {
     await unlink(path.join(dir, old.name)).catch(() => {});
     const stamp = old.name.replace(/^mantle-/, '').replace(/\.dump$/, '');
-    await rm(path.join(dir, `mantle-table-dbs-${stamp}`), { recursive: true, force: true }).catch(() => {});
-    await rm(path.join(dir, `mantle-app-dbs-${stamp}`), { recursive: true, force: true }).catch(() => {});
+    await rm(path.join(dir, `mantle-table-dbs-${stamp}`), { recursive: true, force: true }).catch(
+      () => {},
+    );
+    await rm(path.join(dir, `mantle-app-dbs-${stamp}`), { recursive: true, force: true }).catch(
+      () => {},
+    );
   }
 
   const finishedAt = new Date().toISOString();

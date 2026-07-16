@@ -24,7 +24,10 @@ export async function getPushInstance(): Promise<PushInstanceSecret | null> {
 }
 
 /** Public status (no secret) for settings UI. */
-export async function getPushInstanceMeta(): Promise<{ relayUrl: string; connectedAt: Date } | null> {
+export async function getPushInstanceMeta(): Promise<{
+  relayUrl: string;
+  connectedAt: Date;
+} | null> {
   const [row] = await db
     .select({ relayUrl: pushInstance.relayUrl, connectedAt: pushInstance.connectedAt })
     .from(pushInstance)
@@ -45,7 +48,12 @@ export async function savePushInstance(args: PushInstanceSecret): Promise<void> 
     })
     .onConflictDoUpdate({
       target: pushInstance.singleton,
-      set: { instanceTokenEnc, relayInstanceId: args.relayInstanceId, relayUrl: args.relayUrl, connectedAt: new Date() },
+      set: {
+        instanceTokenEnc,
+        relayInstanceId: args.relayInstanceId,
+        relayUrl: args.relayUrl,
+        connectedAt: new Date(),
+      },
     });
 }
 
@@ -122,7 +130,10 @@ export async function markPushed(id: string): Promise<void> {
   // rejection that could crash the worker mid-batch. lastPushAt is a
   // best-effort recency marker; a missed update is harmless.
   try {
-    await db.update(pushSubscriptions).set({ lastPushAt: new Date() }).where(eq(pushSubscriptions.id, id));
+    await db
+      .update(pushSubscriptions)
+      .set({ lastPushAt: new Date() })
+      .where(eq(pushSubscriptions.id, id));
   } catch (err) {
     console.error('[push] markPushed failed (non-fatal):', err);
   }

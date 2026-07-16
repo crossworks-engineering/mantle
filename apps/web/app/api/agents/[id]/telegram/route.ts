@@ -15,7 +15,8 @@ const ConnectBody = z.object({ token: z.string().min(10).max(200) });
 
 async function resolveAgent(ownerId: string, raw: unknown) {
   const parsed = IdParams.safeParse(raw);
-  if (!parsed.success) return { error: NextResponse.json({ error: 'Invalid id.' }, { status: 400 }) };
+  if (!parsed.success)
+    return { error: NextResponse.json({ error: 'Invalid id.' }, { status: 400 }) };
   const agent = await getAgent(ownerId, parsed.data.id);
   if (!agent) return { error: NextResponse.json({ error: 'Not found.' }, { status: 404 }) };
   return { agent };

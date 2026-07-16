@@ -27,7 +27,9 @@ export function ActiveNow() {
       <div className="rounded-lg border border-border bg-muted/20 p-3">
         <div className="flex items-center gap-2">
           <Activity
-            className={'size-4 ' + (live ? 'animate-pulse text-emerald-500' : 'text-muted-foreground')}
+            className={
+              'size-4 ' + (live ? 'animate-pulse text-emerald-500' : 'text-muted-foreground')
+            }
             aria-hidden
           />
           <h2 className="text-sm font-semibold">Active now</h2>
@@ -50,10 +52,16 @@ export function ActiveNow() {
                     className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm transition-colors hover:bg-muted"
                   >
                     <Loader2
-                      className={'size-3.5 shrink-0 ' + (stalled ? 'text-amber-500' : 'animate-spin text-emerald-500')}
+                      className={
+                        'size-3.5 shrink-0 ' +
+                        (stalled ? 'text-amber-500' : 'animate-spin text-emerald-500')
+                      }
                       aria-hidden
                     />
-                    <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-muted-foreground" />
+                    <ActionIcon
+                      iconKey={it.iconKey}
+                      className="size-3.5 shrink-0 text-muted-foreground"
+                    />
                     <span className="truncate">{it.label}</span>
                     {stalled ? (
                       <span className="ml-auto shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
@@ -75,12 +83,16 @@ export function ActiveNow() {
       <div
         className={
           'rounded-lg border p-3 ' +
-          (failures.length > 0 ? 'border-destructive/40 bg-destructive/5' : 'border-border bg-muted/20')
+          (failures.length > 0
+            ? 'border-destructive/40 bg-destructive/5'
+            : 'border-border bg-muted/20')
         }
       >
         <div className="flex items-center gap-2">
           <AlertCircle
-            className={'size-4 ' + (failures.length > 0 ? 'text-destructive' : 'text-muted-foreground')}
+            className={
+              'size-4 ' + (failures.length > 0 ? 'text-destructive' : 'text-muted-foreground')
+            }
             aria-hidden
           />
           <h2 className="text-sm font-semibold">Needs attention</h2>

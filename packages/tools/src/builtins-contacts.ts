@@ -145,7 +145,7 @@ const contact_get: BuiltinToolDef = {
   slug: 'contact_get',
   preconditions: CONTACT_ID_PRE,
   name: 'Read a contact',
-  description: "Fetch one contact by its node id. Returns the full record including counters.",
+  description: 'Fetch one contact by its node id. Returns the full record including counters.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -261,23 +261,28 @@ const contact_update: BuiltinToolDef = {
       emails: {
         type: 'array',
         items: { type: 'string' },
-        description:
-          'Replaces the email list. Each entry is an address or a `@domain` wildcard.',
+        description: 'Replaces the email list. Each entry is an address or a `@domain` wildcard.',
       },
       email: { type: 'string', description: 'Deprecated single-email shorthand; prefer `emails`.' },
-      country_code: { type: 'string', description: 'Dialling code, e.g. "+27"; required if `cell` is set.' },
+      country_code: {
+        type: 'string',
+        description: 'Dialling code, e.g. "+27"; required if `cell` is set.',
+      },
       cell: {
         type: 'string',
-        description: 'Cell number in any format — non-digits are stripped, stored with `country_code`.',
+        description:
+          'Cell number in any format — non-digits are stripped, stored with `country_code`.',
       },
       description: {
         type: 'string',
-        description: 'Who this is, for the AI — the relationship, what they do. Indexed into the brain for search.',
+        description:
+          'Who this is, for the AI — the relationship, what they do. Indexed into the brain for search.',
       },
       tags: {
         type: 'array',
         items: { type: 'string' },
-        description: "Labels for organisation and filtering, e.g. ['work']. Replaces the whole list.",
+        description:
+          "Labels for organisation and filtering, e.g. ['work']. Replaces the whole list.",
       },
     },
     required: ['id'],

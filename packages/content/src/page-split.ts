@@ -107,10 +107,7 @@ export function extractSection(
  * stay with their container). A section runs from its heading until the next
  * heading of the same level (or end of doc).
  */
-export function splitDocByHeading(
-  doc: Record<string, unknown>,
-  level: SplitLevel,
-): SplitResult {
+export function splitDocByHeading(doc: Record<string, unknown>, level: SplitLevel): SplitResult {
   const blocks = ((doc as PMNode).content ?? []) as PMNode[];
   const intro: PMNode[] = [];
   const sections: SplitSection[] = [];

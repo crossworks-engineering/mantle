@@ -53,9 +53,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       apiKey,
       model: agent.model,
       messages: [
-        ...(agent.systemPrompt
-          ? [{ role: 'system' as const, content: agent.systemPrompt }]
-          : []),
+        ...(agent.systemPrompt ? [{ role: 'system' as const, content: agent.systemPrompt }] : []),
         { role: 'user', content: trimmed },
       ],
       temperature: params.temperature,

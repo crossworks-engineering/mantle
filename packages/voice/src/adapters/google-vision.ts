@@ -36,7 +36,13 @@ import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_VISION_MODELS } from '../catalogs/google';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
-const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
+const ALLOWED_MIMES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+]);
 const INLINE_MAX_BYTES = 20 * 1024 * 1024;
 
 type GeminiInlineDataPart = { inlineData: { mimeType: string; data: string } };

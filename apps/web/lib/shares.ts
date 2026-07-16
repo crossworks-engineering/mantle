@@ -28,9 +28,22 @@ export function buildShareUrl(origin: string, token: string): string {
 }
 
 export type ShareView =
-  | { kind: 'page'; title: string; icon: string | null; width: 'narrow' | 'wide'; doc: Record<string, unknown> }
+  | {
+      kind: 'page';
+      title: string;
+      icon: string | null;
+      width: 'narrow' | 'wide';
+      doc: Record<string, unknown>;
+    }
   | { kind: 'note'; title: string; content: string }
-  | { kind: 'task'; title: string; body: string; status: string; priority: string; dueAt: string | null }
+  | {
+      kind: 'task';
+      title: string;
+      body: string;
+      status: string;
+      priority: string;
+      dueAt: string | null;
+    }
   | {
       kind: 'event';
       title: string;
@@ -65,7 +78,11 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       const n = await loadNode(ownerId, nodeId);
       if (!n) return null;
       const d = (n.data ?? {}) as Record<string, unknown>;
-      return { kind: 'note', title: n.title, content: typeof d.content === 'string' ? d.content : '' };
+      return {
+        kind: 'note',
+        title: n.title,
+        content: typeof d.content === 'string' ? d.content : '',
+      };
     }
     case 'task': {
       const n = await loadNode(ownerId, nodeId);
@@ -96,7 +113,13 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
     case 'file': {
       const f = await fileById({ ownerId, fileId: nodeId });
       if (!f) return null;
-      return { kind: 'file', fileId: nodeId, filename: f.filename, mimeType: f.mimeType, size: f.sizeBytes };
+      return {
+        kind: 'file',
+        fileId: nodeId,
+        filename: f.filename,
+        mimeType: f.mimeType,
+        size: f.sizeBytes,
+      };
     }
     case 'app': {
       // Only a PUBLISHED app is shareable — never expose a draft build publicly.

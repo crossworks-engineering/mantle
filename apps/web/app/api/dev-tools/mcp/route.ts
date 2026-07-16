@@ -19,10 +19,7 @@ export async function GET() {
     return NextResponse.json({ tools });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { error: `MCP server unavailable: ${msg}` },
-      { status: 503 },
-    );
+    return NextResponse.json({ error: `MCP server unavailable: ${msg}` }, { status: 503 });
   }
 }
 

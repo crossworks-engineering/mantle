@@ -53,9 +53,15 @@ describe('parseSheetToGrid', () => {
 
   it('returns one ParsedSheet per non-empty sheet', () => {
     const buf = workbook({
-      Income: [['Source', 'Amount'], ['Salary', 1000]],
+      Income: [
+        ['Source', 'Amount'],
+        ['Salary', 1000],
+      ],
       Empty: [[]],
-      Expenses: [['Item', 'Cost'], ['Rent', 500]],
+      Expenses: [
+        ['Item', 'Cost'],
+        ['Rent', 500],
+      ],
     });
     const sheets = parseSheetToGrid(buf);
     expect(sheets.map((s) => s.name)).toEqual(['Income', 'Expenses']);
@@ -101,15 +107,24 @@ describe('parseSheetToGrid', () => {
     });
     const [sheet] = parseSheetToGrid(buf);
     expect(sheet!.columns.map((c) => c.name)).toEqual(['Name', 'Notes']);
-    expect(sheet!.rows).toEqual([['Ada', null], ['Grace', null]]);
+    expect(sheet!.rows).toEqual([
+      ['Ada', null],
+      ['Grace', null],
+    ]);
   });
 
   it('parses CSV bytes as a single sheet', () => {
     const csv = 'Name,Age\nAda,36\nGrace,40\n';
     const sheets = parseSheetToGrid(Buffer.from(csv, 'utf-8'));
     expect(sheets).toHaveLength(1);
-    expect(sheets[0]!.columns.map((c) => `${c.name}:${c.type}`)).toEqual(['Name:text', 'Age:number']);
-    expect(sheets[0]!.rows).toEqual([['Ada', 36], ['Grace', 40]]);
+    expect(sheets[0]!.columns.map((c) => `${c.name}:${c.type}`)).toEqual([
+      'Name:text',
+      'Age:number',
+    ]);
+    expect(sheets[0]!.rows).toEqual([
+      ['Ada', 36],
+      ['Grace', 40],
+    ]);
   });
 });
 
@@ -122,14 +137,24 @@ describe('parseTextToGrid', () => {
 | Gadget | 3   | 4     |
 `;
     const [sheet] = parseTextToGrid(md);
-    expect(sheet!.columns.map((c) => `${c.name}:${c.type}`)).toEqual(['Item:text', 'Qty:number', 'Price:number']);
-    expect(sheet!.rows).toEqual([['Widget', 2, 9.5], ['Gadget', 3, 4]]);
+    expect(sheet!.columns.map((c) => `${c.name}:${c.type}`)).toEqual([
+      'Item:text',
+      'Qty:number',
+      'Price:number',
+    ]);
+    expect(sheet!.rows).toEqual([
+      ['Widget', 2, 9.5],
+      ['Gadget', 3, 4],
+    ]);
   });
 
   it('parses TSV', () => {
     const [sheet] = parseTextToGrid('Name\tAge\nAda\t36\nGrace\t40');
     expect(sheet!.columns.map((c) => `${c.name}:${c.type}`)).toEqual(['Name:text', 'Age:number']);
-    expect(sheet!.rows).toEqual([['Ada', 36], ['Grace', 40]]);
+    expect(sheet!.rows).toEqual([
+      ['Ada', 36],
+      ['Grace', 40],
+    ]);
   });
 
   it('parses CSV (quote-aware)', () => {

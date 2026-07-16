@@ -7,7 +7,12 @@ const doc = (content: unknown[]) => ({ type: 'doc', content });
 describe('renderPageDoc', () => {
   it('escapes text and applies marks', () => {
     const html = renderPageDoc(
-      doc([{ type: 'paragraph', content: [{ type: 'text', text: '<x> & y', marks: [{ type: 'bold' }] }] }]),
+      doc([
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: '<x> & y', marks: [{ type: 'bold' }] }],
+        },
+      ]),
       opts,
     );
     expect(html).toBe('<p><strong>&lt;x&gt; &amp; y</strong></p>');
@@ -15,21 +20,48 @@ describe('renderPageDoc', () => {
 
   it('renders highlight marks: themed colour from a token, plain otherwise', () => {
     const colored = renderPageDoc(
-      doc([{ type: 'paragraph', content: [{ type: 'text', text: 'hi', marks: [{ type: 'highlight', attrs: { color: 'chart-2' } }] }] }]),
+      doc([
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'hi',
+              marks: [{ type: 'highlight', attrs: { color: 'chart-2' } }],
+            },
+          ],
+        },
+      ]),
       opts,
     );
     expect(colored).toContain('<mark style="background-color:color-mix');
     expect(colored).toContain('var(--chart-2)');
 
     const plain = renderPageDoc(
-      doc([{ type: 'paragraph', content: [{ type: 'text', text: 'hi', marks: [{ type: 'highlight' }] }] }]),
+      doc([
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'hi', marks: [{ type: 'highlight' }] }],
+        },
+      ]),
       opts,
     );
     expect(plain).toContain('<mark>hi</mark>');
 
     // An unknown colour token falls back to a plain mark (no style injection).
     const bad = renderPageDoc(
-      doc([{ type: 'paragraph', content: [{ type: 'text', text: 'hi', marks: [{ type: 'highlight', attrs: { color: 'red; x:1' } }] }] }]),
+      doc([
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'hi',
+              marks: [{ type: 'highlight', attrs: { color: 'red; x:1' } }],
+            },
+          ],
+        },
+      ]),
       opts,
     );
     expect(bad).toContain('<mark>hi</mark>');
@@ -37,13 +69,35 @@ describe('renderPageDoc', () => {
 
   it('renders themed text colour from a token; ignores unknown', () => {
     const ok = renderPageDoc(
-      doc([{ type: 'paragraph', content: [{ type: 'text', text: 'hi', marks: [{ type: 'textColor', attrs: { color: 'chart-3' } }] }] }]),
+      doc([
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'hi',
+              marks: [{ type: 'textColor', attrs: { color: 'chart-3' } }],
+            },
+          ],
+        },
+      ]),
       opts,
     );
     expect(ok).toContain('<span style="color:var(--chart-3)">hi</span>');
 
     const bad = renderPageDoc(
-      doc([{ type: 'paragraph', content: [{ type: 'text', text: 'hi', marks: [{ type: 'textColor', attrs: { color: 'red; x:1' } }] }] }]),
+      doc([
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'hi',
+              marks: [{ type: 'textColor', attrs: { color: 'red; x:1' } }],
+            },
+          ],
+        },
+      ]),
       opts,
     );
     expect(bad).not.toContain('color:');
@@ -53,9 +107,22 @@ describe('renderPageDoc', () => {
   it('renders callouts, images (asset-rewritten), and task lists', () => {
     const html = renderPageDoc(
       doc([
-        { type: 'callout', attrs: { variant: 'warning' }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'hi' }] }] },
+        {
+          type: 'callout',
+          attrs: { variant: 'warning' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'hi' }] }],
+        },
         { type: 'image', attrs: { nodeId: 'f1', alt: 'pic' } },
-        { type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: true }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'done' }] }] }] },
+        {
+          type: 'taskList',
+          content: [
+            {
+              type: 'taskItem',
+              attrs: { checked: true },
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'done' }] }],
+            },
+          ],
+        },
       ]),
       opts,
     );
@@ -82,7 +149,9 @@ describe('renderPageDoc', () => {
     expect(html).toContain('note');
     // Out-of-range attrs normalise to the defaults.
     const bad = renderPageDoc(
-      doc([{ type: 'aside', attrs: { color: 'nope', angle: 999 }, content: [{ type: 'paragraph' }] }]),
+      doc([
+        { type: 'aside', attrs: { color: 'nope', angle: 999 }, content: [{ type: 'paragraph' }] },
+      ]),
       opts,
     );
     expect(bad).toContain('data-color="chart-1"');
@@ -93,7 +162,11 @@ describe('renderPageDoc', () => {
     const html = renderPageDoc(
       doc([
         { type: 'blockMath', attrs: { latex: 'x^2' } },
-        { type: 'codeBlock', attrs: { language: 'ts' }, content: [{ type: 'text', text: 'const x = 1' }] },
+        {
+          type: 'codeBlock',
+          attrs: { language: 'ts' },
+          content: [{ type: 'text', text: 'const x = 1' }],
+        },
       ]),
       opts,
     );
@@ -104,7 +177,13 @@ describe('renderPageDoc', () => {
 
   it('emits the block id on headings so the outline can anchor-scroll to them', () => {
     const html = renderPageDoc(
-      doc([{ type: 'heading', attrs: { id: 'h-1', level: 2 }, content: [{ type: 'text', text: 'Section' }] }]),
+      doc([
+        {
+          type: 'heading',
+          attrs: { id: 'h-1', level: 2 },
+          content: [{ type: 'text', text: 'Section' }],
+        },
+      ]),
       opts,
     );
     expect(html).toBe('<h2 id="h-1">Section</h2>');
@@ -125,7 +204,18 @@ describe('renderPageDoc', () => {
 
   it('neutralizes dangerous link protocols', () => {
     const html = renderPageDoc(
-      doc([{ type: 'paragraph', content: [{ type: 'text', text: 'x', marks: [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }] }] }]),
+      doc([
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'x',
+              marks: [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }],
+            },
+          ],
+        },
+      ]),
       opts,
     );
     expect(html).not.toContain('javascript:');

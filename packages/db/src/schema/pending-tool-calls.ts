@@ -19,11 +19,16 @@ export const pendingToolStatus = pgEnum('pending_tool_status', [
 export const pendingToolCalls = pgTable(
   'pending_tool_calls',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
     toolSlug: text('tool_slug').notNull(),
-    args: jsonb('args').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    args: jsonb('args')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     traceId: uuid('trace_id').references(() => traces.id, { onDelete: 'set null' }),
     status: pendingToolStatus('status').default('pending').notNull(),
     result: jsonb('result').$type<Record<string, unknown> | null>(),

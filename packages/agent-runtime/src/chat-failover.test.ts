@@ -8,9 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const h = vi.hoisted(() => ({
-  primaryChat: (() => ({ text: 'primary-reply', model: 'p-model' })) as (
-    opts: unknown,
-  ) => unknown,
+  primaryChat: (() => ({ text: 'primary-reply', model: 'p-model' })) as (opts: unknown) => unknown,
   primaryCalls: 0,
   backupCalls: 0,
   // Last opts each route received — lets a test assert per-route baseUrl/
@@ -53,12 +51,29 @@ vi.mock('@mantle/api-keys', async (importOriginal) => {
   };
 });
 
-import { chatWithFailover, isChatFailover, resolveChatKey, resolveChatRoutes } from './chat-failover';
+import {
+  chatWithFailover,
+  isChatFailover,
+  resolveChatKey,
+  resolveChatRoutes,
+} from './chat-failover';
 import type { ChatRoutes } from './chat-failover';
 
 const ROUTES: ChatRoutes = {
-  primary: { provider: 'primary', model: 'p-model', apiKeyId: null, baseUrl: null, viaTailnet: false },
-  backup: { provider: 'backup', model: 'b-model', apiKeyId: null, baseUrl: null, viaTailnet: false },
+  primary: {
+    provider: 'primary',
+    model: 'p-model',
+    apiKeyId: null,
+    baseUrl: null,
+    viaTailnet: false,
+  },
+  backup: {
+    provider: 'backup',
+    model: 'b-model',
+    apiKeyId: null,
+    baseUrl: null,
+    viaTailnet: false,
+  },
 };
 const OPTS = { messages: [{ role: 'user' as const, content: 'hi' }] };
 const down = () => {
@@ -140,7 +155,13 @@ describe('chatWithFailover', () => {
         baseUrl: 'http://primary-box:11434/v1',
         viaTailnet: true,
       },
-      backup: { provider: 'backup', model: 'b-model', apiKeyId: null, baseUrl: null, viaTailnet: false },
+      backup: {
+        provider: 'backup',
+        model: 'b-model',
+        apiKeyId: null,
+        baseUrl: null,
+        viaTailnet: false,
+      },
     };
     const r = await chatWithFailover('o', routes, OPTS);
     expect(r.failedOver).toBe(true);

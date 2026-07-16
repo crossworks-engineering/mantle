@@ -35,7 +35,13 @@ import { currentTrace, step } from '@mantle/tracing';
 import { getEmbeddingAdapter, type EmbedInput } from '@mantle/voice';
 
 export type { EmbedInput };
-export { runReembed, digestEmbedText, type ReembedOpts, type ReembedResult, type ReembedProgressEvent } from './reembed';
+export {
+  runReembed,
+  digestEmbedText,
+  type ReembedOpts,
+  type ReembedResult,
+  type ReembedProgressEvent,
+} from './reembed';
 
 /** Models that accept non-text inputs. Kept here for callers (the
  *  extractor's attachment path) that need to know in advance which
@@ -66,8 +72,7 @@ const FALLBACK_MODEL = 'embeddinggemma:latest';
  * insert against the `vector(768)` columns. Paired with the `local` provider
  * default in {@link resolveEmbeddingConfig}.
  */
-export const DEFAULT_EMBEDDING_MODEL =
-  process.env.MANTLE_EMBEDDING_MODEL?.trim() || FALLBACK_MODEL;
+export const DEFAULT_EMBEDDING_MODEL = process.env.MANTLE_EMBEDDING_MODEL?.trim() || FALLBACK_MODEL;
 export const EMBEDDING_DIMS = 768;
 
 /**
@@ -281,7 +286,9 @@ function canonicalize(input: EmbedInput): string {
 }
 
 function hashKey(model: string, input: EmbedInput): string {
-  return createHash('sha256').update(`${model}:${canonicalize(input)}`).digest('hex');
+  return createHash('sha256')
+    .update(`${model}:${canonicalize(input)}`)
+    .digest('hex');
 }
 
 /**
@@ -574,7 +581,11 @@ export function isRouteDownError(err: unknown): boolean {
     if (err instanceof TypeError) return true;
     if (err.name === 'AbortError' || err.name === 'TimeoutError') return true;
     const m = err.message;
-    if (/ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|fetch failed|network|socket hang up|timed? ?out/i.test(m)) {
+    if (
+      /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|fetch failed|network|socket hang up|timed? ?out/i.test(
+        m,
+      )
+    ) {
       return true;
     }
     // Adapters throw "… failed: <status> <statusText> — …". 5xx = server-side

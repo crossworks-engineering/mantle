@@ -66,9 +66,7 @@ async function fetchAvailableModelIds(apiKey: string): Promise<Set<string>> {
 }
 
 /** Available TTS models for this key. */
-export async function discoverTtsModels(
-  apiKey: string,
-): Promise<DiscoveryResult<TtsModelInfo>> {
+export async function discoverTtsModels(apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
   try {
     const ids = await fetchAvailableModelIds(apiKey);
     return {
@@ -86,9 +84,7 @@ export async function discoverTtsModels(
 }
 
 /** Available STT models for this key. */
-export async function discoverSttModels(
-  apiKey: string,
-): Promise<DiscoveryResult<SttModelInfo>> {
+export async function discoverSttModels(apiKey: string): Promise<DiscoveryResult<SttModelInfo>> {
   try {
     const ids = await fetchAvailableModelIds(apiKey);
     return {

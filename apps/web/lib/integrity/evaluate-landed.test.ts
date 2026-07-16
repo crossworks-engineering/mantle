@@ -29,7 +29,8 @@ function fp(over: Partial<ProbeFootprint> = {}): ProbeFootprint {
   };
 }
 
-const fail = (cs: ReturnType<typeof evaluateLanded>['checks']) => cs.filter((c) => c.status === 'fail');
+const fail = (cs: ReturnType<typeof evaluateLanded>['checks']) =>
+  cs.filter((c) => c.status === 'fail');
 
 describe('evaluateLanded', () => {
   it('ok when success + summary + 768-dim embedding + tsv all present', () => {
@@ -56,7 +57,12 @@ describe('evaluateLanded', () => {
 
   it('skipped reads neutral and surfaces the disposition (not red)', () => {
     const r = evaluateLanded(
-      fp({ summary: null, embDims: null, hasTsv: false, run: { ...fp().run!, status: 'skipped', disposition: 'no_text_layer' } }),
+      fp({
+        summary: null,
+        embDims: null,
+        hasTsv: false,
+        run: { ...fp().run!, status: 'skipped', disposition: 'no_text_layer' },
+      }),
       1000,
     );
     expect(r.state).toBe('skipped');

@@ -107,7 +107,10 @@ try {
 
 const flagStr = (k: string) => (typeof flags[k] === 'string' ? (flags[k] as string) : undefined);
 const entry = flagStr('entry') ?? manifest.entry ?? (files['App.tsx'] ? 'App.tsx' : undefined);
-if (!entry) die("could not determine the entry file — pass --entry, add an App.tsx, or set it in mantle-app.json");
+if (!entry)
+  die(
+    'could not determine the entry file — pass --entry, add an App.tsx, or set it in mantle-app.json',
+  );
 if (!(entry in files)) die(`entry '${entry}' is not among the collected files`);
 
 const wantPublish = flags.publish === true;
@@ -161,7 +164,9 @@ if (manifest.schemaSql?.trim()) {
   }
   const app = await getApp(ownerId, id);
   const nextVersion = (app?.manifest.sqlite?.schemaVersion ?? 0) + 1;
-  await setManifest(ownerId, id, { sqlite: { schemaSql: manifest.schemaSql, schemaVersion: nextVersion } });
+  await setManifest(ownerId, id, {
+    sqlite: { schemaSql: manifest.schemaSql, schemaVersion: nextVersion },
+  });
   console.log(`set sqlite schema (v${nextVersion})`);
 }
 

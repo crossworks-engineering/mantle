@@ -235,7 +235,13 @@ export function setStepObserver(fn: StepObserver | null): void {
  *  AND this trace carries a `turnId` (so background traces stay free). */
 function notifyStepObserver(
   trace: TraceContext,
-  e: { name: string; kind: TraceStepKind; phase: StepPhase; ok: boolean; input?: Record<string, unknown> },
+  e: {
+    name: string;
+    kind: TraceStepKind;
+    phase: StepPhase;
+    ok: boolean;
+    input?: Record<string, unknown>;
+  },
 ): void {
   const obs = stepObserver;
   if (!obs || !trace.turnId) return;
@@ -300,7 +306,14 @@ export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: s
   // surfaces via the step observer above.
   if (!obs || !trace?.turnId || !trace.isStreamRoot) return;
   try {
-    obs({ turnId: trace.turnId, ownerId: trace.ownerId, seq: nextTurnSeq(trace.turnId), round, kind, text });
+    obs({
+      turnId: trace.turnId,
+      ownerId: trace.ownerId,
+      seq: nextTurnSeq(trace.turnId),
+      round,
+      kind,
+      text,
+    });
   } catch (err) {
     logErr('turn delta observer', err);
   }
@@ -407,10 +420,7 @@ function logErr(scope: string, err: unknown): void {
  * Open a new trace, run `fn` inside it, finish on success/failure.
  * Errors thrown by `fn` are recorded on the trace and re-thrown.
  */
-export async function startTrace<T>(
-  init: StartTraceInit,
-  fn: () => Promise<T>,
-): Promise<T> {
+export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>): Promise<T> {
   const id = genId();
   // Inherit the live-stream identity from a parent trace (a delegated sub-agent
   // opens its own trace but should stream into the SAME turn). A trace is the
@@ -567,7 +577,13 @@ export async function step<T>(
   // Live turn streaming tap: announce the step's start (no-op unless this trace
   // carries a turnId and an observer is installed). Input rides along for label
   // enrichment ("Searching your brain for …").
-  notifyStepObserver(trace, { name: init.name, kind: init.kind, phase: 'start', ok: true, input: init.input });
+  notifyStepObserver(trace, {
+    name: init.name,
+    kind: init.kind,
+    phase: 'start',
+    ok: true,
+    input: init.input,
+  });
 
   const handle: StepHandle = {
     id,

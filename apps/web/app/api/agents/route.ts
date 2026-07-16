@@ -22,7 +22,12 @@ const RoleEnum = z.enum([
 const MemoryConfig = z
   .object({
     history_limit: z.number().int().min(0).max(500).optional(),
-    history_window_hours: z.number().min(0).max(24 * 365).nullable().optional(),
+    history_window_hours: z
+      .number()
+      .min(0)
+      .max(24 * 365)
+      .nullable()
+      .optional(),
     // Responder/assistant-only.
     digest_limit: z.number().int().min(0).max(20).optional(),
     fact_limit: z.number().int().min(0).max(100).optional(),
@@ -68,7 +73,11 @@ const Avatar = z
   .nullable();
 
 const CreateBody = z.object({
-  slug: z.string().min(1).max(64).regex(/^[a-z0-9_-]+$/, 'slug must be lowercase letters/digits/dash'),
+  slug: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9_-]+$/, 'slug must be lowercase letters/digits/dash'),
   name: z.string().min(1).max(120),
   description: z.string().max(2000).nullish(),
   role: RoleEnum,

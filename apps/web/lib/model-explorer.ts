@@ -102,7 +102,9 @@ async function getJson(url: string, init?: RequestInit): Promise<unknown> {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 200)}` : ''}`);
+    throw new Error(
+      `HTTP ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+    );
   }
   return res.json();
 }
@@ -210,11 +212,7 @@ export function parseMistral(data: unknown[]): ExplorerModel[] {
     const m = rec(raw);
     const caps = rec(m.capabilities);
     const id = String(m.id ?? '');
-    const kind = id.toLowerCase().includes('embed')
-      ? 'embedding'
-      : caps.vision
-        ? 'chat'
-        : 'chat';
+    const kind = id.toLowerCase().includes('embed') ? 'embedding' : caps.vision ? 'chat' : 'chat';
     return {
       id,
       name: str(m.name) ?? str(m.id),
@@ -339,18 +337,22 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   openai: {
     needsKey: true,
     fetch: async (key) => {
-      const body = rec(await getJson('https://api.openai.com/v1/models', {
-        headers: { authorization: `Bearer ${key}` },
-      }));
+      const body = rec(
+        await getJson('https://api.openai.com/v1/models', {
+          headers: { authorization: `Bearer ${key}` },
+        }),
+      );
       return parseOpenAiLike(asArray(body.data));
     },
   },
   anthropic: {
     needsKey: true,
     fetch: async (key) => {
-      const body = rec(await getJson('https://api.anthropic.com/v1/models?limit=1000', {
-        headers: { 'x-api-key': key ?? '', 'anthropic-version': '2023-06-01' },
-      }));
+      const body = rec(
+        await getJson('https://api.anthropic.com/v1/models?limit=1000', {
+          headers: { 'x-api-key': key ?? '', 'anthropic-version': '2023-06-01' },
+        }),
+      );
       return parseAnthropic(asArray(body.data));
     },
   },
@@ -368,45 +370,55 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   xai: {
     needsKey: true,
     fetch: async (key) => {
-      const body = rec(await getJson('https://api.x.ai/v1/language-models', {
-        headers: { authorization: `Bearer ${key}` },
-      }));
+      const body = rec(
+        await getJson('https://api.x.ai/v1/language-models', {
+          headers: { authorization: `Bearer ${key}` },
+        }),
+      );
       return parseXaiLanguageModels(asArray(body.models));
     },
   },
   mistral: {
     needsKey: true,
     fetch: async (key) => {
-      const body = rec(await getJson('https://api.mistral.ai/v1/models', {
-        headers: { authorization: `Bearer ${key}` },
-      }));
+      const body = rec(
+        await getJson('https://api.mistral.ai/v1/models', {
+          headers: { authorization: `Bearer ${key}` },
+        }),
+      );
       return parseMistral(asArray(body.data));
     },
   },
   cohere: {
     needsKey: true,
     fetch: async (key) => {
-      const body = rec(await getJson('https://api.cohere.com/v1/models?page_size=1000', {
-        headers: { authorization: `Bearer ${key}` },
-      }));
+      const body = rec(
+        await getJson('https://api.cohere.com/v1/models?page_size=1000', {
+          headers: { authorization: `Bearer ${key}` },
+        }),
+      );
       return parseCohere(asArray(body.models));
     },
   },
   deepseek: {
     needsKey: true,
     fetch: async (key) => {
-      const body = rec(await getJson('https://api.deepseek.com/models', {
-        headers: { authorization: `Bearer ${key}` },
-      }));
+      const body = rec(
+        await getJson('https://api.deepseek.com/models', {
+          headers: { authorization: `Bearer ${key}` },
+        }),
+      );
       return parseOpenAiLike(asArray(body.data));
     },
   },
   huggingface: {
     needsKey: true,
     fetch: async (key) => {
-      const body = rec(await getJson('https://router.huggingface.co/v1/models', {
-        headers: { authorization: `Bearer ${key}` },
-      }));
+      const body = rec(
+        await getJson('https://router.huggingface.co/v1/models', {
+          headers: { authorization: `Bearer ${key}` },
+        }),
+      );
       return parseOpenAiLike(asArray(body.data));
     },
   },

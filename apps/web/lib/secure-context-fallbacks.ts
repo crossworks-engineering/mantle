@@ -77,7 +77,9 @@ const K = [
 ];
 
 function sha256Js(msg: Uint8Array): string {
-  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  const H = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ];
   const l = msg.length;
   const padded = new Uint8Array((((l + 8) >> 6) + 1) << 6);
   padded.set(msg);
@@ -94,7 +96,16 @@ function sha256Js(msg: Uint8Array): string {
       const s1 = rotr(w[i - 2]!, 17) ^ rotr(w[i - 2]!, 19) ^ (w[i - 2]! >>> 10);
       w[i] = (w[i - 16]! + s0 + w[i - 7]! + s1) | 0;
     }
-    let [a, b, c, d, e, f, g, h] = H as [number, number, number, number, number, number, number, number];
+    let [a, b, c, d, e, f, g, h] = H as [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ];
     for (let i = 0; i < 64; i++) {
       const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
       const ch = (e & f) ^ (~e & g);
@@ -102,10 +113,23 @@ function sha256Js(msg: Uint8Array): string {
       const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
       const maj = (a & b) ^ (a & c) ^ (b & c);
       const t2 = (S0 + maj) | 0;
-      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + t1) | 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) | 0;
     }
-    H[0] = (H[0]! + a) | 0; H[1] = (H[1]! + b) | 0; H[2] = (H[2]! + c) | 0; H[3] = (H[3]! + d) | 0;
-    H[4] = (H[4]! + e) | 0; H[5] = (H[5]! + f) | 0; H[6] = (H[6]! + g) | 0; H[7] = (H[7]! + h) | 0;
+    H[0] = (H[0]! + a) | 0;
+    H[1] = (H[1]! + b) | 0;
+    H[2] = (H[2]! + c) | 0;
+    H[3] = (H[3]! + d) | 0;
+    H[4] = (H[4]! + e) | 0;
+    H[5] = (H[5]! + f) | 0;
+    H[6] = (H[6]! + g) | 0;
+    H[7] = (H[7]! + h) | 0;
   }
   return H.map((x) => (x >>> 0).toString(16).padStart(8, '0')).join('');
 }

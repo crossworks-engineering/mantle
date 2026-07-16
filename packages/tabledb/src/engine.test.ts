@@ -34,7 +34,17 @@ function sampleDoc(): TableDocLike {
       { id: 'c-total', name: 'Total', type: 'formula', formula: '{Qty} * {Price}' },
     ],
     rows: [
-      { id: 'r1', cells: { 'c-name': 'Widget', 'c-qty': 3, 'c-price': 9.5, 'c-done': true, 'c-due': '2026-07-15', 'c-tags': ['a', 'b'] } },
+      {
+        id: 'r1',
+        cells: {
+          'c-name': 'Widget',
+          'c-qty': 3,
+          'c-price': 9.5,
+          'c-done': true,
+          'c-due': '2026-07-15',
+          'c-tags': ['a', 'b'],
+        },
+      },
       { id: 'r2', cells: { 'c-name': 'Gadget', 'c-qty': 1 } },
       { id: 'r3', cells: {} },
     ],
@@ -169,7 +179,10 @@ describe('stats + shape hash', () => {
 
 describe('naming hygiene', () => {
   it('dedupes colliding physical names deterministically', () => {
-    expect(dedupe([physicalName('c', 'a-b'), physicalName('c', 'a_b')])).toEqual(['c_a_b', 'c_a_b_2']);
+    expect(dedupe([physicalName('c', 'a-b'), physicalName('c', 'a_b')])).toEqual([
+      'c_a_b',
+      'c_a_b_2',
+    ]);
   });
 
   it('handles duplicate display names and hostile identifiers in views', () => {
@@ -184,7 +197,11 @@ describe('naming hygiene', () => {
     };
     writeDocFile(file, doc, { ...META, tabName: 'Weird "Tab"' });
     const back = readDocFile(file);
-    expect(back.columns.map((c) => c.name)).toEqual(['Amount', 'amount', '_pos"; DROP TABLE t; --']);
+    expect(back.columns.map((c) => c.name)).toEqual([
+      'Amount',
+      'amount',
+      '_pos"; DROP TABLE t; --',
+    ]);
     const db = openTableFile(file, { readOnly: true });
     try {
       const row = db.prepare(`SELECT "Amount", "amount_2" FROM "Weird ""Tab""" LIMIT 1`).get();

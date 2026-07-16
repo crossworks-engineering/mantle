@@ -92,7 +92,7 @@ export function AssistAgentPicker({
           agentSlug: next === DEFAULT_VALUE ? null : next,
         });
         const name =
-          next === DEFAULT_VALUE ? null : agents.find((a) => a.slug === next)?.name ?? null;
+          next === DEFAULT_VALUE ? null : (agents.find((a) => a.slug === next)?.name ?? null);
         onAgentNameChange?.(name);
       } catch (e) {
         setValue(prev);

@@ -19,7 +19,10 @@ export const tables = pgTable('tables', {
   nodeId: uuid('node_id')
     .primaryKey()
     .references(() => nodes.id, { onDelete: 'cascade' }),
-  data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  data: jsonb('data')
+    .$type<Record<string, unknown>>()
+    .default(sql`'{}'::jsonb`)
+    .notNull(),
   dataText: text('data_text').default('').notNull(),
   // Autosaved working copy (null when there are no uncommitted edits). Never
   // rendered or indexed; promoted into `data` on commit.

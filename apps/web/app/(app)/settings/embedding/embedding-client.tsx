@@ -150,14 +150,16 @@ function EmbeddingForm({
     const r = which === 'primary' ? primary : backup;
     setTesting(which);
     try {
-      const res = await apiSend<
-        { ok: true; dimensions: number } | { ok: false; error: string }
-      >('/api/embedding/test', 'POST', {
-        provider: r.provider,
-        model: model.trim(),
-        baseUrl: r.baseUrl.trim() || null,
-        apiKeyId: r.apiKeyId || null,
-      });
+      const res = await apiSend<{ ok: true; dimensions: number } | { ok: false; error: string }>(
+        '/api/embedding/test',
+        'POST',
+        {
+          provider: r.provider,
+          model: model.trim(),
+          baseUrl: r.baseUrl.trim() || null,
+          apiKeyId: r.apiKeyId || null,
+        },
+      );
       setProbe((p) => ({
         ...p,
         [which]: res.ok ? { dim: res.dimensions } : { error: res.error },
@@ -176,9 +178,11 @@ function EmbeddingForm({
     setRebuilding(true);
     startTransition(async () => {
       try {
-        const res = await apiSend<
-          { ok: true; model: string } | { ok: false; error: string }
-        >('/api/embedding/rebuild', 'POST', { repopulate });
+        const res = await apiSend<{ ok: true; model: string } | { ok: false; error: string }>(
+          '/api/embedding/rebuild',
+          'POST',
+          { repopulate },
+        );
         if (res.ok) toast.success(`Re-embed complete — model ${res.model}`);
         else toast.error(`Re-embed failed: ${res.error}`);
       } catch (err) {
@@ -194,9 +198,11 @@ function EmbeddingForm({
     const body = Object.fromEntries(new FormData(e.currentTarget));
     startTransition(async () => {
       try {
-        const res = await apiSend<
-          { ok: true; model: string } | { ok: false; error: string }
-        >('/api/embedding', 'POST', body);
+        const res = await apiSend<{ ok: true; model: string } | { ok: false; error: string }>(
+          '/api/embedding',
+          'POST',
+          body,
+        );
         if (res.ok) {
           toast.success(`Embedding config saved — ${res.model}`);
           queryClient.invalidateQueries({ queryKey: ['embedding'] });
@@ -220,13 +226,12 @@ function EmbeddingForm({
     <div className="mx-auto w-full max-w-3xl space-y-6 p-1">
       <header className="space-y-1">
         <p className="text-sm text-muted-foreground">
-          The <strong>one</strong> place the brain&apos;s embedder is configured. Every
-          embed — ingest, retrieval, recall, MCP search — resolves from here; agents
-          and workers can&apos;t override it. The brain is{' '}
-          <strong>vector-space-locked</strong>: there is a single model at{' '}
+          The <strong>one</strong> place the brain&apos;s embedder is configured. Every embed —
+          ingest, retrieval, recall, MCP search — resolves from here; agents and workers can&apos;t
+          override it. The brain is <strong>vector-space-locked</strong>: there is a single model at{' '}
           <code className="font-mono">{columnDims}</code> dims, and the backup is the{' '}
-          <strong>same model on a different route</strong> (for availability), never a
-          different model.
+          <strong>same model on a different route</strong> (for availability), never a different
+          model.
         </p>
       </header>
 
@@ -246,11 +251,10 @@ function EmbeddingForm({
               placeholder="embeddinggemma:latest"
             />
             <p className="text-xs text-muted-foreground">
-              The served model id (Ollama: <code>embeddinggemma:latest</code>). Both
-              routes must serve <em>this</em> model. Column dimension:{' '}
-              <code className="font-mono">vector({columnDims})</code> — changing to a
-              model with a different native dim needs a schema migration + full
-              re-embed (not a button).
+              The served model id (Ollama: <code>embeddinggemma:latest</code>). Both routes must
+              serve <em>this</em> model. Column dimension:{' '}
+              <code className="font-mono">vector({columnDims})</code> — changing to a model with a
+              different native dim needs a schema migration + full re-embed (not a button).
             </p>
           </div>
           {failoverDate && (
@@ -291,11 +295,10 @@ function EmbeddingForm({
           </div>
           <input type="hidden" name="backup_enabled" value={backupEnabled ? 'on' : 'off'} />
           <p className="text-xs text-muted-foreground">
-            When the primary route is unreachable (connection refused / timeout / 5xx),
-            embeds fail over here. Must serve the same model{' '}
-            <code className="font-mono">{model || 'embeddinggemma:latest'}</code> — a
-            different model lands vectors in a different space and silently breaks
-            retrieval.
+            When the primary route is unreachable (connection refused / timeout / 5xx), embeds fail
+            over here. Must serve the same model{' '}
+            <code className="font-mono">{model || 'embeddinggemma:latest'}</code> — a different
+            model lands vectors in a different space and silently breaks retrieval.
           </p>
           {backupEnabled && (
             <RouteFields
@@ -335,9 +338,9 @@ function EmbeddingForm({
               </option>
             </select>
             <p className="text-xs text-muted-foreground">
-              A one-click starting point — it just fills the fields below; tweak any of
-              them and Save. A blank field uses the built-in default. On a small CPU-only
-              VPS, pick <strong>Small CPU VPS</strong>.
+              A one-click starting point — it just fills the fields below; tweak any of them and
+              Save. A blank field uses the built-in default. On a small CPU-only VPS, pick{' '}
+              <strong>Small CPU VPS</strong>.
             </p>
           </div>
 
@@ -355,8 +358,8 @@ function EmbeddingForm({
                 placeholder="default 2"
               />
               <p className="text-xs text-muted-foreground">
-                How many files index at once. Drop to <code>1</code> on a CPU-only box so
-                jobs don&apos;t fight for the same cores.
+                How many files index at once. Drop to <code>1</code> on a CPU-only box so jobs
+                don&apos;t fight for the same cores.
               </p>
             </div>
             <div className="space-y-1.5">
@@ -372,8 +375,8 @@ function EmbeddingForm({
                 placeholder="default 60"
               />
               <p className="text-xs text-muted-foreground">
-                How long one file may index before it&apos;s retried. Big documents on a
-                slow embedder need the room.
+                How long one file may index before it&apos;s retried. Big documents on a slow
+                embedder need the room.
               </p>
             </div>
             <div className="space-y-1.5">
@@ -389,9 +392,8 @@ function EmbeddingForm({
                 placeholder="default 16"
               />
               <p className="text-xs text-muted-foreground">
-                Texts per request to the local embedder. Smaller (<code>8</code>) clears
-                the timeout on a slow vCPU; larger suits a GPU. Only affects the{' '}
-                <code>local</code> provider.
+                Texts per request to the local embedder. Smaller (<code>8</code>) clears the timeout
+                on a slow vCPU; larger suits a GPU. Only affects the <code>local</code> provider.
               </p>
             </div>
             <div className="space-y-1.5">
@@ -408,15 +410,15 @@ function EmbeddingForm({
                 placeholder="default 120000"
               />
               <p className="text-xs text-muted-foreground">
-                How long one local embed request may run before it&apos;s aborted. Raise on
-                very slow hardware.
+                How long one local embed request may run before it&apos;s aborted. Raise on very
+                slow hardware.
               </p>
             </div>
           </div>
 
           <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            ℹ Batch size and timeout apply immediately. Concurrency and the time budget are
-            read when the extractor starts, so they take effect after the agent restarts.
+            ℹ Batch size and timeout apply immediately. Concurrency and the time budget are read
+            when the extractor starts, so they take effect after the agent restarts.
           </p>
         </fieldset>
 
@@ -429,9 +431,9 @@ function EmbeddingForm({
           Reindex
         </legend>
         <p className="text-xs text-muted-foreground">
-          Re-embed the corpus against the saved model. Run after changing the model.
-          While a re-embed is in flight, semantic search is degraded (mixed spaces) —
-          do it in a quiet window. Idempotent under the embedding cache.
+          Re-embed the corpus against the saved model. Run after changing the model. While a
+          re-embed is in flight, semantic search is degraded (mixed spaces) — do it in a quiet
+          window. Idempotent under the embedding cache.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -452,9 +454,9 @@ function EmbeddingForm({
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          <strong>Repopulate</strong> also embeds rows whose vector is currently null —
-          use it after a dimension migration that nulled the column. <strong>Rebuild</strong>{' '}
-          refreshes already-embedded rows.
+          <strong>Repopulate</strong> also embeds rows whose vector is currently null — use it after
+          a dimension migration that nulled the column. <strong>Rebuild</strong> refreshes
+          already-embedded rows.
         </p>
       </fieldset>
     </div>

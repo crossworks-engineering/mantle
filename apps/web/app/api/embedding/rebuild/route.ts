@@ -22,6 +22,9 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ ok: true, model, result });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    return NextResponse.json({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }

@@ -47,7 +47,11 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       .from(skills)
       .where(eq(skills.ownerId, ownerId)),
     db
-      .select({ slug: toolGroups.slug, enabled: toolGroups.enabled, toolSlugs: toolGroups.toolSlugs })
+      .select({
+        slug: toolGroups.slug,
+        enabled: toolGroups.enabled,
+        toolSlugs: toolGroups.toolSlugs,
+      })
       .from(toolGroups)
       .where(eq(toolGroups.ownerId, ownerId)),
     db
@@ -88,12 +92,20 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
     let ok = true;
     if (!persona || !persona.enabled) {
       ok = false;
-      samples.push({ id: personaSlug, detail: persona ? 'disabled' : 'no persona agent (no slug `assistant`, no enabled responder)' });
+      samples.push({
+        id: personaSlug,
+        detail: persona
+          ? 'disabled'
+          : 'no persona agent (no slug `assistant`, no enabled responder)',
+      });
     } else {
       const eff = effectiveAgentTools(persona);
       if (eff.size === 0) {
         ok = false;
-        samples.push({ id: personaSlug, detail: 'no tools attached (no groups granted) — cannot act' });
+        samples.push({
+          id: personaSlug,
+          detail: 'no tools attached (no groups granted) — cannot act',
+        });
       } else if (!eff.has('invoke_agent')) {
         ok = false;
         samples.push({ id: personaSlug, detail: 'missing invoke_agent — cannot delegate' });
@@ -172,7 +184,8 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       if (!row) continue;
       const have = new Set(row.skillSlugs ?? []);
       for (const s of a.skillSlugs) {
-        if (!have.has(s)) samples.push({ id: `${a.slug}:${s}`, detail: `${a.slug} is missing skill '${s}'` });
+        if (!have.has(s))
+          samples.push({ id: `${a.slug}:${s}`, detail: `${a.slug} is missing skill '${s}'` });
       }
     }
     checks.push({
@@ -180,7 +193,10 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       label: 'Agent ↔ skill links',
       severity: 'medium',
       ok: samples.length === 0,
-      detail: samples.length === 0 ? 'every agent carries its expected skills' : `${samples.length} expected skill link(s) missing`,
+      detail:
+        samples.length === 0
+          ? 'every agent carries its expected skills'
+          : `${samples.length} expected skill link(s) missing`,
       samples,
     });
   }
@@ -194,7 +210,11 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
     const samples: SystemSample[] = [];
     for (const a of agentRows) {
       for (const s of a.skillSlugs ?? []) {
-        if (!enabledSkillSlugs.has(s)) samples.push({ id: `${a.slug}:${s}`, detail: `${a.slug} → skill '${s}' missing or disabled` });
+        if (!enabledSkillSlugs.has(s))
+          samples.push({
+            id: `${a.slug}:${s}`,
+            detail: `${a.slug} → skill '${s}' missing or disabled`,
+          });
       }
     }
     checks.push({
@@ -202,7 +222,10 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       label: 'Dangling skill references',
       severity: 'high',
       ok: samples.length === 0,
-      detail: samples.length === 0 ? 'every agent skill slug resolves to an enabled skill' : `${samples.length} dangling skill ref(s) — the behaviour silently drops`,
+      detail:
+        samples.length === 0
+          ? 'every agent skill slug resolves to an enabled skill'
+          : `${samples.length} dangling skill ref(s) — the behaviour silently drops`,
       samples: samples.slice(0, 25),
     });
   }
@@ -224,7 +247,10 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       label: 'Tool group ↔ tool links',
       severity: 'medium',
       ok: samples.length === 0,
-      detail: samples.length === 0 ? 'every tool group is seeded, enabled, and its tools resolve' : `${samples.length} tool-group issue(s)`,
+      detail:
+        samples.length === 0
+          ? 'every tool group is seeded, enabled, and its tools resolve'
+          : `${samples.length} tool-group issue(s)`,
       samples: samples.slice(0, 25),
     });
   }
@@ -234,7 +260,11 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
     const samples: SystemSample[] = [];
     for (const a of agentRows) {
       for (const g of a.toolGroupSlugs ?? []) {
-        if (!enabledToolGroupSlugs.has(g)) samples.push({ id: `${a.slug}:${g}`, detail: `${a.slug} → tool group '${g}' missing or disabled` });
+        if (!enabledToolGroupSlugs.has(g))
+          samples.push({
+            id: `${a.slug}:${g}`,
+            detail: `${a.slug} → tool group '${g}' missing or disabled`,
+          });
       }
     }
     checks.push({
@@ -242,19 +272,27 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       label: 'Dangling tool-group references',
       severity: 'high',
       ok: samples.length === 0,
-      detail: samples.length === 0 ? 'every agent tool-group grant resolves to an enabled group' : `${samples.length} dangling tool-group ref(s) — the capability silently drops`,
+      detail:
+        samples.length === 0
+          ? 'every agent tool-group grant resolves to an enabled group'
+          : `${samples.length} dangling tool-group ref(s) — the capability silently drops`,
       samples: samples.slice(0, 25),
     });
   }
 
   // 8. Baseline workers — a default, enabled worker for each required kind.
   {
-    const defaultEnabledKinds = new Set(workers.filter((w) => w.enabled && w.isDefault).map((w) => w.kind));
+    const defaultEnabledKinds = new Set(
+      workers.filter((w) => w.enabled && w.isDefault).map((w) => w.kind),
+    );
     const requiredKinds = MANIFEST_WORKERS.filter((w) => w.required).map((w) => w.kind);
     const samples: SystemSample[] = [];
     for (const w of MANIFEST_WORKERS) {
       if (w.required && !defaultEnabledKinds.has(w.kind)) {
-        samples.push({ id: w.kind, detail: `no default+enabled '${w.kind}' worker — the brain won’t ${w.kind === 'extractor' ? 'index' : 'run that step'}` });
+        samples.push({
+          id: w.kind,
+          detail: `no default+enabled '${w.kind}' worker — the brain won’t ${w.kind === 'extractor' ? 'index' : 'run that step'}`,
+        });
       }
     }
     checks.push({
@@ -264,7 +302,10 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       ok: samples.length === 0,
       // Derive the ready list from the required kinds so it never drifts as the
       // baseline set grows (e.g. the narrator).
-      detail: samples.length === 0 ? `${requiredKinds.join(' · ')} ready` : `${samples.length} required worker(s) missing`,
+      detail:
+        samples.length === 0
+          ? `${requiredKinds.join(' · ')} ready`
+          : `${samples.length} required worker(s) missing`,
       samples,
     });
   }
@@ -276,14 +317,19 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       resolveAssistAgentSlug(ownerId, 'tables'),
     ]);
     const samples: SystemSample[] = [];
-    if (!pagesAssist) samples.push({ id: 'pages', detail: '/pages Assist resolves to no agent (409s)' });
-    if (!tablesAssist) samples.push({ id: 'tables', detail: '/tables Assist resolves to no agent (409s)' });
+    if (!pagesAssist)
+      samples.push({ id: 'pages', detail: '/pages Assist resolves to no agent (409s)' });
+    if (!tablesAssist)
+      samples.push({ id: 'tables', detail: '/tables Assist resolves to no agent (409s)' });
     checks.push({
       key: 'assist',
       label: 'Editor Assist binding',
       severity: 'high',
       ok: samples.length === 0,
-      detail: samples.length === 0 ? `pages → ${pagesAssist} · tables → ${tablesAssist}` : 'an editor Assist panel has no agent to invoke',
+      detail:
+        samples.length === 0
+          ? `pages → ${pagesAssist} · tables → ${tablesAssist}`
+          : 'an editor Assist panel has no agent to invoke',
       samples,
     });
   }

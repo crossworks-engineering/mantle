@@ -10,13 +10,7 @@ const METHOD_CLASSES: Record<HttpMethod, string> = {
   DELETE: 'text-destructive',
 };
 
-export function MethodBadge({
-  method,
-  className,
-}: {
-  method: HttpMethod;
-  className?: string;
-}) {
+export function MethodBadge({ method, className }: { method: HttpMethod; className?: string }) {
   return (
     <span
       className={cn(

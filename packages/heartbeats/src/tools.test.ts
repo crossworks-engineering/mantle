@@ -18,11 +18,7 @@ import { describe, expect, it } from 'vitest';
 import { HEARTBEAT_TOOLS, HEARTBEAT_RESPONDER_TOOLS, registerHeartbeatTools } from './tools';
 import { withHeartbeatContext } from './context';
 import { getBuiltinHandler } from '@mantle/tools';
-import type {
-  BuiltinToolDef,
-  ToolHandlerContext,
-  ToolHandlerResult,
-} from '@mantle/tools';
+import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from '@mantle/tools';
 
 const OWNER = 'owner-uuid-for-tests';
 const HB_ID = 'hb-uuid-for-tests';
@@ -72,7 +68,9 @@ describe('registerHeartbeatTools — dispatch registration', () => {
   it('registers all five heartbeat builtins, not just the responder subset', () => {
     registerHeartbeatTools();
     for (const def of HEARTBEAT_TOOLS) {
-      expect(typeof getBuiltinHandler(def.slug), `${def.slug} handler must resolve`).toBe('function');
+      expect(typeof getBuiltinHandler(def.slug), `${def.slug} handler must resolve`).toBe(
+        'function',
+      );
     }
   });
 
@@ -206,9 +204,8 @@ describe('heartbeat_fire — P1-3 recursion guards', () => {
     // proof that the guards didn't trip.
     let caught: unknown;
     try {
-      await withHeartbeatContext(
-        { heartbeatId: 'hb-uuid', slug: 'hb_a', ownerId: OWNER },
-        () => findTool('heartbeat_fire').handler({ slug: 'hb_b_not_in_db' }, mkCtx()),
+      await withHeartbeatContext({ heartbeatId: 'hb-uuid', slug: 'hb_a', ownerId: OWNER }, () =>
+        findTool('heartbeat_fire').handler({ slug: 'hb_b_not_in_db' }, mkCtx()),
       );
     } catch (err) {
       caught = err;

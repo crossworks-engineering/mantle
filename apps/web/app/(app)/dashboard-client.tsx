@@ -63,8 +63,20 @@ export function DashboardClient() {
     );
   }
 
-  const { brain, vectors, ingest, spend30, email, telegram, heartbeats, pendingTools, errs, fails, integrity, capacity } =
-    dashboardQuery.data;
+  const {
+    brain,
+    vectors,
+    ingest,
+    spend30,
+    email,
+    telegram,
+    heartbeats,
+    pendingTools,
+    errs,
+    fails,
+    integrity,
+    capacity,
+  } = dashboardQuery.data;
 
   // 7d vs prior-7d spend for the KPI trend.
   const last7 = spend30.slice(-7).reduce((a, d) => a + d.costMicroUsd, 0);

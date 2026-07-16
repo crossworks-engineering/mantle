@@ -135,10 +135,10 @@ function fromHeartbeat(h: HeartbeatSummary): FormState {
     // the form state as 'manual' for radio rendering purposes only;
     // the submit path bails before re-serialising the schedule, so
     // the DB row's cron config is preserved unchanged.
-    schedule_kind: h.scheduleKind === 'cron' ? 'manual' : (h.scheduleKind as FormState['schedule_kind']),
+    schedule_kind:
+      h.scheduleKind === 'cron' ? 'manual' : (h.scheduleKind as FormState['schedule_kind']),
     schedule_at: h.schedule.kind === 'once' ? isoToLocalInput(h.schedule.at) : '',
-    schedule_every_minutes:
-      h.schedule.kind === 'interval' ? String(h.schedule.every_minutes) : '',
+    schedule_every_minutes: h.schedule.kind === 'interval' ? String(h.schedule.every_minutes) : '',
     schedule_jitter_minutes:
       h.schedule.kind === 'interval' ? String(h.schedule.jitter_minutes ?? '') : '',
     surface_kind: h.surface.kind,
@@ -196,7 +196,8 @@ export function HeartbeatsClient() {
   // EVERY agent (incl. worker roles) — heartbeats may bind any of them.
   const agentsQuery = useQuery({
     queryKey: ['agents', 'options'],
-    queryFn: () => apiFetch<{ agents: AgentOptionDTO[] }>('/api/agents/options').then((r) => r.agents),
+    queryFn: () =>
+      apiFetch<{ agents: AgentOptionDTO[] }>('/api/agents/options').then((r) => r.agents),
   });
   const skillsQuery = useQuery({
     queryKey: ['skills'],
@@ -214,7 +215,9 @@ export function HeartbeatsClient() {
       })),
     [skillsQuery.data],
   );
-  const [editing, setEditing] = useState<{ mode: 'create' } | { mode: 'edit'; hb: HeartbeatSummary } | null>(null);
+  const [editing, setEditing] = useState<
+    { mode: 'create' } | { mode: 'edit'; hb: HeartbeatSummary } | null
+  >(null);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [slugTouched, setSlugTouched] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<HeartbeatSummary | null>(null);
@@ -543,301 +546,310 @@ export function HeartbeatsClient() {
             </div>
 
             <div className="grid gap-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Name</Label>
-                <Input value={form.name} onChange={(e) => onName(e.target.value)} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label>Name</Label>
+                  <Input value={form.name} onChange={(e) => onName(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Slug</Label>
+                  <Input
+                    value={form.slug}
+                    disabled={editing.mode === 'edit'}
+                    onChange={(e) => {
+                      setSlugTouched(true);
+                      setForm((f) => ({ ...f, slug: slugify(e.target.value) }));
+                    }}
+                  />
+                </div>
               </div>
+
               <div className="space-y-1">
-                <Label>Slug</Label>
+                <Label>Description (optional)</Label>
                 <Input
-                  value={form.slug}
-                  disabled={editing.mode === 'edit'}
-                  onChange={(e) => {
-                    setSlugTouched(true);
-                    setForm((f) => ({ ...f, slug: slugify(e.target.value) }));
-                  }}
+                  value={form.description}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                 />
               </div>
-            </div>
 
-            <div className="space-y-1">
-              <Label>Description (optional)</Label>
-              <Input
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Agent</Label>
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                  value={form.agent_slug}
-                  onChange={(e) => setForm((f) => ({ ...f, agent_slug: e.target.value }))}
-                >
-                  <option value="">— choose —</option>
-                  {agents.map((a) => (
-                    <option key={a.slug} value={a.slug}>
-                      {a.name} ({a.slug}, {a.role})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <Label>Skill</Label>
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                  value={form.skill_slug}
-                  onChange={(e) => {
-                    const slug = e.target.value;
-                    setForm((f) => {
-                      // Pre-fill initial state from the picked skill's
-                      // defaultState — but only when the operator
-                      // hasn't manually edited the state textarea yet.
-                      // Protects in-progress edits if they switch
-                      // skills experimentally. Edit mode sets
-                      // state_touched=true at fromHeartbeat time so
-                      // existing heartbeats never get clobbered.
-                      const next: FormState = { ...f, skill_slug: slug };
-                      if (!f.state_touched && slug) {
-                        const picked = skills.find((sk) => sk.slug === slug);
-                        if (picked) {
-                          next.state_text = JSON.stringify(picked.defaultState ?? {}, null, 2);
-                        }
-                      }
-                      return next;
-                    });
-                  }}
-                >
-                  <option value="">— choose —</option>
-                  {skills.map((s) => (
-                    <option key={s.slug} value={s.slug}>
-                      {s.name} ({s.slug})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="state_text">Initial state (JSON)</Label>
-              <textarea
-                id="state_text"
-                value={form.state_text}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, state_text: e.target.value, state_touched: true }))
-                }
-                rows={6}
-                className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
-                placeholder={'{\n  "answered": [],\n  "expecting_reply": false\n}'}
-              />
-              <p className="text-xs text-muted-foreground">
-                Pre-fills from the chosen skill&apos;s default state on first pick.
-                Edits here only affect this heartbeat. See well-known keys in{' '}
-                <a
-                  href="https://github.com/TitanKing/mantle/blob/main/docs/heartbeats.md#10-conventions-well-known-state-keys"
-                  className="underline"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  docs/heartbeats.md §10
-                </a>
-                .
-              </p>
-            </div>
-
-            <fieldset className="space-y-3 rounded-md border p-4">
-              <legend className="px-1 text-sm font-medium">Schedule</legend>
-              {form.is_cron_locked && (
-                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-100">
-                  <strong>This heartbeat uses a cron schedule</strong>, which
-                  isn&apos;t supported in v1 of the heartbeats form. Editing the
-                  schedule here would silently coerce to <code>manual</code> and
-                  lose the cron expression — so it&apos;s locked.
-                  <br />
-                  To change this heartbeat&apos;s schedule, either edit the row
-                  directly via SQL, or delete + recreate it with one of the
-                  v1-supported schedule kinds.
-                </div>
-              )}
-              <div className="flex flex-wrap gap-3">
-                {(['interval', 'once', 'manual'] as const).map((k) => (
-                  <label
-                    key={k}
-                    className={
-                      'flex items-center gap-2 text-sm' +
-                      (form.is_cron_locked ? ' opacity-50' : '')
-                    }
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label>Agent</Label>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    value={form.agent_slug}
+                    onChange={(e) => setForm((f) => ({ ...f, agent_slug: e.target.value }))}
                   >
-                    <input
-                      type="radio"
-                      checked={form.schedule_kind === k}
-                      disabled={form.is_cron_locked}
-                      onChange={() => setForm((f) => ({ ...f, schedule_kind: k }))}
-                    />
-                    {k}
-                  </label>
-                ))}
+                    <option value="">— choose —</option>
+                    {agents.map((a) => (
+                      <option key={a.slug} value={a.slug}>
+                        {a.name} ({a.slug}, {a.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Skill</Label>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    value={form.skill_slug}
+                    onChange={(e) => {
+                      const slug = e.target.value;
+                      setForm((f) => {
+                        // Pre-fill initial state from the picked skill's
+                        // defaultState — but only when the operator
+                        // hasn't manually edited the state textarea yet.
+                        // Protects in-progress edits if they switch
+                        // skills experimentally. Edit mode sets
+                        // state_touched=true at fromHeartbeat time so
+                        // existing heartbeats never get clobbered.
+                        const next: FormState = { ...f, skill_slug: slug };
+                        if (!f.state_touched && slug) {
+                          const picked = skills.find((sk) => sk.slug === slug);
+                          if (picked) {
+                            next.state_text = JSON.stringify(picked.defaultState ?? {}, null, 2);
+                          }
+                        }
+                        return next;
+                      });
+                    }}
+                  >
+                    <option value="">— choose —</option>
+                    {skills.map((s) => (
+                      <option key={s.slug} value={s.slug}>
+                        {s.name} ({s.slug})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              {form.schedule_kind === 'interval' && (
-                <div className="grid gap-3 sm:grid-cols-2">
+
+              <div className="space-y-1">
+                <Label htmlFor="state_text">Initial state (JSON)</Label>
+                <textarea
+                  id="state_text"
+                  value={form.state_text}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, state_text: e.target.value, state_touched: true }))
+                  }
+                  rows={6}
+                  className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+                  placeholder={'{\n  "answered": [],\n  "expecting_reply": false\n}'}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Pre-fills from the chosen skill&apos;s default state on first pick. Edits here
+                  only affect this heartbeat. See well-known keys in{' '}
+                  <a
+                    href="https://github.com/TitanKing/mantle/blob/main/docs/heartbeats.md#10-conventions-well-known-state-keys"
+                    className="underline"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    docs/heartbeats.md §10
+                  </a>
+                  .
+                </p>
+              </div>
+
+              <fieldset className="space-y-3 rounded-md border p-4">
+                <legend className="px-1 text-sm font-medium">Schedule</legend>
+                {form.is_cron_locked && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-100">
+                    <strong>This heartbeat uses a cron schedule</strong>, which isn&apos;t supported
+                    in v1 of the heartbeats form. Editing the schedule here would silently coerce to{' '}
+                    <code>manual</code> and lose the cron expression — so it&apos;s locked.
+                    <br />
+                    To change this heartbeat&apos;s schedule, either edit the row directly via SQL,
+                    or delete + recreate it with one of the v1-supported schedule kinds.
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-3">
+                  {(['interval', 'once', 'manual'] as const).map((k) => (
+                    <label
+                      key={k}
+                      className={
+                        'flex items-center gap-2 text-sm' +
+                        (form.is_cron_locked ? ' opacity-50' : '')
+                      }
+                    >
+                      <input
+                        type="radio"
+                        checked={form.schedule_kind === k}
+                        disabled={form.is_cron_locked}
+                        onChange={() => setForm((f) => ({ ...f, schedule_kind: k }))}
+                      />
+                      {k}
+                    </label>
+                  ))}
+                </div>
+                {form.schedule_kind === 'interval' && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label>Every (minutes)</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={form.schedule_every_minutes}
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, schedule_every_minutes: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Jitter ± (minutes)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={form.schedule_jitter_minutes}
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, schedule_jitter_minutes: e.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+                {form.schedule_kind === 'once' && (
                   <div className="space-y-1">
-                    <Label>Every (minutes)</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={form.schedule_every_minutes}
-                      onChange={(e) => setForm((f) => ({ ...f, schedule_every_minutes: e.target.value }))}
+                    <Label>Fire at</Label>
+                    <DateTimePicker
+                      value={form.schedule_at ? new Date(form.schedule_at) : null}
+                      onChange={(d) =>
+                        setForm((f) => ({
+                          ...f,
+                          schedule_at: d ? isoToLocalInput(d.toISOString()) : '',
+                        }))
+                      }
+                      placeholder="Pick a date & time"
                     />
                   </div>
+                )}
+                {form.schedule_kind === 'manual' && (
+                  <p className="text-xs text-muted-foreground">
+                    Only fires via the &quot;Fire now&quot; button or the heartbeat_fire tool. No
+                    auto-schedule.
+                  </p>
+                )}
+              </fieldset>
+
+              <fieldset className="space-y-3 rounded-md border p-4">
+                <legend className="px-1 text-sm font-medium">Surface (where the reply goes)</legend>
+                <div className="flex gap-4">
+                  {(['telegram', 'web'] as const).map((k) => (
+                    <label key={k} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        checked={form.surface_kind === k}
+                        onChange={() => setForm((f) => ({ ...f, surface_kind: k }))}
+                      />
+                      {k}
+                    </label>
+                  ))}
+                </div>
+                {form.surface_kind === 'telegram' && (
                   <div className="space-y-1">
-                    <Label>Jitter ± (minutes)</Label>
+                    <Label>Telegram chat_id</Label>
+                    <Input
+                      value={form.surface_chat_id}
+                      onChange={(e) => setForm((f) => ({ ...f, surface_chat_id: e.target.value }))}
+                      placeholder="e.g. 123456789"
+                    />
+                  </div>
+                )}
+              </fieldset>
+
+              <fieldset className="space-y-3 rounded-md border p-4">
+                <legend className="px-1 text-sm font-medium">
+                  Gates — when is it appropriate to fire?
+                </legend>
+                <div className="flex flex-wrap gap-3 text-sm">
+                  {(['none', 'sensible', 'custom'] as const).map((p) => (
+                    <label key={p} className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        checked={form.gate_preset === p}
+                        onChange={() => applyPreset(p)}
+                      />
+                      {p === 'sensible' ? 'sensible defaults' : p}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  No system-wide defaults. Blank fields mean &quot;no gate of this kind&quot;.
+                  &quot;Sensible defaults&quot; fills in 15min idle, 22:00–07:00 quiet hours
+                  (profile tz), 30min cooldown.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label>Min idle (minutes)</Label>
                     <Input
                       type="number"
                       min="0"
-                      value={form.schedule_jitter_minutes}
-                      onChange={(e) => setForm((f) => ({ ...f, schedule_jitter_minutes: e.target.value }))}
+                      value={form.min_idle_minutes}
+                      onChange={(e) => setForm((f) => ({ ...f, min_idle_minutes: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Cooldown (minutes)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={form.cooldown_minutes}
+                      onChange={(e) => setForm((f) => ({ ...f, cooldown_minutes: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Quiet from (HH:MM)</Label>
+                    <Input
+                      value={form.quiet_from}
+                      placeholder="22:00"
+                      onChange={(e) => setForm((f) => ({ ...f, quiet_from: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Quiet to (HH:MM)</Label>
+                    <Input
+                      value={form.quiet_to}
+                      placeholder="07:00"
+                      onChange={(e) => setForm((f) => ({ ...f, quiet_to: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label>Quiet tz (IANA, blank = profile tz)</Label>
+                    <Input
+                      value={form.quiet_tz}
+                      placeholder="Africa/Johannesburg"
+                      onChange={(e) => setForm((f) => ({ ...f, quiet_tz: e.target.value }))}
                     />
                   </div>
                 </div>
-              )}
-              {form.schedule_kind === 'once' && (
-                <div className="space-y-1">
-                  <Label>Fire at</Label>
-                  <DateTimePicker
-                    value={form.schedule_at ? new Date(form.schedule_at) : null}
-                    onChange={(d) =>
-                      setForm((f) => ({ ...f, schedule_at: d ? isoToLocalInput(d.toISOString()) : '' }))
-                    }
-                    placeholder="Pick a date & time"
-                  />
-                </div>
-              )}
-              {form.schedule_kind === 'manual' && (
-                <p className="text-xs text-muted-foreground">
-                  Only fires via the &quot;Fire now&quot; button or the heartbeat_fire tool. No auto-schedule.
-                </p>
-              )}
-            </fieldset>
+              </fieldset>
 
-            <fieldset className="space-y-3 rounded-md border p-4">
-              <legend className="px-1 text-sm font-medium">Surface (where the reply goes)</legend>
-              <div className="flex gap-4">
-                {(['telegram', 'web'] as const).map((k) => (
-                  <label key={k} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      checked={form.surface_kind === k}
-                      onChange={() => setForm((f) => ({ ...f, surface_kind: k }))}
-                    />
-                    {k}
-                  </label>
-                ))}
-              </div>
-              {form.surface_kind === 'telegram' && (
-                <div className="space-y-1">
-                  <Label>Telegram chat_id</Label>
-                  <Input
-                    value={form.surface_chat_id}
-                    onChange={(e) => setForm((f) => ({ ...f, surface_chat_id: e.target.value }))}
-                    placeholder="e.g. 123456789"
-                  />
-                </div>
-              )}
-            </fieldset>
-
-            <fieldset className="space-y-3 rounded-md border p-4">
-              <legend className="px-1 text-sm font-medium">
-                Gates — when is it appropriate to fire?
-              </legend>
-              <div className="flex flex-wrap gap-3 text-sm">
-                {(['none', 'sensible', 'custom'] as const).map((p) => (
-                  <label key={p} className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      checked={form.gate_preset === p}
-                      onChange={() => applyPreset(p)}
-                    />
-                    {p === 'sensible' ? 'sensible defaults' : p}
-                  </label>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                No system-wide defaults. Blank fields mean &quot;no gate of this kind&quot;.
-                &quot;Sensible defaults&quot; fills in 15min idle, 22:00–07:00 quiet hours (profile tz),
-                30min cooldown.
-              </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <Label>Min idle (minutes)</Label>
+                  <Label>Earliest at (optional)</Label>
+                  <DateTimePicker
+                    value={form.earliest_at ? new Date(form.earliest_at) : null}
+                    onChange={(d) =>
+                      setForm((f) => ({
+                        ...f,
+                        earliest_at: d ? isoToLocalInput(d.toISOString()) : '',
+                      }))
+                    }
+                    placeholder="No earliest bound"
+                    clearable
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Max fires (blank = unbounded)</Label>
                   <Input
                     type="number"
-                    min="0"
-                    value={form.min_idle_minutes}
-                    onChange={(e) => setForm((f) => ({ ...f, min_idle_minutes: e.target.value }))}
+                    min="1"
+                    value={form.max_fires}
+                    onChange={(e) => setForm((f) => ({ ...f, max_fires: e.target.value }))}
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label>Cooldown (minutes)</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={form.cooldown_minutes}
-                    onChange={(e) => setForm((f) => ({ ...f, cooldown_minutes: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Quiet from (HH:MM)</Label>
-                  <Input
-                    value={form.quiet_from}
-                    placeholder="22:00"
-                    onChange={(e) => setForm((f) => ({ ...f, quiet_from: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>Quiet to (HH:MM)</Label>
-                  <Input
-                    value={form.quiet_to}
-                    placeholder="07:00"
-                    onChange={(e) => setForm((f) => ({ ...f, quiet_to: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <Label>Quiet tz (IANA, blank = profile tz)</Label>
-                  <Input
-                    value={form.quiet_tz}
-                    placeholder="Africa/Johannesburg"
-                    onChange={(e) => setForm((f) => ({ ...f, quiet_tz: e.target.value }))}
-                  />
-                </div>
-              </div>
-            </fieldset>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Earliest at (optional)</Label>
-                <DateTimePicker
-                  value={form.earliest_at ? new Date(form.earliest_at) : null}
-                  onChange={(d) =>
-                    setForm((f) => ({ ...f, earliest_at: d ? isoToLocalInput(d.toISOString()) : '' }))
-                  }
-                  placeholder="No earliest bound"
-                  clearable
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Max fires (blank = unbounded)</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={form.max_fires}
-                  onChange={(e) => setForm((f) => ({ ...f, max_fires: e.target.value }))}
-                />
               </div>
             </div>
-          </div>
 
             <div className="flex justify-end gap-2 border-t border-border pt-3">
               <Button variant="outline" onClick={close} disabled={pending}>

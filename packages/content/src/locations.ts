@@ -132,9 +132,7 @@ export async function countLocations(
   return row?.n ?? 0;
 }
 
-export async function listLocationTags(
-  ownerId: string,
-): Promise<{ tag: string; count: number }[]> {
+export async function listLocationTags(ownerId: string): Promise<{ tag: string; count: number }[]> {
   const rows = await db
     .select({ tags: nodes.tags })
     .from(nodes)
@@ -223,8 +221,10 @@ export async function updateLocation(
   const newData: Record<string, unknown> = { ...oldData };
   let textChanged = false;
 
-  if (input.latitude !== undefined && Number.isFinite(input.latitude)) newData.latitude = input.latitude;
-  if (input.longitude !== undefined && Number.isFinite(input.longitude)) newData.longitude = input.longitude;
+  if (input.latitude !== undefined && Number.isFinite(input.latitude))
+    newData.latitude = input.latitude;
+  if (input.longitude !== undefined && Number.isFinite(input.longitude))
+    newData.longitude = input.longitude;
   if (input.body !== undefined) {
     const b = input.body.trim();
     if (b) newData.body = b;
@@ -255,7 +255,9 @@ export async function updateLocation(
   const [updated] = await db
     .update(nodes)
     .set({
-      ...(input.title !== undefined ? { title: input.title.trim().slice(0, 200) || node.title } : {}),
+      ...(input.title !== undefined
+        ? { title: input.title.trim().slice(0, 200) || node.title }
+        : {}),
       ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
       data: newData,
       ...(textChanged ? { embedding: null } : {}),
@@ -283,12 +285,7 @@ export async function deleteLocation(ownerId: string, id: string): Promise<boole
  * Great-circle distance between two lat/lon points, in metres. Pure — exported
  * for the geo builtins (location_nearby / location_distance) and unit-tested.
  */
-export function haversineMeters(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
+export function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6_371_000; // Earth radius, metres
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);

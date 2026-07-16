@@ -45,13 +45,7 @@ export function computeRemindAt(startsAt: string, minutesBefore: number): string
  */
 export type RecurFreq = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 
-const RECUR_FREQS: readonly RecurFreq[] = [
-  'none',
-  'daily',
-  'weekly',
-  'monthly',
-  'yearly',
-];
+const RECUR_FREQS: readonly RecurFreq[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
 /** Coerce arbitrary input to a valid RecurFreq, defaulting to 'none'. */
 export function sanitiseRecur(v: unknown): RecurFreq {

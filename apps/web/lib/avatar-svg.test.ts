@@ -18,7 +18,16 @@ import { renderAvatarSvg } from './avatar-svg';
  */
 const PALETTE = ['#6366F1', '#4F46E5', '#4338CA', '#3730A3', '#312E81'];
 const VARIANTS = ['beam', 'bauhaus', 'ring', 'pixel', 'sunset', 'marble', 'geometric', 'abstract'];
-const SEEDS = ['meyx5q5a', 'uqk1scjz', 'tl8wwyea', '9unkittx', '9y95vtqy', '0dv8219y', 'Clara Barton', 'x'];
+const SEEDS = [
+  'meyx5q5a',
+  'uqk1scjz',
+  'tl8wwyea',
+  '9unkittx',
+  '9y95vtqy',
+  '0dv8219y',
+  'Clara Barton',
+  'x',
+];
 
 function sig(svg: string): string {
   const cleaned = svg

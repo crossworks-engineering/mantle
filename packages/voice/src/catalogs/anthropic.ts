@@ -30,8 +30,7 @@ export const ANTHROPIC_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
     id: 'claude-opus-4-7',
     label: 'Claude Opus 4.7',
-    description:
-      'Anthropic flagship. Best for complex reasoning + agentic coding. 1M context.',
+    description: 'Anthropic flagship. Best for complex reasoning + agentic coding. 1M context.',
     contextTokens: 1_000_000,
     capabilities: ['vision', 'reasoning', 'function_calling'],
     inputPricePer1M: 5,
@@ -50,8 +49,7 @@ export const ANTHROPIC_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
     id: 'claude-sonnet-4-6',
     label: 'Claude Sonnet 4.6',
-    description:
-      'Previous-generation Sonnet. 1M context, supports extended thinking.',
+    description: 'Previous-generation Sonnet. 1M context, supports extended thinking.',
     contextTokens: 1_000_000,
     capabilities: ['vision', 'reasoning', 'function_calling'],
     inputPricePer1M: 3,

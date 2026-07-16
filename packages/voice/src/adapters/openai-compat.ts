@@ -52,9 +52,7 @@ export type OpenAICompatMessage =
   | { role: 'system'; content: string }
   | {
       role: 'user';
-      content:
-        | string
-        | Array<OpenAICompatTextBlock | OpenAICompatImageBlock>;
+      content: string | Array<OpenAICompatTextBlock | OpenAICompatImageBlock>;
     }
   | {
       role: 'assistant';
@@ -110,23 +108,19 @@ export type OpenAICompatChatResponse = {
  *
  *   5. Plain strings pass through unchanged.
  */
-export function toOpenAICompatMessages(
-  messages: ChatOptions['messages'],
-): OpenAICompatMessage[] {
+export function toOpenAICompatMessages(messages: ChatOptions['messages']): OpenAICompatMessage[] {
   return messages.map((m): OpenAICompatMessage => {
     if (m.role === 'system') {
       const content =
-        typeof m.content === 'string'
-          ? m.content
-          : m.content.map((p) => p.text).join('\n\n');
+        typeof m.content === 'string' ? m.content : m.content.map((p) => p.text).join('\n\n');
       return { role: 'system', content };
     }
     if (m.role === 'user') {
       if (typeof m.content === 'string') {
         return { role: 'user', content: m.content };
       }
-      const parts: Array<OpenAICompatTextBlock | OpenAICompatImageBlock> =
-        m.content.map((p): OpenAICompatTextBlock | OpenAICompatImageBlock => {
+      const parts: Array<OpenAICompatTextBlock | OpenAICompatImageBlock> = m.content.map(
+        (p): OpenAICompatTextBlock | OpenAICompatImageBlock => {
           if (p.type === 'text') return { type: 'text', text: p.text };
           return {
             type: 'image_url',
@@ -135,7 +129,8 @@ export function toOpenAICompatMessages(
               ...(p.imageUrl.detail ? { detail: p.imageUrl.detail } : {}),
             },
           };
-        });
+        },
+      );
       return { role: 'user', content: parts };
     }
     if (m.role === 'assistant') {

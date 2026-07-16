@@ -6,11 +6,7 @@ import { HeartbeatDetailClient } from './heartbeat-detail-client';
  * HeartbeatDetailClient fetches the summary, fires, and profile-formatted date
  * labels from GET /api/heartbeats/[id]/detail.
  */
-export default async function HeartbeatDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function HeartbeatDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireOwner();
   const { id } = await params;
   return <HeartbeatDetailClient id={id} />;

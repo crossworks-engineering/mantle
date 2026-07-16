@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 import { NextResponse, type NextRequest } from 'next/server';
-import { exchangeCode, fetchMe, resolveOAuthConfig, upsertAccountFromTokens } from '@mantle/microsoft';
+import {
+  exchangeCode,
+  fetchMe,
+  resolveOAuthConfig,
+  upsertAccountFromTokens,
+} from '@mantle/microsoft';
 import { getOwnerOr401 } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
 
@@ -19,7 +24,10 @@ export const dynamic = 'force-dynamic';
 function msBranchPath(upn: string): string {
   const [local, domain] = upn.toLowerCase().split('@');
   const clean = (local ?? '').replace(/[^a-z0-9]/g, '_').replace(/^_+|_+$/g, '') || 'account';
-  const hash = createHash('sha256').update(domain ?? '').digest('hex').slice(0, 4);
+  const hash = createHash('sha256')
+    .update(domain ?? '')
+    .digest('hex')
+    .slice(0, 4);
   return `microsoft.${clean}_${hash}`;
 }
 
@@ -51,7 +59,9 @@ export async function GET(req: NextRequest) {
   const expectedState = req.cookies.get('ms_oauth_state')?.value;
   const verifier = req.cookies.get('ms_oauth_verifier')?.value;
   if (!code || !state || !expectedState || state !== expectedState || !verifier) {
-    return settingsRedirect(req, { error: 'Invalid or expired sign-in attempt. Please try again.' });
+    return settingsRedirect(req, {
+      error: 'Invalid or expired sign-in attempt. Please try again.',
+    });
   }
 
   const cfg = await resolveOAuthConfig(user.id);

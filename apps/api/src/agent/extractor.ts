@@ -53,10 +53,26 @@ import {
   type Fact,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt, extractPdfTextWithPassword, effectiveBrainDepth } from '@mantle/files';
+import {
+  diskPathForFile,
+  extOf,
+  mimeForExt,
+  parseDocumentBytes,
+  INGESTABLE_EXTS,
+  parserRouteForExt,
+  extractPdfTextWithPassword,
+  effectiveBrainDepth,
+} from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
-import { describeWorkbook, profileFile, profileToText, resolveStoragePath, schemaDigest, schemaToText } from '@mantle/tabledb';
+import {
+  describeWorkbook,
+  profileFile,
+  profileToText,
+  resolveStoragePath,
+  schemaDigest,
+  schemaToText,
+} from '@mantle/tabledb';
 import { currentTrace, recordIngest, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import {
   chatWithFailover,
@@ -101,7 +117,21 @@ const HARD_SKIP_TYPES = new Set(['branch']);
  *  `task` and `event` are first-class content: title + body + metadata
  *  (status, due_at, starts_at, location, …) all become part of the body
  *  the extractor summarises and embeds. */
-const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'table', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact', 'documentation', 'journal', 'location'];
+const DEFAULT_EXTRACT_TYPES = [
+  'note',
+  'page',
+  'table',
+  'file',
+  'email',
+  'email_thread',
+  'secret',
+  'task',
+  'event',
+  'contact',
+  'documentation',
+  'journal',
+  'location',
+];
 
 /** Max characters of body text we feed the summarizer in one shot.
  *  Long emails / PDFs get truncated to keep the prompt bounded and the
@@ -127,7 +157,7 @@ const SUPERSEDED_FILE_SALIENCE = Math.min(
 const CLASSIFIER_NEIGHBOURS = 3;
 
 /** Similarity threshold for "this candidate fact looks like an existing one." */
-const FACT_DEDUP_THRESHOLD = 0.30; // cosine distance; lower = more similar
+const FACT_DEDUP_THRESHOLD = 0.3; // cosine distance; lower = more similar
 
 /** Similarity threshold for resolving an entity mention to an existing entity. */
 const ENTITY_DEDUP_THRESHOLD = 0.25;
@@ -186,7 +216,10 @@ Be conservative — quality over quantity:
 - Confidence: 1.0 only for explicitly stated facts; 0.6-0.8 for well-grounded inferences. If you would assign below 0.6, OMIT the fact rather than guessing.
 - DO NOT extract secrets, passwords, API keys, or other credentials. Skip those entirely.`;
 
-const CLASSIFIER_PROMPT_TEMPLATE = (candidate: string, neighbours: string[]) => `You are managing a personal memory store. A new candidate fact has been extracted from a document. You must decide how it relates to existing nearby facts.
+const CLASSIFIER_PROMPT_TEMPLATE = (
+  candidate: string,
+  neighbours: string[],
+) => `You are managing a personal memory store. A new candidate fact has been extracted from a document. You must decide how it relates to existing nearby facts.
 
 Candidate fact:
 "${candidate}"
@@ -446,9 +479,8 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     const data = (node.data ?? {}) as Record<string, unknown>;
     const description = typeof data.description === 'string' ? data.description : '';
     const kind = typeof data.kind === 'string' ? data.kind : '';
-    const tagLine = Array.isArray(node.tags) && node.tags.length > 0
-      ? `\n\nTags: ${node.tags.join(', ')}`
-      : '';
+    const tagLine =
+      Array.isArray(node.tags) && node.tags.length > 0 ? `\n\nTags: ${node.tags.join(', ')}` : '';
     const kindLine = kind ? `\n\nKind: ${kind}` : '';
     return `${node.title}${kindLine}\n\n${description}${tagLine}`.trim();
   }
@@ -581,7 +613,8 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     // filename-only fallback a prior (buggy) extract may have stored; using
     // it would shortcut the real parse below and re-index nothing. Forces a
     // re-parse from disk/storage on the next run.
-    if (typeof c === 'string' && c.trim().length > 0 && c.trim() !== node.title.trim()) return cleanText(c);
+    if (typeof c === 'string' && c.trim().length > 0 && c.trim() !== node.title.trim())
+      return cleanText(c);
   }
   // file fallback: if no usable cached body, read the bytes (local disk for
   // uploads, OBJECT STORAGE for email attachments — see loadFileBytes) and
@@ -602,7 +635,12 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
           {
             name: 'parse_document',
             kind: 'compute',
-            input: { ext: loaded.ext, parser: route, bytes_in: loaded.bytes.length, filename: loaded.filename },
+            input: {
+              ext: loaded.ext,
+              parser: route,
+              bytes_in: loaded.bytes.length,
+              filename: loaded.filename,
+            },
           },
           async (h) => {
             const t = await parseDocumentBytes(loaded.bytes, loaded.ext);
@@ -665,7 +703,11 @@ async function visionIngestImageNode(
       );
       const mimeType = loaded.mime;
       const result = await step(
-        { name: 'extract_vision', kind: 'llm_call', input: { mime: mimeType, bytes: bytes.length } },
+        {
+          name: 'extract_vision',
+          kind: 'llm_call',
+          input: { mime: mimeType, bytes: bytes.length },
+        },
         async (h) => {
           // Neutral describe+OCR (no question) — the durable, query-independent
           // metadata pass. Shares the single vision implementation with the
@@ -756,10 +798,25 @@ async function ocrIngestPdfNode(
       //    when the worker's provider supports it; else falls through to the
       //    per-page raster OCR below.
       const native = await step(
-        { name: 'extract_document', kind: 'llm_call', input: { mime: 'application/pdf', bytes: buf.length } },
+        {
+          name: 'extract_document',
+          kind: 'llm_call',
+          input: { mime: 'application/pdf', bytes: buf.length },
+        },
         async (h) => {
-          const r = await runDocumentWorker({ ownerId, bytes: buf, mimeType: 'application/pdf', filename });
-          h.setMeta({ ran: r.ran, note: r.note, model: r.model, textLength: r.text.length, tokensOut: r.tokensOut });
+          const r = await runDocumentWorker({
+            ownerId,
+            bytes: buf,
+            mimeType: 'application/pdf',
+            filename,
+          });
+          h.setMeta({
+            ran: r.ran,
+            note: r.note,
+            model: r.model,
+            textLength: r.text.length,
+            tokensOut: r.tokensOut,
+          });
           return r;
         },
       );
@@ -833,7 +890,9 @@ async function ocrIngestPdfNode(
         );
         if (res.model) model = res.model;
         if (res.text.trim()) {
-          parts.push(pages.length > 1 ? `[Page ${pg.pageNumber}]\n${res.text.trim()}` : res.text.trim());
+          parts.push(
+            pages.length > 1 ? `[Page ${pg.pageNumber}]\n${res.text.trim()}` : res.text.trim(),
+          );
         }
       }
 
@@ -956,7 +1015,10 @@ async function reconcileEntity(
     // Falls through to the embedding match below, which carries the same guard.
     if (!isLikelyDifferentPerson(mention, existing)) {
       // Looks like a match — register the new spelling as an alias.
-      if (!existing.aliases.includes(trimmed) && existing.name.toLowerCase() !== trimmed.toLowerCase()) {
+      if (
+        !existing.aliases.includes(trimmed) &&
+        existing.name.toLowerCase() !== trimmed.toLowerCase()
+      ) {
         await db
           .update(entities)
           .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
@@ -985,7 +1047,10 @@ async function reconcileEntity(
       // "Alex Carter" are close enough to merge by default, which is wrong
       // for distinct people sharing a surname.
       if (!isLikelyDifferentPerson(mention, existing)) {
-        if (!existing.aliases.includes(trimmed) && existing.name.toLowerCase() !== trimmed.toLowerCase()) {
+        if (
+          !existing.aliases.includes(trimmed) &&
+          existing.name.toLowerCase() !== trimmed.toLowerCase()
+        ) {
           await db
             .update(entities)
             .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
@@ -1094,11 +1159,7 @@ async function classifyAndApplyFact(
     })
     .from(facts)
     .where(
-      and(
-        eq(facts.ownerId, ownerId),
-        isNull(facts.validTo),
-        sql`${facts.embedding} is not null`,
-      ),
+      and(eq(facts.ownerId, ownerId), isNull(facts.validTo), sql`${facts.embedding} is not null`),
     )
     .orderBy(sql`${facts.embedding} <=> ${JSON.stringify(candidateEmbedding)}::vector`)
     .limit(CLASSIFIER_NEIGHBOURS);
@@ -1126,7 +1187,10 @@ async function classifyAndApplyFact(
     ownerId,
     resolveChatRoutes(worker),
     'You are a precise JSON output assistant. Output strictly the JSON requested, with no additional commentary.',
-    CLASSIFIER_PROMPT_TEMPLATE(candidate.content, closeNeighbours.map((n) => n.content)),
+    CLASSIFIER_PROMPT_TEMPLATE(
+      candidate.content,
+      closeNeighbours.map((n) => n.content),
+    ),
     params,
   );
   const decision = parseClassifierDecision(decisionResult.text);
@@ -1307,18 +1371,14 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   // 'file' isn't in target_types). Best-effort: never let it block or fail the
   // text-extraction pass. Deduped + published inside the helper.
   await maybeAutoTableSpreadsheet(node, ownerId).catch((err) =>
-    console.error(
-      '[extractor] auto-table failed:',
-      err instanceof Error ? err.message : err,
-    ),
+    console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err),
   );
 
   // target_types is the new home for the type allowlist. We still
   // accept extract_types for legacy backfilled rows in the same
   // params blob — extractTypes prefers the new name.
   const params = (worker.params ?? {}) as ExtractorParams;
-  const extractTypes =
-    params.target_types ?? params.extract_types ?? DEFAULT_EXTRACT_TYPES;
+  const extractTypes = params.target_types ?? params.extract_types ?? DEFAULT_EXTRACT_TYPES;
 
   // Brain depth: documentation collections default to 'retrieval' — index to
   // L5 (summary + embedding + chunks) but SKIP L4 (entity reconciliation,
@@ -1628,11 +1688,8 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   // guard, leaving stale memory durably). Captured HERE, after the
   // vision/OCR passes above persisted their own data.text writes, so only
   // foreign writes during the LLM window trip it.
-  const verRows = await db.execute(
-    sql`select xmin::text as v from ${nodes} where id = ${node.id}`,
-  );
-  const rowVersion =
-    (verRows as unknown as Array<{ v?: string }>)[0]?.v ?? null;
+  const verRows = await db.execute(sql`select xmin::text as v from ${nodes} where id = ${node.id}`);
+  const rowVersion = (verRows as unknown as Array<{ v?: string }>)[0]?.v ?? null;
 
   await startTrace(
     {
@@ -1683,7 +1740,9 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             {
               name: 'reuse_summary',
               kind: 'compute',
-              input: { reason: 'table shape unchanged — commit kept the summary; LLM pass skipped' },
+              input: {
+                reason: 'table shape unchanged — commit kept the summary; LLM pass skipped',
+              },
             },
             async (h) => {
               const entities = (Array.isArray(existingData.entities) ? existingData.entities : [])
@@ -1699,44 +1758,44 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             },
           )
         : await step(
-        {
-          name: 'llm_extract',
-          kind: 'llm_call',
-          input: {
-            model: worker.model,
-            provider: worker.provider,
-            // Surface everything the LLM saw. No per-field char caps —
-            // the global truncateJson budget (64KB) catches truly
-            // runaway bodies and the node itself lives in /files for
-            // larger reads. Operators want the full preview when
-            // debugging "what did the extractor actually read?".
-            title: node.title,
-            node_type: node.type,
-            body_chars: body.length,
-            body_preview: body,
-          },
-        },
-        async (h) => {
-          const r = await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
-          recordChatUsage(h, r, r.model || worker.model);
-          const result = parseExtractorOutput(r.text, { nodeId: node.id, model: worker.model });
-          // Capture the full model output — summary, all entities,
-          // all facts. truncateJson at the tracing layer will only
-          // bite if the combined JSON exceeds 64KB, which is
-          // generous for normal extractor outputs.
-          h.setOutput({
-            summary: result.summary,
-            entity_count: result.entities.length,
-            entities: result.entities.map((e) => ({
-              name: e.name,
-              kind: e.kind ?? 'unknown',
-            })),
-            fact_count: result.facts.length,
-            facts: result.facts.map((f) => f.content),
-          });
-          return result;
-        },
-      );
+            {
+              name: 'llm_extract',
+              kind: 'llm_call',
+              input: {
+                model: worker.model,
+                provider: worker.provider,
+                // Surface everything the LLM saw. No per-field char caps —
+                // the global truncateJson budget (64KB) catches truly
+                // runaway bodies and the node itself lives in /files for
+                // larger reads. Operators want the full preview when
+                // debugging "what did the extractor actually read?".
+                title: node.title,
+                node_type: node.type,
+                body_chars: body.length,
+                body_preview: body,
+              },
+            },
+            async (h) => {
+              const r = await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
+              recordChatUsage(h, r, r.model || worker.model);
+              const result = parseExtractorOutput(r.text, { nodeId: node.id, model: worker.model });
+              // Capture the full model output — summary, all entities,
+              // all facts. truncateJson at the tracing layer will only
+              // bite if the combined JSON exceeds 64KB, which is
+              // generous for normal extractor outputs.
+              h.setOutput({
+                summary: result.summary,
+                entity_count: result.entities.length,
+                entities: result.entities.map((e) => ({
+                  name: e.name,
+                  kind: e.kind ?? 'unknown',
+                })),
+                fact_count: result.facts.length,
+                facts: result.facts.map((f) => f.content),
+              });
+              return result;
+            },
+          );
 
       // ─── content_index pass ───────────────────────────────────────────
       const summary = parsed.summary;
@@ -1770,7 +1829,10 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             tableSchemaDigest = schemaDigest(surface);
             const sections = profileText.split(/\n(?=## )/);
             tableProfilePieces = [
-              { text: `${sections[0] ?? ''}\n\nOverview: ${summary}`.trim(), headingPath: 'profile' },
+              {
+                text: `${sections[0] ?? ''}\n\nOverview: ${summary}`.trim(),
+                headingPath: 'profile',
+              },
               {
                 text: schemaToText(surface, { title: node.title, nodeId: node.id }),
                 headingPath: 'schema',
@@ -1808,9 +1870,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // long emails / PDFs an embedding biased toward the first ~500
       // chars (lede only) and made vector search find them by greeting,
       // not by content. The summary is what we want indexed.
-      const embedText = [node.title, summary]
-        .filter(Boolean)
-        .join('\n\n');
+      const embedText = [node.title, summary].filter(Boolean).join('\n\n');
       let embedding: number[] | null = null;
       try {
         embedding = await embed(ownerId, embedText);
@@ -1858,10 +1918,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
               updatedAt: new Date(),
             })
             .where(
-              and(
-                eq(nodes.id, node.id),
-                rowVersion ? sql`xmin::text = ${rowVersion}` : sql`true`,
-              ),
+              and(eq(nodes.id, node.id), rowVersion ? sql`xmin::text = ${rowVersion}` : sql`true`),
             )
             .returning({ id: nodes.id });
           if (updated.length === 0) {
@@ -2014,170 +2071,170 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       const entityIdByName = retrievalOnly
         ? new Map<string, string>()
         : await step(
-        {
-          name: 'reconcile_entities',
-          kind: 'compute',
-          input: {
-            mentions: uniqueMentions.length,
-            // Full list of mentions — names + kinds. truncateJson
-            // applies the safety net at 64KB; a normal extractor
-            // pass fits comfortably. The arrays-over-50 cap in
-            // truncate.ts catches genuinely runaway iterations.
-            preview: uniqueMentions.map((m) => ({
-              name: m.name,
-              kind: m.kind ?? 'unknown',
-            })),
-          },
-        },
-        async (h) => {
-          // Idempotent rebuild: this node's prior edges are REPLACED, not
-          // appended to — both the inbound mention edges (entity → this
-          // node) and this node's outbound page/note links (this node →
-          // other node). The delete + re-insert happens in ONE transaction
-          // at the END of this step: entity reconciliation makes network
-          // calls (candidate embeddings), and the old delete-first ordering
-          // meant a crash mid-loop destroyed the previous extraction's
-          // edges with nothing written to replace them. Edges are collected
-          // in memory during the loop instead.
-          const pendingEdges: (typeof entityEdges.$inferInsert)[] = [];
-          const map = new Map<string, string>();
-          // Entity ids that already have an edge this rebuild — dedupes the
-          // NER pass against the explicit @-mention pass below.
-          const edgedEntityIds = new Set<string>();
-          let created = 0;
-          let matched = 0;
-          for (const mention of uniqueMentions) {
-            try {
-              const before = await db
-                .select({ id: entities.id })
-                .from(entities)
-                .where(
-                  and(
-                    eq(entities.ownerId, ownerId),
-                    sql`lower(${entities.name}) = lower(${mention.name.trim()})`,
-                  ),
-                )
-                .limit(1);
-              const ent = await reconcileEntity(ownerId, mention);
-              map.set(mention.name.trim().toLowerCase(), ent.id);
-              if (before.length > 0) matched++;
-              else created++;
-              pendingEdges.push({
-                ownerId,
-                sourceId: ent.id,
-                sourceKind: 'entity',
-                targetId: node.id,
-                targetKind: 'node',
-                relation: 'mentioned_in',
-                validFrom: new Date(),
+            {
+              name: 'reconcile_entities',
+              kind: 'compute',
+              input: {
+                mentions: uniqueMentions.length,
+                // Full list of mentions — names + kinds. truncateJson
+                // applies the safety net at 64KB; a normal extractor
+                // pass fits comfortably. The arrays-over-50 cap in
+                // truncate.ts catches genuinely runaway iterations.
+                preview: uniqueMentions.map((m) => ({
+                  name: m.name,
+                  kind: m.kind ?? 'unknown',
+                })),
+              },
+            },
+            async (h) => {
+              // Idempotent rebuild: this node's prior edges are REPLACED, not
+              // appended to — both the inbound mention edges (entity → this
+              // node) and this node's outbound page/note links (this node →
+              // other node). The delete + re-insert happens in ONE transaction
+              // at the END of this step: entity reconciliation makes network
+              // calls (candidate embeddings), and the old delete-first ordering
+              // meant a crash mid-loop destroyed the previous extraction's
+              // edges with nothing written to replace them. Edges are collected
+              // in memory during the loop instead.
+              const pendingEdges: (typeof entityEdges.$inferInsert)[] = [];
+              const map = new Map<string, string>();
+              // Entity ids that already have an edge this rebuild — dedupes the
+              // NER pass against the explicit @-mention pass below.
+              const edgedEntityIds = new Set<string>();
+              let created = 0;
+              let matched = 0;
+              for (const mention of uniqueMentions) {
+                try {
+                  const before = await db
+                    .select({ id: entities.id })
+                    .from(entities)
+                    .where(
+                      and(
+                        eq(entities.ownerId, ownerId),
+                        sql`lower(${entities.name}) = lower(${mention.name.trim()})`,
+                      ),
+                    )
+                    .limit(1);
+                  const ent = await reconcileEntity(ownerId, mention);
+                  map.set(mention.name.trim().toLowerCase(), ent.id);
+                  if (before.length > 0) matched++;
+                  else created++;
+                  pendingEdges.push({
+                    ownerId,
+                    sourceId: ent.id,
+                    sourceKind: 'entity',
+                    targetId: node.id,
+                    targetKind: 'node',
+                    relation: 'mentioned_in',
+                    validFrom: new Date(),
+                  });
+                  edgedEntityIds.add(ent.id);
+                } catch (err) {
+                  console.error(
+                    `[extractor]   entity '${mention.name}' failed:`,
+                    err instanceof Error ? err.message : err,
+                  );
+                }
+              }
+
+              // ─── explicit @-mentions / links (pages) ─────────────────────
+              // A page's chips carry resolved ids. Entity refs → precise
+              // `mentioned_in` edges (independent of NER recall, deduped against
+              // the loop above). Node refs → `node --references--> node` edges
+              // (backlinks). Both skip ids whose target no longer exists (edges
+              // have no FK; integrity is application-level).
+              let explicit = 0;
+              let refs = 0;
+              if (node.type === 'page') {
+                try {
+                  const [pageRow] = await db
+                    .select({ doc: pages.doc })
+                    .from(pages)
+                    .where(eq(pages.nodeId, node.id))
+                    .limit(1);
+                  const { entityIds, nodeIds } = mentionRefs(pageRow?.doc);
+
+                  for (const entId of entityIds) {
+                    if (edgedEntityIds.has(entId)) continue;
+                    const [ent] = await db
+                      .select({ id: entities.id })
+                      .from(entities)
+                      .where(and(eq(entities.id, entId), eq(entities.ownerId, ownerId)))
+                      .limit(1);
+                    if (!ent) continue;
+                    pendingEdges.push({
+                      ownerId,
+                      sourceId: ent.id,
+                      sourceKind: 'entity',
+                      targetId: node.id,
+                      targetKind: 'node',
+                      relation: 'mentioned_in',
+                      validFrom: new Date(),
+                      data: { explicit: true },
+                    });
+                    edgedEntityIds.add(ent.id);
+                    explicit++;
+                  }
+
+                  const refSeen = new Set<string>();
+                  for (const refId of nodeIds) {
+                    if (refId === node.id || refSeen.has(refId)) continue;
+                    const [target] = await db
+                      .select({ id: nodes.id })
+                      .from(nodes)
+                      .where(and(eq(nodes.id, refId), eq(nodes.ownerId, ownerId)))
+                      .limit(1);
+                    if (!target) continue;
+                    pendingEdges.push({
+                      ownerId,
+                      sourceId: node.id,
+                      sourceKind: 'node',
+                      targetId: refId,
+                      targetKind: 'node',
+                      relation: 'references',
+                      validFrom: new Date(),
+                      data: { explicit: true },
+                    });
+                    refSeen.add(refId);
+                    refs++;
+                  }
+                } catch (err) {
+                  console.error(
+                    '[extractor]   page mention/link edges failed:',
+                    err instanceof Error ? err.message : err,
+                  );
+                }
+              }
+
+              // Atomic swap: clear this node's prior edges and write the new
+              // set in one transaction (see the rebuild note at the top of this
+              // step). All network work is done by now, so the tx is brief.
+              await db.transaction(async (tx) => {
+                await tx
+                  .delete(entityEdges)
+                  .where(
+                    and(
+                      eq(entityEdges.targetId, node.id),
+                      eq(entityEdges.targetKind, 'node'),
+                      eq(entityEdges.relation, 'mentioned_in'),
+                    ),
+                  );
+                await tx
+                  .delete(entityEdges)
+                  .where(
+                    and(
+                      eq(entityEdges.sourceId, node.id),
+                      eq(entityEdges.sourceKind, 'node'),
+                      eq(entityEdges.relation, 'references'),
+                    ),
+                  );
+                if (pendingEdges.length > 0) await tx.insert(entityEdges).values(pendingEdges);
               });
-              edgedEntityIds.add(ent.id);
-            } catch (err) {
-              console.error(
-                `[extractor]   entity '${mention.name}' failed:`,
-                err instanceof Error ? err.message : err,
-              );
-            }
-          }
 
-          // ─── explicit @-mentions / links (pages) ─────────────────────
-          // A page's chips carry resolved ids. Entity refs → precise
-          // `mentioned_in` edges (independent of NER recall, deduped against
-          // the loop above). Node refs → `node --references--> node` edges
-          // (backlinks). Both skip ids whose target no longer exists (edges
-          // have no FK; integrity is application-level).
-          let explicit = 0;
-          let refs = 0;
-          if (node.type === 'page') {
-            try {
-              const [pageRow] = await db
-                .select({ doc: pages.doc })
-                .from(pages)
-                .where(eq(pages.nodeId, node.id))
-                .limit(1);
-              const { entityIds, nodeIds } = mentionRefs(pageRow?.doc);
-
-              for (const entId of entityIds) {
-                if (edgedEntityIds.has(entId)) continue;
-                const [ent] = await db
-                  .select({ id: entities.id })
-                  .from(entities)
-                  .where(and(eq(entities.id, entId), eq(entities.ownerId, ownerId)))
-                  .limit(1);
-                if (!ent) continue;
-                pendingEdges.push({
-                  ownerId,
-                  sourceId: ent.id,
-                  sourceKind: 'entity',
-                  targetId: node.id,
-                  targetKind: 'node',
-                  relation: 'mentioned_in',
-                  validFrom: new Date(),
-                  data: { explicit: true },
-                });
-                edgedEntityIds.add(ent.id);
-                explicit++;
-              }
-
-              const refSeen = new Set<string>();
-              for (const refId of nodeIds) {
-                if (refId === node.id || refSeen.has(refId)) continue;
-                const [target] = await db
-                  .select({ id: nodes.id })
-                  .from(nodes)
-                  .where(and(eq(nodes.id, refId), eq(nodes.ownerId, ownerId)))
-                  .limit(1);
-                if (!target) continue;
-                pendingEdges.push({
-                  ownerId,
-                  sourceId: node.id,
-                  sourceKind: 'node',
-                  targetId: refId,
-                  targetKind: 'node',
-                  relation: 'references',
-                  validFrom: new Date(),
-                  data: { explicit: true },
-                });
-                refSeen.add(refId);
-                refs++;
-              }
-            } catch (err) {
-              console.error(
-                '[extractor]   page mention/link edges failed:',
-                err instanceof Error ? err.message : err,
-              );
-            }
-          }
-
-          // Atomic swap: clear this node's prior edges and write the new
-          // set in one transaction (see the rebuild note at the top of this
-          // step). All network work is done by now, so the tx is brief.
-          await db.transaction(async (tx) => {
-            await tx
-              .delete(entityEdges)
-              .where(
-                and(
-                  eq(entityEdges.targetId, node.id),
-                  eq(entityEdges.targetKind, 'node'),
-                  eq(entityEdges.relation, 'mentioned_in'),
-                ),
-              );
-            await tx
-              .delete(entityEdges)
-              .where(
-                and(
-                  eq(entityEdges.sourceId, node.id),
-                  eq(entityEdges.sourceKind, 'node'),
-                  eq(entityEdges.relation, 'references'),
-                ),
-              );
-            if (pendingEdges.length > 0) await tx.insert(entityEdges).values(pendingEdges);
-          });
-
-          h.setOutput({ matched, created, explicit, refs });
-          return map;
-        },
-      );
+              h.setOutput({ matched, created, explicit, refs });
+              return map;
+            },
+          );
 
       // ─── relation pass (entity↔entity edges → knowledge graph) ───────
       // Runs whenever the deep-extraction tier is on, independent of whether
@@ -2287,8 +2344,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // `spent >= 0` is always true — so every fact gets dropped at #0. A 0
       // means "unlimited", not "zero budget".
       const rawCostCap = params.extract_cost_cap_micro_usd;
-      const costCap =
-        typeof rawCostCap === 'number' && rawCostCap > 0 ? rawCostCap : null;
+      const costCap = typeof rawCostCap === 'number' && rawCostCap > 0 ? rawCostCap : null;
 
       const tally = await step(
         {
@@ -2394,7 +2450,9 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             await db
               .update(nodes)
               .set({ data: sql`${nodes.data} - 'extract_incomplete'` })
-              .where(and(eq(nodes.id, node.id), sql`jsonb_exists(${nodes.data}, 'extract_incomplete')`));
+              .where(
+                and(eq(nodes.id, node.id), sql`jsonb_exists(${nodes.data}, 'extract_incomplete')`),
+              );
           } else {
             await db
               .update(facts)
@@ -2421,7 +2479,9 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
             };
             await db
               .update(nodes)
-              .set({ data: sql`${nodes.data} || ${JSON.stringify({ extract_incomplete: incomplete })}::jsonb` })
+              .set({
+                data: sql`${nodes.data} || ${JSON.stringify({ extract_incomplete: incomplete })}::jsonb`,
+              })
               .where(eq(nodes.id, node.id));
           }
           const output: Record<string, unknown> = { ...t, retired };

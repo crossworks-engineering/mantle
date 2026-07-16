@@ -50,7 +50,9 @@ export function JourneyClient({
       if (category) sp.set('cat', category);
       if (processedOnly) sp.set('done', '1');
       const qs = sp.toString();
-      return apiFetch<{ items: ActivityItem[] }>(qs ? `/api/debug/journey?${qs}` : '/api/debug/journey');
+      return apiFetch<{ items: ActivityItem[] }>(
+        qs ? `/api/debug/journey?${qs}` : '/api/debug/journey',
+      );
     },
     placeholderData: (prev) => prev,
   });
@@ -160,9 +162,7 @@ export function JourneyClient({
                       {it.status}
                     </span>
                   </div>
-                  {it.title && (
-                    <p className="truncate text-xs text-muted-foreground">{it.title}</p>
-                  )}
+                  {it.title && <p className="truncate text-xs text-muted-foreground">{it.title}</p>}
                 </div>
                 <div className="hidden shrink-0 text-right text-[11px] text-muted-foreground sm:block">
                   <div title={formatDateTime(it.startedAt)}>

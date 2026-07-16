@@ -117,9 +117,9 @@ describe('deriveContactTitle', () => {
   });
   it('person name beats company when both are set', () => {
     // Company is surfaced separately in the UI; the row title is the person.
-    expect(
-      deriveContactTitle({ firstName: 'Jane', lastName: 'Smith', company: 'Modular' }),
-    ).toBe('Jane Smith');
+    expect(deriveContactTitle({ firstName: 'Jane', lastName: 'Smith', company: 'Modular' })).toBe(
+      'Jane Smith',
+    );
   });
   it('falls back to email when name + company are empty', () => {
     expect(deriveContactTitle({ email: 'orders@modular.co.za' })).toBe('orders@modular.co.za');
@@ -131,7 +131,9 @@ describe('deriveContactTitle', () => {
     expect(deriveContactTitle({})).toBe('Untitled contact');
   });
   it('falls back to the first email entry', () => {
-    expect(deriveContactTitle({ emails: ['jason@schoeman.me', '@x.com'] })).toBe('jason@schoeman.me');
+    expect(deriveContactTitle({ emails: ['jason@schoeman.me', '@x.com'] })).toBe(
+      'jason@schoeman.me',
+    );
   });
 });
 

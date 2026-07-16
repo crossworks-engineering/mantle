@@ -202,7 +202,14 @@ describe('anthropic-chat cache_control translation', () => {
     const calls: Array<{ url: string; body: string }> = [];
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       calls.push({ url, body: String(init?.body ?? '') });
-      return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }], model: 'claude-haiku-4-5', usage: {} }) };
+      return {
+        ok: true,
+        json: async () => ({
+          content: [{ type: 'text', text: 'ok' }],
+          model: 'claude-haiku-4-5',
+          usage: {},
+        }),
+      };
     }) as unknown as typeof fetch;
     await anthropicChatAdapter.chat({
       apiKey: 'sk-test',
@@ -220,7 +227,14 @@ describe('anthropic-chat cache_control translation', () => {
     const calls: Array<{ body: string }> = [];
     globalThis.fetch = (async (_url: string, init?: RequestInit) => {
       calls.push({ body: String(init?.body ?? '') });
-      return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }], model: 'claude-haiku-4-5', usage: {} }) };
+      return {
+        ok: true,
+        json: async () => ({
+          content: [{ type: 'text', text: 'ok' }],
+          model: 'claude-haiku-4-5',
+          usage: {},
+        }),
+      };
     }) as unknown as typeof fetch;
     await anthropicChatAdapter.chat({
       apiKey: 'sk-test',
@@ -241,7 +255,14 @@ describe('anthropic-chat cache_control translation', () => {
     const calls: Array<{ body: string }> = [];
     globalThis.fetch = (async (_url: string, init?: RequestInit) => {
       calls.push({ body: String(init?.body ?? '') });
-      return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }], model: 'claude-haiku-4-5', usage: {} }) };
+      return {
+        ok: true,
+        json: async () => ({
+          content: [{ type: 'text', text: 'ok' }],
+          model: 'claude-haiku-4-5',
+          usage: {},
+        }),
+      };
     }) as unknown as typeof fetch;
     await anthropicChatAdapter.chat({
       apiKey: 'sk-test',
@@ -309,9 +330,7 @@ describe('deepseek catalog', () => {
 
 describe('openrouter catalog', () => {
   it('includes anthropic/claude-sonnet-4.6 (responder default)', () => {
-    expect(
-      OPENROUTER_CHAT_MODELS.some((m) => m.id === 'anthropic/claude-sonnet-4.6'),
-    ).toBe(true);
+    expect(OPENROUTER_CHAT_MODELS.some((m) => m.id === 'anthropic/claude-sonnet-4.6')).toBe(true);
   });
 
   it('includes a mix of headline providers (anthropic + openai + google + xai)', () => {

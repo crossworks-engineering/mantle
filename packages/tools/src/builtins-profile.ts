@@ -13,11 +13,7 @@
  * the IANA id before writing, so a typo can't poison downstream formatting.
  */
 
-import {
-  loadProfilePreferences,
-  updateProfilePreferences,
-  isValidTimezone,
-} from '@mantle/content';
+import { loadProfilePreferences, updateProfilePreferences, isValidTimezone } from '@mantle/content';
 import type { BuiltinToolDef } from './types';
 
 function str(v: unknown): string {
@@ -41,7 +37,8 @@ const set_timezone: BuiltinToolDef = {
   },
   handler: async (input, ctx) => {
     const timezone = str(input.timezone);
-    if (!timezone) return { ok: false, error: 'timezone is required (an IANA id like America/New_York)' };
+    if (!timezone)
+      return { ok: false, error: 'timezone is required (an IANA id like America/New_York)' };
     if (!isValidTimezone(timezone)) {
       return {
         ok: false,

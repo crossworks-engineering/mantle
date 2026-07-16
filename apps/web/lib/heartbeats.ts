@@ -83,10 +83,7 @@ export async function listHeartbeats(ownerId: string): Promise<HeartbeatSummary[
   return rows.map(toSummary);
 }
 
-export async function getHeartbeat(
-  ownerId: string,
-  id: string,
-): Promise<HeartbeatSummary | null> {
+export async function getHeartbeat(ownerId: string, id: string): Promise<HeartbeatSummary | null> {
   const [row] = await db
     .select()
     .from(heartbeats)
@@ -185,9 +182,7 @@ export async function createHeartbeat(
   return toSummary(row);
 }
 
-export type UpdateHeartbeatInput = Partial<
-  Omit<CreateHeartbeatInput, 'slug'>
-> & {
+export type UpdateHeartbeatInput = Partial<Omit<CreateHeartbeatInput, 'slug'>> & {
   status?: 'active' | 'paused' | 'completed' | 'cancelled';
 };
 

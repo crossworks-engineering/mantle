@@ -74,7 +74,10 @@ export function sanitizedEnv(): NodeJS.ProcessEnv {
 
 function truncate(s: string): { text: string; truncated: boolean } {
   if (s.length <= OUTPUT_CAP) return { text: s, truncated: false };
-  return { text: `${s.slice(0, OUTPUT_CAP)}\n…[truncated ${s.length - OUTPUT_CAP} chars]`, truncated: true };
+  return {
+    text: `${s.slice(0, OUTPUT_CAP)}\n…[truncated ${s.length - OUTPUT_CAP} chars]`,
+    truncated: true,
+  };
 }
 
 const run_terminal: BuiltinToolDef = {
@@ -91,11 +94,12 @@ const run_terminal: BuiltinToolDef = {
     properties: {
       command: {
         type: 'string',
-        description: 'The shell command to run, e.g. "git -C . status" or "pnpm -C apps/web build".',
+        description:
+          'The shell command to run, e.g. "git -C . status" or "pnpm -C apps/web build".',
       },
       cwd: {
         type: 'string',
-        description: 'Absolute working directory. Defaults to the server\'s MANTLE_TERMINAL_CWD.',
+        description: "Absolute working directory. Defaults to the server's MANTLE_TERMINAL_CWD.",
       },
       timeout_seconds: {
         type: 'number',
@@ -112,7 +116,10 @@ const run_terminal: BuiltinToolDef = {
     const cwd = resolveCwd(input.cwd);
     const timeoutS = Math.min(
       MAX_TIMEOUT_S,
-      Math.max(1, typeof input.timeout_seconds === 'number' ? input.timeout_seconds : DEFAULT_TIMEOUT_S),
+      Math.max(
+        1,
+        typeof input.timeout_seconds === 'number' ? input.timeout_seconds : DEFAULT_TIMEOUT_S,
+      ),
     );
     ctx.step?.setMeta({ command, cwd, timeoutSeconds: timeoutS });
 
@@ -121,12 +128,24 @@ const run_terminal: BuiltinToolDef = {
     return await new Promise<ToolHandlerResult>((resolve) => {
       exec(
         command,
-        { cwd, timeout: timeoutS * 1000, maxBuffer: MAX_BUFFER, shell: '/bin/bash', env: sanitizedEnv() },
+        {
+          cwd,
+          timeout: timeoutS * 1000,
+          maxBuffer: MAX_BUFFER,
+          shell: '/bin/bash',
+          env: sanitizedEnv(),
+        },
         (err, stdout, stderr) => {
           const durationMs = Date.now() - started;
           const out = truncate(String(stdout));
           const errOut = truncate(String(stderr));
-          const e = err as (NodeJS.ErrnoException & { code?: number | string; killed?: boolean; signal?: string }) | null;
+          const e = err as
+            | (NodeJS.ErrnoException & {
+                code?: number | string;
+                killed?: boolean;
+                signal?: string;
+              })
+            | null;
 
           // Spawn failure (bad cwd / shell missing) — a real tool error.
           if (e && typeof e.code === 'string') {
@@ -136,7 +155,13 @@ const run_terminal: BuiltinToolDef = {
 
           const timedOut = !!e?.killed;
           const exitCode = timedOut ? null : e ? (typeof e.code === 'number' ? e.code : 1) : 0;
-          ctx.step?.setMeta({ exitCode, timedOut, durationMs, stdoutBytes: String(stdout).length, stderrBytes: String(stderr).length });
+          ctx.step?.setMeta({
+            exitCode,
+            timedOut,
+            durationMs,
+            stdoutBytes: String(stdout).length,
+            stderrBytes: String(stderr).length,
+          });
           ctx.step?.setOutput({ exitCode, timedOut, durationMs });
           resolve({
             ok: true,

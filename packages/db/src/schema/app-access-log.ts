@@ -18,7 +18,9 @@ import { nodes } from './nodes';
 export const appAccessLog = pgTable(
   'app_access_log',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     appNodeId: uuid('app_node_id')
       .notNull()
@@ -28,7 +30,10 @@ export const appAccessLog = pgTable(
     /** 'auth' | 'tool' | 'db' */
     kind: text('kind').notNull(),
     /** e.g. { slug } for tool calls, { op } for db statements. */
-    detail: jsonb('detail').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    detail: jsonb('detail')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

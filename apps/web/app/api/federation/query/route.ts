@@ -61,14 +61,11 @@ export async function POST(req: Request) {
           // Degrade to FTS ranking rather than failing the peer's request.
         }
       }
-      return step(
-        { name: 'query_for_peer', kind: 'db_read', input: parsed.data },
-        async (h) => {
-          const rows = await queryForPeer(peer.id, { ...parsed.data, queryEmbedding });
-          h.setMeta({ result_count: rows.length, semantic: Boolean(queryEmbedding) });
-          return rows;
-        },
-      );
+      return step({ name: 'query_for_peer', kind: 'db_read', input: parsed.data }, async (h) => {
+        const rows = await queryForPeer(peer.id, { ...parsed.data, queryEmbedding });
+        h.setMeta({ result_count: rows.length, semantic: Boolean(queryEmbedding) });
+        return rows;
+      });
     },
   );
 

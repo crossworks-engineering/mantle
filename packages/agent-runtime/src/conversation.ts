@@ -364,10 +364,7 @@ export async function loadConversationContext(args: {
     try {
       queryVec = await embed(ownerId, embedInput.slice(0, 2000));
     } catch (err) {
-      console.error(
-        '[conversation] query embed failed:',
-        err instanceof Error ? err.message : err,
-      );
+      console.error('[conversation] query embed failed:', err instanceof Error ? err.message : err);
     }
   }
 
@@ -391,31 +388,33 @@ export async function loadConversationContext(args: {
             limit ${factPool}`,
       )) as unknown as { id: string }[];
       if (pooled.length === 0) return [];
-      return tx
-        .select({
-          content: facts.content,
-          kind: facts.kind,
-          entityId: facts.entityId,
-          entityName: entities.name,
-          dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
-        })
-        .from(facts)
-        .leftJoin(entities, eq(facts.entityId, entities.id))
-        .where(
-          inArray(
-            facts.id,
-            pooled.map((r) => r.id),
-          ),
-        )
-        // Rank by cosine + a kind-aware age penalty: episodic memories decay
-        // (recent ones win), factual mildly, semantic/preference not at all (stable
-        // identity). Anchor on valid_from (when the fact became true) → created_at.
-        // The mismatch guard below still filters on raw cosine, so recency reorders
-        // but never surfaces a garbage-space row.
-        .orderBy(
-          sql`(${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector) + (case ${facts.kind} when 'episodic' then ${RECENCY_EPISODIC}::float8 when 'factual' then ${RECENCY_FACTUAL}::float8 else 0::float8 end) * (1 - exp(- extract(epoch from (now() - coalesce(${facts.validFrom}, ${facts.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
-        )
-        .limit(factLimit);
+      return (
+        tx
+          .select({
+            content: facts.content,
+            kind: facts.kind,
+            entityId: facts.entityId,
+            entityName: entities.name,
+            dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
+          })
+          .from(facts)
+          .leftJoin(entities, eq(facts.entityId, entities.id))
+          .where(
+            inArray(
+              facts.id,
+              pooled.map((r) => r.id),
+            ),
+          )
+          // Rank by cosine + a kind-aware age penalty: episodic memories decay
+          // (recent ones win), factual mildly, semantic/preference not at all (stable
+          // identity). Anchor on valid_from (when the fact became true) → created_at.
+          // The mismatch guard below still filters on raw cosine, so recency reorders
+          // but never surfaces a garbage-space row.
+          .orderBy(
+            sql`(${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector) + (case ${facts.kind} when 'episodic' then ${RECENCY_EPISODIC}::float8 when 'factual' then ${RECENCY_FACTUAL}::float8 else 0::float8 end) * (1 - exp(- extract(epoch from (now() - coalesce(${facts.validFrom}, ${facts.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
+          )
+          .limit(factLimit)
+      );
     });
     factRows = rows
       // Mismatch guard: if the query vector and stored fact vectors live in
@@ -458,9 +457,7 @@ export async function loadConversationContext(args: {
       .select({ content: facts.content, kind: facts.kind, entityName: entities.name })
       .from(facts)
       .leftJoin(entities, eq(facts.entityId, entities.id))
-      .where(
-        and(eq(facts.ownerId, ownerId), isNull(facts.validTo), eq(facts.kind, 'preference')),
-      )
+      .where(and(eq(facts.ownerId, ownerId), isNull(facts.validTo), eq(facts.kind, 'preference')))
       .orderBy(desc(facts.updatedAt))
       .limit(PREFERENCE_INJECT_LIMIT);
     const seen = new Set(factRows.map((f) => f.content));
@@ -510,33 +507,35 @@ export async function loadConversationContext(args: {
             limit ${contentPool}`,
       )) as unknown as { id: string }[];
       if (pooled.length === 0) return [];
-      return tx
-        .select({
-          nodeId: nodes.id,
-          title: nodes.title,
-          type: nodes.type,
-          data: nodes.data,
-          // Salience-adjusted distance: bulk/marketing mail (low salience) is
-          // pushed back so it can't crowd out real content. Non-email nodes have
-          // salience 1.0 → no change.
-          dist: sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`,
-        })
-        .from(nodes)
-        .where(
-          inArray(
-            nodes.id,
-            pooled.map((r) => r.id),
-          ),
-        )
-        // Order by salience-adjusted distance + a MILD recency penalty. The date
-        // anchor is the content's own date when it has one (an email's send date —
-        // so an old email synced last month reads as old, not fresh), else
-        // created_at. Recency only reorders here; the 0.6 cutoff below stays on the
-        // salience distance, so a relevant-but-old doc is never dropped for age.
-        .orderBy(
-          sql`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA}::float8 * (1 - ${nodes.salience}) + ${RECENCY_CONTENT}::float8 * (1 - exp(- extract(epoch from (now() - coalesce((${nodes.data}->>'internalDate')::timestamptz, ${nodes.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
-        )
-        .limit(contentHitLimit);
+      return (
+        tx
+          .select({
+            nodeId: nodes.id,
+            title: nodes.title,
+            type: nodes.type,
+            data: nodes.data,
+            // Salience-adjusted distance: bulk/marketing mail (low salience) is
+            // pushed back so it can't crowd out real content. Non-email nodes have
+            // salience 1.0 → no change.
+            dist: sql<number>`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA} * (1 - ${nodes.salience})`,
+          })
+          .from(nodes)
+          .where(
+            inArray(
+              nodes.id,
+              pooled.map((r) => r.id),
+            ),
+          )
+          // Order by salience-adjusted distance + a MILD recency penalty. The date
+          // anchor is the content's own date when it has one (an email's send date —
+          // so an old email synced last month reads as old, not fresh), else
+          // created_at. Recency only reorders here; the 0.6 cutoff below stays on the
+          // salience distance, so a relevant-but-old doc is never dropped for age.
+          .orderBy(
+            sql`(${nodes.embedding} <=> ${JSON.stringify(queryVec)}::vector) + ${SALIENCE_LAMBDA}::float8 * (1 - ${nodes.salience}) + ${RECENCY_CONTENT}::float8 * (1 - exp(- extract(epoch from (now() - coalesce((${nodes.data}->>'internalDate')::timestamptz, ${nodes.createdAt}))) / ${RECENCY_TAU_SEC}::float8))`,
+          )
+          .limit(contentHitLimit)
+      );
     });
     contentHits = rows
       .filter((r) => (r.dist ?? 1) < 0.6) // salience-adjusted cutoff — drop non-matches + demoted bulk
@@ -624,7 +623,13 @@ export async function loadConversationContext(args: {
   };
   if (corpusMapLimit > 0) {
     const rows = await db
-      .select({ id: nodes.id, type: nodes.type, title: nodes.title, path: nodes.path, data: nodes.data })
+      .select({
+        id: nodes.id,
+        type: nodes.type,
+        title: nodes.title,
+        path: nodes.path,
+        data: nodes.data,
+      })
       .from(nodes)
       .where(
         and(
@@ -668,7 +673,11 @@ export async function loadConversationContext(args: {
   let relations: RelationLine[] = [];
   if (anchorEntityIds.length > 0) {
     const triples = await entityRelationsFor(ownerId, anchorEntityIds, { limit: RELATION_LIMIT });
-    relations = triples.map((t) => ({ subject: t.subject, relation: t.relation, object: t.object }));
+    relations = triples.map((t) => ({
+      subject: t.subject,
+      relation: t.relation,
+      object: t.object,
+    }));
   }
 
   // ─── Conversation digests for THIS agent (per-agent, cross-channel) ─────
@@ -722,7 +731,9 @@ export async function loadConversationContext(args: {
   if (args.before) histConds.push(lt(assistantMessages.createdAt, args.before));
   if (windowHours != null && windowHours > 0) {
     const base = args.before ?? new Date();
-    histConds.push(gte(assistantMessages.createdAt, new Date(base.getTime() - windowHours * 3600_000)));
+    histConds.push(
+      gte(assistantMessages.createdAt, new Date(base.getTime() - windowHours * 3600_000)),
+    );
   }
   const rows = await db
     .select({
@@ -757,5 +768,15 @@ export async function loadConversationContext(args: {
     corpusMap: { count: corpusMap.entries.length, truncated: corpusMap.truncated },
   };
 
-  return { personaNotes, facts: factRows, corpusMap, contentHits, chunkHits, relations, digests, history, snapshot };
+  return {
+    personaNotes,
+    facts: factRows,
+    corpusMap,
+    contentHits,
+    chunkHits,
+    relations,
+    digests,
+    history,
+    snapshot,
+  };
 }

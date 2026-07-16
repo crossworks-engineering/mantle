@@ -90,15 +90,11 @@ function Row({
       title={node.path}
       className={cn(
         'flex w-full items-center gap-1.5 py-1 pr-2 text-left text-xs transition-colors',
-        active
-          ? 'bg-accent text-accent-foreground'
-          : 'text-foreground hover:bg-foreground/[0.06]',
+        active ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-foreground/[0.06]',
       )}
       style={{ paddingLeft: pad }}
     >
-      <FileCode
-        className={cn('size-3.5 shrink-0', active ? 'opacity-80' : 'opacity-50')}
-      />
+      <FileCode className={cn('size-3.5 shrink-0', active ? 'opacity-80' : 'opacity-50')} />
       <span className="truncate">{node.name}</span>
       {node.path === entry && (
         <span

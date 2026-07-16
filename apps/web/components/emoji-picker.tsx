@@ -177,10 +177,7 @@ export function EmojiPicker({
 
   const query = q.trim().toLowerCase();
   // While searching we flatten across sections; otherwise show the grouped set.
-  const matches = useMemo(
-    () => (query ? ALL.filter((x) => x.k.includes(query)) : null),
-    [query],
-  );
+  const matches = useMemo(() => (query ? ALL.filter((x) => x.k.includes(query)) : null), [query]);
 
   const choose = (emoji: string) => {
     onSelect(emoji);

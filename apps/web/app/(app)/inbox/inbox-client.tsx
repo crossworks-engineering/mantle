@@ -58,8 +58,7 @@ export function InboxClient() {
 
   const gateQuery = useQuery({
     queryKey: ['email', 'contact-gate'],
-    queryFn: () =>
-      apiFetch<{ isEmpty: boolean }>('/api/email/contact-gate').then((r) => r.isEmpty),
+    queryFn: () => apiFetch<{ isEmpty: boolean }>('/api/email/contact-gate').then((r) => r.isEmpty),
   });
 
   const accounts = accountsQuery.data ?? [];
@@ -89,9 +88,9 @@ export function InboxClient() {
       const sp = new URLSearchParams({ account: accountId! });
       if (selectedFolder) sp.set('folder', selectedFolder);
       if (tab === 'unread') sp.set('unread', 'true');
-      return apiFetch<{ messages: MessageListItem[] }>(
-        `/api/email/messages?${sp.toString()}`,
-      ).then((r) => r.messages);
+      return apiFetch<{ messages: MessageListItem[] }>(`/api/email/messages?${sp.toString()}`).then(
+        (r) => r.messages,
+      );
     },
     // Wait for the facets so the folder is resolved before the first fetch
     // (otherwise we'd briefly list every folder, then narrow to INBOX).
@@ -142,7 +141,9 @@ export function InboxClient() {
     return (
       <div className="mx-auto max-w-xl space-y-4 px-6 py-16 text-center">
         <Mail className="mx-auto size-8 text-muted-foreground" aria-hidden />
-        <h2 className="text-xl font-semibold">Your inbox is empty because nothing&apos;s plugged in.</h2>
+        <h2 className="text-xl font-semibold">
+          Your inbox is empty because nothing&apos;s plugged in.
+        </h2>
         <p className="text-sm text-muted-foreground">
           Connect your first email account and Mantle will start pulling messages, attachments, and
           metadata into your tree.
@@ -164,7 +165,9 @@ export function InboxClient() {
     return (
       <div className="mx-auto max-w-xl space-y-4 px-6 py-16 text-center">
         <UserCheck className="mx-auto size-8 text-muted-foreground" aria-hidden />
-        <h2 className="text-xl font-semibold">No contacts yet — so nothing&apos;s being ingested.</h2>
+        <h2 className="text-xl font-semibold">
+          No contacts yet — so nothing&apos;s being ingested.
+        </h2>
         <p className="text-sm text-muted-foreground">
           Mantle only pulls mail from people in your contacts — an address like{' '}
           <code className="rounded bg-muted px-1">you@example.com</code> or a whole domain like{' '}
@@ -250,7 +253,12 @@ export function InboxClient() {
       folders={folders}
       folderTitle={folderTitle}
       tab={tab}
-      tabAllHref={inboxHref({ account: accountId!, folder: selectedFolder, tab: 'all', email: selectedId })}
+      tabAllHref={inboxHref({
+        account: accountId!,
+        folder: selectedFolder,
+        tab: 'all',
+        email: selectedId,
+      })}
       tabUnreadHref={inboxHref({
         account: accountId!,
         folder: selectedFolder,

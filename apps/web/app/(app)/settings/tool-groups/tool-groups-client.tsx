@@ -179,7 +179,12 @@ export function ToolGroupsClient() {
           ) : groupsQuery.isError ? (
             <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
               <p>Couldn’t load tool groups: {groupsQuery.error.message}</p>
-              <Button type="button" variant="outline" size="sm" onClick={() => groupsQuery.refetch()}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => groupsQuery.refetch()}
+              >
                 Retry
               </Button>
             </div>
@@ -340,9 +345,8 @@ export function ToolGroupsClient() {
                   />
                 )}
                 <p className="text-xs text-muted-foreground">
-                  When an agent is granted this group, every tool here joins its
-                  effective tool set. Capability only — no instructions (that&apos;s
-                  what skills are for).
+                  When an agent is granted this group, every tool here joins its effective tool set.
+                  Capability only — no instructions (that&apos;s what skills are for).
                 </p>
               </div>
 

@@ -31,7 +31,8 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
   {
     id: 'text-embedding-3-small',
     label: 'text-embedding-3-small',
-    description: '1536-dim — does NOT fit the brain\'s vector(768) column without a schema migration. Cheapest OpenAI embedding. Was the pre-0060 default.',
+    description:
+      "1536-dim — does NOT fit the brain's vector(768) column without a schema migration. Cheapest OpenAI embedding. Was the pre-0060 default.",
     contextTokens: 8191,
     dimensions: 1536,
     inputPricePer1M: 0.02,
@@ -40,7 +41,7 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
     id: 'text-embedding-3-large',
     label: 'text-embedding-3-large',
     description:
-      '3072-dim native — MRL-truncatable to the brain\'s vector(768) column via the `dimensions` param. Higher recall than the local default, but cloud + paid.',
+      "3072-dim native — MRL-truncatable to the brain's vector(768) column via the `dimensions` param. Higher recall than the local default, but cloud + paid.",
     contextTokens: 8191,
     dimensions: 3072,
     inputPricePer1M: 0.13,
@@ -48,7 +49,8 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
   {
     id: 'text-embedding-ada-002',
     label: 'text-embedding-ada-002',
-    description: '1536-dim, legacy — does NOT fit the brain\'s vector(768) column without a schema migration. Skip for new installs.',
+    description:
+      "1536-dim, legacy — does NOT fit the brain's vector(768) column without a schema migration. Skip for new installs.",
     contextTokens: 8191,
     dimensions: 1536,
     inputPricePer1M: 0.1,
@@ -158,7 +160,8 @@ export const openaiEmbedding: EmbeddingDispatcher = {
             known ?? {
               id: m.id,
               label: m.id,
-              description: 'Embedding model returned by /v1/models — verify dimensions with the Test button.',
+              description:
+                'Embedding model returned by /v1/models — verify dimensions with the Test button.',
             }
           );
         });

@@ -11,7 +11,15 @@ const doc = (content: unknown[]) => ({ type: 'doc', content });
 
 describe('headingText', () => {
   it('concatenates descendant text and trims', () => {
-    expect(headingText({ type: 'heading', content: [{ type: 'text', text: '🔥 Point ' }, { type: 'text', text: 'One ' }] })).toBe('🔥 Point One');
+    expect(
+      headingText({
+        type: 'heading',
+        content: [
+          { type: 'text', text: '🔥 Point ' },
+          { type: 'text', text: 'One ' },
+        ],
+      }),
+    ).toBe('🔥 Point One');
   });
 });
 
@@ -22,7 +30,9 @@ describe('splitDocByHeading', () => {
     expect(intro).toEqual([]);
     expect(sections).toHaveLength(2);
     expect(sections[0]!.title).toBe('Alpha');
-    expect(sections[0]!.blocks.map((b) => (b as { content?: { text: string }[] }).content?.[0]?.text)).toEqual(['a1', 'a2']);
+    expect(
+      sections[0]!.blocks.map((b) => (b as { content?: { text: string }[] }).content?.[0]?.text),
+    ).toEqual(['a1', 'a2']);
     expect(sections[1]!.title).toBe('Beta');
     expect(sections[1]!.blocks).toHaveLength(1);
   });
@@ -30,7 +40,9 @@ describe('splitDocByHeading', () => {
   it('keeps pre-heading blocks as the intro', () => {
     const d = doc([p('lead-in'), h(1, 'One'), p('x')]);
     const { intro, sections } = splitDocByHeading(d, 1);
-    expect(intro.map((b) => (b as { content?: { text: string }[] }).content?.[0]?.text)).toEqual(['lead-in']);
+    expect(intro.map((b) => (b as { content?: { text: string }[] }).content?.[0]?.text)).toEqual([
+      'lead-in',
+    ]);
     expect(sections).toHaveLength(1);
     expect(sections[0]!.title).toBe('One');
   });
@@ -38,7 +50,9 @@ describe('splitDocByHeading', () => {
   it('does NOT repeat the heading block in the section body (it becomes the title)', () => {
     const d = doc([h(1, 'Title'), p('body')]);
     const { sections } = splitDocByHeading(d, 1);
-    expect(sections[0]!.blocks.some((b) => (b as { type?: string }).type === 'heading')).toBe(false);
+    expect(sections[0]!.blocks.some((b) => (b as { type?: string }).type === 'heading')).toBe(
+      false,
+    );
   });
 
   it('only splits on the requested level — other-level headings stay in the body', () => {
@@ -78,7 +92,14 @@ const txt = (b: unknown) => (b as { content?: { text: string }[] }).content?.[0]
 
 describe('extractSection', () => {
   it('lifts a heading + its body, splitting before/after around it', () => {
-    const d = doc([p('intro'), h(2, 'Target', 'h1'), p('b1'), p('b2'), h(2, 'Next', 'h2'), p('n1')]);
+    const d = doc([
+      p('intro'),
+      h(2, 'Target', 'h1'),
+      p('b1'),
+      p('b2'),
+      h(2, 'Next', 'h2'),
+      p('n1'),
+    ]);
     const r = extractSection(d, 'h1')!;
     expect(r.title).toBe('Target');
     expect(r.childBlocks.map(txt)).toEqual(['b1', 'b2']); // heading not repeated

@@ -30,7 +30,9 @@ describe('looksAnaphoricFollowup', () => {
   it('requires BOTH short AND referential', () => {
     // referential but long → not treated as a bare follow-up
     expect(
-      looksAnaphoricFollowup('I was reading about that printer gantry rebuild plan in detail today'),
+      looksAnaphoricFollowup(
+        'I was reading about that printer gantry rebuild plan in detail today',
+      ),
     ).toBe(false);
     // short but no referent
     expect(looksAnaphoricFollowup('sermon notes')).toBe(false);

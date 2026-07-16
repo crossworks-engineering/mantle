@@ -45,13 +45,23 @@ describe('route_map', () => {
   it('builds a static-images URL with the path + pins and returns a PNG image artifact', async () => {
     getApiKey.mockResolvedValue('pk.SECRET-KEY');
     let calledUrl = '';
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      calledUrl = url;
-      return pngResponse();
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calledUrl = url;
+        return pngResponse();
+      }),
+    );
 
     const res = (await route_map.handler(
-      { ...baseInput, from_label: 'You', to_label: 'Truth Coffee', distance_meters: 3200, duration_seconds: 480, profile: 'driving' },
+      {
+        ...baseInput,
+        from_label: 'You',
+        to_label: 'Truth Coffee',
+        distance_meters: 3200,
+        duration_seconds: 480,
+        profile: 'driving',
+      },
       ctx,
     )) as Extract<ToolHandlerResult, { ok: true }>;
 
@@ -68,7 +78,11 @@ describe('route_map', () => {
 
     // Artifact: a PNG, captioned, NOT leaking the key/url in the model-visible output.
     expect(res.artifacts).toHaveLength(1);
-    expect(res.artifacts![0]).toMatchObject({ kind: 'image', mimeType: 'image/png', producedBy: 'route_map' });
+    expect(res.artifacts![0]).toMatchObject({
+      kind: 'image',
+      mimeType: 'image/png',
+      producedBy: 'route_map',
+    });
     expect(res.artifacts![0]!.base64.length).toBeGreaterThan(0);
     expect(res.artifacts![0]!.caption).toContain('You → Truth Coffee');
     expect(JSON.stringify(res.output)).not.toContain('pk.SECRET-KEY');
@@ -77,10 +91,13 @@ describe('route_map', () => {
   it('falls back to pins-only when the route URL would exceed the static-images cap', async () => {
     getApiKey.mockResolvedValue('pk.SECRET-KEY');
     let calledUrl = '';
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      calledUrl = url;
-      return pngResponse();
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calledUrl = url;
+        return pngResponse();
+      }),
+    );
 
     const huge = 'a'.repeat(9000); // pushes the path overlay past the 8192 cap
     const res = (await route_map.handler({ ...baseInput, polyline: huge }, ctx)) as Extract<
@@ -108,13 +125,19 @@ describe('route_map', () => {
 
   it('surfaces a Mapbox HTTP error instead of emitting an artifact', async () => {
     getApiKey.mockResolvedValue('pk.SECRET-KEY');
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: false,
-      status: 422,
-      headers: new Headers(),
-      arrayBuffer: async () => new ArrayBuffer(0),
-      text: async () => 'Not Found',
-    } as unknown as Response)));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          ({
+            ok: false,
+            status: 422,
+            headers: new Headers(),
+            arrayBuffer: async () => new ArrayBuffer(0),
+            text: async () => 'Not Found',
+          }) as unknown as Response,
+      ),
+    );
 
     const res = await route_map.handler(baseInput, ctx);
 

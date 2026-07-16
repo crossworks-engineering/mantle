@@ -80,11 +80,10 @@ export function FolderPicker({
       }}
       className="space-y-4"
     >
-
       {included === null && (
         <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          Currently scanning <strong>all non-excluded folders</strong>. Pick a subset to scan only those.
-          Saving with nothing checked reverts to scanning all.
+          Currently scanning <strong>all non-excluded folders</strong>. Pick a subset to scan only
+          those. Saving with nothing checked reverts to scanning all.
         </p>
       )}
 
@@ -93,10 +92,18 @@ export function FolderPicker({
           {checked.size} of {selectable.length} selected
         </p>
         <div className="flex gap-3 text-xs">
-          <button type="button" onClick={() => setAll(true)} className="underline-offset-2 hover:underline">
+          <button
+            type="button"
+            onClick={() => setAll(true)}
+            className="underline-offset-2 hover:underline"
+          >
             Select all
           </button>
-          <button type="button" onClick={() => setAll(false)} className="underline-offset-2 hover:underline">
+          <button
+            type="button"
+            onClick={() => setAll(false)}
+            className="underline-offset-2 hover:underline"
+          >
             Clear
           </button>
         </div>
@@ -116,7 +123,9 @@ export function FolderPicker({
                 onChange={() => toggle(folder)}
                 className="size-4 accent-primary"
               />
-              <span className={isExcluded ? 'text-muted-foreground line-through' : ''}>{folder}</span>
+              <span className={isExcluded ? 'text-muted-foreground line-through' : ''}>
+                {folder}
+              </span>
               {isExcluded ? (
                 <span className="ml-auto text-xs text-muted-foreground">excluded</span>
               ) : scannedSet.has(folder) ? (
@@ -128,8 +137,8 @@ export function FolderPicker({
       </ul>
 
       <p className="text-xs text-muted-foreground">
-        Newly-added folders stay empty until the next sync runs and their senders are approved. Saving kicks an
-        immediate rescan.
+        Newly-added folders stay empty until the next sync runs and their senders are approved.
+        Saving kicks an immediate rescan.
       </p>
 
       <SubmitButton pending={save.isPending}>Save &amp; rescan</SubmitButton>

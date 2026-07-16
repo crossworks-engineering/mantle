@@ -19,7 +19,10 @@ export const EXPECTED_DIMS = 768;
 /** No terminal extractor_run after this long ⇒ stalled (not just slow). */
 export const STALL_MS = 90_000;
 
-export function evaluateLanded(fp: ProbeFootprint, ageMs: number): { state: LandedState; checks: CheckResult[] } {
+export function evaluateLanded(
+  fp: ProbeFootprint,
+  ageMs: number,
+): { state: LandedState; checks: CheckResult[] } {
   if (!fp.run) {
     if (ageMs > STALL_MS) {
       return {
@@ -28,25 +31,37 @@ export function evaluateLanded(fp: ProbeFootprint, ageMs: number): { state: Land
           {
             label: 'Trace',
             status: 'fail',
-            detail: 'no extractor_run settled — is apps/agent running and an extractor worker configured?',
+            detail:
+              'no extractor_run settled — is apps/agent running and an extractor worker configured?',
           },
         ],
       };
     }
-    return { state: 'indexing', checks: [{ label: 'Trace', status: 'info', detail: 'waiting for the extractor…' }] };
+    return {
+      state: 'indexing',
+      checks: [{ label: 'Trace', status: 'info', detail: 'waiting for the extractor…' }],
+    };
   }
 
   const run = fp.run;
 
   if (run.status === 'error') {
-    return { state: 'fail', checks: [{ label: 'Trace', status: 'fail', detail: 'extractor_run errored' }] };
+    return {
+      state: 'fail',
+      checks: [{ label: 'Trace', status: 'fail', detail: 'extractor_run errored' }],
+    };
   }
 
   if (run.status === 'skipped') {
     const checks: CheckResult[] = [
-      { label: 'Disposition', status: 'info', detail: `skipped${run.disposition ? `: ${run.disposition}` : ''}` },
+      {
+        label: 'Disposition',
+        status: 'info',
+        detail: `skipped${run.disposition ? `: ${run.disposition}` : ''}`,
+      },
     ];
-    if (fp.summary) checks.push({ label: 'L5 summary', status: 'info', detail: `“${fp.summary.slice(0, 60)}”` });
+    if (fp.summary)
+      checks.push({ label: 'L5 summary', status: 'info', detail: `“${fp.summary.slice(0, 60)}”` });
     return { state: 'skipped', checks };
   }
 
@@ -56,16 +71,30 @@ export function evaluateLanded(fp: ProbeFootprint, ageMs: number): { state: Land
   checks.push({
     label: 'L5 summary',
     status: fp.summary ? 'pass' : 'fail',
-    detail: fp.summary ? `“${fp.summary.slice(0, 60)}”` : 'empty (success but no summary — silent miss)',
+    detail: fp.summary
+      ? `“${fp.summary.slice(0, 60)}”`
+      : 'empty (success but no summary — silent miss)',
   });
 
   const hasEmb = fp.embDims != null;
-  checks.push({ label: 'L5 embedding', status: hasEmb ? 'pass' : 'fail', detail: hasEmb ? `${fp.embDims}-dim` : 'none' });
+  checks.push({
+    label: 'L5 embedding',
+    status: hasEmb ? 'pass' : 'fail',
+    detail: hasEmb ? `${fp.embDims}-dim` : 'none',
+  });
   if (hasEmb && fp.embDims !== EXPECTED_DIMS) {
-    checks.push({ label: `Emb ${EXPECTED_DIMS}`, status: 'fail', detail: `${fp.embDims} dims · expected ${EXPECTED_DIMS}` });
+    checks.push({
+      label: `Emb ${EXPECTED_DIMS}`,
+      status: 'fail',
+      detail: `${fp.embDims} dims · expected ${EXPECTED_DIMS}`,
+    });
   }
 
-  checks.push({ label: 'L5 tsv', status: fp.hasTsv ? 'pass' : 'fail', detail: fp.hasTsv ? 'set' : 'missing' });
+  checks.push({
+    label: 'L5 tsv',
+    status: fp.hasTsv ? 'pass' : 'fail',
+    detail: fp.hasTsv ? 'set' : 'missing',
+  });
 
   // Facts + graph are content-dependent — informational, never red on absence.
   checks.push({

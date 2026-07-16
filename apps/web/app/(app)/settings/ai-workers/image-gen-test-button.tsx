@@ -92,19 +92,14 @@ export function ImageGenTestButton({ workerId }: { workerId: string }) {
       {result && (
         <div className="space-y-2 overflow-hidden rounded-md border border-border bg-muted/30">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={result.dataUrl}
-            alt={prompt}
-            className="max-h-96 w-full object-contain"
-          />
+          <img src={result.dataUrl} alt={prompt} className="max-h-96 w-full object-contain" />
           <div className="space-y-1 px-3 py-2 text-xs text-muted-foreground">
             <p>
               adapter: {result.adapter} · model: {result.model}
             </p>
             {result.revisedPrompt && result.revisedPrompt !== prompt && (
               <p>
-                <span className="font-medium">Rewritten by model:</span>{' '}
-                {result.revisedPrompt}
+                <span className="font-medium">Rewritten by model:</span> {result.revisedPrompt}
               </p>
             )}
           </div>

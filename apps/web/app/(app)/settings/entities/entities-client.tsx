@@ -82,13 +82,19 @@ function EntitiesView({ initial }: { initial: Candidate[] }) {
 
   const Row = ({ c }: { c: Candidate }) => (
     <li className="flex items-center gap-3 px-3 py-2.5 text-sm">
-      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{c.kind}</span>
+      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+        {c.kind}
+      </span>
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="truncate text-muted-foreground line-through decoration-muted-foreground/40">{c.dupName}</span>
+        <span className="truncate text-muted-foreground line-through decoration-muted-foreground/40">
+          {c.dupName}
+        </span>
         <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate font-medium">{c.canonicalName}</span>
       </div>
-      <span className="hidden min-w-0 max-w-[40%] truncate text-xs text-muted-foreground sm:block">{c.reason}</span>
+      <span className="hidden min-w-0 max-w-[40%] truncate text-xs text-muted-foreground sm:block">
+        {c.reason}
+      </span>
       <div className="flex shrink-0 items-center gap-1.5">
         <Button size="sm" variant="outline" disabled={busy === c.dupId} onClick={() => merge(c)}>
           <GitMerge /> Merge
@@ -112,7 +118,9 @@ function EntitiesView({ initial }: { initial: Candidate[] }) {
     list.length === 0 ? null : (
       <section className="space-y-2">
         <div className="flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            {title}
+          </h2>
           <span className="text-xs text-muted-foreground">{list.length}</span>
         </div>
         <p className="text-xs text-muted-foreground">{hint}</p>
@@ -140,7 +148,8 @@ function EntitiesView({ initial }: { initial: Candidate[] }) {
 
       {rows.length === 0 ? (
         <div className="flex items-center gap-2 rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-sm text-muted-foreground">
-          <Check className="size-4 text-primary" /> No duplicate candidates — your entity graph is clean.
+          <Check className="size-4 text-primary" /> No duplicate candidates — your entity graph is
+          clean.
         </div>
       ) : (
         <>

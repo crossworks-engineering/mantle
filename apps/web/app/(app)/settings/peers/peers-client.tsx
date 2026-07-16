@@ -121,7 +121,7 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
   );
   const [reveal, setReveal] = useState<string | null>(null);
 
-  const selected = sel.mode === 'view' ? peers.find((p) => p.id === sel.id) ?? null : null;
+  const selected = sel.mode === 'view' ? (peers.find((p) => p.id === sel.id) ?? null) : null;
 
   return (
     <div className="md:grid md:h-full md:grid-cols-[340px_1fr] md:overflow-hidden">
@@ -131,7 +131,14 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Peers
           </h2>
-          <Button type="button" size="sm" onClick={() => { setReveal(null); setSel({ mode: 'create' }); }}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              setReveal(null);
+              setSel({ mode: 'create' });
+            }}
+          >
             <Plus /> New
           </Button>
         </div>
@@ -147,7 +154,10 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => { setReveal(null); setSel({ mode: 'view', id: p.id }); }}
+                  onClick={() => {
+                    setReveal(null);
+                    setSel({ mode: 'view', id: p.id });
+                  }}
                   className={cn(
                     'block w-full rounded-lg border border-l-[3px] border-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
                     isSel ? 'border-l-primary' : 'border-l-border',
@@ -166,7 +176,13 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
                             ? 'bg-chart-4'
                             : 'bg-muted-foreground/40',
                       )}
-                      aria-label={p.enabled ? (p.status === 'pending' ? 'awaiting their token' : p.status) : 'disabled'}
+                      aria-label={
+                        p.enabled
+                          ? p.status === 'pending'
+                            ? 'awaiting their token'
+                            : p.status
+                          : 'disabled'
+                      }
                     />
                   </div>
                   <div className="truncate text-xs text-muted-foreground">{p.baseUrl}</div>
@@ -254,23 +270,39 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
         <h2 className="text-lg font-semibold">Connect a Mantle</h2>
       </div>
       <p className="text-xs text-muted-foreground">
-        Pairing uses <strong>two tokens, one per direction</strong>. Step 1 — add the peer with
-        just a name and URL: we mint <em>your</em> token to send them (shown once). Step 2 — paste
-        the token <em>they</em> send you, here or later on the peer&apos;s page. Neither side needs
-        the other to go first.
+        Pairing uses <strong>two tokens, one per direction</strong>. Step 1 — add the peer with just
+        a name and URL: we mint <em>your</em> token to send them (shown once). Step 2 — paste the
+        token <em>they</em> send you, here or later on the peer&apos;s page. Neither side needs the
+        other to go first.
       </p>
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="peer-name">Display name</Label>
-          <Input id="peer-name" value={displayName} onChange={(e) => setName(e.target.value)} placeholder="e.g. Her Mantle" autoFocus />
+          <Input
+            id="peer-name"
+            value={displayName}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Her Mantle"
+            autoFocus
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="peer-url">Base URL</Label>
-          <Input id="peer-url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://her-mantle.example.com" />
+          <Input
+            id="peer-url"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://her-mantle.example.com"
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="peer-token">Their token — optional for now</Label>
-          <Input id="peer-token" value={outboundToken} onChange={(e) => setOutbound(e.target.value)} placeholder="mtlpeer_… (leave empty if they haven't sent it yet)" />
+          <Input
+            id="peer-token"
+            value={outboundToken}
+            onChange={(e) => setOutbound(e.target.value)}
+            placeholder="mtlpeer_… (leave empty if they haven't sent it yet)"
+          />
           <p className="text-xs text-muted-foreground">
             Used to query them; sealed at rest. Without it the peer is added as “awaiting their
             token” — they can already query you, and you paste theirs when it arrives.
@@ -323,11 +355,16 @@ function PeerDetail({
     }
   }, [peer.id]);
 
-  useEffect(() => { void loadShares(); }, [loadShares]);
+  useEffect(() => {
+    void loadShares();
+  }, [loadShares]);
 
   // Debounced node search for the grant picker.
   useEffect(() => {
-    if (!q.trim()) { setHits([]); return; }
+    if (!q.trim()) {
+      setHits([]);
+      return;
+    }
     const h = setTimeout(async () => {
       try {
         const { nodes } = await apiFetch<{ nodes: NodeHit[] }>(
@@ -375,7 +412,9 @@ function PeerDetail({
         hasOutboundToken: true,
         ...(peer.status === 'pending' ? { status: 'active' } : {}),
       });
-      toast.success(peer.status === 'pending' ? 'Pairing complete — peer is active' : 'Outbound token updated');
+      toast.success(
+        peer.status === 'pending' ? 'Pairing complete — peer is active' : 'Outbound token updated',
+      );
     } catch {
       toast.error('Could not update token');
     }
@@ -410,7 +449,10 @@ function PeerDetail({
       setTypeShares((list) =>
         on
           ? list.filter((t) => t.nodeType !== nodeType)
-          : [...list, { id: `optimistic-${nodeType}`, nodeType, createdAt: new Date().toISOString() }],
+          : [
+              ...list,
+              { id: `optimistic-${nodeType}`, nodeType, createdAt: new Date().toISOString() },
+            ],
       );
       toast.error('Could not update category share');
     }
@@ -450,16 +492,32 @@ function PeerDetail({
             <span className="text-xs text-muted-foreground">Enabled</span>
             <Switch checked={peer.enabled} onCheckedChange={toggleEnabled} />
           </div>
-          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={() => setDeleteOpen(true)}
+          >
             <Trash2 /> Delete
           </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 rounded-md border border-border bg-card p-3 text-xs text-muted-foreground">
-        <div>Status: <span className="font-medium text-foreground">{peer.enabled ? (peer.status === 'pending' ? 'awaiting their token' : peer.status) : 'disabled'}</span></div>
+        <div>
+          Status:{' '}
+          <span className="font-medium text-foreground">
+            {peer.enabled
+              ? peer.status === 'pending'
+                ? 'awaiting their token'
+                : peer.status
+              : 'disabled'}
+          </span>
+        </div>
         <div>Added: {formatDateTime(peer.createdAt)}</div>
-        <div>Last called them: {peer.lastContactedAt ? formatDateTime(peer.lastContactedAt) : '—'}</div>
+        <div>
+          Last called them: {peer.lastContactedAt ? formatDateTime(peer.lastContactedAt) : '—'}
+        </div>
         <div>Last seen from them: {peer.lastSeenAt ? formatDateTime(peer.lastSeenAt) : '—'}</div>
       </div>
 
@@ -468,7 +526,9 @@ function PeerDetail({
       {/* Tokens */}
       <div className="space-y-3 rounded-md border border-border p-3">
         <div className="flex items-center justify-between">
-          <p className="inline-flex items-center gap-2 text-sm font-medium"><KeyRound className="size-4" /> Tokens</p>
+          <p className="inline-flex items-center gap-2 text-sm font-medium">
+            <KeyRound className="size-4" /> Tokens
+          </p>
           <Button type="button" size="sm" variant="outline" onClick={rotate}>
             <RefreshCw /> Rotate inbound
           </Button>
@@ -484,9 +544,19 @@ function PeerDetail({
           <Input
             value={newOutbound}
             onChange={(e) => setNewOutbound(e.target.value)}
-            placeholder={peer.hasOutboundToken ? 'Update their token (outbound)…' : 'Paste their token (outbound)…'}
+            placeholder={
+              peer.hasOutboundToken
+                ? 'Update their token (outbound)…'
+                : 'Paste their token (outbound)…'
+            }
           />
-          <Button type="button" size="sm" variant="outline" onClick={saveOutbound} disabled={!newOutbound.trim()}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={saveOutbound}
+            disabled={!newOutbound.trim()}
+          >
             Save
           </Button>
         </div>
@@ -497,8 +567,8 @@ function PeerDetail({
         <p className="text-sm font-medium">Share whole categories</p>
         <p className="text-xs text-muted-foreground">
           A category switch shares every item of that type with {peer.displayName} —{' '}
-          <span className="font-medium text-foreground">including ones you create later</span>.
-          Turn it off to go back to cherry-picking below.
+          <span className="font-medium text-foreground">including ones you create later</span>. Turn
+          it off to go back to cherry-picking below.
         </p>
         <ul className="divide-y divide-border">
           {CATEGORIES.map((c) => {
@@ -509,7 +579,8 @@ function PeerDetail({
                 <div className="min-w-0 flex-1">
                   <p className="text-sm">{c.label}</p>
                   <p className="text-xs text-muted-foreground">
-                    {count} {count === 1 ? c.label.toLowerCase().replace(/s$/, '') : c.label.toLowerCase()}
+                    {count}{' '}
+                    {count === 1 ? c.label.toLowerCase().replace(/s$/, '') : c.label.toLowerCase()}
                     {on && <> · includes future {c.label.toLowerCase()}</>}
                   </p>
                 </div>
@@ -533,18 +604,27 @@ function PeerDetail({
         </p>
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a note, file, contact… to share" className="pl-8" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search a note, file, contact… to share"
+            className="pl-8"
+          />
         </div>
         {hits.length > 0 && (
           <ul className="divide-y divide-border rounded-md border border-border">
             {hits.map((h) => (
               <li key={h.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{h.type}</span>
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                  {h.type}
+                </span>
                 <span className="min-w-0 flex-1 truncate">{h.title}</span>
                 {grantedIds.has(h.id) ? (
                   <span className="text-xs text-muted-foreground">shared</span>
                 ) : (
-                  <Button type="button" size="sm" variant="outline" onClick={() => grant(h.id)}>Share</Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => grant(h.id)}>
+                    Share
+                  </Button>
                 )}
               </li>
             ))}
@@ -560,9 +640,18 @@ function PeerDetail({
           <ul className="divide-y divide-border rounded-md border border-border">
             {shares.map((s) => (
               <li key={s.id} className="flex items-center gap-2 px-3 py-2 text-sm">
-                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{s.nodeType}</span>
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                  {s.nodeType}
+                </span>
                 <span className="min-w-0 flex-1 truncate">{s.title}</span>
-                <Button type="button" size="icon" variant="ghost" className="size-7 text-muted-foreground hover:text-destructive" onClick={() => revoke(s.nodeId)} aria-label="Revoke">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 text-muted-foreground hover:text-destructive"
+                  onClick={() => revoke(s.nodeId)}
+                  aria-label="Revoke"
+                >
                   <X className="size-4" />
                 </Button>
               </li>
@@ -576,12 +665,16 @@ function PeerDetail({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove “{peer.displayName}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              Both tokens stop working immediately and all grants are dropped. This cannot be undone.
+              Both tokens stop working immediately and all grants are dropped. This cannot be
+              undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={confirmDelete}>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

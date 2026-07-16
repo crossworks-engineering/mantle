@@ -32,7 +32,7 @@ describe('arePersonNamesDistinct', () => {
     expect(arePersonNamesDistinct('Jonathan Schoeman', 'Don Schoeman')).toBe(true);
   });
 
-  it('different surnames are NOT this rule\'s concern (let normal logic decide)', () => {
+  it("different surnames are NOT this rule's concern (let normal logic decide)", () => {
     expect(arePersonNamesDistinct('Don Schoeman', 'Don Smith')).toBe(false);
   });
 
@@ -93,10 +93,7 @@ describe('isLikelyDifferentPerson', () => {
 
   it('never fires for non-person kinds', () => {
     expect(
-      isLikelyDifferentPerson(
-        { name: 'Don Co', kind: 'org' },
-        { name: 'Jason Co', aliases: [] },
-      ),
+      isLikelyDifferentPerson({ name: 'Don Co', kind: 'org' }, { name: 'Jason Co', aliases: [] }),
     ).toBe(false);
     expect(
       isLikelyDifferentPerson(

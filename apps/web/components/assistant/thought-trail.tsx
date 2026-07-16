@@ -137,7 +137,10 @@ function StatusFooter({
       {/* The narrator line — the warm, prominent "what I'm doing right now",
           larger than the trail and shimmering while the turn runs. */}
       <div className="flex items-start gap-2">
-        <Sparkles className="mt-[3px] size-4 shrink-0 animate-pulse text-foreground/50" aria-hidden />
+        <Sparkles
+          className="mt-[3px] size-4 shrink-0 animate-pulse text-foreground/50"
+          aria-hidden
+        />
         <p className="mantle-shimmer-text min-w-0 break-words text-[0.95rem] font-medium leading-relaxed">
           {cleanLabel(label)}
         </p>

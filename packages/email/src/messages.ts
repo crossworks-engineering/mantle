@@ -27,7 +27,11 @@ export interface NavAccount {
 /** Accounts for the inbox nav/gate — id/address/provider, ordered by address. */
 export function navAccounts(userId: string): Promise<NavAccount[]> {
   return db
-    .select({ id: emailAccounts.id, address: emailAccounts.address, provider: emailAccounts.provider })
+    .select({
+      id: emailAccounts.id,
+      address: emailAccounts.address,
+      provider: emailAccounts.provider,
+    })
     .from(emailAccounts)
     .where(eq(emailAccounts.userId, userId))
     .orderBy(emailAccounts.address);
@@ -148,7 +152,10 @@ export async function setStarred(userId: string, emailId: string, starred: boole
 
 /** Subquery of the owner's account ids — reused by the mutation WHERE clauses. */
 function ownedAccountIds(userId: string) {
-  return db.select({ id: emailAccounts.id }).from(emailAccounts).where(eq(emailAccounts.userId, userId));
+  return db
+    .select({ id: emailAccounts.id })
+    .from(emailAccounts)
+    .where(eq(emailAccounts.userId, userId));
 }
 
 async function accountOwned(userId: string, accountId: string): Promise<boolean> {

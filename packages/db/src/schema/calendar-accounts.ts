@@ -32,7 +32,9 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 export const calendarAccounts = pgTable(
   'calendar_accounts',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     /** 'ics' (future: 'google' | 'microsoft'). */
     provider: text('provider').notNull(),
@@ -45,7 +47,10 @@ export const calendarAccounts = pgTable(
     enabled: boolean('enabled').default(true).notNull(),
     /** Provider sync cursor (delta token for API providers); ICS re-pulls in
      *  full and dedups, so it leaves this empty. */
-    syncState: jsonb('sync_state').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    syncState: jsonb('sync_state')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     /** Events upserted on the last successful sync (surfaced in the UI). */
     lastEventCount: integer('last_event_count'),
     lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),

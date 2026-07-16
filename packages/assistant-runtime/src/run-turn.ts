@@ -160,10 +160,7 @@ export type AssistantTurnResult = {
  *  `priority` wins, then a soft assistant→responder→custom tiebreak, then slug
  *  for determinism (the tiebreak + pick live in `pickWebDefaultAgent`, unit-
  *  tested). An explicit `?agent=` slug still wins outright. */
-export async function resolveAssistantAgent(
-  ownerId: string,
-  slug?: string,
-): Promise<Agent | null> {
+export async function resolveAssistantAgent(ownerId: string, slug?: string): Promise<Agent | null> {
   // Explicit pick (the /assistant agent selector). Owner-scoped + enabled;
   // falls through to the default if the slug isn't valid.
   if (slug) {
@@ -383,10 +380,7 @@ export async function runAssistantTurn(
       prefs = res.prefs;
       timezoneSwitch = res.switched;
     } catch (err) {
-      console.error(
-        '[assistant] auto-timezone skipped:',
-        err instanceof Error ? err.message : err,
-      );
+      console.error('[assistant] auto-timezone skipped:', err instanceof Error ? err.message : err);
     }
   }
   const timeContextLine = buildTimeContextLine(prefs);
@@ -479,10 +473,7 @@ export async function runAssistantTurn(
   const imageBytes = options?.image ? base64Bytes(options.image.base64) : 0;
   const withinImageLimit = imageBytes > 0 && imageBytes <= maxImageBytesFor(agent.model);
   const canSeeImage =
-    !!options?.image &&
-    !hasTranscript &&
-    modelSupportsVision(agent.model) &&
-    withinImageLimit;
+    !!options?.image && !hasTranscript && modelSupportsVision(agent.model) && withinImageLimit;
   if (options?.image && !hasTranscript && modelSupportsVision(agent.model) && !withinImageLimit) {
     console.warn(
       `[assistant] no transcript and image ${imageBytes}B exceeds ${agent.model} limit ` +
@@ -541,7 +532,9 @@ export async function runAssistantTurn(
   // grant: inject them only when there's an active heartbeat on this surface
   // for the model to act on. Mirrors apps/agent/main.ts. See docs/heartbeats.md
   // §4 "Permission model & runtime hygiene".
-  const hasHeartbeats = await hasActiveHeartbeatsOnSurface(ownerId, { kind: 'web' }).catch(() => false);
+  const hasHeartbeats = await hasActiveHeartbeatsOnSurface(ownerId, { kind: 'web' }).catch(
+    () => false,
+  );
   if (hasHeartbeats) {
     allowedToolSlugs = [
       ...allowedToolSlugs,
@@ -691,9 +684,13 @@ export async function runAssistantTurn(
     // failure: synthesize an empty outcome and let the success path finalize the
     // (possibly partial-less) turn 'complete'.
     if (abortController?.signal.aborted) {
-      loopOutcome = { reply: '', artifacts: [], iterations: 0, toolCalls: [], tokensOut: 0 } as unknown as Awaited<
-        ReturnType<typeof runLoop>
-      >;
+      loopOutcome = {
+        reply: '',
+        artifacts: [],
+        iterations: 0,
+        toolCalls: [],
+        tokensOut: 0,
+      } as unknown as Awaited<ReturnType<typeof runLoop>>;
     } else {
       // Real failure: flip the pending outbound row to 'failed' so the durable
       // record + a reload + the non-blocking client all reflect it, emit the
@@ -770,8 +767,12 @@ export async function runAssistantTurn(
   // The row was inserted this same turn, so it should always still be there;
   // fall back to the pending row with the reply folded in if it somehow vanished
   // (e.g. a concurrent delete) so the turn still returns a coherent result.
-  const outbound: AssistantMessage =
-    finalized ?? { ...outboundPending, text: reply, model: agent.model, status: 'complete' };
+  const outbound: AssistantMessage = finalized ?? {
+    ...outboundPending,
+    text: reply,
+    model: agent.model,
+    status: 'complete',
+  };
 
   void db
     .update(agents)

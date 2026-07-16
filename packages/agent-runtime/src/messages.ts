@@ -102,9 +102,7 @@ export type ToolCallRequest = {
 export type ChatMessage =
   | {
       role: 'system';
-      content:
-        | string
-        | Array<{ type: 'text'; text: string; cacheControl?: { type: 'ephemeral' } }>;
+      content: string | Array<{ type: 'text'; text: string; cacheControl?: { type: 'ephemeral' } }>;
     }
   | {
       role: 'user';
@@ -311,7 +309,7 @@ export function renderCorpusMapBlock(
       ? '\n[map truncated — more content exists; use search/search_chunks to find anything not listed]'
       : '';
   return (
-    'Map of the user\'s content corpus — what exists, by branch. Read one with ' +
+    "Map of the user's content corpus — what exists, by branch. Read one with " +
     'read_section/node_read (the #id), find passages with search_chunks; anything ' +
     'not listed here does not exist as a page/table/file/note/task:\n' +
     parts.join('\n') +
@@ -378,8 +376,7 @@ export function buildChatMessages(args: {
   // cache_control markers. Gating on the slug alone missed the direct path, so a
   // direct-Anthropic responder collapsed persona+digest into one cache block and
   // a digest refresh busted the persona cache too.
-  const supportsExplicitCache =
-    args.provider === 'anthropic' || model.startsWith('anthropic/');
+  const supportsExplicitCache = args.provider === 'anthropic' || model.startsWith('anthropic/');
   const ephemeral = { type: 'ephemeral' as const };
 
   // ─── Block 1: persona + persona_notes (byte-stable across turns) ──────
@@ -497,10 +494,11 @@ export function buildChatMessages(args: {
 
   // ─── Block 4: raw recent turns ────────────────────────────────────────
   messages.push(
-    ...history.map((t): ChatMessage =>
-      t.role === 'user'
-        ? { role: 'user', content: t.text }
-        : { role: 'assistant', content: t.text },
+    ...history.map(
+      (t): ChatMessage =>
+        t.role === 'user'
+          ? { role: 'user', content: t.text }
+          : { role: 'assistant', content: t.text },
     ),
   );
 
@@ -536,9 +534,7 @@ function renderPersonaBlock(systemPrompt: string, notes: PersonaNote[]): string 
   // user asks for a change that contradicts one.
   const live = activeNotes(notes);
   if (live.length > 0) {
-    const noteLines = live
-      .map((n) => `- [${noteRef(n)}] (${n.kind}) ${n.content}`)
-      .join('\n');
+    const noteLines = live.map((n) => `- [${noteRef(n)}] (${n.kind}) ${n.content}`).join('\n');
     parts.push(
       `\nWhat you've learned about how this user wants to be helped (each tagged with a [ref] you can pass to update_persona):\n${noteLines}`,
     );

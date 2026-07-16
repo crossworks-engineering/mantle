@@ -72,7 +72,7 @@ function transcribePrompt(language: string | undefined): string {
     ? ` The audio is in ${language}. Output the transcript in the same language.`
     : '';
   return (
-    'You are a transcription engine. Transcribe the user\'s audio VERBATIM.' +
+    "You are a transcription engine. Transcribe the user's audio VERBATIM." +
     langClause +
     ' Output only the transcript text — no commentary, no quotation marks, no labels.' +
     ' Preserve filler words and stutters. If there is no speech, output an empty string.'

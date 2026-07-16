@@ -34,23 +34,46 @@ export async function POST() {
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
       body: initialize,
       signal: AbortSignal.timeout(5000),
     });
     const hasChallenge = !!res.headers.get('www-authenticate');
     if (res.status === 401 && hasChallenge) {
-      return NextResponse.json({ ok: true, status: res.status, message: 'Live and OAuth-gated — ready to connect.' });
+      return NextResponse.json({
+        ok: true,
+        status: res.status,
+        message: 'Live and OAuth-gated — ready to connect.',
+      });
     }
     if (res.status === 404) {
-      return NextResponse.json({ ok: false, status: 404, message: 'The connector is disabled — enable it first.' });
+      return NextResponse.json({
+        ok: false,
+        status: 404,
+        message: 'The connector is disabled — enable it first.',
+      });
     }
     if (res.status === 429) {
-      return NextResponse.json({ ok: false, status: 429, message: 'Rate-limited right now — try again in a moment.' });
+      return NextResponse.json({
+        ok: false,
+        status: 429,
+        message: 'Rate-limited right now — try again in a moment.',
+      });
     }
-    return NextResponse.json({ ok: false, status: res.status, message: `Unexpected response (HTTP ${res.status}).` });
+    return NextResponse.json({
+      ok: false,
+      status: res.status,
+      message: `Unexpected response (HTTP ${res.status}).`,
+    });
   } catch (err) {
     const reason = err instanceof Error ? err.message : 'unknown error';
-    return NextResponse.json({ ok: false, status: 0, message: `Could not reach ${url} — ${reason}` });
+    return NextResponse.json({
+      ok: false,
+      status: 0,
+      message: `Could not reach ${url} — ${reason}`,
+    });
   }
 }

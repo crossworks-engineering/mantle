@@ -37,7 +37,10 @@ export function createState(): string {
 }
 
 /** Build the URL to send the user's browser to for sign-in + consent. */
-export function buildAuthorizeUrl(cfg: MsOAuthConfig, opts: { state: string; challenge: string }): string {
+export function buildAuthorizeUrl(
+  cfg: MsOAuthConfig,
+  opts: { state: string; challenge: string },
+): string {
   const params = new URLSearchParams({
     client_id: cfg.clientId,
     response_type: 'code',
@@ -97,7 +100,10 @@ async function postToken(cfg: MsOAuthConfig, body: URLSearchParams): Promise<Tok
 }
 
 /** Step 2: exchange the authorization code for the first token set. */
-export function exchangeCode(cfg: MsOAuthConfig, opts: { code: string; verifier: string }): Promise<TokenSet> {
+export function exchangeCode(
+  cfg: MsOAuthConfig,
+  opts: { code: string; verifier: string },
+): Promise<TokenSet> {
   return postToken(
     cfg,
     new URLSearchParams({
@@ -130,12 +136,16 @@ export function refreshTokens(cfg: MsOAuthConfig, refreshToken: string): Promise
 
 /** Fetch the signed-in user's identity (upn + display name) so we can label the
  *  connected account. Uses the access token directly — no token-store cycle. */
-export async function fetchMe(accessToken: string): Promise<{ upn: string; displayName: string | null; tenantId: string | null }> {
+export async function fetchMe(
+  accessToken: string,
+): Promise<{ upn: string; displayName: string | null; tenantId: string | null }> {
   const res = await fetch('https://graph.microsoft.com/v1.0/me', {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) {
-    throw new Error(`Graph /me failed: ${res.status} ${await res.text().catch(() => '')}`.slice(0, 300));
+    throw new Error(
+      `Graph /me failed: ${res.status} ${await res.text().catch(() => '')}`.slice(0, 300),
+    );
   }
   const me = (await res.json()) as {
     userPrincipalName?: string;

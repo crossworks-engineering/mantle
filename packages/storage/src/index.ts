@@ -91,11 +91,9 @@ export async function putContent(
 }
 
 export async function getSignedUrl(key: string, expiresInSec = 300): Promise<string> {
-  return awsGetSignedUrl(
-    client(),
-    new GetObjectCommand({ Bucket: bucket(), Key: key }),
-    { expiresIn: expiresInSec },
-  );
+  return awsGetSignedUrl(client(), new GetObjectCommand({ Bucket: bucket(), Key: key }), {
+    expiresIn: expiresInSec,
+  });
 }
 
 /**
@@ -167,7 +165,8 @@ export async function bucketStatus(): Promise<BucketStatus> {
   } catch (err: unknown) {
     const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
     const status = e.$metadata?.httpStatusCode;
-    if (e.name === 'NotFound' || status === 404) return { bucket: name, reachable: true, exists: false };
+    if (e.name === 'NotFound' || status === 404)
+      return { bucket: name, reachable: true, exists: false };
     // Any other HTTP answer (e.g. 403) → store is up, existence indeterminate.
     if (typeof status === 'number') return { bucket: name, reachable: true, exists: null };
     return { bucket: name, reachable: false, exists: null };

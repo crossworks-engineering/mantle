@@ -118,7 +118,9 @@ describe('assertSafeScript', () => {
 describe('PRAGMA table_info through node:sqlite', () => {
   it('returns one row per column via prepare().all()', () => {
     // getBuiltinModule keeps vite/vitest from trying to bundle node:sqlite.
-    const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as typeof import('node:sqlite');
+    const { DatabaseSync } = process.getBuiltinModule(
+      'node:sqlite',
+    ) as typeof import('node:sqlite');
     const db = new DatabaseSync(':memory:');
     try {
       db.exec('CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)');
@@ -137,12 +139,7 @@ describe('PRAGMA table_info through node:sqlite', () => {
 describe('appDbFiles', () => {
   it('lists the db file plus its journal/WAL/SHM sidecars', () => {
     const base = '/data/app-dbs/owner/app.sqlite';
-    expect(appDbFiles(base)).toEqual([
-      base,
-      `${base}-journal`,
-      `${base}-wal`,
-      `${base}-shm`,
-    ]);
+    expect(appDbFiles(base)).toEqual([base, `${base}-journal`, `${base}-wal`, `${base}-shm`]);
   });
 });
 
@@ -153,9 +150,7 @@ describe('appDbFiles', () => {
  */
 describe('vacuumIntoStatement', () => {
   it('wraps the destination in a single-quoted literal', () => {
-    expect(vacuumIntoStatement('/backups/o/a.sqlite')).toBe(
-      "VACUUM INTO '/backups/o/a.sqlite'",
-    );
+    expect(vacuumIntoStatement('/backups/o/a.sqlite')).toBe("VACUUM INTO '/backups/o/a.sqlite'");
   });
 
   it("doubles embedded single quotes so the literal can't be broken out of", () => {

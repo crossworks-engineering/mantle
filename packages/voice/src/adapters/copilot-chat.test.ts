@@ -25,7 +25,11 @@ function routeFetch(opts: { token?: unknown; chat?: unknown }) {
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
     calls.push({ url, init });
     if (url.includes('copilot_internal/v2/token')) {
-      return { ok: true, status: 200, json: async () => opts.token ?? { token: 'tid=minted;exp=1', expires_at: 9999999999 } };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => opts.token ?? { token: 'tid=minted;exp=1', expires_at: 9999999999 },
+      };
     }
     return { ok: true, status: 200, json: async () => opts.chat };
   }) as unknown as typeof fetch;
@@ -133,13 +137,21 @@ describe('copilot-chat reasoning', () => {
 describe('copilot-chat error surface', () => {
   it('throws when model is missing', async () => {
     await expect(
-      copilotChatAdapter.chat({ apiKey: 'tid=t;exp=9', model: '', messages: [{ role: 'user', content: 'hi' }] }),
+      copilotChatAdapter.chat({
+        apiKey: 'tid=t;exp=9',
+        model: '',
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
     ).rejects.toThrow(/model required/);
   });
 
   it('throws when the key (OAuth token) is missing', async () => {
     await expect(
-      copilotChatAdapter.chat({ apiKey: '', model: 'gpt-5', messages: [{ role: 'user', content: 'hi' }] }),
+      copilotChatAdapter.chat({
+        apiKey: '',
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
     ).rejects.toThrow(/required/);
   });
 });

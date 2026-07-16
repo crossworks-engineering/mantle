@@ -20,15 +20,7 @@
  */
 
 import { and, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
-import {
-  db,
-  entities,
-  entityEdges,
-  facts,
-  nodes,
-  type Entity,
-  type Fact,
-} from '@mantle/db';
+import { db, entities, entityEdges, facts, nodes, type Entity, type Fact } from '@mantle/db';
 
 export type EntitySearchOptions = {
   ownerId: string;
@@ -331,8 +323,7 @@ function assertUuid(v: string, field: string): string {
 export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult[]> {
   const maxDepth = Math.min(Math.max(1, Math.floor(opts.maxDepth ?? 3)), 6);
   const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? 50)), 200);
-  const relFilter =
-    opts.relations && opts.relations.length > 0 ? opts.relations : null;
+  const relFilter = opts.relations && opts.relations.length > 0 ? opts.relations : null;
 
   // This runs via postgres.js's SIMPLE query protocol (db.$client.unsafe().
   // simple()), NOT drizzle's db.execute — which uses the extended protocol
@@ -348,9 +339,7 @@ export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult
   const ownerId = assertUuid(opts.ownerId, 'ownerId');
   const toId = opts.toId ? assertUuid(opts.toId, 'toId') : null;
   const relList = relFilter
-    ? relFilter
-        .map((r) => r.toLowerCase().replace(/[^a-z0-9_]/g, ''))
-        .filter((r) => r.length > 0)
+    ? relFilter.map((r) => r.toLowerCase().replace(/[^a-z0-9_]/g, '')).filter((r) => r.length > 0)
     : null;
   const relCond =
     relList && relList.length > 0
@@ -390,17 +379,19 @@ export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult
     limit ${limit}`;
 
   // Simple protocol (see note above) — the raw postgres.js client, no params.
-  const client = (db as unknown as {
-    $client: { unsafe: (q: string) => { simple: () => Promise<unknown[]> } };
-  }).$client;
+  const client = (
+    db as unknown as {
+      $client: { unsafe: (q: string) => { simple: () => Promise<unknown[]> } };
+    }
+  ).$client;
   const rows = await client.unsafe(queryText).simple();
 
-  const raw = (rows as unknown as Array<{
+  const raw = rows as unknown as Array<{
     node_id: string;
     path_ids: string[];
     rels: string[];
     depth: number;
-  }>);
+  }>;
   if (raw.length === 0) return [];
 
   // Resolve every entity id that appears in any path, in one query.
@@ -492,7 +483,13 @@ export async function entityRelationsFor(
     const key = `${e.sourceId}|${e.relation}|${e.targetId}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ subjectId: e.sourceId, subject, relation: e.relation, objectId: e.targetId, object });
+    out.push({
+      subjectId: e.sourceId,
+      subject,
+      relation: e.relation,
+      objectId: e.targetId,
+      object,
+    });
     if (out.length >= limit) break;
   }
   return out;

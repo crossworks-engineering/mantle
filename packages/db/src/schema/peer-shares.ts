@@ -17,7 +17,9 @@ import { mantlePeers } from './mantle-peers';
 export const peerShares = pgTable(
   'peer_shares',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     peerId: uuid('peer_id')
       .notNull()

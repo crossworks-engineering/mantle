@@ -124,8 +124,8 @@ export function McpSettingsClient() {
               <div>
                 <h2 className="text-sm font-semibold">Remote MCP connector</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Expose this brain&apos;s tools as a claude.ai custom connector — add it on the web,
-                  desktop, or mobile with no SSH or config files.
+                  Expose this brain&apos;s tools as a claude.ai custom connector — add it on the
+                  web, desktop, or mobile with no SSH or config files.
                 </p>
               </div>
             </div>
@@ -192,20 +192,27 @@ export function McpSettingsClient() {
           <div className="border-b border-border p-4 md:p-5">
             <h2 className="text-sm font-semibold">Connected clients</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Apps that have signed in and hold a live token. Disconnect to revoke access immediately.
+              Apps that have signed in and hold a live token. Disconnect to revoke access
+              immediately.
             </p>
           </div>
           {clients.length === 0 ? (
-            <div className="p-4 text-sm text-muted-foreground md:p-5">No connected clients yet.</div>
+            <div className="p-4 text-sm text-muted-foreground md:p-5">
+              No connected clients yet.
+            </div>
           ) : (
             <ul className="divide-y divide-border">
               {clients.map((c) => (
                 <li key={c.id} className="flex items-center justify-between gap-4 p-4 md:px-5">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{c.clientName || 'Unnamed client'}</p>
+                    <p className="truncate text-sm font-medium">
+                      {c.clientName || 'Unnamed client'}
+                    </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       Connected {formatDateTime(c.connectedAt)}
-                      {c.lastUsedAt ? ` · last used ${formatDateTime(c.lastUsedAt)}` : ' · not used yet'}
+                      {c.lastUsedAt
+                        ? ` · last used ${formatDateTime(c.lastUsedAt)}`
+                        : ' · not used yet'}
                     </p>
                   </div>
                   <AlertDialog>

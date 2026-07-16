@@ -19,7 +19,10 @@ export async function GET() {
 
 const PatchBody = z
   .object({ requireApproval: z.boolean().optional(), egressGate: z.boolean().optional() })
-  .refine((b) => b.requireApproval !== undefined || b.egressGate !== undefined, 'nothing to update');
+  .refine(
+    (b) => b.requireApproval !== undefined || b.egressGate !== undefined,
+    'nothing to update',
+  );
 
 export async function PUT(req: Request) {
   const user = await getOwnerOr401();
@@ -35,7 +38,9 @@ export async function PUT(req: Request) {
     ...(parsed.data.requireApproval !== undefined
       ? { toolsmithRequireApproval: parsed.data.requireApproval }
       : {}),
-    ...(parsed.data.egressGate !== undefined ? { heartbeatEgressGate: parsed.data.egressGate } : {}),
+    ...(parsed.data.egressGate !== undefined
+      ? { heartbeatEgressGate: parsed.data.egressGate }
+      : {}),
   });
   const prefs = await loadProfilePreferences(user.id);
   const body: ToolSettings = {

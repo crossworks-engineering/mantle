@@ -17,13 +17,20 @@ describe('sanitizePushPrefs', () => {
   });
 
   it('drops unknown fields entirely', () => {
-    expect(sanitizePushPrefs({ wat: 1, singleton: true, __proto__: { polluted: true } })).toEqual({});
+    expect(sanitizePushPrefs({ wat: 1, singleton: true, __proto__: { polluted: true } })).toEqual(
+      {},
+    );
   });
 
   it('drops removed quiet-hours fields', () => {
     // These used to be accepted; after §C they're unknown and must not survive.
     expect(
-      sanitizePushPrefs({ quietEnabled: true, quietStart: '23:30', quietEnd: '06:15', timezone: 'UTC' }),
+      sanitizePushPrefs({
+        quietEnabled: true,
+        quietStart: '23:30',
+        quietEnd: '06:15',
+        timezone: 'UTC',
+      }),
     ).toEqual({});
   });
 

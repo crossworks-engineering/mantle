@@ -70,7 +70,9 @@ export async function GET(
         enc(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`);
       });
 
-      unsubscribe = await subscribeTurnStream(caller.ownerId, turnId, (event) => merger.live(event));
+      unsubscribe = await subscribeTurnStream(caller.ownerId, turnId, (event) =>
+        merger.live(event),
+      );
 
       try {
         merger.replay(await getBufferedTurnEvents(caller.ownerId, turnId, sinceSeq));

@@ -55,7 +55,9 @@ export async function pollOnce(
     // 409 Conflict means another instance is polling this token. Surface
     // it loudly via the error column but don't crash the worker.
     if (err instanceof GrammyError && err.error_code === 409) {
-      console.error(`[telegram-sync] 409 Conflict for @${account.botUsername} — another poller is active`);
+      console.error(
+        `[telegram-sync] 409 Conflict for @${account.botUsername} — another poller is active`,
+      );
     }
     throw err;
   }
@@ -144,12 +146,7 @@ async function handleCallback(
   const [chat] = await db
     .select({ status: telegramChats.allowlistStatus, userId: telegramChats.userId })
     .from(telegramChats)
-    .where(
-      and(
-        eq(telegramChats.accountId, account.id),
-        eq(telegramChats.telegramChatId, chatId),
-      ),
-    )
+    .where(and(eq(telegramChats.accountId, account.id), eq(telegramChats.telegramChatId, chatId)))
     .limit(1);
   if (!chat || chat.status !== 'allowed') {
     await answerCallback(account, cq.id, 'Not authorised.');
@@ -247,9 +244,12 @@ function normalise(update: Update): InboundMessage | null {
     if (!text) text = `(sticker${msg.sticker.emoji ? ' ' + msg.sticker.emoji : ''})`;
   }
 
-  const chatTitle = chat.type === 'private'
-    ? [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username
-    : 'title' in chat ? chat.title : undefined;
+  const chatTitle =
+    chat.type === 'private'
+      ? [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username
+      : 'title' in chat
+        ? chat.title
+        : undefined;
   const chatUsername = 'username' in chat ? chat.username : undefined;
   const fromName = [from.first_name, from.last_name].filter(Boolean).join(' ') || from.username;
 
@@ -289,7 +289,9 @@ async function persist(account: TelegramAccount, inbound: InboundMessage): Promi
   // Build the nodes title — keep it short, the body lives on telegram_messages.text
   const titlePreview = inbound.text.length > 80 ? inbound.text.slice(0, 77) + '…' : inbound.text;
   const title = `tg: ${inbound.fromName ?? inbound.fromUsername ?? inbound.fromUserId} — ${titlePreview}`;
-  const path = `${account.branchPath}.${inbound.chatId}`.replace(/[^a-z0-9._]/gi, '_').toLowerCase();
+  const path = `${account.branchPath}.${inbound.chatId}`
+    .replace(/[^a-z0-9._]/gi, '_')
+    .toLowerCase();
 
   return await db.transaction(async (tx) => {
     const [node] = await tx

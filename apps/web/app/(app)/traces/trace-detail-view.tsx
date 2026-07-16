@@ -2,7 +2,11 @@ import Link from 'next/link';
 import { formatDateTime } from '@/lib/format-datetime';
 // Pure formatters + type from the client-safe module (not `@/lib/traces`, which
 // drags postgres in) so this can render inside a client component.
-import { formatDuration, formatMicroUsd, type TraceDetail as TraceDetailRow } from '@/lib/traces-format';
+import {
+  formatDuration,
+  formatMicroUsd,
+  type TraceDetail as TraceDetailRow,
+} from '@/lib/traces-format';
 import { TraceDetail } from './[id]/trace-detail';
 
 /** Shared trace detail surface — status + summary fields + step timeline.
@@ -87,10 +91,7 @@ export function TraceDetailView({ trace }: { trace: TraceDetailRow }) {
             <Field
               label="Parent trace"
               value={
-                <Link
-                  href={`/traces/${parentTraceId}`}
-                  className="text-primary hover:underline"
-                >
+                <Link href={`/traces/${parentTraceId}`} className="text-primary hover:underline">
                   trace#{parentTraceId.slice(0, 8)} →
                 </Link>
               }
@@ -109,15 +110,7 @@ export function TraceDetailView({ trace }: { trace: TraceDetailRow }) {
   );
 }
 
-function Field({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: React.ReactNode;
-  mono?: boolean;
-}) {
+function Field({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
     <div className="flex flex-col">
       <dt className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</dt>

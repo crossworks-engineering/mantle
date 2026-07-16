@@ -417,8 +417,7 @@ export async function rollForwardRecurrence(eventId: string): Promise<void> {
     await markReminderSent(eventId);
     return;
   }
-  const remindMinutes =
-    typeof d.remind_minutes_before === 'number' ? d.remind_minutes_before : 0;
+  const remindMinutes = typeof d.remind_minutes_before === 'number' ? d.remind_minutes_before : 0;
   const nextStart = advanceToNextFuture(currentStart, recur, remindMinutes, Date.now());
 
   // Series cutoff: stop once the next hit lands past recur_until.
@@ -437,10 +436,7 @@ export async function rollForwardRecurrence(eventId: string): Promise<void> {
   }
   newData.remind_at = computeRemindAt(nextStart, remindMinutes);
   delete newData.reminder_sent_at; // re-arm for the next occurrence
-  await db
-    .update(nodes)
-    .set({ data: newData, updatedAt: new Date() })
-    .where(eq(nodes.id, eventId));
+  await db.update(nodes).set({ data: newData, updatedAt: new Date() }).where(eq(nodes.id, eventId));
 }
 
 /** All owner IDs that have at least one event row. The reminder worker

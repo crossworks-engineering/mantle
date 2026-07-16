@@ -148,15 +148,70 @@ function ring(name: string, colors: string[]): string {
 const SIZE_PIXEL = 80;
 // (x, y) of each 10×10 cell, in the library's exact draw order.
 const PIXEL_CELLS: ReadonlyArray<readonly [number, number]> = [
-  [0, 0], [20, 0], [40, 0], [60, 0], [10, 0], [30, 0], [50, 0], [70, 0],
-  [0, 10], [0, 20], [0, 30], [0, 40], [0, 50], [0, 60], [0, 70],
-  [20, 10], [20, 20], [20, 30], [20, 40], [20, 50], [20, 60], [20, 70],
-  [40, 10], [40, 20], [40, 30], [40, 40], [40, 50], [40, 60], [40, 70],
-  [60, 10], [60, 20], [60, 30], [60, 40], [60, 50], [60, 60], [60, 70],
-  [10, 10], [10, 20], [10, 30], [10, 40], [10, 50], [10, 60], [10, 70],
-  [30, 10], [30, 20], [30, 30], [30, 40], [30, 50], [30, 60], [30, 70],
-  [50, 10], [50, 20], [50, 30], [50, 40], [50, 50], [50, 60], [50, 70],
-  [70, 10], [70, 20], [70, 30], [70, 40], [70, 50], [70, 60], [70, 70],
+  [0, 0],
+  [20, 0],
+  [40, 0],
+  [60, 0],
+  [10, 0],
+  [30, 0],
+  [50, 0],
+  [70, 0],
+  [0, 10],
+  [0, 20],
+  [0, 30],
+  [0, 40],
+  [0, 50],
+  [0, 60],
+  [0, 70],
+  [20, 10],
+  [20, 20],
+  [20, 30],
+  [20, 40],
+  [20, 50],
+  [20, 60],
+  [20, 70],
+  [40, 10],
+  [40, 20],
+  [40, 30],
+  [40, 40],
+  [40, 50],
+  [40, 60],
+  [40, 70],
+  [60, 10],
+  [60, 20],
+  [60, 30],
+  [60, 40],
+  [60, 50],
+  [60, 60],
+  [60, 70],
+  [10, 10],
+  [10, 20],
+  [10, 30],
+  [10, 40],
+  [10, 50],
+  [10, 60],
+  [10, 70],
+  [30, 10],
+  [30, 20],
+  [30, 30],
+  [30, 40],
+  [30, 50],
+  [30, 60],
+  [30, 70],
+  [50, 10],
+  [50, 20],
+  [50, 30],
+  [50, 40],
+  [50, 50],
+  [50, 60],
+  [50, 70],
+  [70, 10],
+  [70, 20],
+  [70, 30],
+  [70, 40],
+  [70, 50],
+  [70, 60],
+  [70, 70],
 ];
 function pixel(name: string, colors: string[]): string {
   const x = SIZE_PIXEL;
@@ -166,8 +221,7 @@ function pixel(name: string, colors: string[]): string {
     const fill = getRandomColor(num % (i + 1), colors, range);
     return `<rect${cx ? ` x="${cx}"` : ''}${cy ? ` y="${cy}"` : ''} width="10" height="10" fill="${fill}"/>`;
   }).join('');
-  const inner =
-    mask(x, ' mask-type="alpha"') + `<g mask="url(#mask)">${cells}</g>`;
+  const inner = mask(x, ' mask-type="alpha"') + `<g mask="url(#mask)">${cells}</g>`;
   return svg(x, x, inner);
 }
 
@@ -244,10 +298,7 @@ export function renderAvatarSvg(opts: {
   // occurrence in the string) with the requested render size. viewBox is left
   // intact so the artwork scales. Default 40px matches boring-avatars.
   const size = opts.size ?? '40px';
-  return out.replace(
-    /width="[^"]*" height="[^"]*"/,
-    `width="${size}" height="${size}"`,
-  );
+  return out.replace(/width="[^"]*" height="[^"]*"/, `width="${size}" height="${size}"`);
 }
 
 export type { Variant };

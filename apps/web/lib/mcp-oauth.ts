@@ -164,7 +164,11 @@ export type TokenResponse = {
 
 type GrantResult = { ok: true; tokens: TokenResponse } | { ok: false; error: string };
 
-async function issueTokens(clientId: string, ownerId: string, scope: string): Promise<TokenResponse> {
+async function issueTokens(
+  clientId: string,
+  ownerId: string,
+  scope: string,
+): Promise<TokenResponse> {
   const accessToken = randomToken(ACCESS_PREFIX);
   const refreshToken = randomToken(REFRESH_PREFIX);
   const now = Date.now();

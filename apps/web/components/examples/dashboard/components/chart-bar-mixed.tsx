@@ -1,7 +1,7 @@
-"use client"
+'use client';
 
-import { TrendingUp } from "lucide-react"
-import { Bar, BarChart, XAxis, YAxis } from "recharts"
+import { TrendingUp } from 'lucide-react';
+import { Bar, BarChart, XAxis, YAxis } from 'recharts';
 
 import {
   Card,
@@ -10,46 +10,46 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
+} from '@/components/ui/card';
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from "@/components/ui/chart"
+} from '@/components/ui/chart';
 const chartData = [
-  { tool: "search", calls: 275, fill: "var(--color-search)" },
-  { tool: "recall", calls: 200, fill: "var(--color-recall)" },
-  { tool: "note", calls: 187, fill: "var(--color-note)" },
-  { tool: "email", calls: 173, fill: "var(--color-email)" },
-  { tool: "other", calls: 90, fill: "var(--color-other)" },
-]
+  { tool: 'search', calls: 275, fill: 'var(--color-search)' },
+  { tool: 'recall', calls: 200, fill: 'var(--color-recall)' },
+  { tool: 'note', calls: 187, fill: 'var(--color-note)' },
+  { tool: 'email', calls: 173, fill: 'var(--color-email)' },
+  { tool: 'other', calls: 90, fill: 'var(--color-other)' },
+];
 
 const chartConfig = {
   calls: {
-    label: "Calls",
+    label: 'Calls',
   },
   search: {
-    label: "web_search",
-    color: "var(--chart-1)",
+    label: 'web_search',
+    color: 'var(--chart-1)',
   },
   recall: {
-    label: "recall_window",
-    color: "var(--chart-2)",
+    label: 'recall_window',
+    color: 'var(--chart-2)',
   },
   note: {
-    label: "note_create",
-    color: "var(--chart-3)",
+    label: 'note_create',
+    color: 'var(--chart-3)',
   },
   email: {
-    label: "email_send",
-    color: "var(--chart-4)",
+    label: 'email_send',
+    color: 'var(--chart-4)',
   },
   other: {
-    label: "other",
-    color: "var(--chart-5)",
+    label: 'other',
+    color: 'var(--chart-5)',
   },
-} satisfies ChartConfig
+} satisfies ChartConfig;
 
 export function ChartBarMixed() {
   return (
@@ -75,15 +75,10 @@ export function ChartBarMixed() {
               tickMargin={10}
               axisLine={false}
               width={90}
-              tickFormatter={(value) =>
-                chartConfig[value as keyof typeof chartConfig]?.label
-              }
+              tickFormatter={(value) => chartConfig[value as keyof typeof chartConfig]?.label}
             />
             <XAxis dataKey="calls" type="number" hide />
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel />}
-            />
+            <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
             <Bar dataKey="calls" layout="vertical" radius={5} />
           </BarChart>
         </ChartContainer>
@@ -97,5 +92,5 @@ export function ChartBarMixed() {
         </div>
       </CardFooter>
     </Card>
-  )
+  );
 }

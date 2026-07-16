@@ -80,7 +80,10 @@ export async function POST(req: Request) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('duplicate key') || msg.includes('_uq')) {
-      return NextResponse.json({ error: 'A worker with that slug already exists.' }, { status: 409 });
+      return NextResponse.json(
+        { error: 'A worker with that slug already exists.' },
+        { status: 409 },
+      );
     }
     return NextResponse.json({ error: msg }, { status: 400 });
   }

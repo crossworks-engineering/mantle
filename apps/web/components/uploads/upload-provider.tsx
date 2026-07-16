@@ -1,6 +1,14 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { AlertCircle, CheckCircle2, ChevronDown, Loader2, UploadCloud, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { apiFetch } from '@/lib/api-fetch';
@@ -176,7 +184,10 @@ export function UploadDock() {
         )}
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{heading}</span>
         <ChevronDown
-          className={cn('size-4 shrink-0 text-muted-foreground transition-transform', collapsed && '-rotate-90')}
+          className={cn(
+            'size-4 shrink-0 text-muted-foreground transition-transform',
+            collapsed && '-rotate-90',
+          )}
           aria-hidden
         />
       </button>

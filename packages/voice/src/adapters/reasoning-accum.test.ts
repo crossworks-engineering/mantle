@@ -9,7 +9,13 @@ describe('ReasoningDetailsAccumulator', () => {
     acc.add([{ index: 0, text: 'this.' }]);
     acc.add([{ index: 0, signature: 'sig-abc', format: 'anthropic' }]);
     expect(acc.result()).toEqual([
-      { type: 'reasoning.text', index: 0, text: 'Let me think about this.', signature: 'sig-abc', format: 'anthropic' },
+      {
+        type: 'reasoning.text',
+        index: 0,
+        text: 'Let me think about this.',
+        signature: 'sig-abc',
+        format: 'anthropic',
+      },
     ]);
   });
 

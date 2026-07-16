@@ -218,9 +218,7 @@ describe('buildOpenHeartbeatContext', () => {
 
   // A — 3-branch decision tree.
   describe('relevance decision tree (A)', () => {
-    const open = [
-      { slug: 'get_to_know_user', name: 'One', state: { expecting_reply: true } },
-    ];
+    const open = [{ slug: 'get_to_know_user', name: 'One', state: { expecting_reply: true } }];
 
     it('explicitly tells the model what to do on a related answer', () => {
       const out = buildOpenHeartbeatContext(open);

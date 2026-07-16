@@ -59,7 +59,10 @@ export function JournalClient() {
   const activeTag = searchParams.get('tag')?.trim() || null;
 
   const listQuery = useQuery({
-    queryKey: ['journal', { q: query, mood: activeMood, category: activeCategory, tag: activeTag, page }],
+    queryKey: [
+      'journal',
+      { q: query, mood: activeMood, category: activeCategory, tag: activeTag, page },
+    ],
     queryFn: () => {
       const qs = new URLSearchParams();
       if (query) qs.set('q', query);
@@ -91,7 +94,8 @@ export function JournalClient() {
   // A deep-linked entry outside the current slice → fetch it directly.
   const selectedEntryQuery = useQuery({
     queryKey: ['journal', selectedId],
-    queryFn: () => apiFetch<{ journal: JournalRow }>(`/api/journal/${selectedId}`).then((r) => r.journal),
+    queryFn: () =>
+      apiFetch<{ journal: JournalRow }>(`/api/journal/${selectedId}`).then((r) => r.journal),
     enabled: !!selectedId && !entries.some((n) => n.id === selectedId),
   });
 
@@ -184,7 +188,9 @@ export function JournalClient() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
         <p className="text-muted-foreground">
-          {listQuery.error instanceof Error ? listQuery.error.message : 'Failed to load journal entries.'}
+          {listQuery.error instanceof Error
+            ? listQuery.error.message
+            : 'Failed to load journal entries.'}
         </p>
         <Button variant="outline" size="sm" onClick={() => listQuery.refetch()}>
           Retry
@@ -358,7 +364,8 @@ export function JournalClient() {
           />
         ) : (
           <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
-            Select a journal entry, or click <span className="mx-1 font-medium text-foreground">New</span> to start one.
+            Select a journal entry, or click{' '}
+            <span className="mx-1 font-medium text-foreground">New</span> to start one.
           </div>
         )}
       </div>

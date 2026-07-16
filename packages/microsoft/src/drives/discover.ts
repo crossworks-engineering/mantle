@@ -54,7 +54,11 @@ export async function discoverDrives(account: MsAccount): Promise<number> {
     const sites = await graphGetAll<GraphSite>(account.userId, account.id, '/me/followedSites');
     for (const site of sites.items) {
       try {
-        const drives = await graphGetAll<GraphDrive>(account.userId, account.id, `/sites/${site.id}/drives`);
+        const drives = await graphGetAll<GraphDrive>(
+          account.userId,
+          account.id,
+          `/sites/${site.id}/drives`,
+        );
         for (const d of drives.items) {
           found.push({
             driveId: d.id,

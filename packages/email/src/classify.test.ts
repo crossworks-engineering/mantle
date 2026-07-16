@@ -182,35 +182,21 @@ describe('classifyDelivery — automated', () => {
   });
 
   it('noreply@ local part (no other tells)', () => {
-    expect(
-      classifyDelivery(
-        input({ fromAddr: 'noreply@vendor.example' }),
-      ),
-    ).toBe('automated');
+    expect(classifyDelivery(input({ fromAddr: 'noreply@vendor.example' }))).toBe('automated');
   });
 
   it('no-reply@ local part with hyphen', () => {
-    expect(
-      classifyDelivery(
-        input({ fromAddr: 'no-reply@vendor.example' }),
-      ),
-    ).toBe('automated');
+    expect(classifyDelivery(input({ fromAddr: 'no-reply@vendor.example' }))).toBe('automated');
   });
 
   it('notifications-pr-123@ local part matches notifications marker', () => {
-    expect(
-      classifyDelivery(
-        input({ fromAddr: 'notifications-pr-123@github.com' }),
-      ),
-    ).toBe('automated');
+    expect(classifyDelivery(input({ fromAddr: 'notifications-pr-123@github.com' }))).toBe(
+      'automated',
+    );
   });
 
   it('postmaster@ local part', () => {
-    expect(
-      classifyDelivery(
-        input({ fromAddr: 'postmaster@mail.example.com' }),
-      ),
-    ).toBe('automated');
+    expect(classifyDelivery(input({ fromAddr: 'postmaster@mail.example.com' }))).toBe('automated');
   });
 
   it('residual List-Unsubscribe (transactional, no fingerprint)', () => {
@@ -306,26 +292,20 @@ describe('classifyDelivery — direct', () => {
   });
 
   it('empty headers, empty labels', () => {
-    expect(
-      classifyDelivery({ headers: {}, fromAddr: 'someone@example.com', labels: [] }),
-    ).toBe('direct');
+    expect(classifyDelivery({ headers: {}, fromAddr: 'someone@example.com', labels: [] })).toBe(
+      'direct',
+    );
   });
 
   it('"notify-me" is not a noreply marker (no separator after token)', () => {
     // The marker `notification` must be followed by a separator. "notify"
     // is a different token — and "notify-me" is a totally plausible human
     // address. Guard the heuristic against false positives.
-    expect(
-      classifyDelivery(input({ fromAddr: 'notify-me@example.com' })),
-    ).toBe('direct');
+    expect(classifyDelivery(input({ fromAddr: 'notify-me@example.com' }))).toBe('direct');
   });
 
   it('Auto-Submitted: no explicitly does not promote', () => {
-    expect(
-      classifyDelivery(
-        input({ headers: { 'auto-submitted': 'no' } }),
-      ),
-    ).toBe('direct');
+    expect(classifyDelivery(input({ headers: { 'auto-submitted': 'no' } }))).toBe('direct');
   });
 });
 

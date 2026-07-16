@@ -20,7 +20,10 @@ export async function POST(req: Request) {
   }
   const slug = payload.slug ?? '';
   if (!MANIFEST_AGENTS.some((a) => a.slug === slug)) {
-    return NextResponse.json({ error: `'${slug}' is not a manifest agent — nothing to reset to` }, { status: 400 });
+    return NextResponse.json(
+      { error: `'${slug}' is not a manifest agent — nothing to reset to` },
+      { status: 400 },
+    );
   }
   try {
     await applyManifest(user.id, { only: [slug], mode: 'overwrite' });

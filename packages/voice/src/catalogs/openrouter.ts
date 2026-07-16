@@ -78,8 +78,7 @@ export const OPENROUTER_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
     id: 'openai/gpt-5',
     label: 'GPT-5',
-    description:
-      'OpenAI flagship. Strong all-rounder, native vision + tool use. 256K context.',
+    description: 'OpenAI flagship. Strong all-rounder, native vision + tool use. 256K context.',
     contextTokens: 256_000,
     capabilities: ['reasoning', 'function_calling', 'vision'],
     inputPricePer1M: 5,
@@ -88,8 +87,7 @@ export const OPENROUTER_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
     id: 'openai/gpt-4o',
     label: 'GPT-4o',
-    description:
-      'OpenAI multimodal workhorse. Still widely used for cost reasons. 128K context.',
+    description: 'OpenAI multimodal workhorse. Still widely used for cost reasons. 128K context.',
     contextTokens: 128_000,
     capabilities: ['function_calling', 'vision'],
     inputPricePer1M: 2.5,

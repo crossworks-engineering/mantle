@@ -5,11 +5,7 @@ import { EventDetailClient } from './event-detail-client';
  * /events/[id] — deep link to one event (auth gate only). The event is
  * client-fetched via `GET /api/events/[id]` (Phase 2 · Task 4).
  */
-export default async function EventDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireOwner();
   const { id } = await params;
   return (

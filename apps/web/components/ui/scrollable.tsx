@@ -4,10 +4,10 @@
  * Use this for consistent scroll behavior across the app.
  */
 
-import React from "react";
-import { cn } from "@/lib/utils";
+import React from 'react';
+import { cn } from '@/lib/utils';
 
-export type ScrollbarStyle = "hidden" | "thin" | "default";
+export type ScrollbarStyle = 'hidden' | 'thin' | 'default';
 
 interface ScrollableProps {
   children: React.ReactNode;
@@ -16,18 +16,18 @@ interface ScrollableProps {
   /** Additional class names */
   className?: string;
   /** HTML element to render, defaults to div */
-  as?: "div" | "section" | "aside" | "main" | "nav";
+  as?: 'div' | 'section' | 'aside' | 'main' | 'nav';
 }
 
 /**
  * Scrollable container with configurable scrollbar styling.
- * 
+ *
  * @example
  * // Hidden scrollbar
  * <Scrollable scrollbar="hidden" className="h-full">
  *   {content}
  * </Scrollable>
- * 
+ *
  * @example
  * // Thin scrollbar
  * <Scrollable scrollbar="thin" className="h-[400px]">
@@ -36,20 +36,14 @@ interface ScrollableProps {
  */
 export function Scrollable({
   children,
-  scrollbar = "thin",
+  scrollbar = 'thin',
   className,
-  as: Component = "div",
+  as: Component = 'div',
 }: ScrollableProps) {
   const scrollbarClass =
-    scrollbar === "hidden"
-      ? "scrollbar-hidden"
-      : scrollbar === "thin"
-      ? "scrollbar-thin"
-      : "";
+    scrollbar === 'hidden' ? 'scrollbar-hidden' : scrollbar === 'thin' ? 'scrollbar-thin' : '';
 
   return (
-    <Component className={cn("overflow-y-auto", scrollbarClass, className)}>
-      {children}
-    </Component>
+    <Component className={cn('overflow-y-auto', scrollbarClass, className)}>{children}</Component>
   );
 }

@@ -13,11 +13,15 @@ export async function POST() {
   const owner = await getOwnerOr401();
   if (owner instanceof Response) return owner;
   const key = await getTailscaleAuthKey(owner.id);
-  if (!key) return NextResponse.json({ ok: false, message: 'No auth key saved yet — save one first.' });
+  if (!key)
+    return NextResponse.json({ ok: false, message: 'No auth key saved yet — save one first.' });
   const config = await getTailscaleConfig(owner.id);
   const hostname = config?.hostname || 'mantle';
   const r = await tailnetUp(key, hostname);
   if (!r.ok) return NextResponse.json({ ok: false, message: `Activation failed: ${r.reason}` });
   await markTailscaleActivated(owner.id);
-  return NextResponse.json({ ok: true, message: 'Login started — waiting for the tailnet to come up…' });
+  return NextResponse.json({
+    ok: true,
+    message: 'Login started — waiting for the tailnet to come up…',
+  });
 }

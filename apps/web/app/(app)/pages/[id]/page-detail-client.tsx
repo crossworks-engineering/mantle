@@ -85,7 +85,9 @@ export function PageDetailClient({ pageId }: { pageId: string }) {
   const backlinksQuery = useQuery({
     queryKey: ['pages', pageId, 'backlinks'],
     queryFn: () =>
-      apiFetch<{ backlinks: Backlink[] }>(`/api/pages/${pageId}/backlinks`).then((r) => r.backlinks),
+      apiFetch<{ backlinks: Backlink[] }>(`/api/pages/${pageId}/backlinks`).then(
+        (r) => r.backlinks,
+      ),
   });
 
   if (pageQuery.isPending) {
@@ -96,10 +98,13 @@ export function PageDetailClient({ pageId }: { pageId: string }) {
     );
   }
   if (pageQuery.isError) {
-    const notFound = pageQuery.error instanceof Error && /not found|404/i.test(pageQuery.error.message);
+    const notFound =
+      pageQuery.error instanceof Error && /not found|404/i.test(pageQuery.error.message);
     return (
       <div className="flex h-dvh flex-col items-center justify-center gap-3 p-6 text-center text-sm">
-        <p className="text-muted-foreground">{notFound ? 'Page not found.' : 'Failed to load page.'}</p>
+        <p className="text-muted-foreground">
+          {notFound ? 'Page not found.' : 'Failed to load page.'}
+        </p>
         <BackLink href="/pages">Back to pages</BackLink>
       </div>
     );
@@ -108,13 +113,7 @@ export function PageDetailClient({ pageId }: { pageId: string }) {
   return <PageDetailEditor initial={pageQuery.data} backlinks={backlinksQuery.data ?? []} />;
 }
 
-function PageDetailEditor({
-  initial,
-  backlinks,
-}: {
-  initial: PageDetail;
-  backlinks: Backlink[];
-}) {
+function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlinks: Backlink[] }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -419,13 +418,7 @@ function PageDetailEditor({
       if (hits.length === 0) return;
       const cur = highlightCursor.current;
       const next =
-        dir === 1
-          ? cur < 0
-            ? 0
-            : (cur + 1) % hits.length
-          : cur <= 0
-            ? hits.length - 1
-            : cur - 1;
+        dir === 1 ? (cur < 0 ? 0 : (cur + 1) % hits.length) : cur <= 0 ? hits.length - 1 : cur - 1;
       highlightCursor.current = next;
       const dom = editor.view.nodeDOM(hits[next]!.pos);
       if (dom instanceof HTMLElement) dom.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -514,7 +507,7 @@ function PageDetailEditor({
         if (!n || typeof n !== 'object') return;
         const bid = n.attrs?.id;
         if (typeof bid === 'string') committedById.set(bid, n as JSONContent);
-        for (const c of (n.content as typeof n[] | undefined) ?? []) collect(c);
+        for (const c of (n.content as (typeof n)[] | undefined) ?? []) collect(c);
       };
       collect(committedDocRef.current as never);
 
@@ -596,27 +589,27 @@ function PageDetailEditor({
     }
   }, [initial.draft, initial.doc]);
 
-  const onAiChanged = useCallback((changedBlockIds?: string[]) => {
-    // An AI run (array arg, even empty) enters review mode so the user sees the
-    // diff; a discard (no arg) leaves it. The overlay itself is recomputed from
-    // committed-vs-draft after the remount — no need to thread block ids here.
-    setReviewMode(changedBlockIds !== undefined);
-    // Pull the latest draft from the server. Invalidating the page query
-    // refetches getPage; the new `initial.draft` propagates down through the
-    // outer gate, and the useEffect above detects the prop change and bumps
-    // editorKey THEN — so PageEditor remounts with the right content, not the
-    // stale-before-refetch content.
-    void queryClient.invalidateQueries({ queryKey: ['pages', initial.id] });
-  }, [queryClient, initial.id]);
+  const onAiChanged = useCallback(
+    (changedBlockIds?: string[]) => {
+      // An AI run (array arg, even empty) enters review mode so the user sees the
+      // diff; a discard (no arg) leaves it. The overlay itself is recomputed from
+      // committed-vs-draft after the remount — no need to thread block ids here.
+      setReviewMode(changedBlockIds !== undefined);
+      // Pull the latest draft from the server. Invalidating the page query
+      // refetches getPage; the new `initial.draft` propagates down through the
+      // outer gate, and the useEffect above detects the prop change and bumps
+      // editorKey THEN — so PageEditor remounts with the right content, not the
+      // stale-before-refetch content.
+      void queryClient.invalidateQueries({ queryKey: ['pages', initial.id] });
+    },
+    [queryClient, initial.id],
+  );
 
   // Wire the global assistant overlay to this page: arm the Pages specialist,
   // pin this page as context, fold the gutter marks into a focus directive, and
   // refresh the editor into review mode when Pages edits the draft. Replaces the
   // old in-page AI-assist panel; the draft/Commit flow is unchanged.
-  const focusDirective = useMemo(
-    () => (marks.length ? buildFocusDirective(marks) : null),
-    [marks],
-  );
+  const focusDirective = useMemo(() => (marks.length ? buildFocusDirective(marks) : null), [marks]);
   const onPagesEdited = useCallback(() => onAiChanged([]), [onAiChanged]);
   const { busy: aiPending } = useSurfaceAssist({
     surface: 'pages',
@@ -840,12 +833,7 @@ function PageDetailEditor({
               </aside>
             )}
             <div className="min-w-0 flex-1">
-              <div
-                className={cn(
-                  'mx-auto w-full',
-                  width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
-                )}
-              >
+              <div className={cn('mx-auto w-full', width !== 'wide' ? 'max-w-3xl' : 'max-w-none')}>
                 <PageEditor
                   key={editorKey}
                   content={initialDoc}
@@ -869,8 +857,8 @@ function PageDetailEditor({
                 )}
                 {markerMode && !aiPending && (
                   <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
-                    Marker on — drag down the left gutter to mark sections (click a marked
-                    row to unmark)
+                    Marker on — drag down the left gutter to mark sections (click a marked row to
+                    unmark)
                     {marks.length > 0 ? `; ${marks.length} marked` : ''}. Then ask Pages in the
                     assistant (⌘I) what to do with them.
                   </p>

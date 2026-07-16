@@ -150,11 +150,7 @@ async function resolveReminderAgent(
       .select({ id: agents.id, slug: agents.slug })
       .from(agents)
       .where(
-        and(
-          eq(agents.ownerId, ownerId),
-          eq(agents.slug, preferredSlug),
-          eq(agents.enabled, true),
-        ),
+        and(eq(agents.ownerId, ownerId), eq(agents.slug, preferredSlug), eq(agents.enabled, true)),
       )
       .limit(1);
     if (picked) return picked;
@@ -256,10 +252,7 @@ async function tick(): Promise<void> {
             ` → chat ${target.telegramChatId}`,
         );
       } catch (err) {
-        console.error(
-          `[events-reminders] failed to send reminder for ${evt.id}:`,
-          err,
-        );
+        console.error(`[events-reminders] failed to send reminder for ${evt.id}:`, err);
         // Leave reminder_sent_at null so we retry next tick.
       }
     }

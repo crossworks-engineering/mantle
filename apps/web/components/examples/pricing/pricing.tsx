@@ -1,12 +1,12 @@
-"use client";
+'use client';
 
-import { ArrowRight, CircleCheck } from "lucide-react";
-import { useState } from "react";
+import { ArrowRight, CircleCheck } from 'lucide-react';
+import { useState } from 'react';
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 
 interface MemoryTier {
   id: string;
@@ -26,35 +26,35 @@ interface MemoryTiersProps {
 }
 
 const MemoryTiers = ({
-  heading = "Tiered memory",
-  description = "Mantle remembers across three tiers — from the live conversation to a permanent, citable knowledge graph.",
+  heading = 'Tiered memory',
+  description = 'Mantle remembers across three tiers — from the live conversation to a permanent, citable knowledge graph.',
   tiers = [
     {
-      id: "short",
-      name: "Short-term",
-      description: "The live conversation",
-      retention: "Minutes",
-      capacity: "~50 turns",
+      id: 'short',
+      name: 'Short-term',
+      description: 'The live conversation',
+      retention: 'Minutes',
+      capacity: '~50 turns',
       features: [
-        "Raw turns kept verbatim",
-        "Cleared when the session ends",
-        "Feeds the working tier",
+        'Raw turns kept verbatim',
+        'Cleared when the session ends',
+        'Feeds the working tier',
       ],
-      button: "Open session",
+      button: 'Open session',
     },
     {
-      id: "long",
-      name: "Long-term",
-      description: "Everything, forever",
-      retention: "Permanent",
-      capacity: "Unbounded",
-      inherits: "Short-term",
+      id: 'long',
+      name: 'Long-term',
+      description: 'Everything, forever',
+      retention: 'Permanent',
+      capacity: 'Unbounded',
+      inherits: 'Short-term',
       features: [
-        "Eager summaries on ingest",
-        "Embeddings for semantic recall",
-        "Durable, cited knowledge graph",
+        'Eager summaries on ingest',
+        'Embeddings for semantic recall',
+        'Durable, cited knowledge graph',
       ],
-      button: "Browse graph",
+      button: 'Browse graph',
     },
   ],
 }: MemoryTiersProps) => {

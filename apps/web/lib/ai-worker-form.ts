@@ -65,7 +65,10 @@ export function paramsFromForm(kind: AiWorkerKind, fd: FormData): Record<string,
         temperature: num(fd.get('temperature')),
         max_tokens: num(fd.get('max_tokens')),
         target_types: targetTypes
-          ? targetTypes.split(',').map((s) => s.trim()).filter(Boolean)
+          ? targetTypes
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
           : undefined,
         extract_facts: fd.get('extract_facts') === 'on',
         extract_cost_cap_micro_usd: num(fd.get('extract_cost_cap_micro_usd')),

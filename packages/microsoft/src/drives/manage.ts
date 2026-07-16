@@ -8,7 +8,10 @@ import type { DriveItem } from './types';
 
 /** Re-enumerate an account's drives. Returns the count, or null if the account
  *  isn't owned by `ownerId`. */
-export async function discoverForAccount(ownerId: string, accountId: string): Promise<number | null> {
+export async function discoverForAccount(
+  ownerId: string,
+  accountId: string,
+): Promise<number | null> {
   const [account] = await db
     .select()
     .from(msAccounts)
@@ -20,7 +23,11 @@ export async function discoverForAccount(ownerId: string, accountId: string): Pr
 
 /** Toggle a drive on/off for sync. Verifies the drive belongs to an account the
  *  user owns. The scheduler picks up newly-enabled drives on its next tick. */
-export async function setDriveEnabled(ownerId: string, driveDbId: string, enabled: boolean): Promise<boolean> {
+export async function setDriveEnabled(
+  ownerId: string,
+  driveDbId: string,
+  enabled: boolean,
+): Promise<boolean> {
   const [row] = await db
     .select({ id: msDrives.id })
     .from(msDrives)
@@ -28,7 +35,10 @@ export async function setDriveEnabled(ownerId: string, driveDbId: string, enable
     .where(and(eq(msDrives.id, driveDbId), eq(msAccounts.userId, ownerId)))
     .limit(1);
   if (!row) return false;
-  await db.update(msDrives).set({ enabled, updatedAt: new Date() }).where(eq(msDrives.id, driveDbId));
+  await db
+    .update(msDrives)
+    .set({ enabled, updatedAt: new Date() })
+    .where(eq(msDrives.id, driveDbId));
   return true;
 }
 

@@ -17,14 +17,21 @@ export function TaskPresenter({
           <span
             className={
               'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border ' +
-              (done ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent')
+              (done
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border text-transparent')
             }
             aria-hidden
           >
             {done ? <Check className="size-4" /> : <Circle className="size-3" />}
           </span>
           <div className="min-w-0 flex-1">
-            <h1 className={'text-2xl font-bold tracking-tight ' + (done ? 'text-muted-foreground line-through' : '')}>
+            <h1
+              className={
+                'text-2xl font-bold tracking-tight ' +
+                (done ? 'text-muted-foreground line-through' : '')
+              }
+            >
               {view.title}
             </h1>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">

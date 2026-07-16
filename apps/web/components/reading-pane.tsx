@@ -156,7 +156,13 @@ export function ReadingPane({
   );
 }
 
-function Body({ bodyText, bodyHtmlSafe }: { bodyText: string | null; bodyHtmlSafe: string | null }) {
+function Body({
+  bodyText,
+  bodyHtmlSafe,
+}: {
+  bodyText: string | null;
+  bodyHtmlSafe: string | null;
+}) {
   if (bodyHtmlSafe) {
     const srcDoc =
       '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">' +

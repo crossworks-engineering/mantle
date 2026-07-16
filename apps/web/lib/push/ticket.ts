@@ -31,6 +31,8 @@ export function mintTicket(args: {
   const exp = Math.floor(Date.now() / 1000) + (args.ttlSeconds ?? DEFAULT_TTL_SECONDS);
   const payload: TicketPayload = { iid: args.iid, osPushToken: args.osPushToken, exp };
   const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-  const sig = createHmac('sha256', hashToken(args.instanceToken)).update(payloadB64).digest('base64url');
+  const sig = createHmac('sha256', hashToken(args.instanceToken))
+    .update(payloadB64)
+    .digest('base64url');
   return `${payloadB64}.${sig}`;
 }

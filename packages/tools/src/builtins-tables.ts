@@ -116,7 +116,9 @@ function colSummary(c: Column): {
     name: c.name,
     type: c.type,
     ...(c.formula ? { formula: c.formula } : {}),
-    ...(c.type === 'reference' && c.ref ? { linked_to: { tab_id: c.ref.tabId, column_id: c.ref.columnId } } : {}),
+    ...(c.type === 'reference' && c.ref
+      ? { linked_to: { tab_id: c.ref.tabId, column_id: c.ref.columnId } }
+      : {}),
   };
 }
 
@@ -199,7 +201,9 @@ async function loadTab(
   const want = str(tabRef).trim();
   if (!want) return { table, doc: baseline(table) };
   const tabs = table.tabs ?? [];
-  const hit = tabs.find((t) => t.id === want) ?? tabs.find((t) => t.name.toLowerCase() === want.toLowerCase());
+  const hit =
+    tabs.find((t) => t.id === want) ??
+    tabs.find((t) => t.name.toLowerCase() === want.toLowerCase());
   if (!hit) {
     return {
       error: `no tab '${want}' on this table — tabs: ${tabs.map((t) => t.name).join(', ') || '(single tab)'}`,
@@ -222,12 +226,18 @@ async function resolveRefTarget(
   const tabRef = str(rec.tab).trim();
   const colRef = str(rec.column).trim();
   if (!tabRef || !colRef) {
-    return { error: "a reference column needs `reference: { tab, column }` — the source tab and column it offers values from (see table_get's tabs)" };
+    return {
+      error:
+        "a reference column needs `reference: { tab, column }` — the source tab and column it offers values from (see table_get's tabs)",
+    };
   }
   const loaded = await loadTab(ownerId, tableId, tabRef);
   if ('error' in loaded) return { error: loaded.error };
   const srcTabId = loaded.tabId ?? loaded.table.tabId;
-  if (!srcTabId) return { error: `cannot resolve tab '${tabRef}' — this table has no tab metadata (commit it once, then retry)` };
+  if (!srcTabId)
+    return {
+      error: `cannot resolve tab '${tabRef}' — this table has no tab metadata (commit it once, then retry)`,
+    };
   const col = resolveColumn(loaded.doc, colRef);
   if (!col) return { error: `column '${colRef}' not found on tab '${tabRef}'` };
   if (col.type === 'formula') return { error: 'a reference column cannot target a formula column' };
@@ -335,9 +345,15 @@ const table_create: BuiltinToolDef = {
         ownerId: ctx.ownerId,
         nodeId: table.id,
         summary: `Table created by tool: ${table.title}`,
-        payload: { via: 'table_create_tool', ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
+        payload: {
+          via: 'table_create_tool',
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
       });
-      return { ok: true, output: { id: table.id, title: table.title, columns: table.data.columns.map(colSummary) } };
+      return {
+        ok: true,
+        output: { id: table.id, title: table.title, columns: table.data.columns.map(colSummary) },
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -353,7 +369,11 @@ const table_from_file: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      file_id: { type: 'string', format: 'uuid', description: "The spreadsheet file's id — from `file_list` / `search_nodes`." },
+      file_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The spreadsheet file's id — from `file_list` / `search_nodes`.",
+      },
       title: { type: 'string', description: 'table title (defaults to the filename)' },
       tags: {
         type: 'array',
@@ -371,7 +391,10 @@ const table_from_file: BuiltinToolDef = {
     if (!meta) return notFound('file', fileId, 'file_list / search_nodes');
     const ext = (meta.filename ?? '').toLowerCase().match(/\.(xlsx|xls|csv)$/)?.[1];
     if (!ext) {
-      return { ok: false, error: `table_from_file: '${meta.filename}' is not a spreadsheet (need .xlsx/.xls/.csv)` };
+      return {
+        ok: false,
+        error: `table_from_file: '${meta.filename}' is not a spreadsheet (need .xlsx/.xls/.csv)`,
+      };
     }
     const res = await readFileById({ ownerId: ctx.ownerId, fileId });
     if (!res) return { ok: false, error: 'file bytes unavailable' };
@@ -380,14 +403,21 @@ const table_from_file: BuiltinToolDef = {
     try {
       sheets = parseSheetToGrid(res.bytes);
     } catch (err) {
-      return { ok: false, error: `spreadsheet parse failed: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        ok: false,
+        error: `spreadsheet parse failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
     if (sheets.length === 0) return { ok: false, error: 'no tabular data found in the file' };
 
     const tags = strArr(input.tags);
     const icon = str(input.icon).trim();
     const baseTitle = str(input.title).trim();
-    const title = (baseTitle || meta.filename.replace(/\.(xlsx|xls|csv)$/i, '') || 'Imported table').slice(0, 200);
+    const title = (
+      baseTitle ||
+      meta.filename.replace(/\.(xlsx|xls|csv)$/i, '') ||
+      'Imported table'
+    ).slice(0, 200);
     // One workbook per file (v2.1 P2): sheets become tabs, not sibling tables.
     const tabs = sheets.map((sheet, i) => ({
       ...tableDocFromGrid(sheet),
@@ -406,7 +436,12 @@ const table_from_file: BuiltinToolDef = {
         ownerId: ctx.ownerId,
         nodeId: table.id,
         summary: `Table imported from ${meta.filename} (${sheets.length} sheet${sheets.length === 1 ? '' : 's'}): ${table.title}`,
-        payload: { via: 'table_from_file_tool', sourceFileId: fileId, sheets: sheets.length, ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
+        payload: {
+          via: 'table_from_file_tool',
+          sourceFileId: fileId,
+          sheets: sheets.length,
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
       });
       ctx.step?.setOutput({ id: table.id, tabs: tabs.length });
       return {
@@ -428,7 +463,7 @@ const table_from_text: BuiltinToolDef = {
   slug: 'table_from_text',
   name: 'Create a table from pasted tabular text',
   description:
-    "Build a typed grid from a block of tabular text in ONE call — CSV, TSV, or a markdown pipe table. **This is the right tool for \"make a table from these results / this data\" when the rows are in the conversation.** Do NOT create an empty table and add rows one at a time with table_row_add — that's slow and capped at a handful of rows per turn; this ingests the whole block at once. The header row becomes columns and types are inferred (numbers, dates from xlsx, text). The table is created + indexed immediately. `title` is optional.",
+    'Build a typed grid from a block of tabular text in ONE call — CSV, TSV, or a markdown pipe table. **This is the right tool for "make a table from these results / this data" when the rows are in the conversation.** Do NOT create an empty table and add rows one at a time with table_row_add — that\'s slow and capped at a handful of rows per turn; this ingests the whole block at once. The header row becomes columns and types are inferred (numbers, dates from xlsx, text). The table is created + indexed immediately. `title` is optional.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -454,10 +489,16 @@ const table_from_text: BuiltinToolDef = {
     try {
       sheets = parseTextToGrid(data);
     } catch (err) {
-      return { ok: false, error: `parse failed: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        ok: false,
+        error: `parse failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
     if (sheets.length === 0 || sheets[0]!.columns.length === 0) {
-      return { ok: false, error: 'no table found in the text — expected CSV, TSV, or a markdown | table |' };
+      return {
+        ok: false,
+        error: 'no table found in the text — expected CSV, TSV, or a markdown | table |',
+      };
     }
     const doc = tableDocFromGrid(sheets[0]!);
     const title = (str(input.title).trim() || 'Imported table').slice(0, 200);
@@ -475,7 +516,11 @@ const table_from_text: BuiltinToolDef = {
         ownerId: ctx.ownerId,
         nodeId: table.id,
         summary: `Table built from pasted text: ${table.title}`,
-        payload: { via: 'table_from_text_tool', rows: doc.rows.length, ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
+        payload: {
+          via: 'table_from_text_tool',
+          rows: doc.rows.length,
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
       });
       return {
         ok: true,
@@ -506,7 +551,8 @@ const table_update: BuiltinToolDef = {
       tags: {
         type: 'array',
         items: { type: 'string' },
-        description: "Labels for organisation and filtering, e.g. ['work']. Replaces the existing set.",
+        description:
+          "Labels for organisation and filtering, e.g. ['work']. Replaces the existing set.",
       },
       icon: { type: 'string', description: 'Emoji icon shown beside the title, e.g. "📊".' },
     },
@@ -519,7 +565,8 @@ const table_update: BuiltinToolDef = {
     if (typeof input.title === 'string') patch.title = input.title.trim().slice(0, 200);
     if (Array.isArray(input.tags)) patch.tags = strArr(input.tags);
     if (typeof input.icon === 'string') patch.icon = input.icon.trim();
-    if (Object.keys(patch).length === 0) return { ok: false, error: 'nothing to update — pass title, tags, or icon' };
+    if (Object.keys(patch).length === 0)
+      return { ok: false, error: 'nothing to update — pass title, tags, or icon' };
     try {
       const table = await updateTable(ctx.ownerId, id, patch);
       if (!table) return notFound('table', id, 'table_list');
@@ -535,11 +582,14 @@ const table_delete: BuiltinToolDef = {
   slug: 'table_delete',
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Delete a table',
-  description: 'Permanently delete a table by id. Irreversible — the grid and its index entries are removed. Confirm with the user first.',
+  description:
+    'Permanently delete a table by id. Irreversible — the grid and its index entries are removed. Confirm with the user first.',
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string', description: "The table's id (UUID) — from `table_list`." } },
+    properties: {
+      id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+    },
     required: ['id'],
   },
   handler: async (input, ctx) => {
@@ -564,7 +614,9 @@ const table_commit: BuiltinToolDef = {
     "Publish a table's pending draft as canonical and re-index it into the brain. Use after a batch of row/column edits when the user has confirmed they want the changes live (or asked you to 'save'/'publish'). No-op error if there's no draft. Usually you LEAVE the draft for the user to review + commit in the UI — only commit yourself when explicitly asked.",
   inputSchema: {
     type: 'object',
-    properties: { id: { type: 'string', description: "The table's id (UUID) — from `table_list`." } },
+    properties: {
+      id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+    },
     required: ['id'],
   },
   handler: async (input, ctx) => {
@@ -576,7 +628,10 @@ const table_commit: BuiltinToolDef = {
       const published = await commitTable(ctx.ownerId, id);
       if (!published) return notFound('table', id, 'table_list');
       ctx.step?.setOutput({ id, committed: true });
-      return { ok: true, output: { id, committed: true, rows: published.rowCount, columns: published.columnCount } };
+      return {
+        ok: true,
+        output: { id, committed: true, rows: published.rowCount, columns: published.columnCount },
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -594,8 +649,15 @@ const table_sql: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      table_id: { type: 'string', format: 'uuid', description: "The table's id — from `table_list` / `search_nodes`." },
-      sql: { type: 'string', description: `One SELECT/WITH statement, e.g. SELECT "Status", count(*) FROM "Circuits" GROUP BY "Status".` },
+      table_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The table's id — from `table_list` / `search_nodes`.",
+      },
+      sql: {
+        type: 'string',
+        description: `One SELECT/WITH statement, e.g. SELECT "Status", count(*) FROM "Circuits" GROUP BY "Status".`,
+      },
       max_rows: {
         type: 'number',
         description: 'Row cap for the result.',
@@ -654,7 +716,10 @@ const table_list: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      query: { type: 'string', description: 'Substring match over title/body/summary, e.g. "inventory".' },
+      query: {
+        type: 'string',
+        description: 'Substring match over title/body/summary, e.g. "inventory".',
+      },
       tag: { type: 'string', description: 'Return only tables carrying this tag.' },
       limit: { type: 'number', description: 'max rows (default 50)' },
     },
@@ -668,7 +733,15 @@ const table_list: BuiltinToolDef = {
       ctx.step?.setOutput({ count: rows.length });
       return {
         ok: true,
-        output: rows.map((r) => ({ id: r.id, title: r.title, tags: r.tags, summary: r.summary, columns: r.columnCount, rows: r.rowCount, updatedAt: r.updatedAt })),
+        output: rows.map((r) => ({
+          id: r.id,
+          title: r.title,
+          tags: r.tags,
+          summary: r.summary,
+          columns: r.columnCount,
+          rows: r.rowCount,
+          updatedAt: r.updatedAt,
+        })),
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -681,12 +754,15 @@ const table_get: BuiltinToolDef = {
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Get a table',
   description:
-    "Read one table by id: its columns (id, name, type), a window of rows (default 50; page with `offset`), the total row count, and any column totals (aggregates). Reads the in-flight draft if one exists, else the published grid. **For just the rows addressable by id, `table_rows_list` is lighter.** Large grids page via `offset`/`limit`; the full result spills to the read_result store automatically. Returns a `url` permalink — link the table as a markdown `[title](url)` when you reference it to the user.",
+    'Read one table by id: its columns (id, name, type), a window of rows (default 50; page with `offset`), the total row count, and any column totals (aggregates). Reads the in-flight draft if one exists, else the published grid. **For just the rows addressable by id, `table_rows_list` is lighter.** Large grids page via `offset`/`limit`; the full result spills to the read_result store automatically. Returns a `url` permalink — link the table as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
     properties: {
       id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
-      offset: { type: 'number', description: "Rows to skip for paging — pass the previous call's `next_offset`." },
+      offset: {
+        type: 'number',
+        description: "Rows to skip for paging — pass the previous call's `next_offset`.",
+      },
       limit: { type: 'number', description: 'rows per page (default 50, max 500)' },
       tab: { type: 'string', description: TAB_HINT },
     },
@@ -707,7 +783,11 @@ const table_get: BuiltinToolDef = {
     if (table.docClipped) {
       const file = await windowFile(ctx.ownerId, id);
       const win = file
-        ? queryRowsWindow(file, { offset, limit: Math.max(1, Math.min(limit, 500)), ...(tabId ? { tabId } : {}) })
+        ? queryRowsWindow(file, {
+            offset,
+            limit: Math.max(1, Math.min(limit, 500)),
+            ...(tabId ? { tabId } : {}),
+          })
         : null;
       if (win) {
         listed = {
@@ -748,7 +828,11 @@ const table_get: BuiltinToolDef = {
         url: nodeUrl(table.id),
         has_draft: table.draft != null,
         ...(table.tabs && table.tabs.length > 1
-          ? { tabs: table.tabs, tab_id: table.tabId, tab_hint: 'columns/rows below are ONE tab — pass `tab` to read another' }
+          ? {
+              tabs: table.tabs,
+              tab_id: table.tabId,
+              tab_hint: 'columns/rows below are ONE tab — pass `tab` to read another',
+            }
           : {}),
         columns: doc.columns.map(colSummary),
         rows: listed.rows,
@@ -765,7 +849,11 @@ const table_get: BuiltinToolDef = {
                   view: t.viewName,
                   fts_table: t.ftsTable,
                   row_count: t.rowCount,
-                  columns: t.columns.map((c) => ({ name: c.name, type: c.type, ...(c.refersTo ? { linked: true } : {}) })),
+                  columns: t.columns.map((c) => ({
+                    name: c.name,
+                    type: c.type,
+                    ...(c.refersTo ? { linked: true } : {}),
+                  })),
                 })),
               },
             }
@@ -781,14 +869,15 @@ const table_schema: BuiltinToolDef = {
   slug: 'table_schema',
   name: 'Table schemas (data dictionary)',
   description:
-    'Data dictionary across tables in one call: every tab with its columns, types, row counts, and the table_sql surface (view + FTS shadow names). Pass `table_ids` for specific tables, or omit to survey the most recently updated (up to 20). Use this to pick the right table and write a table_sql query without fetching each table\'s rows via `table_get`. Legacy tables not yet file-backed are listed without a schema.',
+    "Data dictionary across tables in one call: every tab with its columns, types, row counts, and the table_sql surface (view + FTS shadow names). Pass `table_ids` for specific tables, or omit to survey the most recently updated (up to 20). Use this to pick the right table and write a table_sql query without fetching each table's rows via `table_get`. Legacy tables not yet file-backed are listed without a schema.",
   inputSchema: {
     type: 'object',
     properties: {
       table_ids: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Table ids (UUIDs) to describe. Omit to survey the most recently updated tables.',
+        description:
+          'Table ids (UUIDs) to describe. Omit to survey the most recently updated tables.',
       },
     },
   },
@@ -814,8 +903,17 @@ const table_schema: BuiltinToolDef = {
       targets.map(async (t) => {
         const surface = await tableSqlSurface(ctx.ownerId, t.id).catch(() => null);
         return surface
-          ? { id: t.id, title: t.title, schema: schemaToText(surface.tabs, { title: t.title, nodeId: t.id }) }
-          : { id: t.id, title: t.title, schema: null, note: 'legacy storage — no SQL surface until next commit' };
+          ? {
+              id: t.id,
+              title: t.title,
+              schema: schemaToText(surface.tabs, { title: t.title, nodeId: t.id }),
+            }
+          : {
+              id: t.id,
+              title: t.title,
+              schema: null,
+              note: 'legacy storage — no SQL surface until next commit',
+            };
       }),
     );
     ctx.step?.setOutput({ tables: described.length });
@@ -824,7 +922,9 @@ const table_schema: BuiltinToolDef = {
       output: {
         tables: described,
         count: described.length,
-        ...(ids && ids.length > SCHEMA_TABLES_MAX ? { truncated: true, max: SCHEMA_TABLES_MAX } : {}),
+        ...(ids && ids.length > SCHEMA_TABLES_MAX
+          ? { truncated: true, max: SCHEMA_TABLES_MAX }
+          : {}),
         hint: 'Query any listed view with table_sql (double-quote identifiers; FTS MATCH terms in double quotes).',
       },
     };
@@ -844,7 +944,10 @@ const table_tab_add: BuiltinToolDef = {
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       name: { type: 'string', description: 'Tab name shown on the tab bar, e.g. "Car models".' },
-      after_tab: { type: 'string', description: 'optional tab (name or id) to insert after; omit to append' },
+      after_tab: {
+        type: 'string',
+        description: 'optional tab (name or id) to insert after; omit to append',
+      },
     },
     required: ['table_id', 'name'],
   },
@@ -865,7 +968,13 @@ const table_tab_add: BuiltinToolDef = {
       ctx.step?.setOutput({ table_id: tableId, tab_id: tabId });
       return {
         ok: true,
-        output: { table_id: tableId, tab_id: tabId, name, draft_saved: true, hint: DRAFT_REVIEW_HINT(tableId) },
+        output: {
+          table_id: tableId,
+          tab_id: tabId,
+          name,
+          draft_saved: true,
+          hint: DRAFT_REVIEW_HINT(tableId),
+        },
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -878,7 +987,7 @@ const table_tab_rename: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Rename a tab',
   description:
-    "Rename a tab (worksheet). Its `table_sql` view name re-derives from the new name; data and row/column ids are untouched. Writes to DRAFT.",
+    'Rename a tab (worksheet). Its `table_sql` view name re-derives from the new name; data and row/column ids are untouched. Writes to DRAFT.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -897,13 +1006,21 @@ const table_tab_rename: BuiltinToolDef = {
     const tabId = loaded.tabId ?? loaded.table.tabId;
     if (!tabId) return { ok: false, error: 'tab is required — name or id from table_get' };
     try {
-      const applied = await applyTableOps(ctx.ownerId, tableId, [{ op: 'tab_rename', tabId, name }]);
+      const applied = await applyTableOps(ctx.ownerId, tableId, [
+        { op: 'tab_rename', tabId, name },
+      ]);
       if (!applied) return notFound('table', tableId, 'table_list');
       if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
       ctx.step?.setOutput({ table_id: tableId, tab_id: tabId });
       return {
         ok: true,
-        output: { table_id: tableId, tab_id: tabId, name, draft_saved: true, hint: DRAFT_REVIEW_HINT(tableId) },
+        output: {
+          table_id: tableId,
+          tab_id: tabId,
+          name,
+          draft_saved: true,
+          hint: DRAFT_REVIEW_HINT(tableId),
+        },
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -927,7 +1044,8 @@ const table_tab_delete: BuiltinToolDef = {
   },
   handler: async (input, ctx) => {
     const tableId = str(input.table_id).trim();
-    if (!tableId || !str(input.tab).trim()) return { ok: false, error: 'table_id and tab are required' };
+    if (!tableId || !str(input.tab).trim())
+      return { ok: false, error: 'table_id and tab are required' };
     const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
     if ('error' in loaded) return { ok: false, error: loaded.error };
     const tabId = loaded.tabId;
@@ -939,7 +1057,13 @@ const table_tab_delete: BuiltinToolDef = {
       ctx.step?.setOutput({ table_id: tableId, tab_id: tabId });
       return {
         ok: true,
-        output: { table_id: tableId, tab_id: tabId, deleted: true, draft_saved: true, hint: DRAFT_REVIEW_HINT(tableId) },
+        output: {
+          table_id: tableId,
+          tab_id: tabId,
+          deleted: true,
+          draft_saved: true,
+          hint: DRAFT_REVIEW_HINT(tableId),
+        },
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -957,9 +1081,16 @@ const table_rows_list: BuiltinToolDef = {
     type: 'object',
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
-      offset: { type: 'number', description: "Rows to skip for paging — pass the previous call's `next_offset`." },
+      offset: {
+        type: 'number',
+        description: "Rows to skip for paging — pass the previous call's `next_offset`.",
+      },
       limit: { type: 'number', description: 'default 50, max 500' },
-      column_ids: { type: 'array', items: { type: 'string' }, description: 'restrict the cell snapshot to these column ids' },
+      column_ids: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'restrict the cell snapshot to these column ids',
+      },
       view_id: { type: 'string', description: 'optional saved view (filter+sort) to apply first' },
       tab: { type: 'string', description: TAB_HINT },
     },
@@ -978,11 +1109,18 @@ const table_rows_list: BuiltinToolDef = {
       // order). Saved views don't apply at this size — use table_query/
       // table_sql for filtered reads.
       if (str(input.view_id).trim()) {
-        return { ok: false, error: 'saved views are not applied on tables this large — use table_query (filters) or table_sql instead' };
+        return {
+          ok: false,
+          error:
+            'saved views are not applied on tables this large — use table_query (filters) or table_sql instead',
+        };
       }
       const file = await windowFile(ctx.ownerId, tableId);
-      const win = file ? queryRowsWindow(file, { offset, limit, ...(tabId ? { tabId } : {}) }) : null;
-      if (!win) return { ok: false, error: 'windowed read failed — the workbook file is unavailable' };
+      const win = file
+        ? queryRowsWindow(file, { offset, limit, ...(tabId ? { tabId } : {}) })
+        : null;
+      if (!win)
+        return { ok: false, error: 'windowed read failed — the workbook file is unavailable' };
       const want = strArr(input.column_ids);
       const wantSet = want.length ? new Set(want) : null;
       const rows = win.rows.map((r, i) => {
@@ -1000,7 +1138,15 @@ const table_rows_list: BuiltinToolDef = {
       ctx.step?.setOutput({ table_id: tableId, total: win.total, pushed: true });
       return {
         ok: true,
-        output: { table_id: tableId, columns, rows, total: win.total, offset, limit, ...pageMeta(win.total, offset, rows.length) },
+        output: {
+          table_id: tableId,
+          columns,
+          rows,
+          total: win.total,
+          offset,
+          limit,
+          ...pageMeta(win.total, offset, rows.length),
+        },
       };
     }
     const listed = listRows(doc, {
@@ -1010,7 +1156,14 @@ const table_rows_list: BuiltinToolDef = {
       viewId: str(input.view_id).trim() || null,
     });
     ctx.step?.setOutput({ table_id: tableId, total: listed.total });
-    return { ok: true, output: { table_id: tableId, ...listed, ...pageMeta(listed.total, listed.offset, listed.rows.length) } };
+    return {
+      ok: true,
+      output: {
+        table_id: tableId,
+        ...listed,
+        ...pageMeta(listed.total, listed.offset, listed.rows.length),
+      },
+    };
   },
 };
 
@@ -1018,12 +1171,16 @@ const table_row_get: BuiltinToolDef = {
   slug: 'table_row_get',
   preconditions: TABLE_ID_PRE,
   name: 'Get one row',
-  description: "Read a single row by id (from `table_rows_list`). Returns its cells keyed by column name and id, formula columns resolved. Reads the draft if present.",
+  description:
+    'Read a single row by id (from `table_rows_list`). Returns its cells keyed by column name and id, formula columns resolved. Reads the draft if present.',
   inputSchema: {
     type: 'object',
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
-      row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
+      row_id: {
+        type: 'string',
+        description: "The row's stable id — from `table_rows_list` / `table_query`.",
+      },
       tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id', 'row_id'],
@@ -1043,7 +1200,10 @@ const table_row_get: BuiltinToolDef = {
     if (!row) return { ok: false, error: `row ${rowId} not found (re-run table_rows_list)` };
     const byName: Record<string, CellValue> = {};
     for (const col of doc.columns) byName[col.name] = row.cells[col.id] ?? null;
-    return { ok: true, output: { table_id: tableId, row_id: rowId, cells: row.cells, by_name: byName } };
+    return {
+      ok: true,
+      output: { table_id: tableId, row_id: rowId, cells: row.cells, by_name: byName },
+    };
   },
 };
 
@@ -1052,7 +1212,7 @@ const table_query: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Query rows by value',
   description:
-    "Find the rows matching `filters` — the structured-lookup tool for questions about a specific record or subset of a big grid. Returns ONLY the matching rows (id + cells keyed by column name, formula columns resolved) plus `total_matches`, so \"what's the design pressure for circuit 17-P08-D17003\" is one call, not a page-through. Filters AND by default — pass `match: \"any\"` to OR them. Pass `aggregate` to compute totals over the WHOLE matched set without reading the rows back. **`rows` caps at 500 per call; `total_matches` is exact — use it for COUNTS, and page with `offset` (`truncated`/`next_offset` announce clipping).** Read-only — nothing is saved (unlike `table_set_view`). Reads the draft if one exists. For grouped breakdowns (\"count by metallurgy\") use `table_aggregate`.",
+    'Find the rows matching `filters` — the structured-lookup tool for questions about a specific record or subset of a big grid. Returns ONLY the matching rows (id + cells keyed by column name, formula columns resolved) plus `total_matches`, so "what\'s the design pressure for circuit 17-P08-D17003" is one call, not a page-through. Filters AND by default — pass `match: "any"` to OR them. Pass `aggregate` to compute totals over the WHOLE matched set without reading the rows back. **`rows` caps at 500 per call; `total_matches` is exact — use it for COUNTS, and page with `offset` (`truncated`/`next_offset` announce clipping).** Read-only — nothing is saved (unlike `table_set_view`). Reads the draft if one exists. For grouped breakdowns ("count by metallurgy") use `table_aggregate`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1075,20 +1235,33 @@ const table_query: BuiltinToolDef = {
           required: ['column', 'op'],
         },
       },
-      match: { type: 'string', enum: ['all', 'any'], description: "combine filters with AND ('all', default) or OR ('any')" },
+      match: {
+        type: 'string',
+        enum: ['all', 'any'],
+        description: "combine filters with AND ('all', default) or OR ('any')",
+      },
       sort: {
         type: 'array',
-        description: 'Order the matched rows before paging, e.g. [{ "column": "Price", "dir": "desc" }].',
+        description:
+          'Order the matched rows before paging, e.g. [{ "column": "Price", "dir": "desc" }].',
         items: {
           type: 'object',
           properties: {
             column: { type: 'string', description: 'Column to sort by (id or name).' },
-            dir: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction — defaults to ascending.' },
+            dir: {
+              type: 'string',
+              enum: ['asc', 'desc'],
+              description: 'Sort direction — defaults to ascending.',
+            },
           },
           required: ['column'],
         },
       },
-      columns: { type: 'array', items: { type: 'string' }, description: 'restrict returned cells to these columns (id or name)' },
+      columns: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'restrict returned cells to these columns (id or name)',
+      },
       aggregate: {
         type: 'array',
         description: 'compute totals over the full matched set (not just the returned page)',
@@ -1106,7 +1279,10 @@ const table_query: BuiltinToolDef = {
           required: ['column', 'kind'],
         },
       },
-      offset: { type: 'number', description: "Matching rows to skip for paging — pass the previous call's `next_offset`." },
+      offset: {
+        type: 'number',
+        description: "Matching rows to skip for paging — pass the previous call's `next_offset`.",
+      },
       limit: { type: 'number', description: 'max matching rows to return (default 50, max 500)' },
       tab: { type: 'string', description: TAB_HINT },
     },
@@ -1128,13 +1304,19 @@ const table_query: BuiltinToolDef = {
           ignoredFilters.push(str(rec.column));
           return null;
         }
-        return { colId: col.id, op: str(rec.op) as Filter['op'], value: (rec.value ?? null) as CellValue };
+        return {
+          colId: col.id,
+          op: str(rec.op) as Filter['op'],
+          value: (rec.value ?? null) as CellValue,
+        };
       })
       .filter((f): f is Filter => f !== null);
     const sort: SortSpec[] = (Array.isArray(input.sort) ? input.sort : [])
       .map((s): SortSpec | null => {
         const col = resolveColumn(doc, str((s as Record<string, unknown>).column));
-        return col ? { colId: col.id, dir: (s as Record<string, unknown>).dir === 'desc' ? 'desc' : 'asc' } : null;
+        return col
+          ? { colId: col.id, dir: (s as Record<string, unknown>).dir === 'desc' ? 'desc' : 'asc' }
+          : null;
       })
       .filter((s): s is SortSpec => s !== null);
     const match = str(input.match) === 'any' ? 'any' : 'all';
@@ -1152,14 +1334,15 @@ const table_query: BuiltinToolDef = {
     // table whose filters can't push down errors with the recovery move.
     const hasFormula = doc.columns.some((c) => c.type === 'formula');
     const file = hasFormula ? null : await windowFile(ctx.ownerId, tableId);
-    const aggSpecs = (Array.isArray(input.aggregate) ? input.aggregate : [])
-      .map((a): { col: Column; kind: AggregateKind; raw: string } | null => {
+    const aggSpecs = (Array.isArray(input.aggregate) ? input.aggregate : []).map(
+      (a): { col: Column; kind: AggregateKind; raw: string } | null => {
         const rec = a as Record<string, unknown>;
         const col = resolveColumn(doc, str(rec.column));
         const kind = str(rec.kind) as AggregateKind;
         if (!col || !AGGREGATE_KINDS.includes(kind) || kind === 'none') return null;
         return { col, kind, raw: str(rec.column) };
-      });
+      },
+    );
     const ignoredAggregates = (Array.isArray(input.aggregate) ? input.aggregate : [])
       .map((a, i) => (aggSpecs[i] ? null : str((a as Record<string, unknown>).column)))
       .filter((x): x is string => x !== null);
@@ -1168,7 +1351,9 @@ const table_query: BuiltinToolDef = {
     let totalMatches: number;
     let pageRows: { id: string; cells: Record<string, CellValue> }[];
     let aggregates: { column: string; kind: AggregateKind; value: number | null }[] = [];
-    const pushed = file ? queryRowsWindow(file, { filters, match, sort, offset, limit, ...(tabId ? { tabId } : {}) }) : null;
+    const pushed = file
+      ? queryRowsWindow(file, { filters, match, sort, offset, limit, ...(tabId ? { tabId } : {}) })
+      : null;
     if (pushed) {
       totalMatches = pushed.total;
       pageRows = pushed.rows.map((r) => {
@@ -1179,7 +1364,13 @@ const table_query: BuiltinToolDef = {
       aggregates = validAggs.map((a) => ({
         column: a.col.name,
         kind: a.kind,
-        value: aggregateWindow(file!, { columnId: a.col.id, kind: a.kind, filters, match, ...(tabId ? { tabId } : {}) }),
+        value: aggregateWindow(file!, {
+          columnId: a.col.id,
+          kind: a.kind,
+          filters,
+          match,
+          ...(tabId ? { tabId } : {}),
+        }),
       }));
     } else {
       if (table.docClipped) {
@@ -1232,12 +1423,16 @@ const table_aggregate: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Group + summarise rows',
   description:
-    "Summarise a table by category — the GROUP BY tool. Rows are bucketed by their combined `group_by` value(s); each group returns its row `count` plus any `metrics` you ask for. Optional `filters` restrict the rows first, `sort` orders the groups (default: most populous first), and `limit`/`offset` page the groups. Answers \"how many circuits per metallurgy\", \"max design pressure by service\", or \"what distinct damage types exist\" (`group_by` alone) in ONE call — no row paging. For the matching rows themselves use `table_query`. Read-only; reads the draft if present.",
+    'Summarise a table by category — the GROUP BY tool. Rows are bucketed by their combined `group_by` value(s); each group returns its row `count` plus any `metrics` you ask for. Optional `filters` restrict the rows first, `sort` orders the groups (default: most populous first), and `limit`/`offset` page the groups. Answers "how many circuits per metallurgy", "max design pressure by service", or "what distinct damage types exist" (`group_by` alone) in ONE call — no row paging. For the matching rows themselves use `table_query`. Read-only; reads the draft if present.',
   inputSchema: {
     type: 'object',
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
-      group_by: { type: 'array', items: { type: 'string' }, description: 'column(s) to group by (id or name)' },
+      group_by: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'column(s) to group by (id or name)',
+      },
       tab: { type: 'string', description: TAB_HINT },
       metrics: {
         type: 'array',
@@ -1274,16 +1469,27 @@ const table_aggregate: BuiltinToolDef = {
           required: ['column', 'op'],
         },
       },
-      match: { type: 'string', enum: ['all', 'any'], description: "combine filters with AND ('all', default) or OR ('any')" },
+      match: {
+        type: 'string',
+        enum: ['all', 'any'],
+        description: "combine filters with AND ('all', default) or OR ('any')",
+      },
       sort: {
         type: 'object',
         description: 'How to order the groups — defaults to most populous first.',
         properties: {
           by: { type: 'string', description: "'count', a group column, or a metric column" },
-          dir: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction — defaults to descending.' },
+          dir: {
+            type: 'string',
+            enum: ['asc', 'desc'],
+            description: 'Sort direction — defaults to descending.',
+          },
         },
       },
-      offset: { type: 'number', description: "Groups to skip for paging — pass the previous call's `next_offset`." },
+      offset: {
+        type: 'number',
+        description: "Groups to skip for paging — pass the previous call's `next_offset`.",
+      },
       limit: { type: 'number', description: 'max groups to return (default 50, max 500)' },
     },
     required: ['table_id', 'group_by'],
@@ -1306,7 +1512,8 @@ const table_aggregate: BuiltinToolDef = {
     const groupCols = strArr(input.group_by)
       .map((r) => resolveColumn(doc, r))
       .filter((c): c is Column => c !== null);
-    if (groupCols.length === 0) return { ok: false, error: 'group_by must name at least one existing column' };
+    if (groupCols.length === 0)
+      return { ok: false, error: 'group_by must name at least one existing column' };
 
     const ignoredFilters: string[] = [];
     const filters: Filter[] = (Array.isArray(input.filters) ? input.filters : [])
@@ -1317,7 +1524,11 @@ const table_aggregate: BuiltinToolDef = {
           ignoredFilters.push(str(rec.column));
           return null;
         }
-        return { colId: col.id, op: str(rec.op) as Filter['op'], value: (rec.value ?? null) as CellValue };
+        return {
+          colId: col.id,
+          op: str(rec.op) as Filter['op'],
+          value: (rec.value ?? null) as CellValue,
+        };
       })
       .filter((f): f is Filter => f !== null);
     const match = str(input.match) === 'any' ? 'any' : 'all';
@@ -1327,23 +1538,36 @@ const table_aggregate: BuiltinToolDef = {
         const rec = m as Record<string, unknown>;
         const col = resolveColumn(doc, str(rec.column));
         const kind = str(rec.kind) as AggregateKind;
-        return col && AGGREGATE_KINDS.includes(kind) && kind !== 'none' ? { colId: col.id, column: col.name, kind } : null;
+        return col && AGGREGATE_KINDS.includes(kind) && kind !== 'none'
+          ? { colId: col.id, column: col.name, kind }
+          : null;
       })
       .filter((m): m is { colId: string; column: string; kind: AggregateKind } => m !== null);
 
     const buckets = groupRows(doc, { groupColIds: groupCols.map((c) => c.id), filters, match });
-    type Group = { key: Record<string, CellValue>; count: number; metrics?: { column: string; kind: AggregateKind; value: number | null }[] };
+    type Group = {
+      key: Record<string, CellValue>;
+      count: number;
+      metrics?: { column: string; kind: AggregateKind; value: number | null }[];
+    };
     let groups: Group[] = buckets.map((b) => ({
       key: Object.fromEntries(groupCols.map((c, i) => [c.name, b.key[i] ?? null])),
       count: b.rows.length,
       ...(metricSpecs.length
-        ? { metrics: metricSpecs.map((m) => ({ column: m.column, kind: m.kind, value: computeAggregate(doc, m.colId, m.kind, b.rows) })) }
+        ? {
+            metrics: metricSpecs.map((m) => ({
+              column: m.column,
+              kind: m.kind,
+              value: computeAggregate(doc, m.colId, m.kind, b.rows),
+            })),
+          }
         : {}),
     }));
 
     // Order the groups. Default = most populous first; or by an explicit
     // { by, dir } over count / a group column / a named metric.
-    const sortRec = input.sort && typeof input.sort === 'object' ? (input.sort as Record<string, unknown>) : null;
+    const sortRec =
+      input.sort && typeof input.sort === 'object' ? (input.sort as Record<string, unknown>) : null;
     const by = sortRec ? str(sortRec.by) || 'count' : 'count';
     const sign = sortRec && str(sortRec.dir) === 'asc' ? 1 : -1;
     groups = [...groups].sort((a, b) => {
@@ -1362,7 +1586,8 @@ const table_aggregate: BuiltinToolDef = {
       }
       const na = typeof va === 'number' ? va : null;
       const nb = typeof vb === 'number' ? vb : null;
-      const cmp = na !== null && nb !== null ? na - nb : String(va ?? '').localeCompare(String(vb ?? ''));
+      const cmp =
+        na !== null && nb !== null ? na - nb : String(va ?? '').localeCompare(String(vb ?? ''));
       return sign * cmp;
     });
 
@@ -1396,13 +1621,17 @@ const table_row_add: BuiltinToolDef = {
   slug: 'table_row_add',
   preconditions: TABLE_ID_PRE,
   name: 'Add a row',
-  description: "Append a new row (or insert after `after_row_id`). Returns the new row id. Writes to DRAFT.",
+  description:
+    'Append a new row (or insert after `after_row_id`). Returns the new row id. Writes to DRAFT.',
   inputSchema: {
     type: 'object',
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
       cells: { type: 'object', description: CELLS_HINT, additionalProperties: true },
-      after_row_id: { type: 'string', description: 'optional — insert after this row instead of appending' },
+      after_row_id: {
+        type: 'string',
+        description: 'optional — insert after this row instead of appending',
+      },
       tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id'],
@@ -1410,14 +1639,22 @@ const table_row_add: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
-    const cellsIn = (input.cells && typeof input.cells === 'object' ? input.cells : {}) as Record<string, unknown>;
+    const cellsIn = (input.cells && typeof input.cells === 'object' ? input.cells : {}) as Record<
+      string,
+      unknown
+    >;
     const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
     if ('error' in loaded) return { ok: false, error: loaded.error };
     const { doc, tabId } = loaded;
     const { cells, unknown } = resolveCells(doc, cellsIn);
     try {
       const applied = await applyTableOps(ctx.ownerId, tableId, [
-        { op: 'row_add', cells, afterRowId: str(input.after_row_id).trim() || null, ...(tabId ? { tabId } : {}) },
+        {
+          op: 'row_add',
+          cells,
+          afterRowId: str(input.after_row_id).trim() || null,
+          ...(tabId ? { tabId } : {}),
+        },
       ]);
       if (!applied) return notFound('table', tableId, 'table_list');
       if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
@@ -1443,12 +1680,16 @@ const table_row_update: BuiltinToolDef = {
   slug: 'table_row_update',
   preconditions: TABLE_ID_PRE,
   name: 'Update a row',
-  description: "Patch a row's cells by id (merge — unspecified cells stay). The surgical \"do row X\" tool. Writes to DRAFT.",
+  description:
+    'Patch a row\'s cells by id (merge — unspecified cells stay). The surgical "do row X" tool. Writes to DRAFT.',
   inputSchema: {
     type: 'object',
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
-      row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
+      row_id: {
+        type: 'string',
+        description: "The row's stable id — from `table_rows_list` / `table_query`.",
+      },
       cells: { type: 'object', description: CELLS_HINT, additionalProperties: true },
       tab: { type: 'string', description: TAB_HINT },
     },
@@ -1458,8 +1699,12 @@ const table_row_update: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     const rowId = str(input.row_id).trim();
     if (!tableId || !rowId) return { ok: false, error: 'table_id and row_id are required' };
-    const cellsIn = (input.cells && typeof input.cells === 'object' ? input.cells : {}) as Record<string, unknown>;
-    if (Object.keys(cellsIn).length === 0) return { ok: false, error: 'cells is required (nothing to update)' };
+    const cellsIn = (input.cells && typeof input.cells === 'object' ? input.cells : {}) as Record<
+      string,
+      unknown
+    >;
+    if (Object.keys(cellsIn).length === 0)
+      return { ok: false, error: 'cells is required (nothing to update)' };
     const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
     if ('error' in loaded) return { ok: false, error: loaded.error };
     const { doc, tabId } = loaded;
@@ -1494,12 +1739,15 @@ const table_row_delete: BuiltinToolDef = {
   slug: 'table_row_delete',
   preconditions: TABLE_ID_PRE,
   name: 'Delete a row',
-  description: "Remove a row by id. Writes to DRAFT.",
+  description: 'Remove a row by id. Writes to DRAFT.',
   inputSchema: {
     type: 'object',
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
-      row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
+      row_id: {
+        type: 'string',
+        description: "The row's stable id — from `table_rows_list` / `table_query`.",
+      },
       tab: { type: 'string', description: TAB_HINT },
     },
     required: ['table_id', 'row_id'],
@@ -1522,7 +1770,13 @@ const table_row_delete: BuiltinToolDef = {
       ctx.step?.setOutput({ table_id: tableId, row_id: rowId });
       return {
         ok: true,
-        output: { table_id: tableId, row_id: rowId, deleted: true, draft_saved: true, hint: DRAFT_REVIEW_HINT(tableId) },
+        output: {
+          table_id: tableId,
+          row_id: rowId,
+          deleted: true,
+          draft_saved: true,
+          hint: DRAFT_REVIEW_HINT(tableId),
+        },
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -1534,12 +1788,15 @@ const table_cell_set: BuiltinToolDef = {
   slug: 'table_cell_set',
   preconditions: TABLE_ID_PRE,
   name: 'Set one cell',
-  description: "Set a single cell — row by id, column by id or name. Writes to DRAFT.",
+  description: 'Set a single cell — row by id, column by id or name. Writes to DRAFT.',
   inputSchema: {
     type: 'object',
     properties: {
       table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
-      row_id: { type: 'string', description: "The row's stable id — from `table_rows_list` / `table_query`." },
+      row_id: {
+        type: 'string',
+        description: "The row's stable id — from `table_rows_list` / `table_query`.",
+      },
       column: { type: 'string', description: 'column id or name' },
       value: { description: 'new value (coerced to the column type); null/"" clears' },
       tab: { type: 'string', description: TAB_HINT },
@@ -1550,7 +1807,8 @@ const table_cell_set: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     const rowId = str(input.row_id).trim();
     const columnRef = str(input.column).trim();
-    if (!tableId || !rowId || !columnRef) return { ok: false, error: 'table_id, row_id and column are required' };
+    if (!tableId || !rowId || !columnRef)
+      return { ok: false, error: 'table_id, row_id and column are required' };
     const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
     if ('error' in loaded) return { ok: false, error: loaded.error };
     const { doc, tabId } = loaded;
@@ -1561,14 +1819,26 @@ const table_cell_set: BuiltinToolDef = {
     if (!col) return { ok: false, error: `column '${columnRef}' not found` };
     try {
       const applied = await applyTableOps(ctx.ownerId, tableId, [
-        { op: 'cell_set', rowId, columnId: col.id, value: (input.value ?? null) as CellValue, ...(tabId ? { tabId } : {}) },
+        {
+          op: 'cell_set',
+          rowId,
+          columnId: col.id,
+          value: (input.value ?? null) as CellValue,
+          ...(tabId ? { tabId } : {}),
+        },
       ]);
       if (!applied) return notFound('table', tableId, 'table_list');
       if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
       ctx.step?.setOutput({ table_id: tableId, row_id: rowId });
       return {
         ok: true,
-        output: { table_id: tableId, row_id: rowId, column_id: col.id, draft_saved: true, hint: DRAFT_REVIEW_HINT(tableId) },
+        output: {
+          table_id: tableId,
+          row_id: rowId,
+          column_id: col.id,
+          draft_saved: true,
+          hint: DRAFT_REVIEW_HINT(tableId),
+        },
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -1583,7 +1853,7 @@ const table_column_add: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Add a column',
   description:
-    "Add a column. For currency pass `format.currency` (ISO code); for select/multiselect pass `options`; for a formula column pass `formula` (e.g. \"{Qty} * {Price}\" — references other columns by name). Writes to DRAFT.",
+    'Add a column. For currency pass `format.currency` (ISO code); for select/multiselect pass `options`; for a formula column pass `formula` (e.g. "{Qty} * {Price}" — references other columns by name). Writes to DRAFT.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1594,8 +1864,16 @@ const table_column_add: BuiltinToolDef = {
         enum: [...COLUMN_TYPES],
         description: 'Cell type — governs coercion, sorting, and totals.',
       },
-      format: { type: 'object', description: 'e.g. { "currency": "USD", "decimals": 2 }', additionalProperties: true },
-      options: { type: 'array', items: { type: 'string' }, description: 'select/multiselect choices' },
+      format: {
+        type: 'object',
+        description: 'e.g. { "currency": "USD", "decimals": 2 }',
+        additionalProperties: true,
+      },
+      options: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'select/multiselect choices',
+      },
       formula: { type: 'string', description: 'for type=formula, e.g. "{Qty} * {Price}"' },
       after_column: { type: 'string', description: 'optional column id/name to insert after' },
       tab: { type: 'string', description: TAB_HINT },
@@ -1617,7 +1895,8 @@ const table_column_add: BuiltinToolDef = {
     const name = str(input.name).trim();
     const type = str(input.type).trim();
     if (!tableId || !name) return { ok: false, error: 'table_id and name are required' };
-    if (!COLUMN_TYPES.includes(type as ColumnType)) return { ok: false, error: `invalid type '${type}'` };
+    if (!COLUMN_TYPES.includes(type as ColumnType))
+      return { ok: false, error: `invalid type '${type}'` };
     let ref: { tabId: string; columnId: string } | undefined;
     if (type === 'reference') {
       const resolved = await resolveRefTarget(ctx.ownerId, tableId, input.reference);
@@ -1626,13 +1905,22 @@ const table_column_add: BuiltinToolDef = {
     }
     const newColId = crypto.randomUUID();
     const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
-      const spec: Omit<Column, 'id'> & { id: string } = { id: newColId, name, type: type as ColumnType };
-      if (input.format && typeof input.format === 'object') spec.format = input.format as Column['format'];
-      if (Array.isArray(input.options)) spec.options = strArr(input.options).map((label) => ({ id: label.toLowerCase().replace(/\s+/g, '_'), label }));
+      const spec: Omit<Column, 'id'> & { id: string } = {
+        id: newColId,
+        name,
+        type: type as ColumnType,
+      };
+      if (input.format && typeof input.format === 'object')
+        spec.format = input.format as Column['format'];
+      if (Array.isArray(input.options))
+        spec.options = strArr(input.options).map((label) => ({
+          id: label.toLowerCase().replace(/\s+/g, '_'),
+          label,
+        }));
       if (str(input.formula).trim()) spec.formula = str(input.formula).trim();
       if (ref) spec.ref = ref;
       const after = str(input.after_column).trim();
-      const afterColumnId = after ? resolveColumn(doc, after)?.id ?? null : null;
+      const afterColumnId = after ? (resolveColumn(doc, after)?.id ?? null) : null;
       return {
         ops: [{ op: 'column_add', column: spec, afterColumnId }],
         output: { column_id: newColId, name },
@@ -1647,7 +1935,8 @@ const table_column_update: BuiltinToolDef = {
   slug: 'table_column_update',
   preconditions: TABLE_ID_PRE,
   name: 'Update a column',
-  description: "Change a column (by id or name): rename, retype (cells are re-coerced), set format/options/formula. Pass only what changes. Writes to DRAFT.",
+  description:
+    'Change a column (by id or name): rename, retype (cells are re-coerced), set format/options/formula. Pass only what changes. Writes to DRAFT.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1671,7 +1960,8 @@ const table_column_update: BuiltinToolDef = {
       },
       formula: {
         type: 'string',
-        description: 'Formula expression, e.g. "{Qty} * {Price}" — references other columns by name.',
+        description:
+          'Formula expression, e.g. "{Qty} * {Price}" — references other columns by name.',
       },
       tab: { type: 'string', description: TAB_HINT },
       reference: {
@@ -1703,18 +1993,35 @@ const table_column_update: BuiltinToolDef = {
       const patch: Partial<Omit<Column, 'id'>> = {};
       if (str(input.name).trim()) patch.name = str(input.name).trim();
       if (str(input.type).trim()) {
-        if (!COLUMN_TYPES.includes(str(input.type).trim() as ColumnType)) return { ops: [], error: `invalid type '${str(input.type)}'` };
+        if (!COLUMN_TYPES.includes(str(input.type).trim() as ColumnType))
+          return { ops: [], error: `invalid type '${str(input.type)}'` };
         patch.type = str(input.type).trim() as ColumnType;
       }
-      if (input.format && typeof input.format === 'object') patch.format = input.format as Column['format'];
-      if (Array.isArray(input.options)) patch.options = strArr(input.options).map((label) => ({ id: label.toLowerCase().replace(/\s+/g, '_'), label }));
+      if (input.format && typeof input.format === 'object')
+        patch.format = input.format as Column['format'];
+      if (Array.isArray(input.options))
+        patch.options = strArr(input.options).map((label) => ({
+          id: label.toLowerCase().replace(/\s+/g, '_'),
+          label,
+        }));
       if (typeof input.formula === 'string') patch.formula = input.formula.trim();
       if (ref) patch.ref = ref;
-      if ((patch.type === 'reference' || (ref && col.type !== 'reference' && !patch.type)) && !ref && !col.ref) {
-        return { ops: [], error: 'retyping to reference needs `reference: { tab, column }` — the source it offers values from' };
+      if (
+        (patch.type === 'reference' || (ref && col.type !== 'reference' && !patch.type)) &&
+        !ref &&
+        !col.ref
+      ) {
+        return {
+          ops: [],
+          error:
+            'retyping to reference needs `reference: { tab, column }` — the source it offers values from',
+        };
       }
       if (Object.keys(patch).length === 0) return { ops: [], error: 'nothing to update' };
-      return { ops: [{ op: 'column_update', columnId: col.id, patch }], output: { column_id: col.id } };
+      return {
+        ops: [{ op: 'column_update', columnId: col.id, patch }],
+        output: { column_id: col.id },
+      };
     });
     ctx.step?.setOutput({ table_id: tableId });
     return res;
@@ -1725,7 +2032,7 @@ const table_column_delete: BuiltinToolDef = {
   slug: 'table_column_delete',
   preconditions: TABLE_ID_PRE,
   name: 'Delete a column',
-  description: "Remove a column (by id or name) and all its cells. Writes to DRAFT.",
+  description: 'Remove a column (by id or name) and all its cells. Writes to DRAFT.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1742,7 +2049,10 @@ const table_column_delete: BuiltinToolDef = {
     const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
       const col = resolveColumn(doc, columnRef);
       if (!col) return { ops: [], error: `column '${columnRef}' not found` };
-      return { ops: [{ op: 'column_delete', columnId: col.id }], output: { column_id: col.id, deleted: true } };
+      return {
+        ops: [{ op: 'column_delete', columnId: col.id }],
+        output: { column_id: col.id, deleted: true },
+      };
     });
     ctx.step?.setOutput({ table_id: tableId });
     return res;
@@ -1754,7 +2064,7 @@ const table_set_aggregate: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Set a column total',
   description:
-    "Set (or clear) a column's footer total — the \"add totals\" tool. Shows in the totals row and the indexed text. Writes to DRAFT.",
+    'Set (or clear) a column\'s footer total — the "add totals" tool. Shows in the totals row and the indexed text. Writes to DRAFT.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1774,14 +2084,19 @@ const table_set_aggregate: BuiltinToolDef = {
     const columnRef = str(input.column).trim();
     const kind = str(input.kind).trim();
     if (!tableId || !columnRef) return { ok: false, error: 'table_id and column are required' };
-    if (!AGGREGATE_KINDS.includes(kind as AggregateKind)) return { ok: false, error: `invalid kind '${kind}'` };
+    if (!AGGREGATE_KINDS.includes(kind as AggregateKind))
+      return { ok: false, error: `invalid kind '${kind}'` };
     const res = await editViaOps(ctx.ownerId, tableId, input.tab, (doc) => {
       const col = resolveColumn(doc, columnRef);
       if (!col) return { ops: [], error: `column '${columnRef}' not found` };
       const value =
         kind === 'none'
           ? null
-          : computeAggregate(setAggregate(doc, col.id, kind as AggregateKind), col.id, kind as AggregateKind);
+          : computeAggregate(
+              setAggregate(doc, col.id, kind as AggregateKind),
+              col.id,
+              kind as AggregateKind,
+            );
       return {
         ops: [{ op: 'aggregate_set', columnId: col.id, kind: kind as AggregateKind }],
         output: { column_id: col.id, kind, value },
@@ -1797,7 +2112,7 @@ const table_set_view: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Save a filter/sort view',
   description:
-    "Create or update a saved view — a named filter + sort over the table. Pass `view_id` to update an existing view. Writes to DRAFT.",
+    'Create or update a saved view — a named filter + sort over the table. Pass `view_id` to update an existing view. Writes to DRAFT.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1811,7 +2126,11 @@ const table_set_view: BuiltinToolDef = {
           type: 'object',
           properties: {
             column: { type: 'string', description: 'Column to sort by (id or name).' },
-            dir: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction — defaults to ascending.' },
+            dir: {
+              type: 'string',
+              enum: ['asc', 'desc'],
+              description: 'Sort direction — defaults to ascending.',
+            },
           },
           required: ['column'],
         },
@@ -1846,19 +2165,30 @@ const table_set_view: BuiltinToolDef = {
       const sort: SortSpec[] = (Array.isArray(input.sort) ? input.sort : [])
         .map((s): SortSpec | null => {
           const col = resolveColumn(doc, str((s as Record<string, unknown>).column));
-          return col ? { colId: col.id, dir: (s as Record<string, unknown>).dir === 'desc' ? 'desc' : 'asc' } : null;
+          return col
+            ? { colId: col.id, dir: (s as Record<string, unknown>).dir === 'desc' ? 'desc' : 'asc' }
+            : null;
         })
         .filter((s): s is SortSpec => s !== null);
       const filters: Filter[] = (Array.isArray(input.filters) ? input.filters : [])
         .map((f): Filter | null => {
           const rec = f as Record<string, unknown>;
           const col = resolveColumn(doc, str(rec.column));
-          return col ? { colId: col.id, op: str(rec.op) as Filter['op'], value: (rec.value ?? null) as CellValue } : null;
+          return col
+            ? {
+                colId: col.id,
+                op: str(rec.op) as Filter['op'],
+                value: (rec.value ?? null) as CellValue,
+              }
+            : null;
         })
         .filter((f): f is Filter => f !== null);
       const existing = str(input.view_id).trim();
       viewId = existing || `v_${Math.random().toString(36).slice(2, 10)}`;
-      return { ops: [{ op: 'view_set', view: { id: viewId, name, sort, filters } }], output: { view_id: viewId, name } };
+      return {
+        ops: [{ op: 'view_set', view: { id: viewId, name, sort, filters } }],
+        output: { view_id: viewId, name },
+      };
     });
     ctx.step?.setOutput({ table_id: tableId, view_id: viewId });
     return res;

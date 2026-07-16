@@ -87,7 +87,9 @@ export const openrouterEmbedding: EmbeddingDispatcher = {
       (i) => typeof i === 'string' || (typeof i === 'object' && i.type === 'text'),
     );
     const rawInput = allText
-      ? req.input.map((i) => (typeof i === 'string' ? i : (i as { type: 'text'; text: string }).text))
+      ? req.input.map((i) =>
+          typeof i === 'string' ? i : (i as { type: 'text'; text: string }).text,
+        )
       : req.input.map(toRawElement);
 
     const body: Record<string, unknown> = {

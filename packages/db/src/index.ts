@@ -19,4 +19,22 @@ export {
   type PersonaUpdate,
   type PersonaUpdateResult,
 } from './persona-notes';
-export { sql, eq, ne, and, or, not, isNull, isNotNull, inArray, gt, gte, lt, lte, like, ilike, desc, asc } from 'drizzle-orm';
+export {
+  sql,
+  eq,
+  ne,
+  and,
+  or,
+  not,
+  isNull,
+  isNotNull,
+  inArray,
+  gt,
+  gte,
+  lt,
+  lte,
+  like,
+  ilike,
+  desc,
+  asc,
+} from 'drizzle-orm';

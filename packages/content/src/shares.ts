@@ -94,7 +94,8 @@ function genToken(): string {
  *  origin from). `MANTLE_PUBLIC_URL` overrides; falls back to the same
  *  `NEXT_PUBLIC_APP_URL` the web app uses, then localhost. */
 export function publicBaseUrl(): string {
-  const raw = process.env.MANTLE_PUBLIC_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  const raw =
+    process.env.MANTLE_PUBLIC_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
   return raw.replace(/\/$/, '');
 }
 
@@ -118,7 +119,10 @@ export function nodeUrl(id: string): string {
 /** SQL predicate: a share row that is currently active (not revoked, not past
  *  its expiry). */
 function activePredicate() {
-  return and(isNull(shares.revokedAt), or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())));
+  return and(
+    isNull(shares.revokedAt),
+    or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
+  );
 }
 
 /** The owner's active link for a node, or null. */
@@ -213,7 +217,7 @@ export async function listPageDescendantIds(ownerId: string, parentId: string): 
     SELECT id FROM descendants
   `);
   const rows = (
-    Array.isArray(result) ? result : (result as { rows?: Array<{ id: string }> }).rows ?? []
+    Array.isArray(result) ? result : ((result as { rows?: Array<{ id: string }> }).rows ?? [])
   ) as Array<{ id: string }>;
   return rows.map((r) => r.id);
 }

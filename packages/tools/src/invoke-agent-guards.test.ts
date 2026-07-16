@@ -15,11 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  MAX_AGENT_DEPTH,
-  checkAgentDepth,
-  checkDelegationAllowed,
-} from './invoke-agent-guards';
+import { MAX_AGENT_DEPTH, checkAgentDepth, checkDelegationAllowed } from './invoke-agent-guards';
 
 describe('MAX_AGENT_DEPTH constant', () => {
   it('is 2 — parent + child, no grandchildren', () => {
@@ -65,9 +61,7 @@ describe('checkAgentDepth', () => {
 
 describe('checkDelegationAllowed', () => {
   it('passes when target is in the allowlist', () => {
-    expect(
-      checkDelegationAllowed('responder', 'researcher', ['researcher']),
-    ).toEqual({ ok: true });
+    expect(checkDelegationAllowed('responder', 'researcher', ['researcher'])).toEqual({ ok: true });
   });
 
   it('passes when target is one of several entries', () => {
@@ -106,16 +100,11 @@ describe('checkDelegationAllowed', () => {
   });
 
   it('refuses delegation when the allowlist is empty', () => {
-    expect(
-      checkDelegationAllowed('responder', 'researcher', []).ok,
-    ).toBe(false);
+    expect(checkDelegationAllowed('responder', 'researcher', []).ok).toBe(false);
   });
 
   it('refuses delegation when the target is not in the allowlist', () => {
-    const r = checkDelegationAllowed('responder', 'rogue_agent', [
-      'researcher',
-      'archivist',
-    ]);
+    const r = checkDelegationAllowed('responder', 'rogue_agent', ['researcher', 'archivist']);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/not in the parent's delegation allowlist/);
   });

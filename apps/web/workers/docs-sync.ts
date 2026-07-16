@@ -119,7 +119,9 @@ async function rebuildWatcher(): Promise<void> {
     awaitWriteFinish: { stabilityThreshold: 400, pollInterval: 100 },
     ignored: (p) => {
       const base = path.basename(p);
-      return base.startsWith('.') || base.endsWith('~') || base.endsWith('.swp') || base.endsWith('.tmp');
+      return (
+        base.startsWith('.') || base.endsWith('~') || base.endsWith('.swp') || base.endsWith('.tmp')
+      );
     },
   });
   watcher.on('add', handleUpsert);

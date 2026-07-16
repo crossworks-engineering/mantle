@@ -35,7 +35,9 @@ describe('isToolContinuation', () => {
         {
           role: 'assistant',
           content: null,
-          toolCalls: [{ id: 'c1', type: 'function', function: { name: 'search', arguments: '{}' } }],
+          toolCalls: [
+            { id: 'c1', type: 'function', function: { name: 'search', arguments: '{}' } },
+          ],
         },
         { role: 'tool', toolCallId: 'c1', content: 'result' },
       ]),

@@ -88,9 +88,9 @@ const task_get: BuiltinToolDef = {
   slug: 'task_get',
   name: 'Get a task',
   description:
-    "Read one task by id — full row including body, status, priority, due_at. " +
-    "Use after `task_list` or `search_nodes` returns the id you want details on. " +
-    "For browsing/filtering tasks use `task_list`. " +
+    'Read one task by id — full row including body, status, priority, due_at. ' +
+    'Use after `task_list` or `search_nodes` returns the id you want details on. ' +
+    'For browsing/filtering tasks use `task_list`. ' +
     'Returns a `url` permalink — link the task as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
@@ -192,7 +192,10 @@ const task_update: BuiltinToolDef = {
         enum: ['low', 'normal', 'high'],
         description: 'New urgency; omit to keep current.',
       },
-      dueAt: { type: 'string', description: "New due instant (UTC ISO 8601), e.g. '2026-07-10T09:00:00Z'." },
+      dueAt: {
+        type: 'string',
+        description: "New due instant (UTC ISO 8601), e.g. '2026-07-10T09:00:00Z'.",
+      },
       tags: {
         type: 'array',
         items: { type: 'string' },
@@ -244,9 +247,7 @@ const task_delete: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id required' };
     const ok = await deleteTask(ctx.ownerId, id);
     ctx.step?.setMeta({ taskId: id, deleted: ok });
-    return ok
-      ? { ok: true, output: { deleted: true, id } }
-      : notFound('task', id, 'task_list');
+    return ok ? { ok: true, output: { deleted: true, id } } : notFound('task', id, 'task_list');
   },
 };
 

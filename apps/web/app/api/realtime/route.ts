@@ -16,7 +16,12 @@ export async function GET(req: Request): Promise<Response> {
   if (user instanceof Response) return user;
   const typesParam = new URL(req.url).searchParams.get('types');
   const types = typesParam
-    ? new Set(typesParam.split(',').map((s) => s.trim()).filter(Boolean))
+    ? new Set(
+        typesParam
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      )
     : null;
 
   const encoder = new TextEncoder();

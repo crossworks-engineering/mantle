@@ -34,7 +34,9 @@ export function parseEvalCases(raw: unknown): RecallEvalCase[] {
     const query = typeof o.query === 'string' ? o.query.trim() : '';
     if (!query) throw new Error(`case ${id}: "query" (non-empty string) is required`);
     const strArr = (v: unknown): string[] | undefined =>
-      Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string' && s.length > 0) : undefined;
+      Array.isArray(v)
+        ? v.filter((s): s is string => typeof s === 'string' && s.length > 0)
+        : undefined;
     const expectNodeIds = strArr(o.expectNodeIds);
     // Accept the eval-recall.ts field name too, so the repo golden set pastes in unchanged.
     const expectTitleIncludes = strArr(o.expectTitleIncludes) ?? strArr(o.expectNodeTitleIncludes);

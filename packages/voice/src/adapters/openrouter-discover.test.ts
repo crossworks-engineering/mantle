@@ -28,7 +28,12 @@ function routeFetch(keyStatus: number) {
     const u = String(url);
     urls.push(u);
     if (u.endsWith('/key')) {
-      return { ok: keyStatus < 400, status: keyStatus, json: async () => ({}), text: async () => '' };
+      return {
+        ok: keyStatus < 400,
+        status: keyStatus,
+        json: async () => ({}),
+        text: async () => '',
+      };
     }
     return { ok: true, status: 200, json: async () => CATALOG, text: async () => '' };
   }) as unknown as typeof fetch;

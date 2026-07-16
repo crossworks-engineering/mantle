@@ -43,7 +43,11 @@ import {
   runToolLoop,
   type ChatMessage,
 } from '@mantle/agent-runtime';
-import { loadProfilePreferences, buildTimeContextLine, resolveThinkingBudget } from '@mantle/content';
+import {
+  loadProfilePreferences,
+  buildTimeContextLine,
+  resolveThinkingBudget,
+} from '@mantle/content';
 import { checkGates } from './gates';
 import { computeNextFireAt } from './schedule';
 import { withHeartbeatContext } from './context';
@@ -102,10 +106,7 @@ export async function tickFire(hb: Heartbeat): Promise<FireResult> {
   return runWithInflightLock(hb.id, () => fireInner(hb, { skipGates: false }));
 }
 
-async function fireInner(
-  hb: Heartbeat,
-  opts: { skipGates: boolean },
-): Promise<FireResult> {
+async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<FireResult> {
   const now = new Date();
 
   // Capture the heartbeat's `next_fire_at` as it was when the fire
@@ -124,7 +125,7 @@ async function fireInner(
       // the tick loop doesn't churn on this row every minute. The
       // bump is conservative — half the cooldown if there is one,
       // else 10 minutes — so the gate is re-checked reasonably soon.
-      const bumpMs = (hb.cooldownMinutes ? hb.cooldownMinutes * 30_000 : 10 * 60_000);
+      const bumpMs = hb.cooldownMinutes ? hb.cooldownMinutes * 30_000 : 10 * 60_000;
       await db
         .update(heartbeats)
         .set({
@@ -165,14 +166,18 @@ async function fireInner(
   const [agent] = await db
     .select()
     .from(agents)
-    .where(and(eq(agents.ownerId, hb.ownerId), eq(agents.slug, hb.agentSlug), eq(agents.enabled, true)))
+    .where(
+      and(eq(agents.ownerId, hb.ownerId), eq(agents.slug, hb.agentSlug), eq(agents.enabled, true)),
+    )
     .limit(1);
   if (!agent) return autoPause(hb, `agent '${hb.agentSlug}' not found or disabled`);
 
   const [skill] = await db
     .select()
     .from(skills)
-    .where(and(eq(skills.ownerId, hb.ownerId), eq(skills.slug, hb.skillSlug), eq(skills.enabled, true)))
+    .where(
+      and(eq(skills.ownerId, hb.ownerId), eq(skills.slug, hb.skillSlug), eq(skills.enabled, true)),
+    )
     .limit(1);
   if (!skill) return autoPause(hb, `skill '${hb.skillSlug}' not found or disabled`);
 
@@ -224,7 +229,9 @@ async function fireInner(
   const userPrompt = buildHeartbeatPrompt({
     hb,
     skill,
-    lastFiredHuman: hb.lastFiredAt ? humanizeAgo(now.getTime() - hb.lastFiredAt.getTime()) : undefined,
+    lastFiredHuman: hb.lastFiredAt
+      ? humanizeAgo(now.getTime() - hb.lastFiredAt.getTime())
+      : undefined,
   });
   // Direct construction — heartbeats are episodic, no history to fold in.
   // The synthetic user prompt is the "task to do right now"; the agent's
@@ -234,10 +241,10 @@ async function fireInner(
     { role: 'user', content: userPrompt },
   ];
 
-    // Snapshot the trace id from inside startTrace so we can stamp
-    // it onto heartbeat_fires.trace_id. Without this, the detail
-    // page's "trace →" link is permanently dark. (Audit P-trace-1.)
-    let openedTraceId: string | null = null;
+  // Snapshot the trace id from inside startTrace so we can stamp
+  // it onto heartbeat_fires.trace_id. Without this, the detail
+  // page's "trace →" link is permanently dark. (Audit P-trace-1.)
+  let openedTraceId: string | null = null;
   try {
     // Both the LLM tool loop AND the surface delivery run inside
     // the same startTrace block so their steps attach to the same
@@ -263,31 +270,33 @@ async function fireInner(
         // AsyncLocalStorage scope startTrace just opened.
         openedTraceId = currentTrace()?.id ?? null;
         const hbBackup = await resolveBackupAdapter(hb.ownerId, agent);
-        const result = await withHeartbeatContext({ heartbeatId: hb.id, slug: hb.slug, ownerId: hb.ownerId }, () =>
-          runToolLoop({
-            adapter: hbAdapter,
-            apiKey,
-            model: agent.model,
-            baseUrl: agent.baseUrl,
-            viaTailnet: agent.viaTailnet,
-            backup: hbBackup,
-            params: (agent.params ?? {}) as AgentParams,
-            ownerId: hb.ownerId,
-            agentId: agent.id,
-            agentSlug: agent.slug,
-            agentDepth: 1,
-            delegateTo: [],
-            // Per-user adaptive thinking on unattended heartbeat runs too (same
-            // profile gate; prefs already loaded above). Clamped vs max_tokens
-            // inside runToolLoop.
-            thinkingBudget: resolveThinkingBudget(prefs),
-            initialMessages,
-            tools,
-            surface:
-              hb.surface.kind === 'telegram'
-                ? { kind: 'telegram', telegramChatId: hb.surface.chat_id }
-                : { kind: 'web' },
-          }),
+        const result = await withHeartbeatContext(
+          { heartbeatId: hb.id, slug: hb.slug, ownerId: hb.ownerId },
+          () =>
+            runToolLoop({
+              adapter: hbAdapter,
+              apiKey,
+              model: agent.model,
+              baseUrl: agent.baseUrl,
+              viaTailnet: agent.viaTailnet,
+              backup: hbBackup,
+              params: (agent.params ?? {}) as AgentParams,
+              ownerId: hb.ownerId,
+              agentId: agent.id,
+              agentSlug: agent.slug,
+              agentDepth: 1,
+              delegateTo: [],
+              // Per-user adaptive thinking on unattended heartbeat runs too (same
+              // profile gate; prefs already loaded above). Clamped vs max_tokens
+              // inside runToolLoop.
+              thinkingBudget: resolveThinkingBudget(prefs),
+              initialMessages,
+              tools,
+              surface:
+                hb.surface.kind === 'telegram'
+                  ? { kind: 'telegram', telegramChatId: hb.surface.chat_id }
+                  : { kind: 'web' },
+            }),
         );
         const replyText = result.reply;
 
@@ -311,7 +320,11 @@ async function fireInner(
             {
               name: 'deliver_surface',
               kind: 'send',
-              input: { kind: 'telegram', chat_id: hb.surface.chat_id, reply_chars: replyText.length },
+              input: {
+                kind: 'telegram',
+                chat_id: hb.surface.chat_id,
+                reply_chars: replyText.length,
+              },
             },
             async (h) => {
               if (hb.surface.kind !== 'telegram') return null;
@@ -413,11 +426,7 @@ async function fireInner(
     //                       nothing this fire. Operator-visible at a
     //                       glance via /heartbeats/[id] log. (P1-1.)
     const disposition: FireResult['disposition'] =
-      finalStatus === 'completed'
-        ? 'completed'
-        : delivered
-          ? 'fired'
-          : 'fired_undelivered';
+      finalStatus === 'completed' ? 'completed' : delivered ? 'fired' : 'fired_undelivered';
 
     await recordFire(hb, {
       disposition,

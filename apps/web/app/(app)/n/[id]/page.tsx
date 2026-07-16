@@ -21,11 +21,7 @@ import { requireOwner } from '@/lib/auth';
  * Owner-scoped at the loader; a leaked id for another owner 404s rather than
  * leaking existence via a permission error.
  */
-export default async function NodePermalink({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function NodePermalink({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireOwner();
   const { id } = await params;
 

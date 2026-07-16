@@ -90,9 +90,11 @@ async function spawnBridge(): Promise<Bridge> {
   // it still points at *this* bridge — a newer one may already have replaced it.
   client.onclose = () => {
     bridge.alive = false;
-    void state.bridge?.then((b) => {
-      if (b === bridge) state.bridge = null;
-    }).catch(() => {});
+    void state.bridge
+      ?.then((b) => {
+        if (b === bridge) state.bridge = null;
+      })
+      .catch(() => {});
   };
   await client.connect(transport);
   return bridge;

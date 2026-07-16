@@ -122,7 +122,10 @@ function countsOf(data: TableDoc): { columnCount: number; rowCount: number } {
 /** Counts for the list WITHOUT materializing: registry `stats` when the table
  *  is file-backed (or backfilled), else a JSONB parse (legacy rows only —
  *  the pre-v2 behavior). */
-function countsFromRegistry(stats: unknown, data: unknown): { columnCount: number; rowCount: number } {
+function countsFromRegistry(
+  stats: unknown,
+  data: unknown,
+): { columnCount: number; rowCount: number } {
   const s = stats as WorkbookStats | null;
   if (s && Array.isArray(s.tabs)) {
     return {
@@ -137,7 +140,13 @@ function detailOf(
   n: Node,
   data: TableDoc,
   draft: TableDoc | null = null,
-  extra: { totalRows?: number; docClipped?: boolean; draftRev?: number; tabs?: TableTabInfo[]; tabId?: string } = {},
+  extra: {
+    totalRows?: number;
+    docClipped?: boolean;
+    draftRev?: number;
+    tabs?: TableTabInfo[];
+    tabId?: string;
+  } = {},
 ): TableDetail {
   const counts = countsOf(data);
   if (extra.totalRows !== undefined) counts.rowCount = extra.totalRows;
@@ -164,7 +173,10 @@ type DocsRow = { storagePath: string | null; data: unknown; draft: unknown };
 /** Published + draft docs for a registry row: workbook file when file-backed
  *  (draft-first callers get both), JSONB otherwise. `tabId` picks the tab to
  *  materialize (file-backed only; default first). */
-function docsOf(row: DocsRow, tabId?: string): {
+function docsOf(
+  row: DocsRow,
+  tabId?: string,
+): {
   data: TableDoc;
   draft: TableDoc | null;
   totalRows: number;
@@ -172,7 +184,12 @@ function docsOf(row: DocsRow, tabId?: string): {
 } {
   if (row.storagePath) {
     const loaded = loadDocsFromFile(row.storagePath, { tabId });
-    return { data: loaded.data, draft: loaded.draft, totalRows: loaded.totalRows, docClipped: loaded.docClipped };
+    return {
+      data: loaded.data,
+      draft: loaded.draft,
+      totalRows: loaded.totalRows,
+      docClipped: loaded.docClipped,
+    };
   }
   const data = ensureTableDoc(row.data ?? emptyTableDoc());
   return {
@@ -273,9 +290,7 @@ export async function countTables(ownerId: string, opts: ListTablesOpts = {}): P
   return row?.n ?? 0;
 }
 
-export async function listTableTags(
-  ownerId: string,
-): Promise<{ tag: string; count: number }[]> {
+export async function listTableTags(ownerId: string): Promise<{ tag: string; count: number }[]> {
   const rows = await db
     .select({ tags: nodes.tags })
     .from(nodes)
@@ -402,13 +417,12 @@ export type CreateTableInput = {
   sourceFileId?: string;
 };
 
-export async function createTable(
-  ownerId: string,
-  input: CreateTableInput,
-): Promise<TableDetail> {
+export async function createTable(ownerId: string, input: CreateTableInput): Promise<TableDetail> {
   await ensureRoot(ownerId);
   const workbook = input.tabs?.length ? ensureWorkbookDoc({ tabs: input.tabs }) : null;
-  const data = workbook ? ensureTableDoc(workbook.tabs[0]) : ensureTableDoc(input.data ?? emptyTableDoc());
+  const data = workbook
+    ? ensureTableDoc(workbook.tabs[0])
+    : ensureTableDoc(input.data ?? emptyTableDoc());
   const totalRows = workbook
     ? workbook.tabs.reduce((a, t) => a + t.rows.length, 0)
     : data.rows.length;
@@ -446,7 +460,12 @@ export async function createTable(
         })
         .returning();
       if (!node) throw new Error('createTable: insert returned no row');
-      const res = writeDocFile(publishedAbs, workbook ?? data, { nodeId: id, ownerId, tabName: TAB_NAME, fts: true });
+      const res = writeDocFile(publishedAbs, workbook ?? data, {
+        nodeId: id,
+        ownerId,
+        tabName: TAB_NAME,
+        fts: true,
+      });
       await tx.insert(tables).values({
         nodeId: node.id,
         // JSONB mirror only while it fits the window AND stays single-tab;
@@ -546,7 +565,10 @@ function statsOrNull(absPath: string): WorkbookStats | null {
  *  one exists (registry stats only see the published file — a tab added by
  *  an import/draft op is invisible there; audit: a bare PUT could silently
  *  destroy draft-only tabs), else the published count from the locked row. */
-function effectiveTabCount(locked: { tabCount: number | null } | null, storagePath: string | null): number {
+function effectiveTabCount(
+  locked: { tabCount: number | null } | null,
+  storagePath: string | null,
+): number {
   if (storagePath) {
     const draftStats = statsOrNull(draftAbsFor(storagePath));
     if (draftStats) return draftStats.tabs.length;
@@ -614,7 +636,8 @@ export async function saveTableDraft(
     if (!storagePath && workbook) {
       // A workbook draft has no JSONB mirror — the file is its ONLY carrier,
       // so a legacy table converts to file-backed before the draft lands.
-      storagePath = (await ensureFileBacked(tx, { id, ownerId, title: row.title }, locked)).storagePath;
+      storagePath = (await ensureFileBacked(tx, { id, ownerId, title: row.title }, locked))
+        .storagePath;
     }
     if (storagePath) {
       if (!opts.replace) {
@@ -736,7 +759,9 @@ export async function commitTable(
       const newShapeHash = shapeHashOfFile(publishedAbs);
       const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
       const shapeUnchanged =
-        locked.shapeHash != null && locked.shapeHash === newShapeHash && typeof newData.summary === 'string';
+        locked.shapeHash != null &&
+        locked.shapeHash === newShapeHash &&
+        typeof newData.summary === 'string';
       if (!shapeUnchanged) {
         delete newData.summary;
         delete newData.summary_model;
@@ -794,7 +819,8 @@ export async function commitTable(
   const commitTotalRows = workbook
     ? workbook.tabs.reduce((a, t) => a + t.rows.length, 0)
     : doc!.rows.length;
-  if (commitTotalRows > MATERIALIZE_MAX) throw new TableTooLargeError(commitTotalRows, MATERIALIZE_MAX);
+  if (commitTotalRows > MATERIALIZE_MAX)
+    throw new TableTooLargeError(commitTotalRows, MATERIALIZE_MAX);
 
   // Commit under the registry lock (plan §3.3): write the new published file
   // (build + FTS shadows + checkpoint + atomic rename inside writeDocFile),
@@ -815,7 +841,9 @@ export async function commitTable(
     const newShapeHash = shapeHashOf(commitDoc, tabName);
     const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
     const shapeUnchanged =
-      locked?.shapeHash != null && locked.shapeHash === newShapeHash && typeof newData.summary === 'string';
+      locked?.shapeHash != null &&
+      locked.shapeHash === newShapeHash &&
+      typeof newData.summary === 'string';
     if (!shapeUnchanged) {
       delete newData.summary;
       delete newData.summary_model;

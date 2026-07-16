@@ -18,7 +18,9 @@ import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'dri
 export const promptVersions = pgTable(
   'prompt_versions',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     /** 'agent' | 'skill' | 'worker' (the prose registry's entity types). */
     entityType: text('entity_type').notNull(),

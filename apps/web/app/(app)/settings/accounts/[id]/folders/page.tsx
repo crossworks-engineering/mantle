@@ -9,11 +9,7 @@ import { AccountFoldersClient } from './folders-client';
  * folder tree is fetched client-side via `GET /api/email/accounts/[id]/folders`
  * (Phase 2 · Task 4).
  */
-export default async function AccountFoldersPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function AccountFoldersPage({ params }: { params: Promise<{ id: string }> }) {
   await requireOwner();
   const { id } = await params;
 

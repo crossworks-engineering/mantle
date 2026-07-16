@@ -51,16 +51,32 @@ const MANIFEST: ManifestSlices = {
     { slug: 'page_editing', name: 'Page editing', description: '', instructions: 'EDIT' },
   ],
   toolGroups: [
-    { slug: 'memory-core', name: 'Memory core', description: '', toolSlugs: ['search', 'entity_search'] },
+    {
+      slug: 'memory-core',
+      name: 'Memory core',
+      description: '',
+      toolSlugs: ['search', 'entity_search'],
+    },
     { slug: 'files', name: 'Files', description: '', toolSlugs: ['file_list', 'file_read'] },
     { slug: 'pages', name: 'Pages', description: '', toolSlugs: ['page_create', 'page_update'] },
   ],
   workers: [
-    { kind: 'extractor', name: 'Extractor', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
     {
-      kind: 'tts', name: 'Voice', required: false,
-      provider: 'openrouter', model: 'x-ai/grok-voice-tts-1.0',
-      altProvider: 'xai', altModel: 'grok-voice-latest', altKeyService: 'xai',
+      kind: 'extractor',
+      name: 'Extractor',
+      required: true,
+      provider: 'openrouter',
+      model: 'google/gemini-3.1-flash-lite',
+    },
+    {
+      kind: 'tts',
+      name: 'Voice',
+      required: false,
+      provider: 'openrouter',
+      model: 'x-ai/grok-voice-tts-1.0',
+      altProvider: 'xai',
+      altModel: 'grok-voice-latest',
+      altKeyService: 'xai',
     },
   ],
   delegateSlugs: ['pages'],
@@ -71,15 +87,27 @@ function inSyncLive(): LiveConfig {
   return {
     agents: [
       {
-        slug: 'assistant', name: 'Saskia', enabled: true, role: 'responder', priority: 100,
-        skillSlugs: ['tool_grounding', 'voice_reply'], toolGroupSlugs: ['memory-core', 'files'],
-        model: 'anthropic/claude-sonnet-4.6', systemPrompt: 'OPERATOR PERSONA PROMPT',
+        slug: 'assistant',
+        name: 'Saskia',
+        enabled: true,
+        role: 'responder',
+        priority: 100,
+        skillSlugs: ['tool_grounding', 'voice_reply'],
+        toolGroupSlugs: ['memory-core', 'files'],
+        model: 'anthropic/claude-sonnet-4.6',
+        systemPrompt: 'OPERATOR PERSONA PROMPT',
         memoryConfig: { delegate_to: ['pages'] },
       },
       {
-        slug: 'pages', name: 'Pages', enabled: true, role: 'custom', priority: 100,
-        skillSlugs: ['rich_writing', 'page_editing'], toolGroupSlugs: ['pages', 'files'],
-        model: 'anthropic/claude-sonnet-4.6', systemPrompt: 'PAGES PROMPT',
+        slug: 'pages',
+        name: 'Pages',
+        enabled: true,
+        role: 'custom',
+        priority: 100,
+        skillSlugs: ['rich_writing', 'page_editing'],
+        toolGroupSlugs: ['pages', 'files'],
+        model: 'anthropic/claude-sonnet-4.6',
+        systemPrompt: 'PAGES PROMPT',
         memoryConfig: {},
       },
     ],
@@ -90,13 +118,30 @@ function inSyncLive(): LiveConfig {
       { slug: 'page_editing', name: 'Page editing', enabled: true, instructions: 'EDIT' },
     ],
     toolGroups: [
-      { slug: 'memory-core', name: 'Memory core', enabled: true, toolSlugs: ['search', 'entity_search'] },
+      {
+        slug: 'memory-core',
+        name: 'Memory core',
+        enabled: true,
+        toolSlugs: ['search', 'entity_search'],
+      },
       { slug: 'files', name: 'Files', enabled: true, toolSlugs: ['file_list', 'file_read'] },
       { slug: 'pages', name: 'Pages', enabled: true, toolSlugs: ['page_create', 'page_update'] },
     ],
     workers: [
-      { kind: 'extractor', name: 'Extractor', enabled: true, isDefault: true, model: 'google/gemini-3.1-flash-lite' },
-      { kind: 'tts', name: 'Voice', enabled: true, isDefault: true, model: 'x-ai/grok-voice-tts-1.0' },
+      {
+        kind: 'extractor',
+        name: 'Extractor',
+        enabled: true,
+        isDefault: true,
+        model: 'google/gemini-3.1-flash-lite',
+      },
+      {
+        kind: 'tts',
+        name: 'Voice',
+        enabled: true,
+        isDefault: true,
+        model: 'x-ai/grok-voice-tts-1.0',
+      },
     ],
   };
 }
@@ -204,7 +249,11 @@ describe('diffConfig — skills, tool groups, workers', () => {
     live.skills[0]!.instructions = 'OPERATOR EDIT';
     const e = find(diffConfig(live, MANIFEST), 'skill', 'tool_grounding');
     expect(e.status).toBe('modified');
-    expect(e.fields[0]).toMatchObject({ field: 'instructions', manifest: 'GROUND', live: 'OPERATOR EDIT' });
+    expect(e.fields[0]).toMatchObject({
+      field: 'instructions',
+      manifest: 'GROUND',
+      live: 'OPERATOR EDIT',
+    });
   });
 
   it('set-diffs tool group membership', () => {
@@ -220,7 +269,10 @@ describe('diffConfig — skills, tool groups, workers', () => {
     const live = inSyncLive();
     live.workers = []; // both gone
     const entities = diffConfig(live, MANIFEST);
-    expect(find(entities, 'worker', 'extractor')).toMatchObject({ status: 'missing', severity: 'high' });
+    expect(find(entities, 'worker', 'extractor')).toMatchObject({
+      status: 'missing',
+      severity: 'high',
+    });
     expect(find(entities, 'worker', 'tts')).toMatchObject({ status: 'missing', severity: 'low' });
   });
 
@@ -254,7 +306,13 @@ describe('diffConfig — adoptable flag', () => {
 describe('diffConfig — operator extras', () => {
   it('reports operator-added agent / skill / tool group as extra', () => {
     const live = inSyncLive();
-    live.agents.push({ slug: 'my-agent', name: 'Mine', enabled: true, role: 'custom', priority: 50 });
+    live.agents.push({
+      slug: 'my-agent',
+      name: 'Mine',
+      enabled: true,
+      role: 'custom',
+      priority: 50,
+    });
     live.skills.push({ slug: 'my-skill', name: 'Mine', enabled: true, instructions: 'x' });
     live.toolGroups.push({ slug: 'my-group', name: 'Mine', enabled: true, toolSlugs: [] });
     const entities = diffConfig(live, MANIFEST);

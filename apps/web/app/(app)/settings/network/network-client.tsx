@@ -64,8 +64,8 @@ function NetworkView({
         </h1>
         <p className="text-sm text-muted-foreground">
           Reach a box you own — a home GPU or LAN server behind NAT — by name, with no
-          port-forwarding or public IPs. Once it&apos;s on your tailnet, point a chat or
-          vision route&apos;s <strong>Base URL</strong> at its MagicDNS name and flip{' '}
+          port-forwarding or public IPs. Once it&apos;s on your tailnet, point a chat or vision
+          route&apos;s <strong>Base URL</strong> at its MagicDNS name and flip{' '}
           <strong>Reach via Tailscale</strong> on (Agents / AI workers pages).
         </p>
       </header>
@@ -197,8 +197,8 @@ function ActivateCard({
       <CardHeader>
         <CardTitle className="text-base">Activate Tailscale</CardTitle>
         <CardDescription>
-          Paste an auth key once — it&apos;s sealed in the vault (AES-256-GCM) like your API
-          keys — then activate or deactivate the tailnet right here. No SSH, no editing{' '}
+          Paste an auth key once — it&apos;s sealed in the vault (AES-256-GCM) like your API keys —
+          then activate or deactivate the tailnet right here. No SSH, no editing{' '}
           <code className="font-mono">.env</code>.
         </CardDescription>
       </CardHeader>
@@ -206,7 +206,9 @@ function ActivateCard({
         {!editing && config && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
             <span className="text-muted-foreground">Saved key</span>
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{config.masked}</code>
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+              {config.masked}
+            </code>
             <span className="text-muted-foreground">· device</span>
             <code className="font-mono text-xs">{config.hostname}</code>
           </div>
@@ -268,7 +270,12 @@ function ActivateCard({
                 Save key
               </Button>
               {config && (
-                <Button variant="ghost" size="sm" disabled={pending} onClick={() => setEditing(false)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => setEditing(false)}
+                >
                   Cancel
                 </Button>
               )}
@@ -284,7 +291,9 @@ function ActivateCard({
                 size="sm"
                 disabled={pending}
                 onClick={() =>
-                  run(() => apiSend<NetworkResult>('/api/network/deactivate', 'POST'), { poll: true })
+                  run(() => apiSend<NetworkResult>('/api/network/deactivate', 'POST'), {
+                    poll: true,
+                  })
                 }
               >
                 {pending ? <Loader2 className="animate-spin" /> : <PowerOff />}
@@ -294,7 +303,11 @@ function ActivateCard({
               <Button
                 size="sm"
                 disabled={pending || !sidecarUp}
-                title={sidecarUp ? undefined : 'The tailscale sidecar is not running (dev, or profile off)'}
+                title={
+                  sidecarUp
+                    ? undefined
+                    : 'The tailscale sidecar is not running (dev, or profile off)'
+                }
                 onClick={() =>
                   run(() => apiSend<NetworkResult>('/api/network/activate', 'POST'), { poll: true })
                 }

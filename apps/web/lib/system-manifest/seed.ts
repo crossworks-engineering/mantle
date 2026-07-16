@@ -182,7 +182,11 @@ async function upsertSkill(ownerId: string, def: ManifestSkill, mode: ApplyMode)
 /** Seed a tool group row. Capability-only bundle (docs/tools-and-skills.md).
  *  Like skills: gap-fill leaves an existing (operator-edited) group untouched;
  *  overwrite upserts to the canonical manifest membership. */
-async function upsertToolGroup(ownerId: string, def: ManifestToolGroup, mode: ApplyMode): Promise<void> {
+async function upsertToolGroup(
+  ownerId: string,
+  def: ManifestToolGroup,
+  mode: ApplyMode,
+): Promise<void> {
   const [existing] = await db
     .select({ id: toolGroups.id })
     .from(toolGroups)
@@ -218,7 +222,11 @@ async function upsertToolGroup(ownerId: string, def: ManifestToolGroup, mode: Ap
  *  overwrite re-syncs it to the manifest. Never clobbers a non-http tool that
  *  happens to share the slug (a human-authored shell tool, say). The tool sits
  *  dormant until the user adds the `{{secret:…}}` key it references. */
-async function upsertHttpTool(ownerId: string, def: ManifestHttpTool, mode: ApplyMode): Promise<void> {
+async function upsertHttpTool(
+  ownerId: string,
+  def: ManifestHttpTool,
+  mode: ApplyMode,
+): Promise<void> {
   const [existing] = await db
     .select({ id: tools.id, handler: tools.handler })
     .from(tools)
@@ -316,7 +324,8 @@ async function upsertAgent(
   const mergedGroups = union(existing.toolGroupSlugs ?? [], groupSlugs);
   const set: Record<string, unknown> = { enabled: true, updatedAt: new Date() };
   if (mergedSkills.length !== (existing.skillSlugs ?? []).length) set.skillSlugs = mergedSkills;
-  if (mergedGroups.length !== (existing.toolGroupSlugs ?? []).length) set.toolGroupSlugs = mergedGroups;
+  if (mergedGroups.length !== (existing.toolGroupSlugs ?? []).length)
+    set.toolGroupSlugs = mergedGroups;
   await db.update(agents).set(set).where(eq(agents.id, existing.id));
 }
 
@@ -376,7 +385,11 @@ async function syncPersonaSkills(
         .select({ slug: skills.slug })
         .from(skills)
         .where(
-          and(eq(skills.ownerId, ownerId), eq(skills.enabled, true), inArray(skills.slug, persona.skillSlugs)),
+          and(
+            eq(skills.ownerId, ownerId),
+            eq(skills.enabled, true),
+            inArray(skills.slug, persona.skillSlugs),
+          ),
         )
     : [];
   const addable = present.map((p) => p.slug);
@@ -387,7 +400,10 @@ async function syncPersonaSkills(
   const current = row.skillSlugs ?? [];
   const changed = next.length !== current.length || next.some((s, i) => s !== current[i]);
   if (!changed) return;
-  await db.update(agents).set({ skillSlugs: next, updatedAt: new Date() }).where(eq(agents.id, row.id));
+  await db
+    .update(agents)
+    .set({ skillSlugs: next, updatedAt: new Date() })
+    .where(eq(agents.id, row.id));
 }
 
 /**

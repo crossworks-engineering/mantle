@@ -40,12 +40,7 @@ export const traceKind = pgEnum('trace_kind', [
 // "I did the work"; skipped means "I considered the work and chose
 // not to." Filtering /traces?status=skipped surfaces the silent
 // no-ops we previously had no record of.
-export const traceStatus = pgEnum('trace_status', [
-  'running',
-  'success',
-  'error',
-  'skipped',
-]);
+export const traceStatus = pgEnum('trace_status', ['running', 'success', 'error', 'skipped']);
 
 /**
  * One row per meaningful unit of work running in the agent process.
@@ -55,7 +50,9 @@ export const traceStatus = pgEnum('trace_status', [
 export const traces = pgTable(
   'traces',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     kind: traceKind('kind').notNull(),
     subjectId: uuid('subject_id'),
@@ -73,7 +70,10 @@ export const traces = pgTable(
     tokensCacheRead: integer('tokens_cache_read').default(0).notNull(),
     stepCount: integer('step_count').default(0).notNull(),
     error: text('error'),
-    data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    data: jsonb('data')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

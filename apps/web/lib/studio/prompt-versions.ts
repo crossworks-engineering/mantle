@@ -201,15 +201,27 @@ export async function saveProse(args: {
   if (existing.length === 0) {
     // Seed the original as v1 so the pre-edit text is never lost.
     await insertVersion({
-      ownerId, entityType, entityId, field,
-      version: 1, body: current, note: '(original)', author: null,
+      ownerId,
+      entityType,
+      entityId,
+      field,
+      version: 1,
+      body: current,
+      note: '(original)',
+      author: null,
     });
     if (current.trim() === newBody.trim()) {
       return listProseVersions(ownerId, entityType, entityId, field);
     }
     await insertVersion({
-      ownerId, entityType, entityId, field,
-      version: 2, body: newBody, note: args.note ?? null, author: args.author ?? null,
+      ownerId,
+      entityType,
+      entityId,
+      field,
+      version: 2,
+      body: newBody,
+      note: args.note ?? null,
+      author: args.author ?? null,
     });
     await writeLiveProse(ownerId, entityType, entityId, field, newBody);
     return listProseVersions(ownerId, entityType, entityId, field);
@@ -222,8 +234,14 @@ export async function saveProse(args: {
     return listProseVersions(ownerId, entityType, entityId, field);
   }
   await insertVersion({
-    ownerId, entityType, entityId, field,
-    version: latest.version + 1, body: newBody, note: args.note ?? null, author: args.author ?? null,
+    ownerId,
+    entityType,
+    entityId,
+    field,
+    version: latest.version + 1,
+    body: newBody,
+    note: args.note ?? null,
+    author: args.author ?? null,
   });
   await writeLiveProse(ownerId, entityType, entityId, field, newBody);
   return listProseVersions(ownerId, entityType, entityId, field);
@@ -247,7 +265,10 @@ export async function revertProse(args: {
   const target = versions.find((v) => v.version === toVersion);
   if (!target) throw new Error(`version ${toVersion} not found`);
   return saveProse({
-    ownerId, entityType, entityId, field,
+    ownerId,
+    entityType,
+    entityId,
+    field,
     body: target.body,
     note: `revert to v${toVersion}`,
     author: args.author ?? null,

@@ -44,7 +44,10 @@ export async function listConnectedClients(ownerId: string): Promise<ConnectedCl
   return rows.map((r) => ({
     id: r.id,
     clientName: r.clientName,
-    connectedAt: (r.connectedAt instanceof Date ? r.connectedAt : new Date(r.connectedAt!)).toISOString(),
+    connectedAt: (r.connectedAt instanceof Date
+      ? r.connectedAt
+      : new Date(r.connectedAt!)
+    ).toISOString(),
     lastUsedAt: r.lastUsedAt ? new Date(r.lastUsedAt).toISOString() : null,
     activeTokens: Number(r.activeTokens),
   }));

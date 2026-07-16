@@ -11,12 +11,7 @@ import { db, agents, skills, toolGroups, eq } from '@mantle/db';
 import { loadProfilePreferences } from '@mantle/content';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { APP_VERSION } from '@/lib/version';
-import {
-  diffConfig,
-  countStatuses,
-  type ConfigDiffReport,
-  type LiveConfig,
-} from './config-diff';
+import { diffConfig, countStatuses, type ConfigDiffReport, type LiveConfig } from './config-diff';
 
 export async function computeConfigDiff(ownerId: string): Promise<ConfigDiffReport> {
   const [agentRows, skillRows, toolGroupRows, workers, prefs] = await Promise.all([
@@ -36,11 +31,21 @@ export async function computeConfigDiff(ownerId: string): Promise<ConfigDiffRepo
       .from(agents)
       .where(eq(agents.ownerId, ownerId)),
     db
-      .select({ slug: skills.slug, name: skills.name, enabled: skills.enabled, instructions: skills.instructions })
+      .select({
+        slug: skills.slug,
+        name: skills.name,
+        enabled: skills.enabled,
+        instructions: skills.instructions,
+      })
       .from(skills)
       .where(eq(skills.ownerId, ownerId)),
     db
-      .select({ slug: toolGroups.slug, name: toolGroups.name, enabled: toolGroups.enabled, toolSlugs: toolGroups.toolSlugs })
+      .select({
+        slug: toolGroups.slug,
+        name: toolGroups.name,
+        enabled: toolGroups.enabled,
+        toolSlugs: toolGroups.toolSlugs,
+      })
       .from(toolGroups)
       .where(eq(toolGroups.ownerId, ownerId)),
     listAiWorkers(ownerId),

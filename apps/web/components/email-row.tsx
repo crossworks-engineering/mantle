@@ -39,7 +39,10 @@ export function EmailRow(props: RowProps) {
         >
           {props.fromName || props.fromAddr}
         </span>
-        <time className="shrink-0 text-xs text-muted-foreground" dateTime={props.internalDate.toISOString()}>
+        <time
+          className="shrink-0 text-xs text-muted-foreground"
+          dateTime={props.internalDate.toISOString()}
+        >
           {dateLabel}
         </time>
       </div>

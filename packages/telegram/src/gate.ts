@@ -15,10 +15,7 @@ const PAIRING_MAX_PENDING_PER_ACCOUNT = 3;
  * to attach pairing state to — even denied chats benefit from the
  * pairing_replies counter (used to stop replying after N attempts).
  */
-export async function gate(
-  account: TelegramAccount,
-  message: InboundMessage,
-): Promise<GateResult> {
+export async function gate(account: TelegramAccount, message: InboundMessage): Promise<GateResult> {
   // Telegram groups aren't supported in v1; ignore them silently.
   if (message.chatType !== 'private') return { action: 'drop' };
 
@@ -96,10 +93,7 @@ async function countPendingForAccount(accountId: string): Promise<number> {
     .select({ id: telegramChats.id })
     .from(telegramChats)
     .where(
-      and(
-        eq(telegramChats.accountId, accountId),
-        eq(telegramChats.allowlistStatus, 'pending'),
-      ),
+      and(eq(telegramChats.accountId, accountId), eq(telegramChats.allowlistStatus, 'pending')),
     );
   return rows.length;
 }

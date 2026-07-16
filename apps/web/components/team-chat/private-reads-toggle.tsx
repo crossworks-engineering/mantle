@@ -74,8 +74,8 @@ export function PrivateReadsToggle({ initial }: { initial: boolean }) {
             <AlertDialogTitle>Expose your email &amp; journal to team members?</AlertDialogTitle>
             <AlertDialogDescription>
               Team members can already have your notes, pages, tables, files, tasks, events and
-              contacts read on their behalf through the responder — the brain is the trust
-              boundary. Enabling this <strong>also</strong> lets them reach your{' '}
+              contacts read on their behalf through the responder — the brain is the trust boundary.
+              Enabling this <strong>also</strong> lets them reach your{' '}
               <strong>email history and personal journal</strong>, including anything an uploaded
               document tries to make the responder look up. Only turn this on if every team member
               is trusted with that. You can turn it off again at any time.

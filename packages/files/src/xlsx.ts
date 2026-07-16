@@ -47,8 +47,7 @@ const MAX_COLS_PER_SHEET = 256;
 // Char count (compared against `csv.length`), not bytes — aligned with the
 // extractor's char-based TEXT_STORE_MAX_CHARS. (Was misnamed MAX_TEXT_BYTES.)
 const MAX_TEXT_CHARS = 1_000_000;
-const TRUNCATION_NOTE =
-  '[spreadsheet truncated for indexing — large or sparse workbook]';
+const TRUNCATION_NOTE = '[spreadsheet truncated for indexing — large or sparse workbook]';
 
 export async function parseXlsx(buf: Buffer): Promise<string> {
   // sheetRows caps rows parsed at READ time (bounds both memory and the range a

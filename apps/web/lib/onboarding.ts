@@ -14,10 +14,7 @@ import {
  * `prefs` may be passed in by callers that already loaded it (the (app) layout
  * loads it for the avatar) to avoid a second round-trip on the hot path.
  */
-export async function isOnboarded(
-  userId: string,
-  prefs?: ProfilePreferences,
-): Promise<boolean> {
+export async function isOnboarded(userId: string, prefs?: ProfilePreferences): Promise<boolean> {
   const p = prefs ?? (await loadProfilePreferences(userId));
   if (p.onboardedAt) return true;
   // A wizard in flight (step pref saved, not finished) also has an enabled

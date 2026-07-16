@@ -35,10 +35,7 @@ export type RateLimitResult = {
  *
  * Keys are namespaced by the caller — we don't enforce a format.
  */
-export function rateLimit(
-  key: string,
-  opts: { max: number; windowMs: number },
-): RateLimitResult {
+export function rateLimit(key: string, opts: { max: number; windowMs: number }): RateLimitResult {
   const now = Date.now();
   let bucket = buckets.get(key);
   if (!bucket || now - bucket.windowStartMs >= opts.windowMs) {
@@ -55,10 +52,7 @@ export function rateLimit(
     buckets.set(key, bucket);
   }
   bucket.count += 1;
-  const retryAfterSec = Math.max(
-    1,
-    Math.ceil((bucket.windowStartMs + opts.windowMs - now) / 1000),
-  );
+  const retryAfterSec = Math.max(1, Math.ceil((bucket.windowStartMs + opts.windowMs - now) / 1000));
   if (bucket.count > opts.max) {
     return { ok: false, retryAfterSec, remaining: 0 };
   }
@@ -85,7 +79,10 @@ export function rateLimit(
 export function clientIp(req: Request): string {
   const xff = req.headers.get('x-forwarded-for');
   if (xff) {
-    const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
+    const parts = xff
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     if (parts.length) {
       const hops = Math.max(1, Number(process.env.MANTLE_TRUSTED_PROXIES) || 1);
       return parts[Math.max(0, parts.length - hops)]!;

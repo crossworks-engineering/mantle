@@ -65,11 +65,17 @@ const approvalHandlers: PollHandlers = {
       if (!row) return { ok: false, text: 'Already decided, or no longer pending.' };
       if (decision === 'reject') return { ok: true, text: `Rejected ${row.toolSlug}.` };
       if (row.error) {
-        return { ok: true, text: `Approved ${row.toolSlug} — it ran but failed: ${row.error.slice(0, 120)}` };
+        return {
+          ok: true,
+          text: `Approved ${row.toolSlug} — it ran but failed: ${row.error.slice(0, 120)}`,
+        };
       }
       return { ok: true, text: `Approved & ran ${row.toolSlug}.` };
     } catch (err) {
-      return { ok: false, text: err instanceof Error ? err.message.slice(0, 150) : 'Failed to apply.' };
+      return {
+        ok: false,
+        text: err instanceof Error ? err.message.slice(0, 150) : 'Failed to apply.',
+      };
     }
   },
 };

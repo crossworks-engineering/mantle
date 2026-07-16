@@ -13,11 +13,7 @@ export {
   type UserImage,
 } from './messages';
 
-export {
-  captureLlmUsage,
-  recordChatUsage,
-  type ChatUsageResult,
-} from './llm-usage';
+export { captureLlmUsage, recordChatUsage, type ChatUsageResult } from './llm-usage';
 
 export {
   runToolLoop,

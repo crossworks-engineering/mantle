@@ -21,7 +21,9 @@ export const mobileTokens = pgTable(
   'mobile_tokens',
   {
     /** Token id == the `jti` embedded in the signed token. */
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     userId: uuid('user_id').notNull(),
     /** Human label for the device list, e.g. "Jason's iPhone". */
     label: text('label').notNull().default('Mobile device'),

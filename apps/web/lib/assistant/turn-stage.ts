@@ -59,7 +59,10 @@ export async function currentTurnStageLabel(ownerId: string): Promise<string | n
       .orderBy(desc(traceSteps.startedAt))
       .limit(1);
     if (!stepRow) return null;
-    return stageLabelForStep(stepRow.name, (stepRow.input ?? undefined) as Record<string, unknown> | undefined);
+    return stageLabelForStep(
+      stepRow.name,
+      (stepRow.input ?? undefined) as Record<string, unknown> | undefined,
+    );
   } catch {
     return null;
   }

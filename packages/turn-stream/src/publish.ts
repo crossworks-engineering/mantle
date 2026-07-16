@@ -46,7 +46,12 @@ async function bufferTurnEvent(ownerId: string, event: TurnEvent): Promise<void>
       .insert(turnStreamBuffer)
       // `event` column is typed loosely (no client-types dep in @mantle/db); a
       // TurnEvent (a tagged union, no index signature) needs the widening cast.
-      .values({ turnId: event.turnId, seq: event.seq, ownerId, event: event as unknown as Record<string, unknown> })
+      .values({
+        turnId: event.turnId,
+        seq: event.seq,
+        ownerId,
+        event: event as unknown as Record<string, unknown>,
+      })
       .onConflictDoNothing();
     if (event.type === 'turn-start') {
       await db.delete(turnStreamBuffer).where(lt(turnStreamBuffer.createdAt, BUFFER_TTL_SQL));

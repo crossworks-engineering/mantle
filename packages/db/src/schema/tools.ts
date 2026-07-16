@@ -69,12 +69,17 @@ export type ToolHandler =
 export const tools = pgTable(
   'tools',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     slug: text('slug').notNull(),
     name: text('name').notNull(),
     description: text('description').notNull(),
-    inputSchema: jsonb('input_schema').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    inputSchema: jsonb('input_schema')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     handler: jsonb('handler').$type<ToolHandler>().notNull(),
     requiresConfirm: boolean('requires_confirm').default(false).notNull(),
     enabled: boolean('enabled').default(true).notNull(),

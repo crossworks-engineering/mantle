@@ -62,7 +62,14 @@ async function backfillAccount(
 
   if (!account.imapHost || !account.imapPort) {
     console.warn(`[backfill] ${masked}: no IMAP config; skipping`);
-    return { account: account.address, updated: 0, collision: 0, missing: 0, uidvDrift: 0, badMsgId: rows.length };
+    return {
+      account: account.address,
+      updated: 0,
+      collision: 0,
+      missing: 0,
+      uidvDrift: 0,
+      badMsgId: rows.length,
+    };
   }
 
   // Group legacy rows by IMAP folder so we can lock + range-fetch per folder
@@ -99,7 +106,10 @@ async function backfillAccount(
     logger: false,
   });
   client.on('error', (err) => {
-    console.warn(`[backfill] ${masked} imap error:`, err instanceof Error ? err.message : String(err));
+    console.warn(
+      `[backfill] ${masked} imap error:`,
+      err instanceof Error ? err.message : String(err),
+    );
   });
   await client.connect();
 
@@ -114,7 +124,10 @@ async function backfillAccount(
       try {
         lock = await client.getMailboxLock(folder);
       } catch (err) {
-        console.warn(`[backfill] ${masked}: folder ${folder} unreachable —`, err instanceof Error ? err.message : err);
+        console.warn(
+          `[backfill] ${masked}: folder ${folder} unreachable —`,
+          err instanceof Error ? err.message : err,
+        );
         missing += batch.uidToRowId.size;
         continue;
       }
@@ -123,7 +136,9 @@ async function backfillAccount(
         if (!mbox || typeof mbox === 'boolean') continue;
         const serverUidv = Number(mbox.uidValidity);
         if (serverUidv !== batch.uidvalidity) {
-          console.warn(`[backfill] ${masked}: ${folder} uidvalidity drift (${batch.uidvalidity} → ${serverUidv}); skipping ${batch.uidToRowId.size} rows`);
+          console.warn(
+            `[backfill] ${masked}: ${folder} uidvalidity drift (${batch.uidvalidity} → ${serverUidv}); skipping ${batch.uidToRowId.size} rows`,
+          );
           uidvDrift += batch.uidToRowId.size;
           continue;
         }
@@ -225,14 +240,22 @@ async function main(): Promise<void> {
   console.log('═══════════════════════════════════════════════════════════');
   console.log(' summary');
   console.log('═══════════════════════════════════════════════════════════');
-  let tu = 0, tc = 0, tm = 0, tdu = 0, tb = 0;
+  let tu = 0,
+    tc = 0,
+    tm = 0,
+    tdu = 0,
+    tb = 0;
   for (const r of results) {
     console.log(
       `  ${maskEmail(r.account).padEnd(28)} updated=${r.updated.toString().padStart(4)} ` +
         `collision=${r.collision.toString().padStart(4)} missing=${r.missing.toString().padStart(4)} ` +
         `uidvDrift=${r.uidvDrift.toString().padStart(4)} badMsgId=${r.badMsgId.toString().padStart(4)}`,
     );
-    tu += r.updated; tc += r.collision; tm += r.missing; tdu += r.uidvDrift; tb += r.badMsgId;
+    tu += r.updated;
+    tc += r.collision;
+    tm += r.missing;
+    tdu += r.uidvDrift;
+    tb += r.badMsgId;
   }
   console.log('  ' + '─'.repeat(82));
   console.log(
@@ -250,8 +273,11 @@ async function main(): Promise<void> {
     })
     .from(emails);
   if (coverage) {
-    const pct = coverage.total > 0 ? Math.round((coverage.with_rfc * 1000) / coverage.total) / 10 : 0;
-    console.log(`  coverage: ${coverage.with_rfc}/${coverage.total} rows have rfc_message_id (${pct}%)`);
+    const pct =
+      coverage.total > 0 ? Math.round((coverage.with_rfc * 1000) / coverage.total) / 10 : 0;
+    console.log(
+      `  coverage: ${coverage.with_rfc}/${coverage.total} rows have rfc_message_id (${pct}%)`,
+    );
   }
 
   await conn.end();

@@ -17,7 +17,13 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { apiSend, ApiError } from '@/lib/api-fetch';
 import { formatDateTime } from '@/lib/format-datetime';
-import { SecretForm, type Field, type Kind, type SecretBody, type SecretFormValues } from './secret-form';
+import {
+  SecretForm,
+  type Field,
+  type Kind,
+  type SecretBody,
+  type SecretFormValues,
+} from './secret-form';
 import { copyText } from '@/lib/secure-context-fallbacks';
 
 export type SecretRow = {
@@ -189,7 +195,10 @@ export function SecretDetail({
           {meta.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">
               {meta.tags.map((t) => (
-                <span key={t} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                <span
+                  key={t}
+                  className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                >
                   {t}
                 </span>
               ))}
@@ -236,7 +245,10 @@ export function SecretDetail({
               {revealed.fields.map((f, i) => {
                 const visible = visibleIdx.has(i);
                 return (
-                  <div key={i} className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0">
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0"
+                  >
                     <div className="w-32 shrink-0 truncate text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       {f.label || '(unlabeled)'}
                     </div>
@@ -257,7 +269,11 @@ export function SecretDetail({
                       className="text-muted-foreground hover:text-foreground"
                       aria-label="Copy"
                     >
-                      {copiedIdx === i ? <Check className="size-4 text-emerald-600" /> : <Copy className="size-4" />}
+                      {copiedIdx === i ? (
+                        <Check className="size-4 text-emerald-600" />
+                      ) : (
+                        <Copy className="size-4" />
+                      )}
                     </button>
                   </div>
                 );

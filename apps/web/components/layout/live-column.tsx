@@ -2,13 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import {
-  Activity,
-  AlertCircle,
-  CheckCircle2,
-  Loader2,
-  PanelRight,
-} from 'lucide-react';
+import { Activity, AlertCircle, CheckCircle2, Loader2, PanelRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatMicroUsd } from '@/lib/traces-format';
 import { ActionIcon } from '@/components/journey/action-icon';
@@ -56,13 +50,7 @@ function ElapsedTimer({ startedAt }: { startedAt: string }) {
   return <>{formatElapsed(ageSeconds(startedAt))}</>;
 }
 
-export function LiveColumn({
-  collapsed,
-  onToggle,
-}: {
-  collapsed: boolean;
-  onToggle: () => void;
-}) {
+export function LiveColumn({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { data, loaded, tick } = useLiveActivity();
   void tick; // re-render cue for relative timestamps
   const active = data?.active ?? [];
@@ -86,7 +74,10 @@ export function LiveColumn({
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div className="flex items-center gap-2">
               <Activity
-                className={cn('size-4', live ? 'animate-pulse text-emerald-500' : 'text-muted-foreground')}
+                className={cn(
+                  'size-4',
+                  live ? 'animate-pulse text-emerald-500' : 'text-muted-foreground',
+                )}
                 aria-hidden
               />
               <h2 className="text-sm font-semibold">Activity</h2>
@@ -109,7 +100,9 @@ export function LiveColumn({
               <div className="flex flex-col items-center justify-center px-4 py-12 text-center text-sm text-muted-foreground">
                 <Activity className="mb-3 size-10 opacity-30" aria-hidden />
                 <p className="font-medium">No recent activity</p>
-                <p className="mt-1 text-xs">Agent runs, ingests, and heartbeats will stream in here.</p>
+                <p className="mt-1 text-xs">
+                  Agent runs, ingests, and heartbeats will stream in here.
+                </p>
               </div>
             ) : (
               <>
@@ -122,8 +115,14 @@ export function LiveColumn({
                           <div className="flex items-center gap-2">
                             {/* Always spinning — a long-running process is busy,
                                 not broken; the elapsed timer shows progress. */}
-                            <Loader2 className="size-3.5 shrink-0 animate-spin text-emerald-500" aria-hidden />
-                            <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-muted-foreground" />
+                            <Loader2
+                              className="size-3.5 shrink-0 animate-spin text-emerald-500"
+                              aria-hidden
+                            />
+                            <ActionIcon
+                              iconKey={it.iconKey}
+                              className="size-3.5 shrink-0 text-muted-foreground"
+                            />
                             <span className="truncate text-sm font-medium">{it.label}</span>
                             <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                               <ElapsedTimer startedAt={it.startedAt} />
@@ -144,7 +143,10 @@ export function LiveColumn({
                       <Row key={it.traceId} it={it}>
                         <div className="flex items-center gap-2">
                           <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
-                          <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-destructive" />
+                          <ActionIcon
+                            iconKey={it.iconKey}
+                            className="size-3.5 shrink-0 text-destructive"
+                          />
                           <span className="truncate text-sm font-medium">{it.label}</span>
                           <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                             {relativeTime(it.startedAt)}
@@ -163,7 +165,10 @@ export function LiveColumn({
                       return (
                         <Row key={it.traceId} it={it}>
                           <div className="flex items-center gap-2">
-                            <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-muted-foreground" />
+                            <ActionIcon
+                              iconKey={it.iconKey}
+                              className="size-3.5 shrink-0 text-muted-foreground"
+                            />
                             <span className="truncate text-sm font-medium">{it.label}</span>
                             <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                               {relativeTime(it.startedAt)}
@@ -248,9 +253,7 @@ function CollapsedRail({
         icon={<CheckCircle2 className="size-4 text-muted-foreground" aria-hidden />}
       />
 
-      {idle && (
-        <Activity className="mt-1 size-4 text-muted-foreground opacity-30" aria-hidden />
-      )}
+      {idle && <Activity className="mt-1 size-4 text-muted-foreground opacity-30" aria-hidden />}
     </div>
   );
 }

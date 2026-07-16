@@ -139,7 +139,11 @@ async function queryActivity(
     .from(traces)
     .leftJoin(
       nodes,
-      and(eq(traces.subjectId, nodes.id), eq(traces.subjectKind, sql`'node'`), eq(nodes.ownerId, userId)),
+      and(
+        eq(traces.subjectId, nodes.id),
+        eq(traces.subjectKind, sql`'node'`),
+        eq(nodes.ownerId, userId),
+      ),
     )
     .where(and(eq(traces.ownerId, userId), ...extraConds))
     .orderBy(desc(traces.startedAt))
@@ -198,7 +202,9 @@ export async function reapAbandonedTraces(userId: string): Promise<number> {
       finishedAt: new Date(),
       durationMs: sql`(extract(epoch from (now() - ${traces.startedAt})) * 1000)::int`,
     })
-    .where(and(eq(traces.ownerId, userId), eq(traces.status, 'running'), lt(traces.startedAt, cutoff)))
+    .where(
+      and(eq(traces.ownerId, userId), eq(traces.status, 'running'), lt(traces.startedAt, cutoff)),
+    )
     .returning({ id: traces.id });
   return rows.length;
 }
@@ -260,9 +266,7 @@ async function loadLanded(userId: string, nodeId: string): Promise<LandedLayers 
     })
     .from(facts)
     .leftJoin(entities, eq(facts.entityId, entities.id))
-    .where(
-      and(eq(facts.ownerId, userId), eq(facts.sourceNodeId, nodeId), isNull(facts.validTo)),
-    )
+    .where(and(eq(facts.ownerId, userId), eq(facts.sourceNodeId, nodeId), isNull(facts.validTo)))
     .limit(50);
 
   const mentionRows = await db
@@ -288,7 +292,9 @@ async function loadLanded(userId: string, nodeId: string): Promise<LandedLayers 
     .from(entityEdges)
     .innerJoin(subjEnt, eq(entityEdges.sourceId, subjEnt.id))
     .innerJoin(objEnt, eq(entityEdges.targetId, objEnt.id))
-    .where(and(eq(entityEdges.ownerId, userId), sql`${entityEdges.data}->>'source_node_id' = ${nodeId}`))
+    .where(
+      and(eq(entityEdges.ownerId, userId), sql`${entityEdges.data}->>'source_node_id' = ${nodeId}`),
+    )
     .limit(50);
 
   return {
