@@ -9,7 +9,13 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 
-type ShareInfo = { id: string; token: string; path: string; mode?: 'public' | 'team' } | null;
+type ShareInfo = {
+  id: string;
+  token: string;
+  path: string;
+  mode?: 'public' | 'team';
+  cascade?: boolean;
+} | null;
 
 /**
  * Owner control for read-only public sharing of a node. A popover with a single
@@ -22,6 +28,10 @@ type ShareInfo = { id: string; token: string; path: string; mode?: 'public' | 't
  * /s/ surface enforces it). `teamHint` tailors the toggle's explanation —
  * apps pass their tools/data warning; content kinds use the default.
  * Team-shared PAGES also appear on the /team hub as briefing cards.
+ *
+ * `allowCascade` (pages) adds a "Share sub-pages" toggle when the page has
+ * descendants: on shares the whole subtree at this page's mode; off (or
+ * un-sharing the page) revokes the child links. See docs/sharing.md.
  */
 export function ShareControl({
   nodeId,
@@ -29,6 +39,7 @@ export function ShareControl({
   beforeEnable,
   teamMode = false,
   teamHint = 'Visitors must enter their team token to open the link. Team-shared pages appear on the Team Hub.',
+  allowCascade = false,
 }: {
   nodeId: string;
   iconOnly?: boolean;
@@ -40,12 +51,15 @@ export function ShareControl({
   teamMode?: boolean;
   /** Explanation under the team toggle (kind-specific consequences). */
   teamHint?: string;
+  /** Offer the "Share sub-pages" subtree toggle (pages with children). */
+  allowCascade?: boolean;
 }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [share, setShare] = useState<ShareInfo>(null);
+  const [childCount, setChildCount] = useState(0);
   const [copied, setCopied] = useState(false);
 
   const absoluteUrl =
@@ -53,11 +67,12 @@ export function ShareControl({
 
   const load = useCallback(async () => {
     try {
-      const data = await apiFetch<{ share: ShareInfo }>(
+      const data = await apiFetch<{ share: ShareInfo; childCount?: number }>(
         `/api/shares?nodeId=${encodeURIComponent(nodeId)}`,
         { cache: 'no-store' },
       );
       setShare(data.share);
+      setChildCount(data.childCount ?? 0);
     } catch {
       // best-effort; the toggle still works
     } finally {
@@ -111,6 +126,28 @@ export function ShareControl({
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
       toast.error(e instanceof Error ? e.message : 'Could not change who can open the link');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setCascade = async (next: boolean) => {
+    if (!share) return;
+    setBusy(true);
+    try {
+      const d = await apiSend<{ count?: number }>('/api/shares/cascade', 'POST', {
+        nodeId,
+        on: next,
+      });
+      setShare({ ...share, cascade: next });
+      toast.success(
+        next
+          ? `Shared ${d.count ?? childCount} sub-page${(d.count ?? childCount) === 1 ? '' : 's'}`
+          : 'Sub-pages unshared',
+      );
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return; // already bounced to /login
+      toast.error(e instanceof Error ? e.message : 'Could not share the sub-pages');
     } finally {
       setBusy(false);
     }
@@ -170,6 +207,24 @@ export function ShareControl({
                 disabled={busy}
                 onCheckedChange={(v) => void setMode(v)}
                 aria-label="Require a team token"
+              />
+            </div>
+          )}
+
+          {share && allowCascade && childCount > 0 && (
+            <div className="flex items-start justify-between gap-3 border-t border-border pt-3">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium">Share sub-pages</p>
+                <p className="text-xs text-muted-foreground">
+                  Also share the {childCount} page{childCount === 1 ? '' : 's'} nested under this
+                  one. They match this page&rsquo;s setting above; turn off to unshare them all.
+                </p>
+              </div>
+              <Switch
+                checked={!!share.cascade}
+                disabled={busy}
+                onCheckedChange={(v) => void setCascade(v)}
+                aria-label="Share sub-pages"
               />
             </div>
           )}

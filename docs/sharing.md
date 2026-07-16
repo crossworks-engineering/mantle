@@ -172,8 +172,35 @@ view"* toggle → mint token → show URL + **Copy** → **Revoke** (and, P4, ex
 "allow search engines"). API (owner-scoped via `requireOwner`):
 
 - `POST /api/shares` `{ nodeId }` → `{ token, url }`
-- `DELETE /api/shares/[id]` → revoke
-- `GET /api/shares?nodeId=` → current active link (if any)
+- `DELETE /api/shares/[id]` → revoke (cascades to the subtree if the share does — §7b)
+- `PATCH /api/shares/[id]` `{ mode }` → public/team admission (cascades if the share does)
+- `GET /api/shares?nodeId=` → current active link (if any) + `childCount` (descendant pages)
+- `POST /api/shares/cascade` `{ nodeId, on }` → turn subtree sharing on/off (§7b)
+
+---
+
+## 7b. Sharing a page's subtree — "Share sub-pages"
+
+A page's Share popover shows a third toggle, **Share sub-pages**, whenever the
+page has descendant pages (`teamMode` pages via `<ShareControl allowCascade>`).
+Turning it on shares every descendant page; turning it off — or un-sharing the
+parent — revokes those child links. Children **mirror the parent's mode**: flip
+the parent public↔team and the shared children follow.
+
+- **Intent lives on the parent share:** `settings.cascade = true`
+  (`shareCascadeOf`). Children are ordinary shares; the flag is what makes mode
+  changes and un-share propagate. No schema change (jsonb `settings`).
+- **Snapshot, not live:** toggling on shares the pages that exist at that moment
+  (descendants via the `parent_id` recursion, `listPageDescendantIds`). A page
+  added later isn't auto-shared — re-toggle to pick it up.
+- **Helpers** (`packages/content/src/shares.ts`): `setShareCascade(ownerId,
+  parentNodeId, on)`, and the cascade-aware drop-ins `applyShareMode` /
+  `revokeShareTree` used by the PATCH / DELETE routes.
+- **Hub interaction:** team-mode pages are hub cards, so `listTeamHubSections`
+  surfaces only the **top-most** team-shared page of a subtree — a descendant of
+  another team-shared page is left off (still openable via its own link, e.g.
+  from within the parent). Otherwise cascade-sharing a doc index would turn every
+  sub-document into its own card.
 
 ---
 
