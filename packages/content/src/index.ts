@@ -299,7 +299,7 @@ export {
 
 export { evalFormula } from './table-formula';
 
-export { tableToText, formatCellText } from './table-to-text';
+export { tableToText, tableToCsv, formatCellText } from './table-to-text';
 
 export {
   listRows,

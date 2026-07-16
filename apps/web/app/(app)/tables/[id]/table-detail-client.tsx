@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { ExportButton } from '@/components/export/export-button';
+import { ExportMenu } from '@/components/export/export-menu';
 import { TableGrid } from '@/components/table-grid/table-grid';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import { diffTableDocs, ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
@@ -457,7 +457,7 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
           <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={importing}>
             {importing ? <Loader2 className="animate-spin" /> : <Upload />} Import
           </Button>
-          <ExportButton nodeId={initial.id} label="Excel" />
+          <ExportMenu nodeId={initial.id} kind="table" />
           {dirty && (
             <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => void discard()}>
               <Undo2 /> Discard

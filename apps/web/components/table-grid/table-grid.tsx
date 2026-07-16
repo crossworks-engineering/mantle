@@ -459,6 +459,9 @@ function HeaderCell({
   // Reference columns need a workbook to point into — offered only when we
   // have the tab list + a server-backed table (legacy JSONB tables don't).
   const canReference = !!tableId && !!tabs && tabs.length > 0;
+  // Only worth offering "Select column" when there's ANOTHER tab to pull
+  // values from — a lone tab has no source to link to.
+  const hasOtherTab = (tabs ?? []).some((t) => t.id !== activeTabId);
   const linked = col.type === 'reference' && !!col.ref;
   const linkMode: RefMode = col.refMode ?? 'select';
   // A linked column presents as its mode (select→list, checkbox→check); the
@@ -555,10 +558,10 @@ function HeaderCell({
               </DropdownMenuRadioGroup>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
-          {canReference && !linked && (
+          {canReference && !linked && hasOtherTab && (
             <DropdownMenuItem className={MENU_RADIO_ITEM} onSelect={() => setRefDlgOpen(true)}>
               <Link2 className="mr-2 size-3.5" aria-hidden />
-              Link column…
+              Select column
             </DropdownMenuItem>
           )}
           <DropdownMenuSub>
@@ -676,7 +679,7 @@ function ReferenceColumnDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{currentRef ? 'Change linked source' : 'Link column'}</DialogTitle>
+          <DialogTitle>{currentRef ? 'Change linked source' : 'Select column'}</DialogTitle>
           <DialogDescription>
             This column offers values from another tab’s column — picked values are copied as plain text (a convenience
             picker, not a live link).
@@ -741,7 +744,7 @@ function ReferenceColumnDialog({
               disabled={!tabId || !colId}
               onClick={() => tabId && colId && onConfirm({ tabId, columnId: colId })}
             >
-              {currentRef ? 'Change source' : 'Link column'}
+              {currentRef ? 'Change source' : 'Select column'}
             </Button>
           </div>
         </div>

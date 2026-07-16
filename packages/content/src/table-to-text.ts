@@ -55,6 +55,40 @@ export function formatCellText(value: CellValue, col: Column): string {
   }
 }
 
+/** RFC-4180 field: quote when it contains a comma, quote, CR/LF, or edge
+ *  whitespace; escape embedded quotes by doubling. */
+function csvField(s: string): string {
+  if (s === '') return '';
+  return /[",\r\n]/.test(s) || s !== s.trim() ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** Render a TableDoc to CSV (RFC 4180, CRLF rows): header, every data row
+ *  (formula columns resolved, typed cells formatted), and a trailing Totals row
+ *  when any column carries an aggregate. Pure, no DB. The title is NOT a row —
+ *  it lives in the download filename. */
+export function tableToCsv(doc: TableDoc): string {
+  const { columns } = doc;
+  if (columns.length === 0) return '';
+  const rows = applyView(doc, null); // document order, all rows
+  const lines: string[] = [];
+  lines.push(columns.map((c) => csvField(c.name)).join(','));
+  for (const row of rows) {
+    lines.push(columns.map((c) => csvField(formatCellText(resolveCell(doc, row, c), c))).join(','));
+  }
+  const aggregates = doc.aggregates ?? {};
+  if (Object.keys(aggregates).length > 0) {
+    const totals = columns.map((c, idx) => {
+      const kind = aggregates[c.id];
+      if (!kind || kind === 'none') return idx === 0 ? 'Totals' : '';
+      const v = computeAggregate(doc, c.id, kind, rows);
+      return v === null ? '' : formatCellText(v, c.type === 'formula' ? { ...c, type: 'number' } : c);
+    });
+    if (totals[0] === '') totals[0] = 'Totals';
+    lines.push(totals.map(csvField).join(','));
+  }
+  return lines.join('\r\n');
+}
+
 export function tableToText(doc: TableDoc, opts: { title?: string } = {}): string {
   const { columns } = doc;
   if (columns.length === 0) return opts.title ?? '';

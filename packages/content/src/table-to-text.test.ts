@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { setAggregate, type TableDoc } from './table-model';
-import { formatCellText, tableToText } from './table-to-text';
+import { formatCellText, tableToText, tableToCsv } from './table-to-text';
 
 function grid(): TableDoc {
   return {
@@ -50,5 +50,34 @@ describe('tableToText', () => {
     const text = tableToText(withTotal);
     expect(text).toContain('Totals');
     expect(text).toContain('sum: 5');
+  });
+});
+
+describe('tableToCsv', () => {
+  it('renders header + rows with resolved formulas, CRLF-separated', () => {
+    const csv = tableToCsv(grid());
+    const lines = csv.split('\r\n');
+    expect(lines[0]).toBe('Item,Qty,Price,Total');
+    expect(lines[1]).toBe('Widget,2,USD 9.50,19');
+  });
+
+  it('RFC-4180 quotes fields with commas/quotes and does NOT escape pipes', () => {
+    const doc = grid();
+    doc.rows[0] = { id: 'r1', cells: { c_item: 'a, "b"', c_qty: 1, c_price: 2 } };
+    const line = tableToCsv(doc).split('\r\n')[1]!;
+    expect(line.startsWith('"a, ""b""",1,')).toBe(true);
+    // pipes are a markdown concern, not CSV — left as-is
+    expect(tableToCsv(grid())).toContain('Gadget | special');
+  });
+
+  it('appends a Totals row only when an aggregate is set (value only, no "kind:")', () => {
+    expect(tableToCsv(grid())).not.toContain('Totals');
+    const csv = tableToCsv(setAggregate(grid(), 'c_qty', 'sum'));
+    const last = csv.split('\r\n').pop()!;
+    expect(last).toBe('Totals,5,,');
+  });
+
+  it('empty table → empty string', () => {
+    expect(tableToCsv({ columns: [], rows: [], aggregates: {}, views: [] })).toBe('');
   });
 });
