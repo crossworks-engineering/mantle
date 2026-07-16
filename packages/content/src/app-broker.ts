@@ -12,13 +12,41 @@
  * so it stays out of client/edge bundles.
  */
 import { mkdir, rm, stat } from 'node:fs/promises';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, appDatabases } from '@mantle/db';
 
 /** Root dir for per-app SQLite files. A dedicated volume in prod (see compose);
- *  defaults under the repo/cwd in dev. One file per app: <root>/<owner>/<app>.sqlite */
-const ROOT = process.env.APP_DB_DIR ?? path.join(process.cwd(), '.app-dbs');
+ *  one file per app: <root>/<owner>/<app>.sqlite. When APP_DB_DIR is unset
+ *  (bare full-stack dev) anchor to a SINGLE monorepo-root `.app-dbs` so every
+ *  workspace process resolves the same directory — a cwd-relative default
+ *  splits web (cwd apps/web) and api (cwd apps/api) into two roots, the same
+ *  split-brain that hit table-dbs (see packages/tabledb/src/paths.ts). */
+let cachedRoot: string | undefined;
+function appDbRoot(): string {
+  if (cachedRoot) return cachedRoot;
+  const env = process.env.APP_DB_DIR;
+  if (env) return (cachedRoot = env);
+  let dir: string;
+  try {
+    dir = path.dirname(fileURLToPath(import.meta.url));
+  } catch {
+    dir = process.cwd();
+  }
+  let root = process.cwd();
+  for (let cur = dir; ; ) {
+    if (fs.existsSync(path.join(cur, 'pnpm-workspace.yaml'))) {
+      root = cur;
+      break;
+    }
+    const parent = path.dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
+  return (cachedRoot = path.join(root, '.app-dbs'));
+}
 
 export type AppDbSchema = { schemaSql: string; schemaVersion: number };
 export type DbRows = Record<string, unknown>[];
@@ -150,7 +178,7 @@ async function ensureRegistry(
     .limit(1);
   if (!app) throw new Error(`app ${appNodeId} not found`);
 
-  const storagePath = path.join(ROOT, ownerId, `${appNodeId}.sqlite`);
+  const storagePath = path.join(appDbRoot(), ownerId, `${appNodeId}.sqlite`);
   await mkdir(path.dirname(storagePath), { recursive: true });
   await db
     .insert(appDatabases)
@@ -181,7 +209,24 @@ export async function ensureAppDatabase(
     assertSafeScript(schema.schemaSql);
     const handle = await openSqlite(reg.storagePath);
     try {
-      handle.exec(schema.schemaSql);
+      // Apply the whole DDL atomically. SQLite autocommits each statement, so a
+      // bare multi-statement exec that fails on statement 3 leaves 1–2
+      // committed while schemaVersion stays old — the next open re-runs the
+      // full script and now trips on the already-created table, bricking the
+      // app until someone hand-writes guarded DDL. A wrapping transaction makes
+      // it all-or-nothing (SQLite DDL is transactional).
+      handle.exec('BEGIN IMMEDIATE');
+      try {
+        handle.exec(schema.schemaSql);
+        handle.exec('COMMIT');
+      } catch (err) {
+        try {
+          handle.exec('ROLLBACK');
+        } catch {
+          /* already rolled back by the failing statement */
+        }
+        throw err;
+      }
     } finally {
       handle.close();
     }

@@ -41,6 +41,32 @@ function resolveCwd(override?: unknown): string {
   return process.env.MANTLE_TERMINAL_CWD || process.cwd();
 }
 
+/**
+ * Env passed to the child shell. This tool feeds stdout/stderr straight back to
+ * the model, so a single `env`/`printenv` would otherwise exfiltrate the at-rest
+ * encryption key (and every API key) in one call — collapsing the whole
+ * encryption story to "don't grant this tool". We drop the crypto/session/db
+ * roots by exact name and anything whose name looks secret-shaped
+ * (SECRET/KEY/TOKEN/PASSWORD/CREDENTIAL/PRIVATE), while keeping PATH, HOME,
+ * NODE_*, PNPM_*, etc. so git/pnpm/builds still run. An allowlist was rejected —
+ * it breaks too many legit toolchains; this denylist closes the exfil path
+ * without changing what commands work. */
+const SECRET_ENV_EXACT = new Set([
+  'MANTLE_MASTER_KEY',
+  'MANTLE_MASTER_KEY_NEXT',
+  'SESSION_SECRET',
+  'DATABASE_URL',
+  'DIRECT_DATABASE_URL',
+]);
+const SECRET_ENV_PATTERN = /(secret|token|password|passwd|credential|private_key|api_?key)/i;
+export function sanitizedEnv(): NodeJS.ProcessEnv {
+  const out = { ...process.env };
+  for (const k of Object.keys(out)) {
+    if (SECRET_ENV_EXACT.has(k) || SECRET_ENV_PATTERN.test(k)) delete out[k];
+  }
+  return out;
+}
+
 function truncate(s: string): { text: string; truncated: boolean } {
   if (s.length <= OUTPUT_CAP) return { text: s, truncated: false };
   return { text: `${s.slice(0, OUTPUT_CAP)}\n…[truncated ${s.length - OUTPUT_CAP} chars]`, truncated: true };
@@ -90,7 +116,7 @@ const run_terminal: BuiltinToolDef = {
     return await new Promise<ToolHandlerResult>((resolve) => {
       exec(
         command,
-        { cwd, timeout: timeoutS * 1000, maxBuffer: MAX_BUFFER, shell: '/bin/bash', env: process.env },
+        { cwd, timeout: timeoutS * 1000, maxBuffer: MAX_BUFFER, shell: '/bin/bash', env: sanitizedEnv() },
         (err, stdout, stderr) => {
           const durationMs = Date.now() - started;
           const out = truncate(String(stdout));

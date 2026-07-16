@@ -117,7 +117,15 @@ export async function deleteSubscriptionByRoutingToken(routingToken: string): Pr
 }
 
 export async function markPushed(id: string): Promise<void> {
-  await db.update(pushSubscriptions).set({ lastPushAt: new Date() }).where(eq(pushSubscriptions.id, id));
+  // Called fire-and-forget (`void markPushed(...)`) from the delivery loop, so
+  // swallow transient DB errors here rather than surfacing an unhandled
+  // rejection that could crash the worker mid-batch. lastPushAt is a
+  // best-effort recency marker; a missed update is harmless.
+  try {
+    await db.update(pushSubscriptions).set({ lastPushAt: new Date() }).where(eq(pushSubscriptions.id, id));
+  } catch (err) {
+    console.error('[push] markPushed failed (non-fatal):', err);
+  }
 }
 
 // --- Preferences (single row; per-trigger toggles) ---

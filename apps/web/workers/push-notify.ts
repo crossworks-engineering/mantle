@@ -89,6 +89,14 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 }
 
+// Keep-alive backstop, matching calendar-sync/microsoft-sync/docs-sync: a
+// transient rejection mid-delivery (e.g. a Postgres blip on markPushed) must
+// not let Node's default handler kill the worker and drop the rest of the
+// batch. Log and stay up; the next wake event re-drives.
+process.on('unhandledRejection', (reason) => {
+  console.error('[push-notify] unhandledRejection (kept alive):', reason);
+});
+
 main().catch((err) => {
   console.error(err);
   process.exit(1);

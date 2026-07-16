@@ -37,6 +37,7 @@ import { eq, sql } from 'drizzle-orm';
 import { db, profiles } from '@mantle/db';
 import { loadProfilePreferences } from './profile-preferences';
 import { snapshotAllTableDatabases } from './table-storage';
+import { snapshotAllAppDatabases } from './app-broker';
 
 export type BackupFrequency = 'daily' | 'weekly';
 
@@ -69,6 +70,11 @@ export type BackupStatus = {
    *  gate 2). failed>0 is surfaced in the settings card — a backup that
    *  silently skips a workbook is the gap this closes. */
   tableDbs?: { snapshotted: number; missing: number; failed: number };
+  /** Per-app mini-app SQLite databases snapshotted beside the dump. Same
+   *  durability gate as tableDbs: these live on their own volume, so pg_dump
+   *  alone misses them and a scheduled backup would silently omit all app
+   *  data (e.g. a Team Hub app's DB) without this pass. */
+  appDbs?: { snapshotted: number; missing: number; failed: number };
 };
 
 export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
@@ -326,14 +332,35 @@ async function runBackupInner(
     console.error(`[backup] ⚠ table-workbook snapshot pass crashed: ${msg(err)}`);
   }
 
+  // Per-app mini-app databases (durability gate 3): same VACUUM INTO snapshot,
+  // same timestamp + rotation as table-dbs. These live on their own volume, so
+  // pg_dump alone misses them — without this pass a SCHEDULED backup silently
+  // omits all app data (only the manual db-dump.sh path snapshotted them
+  // before). Loud but non-fatal, counts surfaced in the status.
+  let appDbs: BackupStatus['appDbs'];
+  try {
+    const r = await snapshotAllAppDatabases(path.join(dir, `mantle-app-dbs-${ts}`));
+    appDbs = { snapshotted: r.snapshotted.length, missing: r.missing.length, failed: r.failed.length };
+    if (r.failed.length > 0 || r.missing.length > 0) {
+      console.error(
+        `[backup] ⚠ app databases: ${r.failed.map((f) => `${f.appNodeId}: ${f.error}`).join('; ')}` +
+          `${r.missing.length ? ` · missing files: ${r.missing.map((m) => m.appNodeId).join(', ')}` : ''}`,
+      );
+    }
+  } catch (err) {
+    appDbs = { snapshotted: 0, missing: 0, failed: -1 };
+    console.error(`[backup] ⚠ app-database snapshot pass crashed: ${msg(err)}`);
+  }
+
   // Rotate: newest `keep` survive — dumps AND their table-db sibling dirs.
   // Only our own mantle-* names are candidates, so manual files in the same
   // directory are never touched.
   const existing = await listBackups(cfg);
   for (const old of existing.slice(Math.max(1, cfg.keep))) {
     await unlink(path.join(dir, old.name)).catch(() => {});
-    const sibling = path.join(dir, `mantle-table-dbs-${old.name.replace(/^mantle-/, '').replace(/\.dump$/, '')}`);
-    await rm(sibling, { recursive: true, force: true }).catch(() => {});
+    const stamp = old.name.replace(/^mantle-/, '').replace(/\.dump$/, '');
+    await rm(path.join(dir, `mantle-table-dbs-${stamp}`), { recursive: true, force: true }).catch(() => {});
+    await rm(path.join(dir, `mantle-app-dbs-${stamp}`), { recursive: true, force: true }).catch(() => {});
   }
 
   const finishedAt = new Date().toISOString();
@@ -346,6 +373,7 @@ async function runBackupInner(
     trigger,
     lastSuccessAt: finishedAt,
     ...(tableDbs ? { tableDbs } : {}),
+    ...(appDbs ? { appDbs } : {}),
   };
   console.log(
     `[backup] ✔ ${path.basename(finalPath)} (${Math.round(size / 1024 / 1024)}MB, ${status.durationMs}ms, ${trigger})`,

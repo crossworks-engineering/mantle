@@ -9,7 +9,16 @@
  * and harvest a resolved `{{secret:…}}` plaintext. We follow redirects
  * ourselves, replicate the platform's by-name stripping AND drop any header
  * whose value carries a resolved secret once the origin changes.
+ *
+ * SSRF: this is the RUNTIME dispatch path for `http` api-tools (secret-bearing),
+ * so it must apply the same egress guard as web_fetch/api_tool_test — otherwise
+ * SSRF is enforced only at authoring/test time (guardedFetch) and a model-fillable
+ * host, or a public endpoint that 302s to 169.254.169.254, reaches internal
+ * services at execution time. We run assertFetchableUrl on the initial URL and
+ * on every redirect target before connecting.
  */
+
+import { assertFetchableUrl } from './ssrf-guard';
 
 const MAX_REDIRECTS = 5;
 
@@ -27,6 +36,9 @@ export async function safeFetch(
   url: string,
   init: RequestInit,
   secretValues: string[],
+  // Injectable ONLY so the redirect/secret-stripping tests can drive loopback
+  // servers; every production caller takes the default real egress guard.
+  guard: (u: string) => Promise<void> = assertFetchableUrl,
 ): Promise<Response> {
   const carriers = secretValues.filter((s) => s.length > 0);
   let currentUrl = url;
@@ -35,6 +47,7 @@ export async function safeFetch(
   let body = init.body;
 
   for (let hop = 0; ; hop++) {
+    await guard(currentUrl);
     const res = await fetch(currentUrl, { ...init, method, headers, body, redirect: 'manual' });
     if (res.status < 300 || res.status >= 400) return res;
 

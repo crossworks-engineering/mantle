@@ -67,6 +67,16 @@ volumes:
   # — a host bind there buys nothing and risks breaking the socket.
   mantle_tailscale_sock:
 
+# Log rotation for every service — Docker's default json-file driver grows
+# unbounded, so a crash-looping worker or chatty extract run can fill the disk
+# and take Postgres (and the whole brain) down with it. Cap each container's
+# logs at 3×10 MB. Applied via `logging: *default-logging` on every service.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 # Shared env block for app services — anchor + alias keeps the app
 # services in lockstep.
 x-app-env: &app-env
@@ -162,6 +172,7 @@ services:
     image: pgvector/pgvector:pg17
     container_name: mantle_pg
     restart: unless-stopped
+    logging: *default-logging
     # Headroom above the default 100: the full stack (web + agent + 4 workers,
     # each a postgres-js pool, plus pg-boss + web SSE LISTEN conns) sits ~50 at
     # idle and climbs under load. A crash-looping service can briefly double its
@@ -188,6 +199,7 @@ services:
     image: minio/minio:latest
     container_name: mantle_minio
     restart: unless-stopped
+    logging: *default-logging
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minio}
@@ -234,6 +246,7 @@ services:
     image: apache/tika:3.3.0.0
     container_name: mantle_tika
     restart: unless-stopped
+    logging: *default-logging
     environment:
       # Cap JVM heap so Tika can't balloon on a malicious or pathological
       # document, while leaving headroom for legitimately large Office files.
@@ -271,6 +284,7 @@ services:
     image: ghcr.io/browserless/chromium:v2.54.2
     container_name: mantle_browser
     restart: unless-stopped
+    logging: *default-logging
     environment:
       TOKEN: ${BROWSER_TOKEN:-mantle}
       # Two concurrent renders + a small queue covers a team clicking Download;
@@ -293,6 +307,7 @@ services:
     image: ollama/ollama:latest
     container_name: mantle_ollama
     restart: unless-stopped
+    logging: *default-logging
     # OPT-IN. The local embedder only starts with `--profile local-embedder`.
     # Online embedding (set up in onboarding) is the default; by default this
     # service does NOT run and NO app service waits on it — so a fresh box boots
@@ -343,6 +358,7 @@ services:
     image: tailscale/tailscale:${TS_IMAGE_TAG:-v1.98.4}
     container_name: mantle_tailscale
     restart: unless-stopped
+    logging: *default-logging
     entrypoint:
       - tailscaled
       - --tun=userspace-networking
@@ -391,6 +407,7 @@ services:
         MANTLE_BUILD_TIME: ${MANTLE_BUILD_TIME:-}
     container_name: mantle_web
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -443,6 +460,7 @@ services:
     image: caddy:2-alpine
     container_name: mantle_caddy
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       web: { condition: service_healthy }
     ports:
@@ -471,6 +489,7 @@ services:
     image: docker:28-cli
     container_name: mantle_updater
     restart: unless-stopped
+    logging: *default-logging
     entrypoint: ["sh", "/updater.sh"]
     environment:
       MANTLE_STACK_DIR: ${MANTLE_STACK_DIR:-}
@@ -491,6 +510,7 @@ services:
     command: ["pnpm", "-C", "apps/api", "start"]
     container_name: mantle_api
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -512,6 +532,7 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/email-sync.ts"]
     container_name: mantle_worker_email
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -525,6 +546,7 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/telegram-poll.ts"]
     container_name: mantle_worker_telegram
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -539,6 +561,7 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/microsoft-sync.ts"]
     container_name: mantle_worker_microsoft
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -554,6 +577,7 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/files-watch.ts"]
     container_name: mantle_worker_files
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -574,6 +598,7 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/docs-sync.ts"]
     container_name: mantle_worker_docs
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -587,6 +612,7 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/events-reminders.ts"]
     container_name: mantle_worker_events
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -595,6 +621,13 @@ services:
     volumes:
       # Scheduled backups land here (see MANTLE_BACKUP_DIR in x-app-env).
       - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups
+      # This worker also runs the scheduled-backup tick, which snapshots the
+      # sqlite sidecars (table-dbs + app-dbs) beside the pg_dump. Those dirs
+      # must be mounted HERE or the snapshot passes see an empty TABLE_DB_DIR/
+      # APP_DB_DIR and report every workbook/app as "missing" — a scheduled
+      # backup that silently contains no table or app data.
+      - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
+      - ${MANTLE_DATA_DIR:-./data}/app-dbs:/data/app-dbs
 
   # Calendar sync: pulls subscribed external calendars (ICS feeds; Google/MS
   # later) into the brain as event nodes. No volume — events live in Postgres.
@@ -603,6 +636,7 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/calendar-sync.ts"]
     container_name: mantle_worker_calendar
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -617,6 +651,7 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/push-notify.ts"]
     container_name: mantle_worker_push
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
