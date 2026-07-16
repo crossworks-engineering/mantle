@@ -107,7 +107,6 @@ import {
   type CellValue,
   type Column,
   type ColumnType,
-  type RefMode,
   type Row,
   type TableDoc,
 } from '@mantle/content/table-model';
@@ -227,29 +226,24 @@ export function TableGrid({
           onClearSort={() => column.clearSorting()}
           onRename={(name) => onChangeRef.current(updateColumn(docRef.current, col.id, { name }))}
           // Retype through the standard menu is never 'reference' — it UNLINKS:
-          // clear ref + refMode so a linked column becomes a clean plain column.
-          onType={(type) => onChangeRef.current(updateColumn(docRef.current, col.id, { type, ref: undefined, refMode: undefined }))}
-          // Link / change source (dialog): new links default to select; a
-          // source change on an already-linked column keeps its mode.
+          // clear the ref so a linked column becomes a clean plain column.
+          onType={(type) => onChangeRef.current(updateColumn(docRef.current, col.id, { type, ref: undefined }))}
+          // Link / change source (dialog).
           onReference={(ref) =>
             onChangeRef.current(
               updateColumn(docRef.current, col.id, {
                 type: 'reference',
                 ref,
-                refMode: col.type === 'reference' ? (col.refMode ?? 'select') : 'select',
               }),
             )
           }
-          // Switch linked mode (🔗 menu) — keeps the ref.
-          onReferenceMode={(refMode) => onChangeRef.current(updateColumn(docRef.current, col.id, { refMode }))}
-          // Delete link (🔗 menu): keep values, drop the link. A linked-checkbox
-          // stays a checkbox (boolean); a linked-select becomes plain text.
+          // Delete link (🔗 menu): keep values, drop the link — the column
+          // becomes plain text.
           onDeleteLink={() =>
             onChangeRef.current(
               updateColumn(docRef.current, col.id, {
-                type: col.refMode === 'checkbox' ? 'checkbox' : 'text',
+                type: 'text',
                 ref: undefined,
-                refMode: undefined,
               }),
             )
           }
@@ -428,7 +422,6 @@ function HeaderCell({
   onRename,
   onType,
   onReference,
-  onReferenceMode,
   onDeleteLink,
   onAggregate,
   onInsertRight,
@@ -445,7 +438,6 @@ function HeaderCell({
   onRename: (name: string) => void;
   onType: (type: ColumnType) => void;
   onReference: (ref: { tabId: string; columnId: string }) => void;
-  onReferenceMode: (mode: RefMode) => void;
   onDeleteLink: () => void;
   onAggregate: (kind: AggregateKind) => void;
   onInsertRight: () => void;
@@ -463,9 +455,8 @@ function HeaderCell({
   // values from — a lone tab has no source to link to.
   const hasOtherTab = (tabs ?? []).some((t) => t.id !== activeTabId);
   const linked = col.type === 'reference' && !!col.ref;
-  const linkMode: RefMode = col.refMode ?? 'select';
-  // A linked column presents as its mode (select→list, checkbox→check); the
-  // 🔗 to its left is what says "linked".
+  // A linked column presents as its storage type's icon; the 🔗 to its left
+  // is what says "linked".
   const TypeIcon = TYPE_ICON[linked ? storageType(col) : col.type];
   const AggIcon = aggregate !== 'none' ? AGG_ICON[aggregate] : null;
   return (
@@ -498,19 +489,6 @@ function HeaderCell({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             <DropdownMenuLabel className="text-xs text-muted-foreground">Linked column</DropdownMenuLabel>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}><Link2 className="mr-2 size-3.5" /> Mode</DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup value={linkMode} onValueChange={(v) => onReferenceMode(v as RefMode)}>
-                  <DropdownMenuRadioItem value="select" className={MENU_RADIO_ITEM}>
-                    <List className="mr-2 size-3.5" aria-hidden /> Select (one value)
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="checkbox" className={MENU_RADIO_ITEM}>
-                    <SquareCheck className="mr-2 size-3.5" aria-hidden /> Checkbox
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
             {canReference && (
               <DropdownMenuItem className={MENU_RADIO_ITEM} onSelect={() => setRefDlgOpen(true)}>
                 <ArrowUpRight className="mr-2 size-3.5" aria-hidden /> Change source…
@@ -785,10 +763,7 @@ function EditableCell({
   if (col.type === 'formula') {
     return <span className="block px-2 py-1.5 text-sm text-muted-foreground">{displayValue(value, col)}</span>;
   }
-  // A linked-CHECKBOX is a real boolean (the link only borrows the source's
-  // label); render it like any checkbox. A linked-SELECT is the source-values
-  // dropdown. Both keyed on refMode (v2.2).
-  if (col.type === 'checkbox' || (col.type === 'reference' && col.refMode === 'checkbox')) {
+  if (col.type === 'checkbox') {
     return (
       <span className="flex items-center justify-center py-1.5">
         <Checkbox checked={Boolean(rawValue)} onCheckedChange={(c) => onSet(c === true)} aria-label={col.name} />

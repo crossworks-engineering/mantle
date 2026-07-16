@@ -23,8 +23,8 @@ import type { SqliteDb } from './sqlite';
 const FTS_TYPES = new Set(['text', 'select', 'url', 'multiselect', 'date', 'datetime', 'reference']);
 
 export function ftsColumns(columns: Column[]): Column[] {
-  // A linked column indexes by its STORAGE type — a linked-checkbox is a
-  // boolean (not FTS'd), a linked-select is text (FTS'd) (v2.2).
+  // A linked column indexes by its STORAGE type — a reference stores as
+  // 'select' (text), so it is FTS'd.
   return columns.filter((c) => FTS_TYPES.has(storageType(c)));
 }
 
