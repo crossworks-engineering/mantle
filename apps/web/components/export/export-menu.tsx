@@ -1,6 +1,15 @@
 'use client';
 
-import { ChevronDown, Download, FileText, FileType, FileType2 } from 'lucide-react';
+import {
+  ChevronDown,
+  Download,
+  FileText,
+  FileType,
+  FileType2,
+  FileSpreadsheet,
+  Table2,
+  type LucideIcon,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -9,13 +18,31 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 
+type ExportItem = { format: string; label: string; Icon: LucideIcon };
+
+// Pages/notes → Markdown, Word, PDF. Tables → Excel, Markdown table, CSV. Each
+// item is a plain download link to `/api/export/<id>?format=…`; the route
+// generates bytes on the fly and the resolver picks what the node kind
+// supports (PDF via headless Chromium).
+const ITEMS: Record<'page' | 'table', ExportItem[]> = {
+  page: [
+    { format: 'md', label: 'Markdown', Icon: FileText },
+    { format: 'docx', label: 'Word', Icon: FileType },
+    { format: 'pdf', label: 'PDF', Icon: FileType2 },
+  ],
+  table: [
+    { format: 'xlsx', label: 'Excel', Icon: FileSpreadsheet },
+    { format: 'md', label: 'Markdown table', Icon: Table2 },
+    { format: 'csv', label: 'CSV', Icon: FileText },
+  ],
+};
+
 /**
- * Download a Page as Markdown, Word, or PDF. Each item is a plain download link
- * to `/api/export/<id>?format=…`; the route generates the bytes on the fly
- * (Markdown/Word via resolveExport, PDF via headless Chromium). Replaces the
- * single-format ExportButton on the page detail header.
+ * Download a content node in a chosen format. `kind` selects the menu: `page`
+ * (Markdown / Word / PDF) or `table` (Excel / Markdown table / CSV). Replaces
+ * the single-format ExportButton on a detail header.
  */
-export function ExportMenu({ nodeId }: { nodeId: string }) {
+export function ExportMenu({ nodeId, kind = 'page' }: { nodeId: string; kind?: 'page' | 'table' }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -26,24 +53,14 @@ export function ExportMenu({ nodeId }: { nodeId: string }) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem asChild>
-          <a href={`/api/export/${nodeId}?format=md`} download>
-            <FileText />
-            Markdown
-          </a>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <a href={`/api/export/${nodeId}?format=docx`} download>
-            <FileType />
-            Word
-          </a>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <a href={`/api/export/${nodeId}?format=pdf`} download>
-            <FileType2 />
-            PDF
-          </a>
-        </DropdownMenuItem>
+        {ITEMS[kind].map(({ format, label, Icon }) => (
+          <DropdownMenuItem key={format} asChild>
+            <a href={`/api/export/${nodeId}?format=${format}`} download>
+              <Icon />
+              {label}
+            </a>
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

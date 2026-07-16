@@ -8,15 +8,19 @@ import { renderUrlToPdf, printOrigin, PdfRendererUnavailableError } from '@/lib/
 
 const IdParams = z.object({ id: z.string().uuid() });
 // Absent ⇒ docx (the original type-driven behavior; existing links keep working).
-const Format = z.enum(['md', 'docx', 'pdf']);
+const Format = z.enum(['md', 'docx', 'pdf', 'csv', 'xlsx']);
 
 /**
  * Download a content node. Format is chosen by `?format=`:
- *   - `md`   → Markdown (page/note)      — text/markdown
- *   - `docx` → Word (page/note), default — via resolveExport
- *   - `pdf`  → PDF (page only)           — headless Chromium over /print
- * Tables ignore `format` and always export .xlsx. Bytes are generated on the
- * fly — nothing is persisted (the agent `export_node` tool is the save path).
+ *   - `md`   → Markdown (page/note markdown, or a table's GFM pipe-table)
+ *   - `docx` → Word (page/note), default
+ *   - `pdf`  → PDF (page only) — headless Chromium over /print
+ *   - `csv`  → CSV (table)
+ *   - `xlsx` → Excel (table, the table default)
+ * Each kind serves the formats it supports and falls back to its default for
+ * the rest (a table asked for docx → xlsx; a page asked for csv → docx). Bytes
+ * are generated on the fly — nothing is persisted (the agent `export_node` tool
+ * is the save path).
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -58,9 +62,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     }
   }
 
-  // md / docx (and xlsx for tables) go through the shared, browser-free resolver.
+  // md / docx / csv / xlsx go through the shared, browser-free resolver, which
+  // picks what each node kind supports (pdf already handled above).
   const result = await resolveExport(user.id, id, {
-    format: fmt.data === 'md' ? 'md' : 'docx',
+    format: fmt.data,
     // Embed page images by reading their bytes from the file store.
     loadImage: async (fileId) => {
       const res = await readFileById({ ownerId: user.id, fileId });

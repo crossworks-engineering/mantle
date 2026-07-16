@@ -305,12 +305,17 @@ across tabs (same file).
 - **Columns** have a \`type\`: text · number · currency · percent · date ·
   datetime · checkbox · select · multiselect · url · formula · reference.
   Pick the right type — it drives formatting, totals, and sorting.
-- **Reference columns** offer values from another tab's column (Excel
-  data-validation style): \`table_column_add\` with \`type: "reference"\` and
-  \`reference: { tab, column }\`. Soft integrity — free text is allowed, values
-  missing from the source show as DANGLING REFS in the profile. Use one
-  whenever a tab repeats another tab's key (car model names, circuit ids) —
-  it documents the join edge for \`table_sql\`.
+- **Linked (reference) columns** are a convenience picker: they offer values
+  from another tab's column, but the picked value is **copied as plain text**
+  (or a boolean) — no live link, no join, so \`table_sql\` sees an ordinary
+  column. \`table_column_add\` with \`type: "reference"\`, \`reference: { tab,
+  column }\`, and \`link_mode\`: \`"select"\` (default — a dropdown of the source
+  values) or \`"checkbox"\` (a true/false box that borrows the source column's
+  label). Switch an existing linked column's mode with \`table_column_update\`
+  \`link_mode\` alone; re-point it with \`reference\` alone (keeps the mode);
+  retype to any non-reference to unlink. In \`table_get\`, a linked column shows
+  \`link_mode\` + \`linked_to\`. Soft integrity for select mode — free text is
+  allowed, values missing from the source show as DANGLING REFS in the profile.
 - **Rows** are addressed by a stable \`id\`. "Update row 3", "delete that row",
   "set its status" all map onto a row id.
 - **Aggregates** are per-column footer totals (sum / avg / count / min / max).

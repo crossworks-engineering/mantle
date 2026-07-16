@@ -34,10 +34,12 @@ import {
   Divide,
   Hash,
   Link,
+  Link2,
   List,
   ListOrdered,
   ListPlus,
   Maximize2,
+  Unlink,
   Percent,
   Plus,
   Sigma,
@@ -99,11 +101,13 @@ import {
   resolveCell,
   setAggregate,
   setCell,
+  storageType,
   updateColumn,
   type AggregateKind,
   type CellValue,
   type Column,
   type ColumnType,
+  type RefMode,
   type Row,
   type TableDoc,
 } from '@mantle/content/table-model';
@@ -222,11 +226,33 @@ export function TableGrid({
           onSort={(dir) => column.toggleSorting(dir === 'desc')}
           onClearSort={() => column.clearSorting()}
           onRename={(name) => onChangeRef.current(updateColumn(docRef.current, col.id, { name }))}
-          // Retype through the menu is never 'reference' (that goes via the
-          // dialog + onReference) — clear any stale ref so a former reference
-          // column becomes a clean plain column client-side too.
-          onType={(type) => onChangeRef.current(updateColumn(docRef.current, col.id, { type, ref: undefined }))}
-          onReference={(ref) => onChangeRef.current(updateColumn(docRef.current, col.id, { type: 'reference', ref }))}
+          // Retype through the standard menu is never 'reference' — it UNLINKS:
+          // clear ref + refMode so a linked column becomes a clean plain column.
+          onType={(type) => onChangeRef.current(updateColumn(docRef.current, col.id, { type, ref: undefined, refMode: undefined }))}
+          // Link / change source (dialog): new links default to select; a
+          // source change on an already-linked column keeps its mode.
+          onReference={(ref) =>
+            onChangeRef.current(
+              updateColumn(docRef.current, col.id, {
+                type: 'reference',
+                ref,
+                refMode: col.type === 'reference' ? (col.refMode ?? 'select') : 'select',
+              }),
+            )
+          }
+          // Switch linked mode (🔗 menu) — keeps the ref.
+          onReferenceMode={(refMode) => onChangeRef.current(updateColumn(docRef.current, col.id, { refMode }))}
+          // Delete link (🔗 menu): keep values, drop the link. A linked-checkbox
+          // stays a checkbox (boolean); a linked-select becomes plain text.
+          onDeleteLink={() =>
+            onChangeRef.current(
+              updateColumn(docRef.current, col.id, {
+                type: col.refMode === 'checkbox' ? 'checkbox' : 'text',
+                ref: undefined,
+                refMode: undefined,
+              }),
+            )
+          }
           onAggregate={(kind) => onChangeRef.current(setAggregate(docRef.current, col.id, kind))}
           onInsertRight={() => onChangeRef.current(addColumn(docRef.current, { name: 'New column', type: 'text' }, col.id).doc)}
           onDelete={() => onChangeRef.current(deleteColumn(docRef.current, col.id))}
@@ -402,6 +428,8 @@ function HeaderCell({
   onRename,
   onType,
   onReference,
+  onReferenceMode,
+  onDeleteLink,
   onAggregate,
   onInsertRight,
   onDelete,
@@ -417,6 +445,8 @@ function HeaderCell({
   onRename: (name: string) => void;
   onType: (type: ColumnType) => void;
   onReference: (ref: { tabId: string; columnId: string }) => void;
+  onReferenceMode: (mode: RefMode) => void;
+  onDeleteLink: () => void;
   onAggregate: (kind: AggregateKind) => void;
   onInsertRight: () => void;
   onDelete: () => void;
@@ -429,7 +459,14 @@ function HeaderCell({
   // Reference columns need a workbook to point into — offered only when we
   // have the tab list + a server-backed table (legacy JSONB tables don't).
   const canReference = !!tableId && !!tabs && tabs.length > 0;
-  const TypeIcon = TYPE_ICON[col.type];
+  // Only worth offering "Select column" when there's ANOTHER tab to pull
+  // values from — a lone tab has no source to link to.
+  const hasOtherTab = (tabs ?? []).some((t) => t.id !== activeTabId);
+  const linked = col.type === 'reference' && !!col.ref;
+  const linkMode: RefMode = col.refMode ?? 'select';
+  // A linked column presents as its mode (select→list, checkbox→check); the
+  // 🔗 to its left is what says "linked".
+  const TypeIcon = TYPE_ICON[linked ? storageType(col) : col.type];
   const AggIcon = aggregate !== 'none' ? AGG_ICON[aggregate] : null;
   return (
     <span className="flex w-full items-center gap-1">
@@ -445,6 +482,47 @@ function HeaderCell({
       />
       {sortDir === 'asc' && <ArrowUp className="size-3 shrink-0 text-muted-foreground" aria-hidden />}
       {sortDir === 'desc' && <ArrowDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />}
+      {/* Linked-column indicator + its own menu, left of the type menu. */}
+      {linked && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-6 shrink-0 text-muted-foreground"
+              aria-label="Linked column — options"
+              title="Linked column"
+            >
+              <Link2 className="size-3.5" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Linked column</DropdownMenuLabel>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className={MENU_SUBTRIGGER}><Link2 className="mr-2 size-3.5" /> Mode</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuRadioGroup value={linkMode} onValueChange={(v) => onReferenceMode(v as RefMode)}>
+                  <DropdownMenuRadioItem value="select" className={MENU_RADIO_ITEM}>
+                    <List className="mr-2 size-3.5" aria-hidden /> Select (one value)
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="checkbox" className={MENU_RADIO_ITEM}>
+                    <SquareCheck className="mr-2 size-3.5" aria-hidden /> Checkbox
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            {canReference && (
+              <DropdownMenuItem className={MENU_RADIO_ITEM} onSelect={() => setRefDlgOpen(true)}>
+                <ArrowUpRight className="mr-2 size-3.5" aria-hidden /> Change source…
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDeleteLink}>
+              <Unlink className="mr-2 size-3.5" /> Delete link
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       {AggIcon && (
         <span className="shrink-0" title={`Total: ${AGG_LABEL[aggregate]}`}>
           <AggIcon className="size-3 text-muted-foreground" aria-label={`Total: ${AGG_LABEL[aggregate]}`} />
@@ -480,10 +558,10 @@ function HeaderCell({
               </DropdownMenuRadioGroup>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
-          {canReference && (
+          {canReference && !linked && hasOtherTab && (
             <DropdownMenuItem className={MENU_RADIO_ITEM} onSelect={() => setRefDlgOpen(true)}>
-              <ArrowUpRight className="mr-2 size-3.5" aria-hidden />
-              {col.type === 'reference' ? 'Reference source…' : 'Link to another tab…'}
+              <Link2 className="mr-2 size-3.5" aria-hidden />
+              Select column
             </DropdownMenuItem>
           )}
           <DropdownMenuSub>
@@ -601,10 +679,10 @@ function ReferenceColumnDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Link to another tab</DialogTitle>
+          <DialogTitle>{currentRef ? 'Change linked source' : 'Select column'}</DialogTitle>
           <DialogDescription>
-            This column will offer values from another tab’s column (Excel data-validation style — free text stays
-            allowed).
+            This column offers values from another tab’s column — picked values are copied as plain text (a convenience
+            picker, not a live link).
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -666,7 +744,7 @@ function ReferenceColumnDialog({
               disabled={!tabId || !colId}
               onClick={() => tabId && colId && onConfirm({ tabId, columnId: colId })}
             >
-              Link column
+              {currentRef ? 'Change source' : 'Select column'}
             </Button>
           </div>
         </div>
@@ -707,7 +785,10 @@ function EditableCell({
   if (col.type === 'formula') {
     return <span className="block px-2 py-1.5 text-sm text-muted-foreground">{displayValue(value, col)}</span>;
   }
-  if (col.type === 'checkbox') {
+  // A linked-CHECKBOX is a real boolean (the link only borrows the source's
+  // label); render it like any checkbox. A linked-SELECT is the source-values
+  // dropdown. Both keyed on refMode (v2.2).
+  if (col.type === 'checkbox' || (col.type === 'reference' && col.refMode === 'checkbox')) {
     return (
       <span className="flex items-center justify-center py-1.5">
         <Checkbox checked={Boolean(rawValue)} onCheckedChange={(c) => onSet(c === true)} aria-label={col.name} />

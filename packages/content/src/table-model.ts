@@ -87,10 +87,16 @@ export type ColumnFormat = {
 };
 
 /** Cross-tab reference target for type='reference' (v2.1 P4): the column
- *  offers/stores VALUES from another tab's column, Excel data-validation
- *  style — free text allowed, dangling values flagged in the profile, same
- *  workbook only. */
+ *  offers VALUES from another tab's column, Excel data-validation style — a
+ *  convenience picker (values copied as plain text/boolean at pick time, no
+ *  joins, no live-follow; v2.2), same workbook only. */
 export type ColumnRef = { tabId: string; columnId: string };
+
+/** How a linked (type='reference') column behaves + stores (v2.2):
+ *  select→one value (text), multi→several (deferred), checkbox→a real boolean
+ *  whose label is borrowed from the source. Undefined = 'select' (the v0.136.0
+ *  single-text reference — forward-compatible). Mirrors tabledb's RefMode. */
+export type RefMode = 'select' | 'multi' | 'checkbox';
 
 export type Column = {
   id: string;
@@ -103,9 +109,19 @@ export type Column = {
   formula?: string;
   /** Persisted pixel width (UI only). */
   width?: number;
-  /** Source column for reference columns. */
+  /** Source column for reference (linked) columns. */
   ref?: ColumnRef;
+  /** Behavior/storage mode for linked columns. */
+  refMode?: RefMode;
 };
+
+/** The base type a column STORES / COERCES as — a linked column follows its
+ *  refMode (select→text, multi→multiselect, checkbox→checkbox); everything
+ *  else is itself. Callers coercing a cell use this, not the raw `type`. */
+export function storageType(col: Pick<Column, 'type' | 'refMode'>): ColumnType {
+  if (col.type !== 'reference') return col.type;
+  return col.refMode === 'multi' ? 'multiselect' : col.refMode === 'checkbox' ? 'checkbox' : 'select';
+}
 
 /** A single cell's stored value. Formula cells are never stored — they're
  *  derived on read via `resolveCell`. */
@@ -210,7 +226,7 @@ export function tableDocFromGrid(input: GridInput): TableDoc {
   const rows: Row[] = input.rows.map((values) => {
     const cells: Record<string, CellValue> = {};
     columns.forEach((col, i) => {
-      const v = coerceCell(values[i] ?? null, col.type);
+      const v = coerceCell(values[i] ?? null, storageType(col));
       if (v !== null) cells[col.id] = v;
     });
     return { id: randomUUID(), cells };
@@ -243,6 +259,9 @@ export function ensureTableDoc(input: unknown): TableDoc {
     if (typeof col.width === 'number') out.width = col.width;
     if (col.ref && typeof col.ref === 'object' && typeof col.ref.tabId === 'string' && typeof col.ref.columnId === 'string') {
       out.ref = { tabId: col.ref.tabId, columnId: col.ref.columnId };
+    }
+    if (out.type === 'reference' && (col.refMode === 'select' || col.refMode === 'multi' || col.refMode === 'checkbox')) {
+      out.refMode = col.refMode;
     }
     return out;
   });
@@ -367,7 +386,7 @@ export function addRow(
   const coerced: Record<string, CellValue> = {};
   for (const col of doc.columns) {
     if (col.type === 'formula') continue;
-    if (col.id in cells) coerced[col.id] = coerceCell(cells[col.id], col.type);
+    if (col.id in cells) coerced[col.id] = coerceCell(cells[col.id], storageType(col));
   }
   const row: Row = { id: randomUUID(), cells: coerced };
   const rows = [...doc.rows];
@@ -389,7 +408,7 @@ export function updateRow(
     for (const [colId, value] of Object.entries(cells)) {
       const col = findColumn(doc, colId);
       if (!col || col.type === 'formula') continue;
-      const v = coerceCell(value, col.type);
+      const v = coerceCell(value, storageType(col));
       if (v === null) delete next[colId];
       else next[colId] = v;
     }
@@ -441,10 +460,15 @@ export function updateColumn(
   const next: Column = { ...current, ...patch, id: columnId };
   const columns = doc.columns.map((c) => (c.id === columnId ? next : c));
   let rows = doc.rows;
-  if (patch.type && patch.type !== current.type) {
+  // Re-coerce cells when the STORAGE shape changes — a type change OR a linked
+  // mode switch (select↔checkbox keeps type='reference' but changes storage).
+  // Keyed on storageType so it matches the server's op-path recoerce (v2.2).
+  const prevStorage = storageType(current);
+  const nextStorage = storageType(next);
+  if (prevStorage !== nextStorage) {
     rows = doc.rows.map((r) => {
       if (!(columnId in r.cells)) return r;
-      const v = coerceCell(r.cells[columnId], next.type);
+      const v = coerceCell(r.cells[columnId], nextStorage);
       const cells = { ...r.cells };
       if (v === null) delete cells[columnId];
       else cells[columnId] = v;
@@ -684,6 +708,7 @@ export type TableColumnPatch = {
   formula?: string | null;
   width?: number | null;
   ref?: ColumnRef | null;
+  refMode?: RefMode | null;
 };
 
 export type TableDocOp =
@@ -735,6 +760,7 @@ export function diffTableDocs(prev: TableDoc, next: TableDoc): TableDocOp[] | nu
     if ((old.formula ?? '') !== (c.formula ?? '')) patch.formula = c.formula ?? null;
     if ((old.width ?? null) !== (c.width ?? null)) patch.width = c.width ?? null;
     if (JSON.stringify(old.ref ?? null) !== JSON.stringify(c.ref ?? null)) patch.ref = c.ref ?? null;
+    if ((old.refMode ?? null) !== (c.refMode ?? null)) patch.refMode = c.refMode ?? null;
     if (Object.keys(patch).length > 0) ops.push({ op: 'column_update', columnId: c.id, patch });
   });
 

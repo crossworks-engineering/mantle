@@ -21,19 +21,23 @@ import { markdownToDoc } from './markdown-to-doc';
 import { docToMarkdown } from './doc-to-markdown';
 import { renderDocx, type LoadedImage } from './render-docx';
 import { renderXlsx } from './render-xlsx';
+import { tableToText, tableToCsv } from './table-to-text';
 
-export type ExportFormat = 'docx' | 'xlsx' | 'md';
+export type ExportFormat = 'docx' | 'xlsx' | 'md' | 'csv';
 export type ExportKind = 'page' | 'note' | 'table';
 
-/** Formats a page/note can be downloaded as (the caller picks; default docx).
- *  PDF is NOT here — it's rendered in apps/web via headless Chromium against the
- *  live HTML surface, not through this pure (browser-free) package. */
-export type DocExportFormat = 'docx' | 'md';
+/** Formats a node can be asked to download as (the caller picks). PDF is NOT
+ *  here — it's rendered in apps/web via headless Chromium against the live HTML
+ *  surface, not through this pure (browser-free) package. Each node kind serves
+ *  the subset it supports (page/note → docx|md; table → xlsx|md|csv) and falls
+ *  back to its default for the rest. */
+export type DocExportFormat = 'docx' | 'md' | 'csv' | 'xlsx';
 
 export const EXPORT_MIME: Record<ExportFormat, string> = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   md: 'text/markdown; charset=utf-8',
+  csv: 'text/csv; charset=utf-8',
 };
 
 export type ExportResult = {
@@ -124,6 +128,14 @@ export async function resolveExport(
   if (node.type === 'table') {
     const table = await getTable(ownerId, nodeId);
     if (!table) return null;
+    // Markdown pipe-table + CSV are lossy text renders (like the brain index);
+    // xlsx (the default) preserves cell types + totals formatting.
+    if (opts.format === 'md') {
+      return result(Buffer.from(tableToText(table.data, { title: table.title }), 'utf8'), 'md', 'table', table.title);
+    }
+    if (opts.format === 'csv') {
+      return result(Buffer.from(tableToCsv(table.data), 'utf8'), 'csv', 'table', table.title);
+    }
     const bytes = await renderXlsx(table.data, { title: table.title });
     return result(bytes, 'xlsx', 'table', table.title);
   }

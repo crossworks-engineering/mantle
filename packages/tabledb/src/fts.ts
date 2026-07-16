@@ -1,4 +1,5 @@
 import type { Column } from './doc-types';
+import { storageType } from './doc-types';
 import { quoteIdent } from './names';
 import type { SqliteDb } from './sqlite';
 
@@ -22,7 +23,9 @@ import type { SqliteDb } from './sqlite';
 const FTS_TYPES = new Set(['text', 'select', 'url', 'multiselect', 'date', 'datetime', 'reference']);
 
 export function ftsColumns(columns: Column[]): Column[] {
-  return columns.filter((c) => FTS_TYPES.has(c.type));
+  // A linked column indexes by its STORAGE type — a linked-checkbox is a
+  // boolean (not FTS'd), a linked-select is text (FTS'd) (v2.2).
+  return columns.filter((c) => FTS_TYPES.has(storageType(c)));
 }
 
 /** Shadow-table name for a physical data table. */

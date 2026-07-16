@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 import { loadCell, storeCell, sqlTypeFor } from './cells';
-import type { AggregateKind, CellValue, Column, ColumnType, View } from './doc-types';
+import type { AggregateKind, CellValue, Column, ColumnType, RefMode, View } from './doc-types';
+import { storageType } from './doc-types';
 import { createFtsShadow, ftsColumns, ftsTableName } from './fts';
 import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './names';
 import { openTableFile, type SqliteDb } from './sqlite';
@@ -51,6 +52,7 @@ export type ColumnPatch = {
   formula?: string | null;
   width?: number | null;
   ref?: Column['ref'] | null;
+  refMode?: RefMode | null;
 };
 
 export type CoerceFn = (value: unknown, type: ColumnType) => CellValue;
@@ -69,7 +71,14 @@ type ColRow = {
   type: ColumnType;
   options_json: string | null;
   position: number;
+  ref_mode: string | null;
 };
+
+/** Storage/coerce type for a _columns row — a linked column stores as its
+ *  refMode's base type (v2.2). Mirrors doc-types' storageType for ColRow. */
+function rowStorageType(col: Pick<ColRow, 'type' | 'ref_mode'>): ColumnType {
+  return storageType({ type: col.type, refMode: (col.ref_mode ?? undefined) as RefMode | undefined });
+}
 
 type TabRow = { tab_id: string; name: string; physical_table: string; view_name: string };
 
@@ -130,13 +139,14 @@ function columnsOf(db: SqliteDb, tabId: string): ColRow[] {
     .all(tabId) as unknown as ColRow[];
 }
 
-/** Lazy in-file upgrade: drafts copied from pre-v2.1 published files lack the
- *  ref_json column — add it before ops run (idempotent, cheap PRAGMA check). */
+/** Lazy in-file upgrade: drafts copied from older published files lack the
+ *  ref_json (pre-v2.1) / ref_mode (pre-v2.2) columns — add them before ops run
+ *  (idempotent, cheap PRAGMA check). */
 function ensureRefColumn(db: SqliteDb): void {
   const cols = db.prepare(`PRAGMA table_info(_columns)`).all() as unknown as { name: string }[];
-  if (!cols.some((c) => c.name === 'ref_json')) {
-    db.exec(`ALTER TABLE _columns ADD COLUMN ref_json TEXT`);
-  }
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has('ref_json')) db.exec(`ALTER TABLE _columns ADD COLUMN ref_json TEXT`);
+  if (!names.has('ref_mode')) db.exec(`ALTER TABLE _columns ADD COLUMN ref_mode TEXT`);
 }
 
 /** type='reference' columns must point at an EXISTING (tab, column) in this
@@ -206,7 +216,19 @@ export function rebuildFtsShadow(db: SqliteDb, tab: TabRow): void {
   db.exec(`DROP TRIGGER IF EXISTS ${tab.physical_table}_fts_au`);
   db.exec(`DROP TABLE IF EXISTS ${fts}`);
   const cols = columnsOf(db, tab.tab_id);
-  const wanted = new Set(ftsColumns(cols.map((c) => ({ id: c.col_id, name: c.name, type: c.type }))).map((c) => c.id));
+  // Carry ref_mode so ftsColumns' storageType sees it — else a linked-checkbox
+  // (boolean) is wrongly text-indexed here, diverging from writeDocFile's
+  // fresh-write path (audit). name is unused by ftsColumns but kept for shape.
+  const wanted = new Set(
+    ftsColumns(
+      cols.map((c) => ({
+        id: c.col_id,
+        name: c.name,
+        type: c.type,
+        ...(c.ref_mode != null ? { refMode: c.ref_mode as RefMode } : {}),
+      })),
+    ).map((c) => c.id),
+  );
   const physicals = cols.filter((c) => wanted.has(c.col_id)).map((c) => c.physical);
   if (physicals.length === 0) return;
   createFtsShadow(db, tab.physical_table, physicals);
@@ -274,7 +296,8 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
     for (const [colId, raw] of Object.entries(cells)) {
       const col = byId.get(colId);
       if (!col || col.type === 'formula') continue;
-      const v = storeCell(coerce(raw, col.type), col.type);
+      const st = rowStorageType(col);
+      const v = storeCell(coerce(raw, st), st);
       sets.push(`${col.physical} = ?`);
       values.push(v);
     }
@@ -317,10 +340,12 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
           anchor.position,
         );
       }
-      const ref = op.column.type === 'reference' ? validateRef(db, op.column.ref, colId) : null;
+      const isRef = op.column.type === 'reference';
+      const ref = isRef ? validateRef(db, op.column.ref, colId) : null;
+      const refMode: RefMode | null = isRef ? (op.column.refMode ?? 'select') : null;
       db.prepare(
-        `INSERT INTO _columns (tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position, ref_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO _columns (tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position, ref_json, ref_mode)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         tab.tab_id,
         colId,
@@ -333,10 +358,13 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
         op.column.width ?? null,
         position,
         ref ? JSON.stringify(ref) : null,
+        refMode,
       );
       if (op.column.type !== 'formula') {
         dropFtsShadow(db, tab);
-        db.exec(`ALTER TABLE ${table} ADD COLUMN ${physical} ${sqlTypeFor(op.column.type)}`);
+        // A linked column's affinity follows its refMode (checkbox → INTEGER).
+        const st = storageType({ type: op.column.type, refMode: refMode ?? undefined });
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${physical} ${sqlTypeFor(st)}`);
       }
       rebuildView(db, tab);
       return colId;
@@ -346,18 +374,30 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
       if (!col) return null; // mirror updateColumn's silent no-op on unknown id
       const patch = op.patch;
       const nextType = (patch.type ?? col.type) as ColumnType;
-      if (patch.ref !== undefined || (patch.type === 'reference' && col.type !== 'reference')) {
-        // Becoming (or re-pointing) a reference needs a valid same-workbook
-        // target; retyping AWAY from reference clears the edge below.
-        const ref = nextType === 'reference' ? validateRef(db, patch.ref, op.columnId) : null;
+      const wasRef = col.type === 'reference';
+      const willRef = nextType === 'reference';
+      // refMode is only meaningful while linked. Absent patch.refMode keeps the
+      // current mode (mode-only switch keeps ref); a fresh link defaults select.
+      const nextRefMode: RefMode | null = willRef
+        ? ((patch.refMode ?? (wasRef ? ((col.ref_mode as RefMode | null) ?? null) : null)) ?? 'select')
+        : null;
+      // ref_json: validate on link / re-point (patch.ref present, or newly
+      // linked); clear on unlink. A mode-only switch leaves the existing ref.
+      if (willRef && (patch.ref !== undefined || !wasRef)) {
+        const ref = validateRef(db, patch.ref, op.columnId);
         db.prepare(`UPDATE _columns SET ref_json = ? WHERE tab_id = ? AND col_id = ?`).run(
-          ref ? JSON.stringify(ref) : null,
+          JSON.stringify(ref),
           tab.tab_id,
           op.columnId,
         );
-      } else if (patch.type && patch.type !== 'reference' && col.type === 'reference') {
+      } else if (!willRef && wasRef) {
         db.prepare(`UPDATE _columns SET ref_json = NULL WHERE tab_id = ? AND col_id = ?`).run(tab.tab_id, op.columnId);
       }
+      db.prepare(`UPDATE _columns SET ref_mode = ? WHERE tab_id = ? AND col_id = ?`).run(
+        nextRefMode,
+        tab.tab_id,
+        op.columnId,
+      );
       // `null` = explicit CLEAR (JSON drops undefined keys, so the differ
       // signals property removal with null); absent key = keep current.
       db.prepare(
@@ -380,36 +420,42 @@ function applyOne(db: SqliteDb, tab: TabRow, op: NonTabOp, coerce: CoerceFn): st
         op.columnId,
       );
       const typeChanged = patch.type !== undefined && patch.type !== col.type;
+      // STORAGE shape before/after — a linked column stores as its refMode's
+      // base type, so a select↔checkbox mode switch (type stays 'reference')
+      // still changes storage and must re-coerce, while text↔select (same
+      // storage) needn't.
+      const prevStorage = rowStorageType(col);
+      const nextStorage = storageType({ type: nextType, refMode: nextRefMode ?? undefined });
       // Formula columns have NO physical column, so a retype across the
       // formula boundary is DDL, not a value rewrite — without it _columns
       // points at a column that doesn't exist and every subsequent read of
       // the file throws (audit: formula→text bricked the workbook).
-      if (typeChanged && col.type === 'formula' && nextType !== 'formula') {
+      if (col.type === 'formula' && nextType !== 'formula') {
         dropFtsShadow(db, tab);
-        db.exec(`ALTER TABLE ${table} ADD COLUMN ${col.physical} ${sqlTypeFor(nextType)}`);
-      } else if (typeChanged && col.type !== 'formula' && nextType === 'formula') {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${col.physical} ${sqlTypeFor(nextStorage)}`);
+      } else if (col.type !== 'formula' && nextType === 'formula') {
         // Doc semantics: formula cells are never stored — drop the values
         // with the column (the view depends on it; drop that first).
         dropFtsShadow(db, tab);
         db.exec(`DROP VIEW IF EXISTS ${quoteIdent(tab.view_name)}`);
         db.exec(`ALTER TABLE ${table} DROP COLUMN ${col.physical}`);
       }
-      // Type change: re-coerce through the SAME coerce fn the doc path uses,
+      // Storage change: re-coerce through the SAME coerce fn the doc path uses,
       // FROM THE DOC-SHAPED VALUE (loadCell first) — coercing the raw SQL
       // storage form diverged (checkbox stored 0/1 retyped to text became
-      // '1' instead of 'true'; multiselect JSON became '["a","b"]' instead
-      // of 'a,b' — audit finding 3). Stored↔stored needs no DDL (SQLite is
-      // dynamically typed); values rewrite in place.
-      if (typeChanged && col.type !== 'formula' && nextType !== 'formula') {
+      // '1' instead of 'true' — audit). Stored↔stored needs no DDL (SQLite is
+      // dynamically typed); values rewrite in place. Keyed on STORAGE type so
+      // text↔select (same storage) is a no-op and select↔checkbox re-coerces.
+      if (col.type !== 'formula' && nextType !== 'formula' && prevStorage !== nextStorage) {
         const rows = db.prepare(`SELECT _rid, ${col.physical} AS v FROM ${table} WHERE ${col.physical} IS NOT NULL`).all();
         const upd = db.prepare(`UPDATE ${table} SET ${col.physical} = ? WHERE _rid = ?`);
         for (const r of rows) {
-          const docValue = loadCell(r.v, col.type);
-          upd.run(storeCell(coerce(docValue, nextType), nextType), String(r._rid));
+          const docValue = loadCell(r.v, prevStorage);
+          upd.run(storeCell(coerce(docValue, nextStorage), nextStorage), String(r._rid));
         }
       }
-      // Rename relabels the view; a type change across the formula boundary
-      // changes which columns it projects.
+      // Rename relabels the view; a formula-boundary change alters which
+      // columns it projects.
       if ((patch.name && patch.name !== col.name) || typeChanged) rebuildView(db, tab);
       return null;
     }
