@@ -197,10 +197,13 @@ the parent public↔team and the shared children follow.
   parentNodeId, on)`, and the cascade-aware drop-ins `applyShareMode` /
   `revokeShareTree` used by the PATCH / DELETE routes.
 - **Hub interaction:** team-mode pages are hub cards, so `listTeamHubSections`
-  surfaces only the **top-most** team-shared page of a subtree — a descendant of
-  another team-shared page is left off (still openable via its own link, e.g.
-  from within the parent). Otherwise cascade-sharing a doc index would turn every
-  sub-document into its own card.
+  returns the whole shared set but tags each section with the `parentToken` of
+  its nearest team-shared ancestor. The **built-in hub** cards on top-level
+  (`parentToken == null`) only, so a cascaded subtree doesn't flood it; a **hub
+  app** gets the full tree and can nest children under their parent (the NATREF
+  Team Hub renders the Master Documentation Index as an expandable directory).
+  Every section stays an openable team-mode share, so children open from either
+  surface.
 
 ---
 

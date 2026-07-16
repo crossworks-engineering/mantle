@@ -308,6 +308,10 @@ export function TeamHubShell() {
   const brainName = data.siteName ?? 'this brain';
   const firstName = data.memberName?.trim().split(/\s+/)[0];
   const stats = STAT_LABELS.filter(([key]) => (data.counts[key] ?? 0) > 0);
+  // Built-in hub lists only TOP-LEVEL team pages as briefing cards; a page
+  // nested under another team-shared page (a shared subtree) reaches members
+  // via the parent, not its own card. Hub apps get the full tree via hub.get.
+  const topSections = data.sections.filter((s) => !s.parentToken);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
@@ -382,13 +386,13 @@ export function TeamHubShell() {
           <h2 className="text-sm font-medium uppercase tracking-widest text-muted-foreground">
             Briefings
           </h2>
-          {data.sections.length === 0 ? (
+          {topSections.length === 0 ? (
             <p className="mt-4 text-sm text-muted-foreground">
               Briefings are being prepared — check back soon, or ask the brain in the meantime.
             </p>
           ) : (
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              {data.sections.map((s) => (
+              {topSections.map((s) => (
                 <a
                   key={s.token}
                   href={`/s/${s.token}`}

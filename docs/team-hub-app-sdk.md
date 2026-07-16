@@ -69,6 +69,9 @@ type HubData = {
     icon: string | null;
     summary: string | null;
     updatedAt: string;       // ISO
+    parentToken: string | null; // nearest team-shared ANCESTOR page, or null
+                                 //   for a top-level page. Nest a shared subtree
+                                 //   under its parent; null = a top-level card.
   }>;
   counts: Record<string, number>; // whitelisted coarse content counts,
                                   // zeros included — you decide what to hide

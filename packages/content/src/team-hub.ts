@@ -20,17 +20,23 @@ export type TeamHubSection = {
   icon: string | null;
   summary: string | null;
   updatedAt: string;
+  /** Token of the nearest team-shared ANCESTOR page, or null when this is a
+   *  top-level team page. Lets a hub surface nest a shared subtree under its
+   *  top page (the built-in hub cards on top-level only; a hub app can render
+   *  the whole tree). Every section is still an openable team-mode share. */
+  parentToken: string | null;
 };
 
 /**
  * The owner's team-shared pages, oldest share first — the owner curates hub
  * order by the order they shared (Vision first, then the rest).
  *
- * Only the TOP-MOST team-shared page of a subtree becomes a card: a page whose
- * ancestor page is itself team-shared is left off (it stays openable via its
- * own link, e.g. from within the parent). This keeps "Share sub-pages" (subtree
- * cascade, docs/sharing.md) from turning every child into a hub card — the
- * parent card represents the whole subtree.
+ * The FULL set is returned (subtree children included), each tagged with the
+ * `parentToken` of its nearest team-shared ancestor so a consumer can nest.
+ * The built-in hub shows top-level (`parentToken == null`) as cards; a hub app
+ * can render children under their parent. Sharing a subtree ("Share sub-pages",
+ * docs/sharing.md) therefore makes every child reachable from the hub without
+ * flooding the top level with a card each.
  */
 export async function listTeamHubSections(ownerId: string): Promise<TeamHubSection[]> {
   const rows = await db
@@ -39,6 +45,21 @@ export async function listTeamHubSections(ownerId: string): Promise<TeamHubSecti
       title: nodes.title,
       data: nodes.data,
       updatedAt: nodes.updatedAt,
+      // Deepest team-shared ancestor page's token (nearest parent), or null.
+      parentToken: sql<string | null>`(
+        SELECT anc_s.token
+          FROM ${shares} anc_s
+          JOIN ${nodes} anc_n ON anc_n.id = anc_s.node_id
+         WHERE anc_s.owner_id = ${ownerId}
+           AND anc_s.node_type = 'page'
+           AND anc_s.settings->>'mode' = 'team'
+           AND anc_s.revoked_at IS NULL
+           AND (anc_s.expires_at IS NULL OR anc_s.expires_at > now())
+           AND anc_n.id <> ${nodes.id}
+           AND ${nodes.path} <@ anc_n.path
+         ORDER BY nlevel(anc_n.path) DESC
+         LIMIT 1
+      )`,
     })
     .from(shares)
     .innerJoin(nodes, eq(shares.nodeId, nodes.id))
@@ -49,18 +70,6 @@ export async function listTeamHubSections(ownerId: string): Promise<TeamHubSecti
         sql`${shares.settings}->>'mode' = 'team'`,
         isNull(shares.revokedAt),
         or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
-        // Exclude pages nested under another team-shared page (keep the top-most).
-        sql`NOT EXISTS (
-          SELECT 1 FROM ${shares} anc_s
-            JOIN ${nodes} anc_n ON anc_n.id = anc_s.node_id
-           WHERE anc_s.owner_id = ${ownerId}
-             AND anc_s.node_type = 'page'
-             AND anc_s.settings->>'mode' = 'team'
-             AND anc_s.revoked_at IS NULL
-             AND (anc_s.expires_at IS NULL OR anc_s.expires_at > now())
-             AND anc_n.id <> ${nodes.id}
-             AND ${nodes.path} <@ anc_n.path
-        )`,
       ),
     )
     .orderBy(shares.createdAt);
@@ -70,6 +79,7 @@ export async function listTeamHubSections(ownerId: string): Promise<TeamHubSecti
     icon: typeof r.data?.icon === 'string' ? (r.data.icon as string) : null,
     summary: typeof r.data?.summary === 'string' ? (r.data.summary as string) : null,
     updatedAt: r.updatedAt.toISOString(),
+    parentToken: r.parentToken ?? null,
   }));
 }
 

@@ -84,6 +84,10 @@ export type HubData = {
     icon: string | null;
     summary: string | null;
     updatedAt: string;
+    /** Token of the nearest team-shared ANCESTOR page, or null when top-level.
+     *  A hub app nests children under their parent; the built-in hub renders
+     *  only top-level (null) as cards. Every section is an openable share. */
+    parentToken: string | null;
   }[];
   /** Whitelisted coarse per-type node counts (zeros included — the app decides
    *  what to hide). Same shape as the /api/team/hub `counts` field. */
