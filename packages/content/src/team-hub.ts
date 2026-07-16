@@ -25,6 +25,12 @@ export type TeamHubSection = {
 /**
  * The owner's team-shared pages, oldest share first — the owner curates hub
  * order by the order they shared (Vision first, then the rest).
+ *
+ * Only the TOP-MOST team-shared page of a subtree becomes a card: a page whose
+ * ancestor page is itself team-shared is left off (it stays openable via its
+ * own link, e.g. from within the parent). This keeps "Share sub-pages" (subtree
+ * cascade, docs/sharing.md) from turning every child into a hub card — the
+ * parent card represents the whole subtree.
  */
 export async function listTeamHubSections(ownerId: string): Promise<TeamHubSection[]> {
   const rows = await db
@@ -43,6 +49,18 @@ export async function listTeamHubSections(ownerId: string): Promise<TeamHubSecti
         sql`${shares.settings}->>'mode' = 'team'`,
         isNull(shares.revokedAt),
         or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
+        // Exclude pages nested under another team-shared page (keep the top-most).
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${shares} anc_s
+            JOIN ${nodes} anc_n ON anc_n.id = anc_s.node_id
+           WHERE anc_s.owner_id = ${ownerId}
+             AND anc_s.node_type = 'page'
+             AND anc_s.settings->>'mode' = 'team'
+             AND anc_s.revoked_at IS NULL
+             AND (anc_s.expires_at IS NULL OR anc_s.expires_at > now())
+             AND anc_n.id <> ${nodes.id}
+             AND ${nodes.path} <@ anc_n.path
+        )`,
       ),
     )
     .orderBy(shares.createdAt);

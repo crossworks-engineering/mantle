@@ -13,6 +13,9 @@ import { fileById } from '@/lib/files';
 export {
   createShare,
   revokeShare,
+  revokeShareTree,
+  applyShareMode,
+  setShareCascade,
   getActiveShareForNode,
   resolveActiveShareByToken,
   recordShareView,

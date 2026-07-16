@@ -1,19 +1,31 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { countPageDescendants } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createShare, getActiveShareForNode } from '@/lib/shares';
 
-/** GET /api/shares?nodeId=… → the node's active link (or null). */
+/** GET /api/shares?nodeId=… → the node's active link (or null), plus
+ *  `childCount` (descendant pages — drives the "Share sub-pages" switch). */
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const nodeId = new URL(req.url).searchParams.get('nodeId');
   if (!nodeId) return NextResponse.json({ error: 'nodeId required' }, { status: 400 });
-  const share = await getActiveShareForNode(user.id, nodeId);
+  const [share, childCount] = await Promise.all([
+    getActiveShareForNode(user.id, nodeId),
+    countPageDescendants(user.id, nodeId),
+  ]);
   return NextResponse.json({
     share: share
-      ? { id: share.id, token: share.token, path: `/s/${share.token}`, mode: share.mode }
+      ? {
+          id: share.id,
+          token: share.token,
+          path: `/s/${share.token}`,
+          mode: share.mode,
+          cascade: share.cascade,
+        }
       : null,
+    childCount,
   });
 }
 

@@ -800,7 +800,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     systemPrompt: AGENT_PROMPTS['tables']!,
     // P6: `tables` is the authoring subset (no `table-admin`/table_delete);
     // `files`/`memory-core` cover source reads + cross-context lookups.
-    toolGroupSlugs: ['tables', 'files', 'memory-core', 'export'],
+    // `page-share` lets it publish/share a register or summary page it produced
+    // (the same ungated share tools the persona holds; team + subtree modes
+    // included) instead of bouncing back through the persona just to share.
+    toolGroupSlugs: ['tables', 'page-share', 'files', 'memory-core', 'export'],
     skillSlugs: ['table_authoring'],
     isDelegate: true,
     assistSurface: 'tables',

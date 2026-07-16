@@ -6,7 +6,7 @@
  * Token: 16 random bytes (128-bit) as base64url (~22 url-safe chars).
  */
 import { randomBytes } from 'node:crypto';
-import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db, nodes, shares, type Share } from '@mantle/db';
 
 /** Node types that may be shared publicly. Sensitive types are excluded. */
@@ -35,12 +35,22 @@ export function shareModeOf(s: Pick<Share, 'settings'>): ShareMode {
   return (s.settings as Record<string, unknown>)?.mode === 'team' ? 'team' : 'public';
 }
 
+/** Whether a page share cascades to its subtree (settings.cascade, default
+ *  false). When true, the page's descendant pages are shared to match this
+ *  share's mode, and a mode change or un-share propagates to them. */
+export function shareCascadeOf(s: Pick<Share, 'settings'>): boolean {
+  return (s.settings as Record<string, unknown>)?.cascade === true;
+}
+
 export type ShareSummary = {
   id: string;
   token: string;
   nodeId: string;
   nodeType: string;
   mode: ShareMode;
+  /** Subtree sharing on — this page's descendant pages are shared to match
+   *  (see {@link setShareCascade}). Meaningful only on page shares. */
+  cascade: boolean;
   createdAt: string;
   expiresAt: string | null;
   viewCount: number;
@@ -53,6 +63,7 @@ function toSummary(s: Share): ShareSummary {
     nodeId: s.nodeId,
     nodeType: s.nodeType,
     mode: shareModeOf(s),
+    cascade: shareCascadeOf(s),
     createdAt: s.createdAt.toISOString(),
     expiresAt: s.expiresAt ? s.expiresAt.toISOString() : null,
     viewCount: s.viewCount,
@@ -176,4 +187,129 @@ export async function recordShareView(shareId: string): Promise<void> {
     .update(shares)
     .set({ viewCount: sql`${shares.viewCount} + 1`, lastViewedAt: new Date() })
     .where(eq(shares.id, shareId));
+}
+
+// ─── Subtree ("Share children") ──────────────────────────────────────────────
+// A page share can cascade to its descendant pages: sharing the parent shares
+// the whole subtree, and the children track the parent's admission mode. The
+// intent lives in `settings.cascade` on the PARENT share; children are ordinary
+// shares. Semantics (see docs/sharing.md): a SNAPSHOT — toggling on shares the
+// pages that exist now (a page added later needs a re-toggle) — and cascade-off:
+// turning it off, or un-sharing the parent, revokes the child links too.
+
+/** All descendant PAGE ids under a page (children, grandchildren, …) via the
+ *  parent_id tree. `UNION` (not UNION ALL) is cycle-safe. Mirrors
+ *  {@link countPageDescendants}. */
+export async function listPageDescendantIds(ownerId: string, parentId: string): Promise<string[]> {
+  const result = await db.execute<{ id: string }>(sql`
+    WITH RECURSIVE descendants AS (
+      SELECT id FROM ${nodes}
+       WHERE parent_id = ${parentId} AND owner_id = ${ownerId} AND type = 'page'
+      UNION
+      SELECT n.id FROM ${nodes} n
+        JOIN descendants d ON n.parent_id = d.id
+       WHERE n.owner_id = ${ownerId} AND n.type = 'page'
+    )
+    SELECT id FROM descendants
+  `);
+  const rows = (
+    Array.isArray(result) ? result : (result as { rows?: Array<{ id: string }> }).rows ?? []
+  ) as Array<{ id: string }>;
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Turn subtree sharing on/off for a page (the "Share sub-pages" switch). Flips
+ * `settings.cascade` on the parent's active share, then:
+ *   on  — shares every descendant page (idempotent) at the parent's current mode.
+ *   off — revokes every descendant page's active share.
+ * No-op (ok:false) if the parent isn't currently shared. Returns how many
+ * descendant shares were created/updated (on) or revoked (off).
+ */
+export async function setShareCascade(
+  ownerId: string,
+  parentNodeId: string,
+  on: boolean,
+): Promise<{ ok: boolean; count: number }> {
+  const parent = await getActiveShareForNode(ownerId, parentNodeId);
+  if (!parent) return { ok: false, count: 0 };
+
+  await db
+    .update(shares)
+    .set({ settings: sql`${shares.settings} || ${JSON.stringify({ cascade: on })}::jsonb` })
+    .where(and(eq(shares.id, parent.id), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)));
+
+  const ids = await listPageDescendantIds(ownerId, parentNodeId);
+  if (ids.length === 0) return { ok: true, count: 0 };
+
+  if (on) {
+    for (const id of ids) {
+      const child = await createShare(ownerId, id); // idempotent — returns existing
+      if (child.mode !== parent.mode) await setShareMode(ownerId, child.id, parent.mode);
+    }
+    return { ok: true, count: ids.length };
+  }
+
+  const revoked = await db
+    .update(shares)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(shares.ownerId, ownerId), inArray(shares.nodeId, ids), isNull(shares.revokedAt)))
+    .returning({ id: shares.id });
+  return { ok: true, count: revoked.length };
+}
+
+/** Set a share's mode, propagating to the subtree when the share cascades.
+ *  Drop-in for {@link setShareMode} on the owner PATCH path. Returns false when
+ *  no such active share. */
+export async function applyShareMode(
+  ownerId: string,
+  shareId: string,
+  mode: ShareMode,
+): Promise<boolean> {
+  const [row] = await db
+    .select()
+    .from(shares)
+    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
+    .limit(1);
+  if (!row) return false;
+
+  const ok = await setShareMode(ownerId, shareId, mode);
+  if (!ok) return false;
+
+  if (shareCascadeOf(row)) {
+    const ids = await listPageDescendantIds(ownerId, row.nodeId);
+    if (ids.length > 0) {
+      await db
+        .update(shares)
+        .set({ settings: sql`${shares.settings} || ${JSON.stringify({ mode })}::jsonb` })
+        .where(
+          and(eq(shares.ownerId, ownerId), inArray(shares.nodeId, ids), isNull(shares.revokedAt)),
+        );
+    }
+  }
+  return true;
+}
+
+/** Revoke a share, cascading to the subtree when it cascades. Drop-in for
+ *  {@link revokeShare} on the owner DELETE path. */
+export async function revokeShareTree(ownerId: string, shareId: string): Promise<boolean> {
+  const [row] = await db
+    .select()
+    .from(shares)
+    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
+    .limit(1);
+  if (!row) return revokeShare(ownerId, shareId); // already gone / not found — idempotent
+
+  if (shareCascadeOf(row)) {
+    const ids = await listPageDescendantIds(ownerId, row.nodeId);
+    if (ids.length > 0) {
+      await db
+        .update(shares)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(eq(shares.ownerId, ownerId), inArray(shares.nodeId, ids), isNull(shares.revokedAt)),
+        );
+    }
+  }
+  return revokeShare(ownerId, shareId);
 }

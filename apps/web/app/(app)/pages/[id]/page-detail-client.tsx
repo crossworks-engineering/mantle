@@ -764,7 +764,7 @@ function PageDetailEditor({
             <StretchHorizontal /> Full width
           </Button>
           <ExportMenu nodeId={initial.id} />
-          <ShareControl nodeId={initial.id} beforeEnable={commit} teamMode />
+          <ShareControl nodeId={initial.id} beforeEnable={commit} teamMode allowCascade />
           <Button
             size="sm"
             variant="ghost"
