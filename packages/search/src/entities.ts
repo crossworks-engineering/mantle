@@ -73,6 +73,15 @@ export async function searchEntities(opts: EntitySearchOptions): Promise<EntityH
     eq(entities.ownerId, opts.ownerId),
     sql`similarity(${entities.name}, ${trimmed}) >= ${minSim}`,
   ];
+  // Let the trigram GIN (entities_name_trgm_idx) prefilter with the `%`
+  // operator instead of computing similarity() over every same-owner row. `%`
+  // uses pg_trgm's default 0.3 threshold, so it's only a safe superset of the
+  // `>= minSim` filter when minSim is at least 0.3 — below that we keep the
+  // pure (unindexed) predicate so recall isn't silently clipped.
+  const PG_TRGM_DEFAULT_THRESHOLD = 0.3;
+  if (minSim >= PG_TRGM_DEFAULT_THRESHOLD) {
+    fuzzyConds.push(sql`${entities.name} % ${trimmed}`);
+  }
   if (opts.kind) fuzzyConds.push(eq(entities.kind, opts.kind));
   const fuzzy = await db
     .select({ row: entities, sim: sql<number>`similarity(${entities.name}, ${trimmed})` })

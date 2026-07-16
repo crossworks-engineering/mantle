@@ -848,6 +848,13 @@
       "when": 1785196800000,
       "tag": "0120_table_registry",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1785283200000,
+      "tag": "0121_entity_perf_indexes",
+      "breakpoints": true
     }
   ]
 }

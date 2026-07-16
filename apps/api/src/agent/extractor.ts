@@ -982,8 +982,10 @@ export async function chatComplete(
 async function reconcileEntity(
   ownerId: string,
   mention: { name: string; kind: string },
-): Promise<Entity> {
-  // 1. Exact name (case-insensitive) or alias match first — cheapest.
+): Promise<{ entity: Entity; created: boolean }> {
+  // 1. Exact name (case-insensitive) or alias match first — cheapest. Both OR
+  //    branches are indexed (entities_owner_lname_kind_uq for lower(name),
+  //    entities_aliases_gin_idx for the alias membership — migration 0121).
   const trimmed = mention.name.trim();
   const [exact] = await db
     .select()
@@ -995,16 +997,26 @@ async function reconcileEntity(
       ),
     )
     .limit(1);
-  if (exact) return exact;
+  if (exact) return { entity: exact, created: false };
 
   // 2. Trigram fuzzy match within the same kind. Pick the strongest similarity.
+  //    The `name % $q` predicate lets the trigram GIN (entities_name_trgm_idx)
+  //    prefilter to candidates instead of computing similarity() over every
+  //    same-owner/kind row — the `%` threshold (0.3) sits well below the 0.7
+  //    acceptance gate below, so it never drops a real match.
   const trgmHits = await db
     .select({
       row: entities,
       sim: sql<number>`similarity(${entities.name}, ${trimmed})`,
     })
     .from(entities)
-    .where(and(eq(entities.ownerId, ownerId), eq(entities.kind, mention.kind)))
+    .where(
+      and(
+        eq(entities.ownerId, ownerId),
+        eq(entities.kind, mention.kind),
+        sql`${entities.name} % ${trimmed}`,
+      ),
+    )
     .orderBy(sql`similarity(${entities.name}, ${trimmed}) desc`)
     .limit(1);
   if (trgmHits[0] && trgmHits[0].sim >= 0.7) {
@@ -1025,7 +1037,7 @@ async function reconcileEntity(
           .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
           .where(eq(entities.id, existing.id));
       }
-      return existing;
+      return { entity: existing, created: false };
     }
   }
 
@@ -1057,7 +1069,7 @@ async function reconcileEntity(
             .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
             .where(eq(entities.id, existing.id));
         }
-        return existing;
+        return { entity: existing, created: false };
       }
     }
   } catch {
@@ -1086,7 +1098,7 @@ async function reconcileEntity(
             .set({ aliases: [...hit.aliases, trimmed], updatedAt: new Date() })
             .where(eq(entities.id, hit.id));
         }
-        return hit;
+        return { entity: hit, created: false };
       }
     }
   }
@@ -1110,7 +1122,7 @@ async function reconcileEntity(
       })
       .returning();
     if (!inserted) throw new Error('extractor: failed to insert entity');
-    return inserted;
+    return { entity: inserted, created: true };
   } catch (err) {
     // Unique-violation on entities_owner_lname_kind_uq (migration 0055): a
     // concurrent extraction inserted this same (owner, name, kind) between our
@@ -1130,7 +1142,9 @@ async function reconcileEntity(
       )
       .limit(1);
     if (!winner) throw err;
-    return winner;
+    // A concurrent extraction inserted it between our step-1 probe and here —
+    // from this call's view it already existed, so count it as matched.
+    return { entity: winner, created: false };
   }
 }
 
@@ -2106,20 +2120,16 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
               let matched = 0;
               for (const mention of uniqueMentions) {
                 try {
-                  const before = await db
-                    .select({ id: entities.id })
-                    .from(entities)
-                    .where(
-                      and(
-                        eq(entities.ownerId, ownerId),
-                        sql`lower(${entities.name}) = lower(${mention.name.trim()})`,
-                      ),
-                    )
-                    .limit(1);
-                  const ent = await reconcileEntity(ownerId, mention);
+                  // reconcileEntity already does the exact-match probe as its
+                  // first step and reports whether it matched or created — no
+                  // need for a second identical `lower(name)=…` query here.
+                  const { entity: ent, created: wasCreated } = await reconcileEntity(
+                    ownerId,
+                    mention,
+                  );
                   map.set(mention.name.trim().toLowerCase(), ent.id);
-                  if (before.length > 0) matched++;
-                  else created++;
+                  if (wasCreated) created++;
+                  else matched++;
                   pendingEdges.push({
                     ownerId,
                     sourceId: ent.id,
