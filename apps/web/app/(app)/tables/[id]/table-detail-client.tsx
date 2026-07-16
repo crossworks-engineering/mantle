@@ -30,6 +30,7 @@ import { TableGrid } from '@/components/table-grid/table-grid';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import { diffTableDocs, ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { uuid } from '@/lib/secure-context-fallbacks';
 import type { TableDetail } from '@/lib/tables';
 
 const DRAFT_DEBOUNCE_MS = 1200;
@@ -277,17 +278,19 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
   /** Dispatch tab CRUD ops (add/rename/delete), then reload from the server
    *  (the draft's tab list is the truth). */
   const tabOp = useCallback(
-    async (op: Record<string, unknown>, nextTab?: string) => {
+    async (op: Record<string, unknown> | Record<string, unknown>[], nextTab?: string) => {
+      const ops = Array.isArray(op) ? op : [op];
       try {
         const flushed = await saveDraft();
         if (!flushed) return;
         const j = await apiSend<{ draft_rev: number; created_ids: (string | null)[] }>(
           `/api/tables/${initial.id}/draft-ops`,
           'POST',
-          { ops: [op], if_rev: draftRevRef.current },
+          { ops, if_rev: draftRevRef.current },
         );
         draftRevRef.current = j.draft_rev;
-        await reloadTab(nextTab ?? (op.op === 'tab_add' ? (j.created_ids[0] as string) : undefined));
+        const addIdx = ops.findIndex((o) => o.op === 'tab_add');
+        await reloadTab(nextTab ?? (addIdx >= 0 ? (j.created_ids[addIdx] as string) : undefined));
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) {
           toast.error('This table changed elsewhere — reloading the latest draft');
@@ -482,7 +485,22 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
           activeTab={activeTab}
           switching={tabSwitching}
           onSwitch={(id) => void switchTab(id)}
-          onAdd={() => void tabOp({ op: 'tab_add', name: `Sheet${(tabs?.length ?? 0) + 1}` })}
+          onAdd={() => {
+            // Seed a fresh sheet with a labeled first column + a few empty rows
+            // (mirrors a brand-new table). An empty tab renders the "+" adrift
+            // mid-grid with nowhere obvious to type — the named column anchors it.
+            const tabId = uuid();
+            void tabOp(
+              [
+                { op: 'tab_add', tabId, name: `Sheet${(tabs?.length ?? 0) + 1}` },
+                { op: 'column_add', tabId, column: { name: 'Column 1', type: 'text' } },
+                { op: 'row_add', tabId },
+                { op: 'row_add', tabId },
+                { op: 'row_add', tabId },
+              ],
+              tabId,
+            );
+          }}
           onRename={(id, name) => void tabOp({ op: 'tab_rename', tabId: id, name }, id)}
           onDelete={(id) => void tabOp({ op: 'tab_delete', tabId: id }, (tabs ?? []).find((t) => t.id !== id)?.id)}
         />
