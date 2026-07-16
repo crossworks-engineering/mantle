@@ -110,23 +110,13 @@ describe('diffTableDocs', () => {
     ]);
   });
 
-  it('emits a refMode switch on a linked column (v2.2)', () => {
+  it('emits ref:null (clear) when a linked column is unlinked', () => {
     const prev = doc();
-    prev.columns[1] = { id: 'c2', name: 'Qty', type: 'reference', ref: { tabId: 't1', columnId: 'c1' }, refMode: 'select' };
-    const next = doc();
-    next.columns[1] = { id: 'c2', name: 'Qty', type: 'reference', ref: { tabId: 't1', columnId: 'c1' }, refMode: 'checkbox' };
-    expect(diffTableDocs(prev, next)).toEqual([
-      { op: 'column_update', columnId: 'c2', patch: { refMode: 'checkbox' } },
-    ]);
-  });
-
-  it('emits refMode:null (clear) when a linked column is unlinked', () => {
-    const prev = doc();
-    prev.columns[1] = { id: 'c2', name: 'Qty', type: 'reference', ref: { tabId: 't1', columnId: 'c1' }, refMode: 'checkbox' };
+    prev.columns[1] = { id: 'c2', name: 'Qty', type: 'reference', ref: { tabId: 't1', columnId: 'c1' } };
     const next = doc(); // c2 back to plain number
     const ops = diffTableDocs(prev, next);
     expect(ops).toEqual([
-      { op: 'column_update', columnId: 'c2', patch: { type: 'number', ref: null, refMode: null } },
+      { op: 'column_update', columnId: 'c2', patch: { type: 'number', ref: null } },
     ]);
   });
 

@@ -1,5 +1,5 @@
 import { loadCell } from './cells';
-import type { CellValue, Column, ColumnType, RefMode, Row } from './doc-types';
+import type { CellValue, Column, ColumnType, Row } from './doc-types';
 import { storageType } from './doc-types';
 import { openTableFile, type SqliteDb } from './sqlite';
 
@@ -51,13 +51,13 @@ const TOP_N = 8;
 const RANGED = new Set<ColumnType>(['number', 'currency', 'percent', 'date', 'datetime']);
 const TEXTY = new Set<ColumnType>(['text', 'url', 'reference']);
 
-type ColRow = { col_id: string; physical: string; name: string; type: string; ref_mode?: string | null };
+type ColRow = { col_id: string; physical: string; name: string; type: string };
 
 function profileColumn(db: SqliteDb, table: string, rowCount: number, col: ColRow): ColumnProfile {
   const docType = col.type as ColumnType;
   // Report the doc type ('reference' stays visible in the schema), but analyze
-  // value shape by the STORAGE type — a linked-checkbox is booleans, not text.
-  const type = storageType({ type: docType, refMode: (col.ref_mode ?? undefined) as RefMode | undefined });
+  // value shape by the STORAGE type — a linked column is text (select).
+  const type = storageType({ type: docType });
   const p = col.physical;
   const out: ColumnProfile = {
     colId: col.col_id,
@@ -131,17 +131,15 @@ export function profileFile(absPath: string): TabProfile[] {
       // SELECT * — pre-v2.1 files have no ref_json column.
       const cols = db
         .prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`)
-        .all(tab.tab_id) as unknown as (ColRow & { ref_json?: string | null; ref_mode?: string | null })[];
+        .all(tab.tab_id) as unknown as (ColRow & { ref_json?: string | null })[];
       return {
         tabId: tab.tab_id,
         name: tab.name,
         rowCount,
         columns: cols.map((c) => {
           const out = profileColumn(db, tab.physical_table, rowCount, c);
-          // Only a linked-SELECT pulls values from a source (dangling makes
-          // sense there). A linked-checkbox only borrows the source's label —
-          // its cells are booleans, so no join edge / dangling (v2.2).
-          if (c.type === 'reference' && c.ref_json != null && (c.ref_mode ?? 'select') === 'select') {
+          // A linked column pulls source values worth a dangling check here.
+          if (c.type === 'reference' && c.ref_json != null) {
             const ref = JSON.parse(String(c.ref_json)) as { tabId: string; columnId: string };
             const srcCol = colById.get(ref.columnId);
             const srcTable = tableByTabId.get(ref.tabId);
@@ -183,10 +181,10 @@ export function sampleRows(absPath: string, n = 20): { tabId: string; rows: Row[
     return tabs.map((tab) => {
       const total = Number(db.prepare(`SELECT count(*) AS c FROM ${tab.physical_table}`).get()?.c ?? 0);
       const cols = db
-        // SELECT * — pre-v2.2 files lack ref_mode; a named SELECT would throw
-        // on old published files (see window.tabMeta). Missing → 'select'.
+        // SELECT * — pre-v2.1 files lack ref_json; a named SELECT would throw
+        // on old published files (see window.tabMeta).
         .prepare(`SELECT * FROM _columns WHERE tab_id = ? AND type != 'formula' ORDER BY position`)
-        .all(tab.tab_id) as unknown as { col_id: string; physical: string; type: string; ref_mode?: string | null }[];
+        .all(tab.tab_id) as unknown as { col_id: string; physical: string; type: string }[];
       if (total === 0 || cols.length === 0) return { tabId: tab.tab_id, rows: [] };
       const k = Math.max(1, Math.ceil(total / n));
       const select = cols.map((c) => c.physical).join(', ');
@@ -200,7 +198,7 @@ export function sampleRows(absPath: string, n = 20): { tabId: string; rows: Row[
       const rows: Row[] = raw.map((r) => {
         const cells: Record<string, CellValue> = {};
         for (const c of cols) {
-          const st = storageType({ type: c.type as ColumnType, refMode: (c.ref_mode ?? undefined) as RefMode | undefined });
+          const st = storageType({ type: c.type as ColumnType });
           const v = loadCell(r[c.physical], st);
           if (v !== null) cells[c.col_id] = v;
         }

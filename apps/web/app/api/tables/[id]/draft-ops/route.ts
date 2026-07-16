@@ -23,10 +23,6 @@ const Cells = z
   .record(Cell)
   .refine((o) => Object.keys(o).length <= 500, { message: 'too many cells in one op' });
 const Ref = z.object({ tabId: Id, columnId: Id });
-// 'multi' is a defined RefMode but its storage/UI is deferred — don't accept
-// it over the network yet (a hand-crafted request would otherwise create a
-// multiselect-backed reference column ahead of its implementation).
-const RefMode = z.enum(['select', 'checkbox']);
 const ColumnType = z.enum([
   'text', 'number', 'currency', 'percent', 'date', 'datetime',
   'checkbox', 'select', 'multiselect', 'url', 'formula', 'reference',
@@ -42,7 +38,6 @@ const ColumnShape = z.object({
   formula: z.string().max(4000).optional(),
   width: z.number().optional(),
   ref: Ref.optional(),
-  refMode: RefMode.optional(),
 });
 const ColumnPatch = z.object({
   name: Name.optional(),
@@ -52,7 +47,6 @@ const ColumnPatch = z.object({
   formula: z.string().max(4000).nullish(),
   width: z.number().nullish(),
   ref: Ref.nullish(),
-  refMode: RefMode.nullish(),
 });
 const SortSpec = z.object({ colId: Id, dir: z.enum(['asc', 'desc']) });
 const FilterSpec = z.object({

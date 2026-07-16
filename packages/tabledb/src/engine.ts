@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { storeCell, loadCell, sqlTypeFor } from './cells';
-import type { AggregateKind, Column, ColumnType, RefMode, Row, TableDocLike, View, WorkbookDocLike, WorkbookTabDoc } from './doc-types';
+import type { AggregateKind, Column, ColumnType, Row, TableDocLike, View, WorkbookDocLike, WorkbookTabDoc } from './doc-types';
 import { storageType } from './doc-types';
 import { createFtsShadow, ftsColumns, ftsTableName } from './fts';
 import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './names';
@@ -160,7 +160,7 @@ function createSchema(db: SqliteDb, meta: WriteDocMeta): void {
     name TEXT NOT NULL, type TEXT NOT NULL,
     format_json TEXT, options_json TEXT, formula_src TEXT, width INTEGER,
     position INTEGER NOT NULL,
-    ref_json TEXT, ref_mode TEXT,
+    ref_json TEXT,
     PRIMARY KEY (tab_id, col_id)
   )`);
   db.exec(`CREATE TABLE _views (
@@ -195,8 +195,8 @@ function createTab(
     viewName,
   );
   const insCol = db.prepare(
-    `INSERT INTO _columns (tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position, ref_json, ref_mode)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO _columns (tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position, ref_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   plans.forEach(({ col, physical }, i) => {
     insCol.run(
@@ -211,12 +211,11 @@ function createTab(
       col.width ?? null,
       i,
       col.ref ? JSON.stringify(col.ref) : null,
-      col.type === 'reference' ? (col.refMode ?? 'select') : null,
     );
   });
 
   // Data table: stable-id columns; formula columns have no storage. A linked
-  // column's SQL affinity follows its refMode (checkbox → INTEGER, else TEXT).
+  // column's SQL affinity follows its storage type (select → TEXT).
   const stored = plans.filter((p) => p.col.type !== 'formula');
   const colDefs = stored.map((p) => `${p.physical} ${sqlTypeFor(storageType(p.col))}`);
   db.exec(
@@ -366,7 +365,6 @@ function readColumns(db: SqliteDb, tabId: string): { columns: Column[]; physical
     if (r.formula_src != null) col.formula = String(r.formula_src);
     if (r.width != null) col.width = Number(r.width);
     if (r.ref_json != null) col.ref = JSON.parse(String(r.ref_json));
-    if (r.ref_mode != null) col.refMode = String(r.ref_mode) as RefMode;
     physicals.set(col.id, String(r.physical));
     return col;
   });
@@ -547,12 +545,11 @@ export function describeWorkbook(absPath: string): WorkbookTabRef[] {
             physical: String(c.physical),
             type: String(c.type) as ColumnType,
           };
-          // Only a linked-SELECT is a value edge worth advertising to the
-          // schema/table_sql surface. A linked-checkbox only borrows the
-          // source's label (a boolean, not its values) — no edge, matching
-          // profile.ts (v2.2). A deleted source degrades to plain text: the
-          // edge simply stops being advertised (Excel-style).
-          if (c.ref_json != null && (c.ref_mode ?? 'select') === 'select') {
+          // A linked column is a value edge worth advertising to the
+          // schema/table_sql surface (matching profile.ts). A deleted source
+          // degrades to plain text: the edge simply stops being advertised
+          // (Excel-style).
+          if (c.ref_json != null) {
             const ref = JSON.parse(String(c.ref_json)) as { tabId: string; columnId: string };
             const tab = tabNameById.get(ref.tabId);
             const column = colNameById.get(ref.columnId);

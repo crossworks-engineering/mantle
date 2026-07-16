@@ -92,12 +92,6 @@ export type ColumnFormat = {
  *  joins, no live-follow; v2.2), same workbook only. */
 export type ColumnRef = { tabId: string; columnId: string };
 
-/** How a linked (type='reference') column behaves + stores (v2.2):
- *  select→one value (text), multi→several (deferred), checkbox→a real boolean
- *  whose label is borrowed from the source. Undefined = 'select' (the v0.136.0
- *  single-text reference — forward-compatible). Mirrors tabledb's RefMode. */
-export type RefMode = 'select' | 'multi' | 'checkbox';
-
 export type Column = {
   id: string;
   name: string;
@@ -111,16 +105,13 @@ export type Column = {
   width?: number;
   /** Source column for reference (linked) columns. */
   ref?: ColumnRef;
-  /** Behavior/storage mode for linked columns. */
-  refMode?: RefMode;
 };
 
-/** The base type a column STORES / COERCES as — a linked column follows its
- *  refMode (select→text, multi→multiselect, checkbox→checkbox); everything
- *  else is itself. Callers coercing a cell use this, not the raw `type`. */
-export function storageType(col: Pick<Column, 'type' | 'refMode'>): ColumnType {
-  if (col.type !== 'reference') return col.type;
-  return col.refMode === 'multi' ? 'multiselect' : col.refMode === 'checkbox' ? 'checkbox' : 'select';
+/** The base type a column STORES / COERCES as — a linked (reference) column
+ *  stores as 'select' (text); everything else is itself. Callers coercing a
+ *  cell use this, not the raw `type`. */
+export function storageType(col: Pick<Column, 'type'>): ColumnType {
+  return col.type === 'reference' ? 'select' : col.type;
 }
 
 /** A single cell's stored value. Formula cells are never stored — they're
@@ -259,9 +250,6 @@ export function ensureTableDoc(input: unknown): TableDoc {
     if (typeof col.width === 'number') out.width = col.width;
     if (col.ref && typeof col.ref === 'object' && typeof col.ref.tabId === 'string' && typeof col.ref.columnId === 'string') {
       out.ref = { tabId: col.ref.tabId, columnId: col.ref.columnId };
-    }
-    if (out.type === 'reference' && (col.refMode === 'select' || col.refMode === 'multi' || col.refMode === 'checkbox')) {
-      out.refMode = col.refMode;
     }
     return out;
   });
@@ -460,9 +448,9 @@ export function updateColumn(
   const next: Column = { ...current, ...patch, id: columnId };
   const columns = doc.columns.map((c) => (c.id === columnId ? next : c));
   let rows = doc.rows;
-  // Re-coerce cells when the STORAGE shape changes — a type change OR a linked
-  // mode switch (select↔checkbox keeps type='reference' but changes storage).
-  // Keyed on storageType so it matches the server's op-path recoerce (v2.2).
+  // Re-coerce cells when the STORAGE shape changes on a type change. Keyed on
+  // storageType so it matches the server's op-path recoerce, and so a text↔
+  // reference retype (both store as text/select) needn't rewrite cells.
   const prevStorage = storageType(current);
   const nextStorage = storageType(next);
   if (prevStorage !== nextStorage) {
@@ -708,7 +696,6 @@ export type TableColumnPatch = {
   formula?: string | null;
   width?: number | null;
   ref?: ColumnRef | null;
-  refMode?: RefMode | null;
 };
 
 export type TableDocOp =
@@ -760,7 +747,6 @@ export function diffTableDocs(prev: TableDoc, next: TableDoc): TableDocOp[] | nu
     if ((old.formula ?? '') !== (c.formula ?? '')) patch.formula = c.formula ?? null;
     if ((old.width ?? null) !== (c.width ?? null)) patch.width = c.width ?? null;
     if (JSON.stringify(old.ref ?? null) !== JSON.stringify(c.ref ?? null)) patch.ref = c.ref ?? null;
-    if ((old.refMode ?? null) !== (c.refMode ?? null)) patch.refMode = c.refMode ?? null;
     if (Object.keys(patch).length > 0) ops.push({ op: 'column_update', columnId: c.id, patch });
   });
 

@@ -1,12 +1,11 @@
 import { loadCell } from './cells';
-import type { AggregateKind, CellValue, ColumnType, Filter, RefMode, Row, SortSpec } from './doc-types';
+import type { AggregateKind, CellValue, ColumnType, Filter, Row, SortSpec } from './doc-types';
 import { storageType } from './doc-types';
 import { openTableFile, type SqliteDb } from './sqlite';
 
-/** The type a ColMeta stores/compares as — a linked column follows its
- *  refMode's base type (v2.2). Pushdown/sort/aggregate branch on THIS so a
- *  linked-checkbox filters as a checkbox, not as text. */
-const metaType = (c: { type: ColumnType; refMode?: RefMode }): ColumnType => storageType(c);
+/** The type a ColMeta stores/compares as — a linked column stores as 'select'
+ *  (text). Pushdown/sort/aggregate branch on THIS, not the raw 'reference'. */
+const metaType = (c: { type: ColumnType }): ColumnType => storageType(c);
 
 /**
  * Windowed reads over a workbook file (P3): keyset pagination on (_pos, _rid)
@@ -21,7 +20,7 @@ const metaType = (c: { type: ColumnType; refMode?: RefMode }): ColumnType => sto
  * tables are new in v2, so the SQL semantics ARE their contract).
  */
 
-type ColMeta = { colId: string; physical: string; type: ColumnType; refMode?: RefMode };
+type ColMeta = { colId: string; physical: string; type: ColumnType };
 
 function tabMeta(db: SqliteDb, tabId?: string): { physicalTable: string; cols: ColMeta[] } {
   const tab =
@@ -34,17 +33,14 @@ function tabMeta(db: SqliteDb, tabId?: string): { physicalTable: string; cols: C
     );
   }
   const cols = db
-    // SELECT * — pre-v2.2 files have no ref_mode column; a named SELECT would
-    // throw `no such column` on every read of an un-recommitted old table
-    // (the lazy ALTER only runs on the write path). storageType treats a
-    // missing refMode as 'select', so undefined round-trips.
+    // SELECT * — pre-v2.1 files have no ref_json column; a named SELECT would
+    // throw `no such column` on every read of an un-recommitted old table.
     .prepare(`SELECT * FROM _columns WHERE tab_id = ? ORDER BY position`)
     .all(String(tab.tab_id))
     .map((c) => ({
       colId: String(c.col_id),
       physical: String(c.physical),
       type: String(c.type) as ColumnType,
-      ...(c.ref_mode != null ? { refMode: String(c.ref_mode) as RefMode } : {}),
     }));
   return { physicalTable: String(tab.physical_table), cols };
 }

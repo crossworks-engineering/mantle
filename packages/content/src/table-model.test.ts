@@ -377,30 +377,26 @@ describe('emptyTableDoc', () => {
 });
 
 describe('linked-column cells coerce by storage mode (v2.2)', () => {
-  // A linked-checkbox is a real boolean; updateRow/addRow must coerce via
-  // storageType, not the raw 'reference' type — else the cell becomes the
-  // string 'false' and the grid checkbox can never be unchecked (audit).
-  const linkedCheckbox = () =>
+  // A linked-select stores as text; updateRow/addRow must coerce via
+  // storageType, not the raw 'reference' type, so the picked value round-trips
+  // through the proven select path.
+  const linkedSelect = () =>
     ensureTableDoc({
       columns: [
         { id: 'c1', name: 'K', type: 'text' },
-        { id: 'c2', name: 'Done', type: 'reference', refMode: 'checkbox', ref: { tabId: 't', columnId: 's' } },
+        { id: 'c2', name: 'Model', type: 'reference', ref: { tabId: 't', columnId: 's' } },
       ],
-      rows: [{ id: 'r1', cells: { c1: 'a', c2: true } }],
+      rows: [{ id: 'r1', cells: { c1: 'a', c2: 'X' } }],
     });
 
-  it('updateRow stores a boolean, not the string "false"', () => {
-    const doc = updateRow(linkedCheckbox(), 'r1', { c2: false });
-    // The fix: boolean false (Boolean(false)=false → unchecks), NOT 'false'
-    // (a truthy string that would keep the box checked).
-    expect(doc.rows[0]!.cells.c2).toBe(false);
-    const doc2 = updateRow(linkedCheckbox(), 'r1', { c2: true });
-    expect(doc2.rows[0]!.cells.c2).toBe(true);
+  it('updateRow stores the picked value as text', () => {
+    const doc = updateRow(linkedSelect(), 'r1', { c2: 'Y' });
+    expect(doc.rows[0]!.cells.c2).toBe('Y');
   });
 
-  it('addRow coerces a linked-checkbox cell to boolean', () => {
-    const doc = addRow(linkedCheckbox(), { c1: 'b', c2: 'x' }).doc; // 'x' is truthy per checkbox coerce
+  it('addRow coerces a linked-select cell to text', () => {
+    const doc = addRow(linkedSelect(), { c1: 'b', c2: 42 }).doc;
     const added = doc.rows[doc.rows.length - 1]!;
-    expect(added.cells.c2).toBe(true);
+    expect(added.cells.c2).toBe('42');
   });
 });

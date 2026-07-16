@@ -52,7 +52,6 @@ type Column = {
   options?: { id; label; color? }[];   // select / multiselect
   formula?: string;                    // formula columns
   ref?: { tabId; columnId };           // linked (reference) columns — source
-  refMode?: 'select'|'multi'|'checkbox'; // linked mode (default select; multi deferred)
   width?: number;
 };
 type Row = { id; cells: Record<columnId, CellValue> };   // ← the addressing unit
@@ -68,35 +67,30 @@ Pure ops (all return a new doc): `addRow`/`updateRow`/`deleteRow`/`setCell`,
 assembler), and `diffTableDocs` (doc diff → draft-op batch; the grid's save
 path — see §5).
 
-### Linked (reference) columns (v2.1 · modes v2.2)
+### Linked (reference) columns (v2.1)
 
 `type: 'reference'` + `ref: {tabId, columnId}`: a **convenience picker** that
 offers values from another tab's column, Excel data-validation style. It is
-NOT a relationship — the picked value is **copied as plain text/boolean at pick
+NOT a relationship — the picked value is **copied as plain text at pick
 time** (no row-ids, no join, no live-follow: renaming a source value does not
 propagate, by design — better for `table_sql`, which just sees an ordinary
 column). Same workbook only (`table_sql` can't `ATTACH` other files).
 
-**`refMode`** (v2.2) picks how it behaves + stores — the engine's `storageType()`
-maps a linked column to its mode's base type at every storage/read/filter site:
-
-| mode | picks | stored as |
-|---|---|---|
-| `select` (default) | one source value, dropdown | text (= the v0.136.0 reference — forward-compatible, no migration) |
-| `checkbox` | — (a real true/false box; the link only borrows the source column's label) | boolean |
-| `multi` | *deferred* — not wired | — |
+A reference **stores as `select` (text)** — the engine's `storageType()` maps
+`reference → select` at every storage/read/filter site, so linked cells
+round-trip through the proven select path (the v0.136.0 single-text reference —
+forward-compatible, no migration).
 
 In the grid: **Link column…** in the type menu when unlinked; once linked, a 🔗
-icon left of the type icon opens a menu (**Mode** select/checkbox · **Change
-source…** · **Delete link**). Picking a standard type unlinks; delete-link keeps
-values (select→text, checkbox→checkbox). Via tools: `table_column_add` /
-`table_column_update` take `reference: {tab, column}` + `link_mode`.
+icon left of the type icon opens a menu (**Change source…** · **Delete link**).
+Picking a standard type unlinks; delete-link keeps values as plain text. Via
+tools: `table_column_add` / `table_column_update` take `reference: {tab, column}`.
 
-Soft integrity (select mode): free text allowed, values missing from the source
-flagged `DANGLING REFS`; deleting the source degrades to plain text, values
-intact. A linked-**select** advertises its source edge everywhere schema is
+Soft integrity: free text allowed, values missing from the source flagged
+`DANGLING REFS`; deleting the source degrades to plain text, values intact. A
+linked column advertises its source edge everywhere schema is
 (`describeWorkbook().columns[].refersTo`, the profile, the schema chunk "Join
-edge: …"); a linked-**checkbox** does not (it borrows a label, not values).
+edge: …").
 
 ### Formulas — `table-formula.ts`
 
@@ -214,7 +208,7 @@ lookups with parity-gated SQL pushdown; aggregates over the full matched set),
 
 Edits (→ the draft, atomic op batches, review hint): `table_row_add`/`update`/
 `delete`, `table_cell_set`, `table_column_add`/`update`/`delete` (add/update take
-`reference: {tab, column}` + `link_mode` select|checkbox for linked columns),
+`reference: {tab, column}` for linked columns),
 `table_set_aggregate`,
 `table_set_view`, and the tab CRUD — **`table_tab_add` / `table_tab_rename` /
 `table_tab_delete`** (refuses the last tab). Plus `table_create`,
