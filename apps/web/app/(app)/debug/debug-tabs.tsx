@@ -23,7 +23,7 @@ const TABS = [
 export function DebugTabs() {
   const pathname = usePathname();
   return (
-    <nav className="flex flex-wrap gap-1 border-b border-border">
+    <nav className="flex flex-nowrap gap-1 overflow-x-auto border-b border-border">
       {TABS.map((t) => {
         const active = t.exact ? pathname === t.href : pathname.startsWith(t.href);
         return (
@@ -31,7 +31,7 @@ export function DebugTabs() {
             key={t.href}
             href={t.href}
             className={
-              'rounded-t-md px-3 py-2 text-sm font-medium transition-colors ' +
+              'shrink-0 whitespace-nowrap rounded-t-md px-3 py-2 text-sm font-medium transition-colors ' +
               (active
                 ? 'border-b-2 border-primary text-foreground'
                 : 'text-muted-foreground hover:text-foreground')

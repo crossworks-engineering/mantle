@@ -17,7 +17,7 @@ export default async function JourneyDetailPage({
   const { traceId } = await params;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-6 py-8">
+    <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
       <DebugTabs />
       <BackLink href="/debug/journey">Back to activity</BackLink>
       <JourneyDetailClient traceId={traceId} />
