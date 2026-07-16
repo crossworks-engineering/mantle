@@ -16,11 +16,12 @@ describe('@host kit ↔ bridge protocol mirror', () => {
 
   it('exposes the team-hub namespace with the enumerated hub kinds', () => {
     expect(HOST).toContain("kind: 'hub.get'");
-    // Both nav intents post the SAME event kind with the two target shapes the
-    // shell's isHubNavTarget guard accepts.
+    // All nav intents post the SAME event kind with the target shapes the
+    // shell's isHubNavTarget guard accepts (chat / briefing / app).
     expect(HOST).toContain("kind: 'hub.nav', target: 'chat'");
     expect(HOST).toContain("kind: 'hub.nav', target: { briefing: String(token) }");
-    for (const api of ['hub:', 'get:', 'openChat:', 'openBriefing:']) {
+    expect(HOST).toContain("kind: 'hub.nav', target: { app: String(token) }");
+    for (const api of ['hub:', 'get:', 'openChat:', 'openBriefing:', 'openApp:']) {
       expect(HOST).toContain(api);
     }
   });

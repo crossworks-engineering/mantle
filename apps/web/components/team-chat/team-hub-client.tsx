@@ -43,13 +43,9 @@ type TeamAppCard = {
 };
 
 /** The /api/team/hub payload — the bridge `HubData` (what `hub.get` answers a
- *  hub app with) plus the shell-only fields. Composed from the protocol type
- *  so the two can't drift. */
+ *  hub app with; `apps` is now part of that contract) plus the shell-only
+ *  fields. Composed from the protocol type so the two can't drift. */
 type HubData = BridgeHubData & {
-  /** Team-apps launcher cards. Shell-only until the bridge `HubData` grows an
-   *  `apps` field (launcher phase 2) — optional so a cached payload from an
-   *  older server renders fine. */
-  apps?: TeamAppCard[];
   /** Present when this brain designated a team-hub APP (pref + green published
    *  build + active team-mode share all intact) — the shell renders it
    *  full-bleed instead of the built-in hub body below. */
@@ -266,6 +262,13 @@ export function TeamHubShell() {
         setView('chat');
         return;
       }
+      if ('app' in target) {
+        // Only open apps that are REAL team-app launchers — never an arbitrary
+        // token an app hands us. The reader opens /s/<token> like a briefing.
+        const appCard = (data.apps ?? []).find((a) => a.token === target.app);
+        if (appCard) setView({ reader: appCard });
+        return;
+      }
       // Only open briefings that are REAL hub sections (active team-mode page
       // shares) — never navigate to an arbitrary token an app hands us.
       const section = data.sections.find((s) => s.token === target.briefing);
@@ -285,6 +288,7 @@ export function TeamHubShell() {
                 version: data.version,
                 sections: data.sections,
                 counts: data.counts,
+                apps: data.apps ?? [],
               }),
               onNav,
             }}

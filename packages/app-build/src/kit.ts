@@ -222,6 +222,8 @@ export const host = {
     openChat: () => window.parent.postMessage({ v: 1, kind: 'hub.nav', target: 'chat' }, '*'),
     openBriefing: (token) =>
       window.parent.postMessage({ v: 1, kind: 'hub.nav', target: { briefing: String(token) } }, '*'),
+    openApp: (token) =>
+      window.parent.postMessage({ v: 1, kind: 'hub.nav', target: { app: String(token) } }, '*'),
   },
 };
 
