@@ -115,7 +115,7 @@ describe('applyOpsToFile', () => {
     );
     doc = readDocFile(file);
     expect(doc.rows[1]!.cells['c-due']).toBe(42);
-    expect(doc.rows[0]!.cells['c-due']).toBeNull; // '2026-07-15' isn't numeric → null (dropped)
+    expect(doc.rows[0]!.cells['c-due']).toBeUndefined(); // '2026-07-15' isn't numeric → cell dropped (absent)
 
     applyOpsToFile(
       file,

@@ -278,6 +278,7 @@ function truncateForPrompt(body: string): string {
  * this). NULs carry no information, so dropping them is safe.
  */
 function cleanText(s: string): string {
+  // eslint-disable-next-line no-control-regex -- stripping NUL is the whole point
   return s.replace(/\x00/g, '');
 }
 

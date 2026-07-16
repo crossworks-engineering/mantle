@@ -1,10 +1,10 @@
 # CI build-check — validate a change BEFORE it can reach a deploy.
 #
-# Runs typecheck + the full vitest suite + the apps/web PRODUCTION build (the
-# edge-runtime / webpack gate that tsc + vitest miss — see
-# docs/deploy-preflight). This is the durable replacement for building locally
-# or on a worktree: the build runs OFF your machine, on the right tree, before
-# anything is merged or tagged.
+# Runs typecheck + lint (ESLint) + format check (Prettier) + the full vitest
+# suite + the apps/web PRODUCTION build (the edge-runtime / webpack gate that
+# tsc + vitest miss — see docs/deploy-preflight). This is the durable
+# replacement for building locally or on a worktree: the build runs OFF your
+# machine, on the right tree, before anything is merged or tagged.
 #
 # Triggers:
 #   - push to feat/** — validate a branch as you work, before opening a PR / merge
@@ -56,6 +56,15 @@ jobs:
 
       - name: Typecheck
         run: pnpm -r typecheck
+
+      # Lint (ESLint flat config) + formatting (Prettier) — the quality gate.
+      # Cheap and fails fast, so a formatting/lint slip is caught before the
+      # slower test + build steps run.
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
 
       - name: Test
         run: pnpm test

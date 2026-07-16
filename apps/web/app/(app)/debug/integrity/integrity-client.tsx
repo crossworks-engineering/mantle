@@ -664,7 +664,7 @@ function SystemView() {
   // provider's api object isn't memoized, so `run` re-identifies every time a
   // toast is pushed — keying the effect on it would re-fetch on each success
   // toast, an infinite loop. Mount-once is the right shape for a one-shot check.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     void run();
   }, []);

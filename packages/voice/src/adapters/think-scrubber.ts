@@ -186,7 +186,7 @@ export class StreamingThinkScrubber {
     for (const tag of OPEN_TAGS) {
       const tagLower = tag.toLowerCase();
       let searchStart = 0;
-      // eslint-disable-next-line no-constant-condition
+
       while (true) {
         const idx = bufLower.indexOf(tagLower, searchStart);
         if (idx === -1) break;

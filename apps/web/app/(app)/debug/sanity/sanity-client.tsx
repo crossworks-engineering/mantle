@@ -107,7 +107,7 @@ export function SanityClient() {
 
   // Auto-run once on open. Not keyed on `run` — the toast api object isn't
   // memoized, so keying would re-fetch on every toast (see integrity-client).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     void run();
   }, []);

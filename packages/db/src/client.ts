@@ -3,9 +3,8 @@ import postgres from 'postgres';
 import * as schema from './schema/index';
 
 declare global {
-  // eslint-disable-next-line no-var
   var __mantleSql: ReturnType<typeof postgres> | undefined;
-  // eslint-disable-next-line no-var
+
   var __mantleDb: PostgresJsDatabase<typeof schema> | undefined;
 }
 

@@ -133,7 +133,6 @@ export function usePersistedState<T>(
       /* keep initial */
     }
     loaded.current = true;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
   const set = useCallback(

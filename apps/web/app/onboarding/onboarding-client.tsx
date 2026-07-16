@@ -197,7 +197,6 @@ function Wizard({
   }
   useEffect(() => {
     void checkInfra();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const infraDown = infra !== null && infra.some((c) => !c.ok);
 

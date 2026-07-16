@@ -26,13 +26,13 @@
     "version:bump": "node scripts/bump-version.mjs",
     "apps:push": "pnpm -C apps/web apps:push",
     "licenses:notices": "node scripts/generate-notices.mjs",
-    "lint": "pnpm -r lint",
+    "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx,mjs,cjs}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,mjs,cjs}\"",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "pnpm -r typecheck && vitest run",
+    "verify": "pnpm -r typecheck && pnpm lint && pnpm format:check && vitest run",
     "db:migrate": "pnpm -C packages/db migrate",
     "db:studio": "pnpm -C packages/db studio",
     "extract:backfill": "pnpm -C apps/web extract:backfill",
@@ -60,9 +60,15 @@
     "tailscale:serve:status": "bash scripts/prod-tailscale-serve.sh status"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@next/eslint-plugin-next": "^16.2.10",
     "concurrently": "^9.2.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.7.0",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.64.0",
     "vitest": "^2.1.9"
   }
 }

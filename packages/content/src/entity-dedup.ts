@@ -103,7 +103,7 @@ export function isEmailName(name: string): boolean {
 /** Bare phone-ish name: 7+ chars of digits/space/+()- and ≥7 digits. */
 export function isPhoneName(name: string): boolean {
   const t = name.trim();
-  if (!/^[0-9 +()\-]{7,}$/.test(t)) return false;
+  if (!/^[0-9 +()-]{7,}$/.test(t)) return false;
   return t.replace(/\D/g, '').length >= 7;
 }
 

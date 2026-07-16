@@ -29,29 +29,32 @@ export default async function NodePermalink({ params }: { params: Promise<{ id: 
   if (!row) notFound();
 
   const enc = encodeURIComponent(id);
+  // `redirect()` throws (returns `never`), so control never actually falls
+  // through — but `return` makes that explicit and satisfies no-fallthrough
+  // without the syntactic rule needing type info.
   switch (row.type) {
     case 'note':
-      redirect(`/notes?selected=${enc}`);
+      return redirect(`/notes?selected=${enc}`);
     case 'page':
-      redirect(`/pages/${enc}`);
+      return redirect(`/pages/${enc}`);
     case 'task':
-      redirect(`/tasks?selected=${enc}`);
+      return redirect(`/tasks?selected=${enc}`);
     case 'table':
-      redirect(`/tables?selected=${enc}`);
+      return redirect(`/tables?selected=${enc}`);
     case 'app':
-      redirect(`/apps/${enc}`);
+      return redirect(`/apps/${enc}`);
     case 'event':
-      redirect(`/events/${enc}`);
+      return redirect(`/events/${enc}`);
     case 'file':
-      redirect(`/files?file=${enc}`);
+      return redirect(`/files?file=${enc}`);
     case 'contact':
-      redirect(`/contacts?id=${enc}`);
+      return redirect(`/contacts?id=${enc}`);
     case 'journal':
-      redirect(`/journal?selected=${enc}`);
+      return redirect(`/journal?selected=${enc}`);
     default:
       // email, secret, location, telegram_message, sermon, documentation,
       // mantle_peer, printer_project, branch — no dedicated editor; the
       // generic node biography works for every type.
-      redirect(`/nodes/${enc}/history`);
+      return redirect(`/nodes/${enc}/history`);
   }
 }

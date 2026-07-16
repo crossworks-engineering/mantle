@@ -72,7 +72,7 @@ async function main() {
     .innerJoin(emails, eq(emails.nodeId, nodes.id))
     .where(and(...conds));
 
-  let flagged = rows.filter((r) => !gate.allows(r.fromAddr));
+  const flagged = rows.filter((r) => !gate.allows(r.fromAddr));
   flagged.sort((a, b) => b.internalDate.getTime() - a.internalDate.getTime());
   const capped = limit !== undefined ? flagged.slice(0, limit) : flagged;
 
