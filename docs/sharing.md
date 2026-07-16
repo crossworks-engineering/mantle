@@ -210,10 +210,14 @@ The same token CRUD is exposed to the chat agent for **pages** via two tools
 ([`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts)),
 so *"share that page and send me the link"* works end to end:
 
-- **`page_share { id }`** → `createShare` (idempotent — one active link per node)
-  → returns `{ url, token }`. The URL is built with `shareUrlForToken`.
-- **`page_unshare { id }`** → `getActiveShareForNode` → `revokeShare`. No-op if
-  unshared.
+- **`page_share { id, mode?, children? }`** → `createShare` (idempotent — one
+  active link per node) → returns `{ url, token, mode }`. `mode: 'public' |
+  'team'` sets admission via `applyShareMode` (team also lists the page on the
+  hub); `children: true|false` shares/unshares the subtree via `setShareCascade`
+  (§7b) and reports `subpagesShared` / `subpagesRevoked`. The URL is built with
+  `shareUrlForToken`.
+- **`page_unshare { id }`** → `getActiveShareForNode` → `revokeShareTree`
+  (subtree-aware — un-shares cascaded sub-pages too). No-op if unshared.
 
 Both are auto-granted at boot (`CORE_AUTO_GRANT_SLUGS`). Because the agent runs
 outside the web request cycle, it can't read an origin from the request — share
