@@ -23,6 +23,7 @@ const Cells = z
   .record(Cell)
   .refine((o) => Object.keys(o).length <= 500, { message: 'too many cells in one op' });
 const Ref = z.object({ tabId: Id, columnId: Id });
+const RefMode = z.enum(['select', 'multi', 'checkbox']);
 const ColumnType = z.enum([
   'text', 'number', 'currency', 'percent', 'date', 'datetime',
   'checkbox', 'select', 'multiselect', 'url', 'formula', 'reference',
@@ -38,6 +39,7 @@ const ColumnShape = z.object({
   formula: z.string().max(4000).optional(),
   width: z.number().optional(),
   ref: Ref.optional(),
+  refMode: RefMode.optional(),
 });
 const ColumnPatch = z.object({
   name: Name.optional(),
@@ -47,6 +49,7 @@ const ColumnPatch = z.object({
   formula: z.string().max(4000).nullish(),
   width: z.number().nullish(),
   ref: Ref.nullish(),
+  refMode: RefMode.nullish(),
 });
 const SortSpec = z.object({ colId: Id, dir: z.enum(['asc', 'desc']) });
 const FilterSpec = z.object({
