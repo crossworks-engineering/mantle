@@ -584,6 +584,20 @@ services:
       AUTOHEAL_CONTAINER_LABEL: autoheal
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    # Watch the watcher: override the image's built-in healthcheck (pgrep of
+    # PID 1 — tautological: if the loop dies the container exits anyway) with a
+    # docker-socket ping, autoheal's one real wedge mode (socket unreachable ⇒
+    # it can see nothing and restart nothing while looking alive). NOTHING
+    # auto-restarts an unhealthy autoheal — labelling it autoheal=true would be
+    # circular (a wedged autoheal can't restart itself). `restart:
+    # unless-stopped` covers crashes; this makes the wedge VISIBLE (docker ps,
+    # the dashboard stack card) so the operator is the actuator of last resort.
+    healthcheck:
+      test:
+        ['CMD', 'curl', '--fail', '--silent', '--max-time', '4', '--unix-socket', '/var/run/docker.sock', 'http://localhost/_ping']
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   # Dedicated durable-runner service: executes assistant/agent LLM work as DBOS
   # workflows (journaled to the mantle_dbos_sys system DB, provisioned in the
