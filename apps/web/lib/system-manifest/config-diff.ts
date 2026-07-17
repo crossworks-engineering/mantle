@@ -208,9 +208,16 @@ function diffPersona(live: LiveConfig, m: ManifestSlices): EntityDiffCore {
   const personaSlug = manifestPersona?.slug ?? 'assistant';
   // Resolve the agent that ACTUALLY serves as the persona (slug-flexible).
   const livePersona = resolveEffectivePersona(
-    live.agents.map((a) => ({ slug: a.slug, enabled: a.enabled, role: a.role, priority: a.priority })),
+    live.agents.map((a) => ({
+      slug: a.slug,
+      enabled: a.enabled,
+      role: a.role,
+      priority: a.priority,
+    })),
   );
-  const liveRow = livePersona ? live.agents.find((a) => a.slug === livePersona.slug) ?? null : null;
+  const liveRow = livePersona
+    ? (live.agents.find((a) => a.slug === livePersona.slug) ?? null)
+    : null;
 
   const base = { kind: 'persona' as const, slug: personaSlug, name: liveRow?.name || personaSlug };
 
@@ -226,7 +233,11 @@ function diffPersona(live: LiveConfig, m: ManifestSlices): EntityDiffCore {
 
   // Structure only — prompt/model/params are operator-owned and never diffed.
   const fields: FieldDiff[] = [];
-  const groups = setField('toolGroupSlugs', manifestPersona?.toolGroupSlugs, liveRow.toolGroupSlugs);
+  const groups = setField(
+    'toolGroupSlugs',
+    manifestPersona?.toolGroupSlugs,
+    liveRow.toolGroupSlugs,
+  );
   if (groups) fields.push(groups);
   const skills = setField('skillSlugs', manifestPersona?.skillSlugs, liveRow.skillSlugs);
   if (skills) fields.push(skills);
@@ -235,7 +246,13 @@ function diffPersona(live: LiveConfig, m: ManifestSlices): EntityDiffCore {
   if (deleg) fields.push(deleg);
 
   if (fields.length === 0) {
-    return { ...base, status: 'ok', severity: 'low', summary: 'matches the template (structure)', fields };
+    return {
+      ...base,
+      status: 'ok',
+      severity: 'low',
+      summary: 'matches the template (structure)',
+      fields,
+    };
   }
   return {
     ...base,
@@ -246,7 +263,7 @@ function diffPersona(live: LiveConfig, m: ManifestSlices): EntityDiffCore {
   };
 }
 
-function diffSpecialist(a: ManifestAgent, live: LiveConfig, m: ManifestSlices): EntityDiffCore {
+function diffSpecialist(a: ManifestAgent, live: LiveConfig, _m: ManifestSlices): EntityDiffCore {
   const row = live.agents.find((r) => r.slug === a.slug);
   const base = { kind: 'agent' as const, slug: a.slug, name: row?.name || a.name };
 
@@ -261,18 +278,36 @@ function diffSpecialist(a: ManifestAgent, live: LiveConfig, m: ManifestSlices): 
   let severity: AuditSeverity = 'low';
 
   const groups = setField('toolGroupSlugs', a.toolGroupSlugs, row.toolGroupSlugs);
-  if (groups) { fields.push(groups); severity = maxSeverity(severity, 'medium'); }
+  if (groups) {
+    fields.push(groups);
+    severity = maxSeverity(severity, 'medium');
+  }
   const skills = setField('skillSlugs', a.skillSlugs, row.skillSlugs);
-  if (skills) { fields.push(skills); severity = maxSeverity(severity, 'medium'); }
-  const deleg = setField('delegate_to', a.memoryConfig?.delegate_to ?? [], delegateTo(row.memoryConfig));
-  if (deleg) { fields.push(deleg); severity = maxSeverity(severity, 'medium'); }
+  if (skills) {
+    fields.push(skills);
+    severity = maxSeverity(severity, 'medium');
+  }
+  const deleg = setField(
+    'delegate_to',
+    a.memoryConfig?.delegate_to ?? [],
+    delegateTo(row.memoryConfig),
+  );
+  if (deleg) {
+    fields.push(deleg);
+    severity = maxSeverity(severity, 'medium');
+  }
   if (a.model && row.model && a.model !== row.model) {
     fields.push({ field: 'model', manifest: a.model, live: row.model });
     severity = maxSeverity(severity, 'medium');
   }
   // Specialist prompt: surfaced as informational only (not weighted).
   if (a.systemPrompt && (row.systemPrompt ?? '') !== a.systemPrompt) {
-    fields.push({ field: 'systemPrompt', manifest: a.systemPrompt, live: row.systemPrompt ?? null, info: true });
+    fields.push({
+      field: 'systemPrompt',
+      manifest: a.systemPrompt,
+      live: row.systemPrompt ?? null,
+      info: true,
+    });
   }
 
   if (fields.length === 0) {
@@ -285,7 +320,13 @@ function diffSkill(s: ManifestSkill, live: LiveConfig): EntityDiffCore {
   const row = live.skills.find((r) => r.slug === s.slug);
   const base = { kind: 'skill' as const, slug: s.slug, name: row?.name || s.name };
   if (!row || !row.enabled) {
-    return { ...base, status: 'missing', severity: 'medium', summary: row ? 'disabled' : 'not seeded', fields: [] };
+    return {
+      ...base,
+      status: 'missing',
+      severity: 'medium',
+      summary: row ? 'disabled' : 'not seeded',
+      fields: [],
+    };
   }
   if (row.instructions !== s.instructions) {
     return {
@@ -303,11 +344,23 @@ function diffToolGroup(g: ManifestToolGroup, live: LiveConfig): EntityDiffCore {
   const row = live.toolGroups.find((r) => r.slug === g.slug);
   const base = { kind: 'tool-group' as const, slug: g.slug, name: row?.name || g.name };
   if (!row || !row.enabled) {
-    return { ...base, status: 'missing', severity: 'medium', summary: row ? 'disabled' : 'not seeded', fields: [] };
+    return {
+      ...base,
+      status: 'missing',
+      severity: 'medium',
+      summary: row ? 'disabled' : 'not seeded',
+      fields: [],
+    };
   }
   const tools = setField('toolSlugs', g.toolSlugs, row.toolSlugs);
   if (tools) {
-    return { ...base, status: 'modified', severity: 'medium', summary: summarizeFields([tools]), fields: [tools] };
+    return {
+      ...base,
+      status: 'modified',
+      severity: 'medium',
+      summary: summarizeFields([tools]),
+      fields: [tools],
+    };
   }
   return { ...base, status: 'ok', severity: 'low', summary: 'matches the template', fields: [] };
 }
@@ -350,30 +403,51 @@ function diffExtras(live: LiveConfig, m: ManifestSlices): EntityDiffCore[] {
   const manifestAgentSlugs = new Set(m.agents.map((a) => a.slug));
   const personaSlug = m.agents.find((a) => a.isPersona)?.slug ?? 'assistant';
   const livePersona = resolveEffectivePersona(
-    live.agents.map((a) => ({ slug: a.slug, enabled: a.enabled, role: a.role, priority: a.priority })),
+    live.agents.map((a) => ({
+      slug: a.slug,
+      enabled: a.enabled,
+      role: a.role,
+      priority: a.priority,
+    })),
   );
   for (const a of live.agents) {
     // Skip manifest agents and whichever agent serves as the effective persona.
-    if (manifestAgentSlugs.has(a.slug) || a.slug === personaSlug || a.slug === livePersona?.slug) continue;
+    if (manifestAgentSlugs.has(a.slug) || a.slug === personaSlug || a.slug === livePersona?.slug)
+      continue;
     out.push({
-      kind: 'agent', slug: a.slug, name: a.name || a.slug,
-      status: 'extra', severity: 'low', summary: 'operator-added (not in template)', fields: [],
+      kind: 'agent',
+      slug: a.slug,
+      name: a.name || a.slug,
+      status: 'extra',
+      severity: 'low',
+      summary: 'operator-added (not in template)',
+      fields: [],
     });
   }
   const manifestSkillSlugs = new Set(m.skills.map((s) => s.slug));
   for (const s of live.skills) {
     if (manifestSkillSlugs.has(s.slug)) continue;
     out.push({
-      kind: 'skill', slug: s.slug, name: s.name || s.slug,
-      status: 'extra', severity: 'low', summary: 'operator-added (not in template)', fields: [],
+      kind: 'skill',
+      slug: s.slug,
+      name: s.name || s.slug,
+      status: 'extra',
+      severity: 'low',
+      summary: 'operator-added (not in template)',
+      fields: [],
     });
   }
   const manifestGroupSlugs = new Set(m.toolGroups.map((g) => g.slug));
   for (const g of live.toolGroups) {
     if (manifestGroupSlugs.has(g.slug)) continue;
     out.push({
-      kind: 'tool-group', slug: g.slug, name: g.name || g.slug,
-      status: 'extra', severity: 'low', summary: 'operator-added (not in template)', fields: [],
+      kind: 'tool-group',
+      slug: g.slug,
+      name: g.name || g.slug,
+      status: 'extra',
+      severity: 'low',
+      summary: 'operator-added (not in template)',
+      fields: [],
     });
   }
   return out;

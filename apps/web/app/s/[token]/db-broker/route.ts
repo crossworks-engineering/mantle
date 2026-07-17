@@ -41,11 +41,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   }
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
+  if (!parsed.success)
+    return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
 
   if (parsed.data.op === 'exec' && visitor.mode === 'public') {
     return NextResponse.json(
-      { ok: false, error: 'Shared apps are read-only — database writes are disabled on public links.' },
+      {
+        ok: false,
+        error: 'Shared apps are read-only — database writes are disabled on public links.',
+      },
       { status: 403 },
     );
   }
@@ -67,8 +71,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   try {
     const output =
       parsed.data.op === 'query'
-        ? await appDbQuery(share.ownerId, share.nodeId, parsed.data.sql, parsed.data.params, app.manifest.sqlite)
-        : await appDbExec(share.ownerId, share.nodeId, parsed.data.sql, parsed.data.params, app.manifest.sqlite);
+        ? await appDbQuery(
+            share.ownerId,
+            share.nodeId,
+            parsed.data.sql,
+            parsed.data.params,
+            app.manifest.sqlite,
+          )
+        : await appDbExec(
+            share.ownerId,
+            share.nodeId,
+            parsed.data.sql,
+            parsed.data.params,
+            app.manifest.sqlite,
+          );
     return NextResponse.json({ ok: true, output });
   } catch (err) {
     return NextResponse.json(

@@ -42,10 +42,7 @@ import type {
   ReasoningDetail,
 } from './types';
 import type { DiscoveryResult } from '../discover';
-import {
-  OPENROUTER_BASE_URL,
-  OPENROUTER_CHAT_MODELS,
-} from '../catalogs/openrouter';
+import { OPENROUTER_BASE_URL, OPENROUTER_CHAT_MODELS } from '../catalogs/openrouter';
 import { DEFAULT_MAX_RETRIES, isEmptyJsonBodyError } from './retry';
 import { StreamingThinkScrubber } from './think-scrubber';
 import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reasoning-accum';
@@ -60,7 +57,9 @@ const RETRY_MAX_DELAY_MS = 8_000;
  *  ignore it. Returns undefined when no budget is set so we omit the field. */
 function openRouterReasoning(opts: ChatOptions): { maxTokens: number } | undefined {
   const budget =
-    typeof opts.thinkingBudget === 'number' && opts.thinkingBudget > 0 ? Math.floor(opts.thinkingBudget) : 0;
+    typeof opts.thinkingBudget === 'number' && opts.thinkingBudget > 0
+      ? Math.floor(opts.thinkingBudget)
+      : 0;
   return budget > 0 ? { maxTokens: budget } : undefined;
 }
 
@@ -263,7 +262,13 @@ function buildMessages(
         role: 'assistant',
         content: m.content as string | null,
         ...('toolCalls' in m && m.toolCalls
-          ? { toolCalls: m.toolCalls.map((c) => ({ id: c.id, type: 'function', function: c.function })) }
+          ? {
+              toolCalls: m.toolCalls.map((c) => ({
+                id: c.id,
+                type: 'function',
+                function: c.function,
+              })),
+            }
           : {}),
         // Echo signed reasoning blocks back unchanged so Anthropic accepts a turn
         // that paired thinking with tool_use (it 400s if the block is missing).
@@ -339,8 +344,7 @@ function extractToolCalls(message: unknown): ChatToolCall[] | undefined {
           name,
           // OR's typed shape returns arguments already as a JSON string;
           // be defensive in case a route returns a parsed object.
-          arguments:
-            typeof args === 'string' ? args : JSON.stringify(args ?? {}),
+          arguments: typeof args === 'string' ? args : JSON.stringify(args ?? {}),
         },
       };
     })
@@ -404,21 +408,17 @@ function enrichOpenRouterError(err: unknown, model: string, elapsedMs?: number):
   if (!(err instanceof OpenRouterError)) {
     return err instanceof Error ? err : new Error(String(err));
   }
-  const envelope = (err as { error?: { message?: string; code?: number; metadata?: unknown } }).error;
+  const envelope = (err as { error?: { message?: string; code?: number; metadata?: unknown } })
+    .error;
   const upstream = envelope?.message;
   const meta = envelope?.metadata;
   const status = err.statusCode;
   // Body is usually the same JSON the envelope was parsed from; include
   // a clipped slice when the envelope didn't have a message (some 5xx
   // routes return text/plain). Cap to keep trace rows readable.
-  const bodyHint =
-    !upstream && err.body
-      ? ` body=${err.body.slice(0, 400)}`
-      : '';
+  const bodyHint = !upstream && err.body ? ` body=${err.body.slice(0, 400)}` : '';
   const metaHint =
-    meta && typeof meta === 'object'
-      ? ` metadata=${JSON.stringify(meta).slice(0, 400)}`
-      : '';
+    meta && typeof meta === 'object' ? ` metadata=${JSON.stringify(meta).slice(0, 400)}` : '';
   const wrapped = new Error(
     `openrouter-chat ${status} on ${model}: ${upstream ?? err.message}${metaHint}${bodyHint}`,
     { cause: err },
@@ -467,9 +467,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   // individual fields. Behaviour is unchanged; the laundering is one line.
   const sendOnce = () =>
     client.chat.send({
-      chatRequest: chatRequest as unknown as Parameters<
-        typeof client.chat.send
-      >[0]['chatRequest'],
+      chatRequest: chatRequest as unknown as Parameters<typeof client.chat.send>[0]['chatRequest'],
     });
 
   // The SDK retries HTTP-level transients (429/5xx/network) itself, which is why
@@ -489,8 +487,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     } catch (err) {
       if (isEmptyJsonBodyError(err) && attempt < maxRetries) {
         const delay = Math.round(
-          Math.random() *
-            Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** attempt),
+          Math.random() * Math.min(RETRY_MAX_DELAY_MS, RETRY_BASE_DELAY_MS * 2 ** attempt),
         );
         console.warn(
           `[openrouter-chat] ${opts.model}: empty/truncated response — ` +
@@ -508,9 +505,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     }
   }
   if (!('choices' in result)) {
-    throw new Error(
-      'openrouter-chat: unexpected streaming response (no `choices`)',
-    );
+    throw new Error('openrouter-chat: unexpected streaming response (no `choices`)');
   }
 
   const choice = result.choices?.[0];
@@ -560,9 +555,7 @@ function perMillion(v: unknown): number | undefined {
   return Math.round(n * 1_000_000 * 10_000) / 10_000;
 }
 
-async function openrouterDiscover(
-  apiKey: string,
-): Promise<DiscoveryResult<ChatModelInfo>> {
+async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   // OR's /api/v1/models is PUBLIC (returns 200 even with a bogus key), so the
   // catalog fetch alone is NOT an auth probe — probeApiKey relying on it would
   // pass any garbage key. When a key is supplied, validate it first against
@@ -741,7 +734,9 @@ async function openrouterChatStream(
   try {
     sent = (await client.chat.send(
       {
-        chatRequest: chatRequest as unknown as Parameters<typeof client.chat.send>[0]['chatRequest'],
+        chatRequest: chatRequest as unknown as Parameters<
+          typeof client.chat.send
+        >[0]['chatRequest'],
       },
       // Thread the cancellation signal into the underlying fetch so a Stop aborts
       // the HTTP stream — halting upstream token generation, not just our reading.
@@ -753,7 +748,6 @@ async function openrouterChatStream(
   }
 
   let text = '';
-  let reasoning = '';
   let model = opts.model;
   let usage: OrStreamChunk['usage'];
   // Tool-call fragments accumulate by index: id+name land first, arguments arrive
@@ -790,7 +784,6 @@ async function openrouterChatStream(
         }
       }
       if (typeof delta.reasoning === 'string' && delta.reasoning.length > 0) {
-        reasoning += delta.reasoning;
         safeDelta(onDelta, { type: 'reasoning', text: delta.reasoning });
       }
       reasoningDetails.add(delta.reasoningDetails ?? delta.reasoning_details);
@@ -848,7 +841,8 @@ async function openrouterChatStream(
   const cacheRead =
     usage?.promptTokensDetails?.cachedTokens ?? usage?.prompt_tokens_details?.cached_tokens;
   const cacheWrite =
-    usage?.promptTokensDetails?.cacheWriteTokens ?? usage?.prompt_tokens_details?.cache_write_tokens;
+    usage?.promptTokensDetails?.cacheWriteTokens ??
+    usage?.prompt_tokens_details?.cache_write_tokens;
 
   const details = reasoningDetails.result();
   return {
@@ -869,7 +863,10 @@ function safeDelta(onDelta: ChatStreamSink, delta: ChatStreamDelta): void {
   try {
     onDelta(delta);
   } catch (err) {
-    console.warn('[openrouter-chat] delta sink threw (ignored):', err instanceof Error ? err.message : err);
+    console.warn(
+      '[openrouter-chat] delta sink threw (ignored):',
+      err instanceof Error ? err.message : err,
+    );
   }
 }
 

@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -334,10 +335,13 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(function Sl
       ?.scrollIntoView({ block: 'nearest' });
   }, [selected]);
 
-  const choose = (i: number) => {
-    const item = items[i];
-    if (item) command(item);
-  };
+  const choose = useCallback(
+    (i: number) => {
+      const item = items[i];
+      if (item) command(item);
+    },
+    [items, command],
+  );
 
   useImperativeHandle(
     ref,
@@ -359,7 +363,7 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(function Sl
         return false;
       },
     }),
-    [items, selected],
+    [items, selected, choose],
   );
 
   if (items.length === 0) {

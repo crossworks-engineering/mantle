@@ -13,11 +13,26 @@ const Loading = () => (
 
 // Heavy demo surfaces — loaded on demand, client-only (charts/sidebar
 // don't need SSR for a preview).
-const CardsDemo = dynamic(() => import('@/components/examples/cards'), { loading: Loading, ssr: false });
-const Dashboard = dynamic(() => import('@/components/examples/dashboard'), { loading: Loading, ssr: false });
-const MailDemo = dynamic(() => import('@/components/examples/mail'), { loading: Loading, ssr: false });
-const MemoryTiers = dynamic(() => import('@/components/examples/pricing/pricing'), { loading: Loading, ssr: false });
-const Typography = dynamic(() => import('@/components/examples/typography/typography-demo'), { loading: Loading, ssr: false });
+const CardsDemo = dynamic(() => import('@/components/examples/cards'), {
+  loading: Loading,
+  ssr: false,
+});
+const Dashboard = dynamic(() => import('@/components/examples/dashboard'), {
+  loading: Loading,
+  ssr: false,
+});
+const MailDemo = dynamic(() => import('@/components/examples/mail'), {
+  loading: Loading,
+  ssr: false,
+});
+const MemoryTiers = dynamic(() => import('@/components/examples/pricing/pricing'), {
+  loading: Loading,
+  ssr: false,
+});
+const Typography = dynamic(() => import('@/components/examples/typography/typography-demo'), {
+  loading: Loading,
+  ssr: false,
+});
 
 const TABS = [
   { value: 'cards', label: 'Cards' },
@@ -45,12 +60,24 @@ export function PreviewTabs() {
         ))}
       </TabsList>
 
-      <TabsContent value="cards" className="m-0"><CardsDemo /></TabsContent>
-      <TabsContent value="dashboard" className="m-0"><Dashboard /></TabsContent>
-      <TabsContent value="mail" className="m-0"><MailDemo /></TabsContent>
-      <TabsContent value="memory" className="m-0"><MemoryTiers /></TabsContent>
-      <TabsContent value="colors" className="m-0"><ColorPalette /></TabsContent>
-      <TabsContent value="typography" className="m-0"><Typography /></TabsContent>
+      <TabsContent value="cards" className="m-0">
+        <CardsDemo />
+      </TabsContent>
+      <TabsContent value="dashboard" className="m-0">
+        <Dashboard />
+      </TabsContent>
+      <TabsContent value="mail" className="m-0">
+        <MailDemo />
+      </TabsContent>
+      <TabsContent value="memory" className="m-0">
+        <MemoryTiers />
+      </TabsContent>
+      <TabsContent value="colors" className="m-0">
+        <ColorPalette />
+      </TabsContent>
+      <TabsContent value="typography" className="m-0">
+        <Typography />
+      </TabsContent>
     </Tabs>
   );
 }

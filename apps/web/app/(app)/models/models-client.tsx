@@ -140,7 +140,9 @@ function ModelsView({ data }: { data: ExploreBundle }) {
   // Re-select the first row whenever the SSR result changes (provider switch,
   // search, sort, page). Keeps the detail pane in sync with the visible page.
   useEffect(() => {
-    setSelectedId((prev) => (prev && rows.some((r) => r.id === prev) ? prev : (rows[0]?.id ?? null)));
+    setSelectedId((prev) =>
+      prev && rows.some((r) => r.id === prev) ? prev : (rows[0]?.id ?? null),
+    );
   }, [rows]);
 
   // Keep the search box in sync if the URL q changes from elsewhere.
@@ -220,7 +222,10 @@ function ModelsView({ data }: { data: ExploreBundle }) {
             />
           </div>
           <div className="flex items-center gap-2">
-            <Select value={sort} onValueChange={(v) => go({ sort: v === 'name' ? null : v, page: null })}>
+            <Select
+              value={sort}
+              onValueChange={(v) => go({ sort: v === 'name' ? null : v, page: null })}
+            >
               <SelectTrigger className="h-8 flex-1 text-xs">
                 <SelectValue />
               </SelectTrigger>
@@ -252,7 +257,9 @@ function ModelsView({ data }: { data: ExploreBundle }) {
             )}
           </div>
           <p className="text-[11px] text-muted-foreground tabular-nums">
-            {busy ? 'Loading…' : `${total} model${total === 1 ? '' : 's'} · updated ${timeAgo(meta.fetchedAt)}`}
+            {busy
+              ? 'Loading…'
+              : `${total} model${total === 1 ? '' : 's'} · updated ${timeAgo(meta.fetchedAt)}`}
           </p>
         </div>
 
@@ -278,7 +285,9 @@ function ModelsView({ data }: { data: ExploreBundle }) {
                     </Badge>
                   )}
                 </div>
-                {m.name && <p className="truncate font-mono text-[11px] text-muted-foreground">{m.id}</p>}
+                {m.name && (
+                  <p className="truncate font-mono text-[11px] text-muted-foreground">{m.id}</p>
+                )}
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground tabular-nums">
                   <span>ctx {fmtTokens(m.contextTokens)}</span>
                   {(m.inputPricePerM !== undefined || m.outputPricePerM !== undefined) && (
@@ -369,10 +378,14 @@ function ProviderSplash({ meta, provider }: { meta: Meta; provider?: ProviderMet
       ) : meta.error ? (
         <>
           <p className="text-sm font-medium">Couldn’t load models</p>
-          <p className="max-w-md break-words font-mono text-xs text-muted-foreground">{meta.error}</p>
+          <p className="max-w-md break-words font-mono text-xs text-muted-foreground">
+            {meta.error}
+          </p>
         </>
       ) : (
-        <p className="text-sm text-muted-foreground">Select a model to see everything its API reports.</p>
+        <p className="text-sm text-muted-foreground">
+          Select a model to see everything its API reports.
+        </p>
       )}
     </div>
   );

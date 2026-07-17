@@ -114,8 +114,7 @@ const update_persona: BuiltinToolDef = {
     if (!update.add && (update.removeRefs ?? []).length === 0) {
       return {
         ok: false,
-        error:
-          'Nothing to do — provide `add` (a new note) and/or `remove_refs` (notes to retire).',
+        error: 'Nothing to do — provide `add` (a new note) and/or `remove_refs` (notes to retire).',
       };
     }
 

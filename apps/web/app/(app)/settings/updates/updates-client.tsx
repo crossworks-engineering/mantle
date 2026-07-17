@@ -13,13 +13,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ArrowUpCircle,
-  CheckCircle2,
-  ExternalLink,
-  Loader2,
-  RefreshCw,
-} from 'lucide-react';
+import { ArrowUpCircle, CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -231,9 +225,7 @@ function UpdatesView({
         <div className="mt-2 flex items-baseline gap-3">
           <span className="text-2xl font-semibold">v{build.version}</span>
           <span className="text-xs text-muted-foreground">
-            {[build.sha, build.time ? build.time.slice(0, 10) : '']
-              .filter(Boolean)
-              .join(' · ')}
+            {[build.sha, build.time ? build.time.slice(0, 10) : ''].filter(Boolean).join(' · ')}
           </span>
         </div>
       </section>
@@ -288,8 +280,8 @@ function UpdatesView({
           <p className="text-sm text-muted-foreground">No release information yet.</p>
         )}
         <p className="text-xs text-muted-foreground">
-          Checked {check.checkedAt.slice(0, 16).replace('T', ' ')} UTC against the GitHub
-          releases of <code>crossworks-engineering/mantle</code>.
+          Checked {check.checkedAt.slice(0, 16).replace('T', ' ')} UTC against the GitHub releases
+          of <code>crossworks-engineering/mantle</code>.
         </p>
       </section>
 
@@ -301,16 +293,15 @@ function UpdatesView({
         {!updaterAvailable ? (
           <div className="space-y-2 text-sm text-muted-foreground">
             <p>
-              The updater sidecar isn&apos;t available on this deployment, so one-click
-              updates are off. Update from the stack directory instead:
+              The updater sidecar isn&apos;t available on this deployment, so one-click updates are
+              off. Update from the stack directory instead:
             </p>
             <pre className="rounded-md bg-muted px-3 py-2 font-mono text-xs">
               docker compose pull && docker compose up -d --wait
             </pre>
             <p>
-              The sidecar ships with the compose stack — it needs{' '}
-              <code>MANTLE_STACK_DIR</code> set in <code>.env</code> (see
-              docs/self-hosting.md).
+              The sidecar ships with the compose stack — it needs <code>MANTLE_STACK_DIR</code> set
+              in <code>.env</code> (see docs/self-hosting.md).
             </p>
           </div>
         ) : busy ? (
@@ -320,9 +311,7 @@ function UpdatesView({
               {restarting
                 ? 'Services are restarting — this page will reload onto the new version…'
                 : (PHASE_LABEL[status?.phase ?? ''] ?? 'Working…')}
-              {status?.target && (
-                <span className="text-muted-foreground">→ {status.target}</span>
-              )}
+              {status?.target && <span className="text-muted-foreground">→ {status.target}</span>}
             </p>
             {log && (
               <pre className="max-h-56 overflow-y-auto rounded-md bg-muted px-3 py-2 font-mono text-[11px] leading-relaxed">
@@ -333,9 +322,8 @@ function UpdatesView({
         ) : (
           <div className="space-y-2 text-sm text-muted-foreground">
             <p>
-              Ready. Updating pulls the new image and rolls every service; database
-              migrations apply automatically before the app restarts. Expect about a
-              minute of downtime.
+              Ready. Updating pulls the new image and rolls every service; database migrations apply
+              automatically before the app restarts. Expect about a minute of downtime.
             </p>
             {status?.phase === 'error' && status.error && (
               <p className="text-destructive">Last update failed: {status.error}</p>
@@ -363,16 +351,14 @@ function UpdatesView({
           <AlertDialogHeader>
             <AlertDialogTitle>Update to {latest?.tag}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Pulls the new image and restarts every service (about a minute of
-              downtime). Migrations apply automatically. A recent backup
-              (Settings → Backups) is cheap insurance first.
+              Pulls the new image and restarts every service (about a minute of downtime).
+              Migrations apply automatically. A recent backup (Settings → Backups) is cheap
+              insurance first.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={onConfirmUpdate}>
-              Update now
-            </AlertDialogAction>
+            <AlertDialogAction onClick={onConfirmUpdate}>Update now</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

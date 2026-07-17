@@ -1,7 +1,7 @@
-import { addDays } from "date-fns";
-import { addHours } from "date-fns";
-import { format } from "date-fns";
-import { nextSaturday } from "date-fns";
+import { addDays } from 'date-fns';
+import { addHours } from 'date-fns';
+import { format } from 'date-fns';
+import { nextSaturday } from 'date-fns';
 import {
   Archive,
   ArchiveX,
@@ -11,20 +11,20 @@ import {
   Reply,
   ReplyAll,
   Trash2,
-} from "lucide-react";
+} from 'lucide-react';
 
-import { DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { DropdownMenu, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
-import { Mail } from "@/components/examples/mail/data";
-import { useState } from "react";
+import { DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { Mail } from '@/components/examples/mail/data';
+import { useState } from 'react';
 
 interface MailDisplayProps {
   mail: Mail | null;
@@ -45,10 +45,10 @@ export function MailDisplay({ mail }: MailDisplayProps) {
             <ArchiveX />
             <span className="sr-only">Move to junk</span>
           </Button>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            disabled={!mail} 
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={!mail}
             title="Move to trash"
             className="text-destructive hover:text-destructive focus-visible:text-destructive"
           >
@@ -68,27 +68,27 @@ export function MailDisplay({ mail }: MailDisplayProps) {
                 <div className="px-4 text-sm font-medium">Snooze until</div>
                 <div className="grid min-w-[250px] gap-1">
                   <Button variant="ghost" className="justify-start font-normal">
-                    Later today{" "}
+                    Later today{' '}
                     <span className="text-muted-foreground ml-auto">
-                      {format(addHours(selectedDate, 4), "E, h:mm b")}
+                      {format(addHours(selectedDate, 4), 'E, h:mm b')}
                     </span>
                   </Button>
                   <Button variant="ghost" className="justify-start font-normal">
                     Tomorrow
                     <span className="text-muted-foreground ml-auto">
-                      {format(addDays(selectedDate, 1), "E, h:mm b")}
+                      {format(addDays(selectedDate, 1), 'E, h:mm b')}
                     </span>
                   </Button>
                   <Button variant="ghost" className="justify-start font-normal">
                     This weekend
                     <span className="text-muted-foreground ml-auto">
-                      {format(nextSaturday(selectedDate), "E, h:mm b")}
+                      {format(nextSaturday(selectedDate), 'E, h:mm b')}
                     </span>
                   </Button>
                   <Button variant="ghost" className="justify-start font-normal">
                     Next week
                     <span className="text-muted-foreground ml-auto">
-                      {format(addDays(selectedDate, 7), "E, h:mm b")}
+                      {format(addDays(selectedDate, 7), 'E, h:mm b')}
                     </span>
                   </Button>
                 </div>
@@ -98,7 +98,7 @@ export function MailDisplay({ mail }: MailDisplayProps) {
                   mode="single"
                   selected={selectedDate}
                   onSelect={setSelectedDate}
-                  classNames={{ today: "bg-none" }}
+                  classNames={{ today: 'bg-none' }}
                   required
                 />
               </div>
@@ -144,9 +144,9 @@ export function MailDisplay({ mail }: MailDisplayProps) {
                 <AvatarImage alt={mail.name} />
                 <AvatarFallback>
                   {mail.name
-                    .split(" ")
+                    .split(' ')
                     .map((chunk) => chunk[0])
-                    .join("")}
+                    .join('')}
                 </AvatarFallback>
               </Avatar>
               <div className="grid gap-1">
@@ -159,7 +159,7 @@ export function MailDisplay({ mail }: MailDisplayProps) {
             </div>
             {mail.date && (
               <div className="text-muted-foreground ml-auto text-xs">
-                {format(new Date(mail.date), "PPpp")}
+                {format(new Date(mail.date), 'PPpp')}
               </div>
             )}
           </div>

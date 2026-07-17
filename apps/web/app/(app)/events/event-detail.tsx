@@ -51,7 +51,14 @@ function Ring({ progress, children }: { progress: number; children: React.ReactN
   return (
     <div className="relative grid size-36 shrink-0 place-items-center">
       <svg viewBox="0 0 120 120" className="absolute size-36 -rotate-90">
-        <circle cx="60" cy="60" r="52" fill="none" strokeWidth="7" style={{ stroke: 'var(--muted)' }} />
+        <circle
+          cx="60"
+          cy="60"
+          r="52"
+          fill="none"
+          strokeWidth="7"
+          style={{ stroke: 'var(--muted)' }}
+        />
         <circle
           cx="60"
           cy="60"
@@ -96,7 +103,9 @@ function Countdown({ event, now }: { event: EventRow; now: number }) {
               <div className="text-2xl font-bold tabular-nums">
                 {pad(p.hours)}:{pad(p.minutes)}:{pad(p.seconds)}
               </div>
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">to go</div>
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                to go
+              </div>
             </>
           ) : (
             <>
@@ -121,7 +130,10 @@ function Countdown({ event, now }: { event: EventRow; now: number }) {
             className="absolute inline-flex size-full animate-ping rounded-full opacity-60"
             style={{ background: 'var(--primary)' }}
           />
-          <span className="inline-flex size-3 rounded-full" style={{ background: 'var(--primary)' }} />
+          <span
+            className="inline-flex size-3 rounded-full"
+            style={{ background: 'var(--primary)' }}
+          />
         </span>
         <div className="text-lg font-semibold" style={{ color: 'var(--primary)' }}>
           Happening now
@@ -146,7 +158,9 @@ function Countdown({ event, now }: { event: EventRow; now: number }) {
   return (
     <div className="flex w-36 flex-col items-center gap-2 py-6 text-muted-foreground">
       <CalendarCheck className="size-9" aria-hidden />
-      <div className="text-sm">Ended {formatRelativeShort(event.endsAt ?? event.startsAt, now)}</div>
+      <div className="text-sm">
+        Ended {formatRelativeShort(event.endsAt ?? event.startsAt, now)}
+      </div>
     </div>
   );
 }
@@ -264,7 +278,9 @@ export function EventDetail({
             {meta.reminderSentAt
               ? `Reminder sent ${formatDateTime(meta.reminderSentAt)}`
               : `Reminder ${
-                  meta.remindMinutesBefore === 0 ? 'at start' : `${meta.remindMinutesBefore}m before`
+                  meta.remindMinutesBefore === 0
+                    ? 'at start'
+                    : `${meta.remindMinutesBefore}m before`
                 } · fires ${formatDateTime(meta.remindAt)}`}
           </p>
           {meta.recur !== 'none' && (
@@ -279,7 +295,10 @@ export function EventDetail({
           {meta.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-0.5">
               {meta.tags.map((t) => (
-                <span key={t} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                <span
+                  key={t}
+                  className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                >
                   {t}
                 </span>
               ))}
@@ -304,7 +323,9 @@ export function EventDetail({
           {meta.body}
         </pre>
       )}
-      {meta.summary && <p className="text-xs italic text-muted-foreground">Indexed: {meta.summary}</p>}
+      {meta.summary && (
+        <p className="text-xs italic text-muted-foreground">Indexed: {meta.summary}</p>
+      )}
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

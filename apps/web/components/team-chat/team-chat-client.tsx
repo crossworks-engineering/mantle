@@ -277,7 +277,9 @@ export function TeamChatClient() {
           if (event.type === 'status' && event.data.label) {
             setLive((l) => (l ? { ...l, status: event.data.label ?? l.status } : l));
           } else if (event.type === 'text-delta' && event.data.text) {
-            setLive((l) => (l ? { ...l, status: null, text: l.text + (event.data.text ?? '') } : l));
+            setLive((l) =>
+              l ? { ...l, status: null, text: l.text + (event.data.text ?? '') } : l,
+            );
           } else if (event.type === 'done' || event.type === 'error') {
             if (event.type === 'error') setSendError(event.data.message ?? 'The turn failed.');
             finishTurn();
@@ -420,129 +422,131 @@ export function TeamChatClient() {
         >
           {/* Height-tracking wrapper for the ResizeObserver re-pin above. */}
           <div ref={contentRef}>
-          {turns.length === 0 && !live ? (
-            <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
-              <span className="font-logo lowercase text-lg text-muted-foreground" aria-hidden>
-                mantle
-              </span>
-              <p className="text-sm text-muted-foreground">
-                Ask anything this brain knows. Requests to change content are routed to a
-                specialist for review.
-              </p>
-            </div>
-          ) : (
-            <ul className="mx-auto flex w-full max-w-5xl flex-col">
-              {turns.length > 0 && (
-                <li className="pb-6">
-                  <p className="text-center text-xs text-muted-foreground">
-                    Beginning of the conversation
-                  </p>
-                </li>
-              )}
-              {turns.map((turn, idx) => {
-                // The live stream supersedes the host turn's durable 'pending'
-                // placeholder until the completed reply lands via refetch.
-                const liveHere = live !== null && idx === liveHostIdx;
-                return (
-                  <li
-                    key={turn.key}
-                    className={
-                      'group/turn grid gap-x-10 gap-y-3 pb-10 lg:grid-cols-[minmax(0,1fr)_300px]' +
-                      // A thin divider between turns — the assistant chat's
-                      // accent hairline, on the theme's primary tint here.
-                      (idx > 0 ? ' border-t border-primary/15 pt-10' : '')
-                    }
-                  >
-                    {/* RIGHT MARGIN (DOM-first so it stacks above the reply on
+            {turns.length === 0 && !live ? (
+              <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
+                <span className="font-logo lowercase text-lg text-muted-foreground" aria-hidden>
+                  mantle
+                </span>
+                <p className="text-sm text-muted-foreground">
+                  Ask anything this brain knows. Requests to change content are routed to a
+                  specialist for review.
+                </p>
+              </div>
+            ) : (
+              <ul className="mx-auto flex w-full max-w-5xl flex-col">
+                {turns.length > 0 && (
+                  <li className="pb-6">
+                    <p className="text-center text-xs text-muted-foreground">
+                      Beginning of the conversation
+                    </p>
+                  </li>
+                )}
+                {turns.map((turn, idx) => {
+                  // The live stream supersedes the host turn's durable 'pending'
+                  // placeholder until the completed reply lands via refetch.
+                  const liveHere = live !== null && idx === liveHostIdx;
+                  return (
+                    <li
+                      key={turn.key}
+                      className={
+                        'group/turn grid gap-x-10 gap-y-3 pb-10 lg:grid-cols-[minmax(0,1fr)_300px]' +
+                        // A thin divider between turns — the assistant chat's
+                        // accent hairline, on the theme's primary tint here.
+                        (idx > 0 ? ' border-t border-primary/15 pt-10' : '')
+                      }
+                    >
+                      {/* RIGHT MARGIN (DOM-first so it stacks above the reply on
                         mobile): the member's question, anchored beside the
                         reply it produced. Omitted entirely for prompt-less
                         turns — an empty grid child adds a stray gap-y row on
                         mobile. The reply cell pins its own column, so the grid
                         stays intact. */}
-                    {turn.prompt ? (
-                      <div className="lg:col-start-2 lg:row-start-1">
-                        <PromptCard message={turn.prompt} />
-                      </div>
-                    ) : null}
+                      {turn.prompt ? (
+                        <div className="lg:col-start-2 lg:row-start-1">
+                          <PromptCard message={turn.prompt} />
+                        </div>
+                      ) : null}
 
-                    {/* MAIN CANVAS: the reply as a document. */}
-                    <div className="min-w-0 lg:col-start-1 lg:row-start-1">
-                      {liveHere ? (
-                        live.text ? (
-                          <div>
-                            <div className="mb-2 text-sm font-medium text-muted-foreground">
-                              Assistant
+                      {/* MAIN CANVAS: the reply as a document. */}
+                      <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+                        {liveHere ? (
+                          live.text ? (
+                            <div>
+                              <div className="mb-2 text-sm font-medium text-muted-foreground">
+                                Assistant
+                              </div>
+                              <ReplyBody markdown={live.text} />
+                              {live.status && (
+                                <p className="mt-1.5 text-xs text-muted-foreground">
+                                  {live.status}
+                                </p>
+                              )}
                             </div>
-                            <ReplyBody markdown={live.text} />
-                            {live.status && (
-                              <p className="mt-1.5 text-xs text-muted-foreground">{live.status}</p>
-                            )}
-                          </div>
-                        ) : (
-                          <ThinkingBubble label={live.status} />
-                        )
-                      ) : turn.response ? (
-                        turn.response.status === 'failed' ? (
-                          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                            <span>
-                              That message couldn&rsquo;t be answered. Try again, or let the brain
-                              admin know.
-                            </span>
-                          </div>
-                        ) : turn.response.status === 'pending' ? (
-                          // Durable pending turn (reloaded mid-flight) — the
-                          // runner is still working.
-                          <ThinkingBubble label={null} />
-                        ) : (
-                          <article>
-                            <div className="mb-2 text-sm font-medium text-muted-foreground">
-                              Assistant
+                          ) : (
+                            <ThinkingBubble label={live.status} />
+                          )
+                        ) : turn.response ? (
+                          turn.response.status === 'failed' ? (
+                            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                              <span>
+                                That message couldn&rsquo;t be answered. Try again, or let the brain
+                                admin know.
+                              </span>
                             </div>
-                            <ReplyBody markdown={turn.response.text} />
-                            {/* Hover-revealed on pointer devices; always visible
+                          ) : turn.response.status === 'pending' ? (
+                            // Durable pending turn (reloaded mid-flight) — the
+                            // runner is still working.
+                            <ThinkingBubble label={null} />
+                          ) : (
+                            <article>
+                              <div className="mb-2 text-sm font-medium text-muted-foreground">
+                                Assistant
+                              </div>
+                              <ReplyBody markdown={turn.response.text} />
+                              {/* Hover-revealed on pointer devices; always visible
                                 where hover doesn't exist (tablets), and revealed
                                 on keyboard focus — an invisible focusable copy
                                 button reads as broken. */}
-                            <div className="mt-1.5 flex items-center justify-between gap-2 pointer-events-none opacity-0 transition-opacity group-hover/turn:pointer-events-auto group-hover/turn:opacity-100 group-focus-within/turn:pointer-events-auto group-focus-within/turn:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
-                              <span
-                                className="text-[10px] text-muted-foreground"
-                                title={formatFull(turn.response.createdAt)}
-                              >
-                                {formatTime(turn.response.createdAt)}
-                              </span>
-                              <CopyButton text={turn.response.text} />
-                            </div>
-                          </article>
-                        )
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-              {/* No eligible host turn (see liveHostIdx) — render the stream
+                              <div className="mt-1.5 flex items-center justify-between gap-2 pointer-events-none opacity-0 transition-opacity group-hover/turn:pointer-events-auto group-hover/turn:opacity-100 group-focus-within/turn:pointer-events-auto group-focus-within/turn:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
+                                <span
+                                  className="text-[10px] text-muted-foreground"
+                                  title={formatFull(turn.response.createdAt)}
+                                >
+                                  {formatTime(turn.response.createdAt)}
+                                </span>
+                                <CopyButton text={turn.response.text} />
+                              </div>
+                            </article>
+                          )
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+                {/* No eligible host turn (see liveHostIdx) — render the stream
                   as its own trailing turn so it is never invisible and never
                   displaces a completed reply. */}
-              {live && liveHostIdx === -1 ? (
-                <li className="grid gap-x-10 gap-y-3 pb-10 lg:grid-cols-[minmax(0,1fr)_300px] border-t border-primary/15 pt-10">
-                  <div className="min-w-0 lg:col-start-1 lg:row-start-1">
-                    {live.text ? (
-                      <div>
-                        <div className="mb-2 text-sm font-medium text-muted-foreground">
-                          Assistant
+                {live && liveHostIdx === -1 ? (
+                  <li className="grid gap-x-10 gap-y-3 pb-10 lg:grid-cols-[minmax(0,1fr)_300px] border-t border-primary/15 pt-10">
+                    <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+                      {live.text ? (
+                        <div>
+                          <div className="mb-2 text-sm font-medium text-muted-foreground">
+                            Assistant
+                          </div>
+                          <ReplyBody markdown={live.text} />
+                          {live.status && (
+                            <p className="mt-1.5 text-xs text-muted-foreground">{live.status}</p>
+                          )}
                         </div>
-                        <ReplyBody markdown={live.text} />
-                        {live.status && (
-                          <p className="mt-1.5 text-xs text-muted-foreground">{live.status}</p>
-                        )}
-                      </div>
-                    ) : (
-                      <ThinkingBubble label={live.status} />
-                    )}
-                  </div>
-                </li>
-              ) : null}
-            </ul>
-          )}
+                      ) : (
+                        <ThinkingBubble label={live.status} />
+                      )}
+                    </div>
+                  </li>
+                ) : null}
+              </ul>
+            )}
           </div>
         </div>
         {showJump && (

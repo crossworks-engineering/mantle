@@ -332,9 +332,7 @@ export const DEFAULT_PREFERENCES: ProfilePreferences = {
 /** Read prefs jsonb and project to typed shape. Missing keys fall
  *  back to DEFAULT_PREFERENCES. Auto-creates the profile row on
  *  first access. */
-export async function loadProfilePreferences(
-  userId: string,
-): Promise<ProfilePreferences> {
+export async function loadProfilePreferences(userId: string): Promise<ProfilePreferences> {
   const [row] = await db
     .select({ preferences: profiles.preferences })
     .from(profiles)
@@ -380,9 +378,7 @@ export async function loadProfilePreferences(
       typeof prefs.reminderAgentSlug === 'string' && prefs.reminderAgentSlug.length > 0
         ? prefs.reminderAgentSlug
         : undefined,
-    reminderChannel: isReminderChannel(prefs.reminderChannel)
-      ? prefs.reminderChannel
-      : undefined,
+    reminderChannel: isReminderChannel(prefs.reminderChannel) ? prefs.reminderChannel : undefined,
     displayName:
       typeof prefs.displayName === 'string' && prefs.displayName.length > 0
         ? prefs.displayName
@@ -510,10 +506,7 @@ export async function noteInboundChannel(
         setWhere: sql`coalesce(${profiles.preferences}->>'reminderChannel', '') <> ${channel}`,
       });
   } catch (err) {
-    console.error(
-      '[profile] noteInboundChannel failed:',
-      err instanceof Error ? err.message : err,
-    );
+    console.error('[profile] noteInboundChannel failed:', err instanceof Error ? err.message : err);
   }
 }
 
@@ -536,7 +529,9 @@ export async function updateProfilePreferences(
     );
   }
   if (patch.reminderChannel != null && !isReminderChannel(patch.reminderChannel)) {
-    throw new Error(`'${patch.reminderChannel}' is not a valid reminder channel ('telegram' | 'mobile').`);
+    throw new Error(
+      `'${patch.reminderChannel}' is not a valid reminder channel ('telegram' | 'mobile').`,
+    );
   }
   // '' is the deliberate "clear designation" write (projects to undefined on
   // read); anything else must be a UUID so garbage never lands in the row.
@@ -553,10 +548,7 @@ export async function updateProfilePreferences(
     .insert(profiles)
     .values({
       userId,
-      preferences: { ...DEFAULT_PREFERENCES, ...patch } as unknown as Record<
-        string,
-        unknown
-      >,
+      preferences: { ...DEFAULT_PREFERENCES, ...patch } as unknown as Record<string, unknown>,
     })
     .onConflictDoUpdate({
       target: profiles.userId,

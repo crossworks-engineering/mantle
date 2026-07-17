@@ -13,11 +13,7 @@
  *     adapter's job is to be uniform, not pedantic.
  */
 
-import type {
-  GenerateImageOptions,
-  GenerateImageResult,
-  ImageGenDispatcher,
-} from './types';
+import type { GenerateImageOptions, GenerateImageResult, ImageGenDispatcher } from './types';
 import {
   XAI_BASE_URL,
   XAI_IMAGE_DEFAULT_MODEL,

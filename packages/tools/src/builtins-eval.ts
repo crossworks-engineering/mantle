@@ -105,9 +105,23 @@ const recall_eval: BuiltinToolDef = {
         skipped++;
         continue;
       }
-      const found = await searchNodes({ ownerId: ctx.ownerId, q: c.query, queryEmbedding, limit: RANK_K });
-      searchRanks.push(goldRank(c, found.map((n) => ({ id: n.id, title: n.title }))));
-      const passages = await searchChunks({ ownerId: ctx.ownerId, embedding: queryEmbedding, limit: RANK_K * 3 });
+      const found = await searchNodes({
+        ownerId: ctx.ownerId,
+        q: c.query,
+        queryEmbedding,
+        limit: RANK_K,
+      });
+      searchRanks.push(
+        goldRank(
+          c,
+          found.map((n) => ({ id: n.id, title: n.title })),
+        ),
+      );
+      const passages = await searchChunks({
+        ownerId: ctx.ownerId,
+        embedding: queryEmbedding,
+        limit: RANK_K * 3,
+      });
       // Passage hits collapse to their parent node, first appearance keeps rank.
       const seen = new Set<string>();
       const nodeHits: Array<{ id: string; title: string }> = [];
@@ -120,7 +134,11 @@ const recall_eval: BuiltinToolDef = {
       chunkRanks.push(goldRank(c, nodeHits));
     }
     if (searchRanks.length === 0) {
-      return { ok: false, error: 'every case failed to embed — the embedder looks down; check /settings/ai-workers and re-run recall_eval later' };
+      return {
+        ok: false,
+        error:
+          'every case failed to embed — the embedder looks down; check /settings/ai-workers and re-run recall_eval later',
+      };
     }
 
     const run: RunSummary = {

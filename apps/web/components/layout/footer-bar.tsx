@@ -6,7 +6,11 @@ import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { navItemMatches } from './nav-items';
 import { useTopNavItems } from '@/lib/nav-usage';
-import { AssistantButton, AssistantDockToggle, HighlightButton } from '@/components/assistant/assistant-dock';
+import {
+  AssistantButton,
+  AssistantDockToggle,
+  HighlightButton,
+} from '@/components/assistant/assistant-dock';
 
 /** Compact icon toggle styled to match the footer's quick-menu links. */
 function ToggleButton({

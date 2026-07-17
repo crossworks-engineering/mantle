@@ -16,7 +16,13 @@
  */
 import type { EmailAccount } from '@mantle/db';
 import { classifyDelivery } from '@mantle/email';
-import type { EmailProvider, FullMessage, RawAttachment, RawMessage, SyncCursor } from '@mantle/email';
+import type {
+  EmailProvider,
+  FullMessage,
+  RawAttachment,
+  RawMessage,
+  SyncCursor,
+} from '@mantle/email';
 import { graphGet } from '../client';
 import type { GraphAttachment, GraphMessage, GraphRecipient } from './types';
 
@@ -59,7 +65,11 @@ function stripAngles(id: string | undefined): string | undefined {
 function normalize(m: GraphMessage): RawMessage {
   const headers: Record<string, string> = {};
   for (const h of m.internetMessageHeaders ?? []) headers[h.name.toLowerCase()] = h.value;
-  const fromAddr = (m.from?.emailAddress?.address ?? m.sender?.emailAddress?.address ?? '').toLowerCase();
+  const fromAddr = (
+    m.from?.emailAddress?.address ??
+    m.sender?.emailAddress?.address ??
+    ''
+  ).toLowerCase();
 
   let deliveryKind: RawMessage['deliveryKind'];
   try {

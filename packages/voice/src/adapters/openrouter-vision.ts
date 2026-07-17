@@ -50,7 +50,10 @@ function replyText(content: unknown): string {
   if (Array.isArray(content)) {
     return content
       .map((c) =>
-        c && typeof c === 'object' && 'text' in c && typeof (c as { text?: unknown }).text === 'string'
+        c &&
+        typeof c === 'object' &&
+        'text' in c &&
+        typeof (c as { text?: unknown }).text === 'string'
           ? (c as { text: string }).text
           : '',
       )
@@ -171,7 +174,11 @@ export const openrouterVisionAdapter: VisionDispatcher = {
         signal: AbortSignal.timeout(15_000),
       });
       if (!res.ok) {
-        return { available: [...OPENROUTER_VISION_MODELS], filtered: false, error: `openrouter /models ${res.status}` };
+        return {
+          available: [...OPENROUTER_VISION_MODELS],
+          filtered: false,
+          error: `openrouter /models ${res.status}`,
+        };
       }
       const parsed = (await res.json()) as OrListModelsResponse;
       const vision: VisionModelInfo[] = (parsed.data ?? [])

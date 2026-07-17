@@ -1,24 +1,24 @@
-"use client";
+'use client';
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
+} from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 
 const people = [
-  { name: "Jason Schoeman", detail: "Owner", initials: "JS" },
-  { name: "Saskia", detail: "Assistant", initials: "Sa" },
-  { name: "Remy", detail: "Memory recall", initials: "Re" },
-  { name: "Researcher", detail: "Web search", initials: "Rs" },
+  { name: 'Jason Schoeman', detail: 'Owner', initials: 'JS' },
+  { name: 'Saskia', detail: 'Assistant', initials: 'Sa' },
+  { name: 'Remy', detail: 'Memory recall', initials: 'Re' },
+  { name: 'Researcher', detail: 'Web search', initials: 'Rs' },
 ];
 
 export function CardsShare() {
@@ -33,7 +33,12 @@ export function CardsShare() {
           <Label htmlFor="link" className="sr-only">
             Link
           </Label>
-          <Input id="link" value="https://mantle.local/p/memory-architecture" className="h-8" readOnly />
+          <Input
+            id="link"
+            value="https://mantle.local/p/memory-architecture"
+            className="h-8"
+            readOnly
+          />
           <Button size="sm" variant="outline" className="shadow-none">
             Copy Link
           </Button>

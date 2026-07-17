@@ -10,7 +10,11 @@
  * every call. Read-only.
  */
 import { NextResponse } from 'next/server';
-import { countTeamVisibleShares, listTeamVisibleShares, loadProfilePreferences } from '@mantle/content';
+import {
+  countTeamVisibleShares,
+  listTeamVisibleShares,
+  loadProfilePreferences,
+} from '@mantle/content';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
 import { APP_VERSION } from '@/lib/version';
 

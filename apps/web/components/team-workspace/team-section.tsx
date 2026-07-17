@@ -72,7 +72,9 @@ export function TeamSection({
   if (items === null) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <p className="text-sm text-muted-foreground">{failed ? 'Could not load this section.' : 'Loading…'}</p>
+        <p className="text-sm text-muted-foreground">
+          {failed ? 'Could not load this section.' : 'Loading…'}
+        </p>
       </div>
     );
   }
@@ -122,9 +124,13 @@ export function TeamSection({
                   )}
                 </div>
                 {item.summary && (
-                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.summary}</p>
+                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                    {item.summary}
+                  </p>
                 )}
-                <p className="mt-0.5 text-xs text-muted-foreground/70">{formatDate(item.updatedAt)}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground/70">
+                  {formatDate(item.updatedAt)}
+                </p>
               </button>
             </li>
           ))}

@@ -30,10 +30,9 @@
  * pg_notify channel to extractNode().
  */
 
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   db,
-  agents,
   bumpWorkerUsage,
   facts,
   entities,
@@ -45,18 +44,31 @@ import {
   pages,
   tables,
   contentChunks,
-  type Agent,
-  type AgentMemoryConfig,
   type AiWorker,
   type ExtractorParams,
   type Entity,
-  type Fact,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import { diskPathForFile, extOf, mimeForExt, parseDocumentBytes, INGESTABLE_EXTS, parserRouteForExt, extractPdfTextWithPassword, effectiveBrainDepth } from '@mantle/files';
+import {
+  diskPathForFile,
+  extOf,
+  mimeForExt,
+  parseDocumentBytes,
+  INGESTABLE_EXTS,
+  parserRouteForExt,
+  extractPdfTextWithPassword,
+  effectiveBrainDepth,
+} from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
-import { describeWorkbook, profileFile, profileToText, resolveStoragePath, schemaDigest, schemaToText } from '@mantle/tabledb';
+import {
+  describeWorkbook,
+  profileFile,
+  profileToText,
+  resolveStoragePath,
+  schemaDigest,
+  schemaToText,
+} from '@mantle/tabledb';
 import { currentTrace, recordIngest, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
 import {
   chatWithFailover,
@@ -101,7 +113,21 @@ const HARD_SKIP_TYPES = new Set(['branch']);
  *  `task` and `event` are first-class content: title + body + metadata
  *  (status, due_at, starts_at, location, …) all become part of the body
  *  the extractor summarises and embeds. */
-const DEFAULT_EXTRACT_TYPES = ['note', 'page', 'table', 'file', 'email', 'email_thread', 'secret', 'task', 'event', 'contact', 'documentation', 'journal', 'location'];
+const DEFAULT_EXTRACT_TYPES = [
+  'note',
+  'page',
+  'table',
+  'file',
+  'email',
+  'email_thread',
+  'secret',
+  'task',
+  'event',
+  'contact',
+  'documentation',
+  'journal',
+  'location',
+];
 
 /** Max characters of body text we feed the summarizer in one shot.
  *  Long emails / PDFs get truncated to keep the prompt bounded and the
@@ -127,7 +153,7 @@ const SUPERSEDED_FILE_SALIENCE = Math.min(
 const CLASSIFIER_NEIGHBOURS = 3;
 
 /** Similarity threshold for "this candidate fact looks like an existing one." */
-const FACT_DEDUP_THRESHOLD = 0.30; // cosine distance; lower = more similar
+const FACT_DEDUP_THRESHOLD = 0.3; // cosine distance; lower = more similar
 
 /** Similarity threshold for resolving an entity mention to an existing entity. */
 const ENTITY_DEDUP_THRESHOLD = 0.25;
@@ -186,7 +212,10 @@ Be conservative — quality over quantity:
 - Confidence: 1.0 only for explicitly stated facts; 0.6-0.8 for well-grounded inferences. If you would assign below 0.6, OMIT the fact rather than guessing.
 - DO NOT extract secrets, passwords, API keys, or other credentials. Skip those entirely.`;
 
-const CLASSIFIER_PROMPT_TEMPLATE = (candidate: string, neighbours: string[]) => `You are managing a personal memory store. A new candidate fact has been extracted from a document. You must decide how it relates to existing nearby facts.
+const CLASSIFIER_PROMPT_TEMPLATE = (
+  candidate: string,
+  neighbours: string[],
+) => `You are managing a personal memory store. A new candidate fact has been extracted from a document. You must decide how it relates to existing nearby facts.
 
 Candidate fact:
 "${candidate}"
@@ -205,14 +234,11 @@ Output STRICT JSON, no markdown:
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-import {
-  isValidEntity,
-  isValidFact,
-  parseExtractorOutput,
-  sanitiseFactEntities,
-  type ExtractedFact,
-  type ExtractorOutput,
-} from './extractor-parse';
+import { parseExtractorOutput, type ExtractedFact, type ExtractorOutput } from './extractor-parse';
+
+/** A resolved entity mention (name + kind) as produced by the parser and
+ *  threaded through the index + reconciliation stages. */
+type EntityMention = { name: string; kind: string };
 
 type ClassifierDecision = {
   decision: 'ADD' | 'UPDATE' | 'DELETE' | 'NOOP';
@@ -245,6 +271,7 @@ function truncateForPrompt(body: string): string {
  * this). NULs carry no information, so dropping them is safe.
  */
 function cleanText(s: string): string {
+  // eslint-disable-next-line no-control-regex -- stripping NUL is the whole point
   return s.replace(/\x00/g, '');
 }
 
@@ -446,9 +473,8 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     const data = (node.data ?? {}) as Record<string, unknown>;
     const description = typeof data.description === 'string' ? data.description : '';
     const kind = typeof data.kind === 'string' ? data.kind : '';
-    const tagLine = Array.isArray(node.tags) && node.tags.length > 0
-      ? `\n\nTags: ${node.tags.join(', ')}`
-      : '';
+    const tagLine =
+      Array.isArray(node.tags) && node.tags.length > 0 ? `\n\nTags: ${node.tags.join(', ')}` : '';
     const kindLine = kind ? `\n\nKind: ${kind}` : '';
     return `${node.title}${kindLine}\n\n${description}${tagLine}`.trim();
   }
@@ -581,7 +607,8 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     // filename-only fallback a prior (buggy) extract may have stored; using
     // it would shortcut the real parse below and re-index nothing. Forces a
     // re-parse from disk/storage on the next run.
-    if (typeof c === 'string' && c.trim().length > 0 && c.trim() !== node.title.trim()) return cleanText(c);
+    if (typeof c === 'string' && c.trim().length > 0 && c.trim() !== node.title.trim())
+      return cleanText(c);
   }
   // file fallback: if no usable cached body, read the bytes (local disk for
   // uploads, OBJECT STORAGE for email attachments — see loadFileBytes) and
@@ -602,7 +629,12 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
           {
             name: 'parse_document',
             kind: 'compute',
-            input: { ext: loaded.ext, parser: route, bytes_in: loaded.bytes.length, filename: loaded.filename },
+            input: {
+              ext: loaded.ext,
+              parser: route,
+              bytes_in: loaded.bytes.length,
+              filename: loaded.filename,
+            },
           },
           async (h) => {
             const t = await parseDocumentBytes(loaded.bytes, loaded.ext);
@@ -665,7 +697,11 @@ async function visionIngestImageNode(
       );
       const mimeType = loaded.mime;
       const result = await step(
-        { name: 'extract_vision', kind: 'llm_call', input: { mime: mimeType, bytes: bytes.length } },
+        {
+          name: 'extract_vision',
+          kind: 'llm_call',
+          input: { mime: mimeType, bytes: bytes.length },
+        },
         async (h) => {
           // Neutral describe+OCR (no question) — the durable, query-independent
           // metadata pass. Shares the single vision implementation with the
@@ -756,10 +792,25 @@ async function ocrIngestPdfNode(
       //    when the worker's provider supports it; else falls through to the
       //    per-page raster OCR below.
       const native = await step(
-        { name: 'extract_document', kind: 'llm_call', input: { mime: 'application/pdf', bytes: buf.length } },
+        {
+          name: 'extract_document',
+          kind: 'llm_call',
+          input: { mime: 'application/pdf', bytes: buf.length },
+        },
         async (h) => {
-          const r = await runDocumentWorker({ ownerId, bytes: buf, mimeType: 'application/pdf', filename });
-          h.setMeta({ ran: r.ran, note: r.note, model: r.model, textLength: r.text.length, tokensOut: r.tokensOut });
+          const r = await runDocumentWorker({
+            ownerId,
+            bytes: buf,
+            mimeType: 'application/pdf',
+            filename,
+          });
+          h.setMeta({
+            ran: r.ran,
+            note: r.note,
+            model: r.model,
+            textLength: r.text.length,
+            tokensOut: r.tokensOut,
+          });
           return r;
         },
       );
@@ -833,7 +884,9 @@ async function ocrIngestPdfNode(
         );
         if (res.model) model = res.model;
         if (res.text.trim()) {
-          parts.push(pages.length > 1 ? `[Page ${pg.pageNumber}]\n${res.text.trim()}` : res.text.trim());
+          parts.push(
+            pages.length > 1 ? `[Page ${pg.pageNumber}]\n${res.text.trim()}` : res.text.trim(),
+          );
         }
       }
 
@@ -922,8 +975,13 @@ export async function chatComplete(
 async function reconcileEntity(
   ownerId: string,
   mention: { name: string; kind: string },
-): Promise<Entity> {
-  // 1. Exact name (case-insensitive) or alias match first — cheapest.
+): Promise<{ entity: Entity; created: boolean }> {
+  // 1. Exact name (case-insensitive) or alias match first — cheapest. Both OR
+  //    branches are indexed: entities_owner_lname_kind_uq for lower(name), and
+  //    entities_aliases_gin_idx for the alias membership. The alias test MUST be
+  //    the containment form `aliases @> array[q]` — the scalar `q = any(aliases)`
+  //    form is NOT recognized by the array GIN opclass (verified via EXPLAIN),
+  //    so it would filter after an owner scan instead of using the index.
   const trimmed = mention.name.trim();
   const [exact] = await db
     .select()
@@ -931,20 +989,30 @@ async function reconcileEntity(
     .where(
       and(
         eq(entities.ownerId, ownerId),
-        sql`lower(${entities.name}) = lower(${trimmed}) or ${trimmed} = any(${entities.aliases})`,
+        sql`lower(${entities.name}) = lower(${trimmed}) or ${entities.aliases} @> array[${trimmed}]::text[]`,
       ),
     )
     .limit(1);
-  if (exact) return exact;
+  if (exact) return { entity: exact, created: false };
 
   // 2. Trigram fuzzy match within the same kind. Pick the strongest similarity.
+  //    The `name % $q` predicate lets the trigram GIN (entities_name_trgm_idx)
+  //    prefilter to candidates instead of computing similarity() over every
+  //    same-owner/kind row — the `%` threshold (0.3) sits well below the 0.7
+  //    acceptance gate below, so it never drops a real match.
   const trgmHits = await db
     .select({
       row: entities,
       sim: sql<number>`similarity(${entities.name}, ${trimmed})`,
     })
     .from(entities)
-    .where(and(eq(entities.ownerId, ownerId), eq(entities.kind, mention.kind)))
+    .where(
+      and(
+        eq(entities.ownerId, ownerId),
+        eq(entities.kind, mention.kind),
+        sql`${entities.name} % ${trimmed}`,
+      ),
+    )
     .orderBy(sql`similarity(${entities.name}, ${trimmed}) desc`)
     .limit(1);
   if (trgmHits[0] && trgmHits[0].sim >= 0.7) {
@@ -956,13 +1024,16 @@ async function reconcileEntity(
     // Falls through to the embedding match below, which carries the same guard.
     if (!isLikelyDifferentPerson(mention, existing)) {
       // Looks like a match — register the new spelling as an alias.
-      if (!existing.aliases.includes(trimmed) && existing.name.toLowerCase() !== trimmed.toLowerCase()) {
+      if (
+        !existing.aliases.includes(trimmed) &&
+        existing.name.toLowerCase() !== trimmed.toLowerCase()
+      ) {
         await db
           .update(entities)
           .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
           .where(eq(entities.id, existing.id));
       }
-      return existing;
+      return { entity: existing, created: false };
     }
   }
 
@@ -985,13 +1056,16 @@ async function reconcileEntity(
       // "Alex Carter" are close enough to merge by default, which is wrong
       // for distinct people sharing a surname.
       if (!isLikelyDifferentPerson(mention, existing)) {
-        if (!existing.aliases.includes(trimmed) && existing.name.toLowerCase() !== trimmed.toLowerCase()) {
+        if (
+          !existing.aliases.includes(trimmed) &&
+          existing.name.toLowerCase() !== trimmed.toLowerCase()
+        ) {
           await db
             .update(entities)
             .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
             .where(eq(entities.id, existing.id));
         }
-        return existing;
+        return { entity: existing, created: false };
       }
     }
   } catch {
@@ -1020,7 +1094,7 @@ async function reconcileEntity(
             .set({ aliases: [...hit.aliases, trimmed], updatedAt: new Date() })
             .where(eq(entities.id, hit.id));
         }
-        return hit;
+        return { entity: hit, created: false };
       }
     }
   }
@@ -1044,7 +1118,7 @@ async function reconcileEntity(
       })
       .returning();
     if (!inserted) throw new Error('extractor: failed to insert entity');
-    return inserted;
+    return { entity: inserted, created: true };
   } catch (err) {
     // Unique-violation on entities_owner_lname_kind_uq (migration 0055): a
     // concurrent extraction inserted this same (owner, name, kind) between our
@@ -1064,7 +1138,9 @@ async function reconcileEntity(
       )
       .limit(1);
     if (!winner) throw err;
-    return winner;
+    // A concurrent extraction inserted it between our step-1 probe and here —
+    // from this call's view it already existed, so count it as matched.
+    return { entity: winner, created: false };
   }
 }
 
@@ -1094,11 +1170,7 @@ async function classifyAndApplyFact(
     })
     .from(facts)
     .where(
-      and(
-        eq(facts.ownerId, ownerId),
-        isNull(facts.validTo),
-        sql`${facts.embedding} is not null`,
-      ),
+      and(eq(facts.ownerId, ownerId), isNull(facts.validTo), sql`${facts.embedding} is not null`),
     )
     .orderBy(sql`${facts.embedding} <=> ${JSON.stringify(candidateEmbedding)}::vector`)
     .limit(CLASSIFIER_NEIGHBOURS);
@@ -1126,7 +1198,10 @@ async function classifyAndApplyFact(
     ownerId,
     resolveChatRoutes(worker),
     'You are a precise JSON output assistant. Output strictly the JSON requested, with no additional commentary.',
-    CLASSIFIER_PROMPT_TEMPLATE(candidate.content, closeNeighbours.map((n) => n.content)),
+    CLASSIFIER_PROMPT_TEMPLATE(
+      candidate.content,
+      closeNeighbours.map((n) => n.content),
+    ),
     params,
   );
   const decision = parseClassifierDecision(decisionResult.text);
@@ -1183,6 +1258,1077 @@ async function classifyAndApplyFact(
     embedding: candidateEmbedding,
   });
   return 'ADD';
+}
+
+// ─── Per-stage seams ────────────────────────────────────────────────────────
+// extractNode below is a thin orchestrator: the skip-gating + the ordered
+// stage calls + the glue. Each stage is a named function here, holding the
+// exact code (and comments) moved verbatim from the former monolith. Control
+// flow BETWEEN stages (skip gates, the retrieval-only / extract_facts
+// conditionals) stays visible in the orchestrator; logic WITHIN a stage lives
+// with the stage.
+
+/**
+ * Load the FULL extracted text for a node, ready to summarise/embed/chunk.
+ *
+ * Covers the body-load ladder: image vision-ingest, the typed body dispatch
+ * (readNodeBodyRaw), and the PDF OCR / native-read / encrypted / bytes-missing
+ * / no-text-layer fallbacks. Records its OWN terminal skip traces for every
+ * dead-end (no_vision_text, encrypted_pdf, bytes_unavailable, no_text_layer,
+ * body_too_short); when it does, it returns `{ ok: false }` and the caller must
+ * simply return. On success returns the raw (untruncated) body text.
+ */
+async function loadExtractableBody(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+  worker: AiWorker,
+  existingData: Record<string, unknown>,
+): Promise<{ ok: true; rawBody: string } | { ok: false }> {
+  // Image file nodes carry no text body until a vision worker reads them.
+  // The chat / Telegram upload paths do that inline, but an image dropped
+  // into /files (web upload, disk-sync watcher, or MCP file_upload) arrives
+  // here untouched — readNodeBodyRaw returns just the filename for it. Run the
+  // default vision worker, which persists the description/OCR as data.text and
+  // returns it so we index it in THIS pass below (summary + embedding + facts)
+  // — no second extractor round-trip. One code path turns image bytes into
+  // searchable text however the image landed. Images that already carry
+  // data.text (e.g. re-extraction) fall through to readNodeBodyRaw unchanged.
+  // Type/mime resolution that works for BOTH upload nodes (data.filename) and
+  // email-attachment nodes (no filename — the title is the filename, mime is in
+  // data.mimeType). Without this, attachments fell through every vision/OCR
+  // gate and indexed as filename-only summaries.
+  const fileNameForType =
+    typeof existingData.filename === 'string' ? existingData.filename : node.title;
+  const fileExt = extOf(fileNameForType);
+  const fileMime =
+    typeof existingData.mimeType === 'string' ? existingData.mimeType : mimeForExt(fileExt);
+
+  const isImageNeedingVision =
+    node.type === 'file' &&
+    !existingData.text &&
+    !existingData.content &&
+    fileMime.startsWith('image/');
+
+  // Read the FULL extracted text once. `body` (truncated) is what the LLM
+  // sees; `rawBody` is what we persist so the document stays retrievable.
+  let rawBody: string;
+  if (isImageNeedingVision) {
+    const visionText = await visionIngestImageNode(node, ownerId);
+    if (!visionText) {
+      // Vision produced no text — an SVG/vector the model can't read, a blank
+      // image, or an unwired/erroring vision worker. Record a TERMINAL skip so
+      // the node counts as processed. Without this it has only a `photo_ingest`
+      // trace and no `extractor_run`, so the periodic extract sweep — whose
+      // loop-safety keys on the presence of an extractor_run — re-queues it
+      // every cycle forever (the icon.svg "indexed every minute" bug).
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'no_vision_text',
+        details: {
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          mime: fileMime,
+          hint: 'Image produced no describable text (a vector/blank image, or the vision worker is unwired/failing). Nothing to index; the node is marked processed so the sweep stops re-queuing it.',
+        },
+      });
+      return { ok: false };
+    }
+    rawBody = visionText;
+  } else {
+    rawBody = await readNodeBodyRaw(node);
+  }
+
+  // Scanned / image-only PDF: readNodeBodyRaw found no text layer and fell back
+  // to the title (filename). Indexing that would silently mask the failure — a
+  // filename-only summary recorded as `success` (the passport-PDF case). Before
+  // giving up, try OCR via the vision worker (rasterize → describe+OCR), the
+  // same route images take. Only triggered when the body IS the filename, so a
+  // PDF with a real text layer never pays the OCR cost.
+  const isPdf = fileExt === 'pdf' || fileMime === 'application/pdf';
+  const isPdfWithoutTextLayer =
+    node.type === 'file' &&
+    !existingData.text &&
+    !existingData.content &&
+    isPdf &&
+    rawBody.trim() === node.title.trim();
+  // prefer_native: a PDF WITH a text layer, but the document worker is set to
+  // always read PDFs through the model (tabular docs whose text layer scrambles
+  // columns). Run the same native path; keep the text-layer body if native
+  // yields nothing, so we never end up worse than the cheap path.
+  const isPdfWithTextLayer =
+    node.type === 'file' &&
+    !existingData.text &&
+    !existingData.content &&
+    isPdf &&
+    !isPdfWithoutTextLayer;
+  const preferNativePdf = isPdfWithTextLayer && (await documentWorkerPrefersNative(ownerId));
+
+  if (isPdfWithoutTextLayer) {
+    const ocr = await ocrIngestPdfNode(node, ownerId);
+    if (ocr.text && ocr.text.trim().length >= 20) {
+      rawBody = ocr.text;
+    } else if (ocr.encrypted) {
+      // Password-protected PDF. Try the vaulted passwords before giving up.
+      const unlocked = await tryUnlockPdf(node, ownerId);
+      if (unlocked && unlocked.trim().length >= 20) {
+        rawBody = unlocked;
+      } else {
+        // No stored password opened it. Honest, distinct skip (not the
+        // misleading no_text_layer) so the operator knows it's LOCKED, not blank.
+        await recordSkippedTrace({
+          kind: 'extractor_run',
+          ownerId,
+          subjectId: node.id,
+          subjectKind: 'node',
+          disposition: 'encrypted_pdf',
+          details: {
+            worker_slug: worker.slug,
+            node_type: node.type,
+            title: node.title,
+            filename: existingData.filename,
+            hint: 'PDF is password-protected and no stored password opened it. Add the password at /settings/pdf-passwords, then re-extract.',
+          },
+        });
+        return { ok: false };
+      }
+    } else if (ocr.bytesMissing) {
+      // We never had the file's bytes (no disk path + not in object storage —
+      // e.g. an email attachment indexed by metadata whose body was never
+      // fetched). Distinct from a bad scan: the fix is to RE-FETCH the file,
+      // not to OCR it. Honest disposition so the operator can tell the two apart.
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'bytes_unavailable',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          sha256: typeof existingData.sha256 === 'string' ? existingData.sha256 : undefined,
+          hint: "The file's bytes aren't in object storage (metadata-only node — e.g. an email attachment whose body was never fetched). Re-fetch the source to extract it; OCR can't help.",
+        },
+      });
+      return { ok: false };
+    } else {
+      // No text layer AND OCR produced nothing (no/unwired vision worker, an
+      // unrenderable PDF, or a blank scan). Record an honest skip instead of a
+      // filename-only false success.
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'no_text_layer',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          hint: 'PDF has no extractable text layer and OCR produced nothing — configure a default vision worker at /settings/ai-workers, or re-upload as an image. A blank/illegible scan can also land here.',
+        },
+      });
+      return { ok: false };
+    }
+  } else if (preferNativePdf) {
+    const native = await ocrIngestPdfNode(node, ownerId);
+    // Only replace the text-layer body if native produced something usable;
+    // otherwise keep the text we already have (native is best-effort here).
+    if (native.text && native.text.trim().length >= 20) rawBody = native.text;
+  }
+
+  if (!rawBody || rawBody.trim().length < 20) {
+    // Not enough content to extract meaningfully.
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition: 'body_too_short',
+      details: {
+        worker_slug: worker.slug,
+        node_type: node.type,
+        title: node.title,
+        body_chars: rawBody?.length ?? 0,
+        threshold_chars: 20,
+        hint: 'The extractor wants ≥20 chars of body content. Title-only nodes are skipped.',
+      },
+    });
+    return { ok: false };
+  }
+  return { ok: true, rawBody };
+}
+
+/**
+ * Run the extractor LLM over the node body and return the parsed output
+ * (summary + facts + entities + relations). Two paths: a shape-unchanged table
+ * REUSES its committed summary (no LLM spend), everything else calls the model.
+ * Wraps the same `reuse_summary` / `llm_extract` trace steps as before.
+ */
+async function runExtractorModel(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+  worker: AiWorker,
+  routes: ChatRoutes,
+  params: ExtractorParams,
+  body: string,
+  existingData: Record<string, unknown>,
+): Promise<ExtractorOutput> {
+  const systemPrompt = worker.systemPrompt || DEFAULT_EXTRACTOR_PROMPT;
+  // Tables get a targeted L2 brief: the body is already profile + leading
+  // rows (built at commit), so steer the summary toward what the table
+  // contains, per-column meaning, and the questions it can answer.
+  const tableHint =
+    node.type === 'table'
+      ? 'This is a structured data table (its column profile and leading rows follow). Describe what the table contains, what each column means, and what questions it can answer.\n\n'
+      : '';
+  const userPayload = `Title: ${node.title}\nType: ${node.type}\n\n${tableHint}Body:\n${body.slice(0, 8000)}`;
+
+  // Shape-hash gate (Tables v2 §6): commitTable KEEPS data.summary when
+  // only cell values changed (schema fingerprint unchanged) and clears it
+  // when the shape changed. A table arriving here WITH a summary is
+  // therefore a cell-edit re-index: reuse the summary, skip the LLM, and
+  // refresh only the deterministic layers (profile chunks + embedding).
+  const reusedTableSummary =
+    node.type === 'table' &&
+    typeof existingData.summary === 'string' &&
+    existingData.summary.trim().length > 0
+      ? existingData.summary
+      : null;
+
+  const parsed = reusedTableSummary
+    ? await step(
+        {
+          name: 'reuse_summary',
+          kind: 'compute',
+          input: {
+            reason: 'table shape unchanged — commit kept the summary; LLM pass skipped',
+          },
+        },
+        async (h) => {
+          const entities = (Array.isArray(existingData.entities) ? existingData.entities : [])
+            .filter((n): n is string => typeof n === 'string')
+            .map((name) => ({ name, kind: 'unknown' }));
+          h.setOutput({ summary_chars: reusedTableSummary.length, entities: entities.length });
+          return {
+            summary: reusedTableSummary,
+            facts: [],
+            entities,
+            relations: [],
+          } as ReturnType<typeof parseExtractorOutput>;
+        },
+      )
+    : await step(
+        {
+          name: 'llm_extract',
+          kind: 'llm_call',
+          input: {
+            model: worker.model,
+            provider: worker.provider,
+            // Surface everything the LLM saw. No per-field char caps —
+            // the global truncateJson budget (64KB) catches truly
+            // runaway bodies and the node itself lives in /files for
+            // larger reads. Operators want the full preview when
+            // debugging "what did the extractor actually read?".
+            title: node.title,
+            node_type: node.type,
+            body_chars: body.length,
+            body_preview: body,
+          },
+        },
+        async (h) => {
+          const r = await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
+          recordChatUsage(h, r, r.model || worker.model);
+          const result = parseExtractorOutput(r.text, { nodeId: node.id, model: worker.model });
+          // Capture the full model output — summary, all entities,
+          // all facts. truncateJson at the tracing layer will only
+          // bite if the combined JSON exceeds 64KB, which is
+          // generous for normal extractor outputs.
+          h.setOutput({
+            summary: result.summary,
+            entity_count: result.entities.length,
+            entities: result.entities.map((e) => ({
+              name: e.name,
+              kind: e.kind ?? 'unknown',
+            })),
+            fact_count: result.facts.length,
+            facts: result.facts.map((f) => f.content),
+          });
+          return result;
+        },
+      );
+  return parsed;
+}
+
+/**
+ * For a file-backed table node, build the PROFILE-ONLY retrieval chunks (L1
+ * profile per tab + the L2 overview + a schema data-dictionary chunk) and the
+ * one-line schema digest merged into nodes.data. Returns nulls for non-table
+ * nodes or when the register has no storage path / profiling fails.
+ */
+async function buildTableIndexPieces(
+  node: typeof nodes.$inferSelect,
+  summary: string,
+): Promise<{
+  tableProfilePieces: { text: string; headingPath?: string }[] | null;
+  tableSchemaDigest: string | null;
+}> {
+  // Tables v2 (§12.1 amendment, 2026-07-15): file-backed tables index
+  // PROFILE-ONLY chunks — the L1 profile per tab plus the L2 overview.
+  // Rows are NEVER embedded (row dumps were 531 passages/16 nodes of the
+  // NATREF chunk pollution); row-level lookup is table_sql's job, and the
+  // first-200-rows text lives only in tables.data_text for list ILIKE.
+  // Legacy JSONB tables keep the old dataText chunking until a commit
+  // converts them to file storage.
+  //
+  // v2.1 P3 adds the SCHEMA layer on top: a data-dictionary chunk (query
+  // surface — tabs, columns, view/FTS names) so retrieval lands on schema
+  // and grounds a table_sql call directly, plus a one-line digest merged
+  // into nodes.data for the corpus map. Computed here, before update_index,
+  // so the digest rides the same jsonb merge as the summary.
+  let tableProfilePieces: { text: string; headingPath?: string }[] | null = null;
+  let tableSchemaDigest: string | null = null;
+  if (node.type === 'table') {
+    const [reg] = await db
+      .select({ storagePath: tables.storagePath })
+      .from(tables)
+      .where(eq(tables.nodeId, node.id))
+      .limit(1);
+    if (reg?.storagePath) {
+      try {
+        const abs = resolveStoragePath(reg.storagePath);
+        const profileText = profileToText(profileFile(abs), { title: node.title });
+        const surface = describeWorkbook(abs);
+        tableSchemaDigest = schemaDigest(surface);
+        const sections = profileText.split(/\n(?=## )/);
+        tableProfilePieces = [
+          {
+            text: `${sections[0] ?? ''}\n\nOverview: ${summary}`.trim(),
+            headingPath: 'profile',
+          },
+          {
+            text: schemaToText(surface, { title: node.title, nodeId: node.id }),
+            headingPath: 'schema',
+          },
+          ...sections.slice(1).map((s) => ({
+            text: s.trim(),
+            headingPath: `profile > ${(/^## ([^\n—]+)/.exec(s)?.[1] ?? 'tab').trim()}`,
+          })),
+        ].filter((p) => p.text.length > 0);
+      } catch (err) {
+        console.error(
+          `[extractor] table profile failed for ${node.id} — falling back to dataText chunks:`,
+          err,
+        );
+      }
+    }
+  }
+  return { tableProfilePieces, tableSchemaDigest };
+}
+
+/**
+ * content_index pass: embed (title + summary) then write the summary,
+ * summary_model, entities, optional persisted full text + schema digest, and
+ * the embedding onto the LIVE node row under the mid-extract concurrency guard
+ * (the captured xmin). Announces the fresh index on `node_indexed`. Throws if
+ * the embedder fails (retry rather than half-index) or if the row changed
+ * mid-flight (stale write aborted).
+ */
+async function writeContentIndex(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+  worker: AiWorker,
+  summary: string,
+  uniqueMentions: EntityMention[],
+  persistedText: string | undefined,
+  tableSchemaDigest: string | null,
+  rowVersion: string | null,
+): Promise<void> {
+  // Embed against title + summary. The summary already condenses the
+  // full body (after head+tail truncation), so it's a faithful
+  // representation regardless of how long the original was.
+  // Previously we appended `body.slice(0, 500)` here, which gave
+  // long emails / PDFs an embedding biased toward the first ~500
+  // chars (lede only) and made vector search find them by greeting,
+  // not by content. The summary is what we want indexed.
+  const embedText = [node.title, summary].filter(Boolean).join('\n\n');
+  let embedding: number[] | null = null;
+  try {
+    embedding = await embed(ownerId, embedText);
+  } catch (err) {
+    // Throw, don't half-index: writing the summary without its embedding
+    // left the node invisible to vector search with no sweep that could
+    // see it (the extractor_run trace excluded it from the missed-
+    // extraction sweep). The queue retries with backoff; persistent
+    // embedder outages land in the DLQ, which is re-driven on restart
+    // and surfaced by /debug/integrity.
+    throw new Error(
+      `extractor: embed failed for node ${node.id} — retrying instead of half-indexing: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+
+  await step(
+    { name: 'update_index', kind: 'db_write', input: { entities: uniqueMentions.length } },
+    async (h) => {
+      // MERGE onto the LIVE row (jsonb `||`), not a spread of the
+      // in-memory `existingData` captured at function start. For image
+      // nodes, visionIngestImageNode ran in between and persisted
+      // `data.vision_model` (+ `data.text`); a replacing write keyed off
+      // the stale snapshot dropped vision_model (file-ingestion.md V2).
+      // The merge preserves any key written after the snapshot while
+      // still overwriting the index fields below.
+      const indexPatch: Record<string, unknown> = {
+        summary,
+        summary_model: worker.model,
+        summary_at: new Date().toISOString(),
+        entities: uniqueMentions.map((m) => m.name),
+        ...(persistedText ? { text: persistedText } : {}),
+        ...(tableSchemaDigest ? { schemaDigest: tableSchemaDigest } : {}),
+      };
+      // Conditional on the xmin captured before the LLM call: if anything
+      // wrote to this node mid-extract (a user edit being the case that
+      // matters — its summary/embedding invalidation must win over our
+      // now-stale output), write nothing and throw. pg-boss retries the
+      // job against the fresh row; the edit's own notify coalesces with
+      // it under the queue's short policy.
+      const updated = await db
+        .update(nodes)
+        .set({
+          data: sql`${nodes.data} || ${JSON.stringify(indexPatch)}::jsonb`,
+          ...(embedding ? { embedding } : {}),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(nodes.id, node.id), rowVersion ? sql`xmin::text = ${rowVersion}` : sql`true`))
+        .returning({ id: nodes.id });
+      if (updated.length === 0) {
+        throw new Error(
+          `extractor: node ${node.id} changed while extraction was in flight — aborting stale write (retry re-reads)`,
+        );
+      }
+      h.setMeta({
+        summaryLength: summary.length,
+        embedded: !!embedding,
+        textStored: persistedText?.length ?? 0,
+      });
+    },
+  );
+
+  // The summary + embedding are now on the row. Announce it on the
+  // reader-only `node_indexed` channel so live UI (the files screen) paints
+  // the summary the instant it lands — no manual refresh. Not `node_ingested`
+  // (that drives the extractor and would re-index our own output).
+  await notifyNodeIndexed(node.id);
+
+  console.log(
+    `[extractor]   → content_index: summary (${summary.length}c), ${uniqueMentions.length} entities`,
+  );
+}
+
+/**
+ * chunked retrieval index: rebuild this node's retrieval chunks
+ * (delete-for-node, then insert) so re-extracts REPLACE rather than accumulate.
+ * Long docs become section-sized individually-embedded chunks; spreadsheets get
+ * profile-only chunks; file-backed tables use the pre-built profile pieces.
+ * Embeds BEFORE touching the table and swaps delete+insert in one transaction,
+ * so an embed hiccup throws with the old chunks intact.
+ */
+async function writeRetrievalChunks(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+  rawBody: string,
+  tableProfilePieces: { text: string; headingPath?: string }[] | null,
+): Promise<void> {
+  // Rebuild this node's retrieval chunks (delete-for-node, then insert)
+  // so re-extracts REPLACE rather than accumulate. Long docs become
+  // section-sized, individually-embedded chunks; short ones a single
+  // whole-body chunk — uniform chunk-level search across all content.
+  //
+  // Spreadsheets are the exception: embedding a flattened grid row-by-row
+  // poisons passage retrieval (a corpus audit found grid chunks at 74% of
+  // one brain's chunk table, riding into the responder's auto-context as
+  // numeric noise). A grid file gets one PROFILE chunk per sheet — name,
+  // header row, sampled rows, honest coverage note — while the full text
+  // stays readable via file_read (data.text persists above).
+  const gridProfile =
+    node.type === 'file' && (isSpreadsheetTitle(node.title) || hasSheetMarkers(rawBody));
+  await step(
+    {
+      name: 'write_chunks',
+      kind: 'compute',
+      input: { bodyChars: rawBody.length, gridProfile },
+    },
+    async (h) => {
+      // Embed BEFORE touching the table, and swap delete+insert in one
+      // transaction. The old order (delete → embed → insert, embed
+      // failure swallowed) left the node permanently chunk-less when the
+      // embedder hiccuped: the delete had already run, the failure
+      // returned "success", and the skip guard kept every retry away.
+      // Now an embed failure throws (queue retries, old chunks intact)
+      // and a crash mid-step can never destroy the previous rebuild.
+      const pieces =
+        tableProfilePieces ??
+        (gridProfile
+          ? chunkSpreadsheetProfile(rawBody, { fileTitle: node.title })
+          : chunkDocText(rawBody));
+      if (pieces.length === 0) {
+        await db.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
+        h.setOutput({ chunks: 0 });
+        return;
+      }
+      const { embedBatch } = await import('@mantle/embeddings');
+      const vectors = await embedBatch(
+        ownerId,
+        pieces.map((p) => p.text),
+      );
+      await db.transaction(async (tx) => {
+        await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
+        await tx.insert(contentChunks).values(
+          pieces.map((p, i) => ({
+            ownerId,
+            nodeId: node.id,
+            ordinal: i,
+            headingPath: p.headingPath ?? null,
+            text: p.text,
+            embedding: vectors[i] ?? null,
+          })),
+        );
+      });
+      h.setOutput({ chunks: pieces.length });
+    },
+  );
+}
+
+/**
+ * versioned-export supersede (file nodes): group same-family siblings
+ * (fileFamilyKey) and down-weight every version but the newest (salience is a
+ * re-ranking nudge, not a hide). Idempotent + self-healing — restores the
+ * newest to 1.0 if a prior pass demoted it. Best-effort; the caller isolates it.
+ */
+async function supersedeFileVersions(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+): Promise<void> {
+  // Weekly dumps and "_version_NN" workbooks arrive as siblings whose
+  // titles differ only by a date/version token; retrieval then hits
+  // whichever version is cosine-closest — often stale. Group siblings by
+  // fileFamilyKey and down-weight every version but the newest (salience
+  // is a re-ranking nudge, λ·(1−salience), not a hide). Idempotent and
+  // self-healing: the newest is restored to 1.0 if a prior pass demoted
+  // it. Best-effort — a failure here must not fail the extraction.
+  await step(
+    { name: 'supersede_file_versions', kind: 'compute', input: { title: node.title } },
+    async (h) => {
+      const familyKey = fileFamilyKey(node.title);
+      if (!familyKey) {
+        h.setOutput({ family: null });
+        return;
+      }
+      const siblings = await db
+        .select({
+          id: nodes.id,
+          title: nodes.title,
+          createdAt: nodes.createdAt,
+          salience: nodes.salience,
+        })
+        .from(nodes)
+        .where(
+          and(
+            eq(nodes.ownerId, ownerId),
+            eq(nodes.type, 'file'),
+            node.parentId ? eq(nodes.parentId, node.parentId) : isNull(nodes.parentId),
+          ),
+        );
+      const family = siblings
+        .filter((s) => fileFamilyKey(s.title) === familyKey)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      const [newest, ...older] = family;
+      const demote = older.filter((s) => s.salience > SUPERSEDED_FILE_SALIENCE);
+      if (demote.length > 0) {
+        await db
+          .update(nodes)
+          .set({ salience: SUPERSEDED_FILE_SALIENCE })
+          .where(
+            inArray(
+              nodes.id,
+              demote.map((s) => s.id),
+            ),
+          );
+      }
+      if (newest && newest.salience < 1) {
+        await db.update(nodes).set({ salience: 1 }).where(eq(nodes.id, newest.id));
+      }
+      h.setOutput({
+        family: familyKey,
+        versions: family.length,
+        demoted: demote.length,
+        newest: newest?.title ?? null,
+      });
+    },
+  );
+}
+
+/**
+ * entity reconciliation: resolve each unique mention to an entity (dedup via
+ * exact/trigram/embedding/org-suffix match, or create), collect this node's
+ * `mentioned_in` edges plus a page's explicit @-mention / node-reference edges,
+ * then atomically swap (delete this node's prior edges + insert the new set) in
+ * one transaction. Returns the name→entityId map used by the relation + fact
+ * passes.
+ */
+async function reconcileEntities(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+  uniqueMentions: EntityMention[],
+): Promise<Map<string, string>> {
+  return await step(
+    {
+      name: 'reconcile_entities',
+      kind: 'compute',
+      input: {
+        mentions: uniqueMentions.length,
+        // Full list of mentions — names + kinds. truncateJson
+        // applies the safety net at 64KB; a normal extractor
+        // pass fits comfortably. The arrays-over-50 cap in
+        // truncate.ts catches genuinely runaway iterations.
+        preview: uniqueMentions.map((m) => ({
+          name: m.name,
+          kind: m.kind ?? 'unknown',
+        })),
+      },
+    },
+    async (h) => {
+      // Idempotent rebuild: this node's prior edges are REPLACED, not
+      // appended to — both the inbound mention edges (entity → this
+      // node) and this node's outbound page/note links (this node →
+      // other node). The delete + re-insert happens in ONE transaction
+      // at the END of this step: entity reconciliation makes network
+      // calls (candidate embeddings), and the old delete-first ordering
+      // meant a crash mid-loop destroyed the previous extraction's
+      // edges with nothing written to replace them. Edges are collected
+      // in memory during the loop instead.
+      const pendingEdges: (typeof entityEdges.$inferInsert)[] = [];
+      const map = new Map<string, string>();
+      // Entity ids that already have an edge this rebuild — dedupes the
+      // NER pass against the explicit @-mention pass below.
+      const edgedEntityIds = new Set<string>();
+      let created = 0;
+      let matched = 0;
+      for (const mention of uniqueMentions) {
+        try {
+          // reconcileEntity already does the exact-match probe as its
+          // first step and reports whether it matched or created — no
+          // need for a second identical `lower(name)=…` query here.
+          const { entity: ent, created: wasCreated } = await reconcileEntity(ownerId, mention);
+          map.set(mention.name.trim().toLowerCase(), ent.id);
+          if (wasCreated) created++;
+          else matched++;
+          pendingEdges.push({
+            ownerId,
+            sourceId: ent.id,
+            sourceKind: 'entity',
+            targetId: node.id,
+            targetKind: 'node',
+            relation: 'mentioned_in',
+            validFrom: new Date(),
+          });
+          edgedEntityIds.add(ent.id);
+        } catch (err) {
+          console.error(
+            `[extractor]   entity '${mention.name}' failed:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+
+      // ─── explicit @-mentions / links (pages) ─────────────────────
+      // A page's chips carry resolved ids. Entity refs → precise
+      // `mentioned_in` edges (independent of NER recall, deduped against
+      // the loop above). Node refs → `node --references--> node` edges
+      // (backlinks). Both skip ids whose target no longer exists (edges
+      // have no FK; integrity is application-level).
+      let explicit = 0;
+      let refs = 0;
+      if (node.type === 'page') {
+        try {
+          const [pageRow] = await db
+            .select({ doc: pages.doc })
+            .from(pages)
+            .where(eq(pages.nodeId, node.id))
+            .limit(1);
+          const { entityIds, nodeIds } = mentionRefs(pageRow?.doc);
+
+          for (const entId of entityIds) {
+            if (edgedEntityIds.has(entId)) continue;
+            const [ent] = await db
+              .select({ id: entities.id })
+              .from(entities)
+              .where(and(eq(entities.id, entId), eq(entities.ownerId, ownerId)))
+              .limit(1);
+            if (!ent) continue;
+            pendingEdges.push({
+              ownerId,
+              sourceId: ent.id,
+              sourceKind: 'entity',
+              targetId: node.id,
+              targetKind: 'node',
+              relation: 'mentioned_in',
+              validFrom: new Date(),
+              data: { explicit: true },
+            });
+            edgedEntityIds.add(ent.id);
+            explicit++;
+          }
+
+          const refSeen = new Set<string>();
+          for (const refId of nodeIds) {
+            if (refId === node.id || refSeen.has(refId)) continue;
+            const [target] = await db
+              .select({ id: nodes.id })
+              .from(nodes)
+              .where(and(eq(nodes.id, refId), eq(nodes.ownerId, ownerId)))
+              .limit(1);
+            if (!target) continue;
+            pendingEdges.push({
+              ownerId,
+              sourceId: node.id,
+              sourceKind: 'node',
+              targetId: refId,
+              targetKind: 'node',
+              relation: 'references',
+              validFrom: new Date(),
+              data: { explicit: true },
+            });
+            refSeen.add(refId);
+            refs++;
+          }
+        } catch (err) {
+          console.error(
+            '[extractor]   page mention/link edges failed:',
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+
+      // Atomic swap: clear this node's prior edges and write the new
+      // set in one transaction (see the rebuild note at the top of this
+      // step). All network work is done by now, so the tx is brief.
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(entityEdges)
+          .where(
+            and(
+              eq(entityEdges.targetId, node.id),
+              eq(entityEdges.targetKind, 'node'),
+              eq(entityEdges.relation, 'mentioned_in'),
+            ),
+          );
+        await tx
+          .delete(entityEdges)
+          .where(
+            and(
+              eq(entityEdges.sourceId, node.id),
+              eq(entityEdges.sourceKind, 'node'),
+              eq(entityEdges.relation, 'references'),
+            ),
+          );
+        if (pendingEdges.length > 0) await tx.insert(entityEdges).values(pendingEdges);
+      });
+
+      h.setOutput({ matched, created, explicit, refs });
+      return map;
+    },
+  );
+}
+
+/**
+ * relation pass (entity↔entity edges → knowledge graph): resolve + dedupe the
+ * parsed relations against the reconciled entity ids in memory, then swap
+ * delete + insert in ONE transaction so a re-extract REPLACES this node's prior
+ * relation edges (the only edges carrying source_node_id). Endpoints that don't
+ * resolve to a known entity are dropped — we never invent entities from a
+ * relation.
+ */
+async function processRelations(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+  parsed: ExtractorOutput,
+  entityIdByName: Map<string, string>,
+): Promise<void> {
+  await step(
+    {
+      name: 'process_relations',
+      kind: 'compute',
+      input: {
+        candidates: parsed.relations.length,
+        preview: parsed.relations.map((r) => ({
+          subject: r.subject,
+          relation: r.relation,
+          object: r.object,
+        })),
+      },
+    },
+    async (h) => {
+      // Resolve + dedupe in memory first, then swap delete + insert in
+      // ONE transaction — the old delete-first ordering meant a crash
+      // mid-loop destroyed the previous extraction's relation edges
+      // with nothing written to replace them. No network calls here
+      // (entity ids are already resolved), so the tx is brief.
+      const t = { ADD: 0, NOOP: 0, skipped: 0 };
+      const seen = new Set<string>();
+      const newEdges: (typeof entityEdges.$inferInsert)[] = [];
+      for (const rel of parsed.relations) {
+        const subjId = entityIdByName.get(rel.subject.trim().toLowerCase());
+        const objId = entityIdByName.get(rel.object.trim().toLowerCase());
+        // Skip endpoints that didn't resolve to a known entity — we never
+        // invent entities from a relation, to keep graph junk out.
+        if (!subjId || !objId || subjId === objId) {
+          t.skipped++;
+          continue;
+        }
+        const key = `${subjId}|${rel.relation}|${objId}`;
+        if (seen.has(key)) {
+          t.NOOP++;
+          continue;
+        }
+        seen.add(key);
+        newEdges.push({
+          ownerId,
+          sourceId: subjId,
+          sourceKind: 'entity',
+          targetId: objId,
+          targetKind: 'entity',
+          relation: rel.relation,
+          validFrom: new Date(),
+          data: { source_node_id: node.id, confidence: rel.confidence },
+        });
+        t.ADD++;
+      }
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(entityEdges)
+          .where(
+            and(
+              eq(entityEdges.ownerId, ownerId),
+              sql`${entityEdges.data}->>'source_node_id' = ${node.id}`,
+            ),
+          );
+        if (newEdges.length > 0) await tx.insert(entityEdges).values(newEdges);
+      });
+      h.setOutput(t);
+      h.setMeta({ added: t.ADD, deduped: t.NOOP, unresolved: t.skipped });
+      console.log(`[extractor]   → relations: ADD=${t.ADD} NOOP=${t.NOOP} skipped=${t.skipped}`);
+      return t;
+    },
+  );
+}
+
+/**
+ * fact extraction pass: embed the candidate facts, then classify+apply each
+ * (ADD/UPDATE/DELETE/NOOP) against near-neighbour facts, honouring the optional
+ * per-run cost cap. Uses the H4 dirty-flag protocol: mark this node's live
+ * facts suspect, clear the re-asserted ones, retire the rest on a COMPLETE pass
+ * (a cost-cap break leaves them untouched and records `data.extract_incomplete`
+ * for recovery). Returns the ADD/UPDATE/DELETE/NOOP/retired tally.
+ */
+async function processFacts(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+  worker: AiWorker,
+  params: ExtractorParams,
+  parsed: ExtractorOutput,
+  entityIdByName: Map<string, string>,
+): Promise<{ ADD: number; UPDATE: number; DELETE: number; NOOP: number; retired: number }> {
+  const factTexts = parsed.facts.map((f) => f.content);
+  let factVectors: number[][] = [];
+  try {
+    const { embedBatch } = await import('@mantle/embeddings');
+    factVectors = await embedBatch(ownerId, factTexts);
+  } catch (err) {
+    // Throw so the queue retries — a silent return here meant the facts
+    // for this node were never written and (pre-completion-marker)
+    // never would be.
+    throw new Error(
+      `extractor: fact embed batch failed for node ${node.id}: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+
+  // Treat 0 / negative / non-numeric as "no cap". `?? null` alone is a
+  // trap: a configured 0 survives (0 ?? null === 0) and, because the
+  // llm_extract step has already spent money by the time we get here,
+  // `spent >= 0` is always true — so every fact gets dropped at #0. A 0
+  // means "unlimited", not "zero budget".
+  const rawCostCap = params.extract_cost_cap_micro_usd;
+  const costCap = typeof rawCostCap === 'number' && rawCostCap > 0 ? rawCostCap : null;
+
+  const tally = await step(
+    {
+      name: 'process_facts',
+      kind: 'compute',
+      input: {
+        candidates: parsed.facts.length,
+        costCapMicroUsd: costCap,
+        // Full list of fact candidates — content + their entities.
+        // truncateJson safety net at 64KB; arrays-over-50 cap in
+        // truncate.ts catches genuinely runaway iterations.
+        preview: parsed.facts.map((f) => ({
+          content: f.content,
+          entities: (f.entities ?? []).map((e) => e.name),
+        })),
+      },
+    },
+    async (h) => {
+      const t = { ADD: 0, UPDATE: 0, DELETE: 0, NOOP: 0 };
+      // H4 (re-extract reconciliation): mark this node's live facts suspect.
+      // Each re-asserted by the new extraction gets cleared (NOOP/UPDATE);
+      // the rest are retired after the loop. Without this, a fact dropped
+      // from an edited document stays valid_to=NULL forever. No-op for a
+      // fresh node (0 prior facts).
+      await db
+        .update(facts)
+        .set({ dirty: true })
+        .where(
+          and(eq(facts.ownerId, ownerId), eq(facts.sourceNodeId, node.id), isNull(facts.validTo)),
+        );
+      let capExceededAt: number | null = null;
+      for (let i = 0; i < parsed.facts.length; i++) {
+        if (costCap != null) {
+          const spent = currentTrace()?.costMicroUsd ?? 0;
+          if (spent >= costCap) {
+            capExceededAt = i;
+            // Surface every dropped fact so a tight cap isn't an
+            // invisible data-loss event. The previous code summed
+            // them up only after the loop and left the individual
+            // contents undiscoverable.
+            const dropped = parsed.facts.slice(i).map((f) => f.content);
+            console.warn(
+              `[extractor] cost cap ${costCap}µ$ hit at fact ${i}/${parsed.facts.length}; ` +
+                `dropping ${dropped.length} fact(s) from node ${node.id}:`,
+              dropped,
+            );
+            break;
+          }
+        }
+        const candidate = parsed.facts[i]!;
+        const vec = factVectors[i]!;
+        let primaryEntityId: string | null = null;
+        for (const e of candidate.entities ?? []) {
+          const id = entityIdByName.get(e.name.trim().toLowerCase());
+          if (id) {
+            primaryEntityId = id;
+            break;
+          }
+        }
+        try {
+          const decision = await classifyAndApplyFact(
+            ownerId,
+            candidate,
+            vec,
+            node.id,
+            primaryEntityId,
+            worker,
+          );
+          t[decision]++;
+        } catch (err) {
+          console.error(
+            '[extractor]   fact classify failed:',
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+      // H4: retire facts this extraction didn't re-assert (still dirty) —
+      // but only on a complete pass. A cost-cap break leaves later
+      // candidates unprocessed, so their facts must NOT be retired; just
+      // clear the suspect flag in that case.
+      let retired = 0;
+      if (capExceededAt == null) {
+        const retiredRows = await db
+          .update(facts)
+          .set({ validTo: new Date(), dirty: false, updatedAt: new Date() })
+          .where(
+            and(
+              eq(facts.ownerId, ownerId),
+              eq(facts.sourceNodeId, node.id),
+              isNull(facts.validTo),
+              eq(facts.dirty, true),
+            ),
+          )
+          .returning({ id: facts.id });
+        retired = retiredRows.length;
+        // A complete pass clears any stale incomplete-marker from a prior
+        // capped run (guarded by `?` so it's a no-op when absent — no write
+        // amplification on the normal path).
+        await db
+          .update(nodes)
+          .set({ data: sql`${nodes.data} - 'extract_incomplete'` })
+          .where(
+            and(eq(nodes.id, node.id), sql`jsonb_exists(${nodes.data}, 'extract_incomplete')`),
+          );
+      } else {
+        await db
+          .update(facts)
+          .set({ dirty: false })
+          .where(
+            and(
+              eq(facts.ownerId, ownerId),
+              eq(facts.sourceNodeId, node.id),
+              isNull(facts.validTo),
+              eq(facts.dirty, true),
+            ),
+          );
+        // Durable, queryable proof that this node has facts the extractor
+        // never persisted (the cost cap cut the run short). Logs + the amber
+        // trace step get pruned; this marker survives so the loss is
+        // recoverable: raise extract_cost_cap_micro_usd for the worker, then
+        // re-fire pg_notify('node_ingested') on these nodes. Cleared on the
+        // next complete pass (above).
+        const incomplete = {
+          reason: 'fact_cost_cap',
+          dropped: parsed.facts.length - capExceededAt,
+          processed: capExceededAt,
+          at: new Date().toISOString(),
+        };
+        await db
+          .update(nodes)
+          .set({
+            data: sql`${nodes.data} || ${JSON.stringify({ extract_incomplete: incomplete })}::jsonb`,
+          })
+          .where(eq(nodes.id, node.id));
+      }
+      const output: Record<string, unknown> = { ...t, retired };
+      if (capExceededAt != null) {
+        const dropped = parsed.facts.length - capExceededAt;
+        output.costCapHitAt = capExceededAt;
+        output.processed = capExceededAt;
+        output.skipped = dropped;
+        // Flip the step to `skipped` so a cost-cap-exhausted fact run is
+        // amber in /traces and the node-biography instead of a green
+        // "success" that hides paid-for facts being dropped — the exact
+        // silent-miss class observability.md §4 used to warn was invisible.
+        // `fact_cost_cap`/`dropped`/`model` mirror the duplicate-guard
+        // meta so /debug's widget rolls it up without a join. See §9n.
+        h.setSkipped('fact_cost_cap');
+        h.setMeta({
+          fact_cost_cap: true,
+          dropped,
+          model: worker.model,
+          costCapMicroUsd: costCap,
+          spentMicroUsd: currentTrace()?.costMicroUsd ?? 0,
+        });
+        console.warn(
+          `[extractor]   cost cap ${costCap}µ$ hit after ${capExceededAt}/${parsed.facts.length} facts — skipping rest`,
+        );
+      }
+      h.setOutput(output);
+      return { ...t, retired };
+    },
+  );
+  return tally;
 }
 
 // ─── The main entrypoint ────────────────────────────────────────────────────
@@ -1307,18 +2453,14 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   // 'file' isn't in target_types). Best-effort: never let it block or fail the
   // text-extraction pass. Deduped + published inside the helper.
   await maybeAutoTableSpreadsheet(node, ownerId).catch((err) =>
-    console.error(
-      '[extractor] auto-table failed:',
-      err instanceof Error ? err.message : err,
-    ),
+    console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err),
   );
 
   // target_types is the new home for the type allowlist. We still
   // accept extract_types for legacy backfilled rows in the same
   // params blob — extractTypes prefers the new name.
   const params = (worker.params ?? {}) as ExtractorParams;
-  const extractTypes =
-    params.target_types ?? params.extract_types ?? DEFAULT_EXTRACT_TYPES;
+  const extractTypes = params.target_types ?? params.extract_types ?? DEFAULT_EXTRACT_TYPES;
 
   // Brain depth: documentation collections default to 'retrieval' — index to
   // L5 (summary + embedding + chunks) but SKIP L4 (entity reconciliation,
@@ -1396,184 +2538,14 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     return;
   }
 
-  // Image file nodes carry no text body until a vision worker reads them.
-  // The chat / Telegram upload paths do that inline, but an image dropped
-  // into /files (web upload, disk-sync watcher, or MCP file_upload) arrives
-  // here untouched — readNodeBodyRaw returns just the filename for it. Run the
-  // default vision worker, which persists the description/OCR as data.text and
-  // returns it so we index it in THIS pass below (summary + embedding + facts)
-  // — no second extractor round-trip. One code path turns image bytes into
-  // searchable text however the image landed. Images that already carry
-  // data.text (e.g. re-extraction) fall through to readNodeBodyRaw unchanged.
-  // Type/mime resolution that works for BOTH upload nodes (data.filename) and
-  // email-attachment nodes (no filename — the title is the filename, mime is in
-  // data.mimeType). Without this, attachments fell through every vision/OCR
-  // gate and indexed as filename-only summaries.
-  const fileNameForType =
-    typeof existingData.filename === 'string' ? existingData.filename : node.title;
-  const fileExt = extOf(fileNameForType);
-  const fileMime =
-    typeof existingData.mimeType === 'string' ? existingData.mimeType : mimeForExt(fileExt);
-
-  const isImageNeedingVision =
-    node.type === 'file' &&
-    !existingData.text &&
-    !existingData.content &&
-    fileMime.startsWith('image/');
-
-  // Read the FULL extracted text once. `body` (truncated) is what the LLM
-  // sees; `rawBody` is what we persist so the document stays retrievable.
-  let rawBody: string;
-  if (isImageNeedingVision) {
-    const visionText = await visionIngestImageNode(node, ownerId);
-    if (!visionText) {
-      // Vision produced no text — an SVG/vector the model can't read, a blank
-      // image, or an unwired/erroring vision worker. Record a TERMINAL skip so
-      // the node counts as processed. Without this it has only a `photo_ingest`
-      // trace and no `extractor_run`, so the periodic extract sweep — whose
-      // loop-safety keys on the presence of an extractor_run — re-queues it
-      // every cycle forever (the icon.svg "indexed every minute" bug).
-      await recordSkippedTrace({
-        kind: 'extractor_run',
-        ownerId,
-        subjectId: node.id,
-        subjectKind: 'node',
-        disposition: 'no_vision_text',
-        details: {
-          node_type: node.type,
-          title: node.title,
-          filename: existingData.filename,
-          mime: fileMime,
-          hint: 'Image produced no describable text (a vector/blank image, or the vision worker is unwired/failing). Nothing to index; the node is marked processed so the sweep stops re-queuing it.',
-        },
-      });
-      return;
-    }
-    rawBody = visionText;
-  } else {
-    rawBody = await readNodeBodyRaw(node);
-  }
-
-  // Scanned / image-only PDF: readNodeBodyRaw found no text layer and fell back
-  // to the title (filename). Indexing that would silently mask the failure — a
-  // filename-only summary recorded as `success` (the passport-PDF case). Before
-  // giving up, try OCR via the vision worker (rasterize → describe+OCR), the
-  // same route images take. Only triggered when the body IS the filename, so a
-  // PDF with a real text layer never pays the OCR cost.
-  const isPdf = fileExt === 'pdf' || fileMime === 'application/pdf';
-  const isPdfWithoutTextLayer =
-    node.type === 'file' &&
-    !existingData.text &&
-    !existingData.content &&
-    isPdf &&
-    rawBody.trim() === node.title.trim();
-  // prefer_native: a PDF WITH a text layer, but the document worker is set to
-  // always read PDFs through the model (tabular docs whose text layer scrambles
-  // columns). Run the same native path; keep the text-layer body if native
-  // yields nothing, so we never end up worse than the cheap path.
-  const isPdfWithTextLayer =
-    node.type === 'file' &&
-    !existingData.text &&
-    !existingData.content &&
-    isPdf &&
-    !isPdfWithoutTextLayer;
-  const preferNativePdf = isPdfWithTextLayer && (await documentWorkerPrefersNative(ownerId));
-
-  if (isPdfWithoutTextLayer) {
-    const ocr = await ocrIngestPdfNode(node, ownerId);
-    if (ocr.text && ocr.text.trim().length >= 20) {
-      rawBody = ocr.text;
-    } else if (ocr.encrypted) {
-      // Password-protected PDF. Try the vaulted passwords before giving up.
-      const unlocked = await tryUnlockPdf(node, ownerId);
-      if (unlocked && unlocked.trim().length >= 20) {
-        rawBody = unlocked;
-      } else {
-        // No stored password opened it. Honest, distinct skip (not the
-        // misleading no_text_layer) so the operator knows it's LOCKED, not blank.
-        await recordSkippedTrace({
-          kind: 'extractor_run',
-          ownerId,
-          subjectId: node.id,
-          subjectKind: 'node',
-          disposition: 'encrypted_pdf',
-          details: {
-            worker_slug: worker.slug,
-            node_type: node.type,
-            title: node.title,
-            filename: existingData.filename,
-            hint: 'PDF is password-protected and no stored password opened it. Add the password at /settings/pdf-passwords, then re-extract.',
-          },
-        });
-        return;
-      }
-    } else if (ocr.bytesMissing) {
-      // We never had the file's bytes (no disk path + not in object storage —
-      // e.g. an email attachment indexed by metadata whose body was never
-      // fetched). Distinct from a bad scan: the fix is to RE-FETCH the file,
-      // not to OCR it. Honest disposition so the operator can tell the two apart.
-      await recordSkippedTrace({
-        kind: 'extractor_run',
-        ownerId,
-        subjectId: node.id,
-        subjectKind: 'node',
-        disposition: 'bytes_unavailable',
-        details: {
-          worker_slug: worker.slug,
-          node_type: node.type,
-          title: node.title,
-          filename: existingData.filename,
-          sha256: typeof existingData.sha256 === 'string' ? existingData.sha256 : undefined,
-          hint: "The file's bytes aren't in object storage (metadata-only node — e.g. an email attachment whose body was never fetched). Re-fetch the source to extract it; OCR can't help.",
-        },
-      });
-      return;
-    } else {
-      // No text layer AND OCR produced nothing (no/unwired vision worker, an
-      // unrenderable PDF, or a blank scan). Record an honest skip instead of a
-      // filename-only false success.
-      await recordSkippedTrace({
-        kind: 'extractor_run',
-        ownerId,
-        subjectId: node.id,
-        subjectKind: 'node',
-        disposition: 'no_text_layer',
-        details: {
-          worker_slug: worker.slug,
-          node_type: node.type,
-          title: node.title,
-          filename: existingData.filename,
-          hint: 'PDF has no extractable text layer and OCR produced nothing — configure a default vision worker at /settings/ai-workers, or re-upload as an image. A blank/illegible scan can also land here.',
-        },
-      });
-      return;
-    }
-  } else if (preferNativePdf) {
-    const native = await ocrIngestPdfNode(node, ownerId);
-    // Only replace the text-layer body if native produced something usable;
-    // otherwise keep the text we already have (native is best-effort here).
-    if (native.text && native.text.trim().length >= 20) rawBody = native.text;
-  }
-
-  if (!rawBody || rawBody.trim().length < 20) {
-    // Not enough content to extract meaningfully.
-    await recordSkippedTrace({
-      kind: 'extractor_run',
-      ownerId,
-      subjectId: node.id,
-      subjectKind: 'node',
-      disposition: 'body_too_short',
-      details: {
-        worker_slug: worker.slug,
-        node_type: node.type,
-        title: node.title,
-        body_chars: rawBody?.length ?? 0,
-        threshold_chars: 20,
-        hint: 'The extractor wants ≥20 chars of body content. Title-only nodes are skipped.',
-      },
-    });
-    return;
-  }
+  // Load the FULL extracted text — image vision, typed body dispatch, and the
+  // PDF OCR / native / encrypted / bytes-missing / no-text-layer ladder all
+  // live in loadExtractableBody, which records its own terminal skip traces and
+  // returns { ok: false } when the node can't be indexed. `body` (truncated) is
+  // what the LLM sees; `rawBody` is what we persist so the doc stays retrievable.
+  const bodyResult = await loadExtractableBody(node, ownerId, worker, existingData);
+  if (!bodyResult.ok) return;
+  const rawBody = bodyResult.rawBody;
   const body = truncateForPrompt(rawBody);
 
   // Persist the full text for binary file nodes (pdf/docx/xlsx) — their
@@ -1628,11 +2600,8 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   // guard, leaving stale memory durably). Captured HERE, after the
   // vision/OCR passes above persisted their own data.text writes, so only
   // foreign writes during the LLM window trip it.
-  const verRows = await db.execute(
-    sql`select xmin::text as v from ${nodes} where id = ${node.id}`,
-  );
-  const rowVersion =
-    (verRows as unknown as Array<{ v?: string }>)[0]?.v ?? null;
+  const verRows = await db.execute(sql`select xmin::text as v from ${nodes} where id = ${node.id}`);
+  const rowVersion = (verRows as unknown as Array<{ v?: string }>)[0]?.v ?? null;
 
   await startTrace(
     {
@@ -1656,138 +2625,20 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       },
     },
     async () => {
-      const systemPrompt = worker.systemPrompt || DEFAULT_EXTRACTOR_PROMPT;
-      // Tables get a targeted L2 brief: the body is already profile + leading
-      // rows (built at commit), so steer the summary toward what the table
-      // contains, per-column meaning, and the questions it can answer.
-      const tableHint =
-        node.type === 'table'
-          ? 'This is a structured data table (its column profile and leading rows follow). Describe what the table contains, what each column means, and what questions it can answer.\n\n'
-          : '';
-      const userPayload = `Title: ${node.title}\nType: ${node.type}\n\n${tableHint}Body:\n${body.slice(0, 8000)}`;
-
-      // Shape-hash gate (Tables v2 §6): commitTable KEEPS data.summary when
-      // only cell values changed (schema fingerprint unchanged) and clears it
-      // when the shape changed. A table arriving here WITH a summary is
-      // therefore a cell-edit re-index: reuse the summary, skip the LLM, and
-      // refresh only the deterministic layers (profile chunks + embedding).
-      const reusedTableSummary =
-        node.type === 'table' &&
-        typeof existingData.summary === 'string' &&
-        existingData.summary.trim().length > 0
-          ? existingData.summary
-          : null;
-
-      const parsed = reusedTableSummary
-        ? await step(
-            {
-              name: 'reuse_summary',
-              kind: 'compute',
-              input: { reason: 'table shape unchanged — commit kept the summary; LLM pass skipped' },
-            },
-            async (h) => {
-              const entities = (Array.isArray(existingData.entities) ? existingData.entities : [])
-                .filter((n): n is string => typeof n === 'string')
-                .map((name) => ({ name, kind: 'unknown' }));
-              h.setOutput({ summary_chars: reusedTableSummary.length, entities: entities.length });
-              return {
-                summary: reusedTableSummary,
-                facts: [],
-                entities,
-                relations: [],
-              } as ReturnType<typeof parseExtractorOutput>;
-            },
-          )
-        : await step(
-        {
-          name: 'llm_extract',
-          kind: 'llm_call',
-          input: {
-            model: worker.model,
-            provider: worker.provider,
-            // Surface everything the LLM saw. No per-field char caps —
-            // the global truncateJson budget (64KB) catches truly
-            // runaway bodies and the node itself lives in /files for
-            // larger reads. Operators want the full preview when
-            // debugging "what did the extractor actually read?".
-            title: node.title,
-            node_type: node.type,
-            body_chars: body.length,
-            body_preview: body,
-          },
-        },
-        async (h) => {
-          const r = await chatComplete(ownerId, routes, systemPrompt, userPayload, params);
-          recordChatUsage(h, r, r.model || worker.model);
-          const result = parseExtractorOutput(r.text, { nodeId: node.id, model: worker.model });
-          // Capture the full model output — summary, all entities,
-          // all facts. truncateJson at the tracing layer will only
-          // bite if the combined JSON exceeds 64KB, which is
-          // generous for normal extractor outputs.
-          h.setOutput({
-            summary: result.summary,
-            entity_count: result.entities.length,
-            entities: result.entities.map((e) => ({
-              name: e.name,
-              kind: e.kind ?? 'unknown',
-            })),
-            fact_count: result.facts.length,
-            facts: result.facts.map((f) => f.content),
-          });
-          return result;
-        },
+      const parsed = await runExtractorModel(
+        node,
+        ownerId,
+        worker,
+        routes,
+        params,
+        body,
+        existingData,
       );
 
       // ─── content_index pass ───────────────────────────────────────────
       const summary = parsed.summary;
 
-      // Tables v2 (§12.1 amendment, 2026-07-15): file-backed tables index
-      // PROFILE-ONLY chunks — the L1 profile per tab plus the L2 overview.
-      // Rows are NEVER embedded (row dumps were 531 passages/16 nodes of the
-      // NATREF chunk pollution); row-level lookup is table_sql's job, and the
-      // first-200-rows text lives only in tables.data_text for list ILIKE.
-      // Legacy JSONB tables keep the old dataText chunking until a commit
-      // converts them to file storage.
-      //
-      // v2.1 P3 adds the SCHEMA layer on top: a data-dictionary chunk (query
-      // surface — tabs, columns, view/FTS names) so retrieval lands on schema
-      // and grounds a table_sql call directly, plus a one-line digest merged
-      // into nodes.data for the corpus map. Computed here, before update_index,
-      // so the digest rides the same jsonb merge as the summary.
-      let tableProfilePieces: { text: string; headingPath?: string }[] | null = null;
-      let tableSchemaDigest: string | null = null;
-      if (node.type === 'table') {
-        const [reg] = await db
-          .select({ storagePath: tables.storagePath })
-          .from(tables)
-          .where(eq(tables.nodeId, node.id))
-          .limit(1);
-        if (reg?.storagePath) {
-          try {
-            const abs = resolveStoragePath(reg.storagePath);
-            const profileText = profileToText(profileFile(abs), { title: node.title });
-            const surface = describeWorkbook(abs);
-            tableSchemaDigest = schemaDigest(surface);
-            const sections = profileText.split(/\n(?=## )/);
-            tableProfilePieces = [
-              { text: `${sections[0] ?? ''}\n\nOverview: ${summary}`.trim(), headingPath: 'profile' },
-              {
-                text: schemaToText(surface, { title: node.title, nodeId: node.id }),
-                headingPath: 'schema',
-              },
-              ...sections.slice(1).map((s) => ({
-                text: s.trim(),
-                headingPath: `profile > ${(/^## ([^\n—]+)/.exec(s)?.[1] ?? 'tab').trim()}`,
-              })),
-            ].filter((p) => p.text.length > 0);
-          } catch (err) {
-            console.error(
-              `[extractor] table profile failed for ${node.id} — falling back to dataText chunks:`,
-              err,
-            );
-          }
-        }
-      }
+      const { tableProfilePieces, tableSchemaDigest } = await buildTableIndexPieces(node, summary);
 
       const allEntityMentions = [
         ...parsed.entities,
@@ -1801,211 +2652,23 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         return true;
       });
 
-      // Embed against title + summary. The summary already condenses the
-      // full body (after head+tail truncation), so it's a faithful
-      // representation regardless of how long the original was.
-      // Previously we appended `body.slice(0, 500)` here, which gave
-      // long emails / PDFs an embedding biased toward the first ~500
-      // chars (lede only) and made vector search find them by greeting,
-      // not by content. The summary is what we want indexed.
-      const embedText = [node.title, summary]
-        .filter(Boolean)
-        .join('\n\n');
-      let embedding: number[] | null = null;
-      try {
-        embedding = await embed(ownerId, embedText);
-      } catch (err) {
-        // Throw, don't half-index: writing the summary without its embedding
-        // left the node invisible to vector search with no sweep that could
-        // see it (the extractor_run trace excluded it from the missed-
-        // extraction sweep). The queue retries with backoff; persistent
-        // embedder outages land in the DLQ, which is re-driven on restart
-        // and surfaced by /debug/integrity.
-        throw new Error(
-          `extractor: embed failed for node ${node.id} — retrying instead of half-indexing: ${err instanceof Error ? err.message : err}`,
-        );
-      }
-
-      await step(
-        { name: 'update_index', kind: 'db_write', input: { entities: uniqueMentions.length } },
-        async (h) => {
-          // MERGE onto the LIVE row (jsonb `||`), not a spread of the
-          // in-memory `existingData` captured at function start. For image
-          // nodes, visionIngestImageNode ran in between and persisted
-          // `data.vision_model` (+ `data.text`); a replacing write keyed off
-          // the stale snapshot dropped vision_model (file-ingestion.md V2).
-          // The merge preserves any key written after the snapshot while
-          // still overwriting the index fields below.
-          const indexPatch: Record<string, unknown> = {
-            summary,
-            summary_model: worker.model,
-            summary_at: new Date().toISOString(),
-            entities: uniqueMentions.map((m) => m.name),
-            ...(persistedText ? { text: persistedText } : {}),
-            ...(tableSchemaDigest ? { schemaDigest: tableSchemaDigest } : {}),
-          };
-          // Conditional on the xmin captured before the LLM call: if anything
-          // wrote to this node mid-extract (a user edit being the case that
-          // matters — its summary/embedding invalidation must win over our
-          // now-stale output), write nothing and throw. pg-boss retries the
-          // job against the fresh row; the edit's own notify coalesces with
-          // it under the queue's short policy.
-          const updated = await db
-            .update(nodes)
-            .set({
-              data: sql`${nodes.data} || ${JSON.stringify(indexPatch)}::jsonb`,
-              ...(embedding ? { embedding } : {}),
-              updatedAt: new Date(),
-            })
-            .where(
-              and(
-                eq(nodes.id, node.id),
-                rowVersion ? sql`xmin::text = ${rowVersion}` : sql`true`,
-              ),
-            )
-            .returning({ id: nodes.id });
-          if (updated.length === 0) {
-            throw new Error(
-              `extractor: node ${node.id} changed while extraction was in flight — aborting stale write (retry re-reads)`,
-            );
-          }
-          h.setMeta({
-            summaryLength: summary.length,
-            embedded: !!embedding,
-            textStored: persistedText?.length ?? 0,
-          });
-        },
-      );
-
-      // The summary + embedding are now on the row. Announce it on the
-      // reader-only `node_indexed` channel so live UI (the files screen) paints
-      // the summary the instant it lands — no manual refresh. Not `node_ingested`
-      // (that drives the extractor and would re-index our own output).
-      await notifyNodeIndexed(node.id);
-
-      console.log(
-        `[extractor]   → content_index: summary (${summary.length}c), ${uniqueMentions.length} entities`,
+      await writeContentIndex(
+        node,
+        ownerId,
+        worker,
+        summary,
+        uniqueMentions,
+        persistedText,
+        tableSchemaDigest,
+        rowVersion,
       );
 
       // ─── chunked retrieval index ─────────────────────────────────────
-      // Rebuild this node's retrieval chunks (delete-for-node, then insert)
-      // so re-extracts REPLACE rather than accumulate. Long docs become
-      // section-sized, individually-embedded chunks; short ones a single
-      // whole-body chunk — uniform chunk-level search across all content.
-      //
-      // Spreadsheets are the exception: embedding a flattened grid row-by-row
-      // poisons passage retrieval (a corpus audit found grid chunks at 74% of
-      // one brain's chunk table, riding into the responder's auto-context as
-      // numeric noise). A grid file gets one PROFILE chunk per sheet — name,
-      // header row, sampled rows, honest coverage note — while the full text
-      // stays readable via file_read (data.text persists above).
-      const gridProfile =
-        node.type === 'file' && (isSpreadsheetTitle(node.title) || hasSheetMarkers(rawBody));
-      await step(
-        {
-          name: 'write_chunks',
-          kind: 'compute',
-          input: { bodyChars: rawBody.length, gridProfile },
-        },
-        async (h) => {
-          // Embed BEFORE touching the table, and swap delete+insert in one
-          // transaction. The old order (delete → embed → insert, embed
-          // failure swallowed) left the node permanently chunk-less when the
-          // embedder hiccuped: the delete had already run, the failure
-          // returned "success", and the skip guard kept every retry away.
-          // Now an embed failure throws (queue retries, old chunks intact)
-          // and a crash mid-step can never destroy the previous rebuild.
-          const pieces =
-            tableProfilePieces ??
-            (gridProfile
-              ? chunkSpreadsheetProfile(rawBody, { fileTitle: node.title })
-              : chunkDocText(rawBody));
-          if (pieces.length === 0) {
-            await db.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
-            h.setOutput({ chunks: 0 });
-            return;
-          }
-          const { embedBatch } = await import('@mantle/embeddings');
-          const vectors = await embedBatch(
-            ownerId,
-            pieces.map((p) => p.text),
-          );
-          await db.transaction(async (tx) => {
-            await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
-            await tx.insert(contentChunks).values(
-              pieces.map((p, i) => ({
-                ownerId,
-                nodeId: node.id,
-                ordinal: i,
-                headingPath: p.headingPath ?? null,
-                text: p.text,
-                embedding: vectors[i] ?? null,
-              })),
-            );
-          });
-          h.setOutput({ chunks: pieces.length });
-        },
-      );
+      await writeRetrievalChunks(node, ownerId, rawBody, tableProfilePieces);
 
       // ─── versioned-export supersede (file nodes) ─────────────────────
-      // Weekly dumps and "_version_NN" workbooks arrive as siblings whose
-      // titles differ only by a date/version token; retrieval then hits
-      // whichever version is cosine-closest — often stale. Group siblings by
-      // fileFamilyKey and down-weight every version but the newest (salience
-      // is a re-ranking nudge, λ·(1−salience), not a hide). Idempotent and
-      // self-healing: the newest is restored to 1.0 if a prior pass demoted
-      // it. Best-effort — a failure here must not fail the extraction.
       if (node.type === 'file') {
-        await step(
-          { name: 'supersede_file_versions', kind: 'compute', input: { title: node.title } },
-          async (h) => {
-            const familyKey = fileFamilyKey(node.title);
-            if (!familyKey) {
-              h.setOutput({ family: null });
-              return;
-            }
-            const siblings = await db
-              .select({
-                id: nodes.id,
-                title: nodes.title,
-                createdAt: nodes.createdAt,
-                salience: nodes.salience,
-              })
-              .from(nodes)
-              .where(
-                and(
-                  eq(nodes.ownerId, ownerId),
-                  eq(nodes.type, 'file'),
-                  node.parentId ? eq(nodes.parentId, node.parentId) : isNull(nodes.parentId),
-                ),
-              );
-            const family = siblings
-              .filter((s) => fileFamilyKey(s.title) === familyKey)
-              .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-            const [newest, ...older] = family;
-            const demote = older.filter((s) => s.salience > SUPERSEDED_FILE_SALIENCE);
-            if (demote.length > 0) {
-              await db
-                .update(nodes)
-                .set({ salience: SUPERSEDED_FILE_SALIENCE })
-                .where(
-                  inArray(
-                    nodes.id,
-                    demote.map((s) => s.id),
-                  ),
-                );
-            }
-            if (newest && newest.salience < 1) {
-              await db.update(nodes).set({ salience: 1 }).where(eq(nodes.id, newest.id));
-            }
-            h.setOutput({
-              family: familyKey,
-              versions: family.length,
-              demoted: demote.length,
-              newest: newest?.title ?? null,
-            });
-          },
-        );
+        await supersedeFileVersions(node, ownerId);
       }
 
       // ─── entity reconciliation ───────────────────────────────────────
@@ -2013,171 +2676,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // `mentioned_in` edges — L4 stays empty for them.
       const entityIdByName = retrievalOnly
         ? new Map<string, string>()
-        : await step(
-        {
-          name: 'reconcile_entities',
-          kind: 'compute',
-          input: {
-            mentions: uniqueMentions.length,
-            // Full list of mentions — names + kinds. truncateJson
-            // applies the safety net at 64KB; a normal extractor
-            // pass fits comfortably. The arrays-over-50 cap in
-            // truncate.ts catches genuinely runaway iterations.
-            preview: uniqueMentions.map((m) => ({
-              name: m.name,
-              kind: m.kind ?? 'unknown',
-            })),
-          },
-        },
-        async (h) => {
-          // Idempotent rebuild: this node's prior edges are REPLACED, not
-          // appended to — both the inbound mention edges (entity → this
-          // node) and this node's outbound page/note links (this node →
-          // other node). The delete + re-insert happens in ONE transaction
-          // at the END of this step: entity reconciliation makes network
-          // calls (candidate embeddings), and the old delete-first ordering
-          // meant a crash mid-loop destroyed the previous extraction's
-          // edges with nothing written to replace them. Edges are collected
-          // in memory during the loop instead.
-          const pendingEdges: (typeof entityEdges.$inferInsert)[] = [];
-          const map = new Map<string, string>();
-          // Entity ids that already have an edge this rebuild — dedupes the
-          // NER pass against the explicit @-mention pass below.
-          const edgedEntityIds = new Set<string>();
-          let created = 0;
-          let matched = 0;
-          for (const mention of uniqueMentions) {
-            try {
-              const before = await db
-                .select({ id: entities.id })
-                .from(entities)
-                .where(
-                  and(
-                    eq(entities.ownerId, ownerId),
-                    sql`lower(${entities.name}) = lower(${mention.name.trim()})`,
-                  ),
-                )
-                .limit(1);
-              const ent = await reconcileEntity(ownerId, mention);
-              map.set(mention.name.trim().toLowerCase(), ent.id);
-              if (before.length > 0) matched++;
-              else created++;
-              pendingEdges.push({
-                ownerId,
-                sourceId: ent.id,
-                sourceKind: 'entity',
-                targetId: node.id,
-                targetKind: 'node',
-                relation: 'mentioned_in',
-                validFrom: new Date(),
-              });
-              edgedEntityIds.add(ent.id);
-            } catch (err) {
-              console.error(
-                `[extractor]   entity '${mention.name}' failed:`,
-                err instanceof Error ? err.message : err,
-              );
-            }
-          }
-
-          // ─── explicit @-mentions / links (pages) ─────────────────────
-          // A page's chips carry resolved ids. Entity refs → precise
-          // `mentioned_in` edges (independent of NER recall, deduped against
-          // the loop above). Node refs → `node --references--> node` edges
-          // (backlinks). Both skip ids whose target no longer exists (edges
-          // have no FK; integrity is application-level).
-          let explicit = 0;
-          let refs = 0;
-          if (node.type === 'page') {
-            try {
-              const [pageRow] = await db
-                .select({ doc: pages.doc })
-                .from(pages)
-                .where(eq(pages.nodeId, node.id))
-                .limit(1);
-              const { entityIds, nodeIds } = mentionRefs(pageRow?.doc);
-
-              for (const entId of entityIds) {
-                if (edgedEntityIds.has(entId)) continue;
-                const [ent] = await db
-                  .select({ id: entities.id })
-                  .from(entities)
-                  .where(and(eq(entities.id, entId), eq(entities.ownerId, ownerId)))
-                  .limit(1);
-                if (!ent) continue;
-                pendingEdges.push({
-                  ownerId,
-                  sourceId: ent.id,
-                  sourceKind: 'entity',
-                  targetId: node.id,
-                  targetKind: 'node',
-                  relation: 'mentioned_in',
-                  validFrom: new Date(),
-                  data: { explicit: true },
-                });
-                edgedEntityIds.add(ent.id);
-                explicit++;
-              }
-
-              const refSeen = new Set<string>();
-              for (const refId of nodeIds) {
-                if (refId === node.id || refSeen.has(refId)) continue;
-                const [target] = await db
-                  .select({ id: nodes.id })
-                  .from(nodes)
-                  .where(and(eq(nodes.id, refId), eq(nodes.ownerId, ownerId)))
-                  .limit(1);
-                if (!target) continue;
-                pendingEdges.push({
-                  ownerId,
-                  sourceId: node.id,
-                  sourceKind: 'node',
-                  targetId: refId,
-                  targetKind: 'node',
-                  relation: 'references',
-                  validFrom: new Date(),
-                  data: { explicit: true },
-                });
-                refSeen.add(refId);
-                refs++;
-              }
-            } catch (err) {
-              console.error(
-                '[extractor]   page mention/link edges failed:',
-                err instanceof Error ? err.message : err,
-              );
-            }
-          }
-
-          // Atomic swap: clear this node's prior edges and write the new
-          // set in one transaction (see the rebuild note at the top of this
-          // step). All network work is done by now, so the tx is brief.
-          await db.transaction(async (tx) => {
-            await tx
-              .delete(entityEdges)
-              .where(
-                and(
-                  eq(entityEdges.targetId, node.id),
-                  eq(entityEdges.targetKind, 'node'),
-                  eq(entityEdges.relation, 'mentioned_in'),
-                ),
-              );
-            await tx
-              .delete(entityEdges)
-              .where(
-                and(
-                  eq(entityEdges.sourceId, node.id),
-                  eq(entityEdges.sourceKind, 'node'),
-                  eq(entityEdges.relation, 'references'),
-                ),
-              );
-            if (pendingEdges.length > 0) await tx.insert(entityEdges).values(pendingEdges);
-          });
-
-          h.setOutput({ matched, created, explicit, refs });
-          return map;
-        },
-      );
+        : await reconcileEntities(node, ownerId, uniqueMentions);
 
       // ─── relation pass (entity↔entity edges → knowledge graph) ───────
       // Runs whenever the deep-extraction tier is on, independent of whether
@@ -2189,74 +2688,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       // re-extract REPLACES rather than appends — and a doc that no longer
       // yields a relation has its stale edge cleared.
       if (params.extract_facts !== false && !retrievalOnly) {
-        await step(
-          {
-            name: 'process_relations',
-            kind: 'compute',
-            input: {
-              candidates: parsed.relations.length,
-              preview: parsed.relations.map((r) => ({
-                subject: r.subject,
-                relation: r.relation,
-                object: r.object,
-              })),
-            },
-          },
-          async (h) => {
-            // Resolve + dedupe in memory first, then swap delete + insert in
-            // ONE transaction — the old delete-first ordering meant a crash
-            // mid-loop destroyed the previous extraction's relation edges
-            // with nothing written to replace them. No network calls here
-            // (entity ids are already resolved), so the tx is brief.
-            const t = { ADD: 0, NOOP: 0, skipped: 0 };
-            const seen = new Set<string>();
-            const newEdges: (typeof entityEdges.$inferInsert)[] = [];
-            for (const rel of parsed.relations) {
-              const subjId = entityIdByName.get(rel.subject.trim().toLowerCase());
-              const objId = entityIdByName.get(rel.object.trim().toLowerCase());
-              // Skip endpoints that didn't resolve to a known entity — we never
-              // invent entities from a relation, to keep graph junk out.
-              if (!subjId || !objId || subjId === objId) {
-                t.skipped++;
-                continue;
-              }
-              const key = `${subjId}|${rel.relation}|${objId}`;
-              if (seen.has(key)) {
-                t.NOOP++;
-                continue;
-              }
-              seen.add(key);
-              newEdges.push({
-                ownerId,
-                sourceId: subjId,
-                sourceKind: 'entity',
-                targetId: objId,
-                targetKind: 'entity',
-                relation: rel.relation,
-                validFrom: new Date(),
-                data: { source_node_id: node.id, confidence: rel.confidence },
-              });
-              t.ADD++;
-            }
-            await db.transaction(async (tx) => {
-              await tx
-                .delete(entityEdges)
-                .where(
-                  and(
-                    eq(entityEdges.ownerId, ownerId),
-                    sql`${entityEdges.data}->>'source_node_id' = ${node.id}`,
-                  ),
-                );
-              if (newEdges.length > 0) await tx.insert(entityEdges).values(newEdges);
-            });
-            h.setOutput(t);
-            h.setMeta({ added: t.ADD, deduped: t.NOOP, unresolved: t.skipped });
-            console.log(
-              `[extractor]   → relations: ADD=${t.ADD} NOOP=${t.NOOP} skipped=${t.skipped}`,
-            );
-            return t;
-          },
-        );
+        await processRelations(node, ownerId, parsed, entityIdByName);
       }
 
       // ─── fact extraction pass ────────────────────────────────────────
@@ -2267,191 +2699,7 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         return;
       }
 
-      const factTexts = parsed.facts.map((f) => f.content);
-      let factVectors: number[][] = [];
-      try {
-        const { embedBatch } = await import('@mantle/embeddings');
-        factVectors = await embedBatch(ownerId, factTexts);
-      } catch (err) {
-        // Throw so the queue retries — a silent return here meant the facts
-        // for this node were never written and (pre-completion-marker)
-        // never would be.
-        throw new Error(
-          `extractor: fact embed batch failed for node ${node.id}: ${err instanceof Error ? err.message : err}`,
-        );
-      }
-
-      // Treat 0 / negative / non-numeric as "no cap". `?? null` alone is a
-      // trap: a configured 0 survives (0 ?? null === 0) and, because the
-      // llm_extract step has already spent money by the time we get here,
-      // `spent >= 0` is always true — so every fact gets dropped at #0. A 0
-      // means "unlimited", not "zero budget".
-      const rawCostCap = params.extract_cost_cap_micro_usd;
-      const costCap =
-        typeof rawCostCap === 'number' && rawCostCap > 0 ? rawCostCap : null;
-
-      const tally = await step(
-        {
-          name: 'process_facts',
-          kind: 'compute',
-          input: {
-            candidates: parsed.facts.length,
-            costCapMicroUsd: costCap,
-            // Full list of fact candidates — content + their entities.
-            // truncateJson safety net at 64KB; arrays-over-50 cap in
-            // truncate.ts catches genuinely runaway iterations.
-            preview: parsed.facts.map((f) => ({
-              content: f.content,
-              entities: (f.entities ?? []).map((e) => e.name),
-            })),
-          },
-        },
-        async (h) => {
-          const t = { ADD: 0, UPDATE: 0, DELETE: 0, NOOP: 0 };
-          // H4 (re-extract reconciliation): mark this node's live facts suspect.
-          // Each re-asserted by the new extraction gets cleared (NOOP/UPDATE);
-          // the rest are retired after the loop. Without this, a fact dropped
-          // from an edited document stays valid_to=NULL forever. No-op for a
-          // fresh node (0 prior facts).
-          await db
-            .update(facts)
-            .set({ dirty: true })
-            .where(
-              and(
-                eq(facts.ownerId, ownerId),
-                eq(facts.sourceNodeId, node.id),
-                isNull(facts.validTo),
-              ),
-            );
-          let capExceededAt: number | null = null;
-          for (let i = 0; i < parsed.facts.length; i++) {
-            if (costCap != null) {
-              const spent = currentTrace()?.costMicroUsd ?? 0;
-              if (spent >= costCap) {
-                capExceededAt = i;
-                // Surface every dropped fact so a tight cap isn't an
-                // invisible data-loss event. The previous code summed
-                // them up only after the loop and left the individual
-                // contents undiscoverable.
-                const dropped = parsed.facts.slice(i).map((f) => f.content);
-                console.warn(
-                  `[extractor] cost cap ${costCap}µ$ hit at fact ${i}/${parsed.facts.length}; ` +
-                    `dropping ${dropped.length} fact(s) from node ${node.id}:`,
-                  dropped,
-                );
-                break;
-              }
-            }
-            const candidate = parsed.facts[i]!;
-            const vec = factVectors[i]!;
-            let primaryEntityId: string | null = null;
-            for (const e of candidate.entities ?? []) {
-              const id = entityIdByName.get(e.name.trim().toLowerCase());
-              if (id) {
-                primaryEntityId = id;
-                break;
-              }
-            }
-            try {
-              const decision = await classifyAndApplyFact(
-                ownerId,
-                candidate,
-                vec,
-                node.id,
-                primaryEntityId,
-                worker,
-              );
-              t[decision]++;
-            } catch (err) {
-              console.error(
-                '[extractor]   fact classify failed:',
-                err instanceof Error ? err.message : err,
-              );
-            }
-          }
-          // H4: retire facts this extraction didn't re-assert (still dirty) —
-          // but only on a complete pass. A cost-cap break leaves later
-          // candidates unprocessed, so their facts must NOT be retired; just
-          // clear the suspect flag in that case.
-          let retired = 0;
-          if (capExceededAt == null) {
-            const retiredRows = await db
-              .update(facts)
-              .set({ validTo: new Date(), dirty: false, updatedAt: new Date() })
-              .where(
-                and(
-                  eq(facts.ownerId, ownerId),
-                  eq(facts.sourceNodeId, node.id),
-                  isNull(facts.validTo),
-                  eq(facts.dirty, true),
-                ),
-              )
-              .returning({ id: facts.id });
-            retired = retiredRows.length;
-            // A complete pass clears any stale incomplete-marker from a prior
-            // capped run (guarded by `?` so it's a no-op when absent — no write
-            // amplification on the normal path).
-            await db
-              .update(nodes)
-              .set({ data: sql`${nodes.data} - 'extract_incomplete'` })
-              .where(and(eq(nodes.id, node.id), sql`jsonb_exists(${nodes.data}, 'extract_incomplete')`));
-          } else {
-            await db
-              .update(facts)
-              .set({ dirty: false })
-              .where(
-                and(
-                  eq(facts.ownerId, ownerId),
-                  eq(facts.sourceNodeId, node.id),
-                  isNull(facts.validTo),
-                  eq(facts.dirty, true),
-                ),
-              );
-            // Durable, queryable proof that this node has facts the extractor
-            // never persisted (the cost cap cut the run short). Logs + the amber
-            // trace step get pruned; this marker survives so the loss is
-            // recoverable: raise extract_cost_cap_micro_usd for the worker, then
-            // re-fire pg_notify('node_ingested') on these nodes. Cleared on the
-            // next complete pass (above).
-            const incomplete = {
-              reason: 'fact_cost_cap',
-              dropped: parsed.facts.length - capExceededAt,
-              processed: capExceededAt,
-              at: new Date().toISOString(),
-            };
-            await db
-              .update(nodes)
-              .set({ data: sql`${nodes.data} || ${JSON.stringify({ extract_incomplete: incomplete })}::jsonb` })
-              .where(eq(nodes.id, node.id));
-          }
-          const output: Record<string, unknown> = { ...t, retired };
-          if (capExceededAt != null) {
-            const dropped = parsed.facts.length - capExceededAt;
-            output.costCapHitAt = capExceededAt;
-            output.processed = capExceededAt;
-            output.skipped = dropped;
-            // Flip the step to `skipped` so a cost-cap-exhausted fact run is
-            // amber in /traces and the node-biography instead of a green
-            // "success" that hides paid-for facts being dropped — the exact
-            // silent-miss class observability.md §4 used to warn was invisible.
-            // `fact_cost_cap`/`dropped`/`model` mirror the duplicate-guard
-            // meta so /debug's widget rolls it up without a join. See §9n.
-            h.setSkipped('fact_cost_cap');
-            h.setMeta({
-              fact_cost_cap: true,
-              dropped,
-              model: worker.model,
-              costCapMicroUsd: costCap,
-              spentMicroUsd: currentTrace()?.costMicroUsd ?? 0,
-            });
-            console.warn(
-              `[extractor]   cost cap ${costCap}µ$ hit after ${capExceededAt}/${parsed.facts.length} facts — skipping rest`,
-            );
-          }
-          h.setOutput(output);
-          return { ...t, retired };
-        },
-      );
+      const tally = await processFacts(node, ownerId, worker, params, parsed, entityIdByName);
 
       console.log(
         `[extractor]   → facts: ADD=${tally.ADD} UPDATE=${tally.UPDATE} DELETE=${tally.DELETE} NOOP=${tally.NOOP} retired=${tally.retired}`,

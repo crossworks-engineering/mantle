@@ -209,7 +209,11 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
           input: { model: worker.model, provider: worker.provider },
         },
         async (h) => {
-          const { result: r, failedOver, usedProvider } = await chatWithFailover(
+          const {
+            result: r,
+            failedOver,
+            usedProvider,
+          } = await chatWithFailover(
             ownerId,
             routes,
             {
@@ -217,13 +221,16 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
               // Same rationale as the Telegram summariser: system prompt
               // is stable per worker, mark it cacheable.
               cacheControl: { systemPrompt: true },
-              ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
+              ...(typeof params.temperature === 'number'
+                ? { temperature: params.temperature }
+                : {}),
               ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
               ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
             },
             (m) => console.warn(`[summarizer] ${m}`),
           );
-          if (failedOver) console.warn(`[summarizer] summarized via backup route (${usedProvider})`);
+          if (failedOver)
+            console.warn(`[summarizer] summarized via backup route (${usedProvider})`);
           recordChatUsage(h, r, r.model || routes.primary.model);
           return r;
         },
@@ -306,8 +313,7 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
               if (turns.length === 0) continue;
               const periodStart = turns[0]!.createdAt.toISOString();
               const periodEnd = turns[turns.length - 1]!.createdAt.toISOString();
-              const title =
-                `${topic.label} · ${periodStart.slice(0, 10)} → ${periodEnd.slice(0, 10)} (${turns.length} turns)`;
+              const title = `${topic.label} · ${periodStart.slice(0, 10)} → ${periodEnd.slice(0, 10)} (${turns.length} turns)`;
 
               const vec = topicVecs[ti] ?? null;
               const [n] = await tx
@@ -360,7 +366,8 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
 
             const fallbackId = turnToDigest.values().next().value;
             if (fallbackId) {
-              for (const t of batch) if (!turnToDigest.has(t.id)) turnToDigest.set(t.id, fallbackId);
+              for (const t of batch)
+                if (!turnToDigest.has(t.id)) turnToDigest.set(t.id, fallbackId);
             }
 
             const byDigest = new Map<string, string[]>();

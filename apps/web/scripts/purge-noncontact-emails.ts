@@ -72,7 +72,7 @@ async function main() {
     .innerJoin(emails, eq(emails.nodeId, nodes.id))
     .where(and(...conds));
 
-  let flagged = rows.filter((r) => !gate.allows(r.fromAddr));
+  const flagged = rows.filter((r) => !gate.allows(r.fromAddr));
   flagged.sort((a, b) => b.internalDate.getTime() - a.internalDate.getTime());
   const capped = limit !== undefined ? flagged.slice(0, limit) : flagged;
 
@@ -83,9 +83,7 @@ async function main() {
   );
   console.log(`Sample (${apply ? 'deleting' : 'would delete'}):`);
   for (const h of capped.slice(0, 20)) {
-    console.log(
-      `  - ${h.fromAddr}  ·  ${(h.subject ?? h.title ?? '(no subject)').slice(0, 60)}`,
-    );
+    console.log(`  - ${h.fromAddr}  ·  ${(h.subject ?? h.title ?? '(no subject)').slice(0, 60)}`);
   }
   if (capped.length > 20) console.log(`  … and ${capped.length - 20} more`);
 
@@ -118,9 +116,7 @@ async function main() {
         sql`not exists (select 1 from ${emailAttachments} ea where ea.file_node_id = ${nodes.id})`,
       ),
     );
-  console.log(
-    `\nOrphan attachment file node(s) (no email references them): ${orphans.length}.`,
-  );
+  console.log(`\nOrphan attachment file node(s) (no email references them): ${orphans.length}.`);
   for (const o of orphans.slice(0, 20)) console.log(`  - ${(o.title ?? '(no name)').slice(0, 60)}`);
   if (orphans.length > 20) console.log(`  … and ${orphans.length - 20} more`);
 

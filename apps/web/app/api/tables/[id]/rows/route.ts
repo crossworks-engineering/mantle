@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
-import { distinctColumnValues, draftPathFor, listRowsWindow, queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
+import {
+  distinctColumnValues,
+  draftPathFor,
+  listRowsWindow,
+  queryRowsWindow,
+  resolveStoragePath,
+} from '@mantle/tabledb';
 import { existsSync } from 'node:fs';
 import { getOwnerOr401 } from '@/lib/auth';
 
@@ -24,7 +30,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   if (!row.storagePath) {
     // Legacy JSONB table — the whole doc already ships in GET /api/tables/[id].
-    return NextResponse.json({ error: 'table has no windowed storage; use the full document' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'table has no windowed storage; use the full document' },
+      { status: 400 },
+    );
   }
   const url = new URL(req.url);
   const wantDraft = url.searchParams.get('draft') === '1';
@@ -68,7 +77,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const page = listRowsWindow(file, {
       limit,
       ...(tabId ? { tabId } : {}),
-      ...(afterPos !== null && afterRid !== null ? { after: { pos: Number(afterPos), rid: afterRid } } : {}),
+      ...(afterPos !== null && afterRid !== null
+        ? { after: { pos: Number(afterPos), rid: afterRid } }
+        : {}),
     });
     return NextResponse.json({
       rows: page.rows,
@@ -77,6 +88,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       source: file === draftAbs ? 'draft' : 'published',
     });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'window read failed' }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'window read failed' },
+      { status: 500 },
+    );
   }
 }

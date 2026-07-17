@@ -32,7 +32,13 @@ export default async function RunnersPage(props: { searchParams?: Promise<Search
   return (
     <>
       <SetPageTitle title="Runners" />
-      <RunnersClient statuses={statuses} name={name} hours={hours} page={page} selected={selected} />
+      <RunnersClient
+        statuses={statuses}
+        name={name}
+        hours={hours}
+        page={page}
+        selected={selected}
+      />
     </>
   );
 }

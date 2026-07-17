@@ -186,7 +186,7 @@ function listItems(
   ref: string | null,
 ): DocxBlock[] {
   const out: DocxBlock[] = [];
-  const reference = ordered ? ref ?? ctx.newOrderedRef() : null;
+  const reference = ordered ? (ref ?? ctx.newOrderedRef()) : null;
   for (const item of node.content ?? []) {
     if (item.type !== 'listItem' && item.type !== 'taskItem') continue;
     const checked = item.type === 'taskItem' ? Boolean(item.attrs?.checked) : null;
@@ -245,9 +245,7 @@ function gridCells(cellNodes: PMNode[], ctx: DocxCtx): TableCell[] {
     (cell) =>
       new TableCell({
         shading:
-          cell.type === 'tableHeader'
-            ? { type: ShadingType.CLEAR, fill: 'F9FAFB' }
-            : undefined,
+          cell.type === 'tableHeader' ? { type: ShadingType.CLEAR, fill: 'F9FAFB' } : undefined,
         margins: { top: 40, bottom: 40, left: 80, right: 80 },
         children: (() => {
           const blocks = renderBlocks(cell.content, ctx);
@@ -264,7 +262,10 @@ function renderBlock(node: PMNode, ctx: DocxCtx): DocxBlock[] {
     case 'heading': {
       const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 4);
       return [
-        new Paragraph({ heading: HEADING_BY_LEVEL[level - 1], children: inlineChildren(node.content) }),
+        new Paragraph({
+          heading: HEADING_BY_LEVEL[level - 1],
+          children: inlineChildren(node.content),
+        }),
       ];
     }
     case 'blockquote':
@@ -355,9 +356,7 @@ function renderBlock(node: PMNode, ctx: DocxCtx): DocxBlock[] {
       return [
         new Table({
           width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: rows.map(
-            (r) => new TableRow({ children: gridCells(r.content ?? [], ctx) }),
-          ),
+          rows: rows.map((r) => new TableRow({ children: gridCells(r.content ?? [], ctx) })),
         }),
       ];
     }
@@ -405,7 +404,14 @@ function renderBlock(node: PMNode, ctx: DocxCtx): DocxBlock[] {
 
 function noBorders() {
   const none = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
-  return { top: none, bottom: none, left: none, right: none, insideHorizontal: none, insideVertical: none };
+  return {
+    top: none,
+    bottom: none,
+    left: none,
+    right: none,
+    insideHorizontal: none,
+    insideVertical: none,
+  };
 }
 
 function renderBlocks(nodes: PMNode[] | undefined, ctx: DocxCtx): DocxBlock[] {
@@ -494,7 +500,9 @@ export async function renderDocx(doc: unknown, opts: RenderDocxOptions = {}): Pr
   const ctx = new DocxCtx(images);
   const body: DocxBlock[] = [];
   if (opts.title) {
-    body.push(new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun({ text: opts.title })] }));
+    body.push(
+      new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun({ text: opts.title })] }),
+    );
   }
   body.push(...renderBlocks(root.content, ctx));
   if (body.length === 0) body.push(new Paragraph({}));

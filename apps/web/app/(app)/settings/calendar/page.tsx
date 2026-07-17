@@ -22,8 +22,11 @@ export default async function CalendarSettingsPage() {
           </h2>
           <p className="text-sm text-muted-foreground">
             Sync external calendars into Mantle. Subscribed events appear in your{' '}
-            <a href="/events" className="underline underline-offset-2">events</a>, in search, and in
-            the knowledge graph. Read-only — the source calendar stays in charge.
+            <a href="/events" className="underline underline-offset-2">
+              events
+            </a>
+            , in search, and in the knowledge graph. Read-only — the source calendar stays in
+            charge.
           </p>
         </div>
 

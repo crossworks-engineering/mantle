@@ -21,7 +21,8 @@ export default async function ChangelogPage() {
     );
   }
 
-  const markdown = (await getChangelogMarkdown(latest)) ?? `# ${latest}\n\n(Empty changelog entry.)`;
+  const markdown =
+    (await getChangelogMarkdown(latest)) ?? `# ${latest}\n\n(Empty changelog entry.)`;
 
   return (
     <>

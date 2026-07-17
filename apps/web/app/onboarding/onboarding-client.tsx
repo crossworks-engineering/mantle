@@ -1,23 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  ExternalLink,
-  Loader2,
-  Sparkles,
-  X,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ExternalLink, Loader2, Sparkles, X } from 'lucide-react';
 // Import the browser-safe LEAVES directly, NOT the @mantle/content barrel —
 // the barrel pulls identity-context → @mantle/db (postgres) into the client
 // bundle. Same discipline as contacts-format / journal-options.
-import {
-  PURPOSE_ARCHETYPES,
-  type PurposeArchetype,
-} from '@mantle/content/onboarding-questions';
+import { PURPOSE_ARCHETYPES, type PurposeArchetype } from '@mantle/content/onboarding-questions';
 import {
   PERSONA_PRESETS,
   DEFAULT_PERSONA_NAMES,
@@ -208,7 +197,6 @@ function Wizard({
   }
   useEffect(() => {
     void checkInfra();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const infraDown = infra !== null && infra.some((c) => !c.ok);
 
@@ -277,7 +265,10 @@ function Wizard({
   async function onSaveKey(service: string, value: string) {
     setBusy(true);
     try {
-      const res = await onboardingPost<{ saved: boolean; test: TestApiKeyResult }>('saveKey', { service, plaintext: value });
+      const res = await onboardingPost<{ saved: boolean; test: TestApiKeyResult }>('saveKey', {
+        service,
+        plaintext: value,
+      });
       if (res.saved) setSaved((s) => new Set(s).add(service));
       setResults((r) => ({ ...r, [service]: res.test }));
       if (res.test.ok) toast.success(`${res.test.provider} key works.`);
@@ -334,10 +325,11 @@ function Wizard({
   async function onSaveEmbedding() {
     setBusy(true);
     try {
-      const res = await onboardingPost<{ saved: boolean; configured: boolean; test: TestApiKeyResult }>(
-        'embedding',
-        { provider: embProvider, model: embModel, plaintext: embKey },
-      );
+      const res = await onboardingPost<{
+        saved: boolean;
+        configured: boolean;
+        test: TestApiKeyResult;
+      }>('embedding', { provider: embProvider, model: embModel, plaintext: embKey });
       if (res.saved && embKey.trim()) setSaved((s) => new Set(s).add(embProvider));
       setEmbResult(res.test);
       setEmbConfigured(res.configured);
@@ -397,7 +389,12 @@ function Wizard({
   async function onSavePersona() {
     setBusy(true);
     try {
-      const res = await onboardingPost<{ ok: boolean; error?: string }>('persona', { presetKey, assistantName, gender, temperature });
+      const res = await onboardingPost<{ ok: boolean; error?: string }>('persona', {
+        presetKey,
+        assistantName,
+        gender,
+        temperature,
+      });
       if (!res.ok) return toast.error(res.error ?? 'Could not save.');
       toast.success(`${assistantName} is ready.`);
       go(index + 1);
@@ -489,14 +486,26 @@ function Wizard({
               </div>
 
               <Field label="Your name" hint="Optional — what your assistant should call you.">
-                <Input value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="e.g. Alex" />
+                <Input
+                  value={userName}
+                  onChange={(e) => setUserName(e.target.value)}
+                  placeholder="e.g. Alex"
+                />
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Timezone" hint="So “tomorrow at 3pm” means the right thing.">
-                  <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Africa/Johannesburg" />
+                  <Input
+                    value={timezone}
+                    onChange={(e) => setTimezone(e.target.value)}
+                    placeholder="Africa/Johannesburg"
+                  />
                 </Field>
                 <Field label="Locale" hint="How dates and numbers are formatted.">
-                  <Input value={locale} onChange={(e) => setLocale(e.target.value)} placeholder="en-GB" />
+                  <Input
+                    value={locale}
+                    onChange={(e) => setLocale(e.target.value)}
+                    placeholder="en-GB"
+                  />
                 </Field>
               </div>
             </div>
@@ -659,7 +668,9 @@ function Wizard({
                   <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-foreground/[0.04]">
                     <RadioGroupItem value="text-embedding-3-large" className="mt-0.5" />
                     <span>
-                      <span className="block text-sm font-medium">text-embedding-3-large · recommended</span>
+                      <span className="block text-sm font-medium">
+                        text-embedding-3-large · recommended
+                      </span>
                       <span className="block text-xs text-muted-foreground">
                         OpenAI’s strongest embedder — noticeably better recall on technical and
                         multilingual content. ~$0.13 per million tokens; indexing a large document
@@ -670,7 +681,9 @@ function Wizard({
                   <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-foreground/[0.04]">
                     <RadioGroupItem value="text-embedding-3-small" className="mt-0.5" />
                     <span>
-                      <span className="block text-sm font-medium">text-embedding-3-small · budget</span>
+                      <span className="block text-sm font-medium">
+                        text-embedding-3-small · budget
+                      </span>
                       <span className="block text-xs text-muted-foreground">
                         ~6× cheaper (~$0.02 per million tokens) and faster, with somewhat lower
                         recall. Fine for lighter, personal use.
@@ -720,7 +733,10 @@ function Wizard({
               </div>
 
               {!saved.has(embProvider) && (
-                <Field label={embProvider === 'openrouter' ? 'OpenRouter API key' : 'OpenAI API key'} hint={undefined}>
+                <Field
+                  label={embProvider === 'openrouter' ? 'OpenRouter API key' : 'OpenAI API key'}
+                  hint={undefined}
+                >
                   <Input
                     type="text"
                     autoComplete="off"
@@ -732,13 +748,21 @@ function Wizard({
               )}
 
               <div className="flex flex-wrap items-center gap-2">
-                <Button onClick={onSaveEmbedding} disabled={busy || (!saved.has(embProvider) && !embKey.trim())} size="sm">
+                <Button
+                  onClick={onSaveEmbedding}
+                  disabled={busy || (!saved.has(embProvider) && !embKey.trim())}
+                  size="sm"
+                >
                   {busy ? <Loader2 className="animate-spin" /> : null} Enable memory search
                 </Button>
                 {!saved.has(embProvider) && (
                   <a
                     className="ml-auto flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
-                    href={embProvider === 'openrouter' ? 'https://openrouter.ai/keys' : 'https://platform.openai.com/api-keys'}
+                    href={
+                      embProvider === 'openrouter'
+                        ? 'https://openrouter.ai/keys'
+                        : 'https://platform.openai.com/api-keys'
+                    }
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -748,7 +772,12 @@ function Wizard({
               </div>
 
               {embResult && (
-                <p className={'flex items-center gap-2 text-sm ' + (embConfigured ? 'text-primary' : 'text-destructive')}>
+                <p
+                  className={
+                    'flex items-center gap-2 text-sm ' +
+                    (embConfigured ? 'text-primary' : 'text-destructive')
+                  }
+                >
                   {embConfigured ? <Check className="size-4" /> : <X className="size-4" />}
                   {embConfigured
                     ? `Memory search enabled — ${embModel} via ${embProvider === 'openrouter' ? 'OpenRouter' : 'OpenAI'}.`
@@ -778,13 +807,16 @@ function Wizard({
                 <ul className="space-y-1.5">
                   {provision.createdAgent && (
                     <li className="flex items-center gap-2">
-                      <Check className="size-4 text-primary" /> Assistant “{provision.createdAgent.name}” created
+                      <Check className="size-4 text-primary" /> Assistant “
+                      {provision.createdAgent.name}” created
                     </li>
                   )}
                   {provision.createdWorkers.map((w) => (
                     <li key={w.kind} className="flex items-center gap-2">
                       <Check className="size-4 text-primary" /> {w.name}{' '}
-                      <span className="text-muted-foreground">({w.provider} · {w.model})</span>
+                      <span className="text-muted-foreground">
+                        ({w.provider} · {w.model})
+                      </span>
                     </li>
                   ))}
                   {provision.seededSpecialists.length > 0 && (
@@ -892,7 +924,11 @@ function Wizard({
             blurb="Pick a personality, give it a name and a voice, and tune how creative it is. You can change all of this later."
           >
             <div className="space-y-5">
-              <RadioGroup value={presetKey} onValueChange={(v) => onPreset(v as PersonaPresetKey)} className="grid gap-2 sm:grid-cols-2">
+              <RadioGroup
+                value={presetKey}
+                onValueChange={(v) => onPreset(v as PersonaPresetKey)}
+                className="grid gap-2 sm:grid-cols-2"
+              >
                 {PERSONA_PRESETS.map((p) => (
                   <label
                     key={p.key}
@@ -956,16 +992,18 @@ function Wizard({
                   />
                   <span className="w-24 text-right text-xs">
                     <span className="font-medium">{tempWord(temperature)}</span>
-                    <span className="ml-1 tabular-nums text-muted-foreground">{temperature.toFixed(1)}</span>
+                    <span className="ml-1 tabular-nums text-muted-foreground">
+                      {temperature.toFixed(1)}
+                    </span>
                   </span>
                 </div>
               </Field>
 
               <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                💬 Channels are set up per-assistant, not here. Next you can reach
-                this assistant on <span className="font-medium">Telegram</span>{' '}
-                (by text or voice note) — it’s optional, and you can always connect
-                or change it later in <span className="font-medium">Settings → Agents</span>.
+                💬 Channels are set up per-assistant, not here. Next you can reach this assistant on{' '}
+                <span className="font-medium">Telegram</span> (by text or voice note) — it’s
+                optional, and you can always connect or change it later in{' '}
+                <span className="font-medium">Settings → Agents</span>.
               </p>
             </div>
           </StepShell>
@@ -979,13 +1017,21 @@ function Wizard({
             <ol className="mb-4 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
               <li>
                 In Telegram, message{' '}
-                <a className="text-primary underline-offset-2 hover:underline" href="https://t.me/BotFather" target="_blank" rel="noreferrer">
+                <a
+                  className="text-primary underline-offset-2 hover:underline"
+                  href="https://t.me/BotFather"
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   @BotFather
                 </a>{' '}
                 and send <code>/newbot</code>.
               </li>
               <li>Pick a name and username, then copy the token it gives you.</li>
-              <li>Paste the token below and connect — then DM your new bot and approve the pairing request that appears here.</li>
+              <li>
+                Paste the token below and connect — then DM your new bot and approve the pairing
+                request that appears here.
+              </li>
             </ol>
             {(provisionedAgentId ?? assistantAgentId) ? (
               // Same connect → pair → manage flow as /settings/agents, bound to
@@ -994,9 +1040,8 @@ function Wizard({
               <TelegramBotSection agentId={(provisionedAgentId ?? assistantAgentId)!} />
             ) : (
               <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-                Finish the setup step first — your assistant needs to exist before a
-                bot can be linked to it. You can always add Telegram later in
-                Settings → Agents.
+                Finish the setup step first — your assistant needs to exist before a bot can be
+                linked to it. You can always add Telegram later in Settings → Agents.
               </p>
             )}
           </StepShell>
@@ -1030,7 +1075,11 @@ function Wizard({
                 disabled: infraDown,
                 onClick: async () => {
                   setBusy(true);
-                  const res = await onboardingPost<{ ok: boolean; error?: string }>('profile', { timezone, locale, displayName: userName });
+                  const res = await onboardingPost<{ ok: boolean; error?: string }>('profile', {
+                    timezone,
+                    locale,
+                    displayName: userName,
+                  });
                   setBusy(false);
                   if (!res.ok) return toast.error(res.error ?? 'Could not save.');
                   go(index + 1);
@@ -1207,7 +1256,6 @@ function Field({
 }
 
 function KeyFields({
-  service,
   label,
   link,
   value,
@@ -1231,10 +1279,7 @@ function KeyFields({
 }) {
   return (
     <div className="space-y-3">
-      <Field
-        label={label}
-        hint={undefined}
-      >
+      <Field label={label} hint={undefined}>
         <Input
           type="text"
           autoComplete="off"
@@ -1266,7 +1311,11 @@ function KeyFields({
         </a>
       </div>
       {result && (
-        <p className={'flex items-center gap-2 text-sm ' + (result.ok ? 'text-primary' : 'text-destructive')}>
+        <p
+          className={
+            'flex items-center gap-2 text-sm ' + (result.ok ? 'text-primary' : 'text-destructive')
+          }
+        >
           {result.ok ? <Check className="size-4" /> : <X className="size-4" />}
           {result.message}
         </p>
@@ -1302,7 +1351,6 @@ function KeyStep(props: {
 }
 
 function Footer({
-  index,
   busy,
   canBack,
   onBack,

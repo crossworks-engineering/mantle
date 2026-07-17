@@ -333,7 +333,9 @@ async function main() {
   }
 
   // ── Aggregate ───────────────────────────────────────────────────────────
-  console.log(`\n  ${'retriever'.padEnd(10)} ${K_VALUES.map((k) => `R@${k}`.padStart(6)).join('')}   MRR`);
+  console.log(
+    `\n  ${'retriever'.padEnd(10)} ${K_VALUES.map((k) => `R@${k}`.padStart(6)).join('')}   MRR`,
+  );
   console.log(`  ${'-'.repeat(10)} ${'-'.repeat(6 * K_VALUES.length)}   ----`);
   for (const ret of RETRIEVERS) {
     const m = metrics[ret];

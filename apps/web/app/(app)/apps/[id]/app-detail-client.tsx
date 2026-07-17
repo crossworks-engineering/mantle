@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Hammer, Rocket, Undo2, SquareDashedMousePointer, X, Save, WandSparkles } from 'lucide-react';
+import {
+  Hammer,
+  Rocket,
+  Undo2,
+  SquareDashedMousePointer,
+  X,
+  Save,
+  WandSparkles,
+} from 'lucide-react';
 import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +32,20 @@ type BuildMsg = { text: string; location: { file: string; line: number; column: 
 // Extensions the /format (Prettier) route handles — mirror its PARSER map so the
 // button only enables for files the server can actually format.
 const FORMATTABLE = new Set([
-  'tsx', 'ts', 'jsx', 'js', 'mjs', 'cjs', 'css', 'scss', 'less', 'json', 'html', 'htm', 'md', 'markdown',
+  'tsx',
+  'ts',
+  'jsx',
+  'js',
+  'mjs',
+  'cjs',
+  'css',
+  'scss',
+  'less',
+  'json',
+  'html',
+  'htm',
+  'md',
+  'markdown',
 ]);
 const extOf = (p: string) => p.slice(p.lastIndexOf('.') + 1).toLowerCase();
 
@@ -66,7 +87,9 @@ function AppDetailView({ app }: { app: AppDetail }) {
   const paths = useMemo(() => Object.keys(files).sort(), [files]);
   const [activePath, setActivePath] = useState(source.entry);
   const [reloadKey, setReloadKey] = useState(0);
-  const [busy, setBusy] = useState<null | 'build' | 'publish' | 'discard' | 'save' | 'format'>(null);
+  const [busy, setBusy] = useState<null | 'build' | 'publish' | 'discard' | 'save' | 'format'>(
+    null,
+  );
   const [buildErrors, setBuildErrors] = useState<BuildMsg[]>([]);
   // Inspect-to-focus: the region the user locked in the preview, and whether
   // select mode is active. Both reset whenever the app reloads (rebuild/publish).

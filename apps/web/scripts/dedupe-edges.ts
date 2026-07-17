@@ -72,7 +72,9 @@ async function main() {
   `;
   const toDelete = dupRows[0]?.n ?? 0;
 
-  console.log(`[dedupe] relation='${relation}': ${totalRows} edges, ${toDelete} duplicate(s) to remove`);
+  console.log(
+    `[dedupe] relation='${relation}': ${totalRows} edges, ${toDelete} duplicate(s) to remove`,
+  );
 
   if (toDelete === 0) {
     console.log('[dedupe] nothing to do — already clean.');

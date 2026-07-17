@@ -9,17 +9,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  extractOpenAICompatToolCalls,
-  toOpenAICompatMessages,
-} from './openai-compat';
+import { extractOpenAICompatToolCalls, toOpenAICompatMessages } from './openai-compat';
 
 describe('toOpenAICompatMessages', () => {
   describe('system messages', () => {
     it('passes string content through unchanged', () => {
-      const out = toOpenAICompatMessages([
-        { role: 'system', content: 'you are saskia' },
-      ]);
+      const out = toOpenAICompatMessages([{ role: 'system', content: 'you are saskia' }]);
       expect(out).toEqual([{ role: 'system', content: 'you are saskia' }]);
     });
 
@@ -33,9 +28,7 @@ describe('toOpenAICompatMessages', () => {
           ],
         },
       ]);
-      expect(out).toEqual([
-        { role: 'system', content: 'persona block\n\ndigest block' },
-      ]);
+      expect(out).toEqual([{ role: 'system', content: 'persona block\n\ndigest block' }]);
     });
   });
 
@@ -96,9 +89,7 @@ describe('toOpenAICompatMessages', () => {
 
   describe('assistant messages', () => {
     it('passes a text-only assistant turn through with null-safe content', () => {
-      const out = toOpenAICompatMessages([
-        { role: 'assistant', content: 'done' },
-      ]);
+      const out = toOpenAICompatMessages([{ role: 'assistant', content: 'done' }]);
       expect(out).toEqual([{ role: 'assistant', content: 'done' }]);
     });
 
@@ -132,9 +123,7 @@ describe('toOpenAICompatMessages', () => {
     });
 
     it('omits tool_calls when the assistant turn has none', () => {
-      const out = toOpenAICompatMessages([
-        { role: 'assistant', content: 'just text' },
-      ]);
+      const out = toOpenAICompatMessages([{ role: 'assistant', content: 'just text' }]);
       expect(out[0]).not.toHaveProperty('tool_calls');
     });
   });
@@ -144,18 +133,14 @@ describe('toOpenAICompatMessages', () => {
       const out = toOpenAICompatMessages([
         { role: 'tool', toolCallId: 'call_1', content: '{"ok":true}' },
       ]);
-      expect(out).toEqual([
-        { role: 'tool', tool_call_id: 'call_1', content: '{"ok":true}' },
-      ]);
+      expect(out).toEqual([{ role: 'tool', tool_call_id: 'call_1', content: '{"ok":true}' }]);
     });
   });
 });
 
 describe('extractOpenAICompatToolCalls', () => {
   it('returns undefined when the message has no tool_calls field', () => {
-    expect(
-      extractOpenAICompatToolCalls({ role: 'assistant', content: 'hi' }),
-    ).toBeUndefined();
+    expect(extractOpenAICompatToolCalls({ role: 'assistant', content: 'hi' })).toBeUndefined();
   });
 
   it('returns undefined for an empty tool_calls array', () => {

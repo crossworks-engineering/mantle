@@ -98,8 +98,7 @@ export function ltreeForDiskPath(absPath: string): { parentPath: string; filenam
   const filename = parts.pop();
   if (!filename) return null;
   const segments = parts.map((s) => s.replace(/-/g, '_'));
-  const parentPath = segments.length === 0
-    ? FILES_ROOT_LABEL
-    : `${FILES_ROOT_LABEL}.${segments.join('.')}`;
+  const parentPath =
+    segments.length === 0 ? FILES_ROOT_LABEL : `${FILES_ROOT_LABEL}.${segments.join('.')}`;
   return { parentPath, filename };
 }

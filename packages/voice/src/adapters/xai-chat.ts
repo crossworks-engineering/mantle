@@ -39,9 +39,7 @@ import { scrubThinkBlocks } from './think-scrubber';
  *  legacy fallback when `message.content` is empty. */
 type XaiChatResponse = OpenAICompatChatResponse & {
   id: string;
-  choices: Array<
-    OpenAICompatChatResponse['choices'][number] & { text?: string }
-  >;
+  choices: Array<OpenAICompatChatResponse['choices'][number] & { text?: string }>;
 };
 
 type ListModelsResponse = {
@@ -78,7 +76,12 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new ChatHttpError({ provider: 'xai', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
+    throw new ChatHttpError({
+      provider: 'xai',
+      status: res.status,
+      body: errBody,
+      retryAfterMs: parseRetryAfterMs(res.headers),
+    });
   }
   const parsed = (await res.json()) as XaiChatResponse;
   // OpenAI-compat shape — text lives at choices[0].message.content,

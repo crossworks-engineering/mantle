@@ -125,10 +125,9 @@ function BackupsView({ data }: { data: BackupsData }) {
             <div className="space-y-1.5">
               <CardTitle>Scheduled backups</CardTitle>
               <CardDescription>
-                Dumps the database (everything your brain knows) to a local folder on the
-                configured schedule and keeps the newest copies. Getting that folder
-                off this machine is up to you — point rsync, rclone, restic, or any sync
-                tool at it.
+                Dumps the database (everything your brain knows) to a local folder on the configured
+                schedule and keeps the newest copies. Getting that folder off this machine is up to
+                you — point rsync, rclone, restic, or any sync tool at it.
               </CardDescription>
             </div>
             <Switch
@@ -143,7 +142,10 @@ function BackupsView({ data }: { data: BackupsData }) {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="backup-frequency">Frequency</Label>
-                <Select value={frequency} onValueChange={(v) => setFrequency(v as typeof frequency)}>
+                <Select
+                  value={frequency}
+                  onValueChange={(v) => setFrequency(v as typeof frequency)}
+                >
                   <SelectTrigger id="backup-frequency">
                     <SelectValue />
                   </SelectTrigger>
@@ -191,9 +193,9 @@ function BackupsView({ data }: { data: BackupsData }) {
                 placeholder={resolvedDir}
               />
               <p className="text-xs text-muted-foreground">
-                Leave empty for the default shown above. Your files and attachments
-                (<code>data/files</code>, <code>data/minio</code>) already live on disk
-                beside it — include them in your offsite copy.
+                Leave empty for the default shown above. Your files and attachments (
+                <code>data/files</code>, <code>data/minio</code>) already live on disk beside it —
+                include them in your offsite copy.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -204,8 +206,8 @@ function BackupsView({ data }: { data: BackupsData }) {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Scheduled runs fire while the events worker is up — if the stack was down
-              during the window, the next window catches it.
+              Scheduled runs fire while the events worker is up — if the stack was down during the
+              window, the next window catches it.
             </p>
           </form>
         </CardContent>

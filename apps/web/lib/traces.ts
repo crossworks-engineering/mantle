@@ -1,17 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
-import {
-  agents,
-  db,
-  traceSteps,
-  traces,
-  type TraceStep,
-} from '@mantle/db';
-import type {
-  TraceDetail,
-  TraceFilter,
-  TraceStepSummary,
-  TraceSummary,
-} from './traces-format';
+import { agents, db, traceSteps, traces, type TraceStep } from '@mantle/db';
+import type { TraceDetail, TraceFilter, TraceStepSummary, TraceSummary } from './traces-format';
 
 /**
  * Read-only helpers for /traces. Owner-scoped — pass the user's id.
@@ -40,7 +29,10 @@ function traceConds(userId: string, filter: TraceFilter) {
   return conds;
 }
 
-export async function listTraces(userId: string, filter: TraceFilter = {}): Promise<TraceSummary[]> {
+export async function listTraces(
+  userId: string,
+  filter: TraceFilter = {},
+): Promise<TraceSummary[]> {
   const limit = Math.min(filter.limit ?? 50, 500);
   const sortCol =
     filter.sort === 'cost'
@@ -95,7 +87,6 @@ export async function listTraces(userId: string, filter: TraceFilter = {}): Prom
     error: r.error,
   }));
 }
-
 
 export async function countTraces(userId: string, filter: TraceFilter = {}): Promise<number> {
   const [row] = await db

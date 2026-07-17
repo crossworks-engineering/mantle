@@ -10,7 +10,6 @@ import { withDurableSteps } from '@mantle/tracing';
 import {
   runTeamTurn,
   TEAM_TURN_WORKFLOW,
-  RUNNER_QUEUE,
   type TeamTurnInput,
   type TeamTurnRunResult,
 } from '@mantle/assistant-runtime';

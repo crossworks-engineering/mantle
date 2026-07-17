@@ -94,9 +94,7 @@ export const deepgramSttAdapter: SttDispatcher = {
     if (cap > 0 && duration != null && duration > cap) {
       // Same as Whisper — we've already paid, but warn so the caller
       // can refuse to proceed (e.g. polite "too long, please text" reply).
-      throw new Error(
-        `deepgram-stt: clip too long: ${duration.toFixed(1)}s exceeds ${cap}s cap`,
-      );
+      throw new Error(`deepgram-stt: clip too long: ${duration.toFixed(1)}s exceeds ${cap}s cap`);
     }
     return {
       text: transcript.trim(),

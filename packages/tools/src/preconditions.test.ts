@@ -20,7 +20,12 @@ const PAGE_ID = '1a2b3c4d-0000-4000-8000-000000000001';
 
 describe('checkToolPreconditions', () => {
   it('passes when the node exists with the right type', async () => {
-    const res = await checkToolPreconditions(PAGE_PRE, { page_id: PAGE_ID }, 'o1', async () => 'page');
+    const res = await checkToolPreconditions(
+      PAGE_PRE,
+      { page_id: PAGE_ID },
+      'o1',
+      async () => 'page',
+    );
     expect(res).toBeNull();
   });
 
@@ -41,7 +46,12 @@ describe('checkToolPreconditions', () => {
   });
 
   it('returns the standard notFound teaching error for a missing node', async () => {
-    const res = await checkToolPreconditions(PAGE_PRE, { page_id: PAGE_ID }, 'o1', async () => null);
+    const res = await checkToolPreconditions(
+      PAGE_PRE,
+      { page_id: PAGE_ID },
+      'o1',
+      async () => null,
+    );
     expect(res?.ok).toBe(false);
     if (res && !res.ok) {
       expect(res.error).toContain(`page ${PAGE_ID} not found`);
@@ -50,7 +60,12 @@ describe('checkToolPreconditions', () => {
   });
 
   it('teaches the wrong-type case explicitly', async () => {
-    const res = await checkToolPreconditions(PAGE_PRE, { page_id: PAGE_ID }, 'o1', async () => 'note');
+    const res = await checkToolPreconditions(
+      PAGE_PRE,
+      { page_id: PAGE_ID },
+      'o1',
+      async () => 'note',
+    );
     expect(res?.ok).toBe(false);
     if (res && !res.ok) {
       expect(res.error).toContain('is a note, not a page');

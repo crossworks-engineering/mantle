@@ -53,7 +53,9 @@ function inferType(values: unknown[]): InferredColumnType {
   let allDate = true;
   let anyTime = false;
   for (const v of sample) {
-    const isNum = typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v.replace(/[, ]/g, ''))));
+    const isNum =
+      typeof v === 'number' ||
+      (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v.replace(/[, ]/g, ''))));
     const isBool = typeof v === 'boolean';
     const isDate = v instanceof Date && !Number.isNaN(v.getTime());
     if (!isNum) allNumber = false;
@@ -79,7 +81,8 @@ function normalize(v: unknown, type: InferredColumnType): string | number | bool
     const n = typeof v === 'number' ? v : Number(String(v).replace(/[, ]/g, ''));
     return Number.isFinite(n) ? n : null;
   }
-  if (type === 'checkbox') return typeof v === 'boolean' ? v : ['true', '1', 'yes'].includes(String(v).toLowerCase());
+  if (type === 'checkbox')
+    return typeof v === 'boolean' ? v : ['true', '1', 'yes'].includes(String(v).toLowerCase());
   return String(v);
 }
 
@@ -155,7 +158,10 @@ function isSeparatorRow(cells: string[]): boolean {
 }
 
 function looksLikeMarkdownTable(text: string): boolean {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
   if (lines.length < 2 || !lines[0]!.includes('|')) return false;
   return lines.some((l) => l.includes('-') && isSeparatorRow(splitMarkdownCells(l)));
 }
@@ -186,7 +192,10 @@ export function parseTextToGrid(text: string): ParsedSheet[] {
     return parseSheet('Pasted', markdownTableToAoa(t));
   }
   if (t.includes('\t')) {
-    const aoa = t.split(/\r?\n/).filter((l) => l.length > 0).map((l) => l.split('\t'));
+    const aoa = t
+      .split(/\r?\n/)
+      .filter((l) => l.length > 0)
+      .map((l) => l.split('\t'));
     return parseSheet('Pasted', aoa);
   }
   // Default: CSV — SheetJS handles quoting/escapes from a buffer.

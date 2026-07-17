@@ -239,16 +239,21 @@ export function ensureTableDoc(input: unknown): TableDoc {
 
   const columns: Column[] = rawColumns.map((c) => {
     const col = (c ?? {}) as Partial<Column>;
-    const id = typeof col.id === 'string' && col.id ? col.id : (changed = true, randomUUID());
+    const id = typeof col.id === 'string' && col.id ? col.id : ((changed = true), randomUUID());
     const type = COLUMN_TYPES.includes(col.type as ColumnType)
       ? (col.type as ColumnType)
-      : (changed = true, 'text');
+      : ((changed = true), 'text');
     const out: Column = { id, name: typeof col.name === 'string' ? col.name : 'Column', type };
     if (col.format && typeof col.format === 'object') out.format = col.format;
     if (Array.isArray(col.options)) out.options = col.options;
     if (typeof col.formula === 'string') out.formula = col.formula;
     if (typeof col.width === 'number') out.width = col.width;
-    if (col.ref && typeof col.ref === 'object' && typeof col.ref.tabId === 'string' && typeof col.ref.columnId === 'string') {
+    if (
+      col.ref &&
+      typeof col.ref === 'object' &&
+      typeof col.ref.tabId === 'string' &&
+      typeof col.ref.columnId === 'string'
+    ) {
       out.ref = { tabId: col.ref.tabId, columnId: col.ref.columnId };
     }
     return out;
@@ -257,7 +262,7 @@ export function ensureTableDoc(input: unknown): TableDoc {
   const colIds = new Set(columns.map((c) => c.id));
   const rows: Row[] = rawRows.map((r) => {
     const row = (r ?? {}) as Partial<Row>;
-    const id = typeof row.id === 'string' && row.id ? row.id : (changed = true, randomUUID());
+    const id = typeof row.id === 'string' && row.id ? row.id : ((changed = true), randomUUID());
     const rawCells = (row.cells ?? {}) as Record<string, CellValue>;
     const cells: Record<string, CellValue> = {};
     for (const [k, v] of Object.entries(rawCells)) {
@@ -491,7 +496,10 @@ export function addSelectOption(doc: TableDoc, columnId: string, label: string):
   if (!trimmed) return doc;
   const options = col.options ?? [];
   if (options.some((o) => o.label.toLowerCase() === trimmed.toLowerCase())) return doc;
-  const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const slug = trimmed
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
   const id = slug && !options.some((o) => o.id === slug) ? slug : randomUUID();
   return updateColumn(doc, columnId, { options: [...options, { id, label: trimmed }] });
 }
@@ -629,7 +637,9 @@ export function queryRows(doc: TableDoc, q: RowQuery = {}): Row[] {
   if (filters.length) {
     const any = q.match === 'any';
     rows = rows.filter((r) =>
-      any ? filters.some((f) => matchesFilter(doc, r, f)) : filters.every((f) => matchesFilter(doc, r, f)),
+      any
+        ? filters.some((f) => matchesFilter(doc, r, f))
+        : filters.every((f) => matchesFilter(doc, r, f)),
     );
   }
   if (q.sort?.length) {
@@ -699,7 +709,13 @@ export type TableColumnPatch = {
 };
 
 export type TableDocOp =
-  | { op: 'row_add'; rowId: string; cells?: Record<string, CellValue>; afterRowId?: string | null; atStart?: boolean }
+  | {
+      op: 'row_add';
+      rowId: string;
+      cells?: Record<string, CellValue>;
+      afterRowId?: string | null;
+      atStart?: boolean;
+    }
   | { op: 'row_update'; rowId: string; cells: Record<string, CellValue> }
   | { op: 'row_delete'; rowId: string }
   | { op: 'column_add'; column: Column; afterColumnId?: string | null }
@@ -724,7 +740,8 @@ export function diffTableDocs(prev: TableDoc, next: TableDoc): TableDocOp[] | nu
   // ── Columns ──
   const prevCols = new Map(prev.columns.map((c) => [c.id, c]));
   const nextCols = new Map(next.columns.map((c) => [c.id, c]));
-  for (const c of prev.columns) if (!nextCols.has(c.id)) ops.push({ op: 'column_delete', columnId: c.id });
+  for (const c of prev.columns)
+    if (!nextCols.has(c.id)) ops.push({ op: 'column_delete', columnId: c.id });
   // Reorder detection: surviving columns must keep their relative order.
   const survivingPrev = prev.columns.filter((c) => nextCols.has(c.id)).map((c) => c.id);
   const survivingNext = next.columns.filter((c) => prevCols.has(c.id)).map((c) => c.id);
@@ -742,11 +759,14 @@ export function diffTableDocs(prev: TableDoc, next: TableDoc): TableDocOp[] | nu
     const patch: TableColumnPatch = {};
     if (old.name !== c.name) patch.name = c.name;
     if (old.type !== c.type) patch.type = c.type;
-    if (JSON.stringify(old.format ?? null) !== JSON.stringify(c.format ?? null)) patch.format = c.format ?? null;
-    if (JSON.stringify(old.options ?? null) !== JSON.stringify(c.options ?? null)) patch.options = c.options ?? null;
+    if (JSON.stringify(old.format ?? null) !== JSON.stringify(c.format ?? null))
+      patch.format = c.format ?? null;
+    if (JSON.stringify(old.options ?? null) !== JSON.stringify(c.options ?? null))
+      patch.options = c.options ?? null;
     if ((old.formula ?? '') !== (c.formula ?? '')) patch.formula = c.formula ?? null;
     if ((old.width ?? null) !== (c.width ?? null)) patch.width = c.width ?? null;
-    if (JSON.stringify(old.ref ?? null) !== JSON.stringify(c.ref ?? null)) patch.ref = c.ref ?? null;
+    if (JSON.stringify(old.ref ?? null) !== JSON.stringify(c.ref ?? null))
+      patch.ref = c.ref ?? null;
     if (Object.keys(patch).length > 0) ops.push({ op: 'column_update', columnId: c.id, patch });
   });
 
@@ -768,14 +788,16 @@ export function diffTableDocs(prev: TableDoc, next: TableDoc): TableDocOp[] | nu
       // so each op landed BEFORE the previous — audit.) A new FIRST row is an
       // explicit front insert; `afterRowId: null` means append to the engine.
       if (i === 0) ops.push({ op: 'row_add', rowId: r.id, cells: r.cells, atStart: true });
-      else ops.push({ op: 'row_add', rowId: r.id, cells: r.cells, afterRowId: next.rows[i - 1]!.id });
+      else
+        ops.push({ op: 'row_add', rowId: r.id, cells: r.cells, afterRowId: next.rows[i - 1]!.id });
       return;
     }
     const changed: Record<string, CellValue> = {};
     for (const colId of colIds) {
       if (!cellEq(old.cells[colId], r.cells[colId])) changed[colId] = r.cells[colId] ?? null;
     }
-    if (Object.keys(changed).length > 0) ops.push({ op: 'row_update', rowId: r.id, cells: changed });
+    if (Object.keys(changed).length > 0)
+      ops.push({ op: 'row_update', rowId: r.id, cells: changed });
   });
 
   // ── Aggregates ──

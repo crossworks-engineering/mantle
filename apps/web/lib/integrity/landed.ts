@@ -77,7 +77,10 @@ export type ListLandedOpts = {
  *  total can never drift apart. Conversation digests are Saskia-authored notes,
  *  not content the user added. */
 function landedWhere(ownerId: string, types: readonly string[]) {
-  const typeArr = sql`ARRAY[${sql.join(types.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+  const typeArr = sql`ARRAY[${sql.join(
+    types.map((t) => sql`${t}`),
+    sql`, `,
+  )}]::text[]`;
   return sql`
     n.owner_id = ${ownerId}
     AND n.type::text = ANY(${typeArr})
@@ -100,7 +103,10 @@ export async function countLanded(ownerId: string, types?: readonly string[]): P
  * tables, the latest extractor_run is a LATERAL join, and step names come from a
  * correlated array. Pair with `countLanded` for the pager total.
  */
-export async function listLanded(ownerId: string, opts: ListLandedOpts = {}): Promise<LandedItem[]> {
+export async function listLanded(
+  ownerId: string,
+  opts: ListLandedOpts = {},
+): Promise<LandedItem[]> {
   const limit = Math.min(Math.max(1, opts.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
   const offset = Math.max(0, Math.trunc(opts.offset ?? 0));
   const types = (opts.types?.length ? opts.types : LANDED_TYPES) as readonly string[];
@@ -201,9 +207,14 @@ export type DeleteLandedResult = { ok: boolean; type?: string; error?: string };
  * everything else by id (FK cascade + the kind-aware reaper triggers 0058/0059
  * handle edges/chunks/facts). Traces have no reaper, so we clear them too.
  */
-export async function deleteLandedNode(ownerId: string, nodeId: string): Promise<DeleteLandedResult> {
+export async function deleteLandedNode(
+  ownerId: string,
+  nodeId: string,
+): Promise<DeleteLandedResult> {
   const row = rowsOf<{ type: string }>(
-    await db.execute(sql`SELECT type::text AS type FROM nodes WHERE id = ${nodeId} AND owner_id = ${ownerId} LIMIT 1`),
+    await db.execute(
+      sql`SELECT type::text AS type FROM nodes WHERE id = ${nodeId} AND owner_id = ${ownerId} LIMIT 1`,
+    ),
   )[0];
   if (!row) return { ok: false, error: 'node not found' };
 

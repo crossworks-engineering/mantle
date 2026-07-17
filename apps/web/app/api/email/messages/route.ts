@@ -28,6 +28,11 @@ export async function GET(req: Request) {
     );
   }
   const { account, folder, unread, limit } = parsed.data;
-  const messages = await listMessages(user.id, { accountId: account, folder, unreadOnly: unread, limit });
+  const messages = await listMessages(user.id, {
+    accountId: account,
+    folder,
+    unreadOnly: unread,
+    limit,
+  });
   return NextResponse.json({ messages });
 }

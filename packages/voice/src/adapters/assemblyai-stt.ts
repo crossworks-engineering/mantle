@@ -28,10 +28,7 @@
 
 import type { SttDispatcher } from './types';
 import type { TranscribeOptions, TranscribeResult } from '../types';
-import {
-  ASSEMBLYAI_BASE_URL,
-  ASSEMBLYAI_POLL_TIMEOUT_SECONDS,
-} from '../catalogs/assemblyai';
+import { ASSEMBLYAI_BASE_URL, ASSEMBLYAI_POLL_TIMEOUT_SECONDS } from '../catalogs/assemblyai';
 
 const DEFAULT_MODEL = 'universal';
 /** Poll cadence — AssemblyAI's docs suggest 3s minimum to avoid being
@@ -148,9 +145,7 @@ export const assemblyAiSttAdapter: SttDispatcher = {
     const duration = typeof result.audio_duration === 'number' ? result.audio_duration : null;
     const cap = opts.maxDurationSeconds ?? 180;
     if (cap > 0 && duration != null && duration > cap) {
-      throw new Error(
-        `assemblyai-stt: clip too long: ${duration.toFixed(1)}s exceeds ${cap}s cap`,
-      );
+      throw new Error(`assemblyai-stt: clip too long: ${duration.toFixed(1)}s exceeds ${cap}s cap`);
     }
 
     return {

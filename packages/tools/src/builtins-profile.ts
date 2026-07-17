@@ -13,16 +13,9 @@
  * the IANA id before writing, so a typo can't poison downstream formatting.
  */
 
-import {
-  loadProfilePreferences,
-  updateProfilePreferences,
-  isValidTimezone,
-} from '@mantle/content';
+import { loadProfilePreferences, updateProfilePreferences, isValidTimezone } from '@mantle/content';
 import type { BuiltinToolDef } from './types';
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v.trim() : '';
-}
+import { str } from './coerce';
 
 const set_timezone: BuiltinToolDef = {
   slug: 'set_timezone',
@@ -40,8 +33,11 @@ const set_timezone: BuiltinToolDef = {
     required: ['timezone'],
   },
   handler: async (input, ctx) => {
-    const timezone = str(input.timezone);
-    if (!timezone) return { ok: false, error: 'timezone is required (an IANA id like America/New_York)' };
+    // `.trim()` preserves this handler's original coercion (its local `str`
+    // trimmed) — a stray-space timezone must still validate/persist cleanly.
+    const timezone = str(input.timezone).trim();
+    if (!timezone)
+      return { ok: false, error: 'timezone is required (an IANA id like America/New_York)' };
     if (!isValidTimezone(timezone)) {
       return {
         ok: false,

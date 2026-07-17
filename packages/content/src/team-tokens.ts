@@ -98,9 +98,7 @@ export async function rotateTeamToken(
   const updated = await db
     .update(contactTeamTokens)
     .set({ tokenHash: hashTeamToken(token), createdAt: new Date(), lastUsedAt: null })
-    .where(
-      and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)),
-    )
+    .where(and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)))
     .returning({ id: contactTeamTokens.id });
   return updated.length > 0 ? { token } : null;
 }
@@ -109,9 +107,7 @@ export async function rotateTeamToken(
 export async function disableTeamMember(ownerId: string, contactId: string): Promise<boolean> {
   const deleted = await db
     .delete(contactTeamTokens)
-    .where(
-      and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)),
-    )
+    .where(and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)))
     .returning({ id: contactTeamTokens.id });
   return deleted.length > 0;
 }
@@ -145,9 +141,7 @@ export async function markTeamTokenUsed(ownerId: string, contactId: string): Pro
   await db
     .update(contactTeamTokens)
     .set({ lastUsedAt: new Date() })
-    .where(
-      and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)),
-    );
+    .where(and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)));
 }
 
 /** Is this contact currently a team member? The live-row check the external
@@ -157,9 +151,7 @@ export async function isTeamMember(ownerId: string, contactId: string): Promise<
   const [row] = await db
     .select({ id: contactTeamTokens.id })
     .from(contactTeamTokens)
-    .where(
-      and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)),
-    )
+    .where(and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)))
     .limit(1);
   return !!row;
 }
@@ -176,9 +168,7 @@ export async function teamStatusFor(
   const [row] = await db
     .select({ createdAt: contactTeamTokens.createdAt, lastUsedAt: contactTeamTokens.lastUsedAt })
     .from(contactTeamTokens)
-    .where(
-      and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)),
-    )
+    .where(and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)))
     .limit(1);
   if (!row) return null;
   return {

@@ -35,7 +35,11 @@ import {
 } from '@mantle/db';
 import { sendMessage } from '@mantle/telegram';
 import { recordTurn } from '@mantle/agent-runtime';
-import { loadProfilePreferences, maybeRunScheduledBackups } from '@mantle/content';
+import {
+  loadProfilePreferences,
+  maybeRunScheduledBackups,
+  startProcessHeartbeat,
+} from '@mantle/content';
 import { maybeSweep } from '@mantle/tools';
 import { pickWebDefaultAgent } from '@mantle/assistant-runtime';
 import {
@@ -150,11 +154,7 @@ async function resolveReminderAgent(
       .select({ id: agents.id, slug: agents.slug })
       .from(agents)
       .where(
-        and(
-          eq(agents.ownerId, ownerId),
-          eq(agents.slug, preferredSlug),
-          eq(agents.enabled, true),
-        ),
+        and(eq(agents.ownerId, ownerId), eq(agents.slug, preferredSlug), eq(agents.enabled, true)),
       )
       .limit(1);
     if (picked) return picked;
@@ -256,10 +256,7 @@ async function tick(): Promise<void> {
             ` → chat ${target.telegramChatId}`,
         );
       } catch (err) {
-        console.error(
-          `[events-reminders] failed to send reminder for ${evt.id}:`,
-          err,
-        );
+        console.error(`[events-reminders] failed to send reminder for ${evt.id}:`, err);
         // Leave reminder_sent_at null so we retry next tick.
       }
     }
@@ -271,6 +268,9 @@ async function main(): Promise<void> {
     console.error('[events-reminders] DATABASE_URL must be set');
     process.exit(1);
   }
+  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
+  // WEDGED process; a dead one is already covered by the restart policy).
+  startProcessHeartbeat();
   console.log(`[events-reminders] up. Polling every ${TICK_MS / 1000}s.`);
   let running = false;
   // Shared runner so the immediate boot-time tick goes through the

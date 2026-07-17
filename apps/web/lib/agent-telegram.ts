@@ -34,9 +34,10 @@ async function getMe(token: string): Promise<{ id: number; username: string }> {
   }
   if (res.status === 401) throw new TelegramTokenError('Telegram rejected this token (401).');
   if (!res.ok) throw new TelegramTokenError(`Telegram getMe failed (HTTP ${res.status}).`);
-  const body = (await res.json().catch(() => null)) as
-    | { ok: boolean; result?: { id: number; username?: string } }
-    | null;
+  const body = (await res.json().catch(() => null)) as {
+    ok: boolean;
+    result?: { id: number; username?: string };
+  } | null;
   if (!body?.ok || !body.result?.username) {
     throw new TelegramTokenError('Telegram accepted the request but returned no bot username.');
   }
@@ -117,9 +118,7 @@ export async function connectAgentTelegram(
   const [byUsername] = await db
     .select()
     .from(telegramAccounts)
-    .where(
-      and(eq(telegramAccounts.userId, ownerId), eq(telegramAccounts.botUsername, me.username)),
-    )
+    .where(and(eq(telegramAccounts.userId, ownerId), eq(telegramAccounts.botUsername, me.username)))
     .limit(1);
 
   // The bot is already owned by a different agent's channel — refuse to steal it.
@@ -227,12 +226,7 @@ export async function listAgentTelegramChats(
   const rows = await db
     .select()
     .from(telegramChats)
-    .where(
-      and(
-        eq(telegramChats.userId, ownerId),
-        eq(telegramChats.accountId, binding.accountId),
-      ),
-    );
+    .where(and(eq(telegramChats.userId, ownerId), eq(telegramChats.accountId, binding.accountId)));
   return rows
     .map((r) => ({
       id: r.id,

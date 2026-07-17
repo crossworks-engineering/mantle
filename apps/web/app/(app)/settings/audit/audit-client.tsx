@@ -160,7 +160,9 @@ export function AuditClient({
                     </Badge>
                   </TableCell>
                   <TableCell className="max-w-md truncate font-mono text-xs text-muted-foreground">
-                    {r.method || r.path ? `${r.method ?? ''} ${r.path ?? ''}`.trim() : detailSummary(r.detail)}
+                    {r.method || r.path
+                      ? `${r.method ?? ''} ${r.path ?? ''}`.trim()
+                      : detailSummary(r.detail)}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                     {r.ip ?? '—'}

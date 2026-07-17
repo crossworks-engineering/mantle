@@ -42,15 +42,23 @@ export const nodeType = pgEnum('node_type', [
 export const nodes = pgTable(
   'nodes',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(), // FK to auth.users.id, enforced in SQL migration.
     parentId: uuid('parent_id'), // self-FK, enforced in SQL migration.
     type: nodeType('type').notNull(),
     title: text('title').notNull(),
     slug: text('slug'),
-    data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    data: jsonb('data')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     path: ltree('path').notNull(),
-    tags: text('tags').array().default(sql`'{}'::text[]`).notNull(),
+    tags: text('tags')
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
     embedding: vector(768)('embedding'),
     // `search_tsv` is a GENERATED ALWAYS column — declared here as a regular
     // tsvector so SELECTs can read it; the actual `GENERATED` clause is in

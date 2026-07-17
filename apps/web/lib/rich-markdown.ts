@@ -94,7 +94,14 @@ const colorSpanExtension: TokenizerAndRendererExtension = {
     if (!m) return undefined;
     const { color, highlight } = parseColorAttrs(m[2]!);
     if (!color && !highlight) return undefined; // not a colour span — let link/text handle it
-    return { type: 'colorSpan', raw: m[0], text: m[1]!, tokens: this.lexer.inlineTokens(m[1]!), color, highlight };
+    return {
+      type: 'colorSpan',
+      raw: m[0],
+      text: m[1]!,
+      tokens: this.lexer.inlineTokens(m[1]!),
+      color,
+      highlight,
+    };
   },
   renderer(token) {
     let html = this.parser.parseInline(token.tokens ?? []);
@@ -169,14 +176,10 @@ function renderColumns(bodyLines: string[]): string {
     if (/^\+\+\+\s*$/.test(line.trim())) segments.push([]);
     else segments[segments.length - 1]!.push(line);
   }
-  const cols = segments
-    .map((seg) => seg.join('\n').trim())
-    .filter((s) => s.length > 0);
+  const cols = segments.map((seg) => seg.join('\n').trim()).filter((s) => s.length > 0);
   // The schema requires 2+ columns; degrade a 0/1-column block to plain blocks.
   if (cols.length < 2) return renderBlocks(bodyLines.join('\n').trim());
-  const inner = cols
-    .map((c) => `<div data-column>${renderBlocks(c) || '<p></p>'}</div>`)
-    .join('');
+  const inner = cols.map((c) => `<div data-column>${renderBlocks(c) || '<p></p>'}</div>`).join('');
   return `<div data-column-list>${inner}</div>`;
 }
 

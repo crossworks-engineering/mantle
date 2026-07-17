@@ -57,7 +57,9 @@ async function main() {
     process.exit(0);
   }
 
-  console.log(`${apply ? 'Updating' : 'Would update'} ${rows.length} agent(s) → content_hit_limit=${target}:`);
+  console.log(
+    `${apply ? 'Updating' : 'Would update'} ${rows.length} agent(s) → content_hit_limit=${target}:`,
+  );
   for (const r of rows) {
     const cur = (r.mc as Record<string, unknown>)?.content_hit_limit;
     console.log(`  ${r.slug} [${r.role}]  ${cur} → ${target}`);

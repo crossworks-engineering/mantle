@@ -9,7 +9,6 @@ import {
   emailAccounts,
   emailAttachments,
   emails,
-  embeddingCache,
   entities,
   entityEdges,
   facts,
@@ -127,7 +126,7 @@ export async function graphIntegrity(userId: string): Promise<GraphIntegrity> {
   const rows = (
     Array.isArray(result)
       ? result
-      : (result as { rows?: Array<{ dup_groups: number; redundant_rows: number }> }).rows ?? []
+      : ((result as { rows?: Array<{ dup_groups: number; redundant_rows: number }> }).rows ?? [])
   ) as Array<{ dup_groups: number; redundant_rows: number }>;
   const row = rows[0] ?? { dup_groups: 0, redundant_rows: 0 };
   return {
@@ -153,25 +152,29 @@ export type VectorCounts = {
 
 export async function vectorCounts(userId: string): Promise<VectorCounts> {
   const indexed = sql<number>`count(*) filter (where embedding is not null)::int`;
-  const [nodeRow, factRow, entityRow, cacheRow] = await Promise.all([
-    db
-      .select({ total: COUNT, indexed })
-      .from(nodes)
-      .where(eq(nodes.ownerId, userId)),
+  const [nodeRow, factRow, entityRow, cacheEst] = await Promise.all([
+    db.select({ total: COUNT, indexed }).from(nodes).where(eq(nodes.ownerId, userId)),
     db
       .select({ total: COUNT, indexed })
       .from(facts)
       .where(and(eq(facts.ownerId, userId), isNull(facts.validTo))),
-    db
-      .select({ total: COUNT, indexed })
-      .from(entities)
-      .where(eq(entities.ownerId, userId)),
-    db.select({ total: COUNT }).from(embeddingCache),
+    db.select({ total: COUNT, indexed }).from(entities).where(eq(entities.ownerId, userId)),
+    // embedding_cache is a global content-addressed table with no owner filter,
+    // so an exact count(*) is a full scan that grows unboundedly with the whole
+    // corpus (100k+ rows) — on every dashboard render. This stat is a rough
+    // "how warm is the cache" indicator, so use the planner's reltuples estimate
+    // (maintained by autovacuum/ANALYZE, no scan). -1 = never analyzed → 0.
+    db.execute<{ est: number }>(
+      sql`select greatest(coalesce(reltuples, 0), 0)::bigint as est from pg_class where relname = 'embedding_cache' and relkind = 'r'`,
+    ),
   ]);
 
   const nodesIndexed = nodeRow[0]?.indexed ?? 0;
   const factsIndexed = factRow[0]?.indexed ?? 0;
   const entitiesIndexed = entityRow[0]?.indexed ?? 0;
+  const cacheRows = Array.isArray(cacheEst)
+    ? cacheEst
+    : ((cacheEst as { rows?: Array<{ est: number }> }).rows ?? []);
   return {
     nodesIndexed,
     nodesTotal: nodeRow[0]?.total ?? 0,
@@ -180,7 +183,7 @@ export async function vectorCounts(userId: string): Promise<VectorCounts> {
     entitiesIndexed,
     entitiesTotal: entityRow[0]?.total ?? 0,
     vectorsTotal: nodesIndexed + factsIndexed + entitiesIndexed,
-    embeddingCacheRows: cacheRow[0]?.total ?? 0,
+    embeddingCacheRows: Number(cacheRows[0]?.est ?? 0),
   };
 }
 
@@ -287,7 +290,7 @@ export async function emailStats(userId: string): Promise<EmailStats> {
   ]);
 
   const syncRows = (
-    Array.isArray(syncResult) ? syncResult : (syncResult as { rows?: SyncRow[] }).rows ?? []
+    Array.isArray(syncResult) ? syncResult : ((syncResult as { rows?: SyncRow[] }).rows ?? [])
   ) as SyncRow[];
 
   return {

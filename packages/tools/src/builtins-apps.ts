@@ -12,7 +12,6 @@ import {
   createApp,
   getApp,
   listApps,
-  updateAppMeta,
   writeDraftFile,
   deleteDraftFile,
   saveDraftSource,
@@ -37,6 +36,7 @@ import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './dispatch';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
+import { str, strArr } from './coerce';
 
 const APP_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'app', lookup: 'app_list' },
@@ -44,13 +44,6 @@ const APP_ID_PRE: readonly ToolPrecondition[] = [
 const APP_DB_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'app_id', nodeType: 'app', lookup: 'app_db_list / app_list' },
 ];
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
-function strArr(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : [];
-}
 
 const SOURCE_HINT =
   'Mini-app source is TSX. Allowed imports: `react`; the kit `@/components/ui/*` (button, card, input, label, badge, separator) + `cn` from `@/lib/utils`; `lucide-react` icons; the host bridge `host` from `@host` (host.tools.call(slug,input), host.db.query/exec(sql,params)); and relative files. Theme tokens only (bg-background, text-foreground, bg-card, bg-primary+text-primary-foreground, chart-1..5) — never hardcode colours. The entry file must `export default function App()`.';
@@ -71,7 +64,7 @@ const app_create: BuiltinToolDef = {
   slug: 'app_create',
   name: 'Create a mini app',
   description:
-    "Create a new mini app (an `app` node under /apps). `name` required. Starts with a trivial entry file you then flesh out with `app_file_write` + `app_build`. " +
+    'Create a new mini app (an `app` node under /apps). `name` required. Starts with a trivial entry file you then flesh out with `app_file_write` + `app_build`. ' +
     SOURCE_HINT,
   inputSchema: {
     type: 'object',
@@ -103,7 +96,10 @@ const app_create: BuiltinToolDef = {
         ownerId: ctx.ownerId,
         nodeId: app.id,
         summary: `App created by tool: ${app.title}`,
-        payload: { via: 'app_create_tool', ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}) },
+        payload: {
+          via: 'app_create_tool',
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
         snippet: name,
       });
       return {
@@ -131,7 +127,7 @@ const app_get: BuiltinToolDef = {
     type: 'object',
     properties: {
       id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
-      include_source: { type: 'boolean', description: 'include each file\'s full text' },
+      include_source: { type: 'boolean', description: "include each file's full text" },
     },
     required: ['id'],
   },
@@ -169,7 +165,10 @@ const app_file_write: BuiltinToolDef = {
     type: 'object',
     properties: {
       id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
-      path: { type: 'string', description: "file path within the app, e.g. 'App.tsx' or 'lib/fmt.ts'" },
+      path: {
+        type: 'string',
+        description: "file path within the app, e.g. 'App.tsx' or 'lib/fmt.ts'",
+      },
       content: { type: 'string', description: 'full file contents (TSX/TS)' },
     },
     required: ['id', 'path', 'content'],
@@ -221,7 +220,10 @@ const app_file_delete: BuiltinToolDef = {
       const next = await deleteDraftFile(ctx.ownerId, id, path);
       if (!next) return { ok: false, error: `app ${id} not found` };
       ctx.step?.setOutput({ id, path, deleted: true });
-      return { ok: true, output: { id, path, deleted: true, file_count: Object.keys(next.files).length } };
+      return {
+        ok: true,
+        output: { id, path, deleted: true, file_count: Object.keys(next.files).length },
+      };
     } catch (err) {
       if (err instanceof CannotDeleteEntryError) return { ok: false, error: err.message };
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -232,7 +234,7 @@ const app_file_delete: BuiltinToolDef = {
 const app_source_set: BuiltinToolDef = {
   slug: 'app_source_set',
   preconditions: APP_ID_PRE,
-  name: 'Set a mini app\'s whole source tree',
+  name: "Set a mini app's whole source tree",
   description:
     "Replace the app's ENTIRE draft source tree in one call, instead of many `app_file_write` calls — use it when you authored the files elsewhere and want to upload them atomically. The published app is untouched until `app_publish`; call `app_build` afterwards to compile. " +
     SOURCE_HINT,
@@ -240,7 +242,10 @@ const app_source_set: BuiltinToolDef = {
     type: 'object',
     properties: {
       id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
-      entry: { type: 'string', description: "entry file path, e.g. 'App.tsx' — must be a key in `files`" },
+      entry: {
+        type: 'string',
+        description: "entry file path, e.g. 'App.tsx' — must be a key in `files`",
+      },
       files: {
         type: 'object',
         description:
@@ -267,7 +272,10 @@ const app_source_set: BuiltinToolDef = {
       files[path] = content;
     }
     if (!(entry in files)) {
-      return { ok: false, error: `entry '${entry}' must be one of the files (${Object.keys(files).join(', ') || 'none'})` };
+      return {
+        ok: false,
+        error: `entry '${entry}' must be one of the files (${Object.keys(files).join(', ') || 'none'})`,
+      };
     }
     try {
       const ok = await saveDraftSource(ctx.ownerId, id, { entry, files });
@@ -332,8 +340,12 @@ const app_build: BuiltinToolDef = {
           errors: res.errors,
           warnings: res.warnings,
           ...(res.ok
-            ? { hint: `Build succeeded. Review the live preview at /apps/${id}; app_publish when approved.` }
-            : { hint: 'Build failed — fix the files at the reported locations and run app_build again.' }),
+            ? {
+                hint: `Build succeeded. Review the live preview at /apps/${id}; app_publish when approved.`,
+              }
+            : {
+                hint: 'Build failed — fix the files at the reported locations and run app_build again.',
+              }),
         },
       };
     } catch (err) {
@@ -345,14 +357,18 @@ const app_build: BuiltinToolDef = {
 const app_tools_set: BuiltinToolDef = {
   slug: 'app_tools_set',
   preconditions: APP_ID_PRE,
-  name: 'Declare a mini app\'s data tools',
+  name: "Declare a mini app's data tools",
   description:
-    "Set the list of api_tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist — the host refuses any slug not declared here. Each slug must be an existing tool you own (build them first via the toolsmith / API Console, or delegate to the `toolsmith` agent). Replaces the current list.",
+    'Set the list of api_tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist — the host refuses any slug not declared here. Each slug must be an existing tool you own (build them first via the toolsmith / API Console, or delegate to the `toolsmith` agent). Replaces the current list.',
   inputSchema: {
     type: 'object',
     properties: {
       id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
-      tool_slugs: { type: 'array', items: { type: 'string' }, description: 'api_tool slugs the app may call' },
+      tool_slugs: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'api_tool slugs the app may call',
+      },
     },
     required: ['id', 'tool_slugs'],
   },
@@ -382,14 +398,17 @@ const app_tools_set: BuiltinToolDef = {
 const app_db_schema_set: BuiltinToolDef = {
   slug: 'app_db_schema_set',
   preconditions: APP_ID_PRE,
-  name: 'Set a mini app\'s SQLite schema',
+  name: "Set a mini app's SQLite schema",
   description:
     "Declare the app's per-app SQLite schema as DDL (CREATE TABLE …). Stored on the app manifest; the host provisions/migrates the app's own SQLite database from it. The app reads/writes via host.db.query(sql, params) / host.db.exec(sql, params) — each app touches only its own database. Replaces the current schema (bumps the version). The DDL is guarded: ATTACH/DETACH/VACUUM INTO/PRAGMA are refused (read-only `PRAGMA table_info(<table>)` excepted), and it only re-runs on a version bump — it will NOT reshape a table that already exists. To add columns to an app with live data, run an idempotent ALTER TABLE migration in app code at startup (pattern in the app_authoring skill).",
   inputSchema: {
     type: 'object',
     properties: {
       id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
-      schema_sql: { type: 'string', description: 'DDL, e.g. "CREATE TABLE IF NOT EXISTS cities (name TEXT PRIMARY KEY);"' },
+      schema_sql: {
+        type: 'string',
+        description: 'DDL, e.g. "CREATE TABLE IF NOT EXISTS cities (name TEXT PRIMARY KEY);"',
+      },
     },
     required: ['id', 'schema_sql'],
   },
@@ -434,9 +453,13 @@ const app_list: BuiltinToolDef = {
     properties: {
       query: {
         type: 'string',
-        description: "Substring matched against app name, source text, and summary, e.g. 'weather'.",
+        description:
+          "Substring matched against app name, source text, and summary, e.g. 'weather'.",
       },
-      tag: { type: 'string', description: "Return only apps carrying this exact tag, e.g. 'work'." },
+      tag: {
+        type: 'string',
+        description: "Return only apps carrying this exact tag, e.g. 'work'.",
+      },
       limit: { type: 'number', description: 'max rows (default 50)' },
     },
   },
@@ -550,8 +573,14 @@ const app_db_query: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      app_id: { type: 'string', description: "The app's id (UUID) — from `app_db_list` / `app_list`." },
-      sql: { type: 'string', description: 'a read-only SELECT query; use ? placeholders for values' },
+      app_id: {
+        type: 'string',
+        description: "The app's id (UUID) — from `app_db_list` / `app_list`.",
+      },
+      sql: {
+        type: 'string',
+        description: 'a read-only SELECT query; use ? placeholders for values',
+      },
       params: { type: 'array', description: 'values bound to the ? placeholders, in order' },
     },
     required: ['app_id', 'sql'],
@@ -568,7 +597,10 @@ const app_db_query: BuiltinToolDef = {
       if (empty) {
         return {
           ok: true,
-          output: { rows: [], note: 'This app has no database yet (nothing stored, or no such app).' },
+          output: {
+            rows: [],
+            note: 'This app has no database yet (nothing stored, or no such app).',
+          },
         };
       }
       return { ok: true, output: { rows, row_count: rows.length } };

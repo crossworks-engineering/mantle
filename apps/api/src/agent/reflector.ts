@@ -267,10 +267,7 @@ async function reflectOnAgent(
             })
             .from(assistantMessages)
             .where(
-              and(
-                eq(assistantMessages.ownerId, ownerId),
-                eq(assistantMessages.agentId, agent.id),
-              ),
+              and(eq(assistantMessages.ownerId, ownerId), eq(assistantMessages.agentId, agent.id)),
             )
             .orderBy(desc(assistantMessages.createdAt))
             .limit(REFLECTION_WINDOW);
@@ -339,9 +336,7 @@ async function reflectOnAgent(
               ...(typeof params.temperature === 'number'
                 ? { temperature: params.temperature }
                 : {}),
-              ...(typeof params.max_tokens === 'number'
-                ? { maxTokens: params.max_tokens }
-                : {}),
+              ...(typeof params.max_tokens === 'number' ? { maxTokens: params.max_tokens } : {}),
               ...(typeof params.top_p === 'number' ? { topP: params.top_p } : {}),
             },
             (m) => console.warn(`[reflector] ${m}`),

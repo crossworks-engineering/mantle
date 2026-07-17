@@ -19,7 +19,7 @@
  * worker rolls the single row forward to its next occurrence (re-arming
  * the reminder) instead of marking it sent — see `rollForwardRecurrence`.
  */
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
 
 export type { RecurFreq } from './events-time';
@@ -417,8 +417,7 @@ export async function rollForwardRecurrence(eventId: string): Promise<void> {
     await markReminderSent(eventId);
     return;
   }
-  const remindMinutes =
-    typeof d.remind_minutes_before === 'number' ? d.remind_minutes_before : 0;
+  const remindMinutes = typeof d.remind_minutes_before === 'number' ? d.remind_minutes_before : 0;
   const nextStart = advanceToNextFuture(currentStart, recur, remindMinutes, Date.now());
 
   // Series cutoff: stop once the next hit lands past recur_until.
@@ -437,10 +436,7 @@ export async function rollForwardRecurrence(eventId: string): Promise<void> {
   }
   newData.remind_at = computeRemindAt(nextStart, remindMinutes);
   delete newData.reminder_sent_at; // re-arm for the next occurrence
-  await db
-    .update(nodes)
-    .set({ data: newData, updatedAt: new Date() })
-    .where(eq(nodes.id, eventId));
+  await db.update(nodes).set({ data: newData, updatedAt: new Date() }).where(eq(nodes.id, eventId));
 }
 
 /** All owner IDs that have at least one event row. The reminder worker

@@ -16,9 +16,7 @@
  *  pipeline of pg_notify reactions instead of a delegation chain. */
 export const MAX_AGENT_DEPTH = 2;
 
-export type DepthCheckResult =
-  | { ok: true; childDepth: number }
-  | { ok: false; reason: string };
+export type DepthCheckResult = { ok: true; childDepth: number } | { ok: false; reason: string };
 
 /**
  * Returns the depth the child WOULD run at, or refuses if it'd exceed
@@ -41,9 +39,7 @@ export function checkAgentDepth(parentDepth: number): DepthCheckResult {
   return { ok: true, childDepth };
 }
 
-export type AllowlistCheckResult =
-  | { ok: true }
-  | { ok: false; reason: string };
+export type AllowlistCheckResult = { ok: true } | { ok: false; reason: string };
 
 /**
  * Verify the parent agent is permitted to delegate to `targetSlug`.
@@ -102,10 +98,7 @@ export function checkDelegationAllowed(
  * distance (typos). This lets an LLM recover from a near-miss without turning
  * the refusal into a directory listing of every authorised agent.
  */
-function closestSlug(
-  target: string,
-  allowlist: readonly string[],
-): string | null {
+function closestSlug(target: string, allowlist: readonly string[]): string | null {
   const t = target.toLowerCase();
 
   // Strong signal: containment in either direction. Prefer the longest such

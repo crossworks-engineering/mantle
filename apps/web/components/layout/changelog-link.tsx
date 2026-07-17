@@ -28,7 +28,9 @@ export function ChangelogLink({ onNavigate }: { onNavigate?: () => void }) {
   useEffect(() => {
     const read = () => {
       try {
-        setShowWhatsNew(window.localStorage.getItem(CHANGELOG_LAST_SEEN_VERSION_KEY) !== APP_VERSION);
+        setShowWhatsNew(
+          window.localStorage.getItem(CHANGELOG_LAST_SEEN_VERSION_KEY) !== APP_VERSION,
+        );
       } catch {
         // Storage blocked — default to showing the pill.
         setShowWhatsNew(true);

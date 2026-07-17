@@ -1,7 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Download, Eye, FileText, Loader2, PencilLine, Save, SplitSquareHorizontal, X } from 'lucide-react';
+import {
+  Download,
+  Eye,
+  FileText,
+  Loader2,
+  PencilLine,
+  Save,
+  SplitSquareHorizontal,
+  X,
+} from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
@@ -198,7 +207,11 @@ export function FileEditor({
             </a>
           </Button>
           <Button asChild variant="outline" size="icon" className="size-9">
-            <a href={assetUrl(`/api/files/files/${file.id}?raw=1`)} download={file.filename} title="Download">
+            <a
+              href={assetUrl(`/api/files/files/${file.id}?raw=1`)}
+              download={file.filename}
+              title="Download"
+            >
               <Download aria-hidden />
             </a>
           </Button>
@@ -297,7 +310,9 @@ function FilePreviewBody({ file }: { file: FileRow }) {
       <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
         <audio src={src} controls className="w-full max-w-xl" />
         {file.summary && (
-          <p className="max-w-md text-center text-xs italic text-muted-foreground">{file.summary}</p>
+          <p className="max-w-md text-center text-xs italic text-muted-foreground">
+            {file.summary}
+          </p>
         )}
       </div>
     );

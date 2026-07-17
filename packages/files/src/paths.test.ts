@@ -56,9 +56,7 @@ describe('diskPathForLtree', () => {
 
   it('converts underscores to dashes per segment', async () => {
     const { diskPathForLtree } = await freshPaths();
-    expect(diskPathForLtree('files.lister_printer')).toBe(
-      path.join(FAKE_ROOT, 'lister-printer'),
-    );
+    expect(diskPathForLtree('files.lister_printer')).toBe(path.join(FAKE_ROOT, 'lister-printer'));
   });
 
   it('handles nested ltree paths', async () => {
@@ -88,7 +86,7 @@ describe('diskPathForFile', () => {
     expect(diskPathForFile('files.work', 'foo\\bar.md')).toBeNull();
   });
 
-  it('returns null when the parent isn\'t under files', async () => {
+  it("returns null when the parent isn't under files", async () => {
     const { diskPathForFile } = await freshPaths();
     expect(diskPathForFile('inbox.work', 'notes.md')).toBeNull();
   });

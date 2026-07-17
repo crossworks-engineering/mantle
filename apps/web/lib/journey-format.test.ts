@@ -30,13 +30,23 @@ describe('deriveAction', () => {
   });
 
   it('detects images by mime', () => {
-    const a = deriveAction({ kind: 'photo_ingest', nodeType: 'file', mime: 'image/heic', source: null });
+    const a = deriveAction({
+      kind: 'photo_ingest',
+      nodeType: 'file',
+      mime: 'image/heic',
+      source: null,
+    });
     expect(a.iconKey).toBe('image');
     expect(a.label).toBe('Image ingested');
   });
 
   it('maps note creation', () => {
-    const a = deriveAction({ kind: 'extractor_run', nodeType: 'note', mime: null, source: 'note_create' });
+    const a = deriveAction({
+      kind: 'extractor_run',
+      nodeType: 'note',
+      mime: null,
+      source: 'note_create',
+    });
     expect(a).toEqual({ label: 'Wrote a note', category: 'content', iconKey: 'note' });
   });
 
@@ -58,15 +68,15 @@ describe('deriveAction', () => {
   });
 
   it('classifies background work as automation', () => {
-    expect(deriveAction({ kind: 'reflector_run', nodeType: null, mime: null, source: null }).category).toBe(
-      'automation',
-    );
-    expect(deriveAction({ kind: 'summarizer_run', nodeType: null, mime: null, source: null }).category).toBe(
-      'automation',
-    );
-    expect(deriveAction({ kind: 'heartbeat_fire', nodeType: null, mime: null, source: null }).category).toBe(
-      'automation',
-    );
+    expect(
+      deriveAction({ kind: 'reflector_run', nodeType: null, mime: null, source: null }).category,
+    ).toBe('automation');
+    expect(
+      deriveAction({ kind: 'summarizer_run', nodeType: null, mime: null, source: null }).category,
+    ).toBe('automation');
+    expect(
+      deriveAction({ kind: 'heartbeat_fire', nodeType: null, mime: null, source: null }).category,
+    ).toBe('automation');
   });
 });
 

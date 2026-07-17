@@ -2,7 +2,13 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { applyOpsToFile, readDocFile, writeDocFile, type CellValue, type TableOp } from '@mantle/tabledb';
+import {
+  applyOpsToFile,
+  readDocFile,
+  writeDocFile,
+  type CellValue,
+  type TableOp,
+} from '@mantle/tabledb';
 import { diffTableDocs, type TableDoc } from './table-model';
 
 function doc(): TableDoc {
@@ -69,7 +75,13 @@ describe('diffTableDocs', () => {
 
   it('clearing a column property travels as explicit null (undefined dies in JSON)', () => {
     const prev = doc();
-    prev.columns[1] = { id: 'c2', name: 'Qty', type: 'number', width: 200, format: { decimals: 2 } };
+    prev.columns[1] = {
+      id: 'c2',
+      name: 'Qty',
+      type: 'number',
+      width: 200,
+      format: { decimals: 2 },
+    };
     const next = doc(); // width + format gone
     expect(diffTableDocs(prev, next)).toEqual([
       { op: 'column_update', columnId: 'c2', patch: { format: null, width: null } },
@@ -78,9 +90,15 @@ describe('diffTableDocs', () => {
 
   it('returns null for view reordering (no op expresses it)', () => {
     const prev = doc();
-    prev.views = [{ id: 'v1', name: 'A' }, { id: 'v2', name: 'B' }];
+    prev.views = [
+      { id: 'v1', name: 'A' },
+      { id: 'v2', name: 'B' },
+    ];
     const next = doc();
-    next.views = [{ id: 'v2', name: 'B' }, { id: 'v1', name: 'A' }];
+    next.views = [
+      { id: 'v2', name: 'B' },
+      { id: 'v1', name: 'A' },
+    ];
     expect(diffTableDocs(prev, next)).toBeNull();
   });
 
@@ -93,14 +111,23 @@ describe('diffTableDocs', () => {
       { id: 'c3', name: 'Done', type: 'checkbox' },
     ];
     expect(diffTableDocs(doc(), next)).toEqual([
-      { op: 'column_add', column: { id: 'c3', name: 'Done', type: 'checkbox' }, afterColumnId: 'c2' },
+      {
+        op: 'column_add',
+        column: { id: 'c3', name: 'Done', type: 'checkbox' },
+        afterColumnId: 'c2',
+      },
       { op: 'row_delete', rowId: 'r1' },
     ]);
   });
 
   it('emits column_update patches (rename + retype + ref)', () => {
     const next = doc();
-    next.columns[1] = { id: 'c2', name: 'Amount', type: 'reference', ref: { tabId: 't1', columnId: 'c1' } };
+    next.columns[1] = {
+      id: 'c2',
+      name: 'Amount',
+      type: 'reference',
+      ref: { tabId: 't1', columnId: 'c1' },
+    };
     expect(diffTableDocs(doc(), next)).toEqual([
       {
         op: 'column_update',
@@ -112,7 +139,12 @@ describe('diffTableDocs', () => {
 
   it('emits ref:null (clear) when a linked column is unlinked', () => {
     const prev = doc();
-    prev.columns[1] = { id: 'c2', name: 'Qty', type: 'reference', ref: { tabId: 't1', columnId: 'c1' } };
+    prev.columns[1] = {
+      id: 'c2',
+      name: 'Qty',
+      type: 'reference',
+      ref: { tabId: 't1', columnId: 'c1' },
+    };
     const next = doc(); // c2 back to plain number
     const ops = diffTableDocs(prev, next);
     expect(ops).toEqual([

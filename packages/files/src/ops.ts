@@ -98,7 +98,8 @@ export async function ensureFilesRootBranch(ownerId: string): Promise<Node> {
       slug: FILES_ROOT_LABEL,
       path: FILES_ROOT_LABEL,
       data: {
-        description: 'Host-mirrored filesystem. Folders and files here live on disk under MANTLE_FILES_ROOT.',
+        description:
+          'Host-mirrored filesystem. Folders and files here live on disk under MANTLE_FILES_ROOT.',
       },
       tags: ['files-root'],
     })
@@ -350,7 +351,7 @@ function folderRowFromNode(row: Node, childFolderCount: number, fileCount: numbe
     id: row.id,
     path: row.path,
     title: row.title,
-    slug: typeof data.slug === 'string' ? (data.slug as string) : row.slug ?? row.title,
+    slug: typeof data.slug === 'string' ? (data.slug as string) : (row.slug ?? row.title),
     description: typeof data.description === 'string' ? (data.description as string) : '',
     childFolderCount,
     fileCount,
@@ -430,9 +431,8 @@ export async function upsertFile(args: {
     overwrite: effectiveOverwrite,
   });
 
-  const content = isText && args.bytes.byteLength <= TEXT_BYTE_CAP
-    ? args.bytes.toString('utf8')
-    : null;
+  const content =
+    isText && args.bytes.byteLength <= TEXT_BYTE_CAP ? args.bytes.toString('utf8') : null;
 
   const newData: Record<string, unknown> = {
     filename,
@@ -614,9 +614,8 @@ export async function syncFileFromDisk(args: {
     )
     .limit(1);
 
-  const content = isText && args.bytes.byteLength <= TEXT_BYTE_CAP
-    ? args.bytes.toString('utf8')
-    : null;
+  const content =
+    isText && args.bytes.byteLength <= TEXT_BYTE_CAP ? args.bytes.toString('utf8') : null;
 
   const newData: Record<string, unknown> = {
     filename,
@@ -853,10 +852,7 @@ export async function bulkDeleteFiles(args: {
   return { deleted };
 }
 
-export async function listFiles(args: {
-  ownerId: string;
-  parentPath: string;
-}): Promise<FileRow[]> {
+export async function listFiles(args: { ownerId: string; parentPath: string }): Promise<FileRow[]> {
   const rows = await db
     .select()
     .from(nodes)
@@ -926,10 +922,7 @@ export async function folderByPath(args: {
   return folderRowFromNode(row, counts.childFolderCount, counts.fileCount);
 }
 
-export async function fileById(args: {
-  ownerId: string;
-  fileId: string;
-}): Promise<FileRow | null> {
+export async function fileById(args: { ownerId: string; fileId: string }): Promise<FileRow | null> {
   const [row] = await db
     .select()
     .from(nodes)

@@ -123,7 +123,12 @@ export async function testStt(
     language: params.language,
     maxDurationSeconds: params.max_duration_seconds ?? 180,
   });
-  return { ok: true, text: result.text, language: result.language, duration: result.durationSeconds };
+  return {
+    ok: true,
+    text: result.text,
+    language: result.language,
+    duration: result.durationSeconds,
+  };
 }
 
 /** List the models a given api_key can access, for the form's dropdown. */
@@ -132,7 +137,9 @@ export async function discoverModels(
   kind: DiscoverKind,
   providerId: string,
 ): Promise<{
-  available: Array<TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo | ImageGenModelInfo>;
+  available: Array<
+    TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo | ImageGenModelInfo
+  >;
   filtered: boolean;
   error: string | null;
 }> {

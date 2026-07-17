@@ -120,8 +120,8 @@ export function TelegramClient({ page, query }: { page: number; query: string })
       <p className="text-xs text-muted-foreground">
         <strong>Pending</strong> is the count of turns not yet folded into a digest. A chat with
         pending ≥ 30 (the default summarizer threshold) is about to roll up on the next message.{' '}
-        <strong>Agent</strong> pins a specific responder to this chat; <em>default</em> falls back to
-        the global highest-priority enabled responder.
+        <strong>Agent</strong> pins a specific responder to this chat; <em>default</em> falls back
+        to the global highest-priority enabled responder.
       </p>
     </>
   );

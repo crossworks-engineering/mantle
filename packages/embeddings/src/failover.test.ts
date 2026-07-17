@@ -22,9 +22,10 @@ vi.mock('@mantle/db', () => ({
     select: () => ({
       from: (t: unknown) => ({
         where: () => {
-          const rows =
-            t === h.embeddingConfigTable && h.state.configRow ? [h.state.configRow] : [];
-          const p = Promise.resolve(rows) as Promise<unknown[]> & { limit?: () => Promise<unknown[]> };
+          const rows = t === h.embeddingConfigTable && h.state.configRow ? [h.state.configRow] : [];
+          const p = Promise.resolve(rows) as Promise<unknown[]> & {
+            limit?: () => Promise<unknown[]>;
+          };
           p.limit = () => Promise.resolve(rows);
           return p;
         },
@@ -164,9 +165,9 @@ describe('isRouteDownError', () => {
     expect(isRouteDownError(new Error('fetch failed'))).toBe(true);
     expect(isRouteDownError(new Error('connect ECONNREFUSED 127.0.0.1:11434'))).toBe(true);
     expect(isRouteDownError(new Error('getaddrinfo ENOTFOUND host'))).toBe(true);
-    expect(isRouteDownError(new Error('local embeddings failed: 503 Service Unavailable — x'))).toBe(
-      true,
-    );
+    expect(
+      isRouteDownError(new Error('local embeddings failed: 503 Service Unavailable — x')),
+    ).toBe(true);
     expect(isRouteDownError(new TypeError('Failed to fetch'))).toBe(true);
     const ab = new Error('aborted');
     ab.name = 'AbortError';

@@ -74,8 +74,10 @@ export function KeysClient() {
   useEffect(() => {
     if (!keysQuery.data) return;
     setKeys(keysQuery.data);
-    setSel((prev) =>
-      prev ?? (keysQuery.data[0] ? { mode: 'view', id: keysQuery.data[0].id } : { mode: 'create' }),
+    setSel(
+      (prev) =>
+        prev ??
+        (keysQuery.data[0] ? { mode: 'view', id: keysQuery.data[0].id } : { mode: 'create' }),
     );
   }, [keysQuery.data]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['keys'] });
@@ -149,7 +151,9 @@ export function KeysClient() {
     setPlaintext('');
     setLabel('default');
     setCustomService('');
-    startTransition(() => { refresh(); });
+    startTransition(() => {
+      refresh();
+    });
   }
 
   async function onRotate(e: React.FormEvent) {
@@ -165,7 +169,9 @@ export function KeysClient() {
     setRevealed({ key: rotateValue, service: rotating.service, label: rotating.label });
     setRotating(undefined);
     setRotateValue('');
-    startTransition(() => { refresh(); });
+    startTransition(() => {
+      refresh();
+    });
   }
 
   async function confirmDelete() {
@@ -182,7 +188,9 @@ export function KeysClient() {
     toast.success(`Deleted ${row.service}/${row.label}`);
     if (sel?.mode === 'view' && sel.id === row.id) setSel({ mode: 'create' });
     setKeys((prev) => prev.filter((k) => k.id !== row.id));
-    startTransition(() => { refresh(); });
+    startTransition(() => {
+      refresh();
+    });
   }
 
   const isCustom = service === CUSTOM_SERVICE;
@@ -246,8 +254,8 @@ export function KeysClient() {
             <div>
               <h2 className="text-lg font-semibold">Add a new key</h2>
               <p className="text-xs text-muted-foreground">
-                Stored as AES-256-GCM ciphertext. The plaintext is shown once after save, then
-                never again.
+                Stored as AES-256-GCM ciphertext. The plaintext is shown once after save, then never
+                again.
               </p>
             </div>
             <form onSubmit={onCreate} className="space-y-4">
@@ -271,9 +279,7 @@ export function KeysClient() {
                       // upfront that this provider's chat/whatever
                       // isn't wired yet, even if the embedding is.
                       const suffix =
-                        wired.length === 0
-                          ? ' — not yet wired'
-                          : ` · ${wired.join(' · ')}`;
+                        wired.length === 0 ? ' — not yet wired' : ` · ${wired.join(' · ')}`;
                       return (
                         <option key={p.id} value={p.id}>
                           {p.label}
@@ -297,47 +303,44 @@ export function KeysClient() {
                       <p className="text-xs text-muted-foreground">
                         Service name for a non-LLM API your API-console tools call (lowercase
                         letters, numbers, dashes). Reference it in a tool as{' '}
-                        <code>{`{{secret:${effectiveService || 'service'}/${label.trim() || 'default'}}}`}</code>.
+                        <code>{`{{secret:${effectiveService || 'service'}/${label.trim() || 'default'}}}`}</code>
+                        .
                       </p>
                     </>
                   )}
-                  {provider && (() => {
-                    const { wired, unwired } = wiredCapabilitiesFor(provider);
-                    return (
-                      <>
-                        <p className="text-xs text-muted-foreground">
-                          {provider.description}{' '}
-                          <a
-                            href={provider.signupUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="underline"
-                          >
-                            Get a key →
-                          </a>
-                        </p>
-                        {wired.length > 0 && (
+                  {provider &&
+                    (() => {
+                      const { wired, unwired } = wiredCapabilitiesFor(provider);
+                      return (
+                        <>
                           <p className="text-xs text-muted-foreground">
-                            <span className="font-medium">Use for:</span>{' '}
-                            {wired.join(', ')}
-                            {wired.length > 1 ? ' workers.' : ' workers.'}
+                            {provider.description}{' '}
+                            <a
+                              href={provider.signupUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="underline"
+                            >
+                              Get a key →
+                            </a>
                           </p>
-                        )}
-                        {unwired.length > 0 && (
-                          <p className="text-xs text-amber-600 dark:text-amber-400">
-                            <span className="font-medium">
-                              Also supports
-                            </span>{' '}
-                            {unwired.join(', ')}, but Mantle doesn&apos;t
-                            dispatch through this provider for{' '}
-                            {unwired.length > 1 ? 'those capabilities' : 'that'}{' '}
-                            yet — a key still works for the wired
-                            capabilities above.
-                          </p>
-                        )}
-                      </>
-                    );
-                  })()}
+                          {wired.length > 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              <span className="font-medium">Use for:</span> {wired.join(', ')}
+                              {wired.length > 1 ? ' workers.' : ' workers.'}
+                            </p>
+                          )}
+                          {unwired.length > 0 && (
+                            <p className="text-xs text-amber-600 dark:text-amber-400">
+                              <span className="font-medium">Also supports</span>{' '}
+                              {unwired.join(', ')}, but Mantle doesn&apos;t dispatch through this
+                              provider for {unwired.length > 1 ? 'those capabilities' : 'that'} yet
+                              — a key still works for the wired capabilities above.
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="label">Label</Label>
@@ -439,7 +442,8 @@ export function KeysClient() {
               Rotate {rotating?.service} / {rotating?.label}
             </DialogTitle>
             <DialogDescription>
-              Paste the new key value. The previous ciphertext is overwritten — there&apos;s no undo.
+              Paste the new key value. The previous ciphertext is overwritten — there&apos;s no
+              undo.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={onRotate} className="space-y-3">

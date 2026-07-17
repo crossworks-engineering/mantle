@@ -72,9 +72,7 @@ export function isValidFact(f: unknown): f is ExtractedFact {
   if (!f || typeof f !== 'object') return false;
   const o = f as Record<string, unknown>;
   return (
-    typeof o.content === 'string' &&
-    o.content.trim().length > 0 &&
-    FACT_KINDS.has(String(o.kind))
+    typeof o.content === 'string' && o.content.trim().length > 0 && FACT_KINDS.has(String(o.kind))
   );
 }
 
@@ -269,9 +267,7 @@ export function parseExtractorOutput(
   const obj = parsed as Partial<ExtractorOutput>;
   return {
     summary: typeof obj.summary === 'string' ? obj.summary.trim() : '',
-    facts: Array.isArray(obj.facts)
-      ? obj.facts.filter(isValidFact).map(sanitiseFactEntities)
-      : [],
+    facts: Array.isArray(obj.facts) ? obj.facts.filter(isValidFact).map(sanitiseFactEntities) : [],
     entities: Array.isArray(obj.entities) ? obj.entities.filter(isValidEntity) : [],
     relations: Array.isArray(obj.relations)
       ? obj.relations

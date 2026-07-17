@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { markdownToDoc } from './markdown-to-doc';
 
-type N = { type: string; attrs?: Record<string, unknown>; content?: N[]; text?: string; marks?: { type: string }[] };
+type N = {
+  type: string;
+  attrs?: Record<string, unknown>;
+  content?: N[];
+  text?: string;
+  marks?: { type: string }[];
+};
 const top = (md: string) => (markdownToDoc(md) as { content: N[] }).content;
 const find = (md: string, type: string) => top(md).find((n) => n.type === type);
 
@@ -81,7 +87,9 @@ describe('markdownToDoc', () => {
   });
 
   it('cycles colour/angle across multiple imported <aside> blocks', () => {
-    const doc = markdownToDoc('<aside>\none\n</aside>\n\n<aside>\ntwo\n</aside>\n\n<aside>\nthree\n</aside>') as { content: N[] };
+    const doc = markdownToDoc(
+      '<aside>\none\n</aside>\n\n<aside>\ntwo\n</aside>\n\n<aside>\nthree\n</aside>',
+    ) as { content: N[] };
     const asides = doc.content.filter((n) => n.type === 'aside');
     expect(asides.map((a) => a.attrs?.color)).toEqual(['chart-1', 'chart-2', 'chart-3']);
     expect(asides[0]?.attrs?.angle).toBe(135);

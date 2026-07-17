@@ -47,10 +47,17 @@ describe('mentionRefs', () => {
 
 describe('buildMentionParagraph', () => {
   it('builds a bare node chip when no lead text is given', () => {
-    const para = buildMentionParagraph({ id: 'page1', label: 'Q3 Plan', ref: 'node', kind: 'page' });
+    const para = buildMentionParagraph({
+      id: 'page1',
+      label: 'Q3 Plan',
+      ref: 'node',
+      kind: 'page',
+    });
     expect(para).toEqual({
       type: 'paragraph',
-      content: [{ type: 'mention', attrs: { id: 'page1', label: 'Q3 Plan', ref: 'node', kind: 'page' } }],
+      content: [
+        { type: 'mention', attrs: { id: 'page1', label: 'Q3 Plan', ref: 'node', kind: 'page' } },
+      ],
     });
   });
 

@@ -89,12 +89,7 @@ async function resolveApprovalChat(
       telegramChatId: telegramChats.telegramChatId,
     })
     .from(telegramChats)
-    .where(
-      and(
-        eq(telegramChats.userId, ownerId),
-        eq(telegramChats.allowlistStatus, 'allowed'),
-      ),
-    )
+    .where(and(eq(telegramChats.userId, ownerId), eq(telegramChats.allowlistStatus, 'allowed')))
     .orderBy(desc(telegramChats.lastMessageAt))
     .limit(1);
   return chat ?? null;

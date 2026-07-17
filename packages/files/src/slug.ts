@@ -83,12 +83,16 @@ export const PREVIEWABLE_MARKDOWN_EXTS = new Set<string>(['md', 'markdown']);
  *  Tika pulls the shape text). Tika supports more (RFC822 mail, MS Publisher,
  *  …); add slugs here as you need them. */
 export const TIKA_EXTS = new Set<string>([
-  'odt', 'ods', 'odp',
-  'pptx', 'ppt',
+  'odt',
+  'ods',
+  'odp',
+  'pptx',
+  'ppt',
   'doc',
   'rtf',
   'epub',
-  'vsdx', 'vsd',
+  'vsdx',
+  'vsd',
 ]);
 /** TEXT_EXTS + every binary type the extractor can pull readable text from.
  *  In-process: pdf-parse, mammoth, SheetJS. Tika-routed: TIKA_EXTS. Each
@@ -97,7 +101,12 @@ export const TIKA_EXTS = new Set<string>([
  *  through parseDocumentBytes → tika.ts. */
 export const INGESTABLE_EXTS = new Set<string>([
   ...TEXT_EXTS,
-  'pdf', 'docx', 'xlsx', 'xls', 'xlsm', 'xlsb',
+  'pdf',
+  'docx',
+  'xlsx',
+  'xls',
+  'xlsm',
+  'xlsb',
   ...TIKA_EXTS,
 ]);
 

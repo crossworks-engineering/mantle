@@ -17,10 +17,7 @@ import {
   DEFAULT_ONLINE_EMBEDDING_PROVIDER,
 } from '@mantle/embeddings';
 import { upsertEmbeddingConfig } from '@/lib/embedding-config';
-import {
-  ASSISTANT_MODEL_CHOICES,
-  WORKER_MODEL_CHOICES,
-} from '@/lib/system-manifest/model-choices';
+import { ASSISTANT_MODEL_CHOICES, WORKER_MODEL_CHOICES } from '@/lib/system-manifest/model-choices';
 import { getOwnerOr401 } from '@/lib/auth';
 import { probeApiKey } from '@/lib/api-key-test';
 import {
@@ -211,7 +208,8 @@ async function runInfraChecks(browserHost: string | null): Promise<SanityCheck[]
       checks.push({
         label: 'Object storage (MinIO)',
         ok: false,
-        detail: 'unreachable — is the minio container running? File uploads and app builds will fail.',
+        detail:
+          'unreachable — is the minio container running? File uploads and app builds will fail.',
       });
     } else if (s.exists === false) {
       checks.push({
@@ -255,7 +253,8 @@ async function runInfraChecks(browserHost: string | null): Promise<SanityCheck[]
       : {
           label: 'Required secrets',
           ok: false,
-          detail: 'MANTLE_MASTER_KEY or SESSION_SECRET missing — API keys cannot be stored securely.',
+          detail:
+            'MANTLE_MASTER_KEY or SESSION_SECRET missing — API keys cannot be stored securely.',
         },
   );
 
@@ -383,7 +382,10 @@ export async function POST(req: Request) {
         });
         return NextResponse.json({ ok: true });
       } catch (err) {
-        return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : 'Could not save.' });
+        return NextResponse.json({
+          ok: false,
+          error: err instanceof Error ? err.message : 'Could not save.',
+        });
       }
     }
     case 'saveKey': {
@@ -410,17 +412,28 @@ export async function POST(req: Request) {
       const workerModel = WORKER_MODEL_CHOICES.find((m) => m.id === body.workerModel)?.id;
       const route = body.route === 'azure' ? 'azure' : 'openrouter';
       if (!assistantModel || !workerModel) {
-        return NextResponse.json({ ok: false, message: 'Pick an assistant model and a worker model.' });
+        return NextResponse.json({
+          ok: false,
+          message: 'Pick an assistant model and a worker model.',
+        });
       }
       if (route === 'azure') {
         const aOk = ASSISTANT_MODEL_CHOICES.find((m) => m.id === assistantModel)?.azure === true;
         const wOk = WORKER_MODEL_CHOICES.find((m) => m.id === workerModel)?.azure === true;
         if (!aOk || !wOk) {
-          return NextResponse.json({ ok: false, message: 'On Azure, pick OpenAI-family models (marked Azure-capable).' });
+          return NextResponse.json({
+            ok: false,
+            message: 'On Azure, pick OpenAI-family models (marked Azure-capable).',
+          });
         }
-        const azureBaseUrl = String(body.azureBaseUrl ?? '').trim().replace(/\/+$/, '');
+        const azureBaseUrl = String(body.azureBaseUrl ?? '')
+          .trim()
+          .replace(/\/+$/, '');
         if (!/^https:\/\/.+/.test(azureBaseUrl)) {
-          return NextResponse.json({ ok: false, message: 'Enter your Azure OpenAI endpoint (an https:// URL).' });
+          return NextResponse.json({
+            ok: false,
+            message: 'Enter your Azure OpenAI endpoint (an https:// URL).',
+          });
         }
         const azureKey = String(body.azureKey ?? '').trim();
         const existingCustom = (await listApiKeys(user.id)).find((k) => k.service === 'custom');
@@ -491,7 +504,12 @@ export async function POST(req: Request) {
           return NextResponse.json({
             saved: false,
             configured: false,
-            test: { ok: false, message: `No ${provider} key saved yet — paste one first.`, provider, adapter: '' },
+            test: {
+              ok: false,
+              message: `No ${provider} key saved yet — paste one first.`,
+              provider,
+              adapter: '',
+            },
           });
         }
         keyId = existing.id;
@@ -551,7 +569,12 @@ export async function POST(req: Request) {
       const keys = await listApiKeys(user.id);
       const key = keys.find((k) => k.service === service);
       if (!key) {
-        return NextResponse.json({ ok: false, message: 'No key saved for this provider yet.', provider: service, adapter: '' });
+        return NextResponse.json({
+          ok: false,
+          message: 'No key saved for this provider yet.',
+          provider: service,
+          adapter: '',
+        });
       }
       return NextResponse.json(await probeApiKey(key.id, service));
     }
@@ -586,7 +609,10 @@ export async function POST(req: Request) {
       const applied = await savePersonaAgent(user.id, parsed.data);
       await updateProfilePreferences(user.id, { onboardingStep: 'telegram' });
       if (!applied) {
-        return NextResponse.json({ ok: false, error: 'No assistant agent to update — add an OpenRouter key first.' });
+        return NextResponse.json({
+          ok: false,
+          error: 'No assistant agent to update — add an OpenRouter key first.',
+        });
       }
       return NextResponse.json({ ok: true });
     }

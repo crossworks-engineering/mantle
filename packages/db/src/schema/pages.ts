@@ -13,13 +13,21 @@ export const pages = pgTable('pages', {
   nodeId: uuid('node_id')
     .primaryKey()
     .references(() => nodes.id, { onDelete: 'cascade' }),
-  doc: jsonb('doc').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  doc: jsonb('doc')
+    .$type<Record<string, unknown>>()
+    .default(sql`'{}'::jsonb`)
+    .notNull(),
   docText: text('doc_text').default('').notNull(),
   // Autosaved working copy (null when there are no uncommitted edits). Never
   // rendered or indexed; promoted into `doc` on commit.
   draftDoc: jsonb('draft_doc').$type<Record<string, unknown>>(),
   draftUpdatedAt: timestamp('draft_updated_at', { withTimezone: true }),
   version: integer('version').default(1).notNull(),
+  // Draft etag (optimistic concurrency): bumped on every draft write, commit,
+  // and discard. Autosave/commit callers round-trip it as a baseRev so a stale
+  // debounced doc (a second device, or the Pages agent's ops) can't silently
+  // overwrite a newer draft — the mirror of `tables.draft_rev`.
+  draftRev: integer('draft_rev').default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

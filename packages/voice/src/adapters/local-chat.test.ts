@@ -12,7 +12,10 @@ afterEach(() => {
 type Call = { url: string; body: Record<string, unknown>; headers: Record<string, string> };
 function mockChat(content: string): Call[] {
   const calls: Call[] = [];
-  globalThis.fetch = (async (url: unknown, init: { body?: string; headers?: Record<string, string> }) => {
+  globalThis.fetch = (async (
+    url: unknown,
+    init: { body?: string; headers?: Record<string, string> },
+  ) => {
     calls.push({
       url: String(url),
       body: JSON.parse(init?.body ?? '{}'),
@@ -60,18 +63,30 @@ describe('local-chat adapter', () => {
   it('falls back baseUrl → env → Ollama localhost:11434', async () => {
     const calls = mockChat('x');
     process.env.MANTLE_LOCAL_CHAT_URL = 'http://lan-box:11434/v1';
-    await localChatAdapter.chat({ apiKey: '', model: 'm', messages: [{ role: 'user', content: 'hi' }] });
+    await localChatAdapter.chat({
+      apiKey: '',
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
     expect(calls[0]!.url).toBe('http://lan-box:11434/v1/chat/completions');
 
     delete process.env.MANTLE_LOCAL_CHAT_URL;
     const calls2 = mockChat('x');
-    await localChatAdapter.chat({ apiKey: '', model: 'm', messages: [{ role: 'user', content: 'hi' }] });
+    await localChatAdapter.chat({
+      apiKey: '',
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
     expect(calls2[0]!.url).toBe('http://localhost:11434/v1/chat/completions');
   });
 
   it('does not send the tools field when none are provided', async () => {
     const calls = mockChat('x');
-    await localChatAdapter.chat({ apiKey: '', model: 'm', messages: [{ role: 'user', content: 'hi' }] });
+    await localChatAdapter.chat({
+      apiKey: '',
+      model: 'm',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
     expect(calls[0]!.body.tools).toBeUndefined();
   });
 });

@@ -17,7 +17,10 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'invalid input' }, { status: 400 });
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
+      { status: 400 },
+    );
   }
   const result = await deleteLandedNode(user.id, parsed.data.nodeId);
   if (!result.ok) {

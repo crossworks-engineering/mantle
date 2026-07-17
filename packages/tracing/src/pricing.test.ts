@@ -5,8 +5,12 @@ describe('fallbackCostMicroUsd', () => {
   it('prices a known OpenRouter slug (result is micro-USD)', () => {
     // gpt-4o-mini: input $0.00000015/tok, output $0.0000006/tok.
     // 1M input tokens = $0.15 = 150_000 µ$; 1M output = $0.60 = 600_000 µ$.
-    expect(fallbackCostMicroUsd('openai/gpt-4o-mini', { input: 1_000_000, output: 0 })).toBe(150_000);
-    expect(fallbackCostMicroUsd('openai/gpt-4o-mini', { input: 0, output: 1_000_000 })).toBe(600_000);
+    expect(fallbackCostMicroUsd('openai/gpt-4o-mini', { input: 1_000_000, output: 0 })).toBe(
+      150_000,
+    );
+    expect(fallbackCostMicroUsd('openai/gpt-4o-mini', { input: 0, output: 1_000_000 })).toBe(
+      600_000,
+    );
   });
 
   it('prices the BARE OpenAI id direct adapters pass (file-ingestion.md V1)', () => {
@@ -16,9 +20,7 @@ describe('fallbackCostMicroUsd', () => {
     const bare = fallbackCostMicroUsd('gpt-4o-mini', { input: 25_579, output: 48 });
     expect(bare).toBeGreaterThan(0);
     // Parity with the OpenRouter-slugged entry — same price either way.
-    expect(bare).toBe(
-      fallbackCostMicroUsd('openai/gpt-4o-mini', { input: 25_579, output: 48 }),
-    );
+    expect(bare).toBe(fallbackCostMicroUsd('openai/gpt-4o-mini', { input: 25_579, output: 48 }));
   });
 
   it('prices the BARE Claude id the direct vision/document adapter passes', () => {

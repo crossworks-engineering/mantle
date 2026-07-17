@@ -14,7 +14,9 @@ function source(files: Record<string, string>) {
 describe('assertSourceWithinLimits', () => {
   it('accepts a normal source tree', () => {
     expect(() =>
-      assertSourceWithinLimits(source({ 'App.tsx': 'export default () => null;', 'lib/x.ts': 'export const x = 1;' })),
+      assertSourceWithinLimits(
+        source({ 'App.tsx': 'export default () => null;', 'lib/x.ts': 'export const x = 1;' }),
+      ),
     ).not.toThrow();
   });
 
@@ -39,7 +41,9 @@ describe('assertSourceWithinLimits', () => {
   it('measures size in UTF-8 bytes, not characters', () => {
     // '€' is 3 bytes — just over half the cap in chars is over the cap in bytes.
     const chars = Math.floor(MAX_APP_FILE_BYTES / 3) + 1;
-    expect(() => assertSourceWithinLimits(source({ 'App.tsx': '€'.repeat(chars) }))).toThrow(/too large/i);
+    expect(() => assertSourceWithinLimits(source({ 'App.tsx': '€'.repeat(chars) }))).toThrow(
+      /too large/i,
+    );
   });
 
   it('rejects an over-long file path', () => {

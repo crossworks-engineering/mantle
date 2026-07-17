@@ -128,7 +128,8 @@ export function PageEditor({
         // marker) and stays put even when the editor is locked during an AI
         // run — scoping it to [contenteditable='true'] dropped the padding the
         // moment setEditable(false) fired, sliding text under the gutter.
-        class: 'page-gutter prose dark:prose-invert prose-accent max-w-none min-h-[50vh] focus:outline-none',
+        class:
+          'page-gutter prose dark:prose-invert prose-accent max-w-none min-h-[50vh] focus:outline-none',
       },
       // Drop images/files onto the canvas → upload + insert at the drop point.
       handleDrop: (view, event) => {

@@ -428,9 +428,7 @@ export interface ChatOptions {
  *  (so the resolved `ChatResult.toolCalls` is fully assembled, identical to
  *  `chat()`) — they're machinery, not something the user reads, so they're not
  *  surfaced here. */
-export type ChatStreamDelta =
-  | { type: 'text'; text: string }
-  | { type: 'reasoning'; text: string };
+export type ChatStreamDelta = { type: 'text'; text: string } | { type: 'reasoning'; text: string };
 
 /** Sink the caller passes to `chatStream` to receive deltas as they arrive. The
  *  adapter calls it synchronously per chunk and never awaits it — the caller
@@ -723,4 +721,3 @@ export interface EmbeddingDispatcher extends AdapterMeta {
    *  AND as a last-resort if discovery errors. */
   staticCatalog?(): readonly EmbeddingModelInfo[];
 }
-

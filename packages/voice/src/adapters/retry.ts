@@ -43,12 +43,7 @@ export class ChatHttpError extends Error {
   readonly status: number;
   readonly retryAfterMs?: number;
   readonly body?: string;
-  constructor(opts: {
-    provider: string;
-    status: number;
-    body?: string;
-    retryAfterMs?: number;
-  }) {
+  constructor(opts: { provider: string; status: number; body?: string; retryAfterMs?: number }) {
     super(`${opts.provider} chat ${opts.status}: ${(opts.body ?? '').slice(0, 400)}`);
     this.name = 'ChatHttpError';
     this.provider = opts.provider;

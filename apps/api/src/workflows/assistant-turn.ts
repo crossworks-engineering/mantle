@@ -106,10 +106,7 @@ export const assistantTurnWorkflow = DBOS.registerWorkflow(assistantTurnImpl, {
 /** Enqueue a turn from WITHIN the runner process (runner-side / tests). The web
  *  route enqueues cross-process via DBOSClient instead — Step 5. `workflowID`,
  *  when supplied (e.g. the inbound message id), makes the enqueue idempotent. */
-export function enqueueAssistantTurn(
-  input: AssistantTurnInput,
-  opts?: { workflowID?: string },
-) {
+export function enqueueAssistantTurn(input: AssistantTurnInput, opts?: { workflowID?: string }) {
   return DBOS.startWorkflow(assistantTurnWorkflow, {
     queueName: RUNNER_QUEUE,
     ...(opts?.workflowID ? { workflowID: opts.workflowID } : {}),

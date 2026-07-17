@@ -90,7 +90,8 @@ export async function assertFetchableUrl(rawUrl: string): Promise<void> {
   if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
 
   if (net.isIP(host)) {
-    if (isBlockedIp(host)) throw new Error(`refusing to fetch a private/internal address (${host})`);
+    if (isBlockedIp(host))
+      throw new Error(`refusing to fetch a private/internal address (${host})`);
     return;
   }
   let addrs: Array<{ address: string }>;

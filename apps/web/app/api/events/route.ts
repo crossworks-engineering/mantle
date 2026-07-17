@@ -11,7 +11,12 @@ const CreateBody = z.object({
   startsAt: z.string().datetime(),
   endsAt: z.string().datetime().nullable().optional(),
   location: z.string().max(200).nullable().optional(),
-  remindMinutesBefore: z.number().int().min(0).max(60 * 24 * 30).optional(),
+  remindMinutesBefore: z
+    .number()
+    .int()
+    .min(0)
+    .max(60 * 24 * 30)
+    .optional(),
   timezone: z.string().max(64).optional(),
   recur: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly']).optional(),
   recurUntil: z.string().datetime().nullable().optional(),
@@ -53,9 +58,6 @@ export async function POST(req: Request) {
     const row = await createEvent(user.id, parsed.data);
     return NextResponse.json({ event: row }, { status: 201 });
   } catch (err) {
-    return NextResponse.json(
-      { error: (err as Error).message },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
 }

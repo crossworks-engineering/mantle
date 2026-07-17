@@ -30,7 +30,9 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 export const apiKeys = pgTable(
   'api_keys',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     userId: uuid('user_id').notNull(),
     service: text('service').notNull(),
     label: text('label').notNull().default('default'),
@@ -39,7 +41,10 @@ export const apiKeys = pgTable(
     /** Precomputed first-4 + last-4 of the plaintext, set at create
      *  and rotate. Lets list views render without decrypting every row. */
     masked: text('masked').notNull().default('••••'),
-    scopes: text('scopes').array().default(sql`'{}'::text[]`).notNull(),
+    scopes: text('scopes')
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
     lastUsed: timestamp('last_used', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

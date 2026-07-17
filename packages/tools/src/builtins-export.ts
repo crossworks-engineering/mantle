@@ -10,6 +10,7 @@ import { resolveExport } from '@mantle/content';
 import { ensureDatedUploadFolder, readFileById, upsertFile } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
+import { str } from './coerce';
 
 // Referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an existing node the owner holds.
@@ -18,10 +19,6 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 const NODE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'node_id', lookup: 'search_nodes / tree_list' },
 ];
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 
 const export_node: BuiltinToolDef = {
   slug: 'export_node',
@@ -58,10 +55,16 @@ const export_node: BuiltinToolDef = {
         },
       });
     } catch (err) {
-      return { ok: false, error: `export failed: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        ok: false,
+        error: `export failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
     if (!result) {
-      return { ok: false, error: `node ${nodeId} not found, or it isn't an exportable page/note/table` };
+      return {
+        ok: false,
+        error: `node ${nodeId} not found, or it isn't an exportable page/note/table`,
+      };
     }
 
     // Honour a caller-supplied name but force the correct extension.
@@ -76,7 +79,12 @@ const export_node: BuiltinToolDef = {
         topSlug: 'exports',
         topDescription: 'Documents exported from pages, notes, and tables.',
       });
-      const file = await upsertFile({ ownerId: ctx.ownerId, parentPath, filename, bytes: result.bytes });
+      const file = await upsertFile({
+        ownerId: ctx.ownerId,
+        parentPath,
+        filename,
+        bytes: result.bytes,
+      });
       ctx.step?.setOutput({ file_id: file.id, filename: file.filename, kind: result.kind });
       void recordIngest({
         source: 'agent_tool',

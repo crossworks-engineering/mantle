@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { slugify } from '@/lib/slugify';
 
 type ToolSummary = ToolDTO;
 
@@ -93,14 +94,6 @@ function parseRecordField(label: string, raw: string): Record<string, string> | 
     out[k] = v;
   }
   return out;
-}
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
 }
 
 const DEFAULT_SETTINGS: ToolSettings = { requireApproval: false, egressGate: false };
@@ -176,11 +169,7 @@ export function ToolsClient() {
     );
 
   const saveMutation = useMutation({
-    mutationFn: (vars: {
-      mode: 'create' | 'edit';
-      id?: string;
-      body: Record<string, unknown>;
-    }) =>
+    mutationFn: (vars: { mode: 'create' | 'edit'; id?: string; body: Record<string, unknown> }) =>
       vars.mode === 'create'
         ? apiSend('/api/tools', 'POST', vars.body)
         : apiSend(`/api/tools/${vars.id}`, 'PATCH', vars.body),
@@ -318,7 +307,12 @@ export function ToolsClient() {
           ) : toolsQuery.isError ? (
             <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
               <p>Couldn’t load tools: {toolsQuery.error.message}</p>
-              <Button type="button" variant="outline" size="sm" onClick={() => toolsQuery.refetch()}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => toolsQuery.refetch()}
+              >
                 Retry
               </Button>
             </div>
@@ -343,7 +337,12 @@ export function ToolsClient() {
                   <p className="px-1 text-xs text-muted-foreground/60">None yet.</p>
                 ) : (
                   userDefined.map((t) => (
-                    <ToolCard key={t.id} tool={t} selected={selectedId === t.id} onClick={() => openEdit(t)} />
+                    <ToolCard
+                      key={t.id}
+                      tool={t}
+                      selected={selectedId === t.id}
+                      onClick={() => openEdit(t)}
+                    />
                   ))
                 )}
               </section>
@@ -353,7 +352,12 @@ export function ToolsClient() {
                   Built-in ({builtins.length})
                 </h3>
                 {builtins.map((t) => (
-                  <ToolCard key={t.id} tool={t} selected={selectedId === t.id} onClick={() => openEdit(t)} />
+                  <ToolCard
+                    key={t.id}
+                    tool={t}
+                    selected={selectedId === t.id}
+                    onClick={() => openEdit(t)}
+                  />
                 ))}
               </section>
             </>
@@ -403,8 +407,8 @@ export function ToolsClient() {
                 </Label>
                 <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                   When on, a heartbeat that fires while you&apos;re away parks any{' '}
-                  <span className="font-medium">email or web</span> call for your approval instead of
-                  running it inline. You can clear it from the Telegram card on your phone. The
+                  <span className="font-medium">email or web</span> call for your approval instead
+                  of running it inline. You can clear it from the Telegram card on your phone. The
                   heartbeat&apos;s own message reply is unaffected.
                 </p>
               </div>
@@ -478,7 +482,9 @@ export function ToolsClient() {
                       setForm((f) => ({
                         ...f,
                         name: e.target.value,
-                        slug: slugTouched ? f.slug : slugify(e.target.value),
+                        slug: slugTouched
+                          ? f.slug
+                          : slugify(e.target.value, { allowUnderscore: true, maxLength: 64 }),
                       }))
                     }
                     required
@@ -523,13 +529,16 @@ export function ToolsClient() {
                         {editTool.handler.steps.map((s, i) => (
                           <div key={i} className="truncate">
                             <span className="text-muted-foreground">{i}.</span> {s.tool}
-                            {s.as ? <span className="text-muted-foreground"> → ${s.as}</span> : null}
+                            {s.as ? (
+                              <span className="text-muted-foreground"> → ${s.as}</span>
+                            ) : null}
                           </div>
                         ))}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        A chain of {editTool.handler.steps.length} existing tools; data flows between
-                        steps server-side. Delete and recreate via the Toolsmith to change it.
+                        A chain of {editTool.handler.steps.length} existing tools; data flows
+                        between steps server-side. Delete and recreate via the Toolsmith to change
+                        it.
                       </p>
                     </>
                   ) : (
@@ -579,7 +588,10 @@ export function ToolsClient() {
                             id="method"
                             value={form.method}
                             onChange={(e) =>
-                              setForm((f) => ({ ...f, method: e.target.value as FormState['method'] }))
+                              setForm((f) => ({
+                                ...f,
+                                method: e.target.value as FormState['method'],
+                              }))
                             }
                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                           >
@@ -597,10 +609,14 @@ export function ToolsClient() {
                           <textarea
                             id="http-headers"
                             value={form.headersJson}
-                            onChange={(e) => setForm((f) => ({ ...f, headersJson: e.target.value }))}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, headersJson: e.target.value }))
+                            }
                             rows={3}
                             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
-                            placeholder={'{\n  "authorization": "Bearer {{secret:mapbox/default}}"\n}'}
+                            placeholder={
+                              '{\n  "authorization": "Bearer {{secret:mapbox/default}}"\n}'
+                            }
                           />
                         </div>
                         <div className="space-y-1.5">

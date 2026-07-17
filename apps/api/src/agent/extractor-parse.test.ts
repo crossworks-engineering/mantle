@@ -86,7 +86,9 @@ describe('parseExtractorOutput — happy path', () => {
 describe('parseExtractorOutput — trailing-content recovery', () => {
   const obj = {
     summary: 'A car sale contract.',
-    facts: [{ content: 'The user has a vehicle purchase contract.', kind: 'factual', confidence: 0.9 }],
+    facts: [
+      { content: 'The user has a vehicle purchase contract.', kind: 'factual', confidence: 0.9 },
+    ],
     entities: [],
   };
 
@@ -279,7 +281,9 @@ describe('sanitiseFactEntities', () => {
 
 describe('isValidRelation', () => {
   it('accepts a well-formed relation', () => {
-    expect(isValidRelation({ subject: 'Sarah', relation: 'works_at', object: 'Lister' })).toBe(true);
+    expect(isValidRelation({ subject: 'Sarah', relation: 'works_at', object: 'Lister' })).toBe(
+      true,
+    );
   });
   it('rejects missing/blank endpoints', () => {
     expect(isValidRelation({ subject: 'Sarah', relation: 'works_at', object: '' })).toBe(false);
@@ -297,18 +301,35 @@ describe('isValidRelation', () => {
 
 describe('sanitiseRelation', () => {
   it('snake_cases + lowercases the verb', () => {
-    const r = sanitiseRelation({ subject: 'Sarah', relation: 'Reports To', object: 'Lister', confidence: 0.9 });
+    const r = sanitiseRelation({
+      subject: 'Sarah',
+      relation: 'Reports To',
+      object: 'Lister',
+      confidence: 0.9,
+    });
     expect(r.relation).toBe('reports_to');
   });
   it('strips punctuation from the verb', () => {
-    expect(sanitiseRelation({ subject: 'A', relation: 'father-of!', object: 'B', confidence: 1 }).relation).toBe('father_of');
+    expect(
+      sanitiseRelation({ subject: 'A', relation: 'father-of!', object: 'B', confidence: 1 })
+        .relation,
+    ).toBe('father_of');
   });
   it('trims endpoints and clamps confidence; defaults missing confidence to 0.8', () => {
-    const r = sanitiseRelation({ subject: '  Sarah ', relation: 'owns', object: ' Car ', confidence: 5 } as ExtractedRelation);
+    const r = sanitiseRelation({
+      subject: '  Sarah ',
+      relation: 'owns',
+      object: ' Car ',
+      confidence: 5,
+    } as ExtractedRelation);
     expect(r.subject).toBe('Sarah');
     expect(r.object).toBe('Car');
     expect(r.confidence).toBe(1);
-    const d = sanitiseRelation({ subject: 'A', relation: 'owns', object: 'B' } as unknown as ExtractedRelation);
+    const d = sanitiseRelation({
+      subject: 'A',
+      relation: 'owns',
+      object: 'B',
+    } as unknown as ExtractedRelation);
     expect(d.confidence).toBe(0.8);
   });
 });
@@ -341,10 +362,14 @@ describe('canonicaliseRelation', () => {
 
 describe('sanitiseRelation — canonicalization', () => {
   it('normalises then canonicalises ("Works At" → employed_by)', () => {
-    expect(sanitiseRelation({ subject: 'S', relation: 'Works At', object: 'O', confidence: 1 }).relation).toBe('employed_by');
+    expect(
+      sanitiseRelation({ subject: 'S', relation: 'Works At', object: 'O', confidence: 1 }).relation,
+    ).toBe('employed_by');
   });
   it('vacuous verb sanitises to empty (so parse drops it)', () => {
-    expect(sanitiseRelation({ subject: 'S', relation: 'is', object: 'O', confidence: 1 }).relation).toBe('');
+    expect(
+      sanitiseRelation({ subject: 'S', relation: 'is', object: 'O', confidence: 1 }).relation,
+    ).toBe('');
   });
 });
 
@@ -352,7 +377,9 @@ describe('parseExtractorOutput — relations', () => {
   it('canonicalises synonyms and drops vacuous verbs end-to-end', () => {
     const out = parseExtractorOutput(
       JSON.stringify({
-        summary: 'x', facts: [], entities: [],
+        summary: 'x',
+        facts: [],
+        entities: [],
         relations: [
           { subject: 'Sarah', relation: 'works at', object: 'Lister' },
           { subject: 'Jason', relation: 'is', object: 'busy' }, // vacuous → dropped
@@ -360,7 +387,11 @@ describe('parseExtractorOutput — relations', () => {
       }),
     );
     expect(out.relations).toHaveLength(1);
-    expect(out.relations[0]).toMatchObject({ subject: 'Sarah', relation: 'employed_by', object: 'Lister' });
+    expect(out.relations[0]).toMatchObject({
+      subject: 'Sarah',
+      relation: 'employed_by',
+      object: 'Lister',
+    });
   });
 });
 
@@ -370,12 +401,21 @@ describe('parseExtractorOutput — relations (basic)', () => {
       JSON.stringify({
         summary: 'x',
         facts: [],
-        entities: [{ name: 'Sarah', kind: 'person' }, { name: 'Lister', kind: 'org' }],
-        relations: [{ subject: 'Sarah', relation: 'Reports To', object: 'Lister', confidence: 0.9 }],
+        entities: [
+          { name: 'Sarah', kind: 'person' },
+          { name: 'Lister', kind: 'org' },
+        ],
+        relations: [
+          { subject: 'Sarah', relation: 'Reports To', object: 'Lister', confidence: 0.9 },
+        ],
       }),
     );
     expect(out.relations).toHaveLength(1);
-    expect(out.relations[0]).toMatchObject({ subject: 'Sarah', relation: 'reports_to', object: 'Lister' });
+    expect(out.relations[0]).toMatchObject({
+      subject: 'Sarah',
+      relation: 'reports_to',
+      object: 'Lister',
+    });
   });
   it('drops invalid relations (self-loop, blank, verb→empty)', () => {
     const out = parseExtractorOutput(
@@ -431,4 +471,4 @@ describe('parseOccurredAt + episodic occurred_at', () => {
     } as unknown as ExtractedFact);
     expect(fact.occurredAt).toBeUndefined(); // non-episodic → no event date
   });
-})
+});

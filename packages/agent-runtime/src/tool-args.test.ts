@@ -39,9 +39,7 @@ describe('parseToolArgs', () => {
     });
 
     it('preserves nested objects and arrays inside the input', () => {
-      const result = parseToolArgs(
-        '{"items": [1, 2, 3], "nested": {"deep": true}}',
-      );
+      const result = parseToolArgs('{"items": [1, 2, 3], "nested": {"deep": true}}');
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.input).toEqual({

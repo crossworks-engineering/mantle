@@ -122,7 +122,11 @@ export function SecretForm({
         </div>
         <div className="space-y-1.5">
           <Label>Tags</Label>
-          <TagInput value={form.tags} onChange={(tags) => setForm({ ...form, tags })} placeholder="Add tags…" />
+          <TagInput
+            value={form.tags}
+            onChange={(tags) => setForm({ ...form, tags })}
+            placeholder="Add tags…"
+          />
         </div>
       </div>
 
@@ -167,7 +171,14 @@ export function SecretForm({
               value={f.value}
               onChange={(e) => setField(i, { value: e.target.value })}
             />
-            <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0" onClick={() => removeField(i)} aria-label="Remove field">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-9 shrink-0"
+              onClick={() => removeField(i)}
+              aria-label="Remove field"
+            >
               <Trash2 />
             </Button>
           </div>

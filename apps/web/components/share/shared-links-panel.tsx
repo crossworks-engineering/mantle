@@ -129,7 +129,13 @@ export function SharedLinksPanel({ initial }: { initial: SharedLinkRow[] }) {
             >
               {copiedId === row.id ? <Check /> : <Copy />}
             </Button>
-            <Button size="icon" variant="ghost" className="size-8 shrink-0" asChild aria-label="Open link">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-8 shrink-0"
+              asChild
+              aria-label="Open link"
+            >
               <Link href={row.path} target="_blank">
                 <ExternalLink />
               </Link>

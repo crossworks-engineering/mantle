@@ -29,7 +29,9 @@ if (!process.env.MANTLE_MASTER_KEY) {
 const ownerId: string = process.env.ALLOWED_USER_ID;
 
 const legacyArg = process.argv.find((a) => a.startsWith('--legacy-state-dir='));
-const legacyDir = legacyArg ? legacyArg.split('=')[1]! : join(homedir(), '.claude', 'channels', 'telegram');
+const legacyDir = legacyArg
+  ? legacyArg.split('=')[1]!
+  : join(homedir(), '.claude', 'channels', 'telegram');
 
 async function main() {
   const token = readToken(legacyDir);

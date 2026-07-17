@@ -21,7 +21,9 @@ describe('resolveWorkerRoute', () => {
   });
 
   it('carries the route params', () => {
-    expect(resolveWorkerRoute(extractor, new Set(['openrouter']))?.params).toEqual({ extract_facts: true });
+    expect(resolveWorkerRoute(extractor, new Set(['openrouter']))?.params).toEqual({
+      extract_facts: true,
+    });
   });
 
   it('returns null when no key exists for the default provider', () => {
@@ -59,9 +61,14 @@ describe('resolveWorkerRoute', () => {
 
   it('skips a worker whose only declared route has no key (alt without default key)', () => {
     const altOnly: ManifestWorker = {
-      kind: 'tts', name: 'x', required: false,
-      provider: 'openrouter', model: 'm',
-      altKeyService: 'xai', altProvider: 'xai', altModel: 'alt',
+      kind: 'tts',
+      name: 'x',
+      required: false,
+      provider: 'openrouter',
+      model: 'm',
+      altKeyService: 'xai',
+      altProvider: 'xai',
+      altModel: 'alt',
     };
     // No keys at all → null even though an alt is declared.
     expect(resolveWorkerRoute(altOnly, new Set())).toBeNull();

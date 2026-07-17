@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import * as React from "react";
+import * as React from 'react';
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import {
   Command,
   CommandEmpty,
@@ -12,8 +12,8 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command";
-import { Input } from "@/components/ui/input";
+} from '@/components/ui/command';
+import { Input } from '@/components/ui/input';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -21,16 +21,16 @@ import {
   ResponsiveDialogFooter,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
-} from "@/components/ui/revola";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
-import { ArrowUpIcon, CheckIcon, PlusIcon } from "lucide-react";
+} from '@/components/ui/revola';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import { ArrowUpIcon, CheckIcon, PlusIcon } from 'lucide-react';
 
 const agents = [
-  { name: "Remy", role: "Memory recall", initials: "Re" },
-  { name: "Researcher", role: "Web search", initials: "Rs" },
-  { name: "Ingest", role: "Local extractor", initials: "In" },
-  { name: "Heartbeat", role: "Scheduled runs", initials: "Hb" },
+  { name: 'Remy', role: 'Memory recall', initials: 'Re' },
+  { name: 'Researcher', role: 'Web search', initials: 'Rs' },
+  { name: 'Ingest', role: 'Local extractor', initials: 'In' },
+  { name: 'Heartbeat', role: 'Scheduled runs', initials: 'Hb' },
 ] as const;
 
 type Agent = (typeof agents)[number];
@@ -41,23 +41,23 @@ export function CardsChat() {
 
   const [messages, setMessages] = React.useState([
     {
-      role: "agent",
+      role: 'agent',
       content: "Hi, I'm Saskia. Ask me anything about your brain.",
     },
     {
-      role: "user",
-      content: "What did I decide about the memory architecture?",
+      role: 'user',
+      content: 'What did I decide about the memory architecture?',
     },
     {
-      role: "agent",
-      content: "On 2026-05-17 you chose eager summarization on ingest — citable over write-cost.",
+      role: 'agent',
+      content: 'On 2026-05-17 you chose eager summarization on ingest — citable over write-cost.',
     },
     {
-      role: "user",
-      content: "Pull the full thread.",
+      role: 'user',
+      content: 'Pull the full thread.',
     },
   ]);
-  const [input, setInput] = React.useState("");
+  const [input, setInput] = React.useState('');
   const inputLength = input.trim().length;
 
   return (
@@ -96,10 +96,10 @@ export function CardsChat() {
               <div
                 key={index}
                 className={cn(
-                  "flex w-max max-w-[75%] flex-col gap-2 rounded-lg px-3 py-2 text-sm",
-                  message.role === "user"
-                    ? "bg-primary text-primary-foreground ml-auto"
-                    : "bg-muted"
+                  'flex w-max max-w-[75%] flex-col gap-2 rounded-lg px-3 py-2 text-sm',
+                  message.role === 'user'
+                    ? 'bg-primary text-primary-foreground ml-auto'
+                    : 'bg-muted',
                 )}
               >
                 {message.content}
@@ -115,11 +115,11 @@ export function CardsChat() {
               setMessages([
                 ...messages,
                 {
-                  role: "user",
+                  role: 'user',
                   content: input,
                 },
               ]);
-              setInput("");
+              setInput('');
             }}
             className="relative w-full"
           >
@@ -165,11 +165,11 @@ export function CardsChat() {
                     onSelect={() => {
                       if (selectedAgents.includes(agent)) {
                         return setSelectedAgents(
-                          selectedAgents.filter((selected) => selected !== agent)
+                          selectedAgents.filter((selected) => selected !== agent),
                         );
                       }
                       return setSelectedAgents(
-                        [...agents].filter((a) => [...selectedAgents, agent].includes(a))
+                        [...agents].filter((a) => [...selectedAgents, agent].includes(a)),
                       );
                     }}
                   >

@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { emailAccounts } from './emails';
 
 /** Predicate language for "when does this rule fire?" */
@@ -22,7 +31,9 @@ export interface IngestRuleThen {
 export const ingestRules = pgTable(
   'ingest_rules',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     userId: uuid('user_id').notNull(),
     name: text('name').notNull(),
     /** Null = applies to all accounts the user owns. */
@@ -34,7 +45,10 @@ export const ingestRules = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index('ingest_rules_user_idx').on(t.userId), index('ingest_rules_priority_idx').on(t.priority)],
+  (t) => [
+    index('ingest_rules_user_idx').on(t.userId),
+    index('ingest_rules_priority_idx').on(t.priority),
+  ],
 );
 
 export type IngestRule = typeof ingestRules.$inferSelect;

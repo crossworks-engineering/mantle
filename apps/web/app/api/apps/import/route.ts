@@ -62,12 +62,16 @@ export async function POST(req: Request) {
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: 'invalid input', detail: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json(
+      { error: 'invalid input', detail: parsed.error.flatten() },
+      { status: 400 },
+    );
   }
   const b = parsed.data;
 
   if (!(b.entry in b.files)) return bad(`entry '${b.entry}' is not one of the files`);
-  if (Object.keys(b.files).length > MAX_APP_FILES) return bad(`too many files (max ${MAX_APP_FILES})`);
+  if (Object.keys(b.files).length > MAX_APP_FILES)
+    return bad(`too many files (max ${MAX_APP_FILES})`);
 
   // ── create or locate ──
   let appId = b.appId;
@@ -112,7 +116,9 @@ export async function POST(req: Request) {
     }
     const app = await getApp(user.id, appId);
     const nextVersion = (app?.manifest.sqlite?.schemaVersion ?? 0) + 1;
-    await setManifest(user.id, appId, { sqlite: { schemaSql: b.schemaSql, schemaVersion: nextVersion } });
+    await setManifest(user.id, appId, {
+      sqlite: { schemaSql: b.schemaSql, schemaVersion: nextVersion },
+    });
   }
 
   // ── build + optional publish ──

@@ -29,7 +29,9 @@ function tabMeta(db: SqliteDb, tabId?: string): { physicalTable: string; cols: C
       : db.prepare(`SELECT tab_id, physical_table FROM _tabs WHERE tab_id = ?`).get(tabId);
   if (!tab) {
     throw new Error(
-      tabId === undefined ? 'tabledb window: workbook has no tabs' : `tabledb window: no tab '${tabId}' in this workbook`,
+      tabId === undefined
+        ? 'tabledb window: workbook has no tabs'
+        : `tabledb window: no tab '${tabId}' in this workbook`,
     );
   }
   const cols = db
@@ -86,7 +88,8 @@ export function listRowsWindow(
     const last = raw[raw.length - 1];
     return {
       rows: rowsFrom(raw, cols),
-      cursor: raw.length === limit && last ? { pos: Number(last._pos), rid: String(last._rid) } : null,
+      cursor:
+        raw.length === limit && last ? { pos: Number(last._pos), rid: String(last._rid) } : null,
       total,
     };
   } finally {
@@ -95,7 +98,11 @@ export function listRowsWindow(
 }
 
 /** Fetch one row by its stable id (the beyond-the-window row_get path). */
-export function readRowById(absPath: string, rid: string, opts: { tabId?: string } = {}): Row | null {
+export function readRowById(
+  absPath: string,
+  rid: string,
+  opts: { tabId?: string } = {},
+): Row | null {
   const db = openTableFile(absPath, { readOnly: true });
   try {
     const { physicalTable, cols } = tabMeta(db, opts.tabId);
@@ -126,10 +133,14 @@ export function distinctColumnValues(
     const params: (string | number)[] = [];
     if (opts.prefix) {
       where.push(`CAST(${p} AS TEXT) LIKE ? ESCAPE '\\'`);
-      params.push(`${opts.prefix.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`);
+      params.push(
+        `${opts.prefix.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`,
+      );
     }
     const raw = db
-      .prepare(`SELECT DISTINCT CAST(${p} AS TEXT) AS v FROM ${physicalTable} WHERE ${where.join(' AND ')} ORDER BY 1 LIMIT ?`)
+      .prepare(
+        `SELECT DISTINCT CAST(${p} AS TEXT) AS v FROM ${physicalTable} WHERE ${where.join(' AND ')} ORDER BY 1 LIMIT ?`,
+      )
       .all(...params, limit);
     return raw.map((r) => String(r.v));
   } finally {
@@ -239,16 +250,22 @@ export function compileFilters(
         const sqlOp = { gt: '>', lt: '<', gte: '>=', lte: '<=' }[f.op];
         const numericTarget =
           typeof f.value === 'number' ||
-          (typeof f.value === 'string' && f.value.trim() !== '' && Number.isFinite(Number(f.value.replace(/[, ]/g, ''))));
+          (typeof f.value === 'string' &&
+            f.value.trim() !== '' &&
+            Number.isFinite(Number(f.value.replace(/[, ]/g, ''))));
         if (NUM_FAMILY.has(st) && numericTarget) {
           // JS: empty never matches ordered compares; both numeric → numeric.
           clauses.push(`(${p} IS NOT NULL AND ${p} ${sqlOp} ?)`);
-          params.push(typeof f.value === 'number' ? f.value : Number(String(f.value).replace(/[, ]/g, '')));
+          params.push(
+            typeof f.value === 'number' ? f.value : Number(String(f.value).replace(/[, ]/g, '')),
+          );
           break;
         }
         if ((st === 'date' || st === 'datetime') && typeof f.value === 'string' && !numericTarget) {
           // ISO text ordering — matches the JS string compare for non-numeric.
-          clauses.push(`(${p} IS NOT NULL AND CAST(${p} AS TEXT) != '' AND CAST(${p} AS TEXT) ${sqlOp} ?)`);
+          clauses.push(
+            `(${p} IS NOT NULL AND CAST(${p} AS TEXT) != '' AND CAST(${p} AS TEXT) ${sqlOp} ?)`,
+          );
           params.push(f.value);
           break;
         }
@@ -314,10 +331,14 @@ export function queryRowsWindow(
     const limit = Math.max(0, Math.min(opts.limit ?? 200, 1000));
     const offset = Math.max(0, opts.offset ?? 0);
     const raw = db
-      .prepare(`SELECT ${select} FROM ${physicalTable} WHERE ${compiled.where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
+      .prepare(
+        `SELECT ${select} FROM ${physicalTable} WHERE ${compiled.where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
+      )
       .all(...compiled.params, limit, offset);
     const total = Number(
-      db.prepare(`SELECT count(*) AS n FROM ${physicalTable} WHERE ${compiled.where}`).get(...compiled.params)?.n ?? 0,
+      db
+        .prepare(`SELECT count(*) AS n FROM ${physicalTable} WHERE ${compiled.where}`)
+        .get(...compiled.params)?.n ?? 0,
     );
     return { rows: rowsFrom(raw, cols), total };
   } finally {
@@ -330,7 +351,13 @@ export function queryRowsWindow(
  *  = not parity-safe (formula target, or filters didn't compile). */
 export function aggregateWindow(
   absPath: string,
-  opts: { columnId: string; kind: AggregateKind; filters?: Filter[]; match?: 'all' | 'any'; tabId?: string },
+  opts: {
+    columnId: string;
+    kind: AggregateKind;
+    filters?: Filter[];
+    match?: 'all' | 'any';
+    tabId?: string;
+  },
 ): number | null {
   if (opts.kind === 'none') return null;
   const db = openTableFile(absPath, { readOnly: true });
@@ -364,7 +391,11 @@ export function aggregateWindow(
     const row = db
       .prepare(`SELECT ${expr} AS v FROM ${physicalTable} WHERE ${compiled.where}`)
       .get(...compiled.params);
-    return row?.v == null ? (opts.kind === 'count' || opts.kind === 'filled' || opts.kind === 'empty' ? 0 : null) : Number(row.v);
+    return row?.v == null
+      ? opts.kind === 'count' || opts.kind === 'filled' || opts.kind === 'empty'
+        ? 0
+        : null
+      : Number(row.v);
   } finally {
     db.close();
   }

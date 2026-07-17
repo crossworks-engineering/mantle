@@ -31,6 +31,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       message: `Disabled ${res.collection.label} — removed ${res.purged ?? 0} indexed doc(s).`,
     });
   } catch (err) {
-    return NextResponse.json({ ok: false, message: err instanceof Error ? err.message : String(err) });
+    return NextResponse.json({
+      ok: false,
+      message: err instanceof Error ? err.message : String(err),
+    });
   }
 }

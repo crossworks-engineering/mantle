@@ -117,7 +117,7 @@ export function DevToolsSidebar() {
     })).filter((g) => g.endpoints.length > 0 || g.name.toLowerCase().includes(q));
   }, [q]);
 
-  const mcpTools = mcp.status === 'ready' ? mcp.tools : [];
+  const mcpTools = useMemo(() => (mcp.status === 'ready' ? mcp.tools : []), [mcp]);
   const filteredMcp = useMemo(
     () =>
       q
@@ -179,10 +179,7 @@ export function DevToolsSidebar() {
         </TabsList>
 
         {/* ── Library ─────────────────────────────────────────────── */}
-        <TabsContent
-          value="library"
-          className="min-h-0 flex-1 overflow-y-auto p-2 scrollbar-thin"
-        >
+        <TabsContent value="library" className="min-h-0 flex-1 overflow-y-auto p-2 scrollbar-thin">
           <div className="space-y-3">
             <section>
               <h3 className="px-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -238,9 +235,7 @@ export function DevToolsSidebar() {
                 </Button>
               )}
               {mcp.status === 'loading' && (
-                <p className="px-1.5 text-xs text-muted-foreground">
-                  Booting the MCP server…
-                </p>
+                <p className="px-1.5 text-xs text-muted-foreground">Booting the MCP server…</p>
               )}
               {mcp.status === 'error' && (
                 <div className="space-y-1 px-1.5">
@@ -266,7 +261,9 @@ export function DevToolsSidebar() {
                       title={t.description}
                     >
                       <KindBadge kind="mcp" />
-                      <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{t.name}</span>
+                      <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
+                        {t.name}
+                      </span>
                     </Row>
                   ))}
                   {filteredMcp.length === 0 && (
@@ -334,10 +331,7 @@ export function DevToolsSidebar() {
         </TabsContent>
 
         {/* ── Saved ───────────────────────────────────────────────── */}
-        <TabsContent
-          value="saved"
-          className="min-h-0 flex-1 overflow-y-auto p-2 scrollbar-thin"
-        >
+        <TabsContent value="saved" className="min-h-0 flex-1 overflow-y-auto p-2 scrollbar-thin">
           {collections.length === 0 ? (
             <p className="px-1.5 text-xs text-muted-foreground">
               Nothing saved yet — build a request and hit Save.
@@ -366,7 +360,9 @@ export function DevToolsSidebar() {
                       .filter(
                         (r) =>
                           !q ||
-                          `${r.name} ${r.url} ${r.targetName} ${r.method}`.toLowerCase().includes(q),
+                          `${r.name} ${r.url} ${r.targetName} ${r.method}`
+                            .toLowerCase()
+                            .includes(q),
                       )
                       .map((r) => (
                         <div key={r.id} className="group flex items-center gap-1">
@@ -398,10 +394,7 @@ export function DevToolsSidebar() {
         </TabsContent>
 
         {/* ── History ─────────────────────────────────────────────── */}
-        <TabsContent
-          value="history"
-          className="min-h-0 flex-1 overflow-y-auto p-2 scrollbar-thin"
-        >
+        <TabsContent value="history" className="min-h-0 flex-1 overflow-y-auto p-2 scrollbar-thin">
           {history.length === 0 ? (
             <p className="px-1.5 text-xs text-muted-foreground">No requests yet.</p>
           ) : (
@@ -420,7 +413,13 @@ export function DevToolsSidebar() {
               {history
                 .filter((h: HistoryEntry) => !q || h.label.toLowerCase().includes(q))
                 .map((h) => (
-                  <Row key={h.id} selected={false} onClick={() => replaceDraft(draftFromSaved({ ...h.draft, id: h.id, savedAt: h.at }))}>
+                  <Row
+                    key={h.id}
+                    selected={false}
+                    onClick={() =>
+                      replaceDraft(draftFromSaved({ ...h.draft, id: h.id, savedAt: h.at }))
+                    }
+                  >
                     <span
                       className={cn(
                         'w-9 shrink-0 font-mono text-[10px] font-bold',

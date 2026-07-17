@@ -79,7 +79,9 @@ export function TaskDetail({
           onClick={onToggleStatus}
           className={cn(
             'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border transition-colors',
-            done ? 'border-primary bg-primary text-primary-foreground' : 'border-input hover:bg-muted',
+            done
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-input hover:bg-muted',
           )}
           aria-label={done ? 'Mark open' : 'Mark done'}
           aria-pressed={done}
@@ -89,7 +91,12 @@ export function TaskDetail({
 
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-start justify-between gap-3">
-            <h2 className={cn('min-w-0 text-xl font-semibold', done && 'text-muted-foreground line-through')}>
+            <h2
+              className={cn(
+                'min-w-0 text-xl font-semibold',
+                done && 'text-muted-foreground line-through',
+              )}
+            >
               {task.title}
             </h2>
             <div className="flex shrink-0 items-center gap-2">
@@ -109,12 +116,19 @@ export function TaskDetail({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5', PRIORITY_BADGE[task.priority])}>
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2 py-0.5',
+                PRIORITY_BADGE[task.priority],
+              )}
+            >
               <Flag className="size-3" /> {task.priority}
             </span>
             <span className="text-muted-foreground">{done ? 'Done' : 'Open'}</span>
             {task.dueAt && (
-              <span className={cn(overdue ? 'font-medium text-destructive' : 'text-muted-foreground')}>
+              <span
+                className={cn(overdue ? 'font-medium text-destructive' : 'text-muted-foreground')}
+              >
                 · due {formatDateTime(task.dueAt)}
                 {overdue && ' · overdue'}
               </span>
@@ -124,7 +138,10 @@ export function TaskDetail({
           {task.tags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {task.tags.map((t) => (
-                <span key={t} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                <span
+                  key={t}
+                  className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                >
                   {t}
                 </span>
               ))}
@@ -138,7 +155,9 @@ export function TaskDetail({
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{task.body}</ReactMarkdown>
         </article>
       )}
-      {task.summary && <p className="text-xs italic text-muted-foreground">Indexed: {task.summary}</p>}
+      {task.summary && (
+        <p className="text-xs italic text-muted-foreground">Indexed: {task.summary}</p>
+      )}
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

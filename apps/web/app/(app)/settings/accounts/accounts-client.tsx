@@ -33,7 +33,8 @@ export function AccountsClient() {
   const connected = sp.get('connected');
   const error = sp.get('error');
   const modeParam = sp.get('mode');
-  const mode = modeParam === 'add' || modeParam === 'edit' || modeParam === 'folders' ? modeParam : null;
+  const mode =
+    modeParam === 'add' || modeParam === 'edit' || modeParam === 'folders' ? modeParam : null;
 
   const accountsQuery = useQuery({
     queryKey: ['email', 'accounts'],
@@ -67,7 +68,9 @@ export function AccountsClient() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm">
         <p className="text-muted-foreground">
-          {accountsQuery.error instanceof Error ? accountsQuery.error.message : 'Failed to load accounts.'}
+          {accountsQuery.error instanceof Error
+            ? accountsQuery.error.message
+            : 'Failed to load accounts.'}
         </p>
         <Button variant="outline" size="sm" onClick={() => accountsQuery.refetch()}>
           Retry
@@ -121,7 +124,9 @@ export function AccountsClient() {
                     {r.provider === 'imap' && r.imapHost ? ` · ${r.imapHost}:${r.imapPort}` : ''}
                   </div>
                   {r.lastSyncError && (
-                    <div className="mt-0.5 truncate text-xs text-destructive">⚠ {r.lastSyncError}</div>
+                    <div className="mt-0.5 truncate text-xs text-destructive">
+                      ⚠ {r.lastSyncError}
+                    </div>
                   )}
                 </Link>
               );
@@ -136,8 +141,8 @@ export function AccountsClient() {
           <div className="p-4 pb-0">
             {connected && (
               <p className="rounded-md border border-green-500/30 bg-green-50 px-3 py-2 text-sm text-green-900 dark:bg-green-950/40 dark:text-green-100">
-                Connected <span className="font-medium">{connected}</span>. First sync runs within two
-                minutes.
+                Connected <span className="font-medium">{connected}</span>. First sync runs within
+                two minutes.
               </p>
             )}
             {error && (
@@ -159,11 +164,21 @@ export function AccountsClient() {
             <ImapForm />
             <p className="text-xs text-muted-foreground">
               Generate an app password (
-              <a className="underline" href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">
+              <a
+                className="underline"
+                href="https://myaccount.google.com/apppasswords"
+                target="_blank"
+                rel="noreferrer"
+              >
                 Google
               </a>{' '}
               /{' '}
-              <a className="underline" href="https://account.live.com" target="_blank" rel="noreferrer">
+              <a
+                className="underline"
+                href="https://account.live.com"
+                target="_blank"
+                rel="noreferrer"
+              >
                 Microsoft
               </a>
               ), enable 2FA, then paste it above with the provider&apos;s host (e.g.{' '}
@@ -209,7 +224,12 @@ export function AccountsClient() {
                 <Spinner />
               </div>
             ) : foldersQuery.isError ? (
-              <FoldersError accountId={selected.id} message={foldersQuery.error instanceof Error ? foldersQuery.error.message : 'unknown error'} />
+              <FoldersError
+                accountId={selected.id}
+                message={
+                  foldersQuery.error instanceof Error ? foldersQuery.error.message : 'unknown error'
+                }
+              />
             ) : foldersQuery.data.ok ? (
               <FolderPicker
                 accountId={selected.id}
@@ -263,7 +283,13 @@ function statusBadgeClass(r: AccountRow, latest: SyncRun | undefined): string {
   return `${base} bg-muted text-muted-foreground`;
 }
 
-function AccountDetail({ account: r, latest }: { account: AccountRow; latest: SyncRun | undefined }) {
+function AccountDetail({
+  account: r,
+  latest,
+}: {
+  account: AccountRow;
+  latest: SyncRun | undefined;
+}) {
   const imapCursor = (r.syncState as { imap?: ImapCursorShape } | null)?.imap;
   const touchedFolders = imapCursor?.folders ? Object.keys(imapCursor.folders).sort() : [];
 
@@ -277,11 +303,13 @@ function AccountDetail({ account: r, latest }: { account: AccountRow; latest: Sy
           </h2>
           <p className="text-xs text-muted-foreground">
             {r.provider}
-            {r.provider === 'imap' && r.imapHost ? ` · ${r.imapHost}:${r.imapPort}` : ''} · last sync{' '}
-            {formatDateTime(r.lastSyncAt ?? null)}
+            {r.provider === 'imap' && r.imapHost ? ` · ${r.imapHost}:${r.imapPort}` : ''} · last
+            sync {formatDateTime(r.lastSyncAt ?? null)}
           </p>
         </div>
-        <span className={cn('shrink-0', statusBadgeClass(r, latest))}>{statusLabel(r, latest)}</span>
+        <span className={cn('shrink-0', statusBadgeClass(r, latest))}>
+          {statusLabel(r, latest)}
+        </span>
       </div>
 
       {r.lastSyncError && (

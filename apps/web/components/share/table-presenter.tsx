@@ -78,13 +78,19 @@ export function TablePresenter({
     }
   }, [tab?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const columns = view.legacyDoc ? view.legacyDoc.columns : (tab?.columns ?? []);
+  // Memoized so the `?? []` fallback doesn't mint a fresh array each render and
+  // re-run the numericCols useMemo below (react-hooks/exhaustive-deps).
+  const columns = useMemo(
+    () => (view.legacyDoc ? view.legacyDoc.columns : (tab?.columns ?? [])),
+    [view.legacyDoc, tab?.columns],
+  );
   const shownRows = view.legacyDoc ? view.legacyDoc.rows : rows;
   const totalRows = view.legacyDoc ? view.legacyDoc.rows.length : total;
   const hasMore = !view.legacyDoc && shownRows.length < totalRows;
 
   const numericCols = useMemo(
-    () => new Set(columns.filter((c) => c.type === 'number' || c.type === 'currency').map((c) => c.id)),
+    () =>
+      new Set(columns.filter((c) => c.type === 'number' || c.type === 'currency').map((c) => c.id)),
     [columns],
   );
 
@@ -143,7 +149,10 @@ export function TablePresenter({
                 {columns.map((c) => (
                   <td
                     key={c.id}
-                    className={cn('max-w-96 truncate px-3 py-1.5', numericCols.has(c.id) && 'text-right tabular-nums')}
+                    className={cn(
+                      'max-w-96 truncate px-3 py-1.5',
+                      numericCols.has(c.id) && 'text-right tabular-nums',
+                    )}
                   >
                     <Cell value={r.cells[c.id] ?? null} type={c.type} />
                   </td>
@@ -152,7 +161,10 @@ export function TablePresenter({
             ))}
             {shownRows.length === 0 && !loading && (
               <tr>
-                <td colSpan={Math.max(columns.length, 1)} className="px-3 py-8 text-center text-muted-foreground">
+                <td
+                  colSpan={Math.max(columns.length, 1)}
+                  className="px-3 py-8 text-center text-muted-foreground"
+                >
                   {failed ? 'Could not load rows.' : 'No rows.'}
                 </td>
               </tr>
@@ -168,7 +180,11 @@ export function TablePresenter({
           </span>
         )}
         {!loading && hasMore && tab && (
-          <Button variant="outline" size="sm" onClick={() => void fetchPage(shownRows.length, tab.id)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void fetchPage(shownRows.length, tab.id)}
+          >
             <Table2 /> Load more ({shownRows.length} of {totalRows})
           </Button>
         )}
@@ -188,7 +204,12 @@ function Cell({ value, type }: { value: CellValue; type: string }) {
   if (type === 'url' && typeof value === 'string') {
     const href = /^https?:\/\//i.test(value) ? value : null;
     return href ? (
-      <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary underline underline-offset-2"
+      >
         {value}
       </a>
     ) : (

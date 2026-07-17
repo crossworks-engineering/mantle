@@ -81,7 +81,9 @@ export function tableToCsv(doc: TableDoc): string {
       const kind = aggregates[c.id];
       if (!kind || kind === 'none') return idx === 0 ? 'Totals' : '';
       const v = computeAggregate(doc, c.id, kind, rows);
-      return v === null ? '' : formatCellText(v, c.type === 'formula' ? { ...c, type: 'number' } : c);
+      return v === null
+        ? ''
+        : formatCellText(v, c.type === 'formula' ? { ...c, type: 'number' } : c);
     });
     if (totals[0] === '') totals[0] = 'Totals';
     lines.push(totals.map(csvField).join(','));

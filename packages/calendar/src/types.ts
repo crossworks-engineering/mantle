@@ -43,5 +43,8 @@ export interface CalendarPull {
 export interface CalendarProvider {
   /** Pull events for an account. `cursor` is the persisted `sync_state` (or
    *  undefined on first run). */
-  pull(account: CalendarAccount, cursor: Record<string, unknown> | undefined): Promise<CalendarPull>;
+  pull(
+    account: CalendarAccount,
+    cursor: Record<string, unknown> | undefined,
+  ): Promise<CalendarPull>;
 }

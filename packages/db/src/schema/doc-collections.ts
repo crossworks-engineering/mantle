@@ -19,7 +19,9 @@ import { boolean, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-or
 export const docCollections = pgTable(
   'doc_collections',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     /** Stable slug, unique per owner (e.g. 'system'). */
     key: text('key').notNull(),

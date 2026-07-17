@@ -36,12 +36,9 @@ import {
   RECIPE_FORBIDDEN_SLUGS,
 } from './recipe';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { str } from './coerce';
 
 /* ───────────────────────────── helpers ───────────────────────────── */
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 
 function rec(v: unknown): Record<string, unknown> | null {
   return v !== null && typeof v === 'object' && !Array.isArray(v)
@@ -173,7 +170,11 @@ function summarizeHandler(h: ToolHandler): Record<string, unknown> {
   if (h.kind === 'recipe') {
     return {
       kind: 'recipe',
-      steps: h.steps.map((s) => ({ tool: s.tool, ...(s.as ? { as: s.as } : {}), input: s.input ?? {} })),
+      steps: h.steps.map((s) => ({
+        tool: s.tool,
+        ...(s.as ? { as: s.as } : {}),
+        input: s.input ?? {},
+      })),
       output: h.output ?? null,
     };
   }
@@ -206,7 +207,7 @@ const web_fetch: BuiltinToolDef = {
   slug: 'web_fetch',
   name: 'Fetch a web page',
   description:
-    'Fetch a URL (API documentation, OpenAPI spec, reference page) and return its readable text. HTML is converted to plain text; JSON/markdown/plain text come back as-is. Long pages are truncated — pass offset to continue reading. Use this to read a service\'s API docs before authoring tools with api_tool_create.',
+    "Fetch a URL (API documentation, OpenAPI spec, reference page) and return its readable text. HTML is converted to plain text; JSON/markdown/plain text come back as-is. Long pages are truncated — pass offset to continue reading. Use this to read a service's API docs before authoring tools with api_tool_create.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -285,7 +286,11 @@ const api_tool_list: BuiltinToolDef = {
     type: 'object',
     properties: {
       q: { type: 'string', description: 'optional substring filter on slug/name/description' },
-      kind: { type: 'string', enum: ['builtin', 'http', 'shell'], description: 'optional kind filter' },
+      kind: {
+        type: 'string',
+        enum: ['builtin', 'http', 'shell'],
+        description: 'optional kind filter',
+      },
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
@@ -294,9 +299,7 @@ const api_tool_list: BuiltinToolDef = {
     const rows = await listToolsForOwner(ctx.ownerId);
     const out = rows
       .filter((t) => (kind ? t.handler.kind === kind : true))
-      .filter((t) =>
-        q ? `${t.slug} ${t.name} ${t.description}`.toLowerCase().includes(q) : true,
-      )
+      .filter((t) => (q ? `${t.slug} ${t.name} ${t.description}`.toLowerCase().includes(q) : true))
       .map((t) => ({
         slug: t.slug,
         name: t.name,
@@ -317,7 +320,9 @@ const api_tool_get: BuiltinToolDef = {
     'Full definition of one tool by slug: description, input schema, and handler (url/method/headers/query/body templates for http tools).',
   inputSchema: {
     type: 'object',
-    properties: { slug: { type: 'string', description: 'slug of the tool to inspect, e.g. mapbox_geocode' } },
+    properties: {
+      slug: { type: 'string', description: 'slug of the tool to inspect, e.g. mapbox_geocode' },
+    },
     required: ['slug'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
@@ -349,27 +354,52 @@ const api_tool_create: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      slug: { type: 'string', description: 'lowercase letters/digits/dash/underscore — the function name models call' },
-      name: { type: 'string', description: 'display name shown in tool pickers and Settings → Tools, e.g. "Mapbox geocode"' },
-      description: { type: 'string', description: 'what it does + when to use it — models read this' },
+      slug: {
+        type: 'string',
+        description: 'lowercase letters/digits/dash/underscore — the function name models call',
+      },
+      name: {
+        type: 'string',
+        description:
+          'display name shown in tool pickers and Settings → Tools, e.g. "Mapbox geocode"',
+      },
+      description: {
+        type: 'string',
+        description: 'what it does + when to use it — models read this',
+      },
       input_schema: {
         type: 'object',
         description: 'JSON Schema for the tool input. Declare every {param} used in the templates.',
       },
       url: { type: 'string', description: 'http(s) URL template, may contain {param}' },
-      method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], description: 'default POST' },
+      method: {
+        type: 'string',
+        enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+        description: 'default POST',
+      },
       headers: { type: 'object', description: 'header → value template map' },
       query: { type: 'object', description: 'query key → value template map' },
-      body: { type: 'string', description: 'body template; omit to send unconsumed input as a JSON body (query string for GET/HEAD)' },
+      body: {
+        type: 'string',
+        description:
+          'body template; omit to send unconsumed input as a JSON body (query string for GET/HEAD)',
+      },
       timeout_ms: { type: 'number', description: '100–120000, default 15000' },
-      requires_confirm: { type: 'boolean', description: 'park calls for operator approval — set true for destructive endpoints (deletes, payments, sends). If the owner has "require approval for agent-built tools" on, every authored tool starts gated regardless and only the operator can clear it in Settings → Tools.' },
+      requires_confirm: {
+        type: 'boolean',
+        description:
+          'park calls for operator approval — set true for destructive endpoints (deletes, payments, sends). If the owner has "require approval for agent-built tools" on, every authored tool starts gated regardless and only the operator can clear it in Settings → Tools.',
+      },
     },
     required: ['slug', 'name', 'description', 'url'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const slug = str(input.slug).trim();
     if (!SLUG_RE.test(slug)) {
-      return { ok: false, error: 'slug must be lowercase letters/digits/dash/underscore (max 120)' };
+      return {
+        ok: false,
+        error: 'slug must be lowercase letters/digits/dash/underscore (max 120)',
+      };
     }
     const name = str(input.name).trim();
     const description = str(input.description).trim();
@@ -407,7 +437,10 @@ const api_tool_create: BuiltinToolDef = {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('tools_owner_slug_uq') || msg.includes('duplicate key')) {
-        return { ok: false, error: `a tool with slug '${slug}' already exists — use api_tool_update` };
+        return {
+          ok: false,
+          error: `a tool with slug '${slug}' already exists — use api_tool_update`,
+        };
       }
       return { ok: false, error: msg };
     }
@@ -422,18 +455,55 @@ const api_tool_update: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      slug: { type: 'string', description: 'slug of the tool to update — the slug itself cannot be changed' },
-      name: { type: 'string', description: 'replacement display name; omit to keep the current one' },
-      description: { type: 'string', description: 'replacement description — what it does + when to use it, as in `api_tool_create`' },
-      input_schema: { type: 'object', description: 'replacement JSON Schema for the tool input (the whole schema, not a merge). Declare every {param} the templates use.' },
+      slug: {
+        type: 'string',
+        description: 'slug of the tool to update — the slug itself cannot be changed',
+      },
+      name: {
+        type: 'string',
+        description: 'replacement display name; omit to keep the current one',
+      },
+      description: {
+        type: 'string',
+        description:
+          'replacement description — what it does + when to use it, as in `api_tool_create`',
+      },
+      input_schema: {
+        type: 'object',
+        description:
+          'replacement JSON Schema for the tool input (the whole schema, not a merge). Declare every {param} the templates use.',
+      },
       url: { type: 'string', description: 'replacement http(s) URL template, may contain {param}' },
-      method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], description: 'replacement HTTP method; omit to keep the current one' },
-      headers: { type: 'object', description: 'replacement header → value template map — replaces the whole map ({} clears it)' },
-      query: { type: 'object', description: 'replacement query key → value template map — replaces the whole map ({} clears it)' },
-      body: { type: ['string', 'null'], description: 'replacement body template; null clears it so unconsumed input is sent as a JSON body (query string for GET/HEAD)' },
+      method: {
+        type: 'string',
+        enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+        description: 'replacement HTTP method; omit to keep the current one',
+      },
+      headers: {
+        type: 'object',
+        description:
+          'replacement header → value template map — replaces the whole map ({} clears it)',
+      },
+      query: {
+        type: 'object',
+        description:
+          'replacement query key → value template map — replaces the whole map ({} clears it)',
+      },
+      body: {
+        type: ['string', 'null'],
+        description:
+          'replacement body template; null clears it so unconsumed input is sent as a JSON body (query string for GET/HEAD)',
+      },
       timeout_ms: { type: 'number', description: 'replacement timeout, 100–120000 ms' },
-      requires_confirm: { type: 'boolean', description: 'toggle the confirm gate. When the owner requires approval for agent-built tools, you can only tighten it (clearing is operator-only, in Settings → Tools).' },
-      enabled: { type: 'boolean', description: 'set false to disable the tool without deleting it; true re-enables' },
+      requires_confirm: {
+        type: 'boolean',
+        description:
+          'toggle the confirm gate. When the owner requires approval for agent-built tools, you can only tighten it (clearing is operator-only, in Settings → Tools).',
+      },
+      enabled: {
+        type: 'boolean',
+        description: 'set false to disable the tool without deleting it; true re-enables',
+      },
     },
     required: ['slug'],
   },
@@ -476,10 +546,17 @@ const api_tool_update: BuiltinToolDef = {
 
     if (touchesDefinition) {
       if (existing.kind === 'builtin') {
-        return { ok: false, error: 'built-in tools are code-backed — only enabled/requires_confirm can change' };
+        return {
+          ok: false,
+          error: 'built-in tools are code-backed — only enabled/requires_confirm can change',
+        };
       }
       if (existing.kind === 'recipe') {
-        return { ok: false, error: 'recipe tools aren\'t patched in place — api_tool_delete and recipe_tool_create a new one (enabled/requires_confirm can still toggle here)' };
+        return {
+          ok: false,
+          error:
+            "recipe tools aren't patched in place — api_tool_delete and recipe_tool_create a new one (enabled/requires_confirm can still toggle here)",
+        };
       }
       if (input.name !== undefined) patch.name = str(input.name).trim();
       if (input.description !== undefined) patch.description = str(input.description).trim();
@@ -515,7 +592,9 @@ const api_tool_delete: BuiltinToolDef = {
     'Delete a user-defined (http/shell) tool by slug. Built-ins cannot be deleted. Check tool_group_list first — deleting a tool other agents use breaks them silently.',
   inputSchema: {
     type: 'object',
-    properties: { slug: { type: 'string', description: 'slug of the user-defined tool to delete' } },
+    properties: {
+      slug: { type: 'string', description: 'slug of the user-defined tool to delete' },
+    },
     required: ['slug'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
@@ -596,14 +675,15 @@ const tool_catalog: BuiltinToolDef = {
   slug: 'tool_catalog',
   name: 'Browse composable tools',
   description:
-    'List the tools you can COMPOSE into a recipe tool (recipe_tool_create) — the brain\'s own content/search/file/page/task/journal/event/table builtins plus your authored http tools. Returns each tool\'s slug, kind, full description, and input_schema so you know the exact slug + input shape to chain. Excludes tools recipes may not call (terminal, secrets, delegation, the tool-authoring kit, confirm-gated, shell). Filter with q. This is how you discover the steps for a new recipe.',
+    "List the tools you can COMPOSE into a recipe tool (recipe_tool_create) — the brain's own content/search/file/page/task/journal/event/table builtins plus your authored http tools. Returns each tool's slug, kind, full description, and input_schema so you know the exact slug + input shape to chain. Excludes tools recipes may not call (terminal, secrets, delegation, the tool-authoring kit, confirm-gated, shell). Filter with q. This is how you discover the steps for a new recipe.",
   inputSchema: {
     type: 'object',
     properties: {
       q: { type: 'string', description: 'optional substring filter on slug/name/description' },
       include_input_schema: {
         type: 'boolean',
-        description: 'include each tool\'s full input_schema (default true; set false for a terse list)',
+        description:
+          "include each tool's full input_schema (default true; set false for a terse list)",
       },
     },
   },
@@ -640,7 +720,7 @@ const tool_catalog: BuiltinToolDef = {
         tools: composable,
         count: composable.length,
         excluded_count: excluded,
-        note: 'Use these slugs as recipe steps. Reference a step\'s output in a later step with $0 / $name.path; reference the recipe\'s own input with {param}.',
+        note: "Use these slugs as recipe steps. Reference a step's output in a later step with $0 / $name.path; reference the recipe's own input with {param}.",
       },
     };
   },
@@ -662,9 +742,18 @@ const recipe_tool_create: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      slug: { type: 'string', description: 'lowercase letters/digits/dash/underscore — the function name models call' },
-      name: { type: 'string', description: 'display name shown in tool pickers and Settings → Tools, e.g. "Note to page"' },
-      description: { type: 'string', description: 'what it does + when to use it — models read this' },
+      slug: {
+        type: 'string',
+        description: 'lowercase letters/digits/dash/underscore — the function name models call',
+      },
+      name: {
+        type: 'string',
+        description: 'display name shown in tool pickers and Settings → Tools, e.g. "Note to page"',
+      },
+      description: {
+        type: 'string',
+        description: 'what it does + when to use it — models read this',
+      },
       input_schema: {
         type: 'object',
         description: 'JSON Schema for the tool input. Declare every {param} used in the steps.',
@@ -676,23 +765,36 @@ const recipe_tool_create: BuiltinToolDef = {
           type: 'object',
           properties: {
             tool: { type: 'string', description: 'slug of an existing composable tool' },
-            input: { type: 'object', description: 'input for the tool; values may use {param} and $ref templates' },
-            as: { type: 'string', description: 'optional name to reference this step\'s output as $name (else $index)' },
+            input: {
+              type: 'object',
+              description: 'input for the tool; values may use {param} and $ref templates',
+            },
+            as: {
+              type: 'string',
+              description: "optional name to reference this step's output as $name (else $index)",
+            },
           },
           required: ['tool'],
         },
       },
       output: {
-        description: 'optional output template (resolved like a step input); default = last step\'s output',
+        description:
+          "optional output template (resolved like a step input); default = last step's output",
       },
-      requires_confirm: { type: 'boolean', description: 'park calls for operator approval before running the recipe' },
+      requires_confirm: {
+        type: 'boolean',
+        description: 'park calls for operator approval before running the recipe',
+      },
     },
     required: ['slug', 'name', 'description', 'steps'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const slug = str(input.slug).trim();
     if (!SLUG_RE.test(slug)) {
-      return { ok: false, error: 'slug must be lowercase letters/digits/dash/underscore (max 120)' };
+      return {
+        ok: false,
+        error: 'slug must be lowercase letters/digits/dash/underscore (max 120)',
+      };
     }
     if (RECIPE_FORBIDDEN_SLUGS.has(slug)) {
       return { ok: false, error: `slug '${slug}' is reserved` };
@@ -720,7 +822,8 @@ const recipe_tool_create: BuiltinToolDef = {
         kind: row?.handler.kind,
         requiresConfirm: row?.requiresConfirm,
       });
-      if (verdict !== 'ok') violations.push(`step ${i}: ${recipeVerdictReason(steps[i]!.tool, verdict)}`);
+      if (verdict !== 'ok')
+        violations.push(`step ${i}: ${recipeVerdictReason(steps[i]!.tool, verdict)}`);
     }
     if (violations.length > 0) {
       return { ok: false, error: `recipe rejected:\n${violations.join('\n')}` };
@@ -731,7 +834,10 @@ const recipe_tool_create: BuiltinToolDef = {
     const declared = new Set(Object.keys(rec(inputSchema.properties) ?? {}));
     const warnings = [...collectRecipeParams(steps, input.output)]
       .filter((p) => !declared.has(p))
-      .map((p) => `{${p}} is used in a step but not declared in input_schema.properties — the model can't fill it`);
+      .map(
+        (p) =>
+          `{${p}} is used in a step but not declared in input_schema.properties — the model can't fill it`,
+      );
 
     const handler = {
       kind: 'recipe' as const,
@@ -763,7 +869,10 @@ const recipe_tool_create: BuiltinToolDef = {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('tools_owner_slug_uq') || msg.includes('duplicate key')) {
-        return { ok: false, error: `a tool with slug '${slug}' already exists — use api_tool_delete then recreate, or pick a new slug` };
+        return {
+          ok: false,
+          error: `a tool with slug '${slug}' already exists — use api_tool_delete then recreate, or pick a new slug`,
+        };
       }
       return { ok: false, error: msg };
     }
@@ -789,7 +898,10 @@ const recipe_tool_test: BuiltinToolDef = {
     if (!row) return { ok: false, error: `tool '${slug}' not found` };
     const handler = row.handler as ToolHandler;
     if (handler.kind !== 'recipe') {
-      return { ok: false, error: `recipe_tool_test only runs recipe tools — '${slug}' is ${handler.kind}` };
+      return {
+        ok: false,
+        error: `recipe_tool_test only runs recipe tools — '${slug}' is ${handler.kind}`,
+      };
     }
     const args = rec(input.input) ?? {};
     const t0 = performance.now();
@@ -811,10 +923,7 @@ const tool_group_list: BuiltinToolDef = {
     'List tool groups (capability bundles agents are granted): slug, tool slugs, and which agents currently grant each group.',
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
-    const groups = await db
-      .select()
-      .from(toolGroups)
-      .where(eq(toolGroups.ownerId, ctx.ownerId));
+    const groups = await db.select().from(toolGroups).where(eq(toolGroups.ownerId, ctx.ownerId));
     const agentRows = await db
       .select({ slug: agents.slug, groups: agents.toolGroupSlugs })
       .from(agents)
@@ -851,8 +960,17 @@ const tool_group_ensure: BuiltinToolDef = {
     properties: {
       slug: { type: 'string', description: 'group slug, e.g. mapbox-tools' },
       name: { type: 'string', description: 'display name (required when creating)' },
-      description: { type: 'string', description: 'what the bundle is for, e.g. "Mapbox geocoding + routing"; omit to keep the existing one' },
-      tool_slugs: { type: 'array', items: { type: 'string' }, description: 'slugs of the tools the group should contain — http/recipe tools only, e.g. ["mapbox_geocode"]' },
+      description: {
+        type: 'string',
+        description:
+          'what the bundle is for, e.g. "Mapbox geocoding + routing"; omit to keep the existing one',
+      },
+      tool_slugs: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'slugs of the tools the group should contain — http/recipe tools only, e.g. ["mapbox_geocode"]',
+      },
       mode: { type: 'string', enum: ['add', 'replace'], description: "default 'add'" },
     },
     required: ['slug', 'tool_slugs'],
@@ -912,7 +1030,7 @@ const tool_group_ensure: BuiltinToolDef = {
         .where(eq(toolGroups.id, existing.id));
     } else {
       const name = str(input.name).trim();
-      if (!name) return { ok: false, error: "name is required when creating a new group" };
+      if (!name) return { ok: false, error: 'name is required when creating a new group' };
       toolSlugs = [...new Set(requested)];
       await db.insert(toolGroups).values({
         ownerId: ctx.ownerId,
@@ -971,8 +1089,15 @@ const agent_grant_tool_group: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      agent_slug: { type: 'string', description: 'agent receiving the grant — must differ from the calling agent (self-grants are refused); list candidates with `agent_list`' },
-      group_slug: { type: 'string', description: 'tool group to grant; must already exist — create it with `tool_group_ensure`' },
+      agent_slug: {
+        type: 'string',
+        description:
+          'agent receiving the grant — must differ from the calling agent (self-grants are refused); list candidates with `agent_list`',
+      },
+      group_slug: {
+        type: 'string',
+        description: 'tool group to grant; must already exist — create it with `tool_group_ensure`',
+      },
     },
     required: ['agent_slug', 'group_slug'],
   },
@@ -1000,7 +1125,10 @@ const agent_grant_tool_group: BuiltinToolDef = {
       .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, groupSlug)))
       .limit(1);
     if (!group) {
-      return { ok: false, error: `tool group '${groupSlug}' not found — create it with tool_group_ensure` };
+      return {
+        ok: false,
+        error: `tool group '${groupSlug}' not found — create it with tool_group_ensure`,
+      };
     }
 
     // Re-check at grant time: a slug bundled while unknown may since have
@@ -1020,7 +1148,10 @@ const agent_grant_tool_group: BuiltinToolDef = {
     }
     const current = agent.groups ?? [];
     if (current.includes(groupSlug)) {
-      return { ok: true, output: { agent_slug: agentSlug, group_slug: groupSlug, already_granted: true } };
+      return {
+        ok: true,
+        output: { agent_slug: agentSlug, group_slug: groupSlug, already_granted: true },
+      };
     }
 
     // Cross-agent grant confirmation: when an AGENT initiates this (ctx.agent

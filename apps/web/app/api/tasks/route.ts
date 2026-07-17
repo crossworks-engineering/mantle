@@ -29,7 +29,9 @@ export async function GET(req: Request) {
   const statusParam = url.searchParams.get('status');
   const priorityParam = url.searchParams.get('priority');
   const status: TaskStatus | 'all' =
-    statusParam && statusParam !== 'all' && (TASK_STATUSES as readonly string[]).includes(statusParam)
+    statusParam &&
+    statusParam !== 'all' &&
+    (TASK_STATUSES as readonly string[]).includes(statusParam)
       ? (statusParam as TaskStatus)
       : 'all';
   const priority: TaskPriority | 'all' =

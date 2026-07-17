@@ -36,7 +36,9 @@ function afterRoot(parentPath: string | undefined): string | null {
 
 /** Full after-root path of an item (e.g. `/Reports/2026/rbi.pdf`), or null
  *  when Graph didn't send a usable parent path. */
-export function itemPathAfterRoot(item: Pick<DriveItem, 'name' | 'parentReference'>): string | null {
+export function itemPathAfterRoot(
+  item: Pick<DriveItem, 'name' | 'parentReference'>,
+): string | null {
   const parent = afterRoot(item.parentReference?.path);
   if (parent === null || !item.name) return null;
   return `${parent}/${item.name}`;

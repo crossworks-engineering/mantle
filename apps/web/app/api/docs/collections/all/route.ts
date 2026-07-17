@@ -29,6 +29,9 @@ export async function POST(req: Request) {
           : `${enabled ? 'Enabled' : 'Disabled'} ${changed} collection(s).`,
     });
   } catch (err) {
-    return NextResponse.json({ ok: false, message: err instanceof Error ? err.message : String(err) });
+    return NextResponse.json({
+      ok: false,
+      message: err instanceof Error ? err.message : String(err),
+    });
   }
 }

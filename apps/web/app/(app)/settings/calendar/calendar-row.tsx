@@ -68,7 +68,11 @@ export function CalendarRow({ account }: { account: CalendarAccountDTO }) {
 
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-destructive"
+          >
             <Trash2 />
           </Button>
         </AlertDialogTrigger>

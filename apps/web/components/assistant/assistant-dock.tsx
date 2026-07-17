@@ -1,6 +1,14 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { usePathname } from 'next/navigation';
 import { Loader2, Maximize2, PanelRight, Sparkles, SquareDashedMousePointer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -44,7 +52,13 @@ export type RunTurnInput = {
   isJson: boolean;
 };
 
-type DockMsg = { id: string; role: 'user' | 'assistant'; text: string; pending?: boolean; error?: boolean };
+type DockMsg = {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  pending?: boolean;
+  error?: boolean;
+};
 
 /** Panel visibility: `open` = full overlay shown; `min`/`closed` = bubble only
  *  (screen behind is visible + interactive). `min` is "minimised from open",
@@ -359,154 +373,176 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
   // route). Types the reply out as text-deltas arrive, then settles on
   // done/error. Fire-and-forget — the provider is mounted app-wide, so the
   // subscription survives navigation and self-terminates when the turn ends.
-  const subscribeDockTurn = useCallback((
-    turnId: string,
-    botId: string,
-    target: { agentSlug?: string; nodeId: string | null },
-  ) => {
-    let replyBuf = '';
-    let round = -1;
-    let settled = false;
-    const stop = apiEventStream(
-      `/api/assistant/turn/${turnId}/stream`,
-      (raw) => {
-        if (settled) return;
-        let ev: TurnEvent;
-        try {
-          ev = JSON.parse(raw) as TurnEvent;
-        } catch {
-          return;
-        }
-        if (ev.type === 'text-delta' && typeof ev.data?.text === 'string') {
-          const r = typeof ev.round === 'number' ? ev.round : 0;
-          if (r > round) {
-            round = r;
-            replyBuf = ev.data.text;
-          } else {
-            replyBuf += ev.data.text;
+  const subscribeDockTurn = useCallback(
+    (turnId: string, botId: string, target: { agentSlug?: string; nodeId: string | null }) => {
+      let replyBuf = '';
+      let round = -1;
+      let settled = false;
+      const stop = apiEventStream(
+        `/api/assistant/turn/${turnId}/stream`,
+        (raw) => {
+          if (settled) return;
+          let ev: TurnEvent;
+          try {
+            ev = JSON.parse(raw) as TurnEvent;
+          } catch {
+            return;
           }
-          setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, text: replyBuf } : m)));
-          return;
-        }
-        if (ev.type === 'done') {
-          settled = true;
-          stop();
-          setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, pending: false } : m)));
-          fireTurnSettled({ agentSlug: target.agentSlug, nodeId: target.nodeId, status: 'done' });
-          return;
-        }
-        if (ev.type === 'error') {
-          settled = true;
-          stop();
-          const message =
-            ev.data && typeof ev.data.message === 'string' ? ev.data.message : 'The turn failed.';
-          setMessages((prev) =>
-            prev.map((m) => (m.id === botId ? { ...m, text: message, pending: false, error: true } : m)),
-          );
-          fireTurnSettled({ agentSlug: target.agentSlug, nodeId: target.nodeId, status: 'error' });
-          return;
-        }
-      },
-      { onError: () => {} },
-    );
-  }, [fireTurnSettled]);
+          if (ev.type === 'text-delta' && typeof ev.data?.text === 'string') {
+            const r = typeof ev.round === 'number' ? ev.round : 0;
+            if (r > round) {
+              round = r;
+              replyBuf = ev.data.text;
+            } else {
+              replyBuf += ev.data.text;
+            }
+            setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, text: replyBuf } : m)));
+            return;
+          }
+          if (ev.type === 'done') {
+            settled = true;
+            stop();
+            setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, pending: false } : m)));
+            fireTurnSettled({ agentSlug: target.agentSlug, nodeId: target.nodeId, status: 'done' });
+            return;
+          }
+          if (ev.type === 'error') {
+            settled = true;
+            stop();
+            const message =
+              ev.data && typeof ev.data.message === 'string' ? ev.data.message : 'The turn failed.';
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === botId ? { ...m, text: message, pending: false, error: true } : m,
+              ),
+            );
+            fireTurnSettled({
+              agentSlug: target.agentSlug,
+              nodeId: target.nodeId,
+              status: 'error',
+            });
+            return;
+          }
+        },
+        { onError: () => {} },
+      );
+    },
+    [fireTurnSettled],
+  );
 
-  const runTurn = useCallback(async (input: RunTurnInput): Promise<TurnPostResult> => {
-    const switched = agentRef.current !== input.agentSlug;
-    agentRef.current = input.agentSlug;
-    setAgentSlug(input.agentSlug);
-    setAgentName(input.agentName);
+  const runTurn = useCallback(
+    async (input: RunTurnInput): Promise<TurnPostResult> => {
+      const switched = agentRef.current !== input.agentSlug;
+      agentRef.current = input.agentSlug;
+      setAgentSlug(input.agentSlug);
+      setAgentName(input.agentName);
 
-    // The on-screen node this turn rides with (the surface's pinned context, if
-    // any). Captured here so a screen can lock its editor while ITS node is being
-    // worked on, and so the turn-settled event refreshes the right editor.
-    const targetNodeId = pinnedContextRef.current[0]?.id ?? null;
-    const target = { agentSlug: input.agentSlug, nodeId: targetNodeId };
-    setActiveContextNodeId(targetNodeId);
+      // The on-screen node this turn rides with (the surface's pinned context, if
+      // any). Captured here so a screen can lock its editor while ITS node is being
+      // worked on, and so the turn-settled event refreshes the right editor.
+      const targetNodeId = pinnedContextRef.current[0]?.id ?? null;
+      const target = { agentSlug: input.agentSlug, nodeId: targetNodeId };
+      setActiveContextNodeId(targetNodeId);
 
-    const userId = `u-${input.idempotencyKey}`;
-    const botId = `a-${input.idempotencyKey}`;
-    setMessages((prev) => {
-      const base = (switched ? [] : prev).slice(-(MAX_DOCK_MSGS - 2));
-      return [
-        ...base,
-        { id: userId, role: 'user', text: input.displayText },
-        { id: botId, role: 'assistant', text: '', pending: true },
-      ];
-    });
+      const userId = `u-${input.idempotencyKey}`;
+      const botId = `a-${input.idempotencyKey}`;
+      setMessages((prev) => {
+        const base = (switched ? [] : prev).slice(-(MAX_DOCK_MSGS - 2));
+        return [
+          ...base,
+          { id: userId, role: 'user', text: input.displayText },
+          { id: botId, role: 'assistant', text: '', pending: true },
+        ];
+      });
 
-    // A research/deep turn can run for minutes; an intermediary (reverse proxy,
-    // gateway, browser) often drops the long-held connection before the server
-    // finishes. But the turn route is idempotent and runAssistantTurn NEVER
-    // rejects — it always resolves to {200|400|500} and caches by
-    // idempotency-key. So a dropped connection means the turn is STILL running,
-    // not failed. We re-POST the SAME key, which re-attaches to the in-flight
-    // turn (or its cached result) WITHOUT re-running the LLM, and keep the
-    // spinner alive. Only a real {400|500} from our route — or exhausting the
-    // deadline — ends the turn. (Proxy 502/503/504/52x means the gateway gave
-    // up but upstream is alive → re-attach, don't surface it.)
-    const headers: Record<string, string> = { 'idempotency-key': input.idempotencyKey };
-    if (input.isJson) headers['content-type'] = 'application/json';
-    const RETRY_DEADLINE_MS = 6 * 60_000;
-    const startedAt = Date.now();
-    let attempt = 0;
+      // A research/deep turn can run for minutes; an intermediary (reverse proxy,
+      // gateway, browser) often drops the long-held connection before the server
+      // finishes. But the turn route is idempotent and runAssistantTurn NEVER
+      // rejects — it always resolves to {200|400|500} and caches by
+      // idempotency-key. So a dropped connection means the turn is STILL running,
+      // not failed. We re-POST the SAME key, which re-attaches to the in-flight
+      // turn (or its cached result) WITHOUT re-running the LLM, and keep the
+      // spinner alive. Only a real {400|500} from our route — or exhausting the
+      // deadline — ends the turn. (Proxy 502/503/504/52x means the gateway gave
+      // up but upstream is alive → re-attach, don't surface it.)
+      const headers: Record<string, string> = { 'idempotency-key': input.idempotencyKey };
+      if (input.isJson) headers['content-type'] = 'application/json';
+      const RETRY_DEADLINE_MS = 6 * 60_000;
+      const startedAt = Date.now();
+      let attempt = 0;
 
-    try {
-      for (;;) {
-        attempt += 1;
-        let res: Response | null = null;
-        try {
-          res = await fetch(apiUrl('/api/assistant/turn'), withAuth({ method: 'POST', headers, body: input.body }));
-        } catch {
-          // Network drop / connection reset mid-turn — the turn is still
-          // running server-side; fall through to re-attach by key.
-          res = null;
-        }
+      try {
+        for (;;) {
+          attempt += 1;
+          let res: Response | null = null;
+          try {
+            res = await fetch(
+              apiUrl('/api/assistant/turn'),
+              withAuth({ method: 'POST', headers, body: input.body }),
+            );
+          } catch {
+            // Network drop / connection reset mid-turn — the turn is still
+            // running server-side; fall through to re-attach by key.
+            res = null;
+          }
 
-        if (res) {
-          if (res.ok) {
-            const data = (await res.json()) as TurnPostResult;
-            if ('outbound' in data) {
-              // Blocking reply (streaming off) — fill it now.
-              setMessages((prev) =>
-                prev.map((m) => (m.id === botId ? { ...m, text: data.outbound.text, pending: false } : m)),
-              );
-              fireTurnSettled({ agentSlug: target.agentSlug, nodeId: target.nodeId, status: 'done' });
+          if (res) {
+            if (res.ok) {
+              const data = (await res.json()) as TurnPostResult;
+              if ('outbound' in data) {
+                // Blocking reply (streaming off) — fill it now.
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === botId ? { ...m, text: data.outbound.text, pending: false } : m,
+                  ),
+                );
+                fireTurnSettled({
+                  agentSlug: target.agentSlug,
+                  nodeId: target.nodeId,
+                  status: 'done',
+                });
+                return data;
+              }
+              // Non-blocking (202): the reply lands over the live stream. Keep the
+              // bot bubble pending and let the stream type it out + settle it.
+              subscribeDockTurn(data.turnId, botId, target);
               return data;
             }
-            // Non-blocking (202): the reply lands over the live stream. Keep the
-            // bot bubble pending and let the stream type it out + settle it.
-            subscribeDockTurn(data.turnId, botId, target);
-            return data;
+            // Our route only emits 400/500 as real outcomes — surface those. A
+            // 5xx from a PROXY (gateway timeout) is not our route; re-attach.
+            const proxyTimeout =
+              res.status === 502 ||
+              res.status === 503 ||
+              res.status === 504 ||
+              res.status === 522 ||
+              res.status === 524;
+            if (!proxyTimeout) {
+              const b = (await res.json().catch(() => ({}))) as { error?: string };
+              throw new Error(b.error ?? `request failed (${res.status})`);
+            }
           }
-          // Our route only emits 400/500 as real outcomes — surface those. A
-          // 5xx from a PROXY (gateway timeout) is not our route; re-attach.
-          const proxyTimeout =
-            res.status === 502 || res.status === 503 || res.status === 504 ||
-            res.status === 522 || res.status === 524;
-          if (!proxyTimeout) {
-            const b = (await res.json().catch(() => ({}))) as { error?: string };
-            throw new Error(b.error ?? `request failed (${res.status})`);
-          }
-        }
 
-        if (Date.now() - startedAt > RETRY_DEADLINE_MS) {
-          throw new Error(
-            'Still working — this is taking unusually long. It may finish in the background; reload to check.',
-          );
+          if (Date.now() - startedAt > RETRY_DEADLINE_MS) {
+            throw new Error(
+              'Still working — this is taking unusually long. It may finish in the background; reload to check.',
+            );
+          }
+          // Brief backoff, then re-attach to the in-flight turn (no LLM re-run).
+          await new Promise((r) => setTimeout(r, Math.min(3000, 1000 * attempt)));
         }
-        // Brief backoff, then re-attach to the in-flight turn (no LLM re-run).
-        await new Promise((r) => setTimeout(r, Math.min(3000, 1000 * attempt)));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Something went wrong';
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === botId ? { ...m, text: message, pending: false, error: true } : m,
+          ),
+        );
+        fireTurnSettled({ agentSlug: target.agentSlug, nodeId: target.nodeId, status: 'error' });
+        throw err;
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Something went wrong';
-      setMessages((prev) =>
-        prev.map((m) => (m.id === botId ? { ...m, text: message, pending: false, error: true } : m)),
-      );
-      fireTurnSettled({ agentSlug: target.agentSlug, nodeId: target.nodeId, status: 'error' });
-      throw err;
-    }
-  }, [subscribeDockTurn, fireTurnSettled]);
+    },
+    [subscribeDockTurn, fireTurnSettled],
+  );
 
   const clear = useCallback(() => setMessages([]), []);
 
@@ -678,7 +714,11 @@ export function HighlightButton() {
       className={cn('relative', picking && 'ring-2 ring-ring ring-offset-1 ring-offset-sidebar')}
       aria-pressed={picking}
       aria-label={picking ? 'Stop highlighting' : 'Highlight content to send to the assistant'}
-      title={picking ? 'Picking — click a row to attach (Esc when done)' : 'Highlight content to send to the assistant'}
+      title={
+        picking
+          ? 'Picking — click a row to attach (Esc when done)'
+          : 'Highlight content to send to the assistant'
+      }
     >
       <SquareDashedMousePointer aria-hidden />
       <span className="hidden sm:inline">Highlight content</span>

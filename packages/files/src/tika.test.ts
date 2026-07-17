@@ -163,7 +163,7 @@ describe('parseTikaBytes — partial-success 422 salvage', () => {
     expect(text).toBe(salvageBody);
   });
 
-  it("trims surrounding whitespace from a 422 body too", async () => {
+  it('trims surrounding whitespace from a 422 body too', async () => {
     mockFetch({ ok: false, status: 422, text: '  partial parse  \n' });
     const text = await parseTikaBytes(Buffer.from('x'));
     expect(text).toBe('partial parse');

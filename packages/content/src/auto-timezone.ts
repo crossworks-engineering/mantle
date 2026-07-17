@@ -26,6 +26,7 @@
  * unit-testable; applyAutoTimezone is the thin DB-writing wrapper.
  */
 
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference -- loads the local ambient type for the untyped tz-lookup module
 /// <reference path="./tz-lookup.d.ts" />
 import tzlookup from 'tz-lookup';
 import type { LocationPing } from './location-ping';

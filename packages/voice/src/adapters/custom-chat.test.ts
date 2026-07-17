@@ -62,7 +62,11 @@ describe('custom-chat base URL + auth', () => {
 
   it('throws a clear error when baseUrl is missing', async () => {
     await expect(
-      customChatAdapter.chat({ apiKey: 'sk', model: 'glm-4.6', messages: [{ role: 'user', content: 'hi' }] }),
+      customChatAdapter.chat({
+        apiKey: 'sk',
+        model: 'glm-4.6',
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
     ).rejects.toThrow(/baseUrl required/);
   });
 
@@ -125,7 +129,13 @@ describe('custom-chat reasoning', () => {
 describe('custom-chat result mapping', () => {
   it('returns text + usage and surfaces the cache-read signal', async () => {
     captureFetch(
-      reply({ usage: { prompt_tokens: 10, completion_tokens: 3, prompt_tokens_details: { cached_tokens: 7 } } }),
+      reply({
+        usage: {
+          prompt_tokens: 10,
+          completion_tokens: 3,
+          prompt_tokens_details: { cached_tokens: 7 },
+        },
+      }),
     );
     const r = await customChatAdapter.chat({
       apiKey: 'sk',

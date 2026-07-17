@@ -36,7 +36,8 @@ export async function POST(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ error: 'valid nodeId required' }, { status: 400 });
+  if (!parsed.success)
+    return NextResponse.json({ error: 'valid nodeId required' }, { status: 400 });
   try {
     const share = await createShare(user.id, parsed.data.nodeId);
     return NextResponse.json({

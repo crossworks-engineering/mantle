@@ -111,7 +111,8 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
         />
         {isEdit && (
           <p className="text-xs text-muted-foreground">
-            The address can&apos;t be changed. Remove the account and add it again to use a different one.
+            The address can&apos;t be changed. Remove the account and add it again to use a
+            different one.
           </p>
         )}
       </div>
@@ -198,8 +199,8 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
         <div className="space-y-1">
           <p className="text-sm font-medium">Sending (SMTP) — optional</p>
           <p className="text-xs text-muted-foreground">
-            Lets the assistant send email from this address. Uses the same app password.
-            Leave blank to keep the account receive-only.
+            Lets the assistant send email from this address. Uses the same app password. Leave blank
+            to keep the account receive-only.
           </p>
         </div>
         <div className="grid grid-cols-3 gap-3">
@@ -223,7 +224,9 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
               max={65535}
               placeholder="465"
               value={smtpPort}
-              onChange={(e) => setSmtpPort(e.target.value === '' ? '' : Number(e.target.value) || 0)}
+              onChange={(e) =>
+                setSmtpPort(e.target.value === '' ? '' : Number(e.target.value) || 0)
+              }
             />
           </div>
         </div>
@@ -239,7 +242,9 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
           <Label htmlFor="smtpSecure" className="cursor-pointer">
             Use TLS
           </Label>
-          <span className="ml-auto text-xs text-muted-foreground">TLS on 465 · off for STARTTLS on 587</span>
+          <span className="ml-auto text-xs text-muted-foreground">
+            TLS on 465 · off for STARTTLS on 587
+          </span>
         </div>
       </div>
 
@@ -256,7 +261,8 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
           onChange={(e) => setFirstScanDays(Number(e.target.value) || 0)}
         />
         <p className="text-xs text-muted-foreground">
-          How far back to scan headers on the first sync (e.g. 30 for the last month, 365 for a year).
+          How far back to scan headers on the first sync (e.g. 30 for the last month, 365 for a
+          year).
           {isEdit
             ? ' Applies to folders not yet scanned — lowering it later won’t delete already-synced mail.'
             : ''}
@@ -282,11 +288,13 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
           <div className="min-w-0">
             <p className="font-medium">Connected.</p>
             <p className="text-green-900/80 dark:text-green-100/80">
-              Authenticated and found <span className="font-medium">{submit.data.foldersFound}</span>{' '}
-              folder{submit.data.foldersFound === 1 ? '' : 's'}
+              Authenticated and found{' '}
+              <span className="font-medium">{submit.data.foldersFound}</span> folder
+              {submit.data.foldersFound === 1 ? '' : 's'}
               {submit.data.serverName ? (
                 <>
-                  {' '}on <span className="font-medium">{submit.data.serverName}</span>
+                  {' '}
+                  on <span className="font-medium">{submit.data.serverName}</span>
                 </>
               ) : null}
               .

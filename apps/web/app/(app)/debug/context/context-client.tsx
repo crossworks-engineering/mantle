@@ -76,7 +76,10 @@ function TurnRow({ turn }: { turn: ContextTurnRow }) {
         {turn.status === 'error' && <span className="font-medium text-destructive">error</span>}
         <span className="ml-auto flex items-baseline gap-3">
           <span>{fmtRelative(turn.startedAt)}</span>
-          <Link href={`/debug/journey/${turn.traceId}`} className="underline-offset-2 hover:underline">
+          <Link
+            href={`/debug/journey/${turn.traceId}`}
+            className="underline-offset-2 hover:underline"
+          >
             trace
           </Link>
         </span>
@@ -228,7 +231,9 @@ function SnapshotItemLine({ item }: { item: SnapshotItem }) {
           <span className="font-medium">
             {item.title ?? item.entity}
             {item.heading ? ` › ${item.heading}` : ''}
-            {item.kind ? <span className="font-normal text-muted-foreground"> ({item.kind})</span> : null}
+            {item.kind ? (
+              <span className="font-normal text-muted-foreground"> ({item.kind})</span>
+            ) : null}
             {item.text ? ' — ' : ''}
           </span>
         )}

@@ -70,7 +70,8 @@ export function SandboxPanel({ agentId, agentName }: { agentId: string; agentNam
         onClick={() => setOpen(true)}
         className="flex items-center gap-1 text-[13px] font-medium text-muted-foreground hover:text-foreground"
       >
-        <ChevronRight className="size-3.5" aria-hidden /> Sandbox — chat with this prompt (nothing saved)
+        <ChevronRight className="size-3.5" aria-hidden /> Sandbox — chat with this prompt (nothing
+        saved)
       </button>
     );
   }
@@ -86,14 +87,21 @@ export function SandboxPanel({ agentId, agentName }: { agentId: string; agentNam
           <ChevronDown className="size-3.5" aria-hidden /> Sandbox
         </button>
         {messages.length > 0 && (
-          <Button size="sm" variant="ghost" className="h-6 px-2 text-[13px]" onClick={reset} disabled={busy}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[13px]"
+            onClick={reset}
+            disabled={busy}
+          >
             <RotateCcw className="size-3" /> Reset
           </Button>
         )}
       </div>
 
       <p className="text-[12px] text-muted-foreground/70">
-        Ephemeral test of {agentName}’s current composed prompt — no tools, no memory, nothing is saved.
+        Ephemeral test of {agentName}’s current composed prompt — no tools, no memory, nothing is
+        saved.
       </p>
 
       {messages.length > 0 && (

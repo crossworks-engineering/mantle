@@ -251,7 +251,10 @@ export async function tailnetUp(authKey: string, hostname: string): Promise<Tail
   const start = await localApiPost('/localapi/v0/start', JSON.stringify(options), 8000);
   if ('error' in start) return { ok: false, reason: start.error };
   if (start.statusCode >= 400) {
-    return { ok: false, reason: `tailscaled /start HTTP ${start.statusCode}${start.body ? ` — ${start.body.slice(0, 300)}` : ''}` };
+    return {
+      ok: false,
+      reason: `tailscaled /start HTTP ${start.statusCode}${start.body ? ` — ${start.body.slice(0, 300)}` : ''}`,
+    };
   }
   // Fire the login now that the auth key is stored. Without this, /start just
   // sits at NeedsLogin and the key is never applied.

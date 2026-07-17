@@ -23,7 +23,8 @@ export function BrainStats({
           <Sparkles className="size-4 text-muted-foreground" aria-hidden /> Memory index
         </CardTitle>
         <CardDescription>
-          {formatCount(vectors.vectorsTotal)} vectors indexed · {formatCount(vectors.embeddingCacheRows)} cached
+          {formatCount(vectors.vectorsTotal)} vectors indexed ·{' '}
+          {formatCount(vectors.embeddingCacheRows)} cached
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -43,9 +44,21 @@ export function BrainStats({
           pct={pct(vectors.entitiesIndexed, vectors.entitiesTotal)}
         />
         <div className="grid grid-cols-3 gap-2 border-t pt-3 text-center">
-          <Stat icon={<Boxes className="size-4" />} label="Entities" value={formatCount(brain.entitiesTotal)} />
-          <Stat icon={<Network className="size-4" />} label="Edges" value={formatCount(brain.edgesTotal)} />
-          <Stat icon={<Sparkles className="size-4" />} label="Facts" value={formatCount(brain.factsTotal)} />
+          <Stat
+            icon={<Boxes className="size-4" />}
+            label="Entities"
+            value={formatCount(brain.entitiesTotal)}
+          />
+          <Stat
+            icon={<Network className="size-4" />}
+            label="Edges"
+            value={formatCount(brain.edgesTotal)}
+          />
+          <Stat
+            icon={<Sparkles className="size-4" />}
+            label="Facts"
+            value={formatCount(brain.factsTotal)}
+          />
         </div>
         <GraphIntegrityRow integrity={integrity} />
       </CardContent>

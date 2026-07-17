@@ -12,7 +12,10 @@ describe('missingPersonaGroups', () => {
 
   it('only ADDS — never proposes removing an operator-held group not in the manifest', () => {
     // The operator added 'custom-group' and removed default 'email'.
-    const result = missingPersonaGroups(['location', 'custom-group'], ['location', 'email', 'profile']);
+    const result = missingPersonaGroups(
+      ['location', 'custom-group'],
+      ['location', 'email', 'profile'],
+    );
     expect(result).toEqual(['email', 'profile']); // re-adds the removed default + the new one
     expect(result).not.toContain('custom-group'); // never touches operator extras
   });
@@ -49,7 +52,11 @@ describe('convergeManifestSkills', () => {
   });
 
   it('adds a newly-wanted manifest skill, keeping order: kept then added', () => {
-    const next = convergeManifestSkills(['tool_grounding'], ['tool_grounding', 'voice_reply'], owned);
+    const next = convergeManifestSkills(
+      ['tool_grounding'],
+      ['tool_grounding', 'voice_reply'],
+      owned,
+    );
     expect(next).toEqual(['tool_grounding', 'voice_reply']);
   });
 

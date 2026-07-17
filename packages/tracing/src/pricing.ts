@@ -83,7 +83,6 @@ export function fallbackCostMicroUsd(
   const cacheRate = price.cacheRead ?? price.input;
   const cacheTokens = tokens.cacheRead ?? 0;
   const freshInput = Math.max(0, tokens.input - cacheTokens);
-  const usd =
-    freshInput * price.input + cacheTokens * cacheRate + tokens.output * price.output;
+  const usd = freshInput * price.input + cacheTokens * cacheRate + tokens.output * price.output;
   return Math.round(usd * 1_000_000);
 }

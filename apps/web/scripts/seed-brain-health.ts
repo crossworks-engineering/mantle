@@ -21,7 +21,7 @@
  * /settings/agents (the manifest defines the group; grants stay explicit).
  */
 import { readFileSync } from 'node:fs';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { db, agents, heartbeats, nodes, skills } from '@mantle/db';
 import { computeNextFireAt } from '@mantle/heartbeats';
 import { createNote } from '@mantle/content';
@@ -81,7 +81,9 @@ async function resolveAgentSlug(): Promise<string> {
   const [responder] = await db
     .select({ slug: agents.slug, name: agents.name })
     .from(agents)
-    .where(and(eq(agents.ownerId, USER_ID!), eq(agents.role, 'responder'), eq(agents.enabled, true)))
+    .where(
+      and(eq(agents.ownerId, USER_ID!), eq(agents.role, 'responder'), eq(agents.enabled, true)),
+    )
     .orderBy(asc(agents.priority))
     .limit(1);
   if (!responder) throw new Error('no enabled responder agent — create one at /settings/agents');
@@ -104,7 +106,10 @@ async function upsertSkill(): Promise<void> {
     .where(and(eq(skills.ownerId, USER_ID!), eq(skills.slug, SKILL_SLUG)))
     .limit(1);
   if (existing) {
-    await db.update(skills).set({ ...meta, updatedAt: new Date() }).where(eq(skills.id, existing.id));
+    await db
+      .update(skills)
+      .set({ ...meta, updatedAt: new Date() })
+      .where(eq(skills.id, existing.id));
     console.log(`[seed] updated skill ${SKILL_SLUG}`);
   } else {
     await db.insert(skills).values({ ownerId: USER_ID!, slug: SKILL_SLUG, ...meta });
@@ -135,7 +140,9 @@ async function seedCasesNote(): Promise<void> {
   try {
     raw = readFileSync(new URL('./eval/recall-cases.json', import.meta.url), 'utf8');
   } catch {
-    console.log('[seed] no scripts/eval/recall-cases.json — skipped cases import (create the note by hand)');
+    console.log(
+      '[seed] no scripts/eval/recall-cases.json — skipped cases import (create the note by hand)',
+    );
     return;
   }
   const note = await createNote(USER_ID!, {
@@ -171,8 +178,13 @@ async function upsertHeartbeat(agentSlug: string): Promise<void> {
     .where(and(eq(heartbeats.ownerId, USER_ID!), eq(heartbeats.slug, HEARTBEAT_SLUG)))
     .limit(1);
   if (existing) {
-    await db.update(heartbeats).set({ ...common, updatedAt: new Date() }).where(eq(heartbeats.id, existing.id));
-    console.log(`[seed] updated heartbeat ${HEARTBEAT_SLUG} (next fire ${nextFireAt?.toISOString()})`);
+    await db
+      .update(heartbeats)
+      .set({ ...common, updatedAt: new Date() })
+      .where(eq(heartbeats.id, existing.id));
+    console.log(
+      `[seed] updated heartbeat ${HEARTBEAT_SLUG} (next fire ${nextFireAt?.toISOString()})`,
+    );
   } else {
     await db.insert(heartbeats).values({
       ownerId: USER_ID!,
@@ -180,7 +192,9 @@ async function upsertHeartbeat(agentSlug: string): Promise<void> {
       state: SKILL_DEFAULT_STATE,
       ...common,
     });
-    console.log(`[seed] inserted heartbeat ${HEARTBEAT_SLUG} (next fire ${nextFireAt?.toISOString()})`);
+    console.log(
+      `[seed] inserted heartbeat ${HEARTBEAT_SLUG} (next fire ${nextFireAt?.toISOString()})`,
+    );
   }
 }
 

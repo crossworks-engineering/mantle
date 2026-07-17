@@ -1,11 +1,7 @@
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import {
-  collectionRoot,
-  createDocCollection,
-  listDocCollections,
-} from '@mantle/files';
+import { collectionRoot, createDocCollection, listDocCollections } from '@mantle/files';
 import { formatInProfile, loadProfilePreferences } from '@mantle/content';
 import { getReaderNav } from '@/lib/docs-reader';
 import { getOwnerOr401 } from '@/lib/auth';
@@ -33,7 +29,9 @@ export async function GET() {
   }));
   const formattedReconciled: Record<string, string | null> = {};
   for (const c of cols) {
-    formattedReconciled[c.id] = c.lastReconciledAt ? formatInProfile(c.lastReconciledAt, prefs) : null;
+    formattedReconciled[c.id] = c.lastReconciledAt
+      ? formatInProfile(c.lastReconciledAt, prefs)
+      : null;
   }
   const firstDocHref: Record<string, string | null> = {};
   for (const c of nav) {
@@ -75,7 +73,10 @@ export async function POST(req: Request) {
   if (owner instanceof Response) return owner;
   const parsed = createSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? 'Invalid input.' });
+    return NextResponse.json({
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? 'Invalid input.',
+    });
   }
   const input = parsed.data;
   try {
@@ -84,7 +85,10 @@ export async function POST(req: Request) {
     for (const c of existing) {
       const r = collectionRoot(c);
       if (r === newRoot) {
-        return NextResponse.json({ ok: false, message: `“${c.label}” already covers that exact folder.` });
+        return NextResponse.json({
+          ok: false,
+          message: `“${c.label}” already covers that exact folder.`,
+        });
       }
       if (c.key === 'system') continue; // repo-docs catch-all; child collections allowed
       if (rootsOverlap(newRoot, r)) {
@@ -111,7 +115,10 @@ export async function POST(req: Request) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/duplicate key|doc_collections_owner_key_uq|unique/i.test(msg)) {
-      return NextResponse.json({ ok: false, message: 'A collection with that key already exists.' });
+      return NextResponse.json({
+        ok: false,
+        message: 'A collection with that key already exists.',
+      });
     }
     return NextResponse.json({ ok: false, message: msg });
   }

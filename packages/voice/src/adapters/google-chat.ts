@@ -135,9 +135,7 @@ function toGeminiInlineData(
  *      functionResponse part. The result's text body becomes
  *      `response.result` (we wrap the string so the JSON parses).
  */
-function splitSystemAndContents(
-  messages: ChatOptions['messages'],
-): {
+function splitSystemAndContents(messages: ChatOptions['messages']): {
   systemInstruction?: { parts: GeminiPart[] };
   contents: GeminiContent[];
 } {
@@ -155,9 +153,7 @@ function splitSystemAndContents(
       // caching). Gemini does implicit caching server-side based on
       // prefix match, so we lose nothing by joining.
       const content =
-        typeof m.content === 'string'
-          ? m.content
-          : m.content.map((p) => p.text).join('\n\n');
+        typeof m.content === 'string' ? m.content : m.content.map((p) => p.text).join('\n\n');
       sys.push(content);
       continue;
     }
@@ -201,9 +197,7 @@ function splitSystemAndContents(
       try {
         const obj = JSON.parse(m.content);
         parsedResponse =
-          obj && typeof obj === 'object' && !Array.isArray(obj)
-            ? obj
-            : { result: m.content };
+          obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : { result: m.content };
       } catch {
         parsedResponse = { result: m.content };
       }
@@ -239,9 +233,7 @@ function splitSystemAndContents(
     contents.push({ role: 'model', parts });
   }
   return {
-    ...(sys.length > 0
-      ? { systemInstruction: { parts: [{ text: sys.join('\n\n') }] } }
-      : {}),
+    ...(sys.length > 0 ? { systemInstruction: { parts: [{ text: sys.join('\n\n') }] } } : {}),
     contents,
   };
 }
@@ -262,9 +254,7 @@ function buildGoogleTools(opts: ChatOptions): GeminiToolDeclaration[] | undefine
 
 /** Walk parts[], surface every functionCall as a normalised ChatToolCall.
  *  Mints synthetic ids since Gemini's functionCall has no id field. */
-function extractGoogleToolCalls(
-  parts: GeminiPart[] | undefined,
-): ChatToolCall[] | undefined {
+function extractGoogleToolCalls(parts: GeminiPart[] | undefined): ChatToolCall[] | undefined {
   if (!parts) return undefined;
   const calls: ChatToolCall[] = [];
   for (const p of parts) {
@@ -319,9 +309,7 @@ function buildGoogleBody(opts: ChatOptions): Record<string, unknown> {
   //   - 'ANY' — forces some tool (we don't expose this through the
   //     'auto'/'none' contract). Map our 'auto'/'none' accordingly.
   const toolConfig =
-    opts.toolChoice === 'none'
-      ? { functionCallingConfig: { mode: 'NONE' as const } }
-      : undefined;
+    opts.toolChoice === 'none' ? { functionCallingConfig: { mode: 'NONE' as const } } : undefined;
 
   return {
     contents,
@@ -339,21 +327,23 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
 
   const body = buildGoogleBody(opts);
 
-  const res = await fetch(
-    `${GOOGLE_BASE_URL}/models/${opts.model}:generateContent`,
-    {
-      method: 'POST',
-      headers: {
-        'x-goog-api-key': opts.apiKey,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: chatAbortSignal(opts.signal, 60_000),
+  const res = await fetch(`${GOOGLE_BASE_URL}/models/${opts.model}:generateContent`, {
+    method: 'POST',
+    headers: {
+      'x-goog-api-key': opts.apiKey,
+      'content-type': 'application/json',
     },
-  );
+    body: JSON.stringify(body),
+    signal: chatAbortSignal(opts.signal, 60_000),
+  });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new ChatHttpError({ provider: 'google', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
+    throw new ChatHttpError({
+      provider: 'google',
+      status: res.status,
+      body: errBody,
+      retryAfterMs: parseRetryAfterMs(res.headers),
+    });
   }
   const parsed = (await res.json()) as GeminiResponse;
   // Response shape: candidates[0].content.parts[]. Walk every part:
@@ -436,18 +426,20 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
   const body = buildGoogleBody(opts);
   if (opts.signal?.aborted) return { text: '', model: opts.model };
 
-  const res = await fetch(
-    `${GOOGLE_BASE_URL}/models/${opts.model}:streamGenerateContent?alt=sse`,
-    {
-      method: 'POST',
-      headers: { 'x-goog-api-key': opts.apiKey, 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      ...(opts.signal ? { signal: opts.signal } : {}),
-    },
-  );
+  const res = await fetch(`${GOOGLE_BASE_URL}/models/${opts.model}:streamGenerateContent?alt=sse`, {
+    method: 'POST',
+    headers: { 'x-goog-api-key': opts.apiKey, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  });
   if (!res.ok || !res.body) {
     const errBody = await res.text().catch(() => '');
-    throw new ChatHttpError({ provider: 'google', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
+    throw new ChatHttpError({
+      provider: 'google',
+      status: res.status,
+      body: errBody,
+      retryAfterMs: parseRetryAfterMs(res.headers),
+    });
   }
 
   let text = '';

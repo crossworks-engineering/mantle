@@ -11,7 +11,10 @@ import { APP_VERSION } from './version';
  */
 
 const bumpMajor = (v: string): string => {
-  const p = v.split('-')[0]!.split('.').map((n) => parseInt(n, 10) || 0);
+  const p = v
+    .split('-')[0]!
+    .split('.')
+    .map((n) => parseInt(n, 10) || 0);
   return `${(p[0] ?? 0) + 1}.0.0`;
 };
 

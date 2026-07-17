@@ -142,8 +142,7 @@ function textForNode(row: Node): string {
     return row.title;
   }
   const summary = typeof data.summary === 'string' ? data.summary : '';
-  const content =
-    typeof data.content === 'string' ? (data.content as string).slice(0, 500) : '';
+  const content = typeof data.content === 'string' ? (data.content as string).slice(0, 500) : '';
   return [row.title, summary, content].filter(Boolean).join('\n\n');
 }
 function textForFact(row: Fact): string {
@@ -201,10 +200,7 @@ async function reEmbedTable<T extends { id: string }>(opts: {
   return { rows: rows.length, chars, written };
 }
 
-export async function runReembed(
-  ownerId: string,
-  opts: ReembedOpts,
-): Promise<ReembedResult> {
+export async function runReembed(ownerId: string, opts: ReembedOpts): Promise<ReembedResult> {
   // Key the in-flight slot on (ownerId, model, dryRun). Coalescing two
   // calls with the same model is the whole point — it stops double-click
   // / multi-tab waste. But two concurrent calls with DIFFERENT models
@@ -221,10 +217,7 @@ export async function runReembed(
   return promise;
 }
 
-async function _runReembedInner(
-  ownerId: string,
-  opts: ReembedOpts,
-): Promise<ReembedResult> {
+async function _runReembedInner(ownerId: string, opts: ReembedOpts): Promise<ReembedResult> {
   const start = Date.now();
   const tables = new Set(opts.tables ?? DEFAULT_TABLES);
   const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
@@ -262,7 +255,10 @@ async function _runReembedInner(
       dryRun,
       onProgress: opts.onProgress,
       fetcher: async () => {
-        const q = db.select().from(nodes).where(and(...conds));
+        const q = db
+          .select()
+          .from(nodes)
+          .where(and(...conds));
         const rows = limit ? await q.limit(limit) : await q;
         return rows as Node[];
       },

@@ -30,18 +30,18 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, agents, type Agent, type ConversationAttachment, type TeamChannel, type TeamMessage } from '@mantle/db';
+import {
+  db,
+  agents,
+  type Agent,
+  type ConversationAttachment,
+  type TeamChannel,
+  type TeamMessage,
+} from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import {
   buildChatMessages,
-  composeSystemPromptWithSkills,
-  effectiveToolSlugs,
   loadConversationContext,
-  resolveAgentSkills,
-  resolveAgentToolGroups,
-  resolveAgentTools,
-  resolveBackupAdapter,
-  runToolLoop,
   type HistoryTurn,
 } from '@mantle/agent-runtime';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
@@ -49,14 +49,14 @@ import {
   appendTeamMessage,
   updateTeamMessageOutcome,
   recentTeamMessages,
-  buildTimeContextLine,
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
   TEAM_PRIVATE_READ_SLUGS,
 } from '@mantle/content';
+import { assembleResponderTurn } from './assemble-turn';
+import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
 import {
   startTrace,
-  step,
   runDurableStep,
   emitTurnLifecycle,
   registerTurnAbort,
@@ -113,7 +113,10 @@ async function resolveTeamResponder(ownerId: string): Promise<Agent | null> {
 export function teamThreadToHistory(rows: TeamMessage[]): HistoryTurn[] {
   return rows
     .filter((r) => r.status === 'complete' && r.text.trim().length > 0)
-    .map((r) => ({ role: r.direction === 'inbound' ? ('user' as const) : ('assistant' as const), text: r.text }));
+    .map((r) => ({
+      role: r.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
+      text: r.text,
+    }));
 }
 
 export async function runTeamTurn(
@@ -196,36 +199,41 @@ export async function runTeamTurn(
     if (options.streamId) unregisterTurnAbort(options.streamId);
   };
 
-  const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
-  const promptWithSkills = composeSystemPromptWithSkills(agent.systemPrompt, attachedSkills);
   const prefs = await loadProfilePreferences(ownerId);
   // Member identity rides the VOLATILE block: per-contact text in the cached
   // prefix would bust the shared per-agent cache on every member switch.
   const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (contact ${contactId}). You are serving this person — an external team member, not the brain's owner.`;
-  const volatileContext = [buildTimeContextLine(prefs), memberLine].filter(Boolean).join('\n\n');
 
-  const params = (agent.params ?? {}) as Record<string, unknown>;
-  const groupTools = await resolveAgentToolGroups(ownerId, agent.toolGroupSlugs ?? []);
-  let allowedToolSlugs = effectiveToolSlugs(groupTools);
-  // Private-reads switch (default OFF): the owner's email + journal are only
-  // reachable by a team member when explicitly opted in. Enforced HERE, at tool
-  // resolution — independent of the `team-read` group grant, so the switch
-  // can't be bypassed by a manifest change that re-adds the slugs.
-  if (!isTeamPrivateReadsEnabled(prefs)) {
-    const gated = new Set(TEAM_PRIVATE_READ_SLUGS);
-    allowedToolSlugs = allowedToolSlugs.filter((s) => !gated.has(s));
-  }
-  const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
+  // Shared responder-turn assembly (audit #5c), configured for the team
+  // surface's HARD isolation: no identity/journal block, no heartbeats, no
+  // owner thinking budget, no delegation (fail closed). The private-reads
+  // switch (default OFF) is enforced HERE, at tool resolution — independent
+  // of the `team-read` group grant, so it can't be bypassed by a manifest
+  // change that re-adds the slugs.
+  const assembled = await assembleResponderTurn({
+    ownerId,
+    agent,
+    prefs,
+    logPrefix: '[team-turn]',
+    includeIdentity: false,
+    volatileExtras: [memberLine],
+    withThinking: false,
+    allowDelegation: false,
+    excludeToolSlugs: isTeamPrivateReadsEnabled(prefs) ? [] : TEAM_PRIVATE_READ_SLUGS,
+  });
+  const { volatileContext, allowedTools } = assembled;
 
   const adapter = getChatAdapter(agent.provider);
   if (!adapter) {
-    throw new Error(`team turn: no chat adapter for provider '${agent.provider}' (agent ${agent.slug})`);
+    throw new Error(
+      `team turn: no chat adapter for provider '${agent.provider}' (agent ${agent.slug})`,
+    );
   }
 
   const messages = buildChatMessages({
     model: agent.model,
     provider: agent.provider,
-    systemPrompt: promptWithSkills,
+    systemPrompt: assembled.effectiveSystemPrompt,
     volatileContext,
     // HARD isolation: no persona notes, no digests — owner-personal context
     // never reaches a team turn (see header invariants).
@@ -240,9 +248,9 @@ export async function runTeamTurn(
   });
 
   let capturedTraceId: string | null = null;
-  let loopOutcome: Awaited<ReturnType<typeof runToolLoop>>;
+  let outcome: ResponderLoopResult;
   try {
-    loopOutcome = await startTrace(
+    outcome = await startTrace(
       {
         kind: 'responder_turn',
         ownerId,
@@ -261,42 +269,27 @@ export async function runTeamTurn(
       },
       async () => {
         capturedTraceId = currentTrace()?.id ?? null;
-        await step(
-          { name: 'load_context', kind: 'compute', input: { agentId: agent.id, contactId } },
-          async (h) => {
-            h.setOutput({
-              turnCount: history.length,
-              factCount: ctx.facts.length,
-              contentHitCount: ctx.contentHits.length,
-              chunkHitCount: ctx.chunkHits.length,
-              relationCount: ctx.relations.length,
-              snapshot: ctx.snapshot,
-            });
-          },
-        );
-        return runToolLoop({
+        return runResponderLoop({
+          ownerId,
+          agent,
           adapter,
           apiKey,
-          model: agent.model,
-          baseUrl: agent.baseUrl,
-          viaTailnet: agent.viaTailnet,
-          backup: await resolveBackupAdapter(ownerId, agent),
-          params,
-          ownerId,
-          agentId: agent.id,
-          agentSlug: agent.slug,
-          agentDepth: 1,
-          // Fail closed: the team responder never delegates.
-          delegateTo: [],
-          initialMessages: messages,
-          tools: allowedTools,
-          ...(() => {
-            const requested = (agent.memoryConfig as { max_iterations?: number } | null)
-              ?.max_iterations;
-            return typeof requested === 'number' && requested > 0
-              ? { maxIterations: Math.min(30, Math.floor(requested)) }
-              : {};
-          })(),
+          prefs,
+          logPrefix: '[team-turn]',
+          // Fail closed: the team responder never delegates (assembly ran
+          // with allowDelegation:false / withThinking:false). `assembled` also
+          // carries loopOverrides (spread by runResponderLoop): since the
+          // unification, the team-responder's memory_config max_tool_calls /
+          // max_calls_per_tool clamps are enforced here where they weren't
+          // before — safe (tighter caps), inert unless the agent configures them.
+          assembled,
+          // Retrieval ran before the trace; the member's REAL history came
+          // from their own team thread, so the step's turnCount reflects
+          // that thread, not the structurally-empty ctx history.
+          loadContext: async () => ctx,
+          contextStepInput: { agentId: agent.id, contactId },
+          contextStepExtra: { turnCount: history.length },
+          buildMessages: () => messages,
           // The provenance channel: team_request_create reads WHO is asking
           // from here; owner-side tools see 'team' and refuse.
           surface: {
@@ -305,14 +298,20 @@ export async function runTeamTurn(
             contactName: options.contactName,
             inboundMessageId: inbound.id,
           },
+          abortSignal: abortController?.signal ?? null,
         });
       },
     );
   } catch (err) {
     if (abortController?.signal.aborted) {
-      loopOutcome = { reply: '', artifacts: [], iterations: 0, toolCalls: [], tokensOut: 0 } as unknown as Awaited<
-        ReturnType<typeof runToolLoop>
-      >;
+      outcome = {
+        loop: emptyLoopResult(),
+        reply: '',
+        emptyReplySubstituted: false,
+        persistedThoughts: [],
+        toolStats: null,
+        ctx,
+      };
     } else {
       const msg = err instanceof Error ? err.message : String(err);
       await runDurableStep('fail_team_outbound', () =>
@@ -330,13 +329,9 @@ export async function runTeamTurn(
     }
   }
 
-  const stopped = abortController?.signal.aborted === true;
-  let rawReply = loopOutcome.reply;
-  if (!stopped && !rawReply.trim()) {
-    rawReply =
-      "Sorry — I gathered some information but couldn't compose a final answer. Please ask that again, perhaps more narrowly.";
-  }
-  const reply = stripAudioTags(rawReply).text;
+  // The core already applied the shared empty-reply fallback (a Stop keeps
+  // its partial reply). Strip audio tags — the team surface is text-only.
+  const reply = stripAudioTags(outcome.reply).text;
 
   const finalized = await runDurableStep('finalize_team_outbound', () =>
     updateTeamMessageOutcome({
@@ -348,14 +343,18 @@ export async function runTeamTurn(
       traceId: capturedTraceId,
     }),
   );
-  const outbound: TeamMessage =
-    finalized ?? { ...outboundPending, text: reply, status: 'complete', traceId: capturedTraceId };
+  const outbound: TeamMessage = finalized ?? {
+    ...outboundPending,
+    text: reply,
+    status: 'complete',
+    traceId: capturedTraceId,
+  };
 
   retireAbort();
   if (options.streamId) {
     emitTurnLifecycle(options.streamId, ownerId, 'done', {
       outboundId: outboundPending.id,
-      tokensOut: loopOutcome.tokensOut,
+      tokensOut: outcome.loop.tokensOut,
     });
   }
 

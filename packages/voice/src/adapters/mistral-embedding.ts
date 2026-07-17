@@ -28,7 +28,7 @@ const STATIC_CATALOG: readonly EmbeddingModelInfo[] = [
     id: 'mistral-embed',
     label: 'mistral-embed',
     description:
-      '1024-dim native — does NOT fit the brain\'s vector(768) column. Solid multilingual recall; pair with a schema migration if you want to use it.',
+      "1024-dim native — does NOT fit the brain's vector(768) column. Solid multilingual recall; pair with a schema migration if you want to use it.",
     contextTokens: 8192,
     dimensions: 1024,
     inputPricePer1M: 0.1,
@@ -116,7 +116,14 @@ export const mistralEmbedding: EmbeddingDispatcher = {
       const byId = new Map(STATIC_CATALOG.map((m) => [m.id, m]));
       const available: EmbeddingModelInfo[] = (body.data ?? [])
         .filter((m): m is { id: string } => typeof m.id === 'string' && /embed/i.test(m.id))
-        .map((m) => byId.get(m.id) ?? { id: m.id, label: m.id, description: 'Embedding model returned by /v1/models — verify dimensions with Test.' });
+        .map(
+          (m) =>
+            byId.get(m.id) ?? {
+              id: m.id,
+              label: m.id,
+              description: 'Embedding model returned by /v1/models — verify dimensions with Test.',
+            },
+        );
       return { available, filtered: true, error: null };
     } catch (err) {
       return {

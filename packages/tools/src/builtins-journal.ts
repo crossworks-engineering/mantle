@@ -26,6 +26,7 @@ import {
   type JournalRow,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
+import { str } from './coerce';
 import { notFound } from './errors';
 
 // Shared referential precondition (checked centrally in dispatch — see
@@ -34,9 +35,6 @@ const JOURNAL_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'journal', lookup: 'journal_list / search_nodes' },
 ];
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
 }
@@ -137,13 +135,16 @@ const journal_create: BuiltinToolDef = {
   slug: 'journal_create',
   name: 'Add a journal entry',
   description:
-    "Record a short, first-person entry in the user's Journal — something durable about who they are, what they're doing, or how they feel (e.g. \"I started a new role as a maths teacher\", \"feeling anxious about the move next month\", \"I value honesty above almost everything\"). Keep `body` to a short paragraph. This becomes part of the assistant's always-on understanding of the user, so write it in the user's voice. " +
+    'Record a short, first-person entry in the user\'s Journal — something durable about who they are, what they\'re doing, or how they feel (e.g. "I started a new role as a maths teacher", "feeling anxious about the move next month", "I value honesty above almost everything"). Keep `body` to a short paragraph. This becomes part of the assistant\'s always-on understanding of the user, so write it in the user\'s voice. ' +
     'Use when the user shares something about themselves and asks you to remember it, or clearly wants it on the record — not for transient task/calendar items (use task_create / event_create) or secrets (secret_create).',
   inputSchema: {
     type: 'object',
     properties: {
       body: { type: 'string', description: 'the entry — a short first-person paragraph' },
-      title: { type: 'string', description: 'optional short title; auto-derived from body if omitted' },
+      title: {
+        type: 'string',
+        description: 'optional short title; auto-derived from body if omitted',
+      },
       mood: { type: 'string', description: MOOD_DESC },
       category: { type: 'string', description: CATEGORY_DESC },
       entry_date: {
@@ -195,8 +196,14 @@ const journal_update: BuiltinToolDef = {
       },
       body: { type: 'string', description: 'New entry text; omit to keep current.' },
       title: { type: 'string', description: 'New title; omit to keep current.' },
-      mood: { type: 'string', description: `${MOOD_DESC} Empty string clears it, omit to keep current.` },
-      category: { type: 'string', description: `${CATEGORY_DESC} Empty string clears it, omit to keep current.` },
+      mood: {
+        type: 'string',
+        description: `${MOOD_DESC} Empty string clears it, omit to keep current.`,
+      },
+      category: {
+        type: 'string',
+        description: `${CATEGORY_DESC} Empty string clears it, omit to keep current.`,
+      },
       entry_date: {
         type: 'string',
         description: 'ISO date the entry is about; empty string clears it, omit to keep current.',

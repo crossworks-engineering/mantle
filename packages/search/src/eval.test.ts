@@ -20,7 +20,12 @@ describe('parseEvalCases', () => {
 });
 
 describe('goldRank', () => {
-  const c: RecallEvalCase = { id: 'c', query: 'q', expectNodeIds: ['g'], expectTitleIncludes: ['whitepaper'] };
+  const c: RecallEvalCase = {
+    id: 'c',
+    query: 'q',
+    expectNodeIds: ['g'],
+    expectTitleIncludes: ['whitepaper'],
+  };
   it('ranks by id match', () => {
     expect(goldRank(c, [hit('a'), hit('g')])).toBe(2);
   });

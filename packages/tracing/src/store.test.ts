@@ -30,13 +30,7 @@ vi.mock('@mantle/db', () => ({
   },
 }));
 
-import {
-  startTrace,
-  step,
-  setStepObserver,
-  setTurnDeltaObserver,
-  emitTurnDelta,
-} from './store';
+import { startTrace, step, setStepObserver, setTurnDeltaObserver, emitTurnDelta } from './store';
 
 afterEach(() => {
   h.stepUpdates.length = 0;
@@ -86,7 +80,9 @@ describe('live turn streaming — delegated child traces', () => {
   it('child inherits the turnId + shares one seq cursor; only the root streams reply text', async () => {
     const stepEvents: Array<{ turnId: string; seq: number; phase: string; name: string }> = [];
     const deltaEvents: Array<{ seq: number; text: string }> = [];
-    setStepObserver((e) => stepEvents.push({ turnId: e.turnId, seq: e.seq, phase: e.phase, name: e.name }));
+    setStepObserver((e) =>
+      stepEvents.push({ turnId: e.turnId, seq: e.seq, phase: e.phase, name: e.name }),
+    );
     setTurnDeltaObserver((e) => deltaEvents.push({ seq: e.seq, text: e.text }));
 
     await startTrace({ ownerId: 'o', kind: 'responder_turn', turnId: 'turn-1' }, async () => {

@@ -14,12 +14,7 @@ import { db, tools, type Tool, type ToolHandler } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
 import { getBuiltin, getBuiltinHandler } from './registry';
 import { checkToolPreconditions } from './preconditions';
-import {
-  buildHttpRequest,
-  collectSecretRefs,
-  refKey,
-  scrubSecrets,
-} from './http-template';
+import { buildHttpRequest, collectSecretRefs, refKey, scrubSecrets } from './http-template';
 import { safeFetch } from './safe-fetch';
 import {
   classifyRecipeStepTool,
@@ -32,10 +27,7 @@ import { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 
 /** Look up a tool by slug for a given owner. Returns null if missing/disabled. */
-export async function resolveTool(
-  ownerId: string,
-  slug: string,
-): Promise<Tool | null> {
+export async function resolveTool(ownerId: string, slug: string): Promise<Tool | null> {
   const [row] = await db
     .select()
     .from(tools)
@@ -45,10 +37,7 @@ export async function resolveTool(
 }
 
 /** Resolve a batch of slugs at once. Skips missing/disabled silently. */
-export async function resolveTools(
-  ownerId: string,
-  slugs: string[],
-): Promise<Tool[]> {
+export async function resolveTools(ownerId: string, slugs: string[]): Promise<Tool[]> {
   if (slugs.length === 0) return [];
   const rows = await db
     .select()
@@ -149,11 +138,14 @@ async function dispatchRecipe(
     let stepInput: Record<string, unknown>;
     try {
       const resolved = resolveTemplateValue(step.input ?? {}, scope);
-      stepInput = (resolved && typeof resolved === 'object' && !Array.isArray(resolved)
-        ? resolved
-        : {}) as Record<string, unknown>;
+      stepInput = (
+        resolved && typeof resolved === 'object' && !Array.isArray(resolved) ? resolved : {}
+      ) as Record<string, unknown>;
     } catch (err) {
-      return { ok: false, error: `recipe step ${i} ('${step.tool}'): ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        ok: false,
+        error: `recipe step ${i} ('${step.tool}'): ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
 
     const t0 = performance.now();
@@ -283,7 +275,12 @@ async function dispatchHttp(
 
     const res = await safeFetch(req.url, init, [...secrets.values()]);
     const text = await res.text();
-    ctx.step?.setMeta({ url: scrub(req.url), method: req.method, status: res.status, length: text.length });
+    ctx.step?.setMeta({
+      url: scrub(req.url),
+      method: req.method,
+      status: res.status,
+      length: text.length,
+    });
     if (!res.ok) {
       return {
         ok: false,

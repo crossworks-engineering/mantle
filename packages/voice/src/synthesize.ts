@@ -17,11 +17,7 @@
  * bubble (with the play/scrub UI), not as a generic audio file.
  */
 
-import type {
-  SynthesizeOptions,
-  SynthesizeResult,
-  TtsVoice,
-} from './types';
+import type { SynthesizeOptions, SynthesizeResult, TtsVoice } from './types';
 import { TTS_VOICES } from './types';
 
 const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
@@ -59,9 +55,7 @@ export function isTtsVoice(v: unknown): v is TtsVoice {
   return typeof v === 'string' && (TTS_VOICES as readonly string[]).includes(v);
 }
 
-export async function synthesizeSpeech(
-  opts: SynthesizeOptions,
-): Promise<SynthesizeResult> {
+export async function synthesizeSpeech(opts: SynthesizeOptions): Promise<SynthesizeResult> {
   if (!opts.apiKey) throw new Error('synthesizeSpeech: apiKey required');
   const raw = (opts.text ?? '').trim();
   if (!raw) throw new Error('synthesizeSpeech: empty text');

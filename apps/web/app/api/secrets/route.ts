@@ -8,12 +8,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import {
-  SECRET_KINDS,
-  countSecrets,
-  createSecret,
-  listSecrets,
-} from '@/lib/secrets';
+import { SECRET_KINDS, countSecrets, createSecret, listSecrets } from '@/lib/secrets';
 
 const PAGE_SIZE = 50;
 

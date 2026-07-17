@@ -28,16 +28,14 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 const KIND_DESCRIPTIONS: Record<string, string> = {
-  content_ingest:
-    'The data entered the system here. Snippet of what came in is in the step below.',
+  content_ingest: 'The data entered the system here. Snippet of what came in is in the step below.',
   extractor_run:
     'The extractor produces a summary, tags, and an embedding so this node becomes searchable.',
   summarizer_run:
     'The summarizer rolls older conversation turns into compact digests for memory tier 2.',
   reflector_run:
     'The reflector reviews recent activity and decides whether the persona notes need updating.',
-  responder_turn:
-    'The responder LLM answered a user turn that referenced this node.',
+  responder_turn: 'The responder LLM answered a user turn that referenced this node.',
   photo_ingest:
     'A photo arrived via Telegram and was routed through the vision worker before being saved as this node.',
   manual: 'A manually-issued trace.',
@@ -74,9 +72,7 @@ function NodeHeader({ view }: { view: NodeBiographyView }) {
           <p className="text-xs text-muted-foreground">
             <code className="font-mono">{n.type}</code> · {n.path} · created{' '}
             {formatDateTime(n.createdAt)}
-            {n.updatedAt !== n.createdAt && (
-              <> · updated {formatDateTime(n.updatedAt)}</>
-            )}
+            {n.updatedAt !== n.createdAt && <> · updated {formatDateTime(n.updatedAt)}</>}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
@@ -165,11 +161,7 @@ function Stats({ view }: { view: NodeBiographyView }) {
       />
       <StatTile
         label="Last touched"
-        value={
-          s.lastTouched === s.firstSeen
-            ? 'never (after creation)'
-            : timeAgo(s.lastTouched)
-        }
+        value={s.lastTouched === s.firstSeen ? 'never (after creation)' : timeAgo(s.lastTouched)}
         title={formatDateTime(s.lastTouched)}
       />
       {Object.keys(s.byStatus).length > 0 && (
@@ -186,20 +178,10 @@ function Stats({ view }: { view: NodeBiographyView }) {
   );
 }
 
-function StatTile({
-  label,
-  value,
-  title,
-}: {
-  label: string;
-  value: string;
-  title?: string;
-}) {
+function StatTile({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
     <div className="rounded-md border border-border bg-card px-3 py-2" title={title}>
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-        {label}
-      </div>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className="text-sm font-semibold">{value}</div>
     </div>
   );
@@ -211,9 +193,8 @@ function Timeline({ view }: { view: NodeBiographyView }) {
       <section className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm">
         <p className="font-medium">No traces yet for this node.</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Either the node was created before tracing was wired (migration 0029) or no
-          pipeline has touched it. The next extractor / summarizer / reflector pass will
-          record here.
+          Either the node was created before tracing was wired (migration 0029) or no pipeline has
+          touched it. The next extractor / summarizer / reflector pass will record here.
         </p>
       </section>
     );
@@ -237,9 +218,7 @@ function TraceCard({ trace, index }: { trace: TraceDetail; index: number }) {
   const description = KIND_DESCRIPTIONS[trace.kind];
   const isSkipped = trace.status === 'skipped';
   const disposition =
-    typeof trace.data?.disposition === 'string'
-      ? (trace.data.disposition as string)
-      : null;
+    typeof trace.data?.disposition === 'string' ? (trace.data.disposition as string) : null;
 
   return (
     <article className="overflow-hidden rounded-md border border-border bg-card">
@@ -248,23 +227,17 @@ function TraceCard({ trace, index }: { trace: TraceDetail; index: number }) {
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-mono text-muted-foreground">#{index}</span>
             <span className="text-sm font-semibold">{label}</span>
-            <span className={STATUS_CHIP[trace.status] ?? STATUS_CHIP.running}>
-              {trace.status}
-            </span>
+            <span className={STATUS_CHIP[trace.status] ?? STATUS_CHIP.running}>{trace.status}</span>
             {trace.agentSlug && (
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                 {trace.agentSlug}
               </code>
             )}
           </div>
-          {description && (
-            <p className="text-muted-foreground">{description}</p>
-          )}
+          {description && <p className="text-muted-foreground">{description}</p>}
         </div>
         <div className="flex flex-col items-end gap-0.5 text-[11px] text-muted-foreground">
-          <span title={formatDateTime(trace.startedAt)}>
-            {timeAgo(trace.startedAt)}
-          </span>
+          <span title={formatDateTime(trace.startedAt)}>{timeAgo(trace.startedAt)}</span>
           <span>
             {formatDuration(trace.durationMs)}
             {trace.costMicroUsd > 0 && <> · {formatMicroUsd(trace.costMicroUsd)}</>}
@@ -280,9 +253,7 @@ function TraceCard({ trace, index }: { trace: TraceDetail; index: number }) {
             Stopped here: <code className="font-mono">{disposition}</code>
           </div>
           {typeof trace.data?.hint === 'string' && (
-            <p className="mt-1 text-amber-800/80 dark:text-amber-200/80">
-              {trace.data.hint}
-            </p>
+            <p className="mt-1 text-amber-800/80 dark:text-amber-200/80">{trace.data.hint}</p>
           )}
           <details className="mt-2">
             <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
@@ -328,10 +299,7 @@ function TraceCard({ trace, index }: { trace: TraceDetail; index: number }) {
 
       {/* Footer link to /traces/[id] for the full graph view */}
       <footer className="border-t border-border bg-muted/30 px-3 py-1.5 text-right text-[10px]">
-        <Link
-          href={`/traces/${trace.id}`}
-          className="text-muted-foreground hover:text-foreground"
-        >
+        <Link href={`/traces/${trace.id}`} className="text-muted-foreground hover:text-foreground">
           Open in /traces →
         </Link>
       </footer>
@@ -344,20 +312,14 @@ function StepRow({ step, index }: { step: TraceStepSummary; index: number }) {
     <div className="px-3 py-2">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-mono text-muted-foreground">
-            {index}.
-          </span>
+          <span className="text-[10px] font-mono text-muted-foreground">{index}.</span>
           <span className="font-medium">{step.name}</span>
           <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
             {step.kind}
           </code>
-          <span className={STATUS_CHIP[step.status] ?? STATUS_CHIP.running}>
-            {step.status}
-          </span>
+          <span className={STATUS_CHIP[step.status] ?? STATUS_CHIP.running}>{step.status}</span>
         </div>
-        <span className="text-[11px] text-muted-foreground">
-          {formatDuration(step.durationMs)}
-        </span>
+        <span className="text-[11px] text-muted-foreground">{formatDuration(step.durationMs)}</span>
       </div>
       {step.error && (
         <p className="mt-1 rounded bg-destructive/10 px-2 py-1 text-[11px] text-destructive">
@@ -378,13 +340,7 @@ function StepRow({ step, index }: { step: TraceStepSummary; index: number }) {
   );
 }
 
-function PayloadBlock({
-  label,
-  payload,
-}: {
-  label: string;
-  payload: Record<string, unknown>;
-}) {
+function PayloadBlock({ label, payload }: { label: string; payload: Record<string, unknown> }) {
   if (!payload || Object.keys(payload).length === 0) {
     return (
       <div className="rounded border border-dashed border-border px-2 py-1 text-[10px] text-muted-foreground">

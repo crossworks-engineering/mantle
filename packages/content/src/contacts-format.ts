@@ -226,9 +226,7 @@ export function hasIdentity(input: {
   company?: string;
 }): boolean {
   return Boolean(
-    (input.firstName ?? '').trim() ||
-      (input.lastName ?? '').trim() ||
-      (input.company ?? '').trim(),
+    (input.firstName ?? '').trim() || (input.lastName ?? '').trim() || (input.company ?? '').trim(),
   );
 }
 

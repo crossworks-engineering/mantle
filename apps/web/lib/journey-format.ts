@@ -155,9 +155,17 @@ export function deriveAction(t: {
     case 'responder_turn':
       return { label: 'Conversation turn', category: 'dialog', iconKey: 'chat' };
     case 'summarizer_run':
-      return { label: 'Rolled up conversation digests', category: 'automation', iconKey: 'automation' };
+      return {
+        label: 'Rolled up conversation digests',
+        category: 'automation',
+        iconKey: 'automation',
+      };
     case 'reflector_run':
-      return { label: 'Updated persona from conversation', category: 'automation', iconKey: 'automation' };
+      return {
+        label: 'Updated persona from conversation',
+        category: 'automation',
+        iconKey: 'automation',
+      };
     case 'heartbeat_fire':
       return { label: 'Scheduled automation fired', category: 'automation', iconKey: 'automation' };
     default:

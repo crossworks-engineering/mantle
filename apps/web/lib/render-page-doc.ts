@@ -41,10 +41,7 @@ export type RenderOptions = {
 };
 
 function esc(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 function escAttr(s: string): string {
   return esc(s).replace(/"/g, '&quot;');
@@ -119,7 +116,10 @@ function renderCode(node: PMNode): string {
   const text = (node.content ?? []).map((c) => c.text ?? '').join('');
   const lang = str(node.attrs?.language);
   try {
-    const tree = lang && lowlight.registered(lang) ? lowlight.highlight(lang, text) : lowlight.highlightAuto(text);
+    const tree =
+      lang && lowlight.registered(lang)
+        ? lowlight.highlight(lang, text)
+        : lowlight.highlightAuto(text);
     const inner = toHtml(tree);
     const cls = lang ? ` class="language-${escAttr(lang)}"` : '';
     return `<pre><code${cls}>${inner}</code></pre>`;

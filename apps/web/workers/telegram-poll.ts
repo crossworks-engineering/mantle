@@ -23,6 +23,7 @@ import { eq } from 'drizzle-orm';
 import { channels, db, telegramAccounts, type Channel, type TelegramAccount } from '@mantle/db';
 import { pollOnce, evictBot, type PollHandlers } from '@mantle/telegram';
 import { approvePendingCall, rejectPendingCall } from '@mantle/tools';
+import { startProcessHeartbeat } from '@mantle/content';
 
 const CHANNEL_REFRESH_MS = 60_000;
 const BACKOFF_BASE_MS = 1_000;
@@ -65,16 +66,25 @@ const approvalHandlers: PollHandlers = {
       if (!row) return { ok: false, text: 'Already decided, or no longer pending.' };
       if (decision === 'reject') return { ok: true, text: `Rejected ${row.toolSlug}.` };
       if (row.error) {
-        return { ok: true, text: `Approved ${row.toolSlug} — it ran but failed: ${row.error.slice(0, 120)}` };
+        return {
+          ok: true,
+          text: `Approved ${row.toolSlug} — it ran but failed: ${row.error.slice(0, 120)}`,
+        };
       }
       return { ok: true, text: `Approved & ran ${row.toolSlug}.` };
     } catch (err) {
-      return { ok: false, text: err instanceof Error ? err.message.slice(0, 150) : 'Failed to apply.' };
+      return {
+        ok: false,
+        text: err instanceof Error ? err.message.slice(0, 150) : 'Failed to apply.',
+      };
     }
   },
 };
 
 async function main() {
+  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
+  // WEDGED process; a dead one is already covered by the restart policy).
+  startProcessHeartbeat();
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL must be set');
   if (!process.env.MANTLE_MASTER_KEY) throw new Error('MANTLE_MASTER_KEY must be set');
 

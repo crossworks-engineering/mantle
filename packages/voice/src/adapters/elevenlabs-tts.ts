@@ -26,14 +26,8 @@
  * names mean different things across providers.
  */
 
-import type {
-  SynthesizeOptions,
-  SynthesizeResult,
-} from '../types';
-import type {
-  ChatModelInfo,
-  TtsDispatcher,
-} from './types';
+import type { SynthesizeOptions, SynthesizeResult } from '../types';
+import type { ChatModelInfo, TtsDispatcher } from './types';
 import type { DiscoveryResult } from '../discover';
 import type { TtsModelInfo } from '../catalog';
 import {
@@ -181,7 +175,9 @@ async function elevenLabsVoicesForModel(
       // Build a useful description: name + category, plus any labels
       // (accent/gender/age) the user has tagged the voice with.
       const labels = v.labels
-        ? Object.values(v.labels).filter((s) => typeof s === 'string').join(', ')
+        ? Object.values(v.labels)
+            .filter((s) => typeof s === 'string')
+            .join(', ')
         : '';
       const desc = [v.name, v.category, labels].filter(Boolean).join(' · ');
       return { id: v.voice_id, description: desc || v.voice_id };
@@ -198,9 +194,7 @@ async function elevenLabsVoicesForModel(
  * Discover available TTS models. ElevenLabs's /v1/models returns the
  * full model catalogue including any beta access the key has.
  */
-async function elevenLabsDiscoverModels(
-  apiKey: string,
-): Promise<DiscoveryResult<TtsModelInfo>> {
+async function elevenLabsDiscoverModels(apiKey: string): Promise<DiscoveryResult<TtsModelInfo>> {
   try {
     const res = await fetch(`${ELEVENLABS_BASE_URL}/v1/models`, {
       headers: { 'xi-api-key': apiKey },
@@ -218,12 +212,9 @@ async function elevenLabsDiscoverModels(
     const liveIds = new Set(
       parsed.filter((m) => m.can_do_text_to_speech !== false).map((m) => m.model_id),
     );
-    const available = ELEVENLABS_TTS_MODELS.filter((m) => liveIds.has(m.id)).map(
-      toTtsModelInfo,
-    );
+    const available = ELEVENLABS_TTS_MODELS.filter((m) => liveIds.has(m.id)).map(toTtsModelInfo);
     return {
-      available:
-        available.length > 0 ? available : ELEVENLABS_TTS_MODELS.map(toTtsModelInfo),
+      available: available.length > 0 ? available : ELEVENLABS_TTS_MODELS.map(toTtsModelInfo),
       filtered: available.length > 0,
       error: null,
     };
@@ -238,11 +229,7 @@ async function elevenLabsDiscoverModels(
 
 /** Bridge from our ElevenLabs-shaped model entry to the generic
  *  TtsModelInfo the catalog/UI consume. */
-function toTtsModelInfo(m: {
-  id: string;
-  label: string;
-  description: string;
-}): TtsModelInfo {
+function toTtsModelInfo(m: { id: string; label: string; description: string }): TtsModelInfo {
   return {
     id: m.id,
     label: m.label,

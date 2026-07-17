@@ -41,9 +41,11 @@ async function boss(): Promise<PgBoss> {
  */
 export function accountBranchPath(address: string): string {
   const [local, domain] = address.toLowerCase().split('@');
-  const cleanLocal =
-    (local ?? '').replace(/[^a-z0-9]/g, '_').replace(/^_+|_+$/g, '') || 'account';
-  const hash = createHash('sha256').update(domain ?? '').digest('hex').slice(0, 4);
+  const cleanLocal = (local ?? '').replace(/[^a-z0-9]/g, '_').replace(/^_+|_+$/g, '') || 'account';
+  const hash = createHash('sha256')
+    .update(domain ?? '')
+    .digest('hex')
+    .slice(0, 4);
   return `inbox.${cleanLocal}_${hash}`;
 }
 
@@ -72,7 +74,10 @@ export function listImapAccounts(
 ): Promise<EmailAccount[]> {
   const conds = [eq(emailAccounts.userId, userId), eq(emailAccounts.provider, 'imap')];
   if (opts?.enabledOnly) conds.push(eq(emailAccounts.enabled, true));
-  return db.select().from(emailAccounts).where(and(...conds));
+  return db
+    .select()
+    .from(emailAccounts)
+    .where(and(...conds));
 }
 
 /** One owner-scoped account, or null. */
@@ -100,7 +105,12 @@ export async function latestSyncRuns(userId: string): Promise<Map<string, SyncRu
   const recent = await db
     .select()
     .from(syncRuns)
-    .where(inArray(syncRuns.accountId, accounts.map((a) => a.id)))
+    .where(
+      inArray(
+        syncRuns.accountId,
+        accounts.map((a) => a.id),
+      ),
+    )
     .orderBy(desc(syncRuns.startedAt))
     .limit(accounts.length * 5);
   for (const r of recent) if (!latest.has(r.accountId)) latest.set(r.accountId, r);
@@ -288,7 +298,10 @@ export async function connectImapAccount(
       try {
         effectivePassword = unsealImapPassword(existing);
       } catch {
-        return { ok: false, error: 'Stored password could not be read — re-enter the app password.' };
+        return {
+          ok: false,
+          error: 'Stored password could not be read — re-enter the app password.',
+        };
       }
     } else {
       return { ok: false, error: 'App password is required.' };
@@ -377,7 +390,12 @@ export async function listAccountFolders(
 ): Promise<AccountFoldersResult> {
   const account = await getAccount(userId, accountId);
   if (!account) return { ok: false, error: 'Account not found.' };
-  if (account.provider !== 'imap' || !account.imapHost || !account.imapPort || !account.imapConfigEnc) {
+  if (
+    account.provider !== 'imap' ||
+    !account.imapHost ||
+    !account.imapPort ||
+    !account.imapConfigEnc
+  ) {
     return { ok: false, error: 'This account has no IMAP connection to list folders from.' };
   }
   try {
@@ -389,7 +407,8 @@ export async function listAccountFolders(
       user: account.address,
       pass,
     });
-    const cursor = (account.syncState as { imap?: { folders?: Record<string, unknown> } } | null)?.imap;
+    const cursor = (account.syncState as { imap?: { folders?: Record<string, unknown> } } | null)
+      ?.imap;
     const scanned = cursor?.folders ? Object.keys(cursor.folders).sort() : [];
     return {
       ok: true,

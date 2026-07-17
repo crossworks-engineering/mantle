@@ -22,7 +22,16 @@ export interface StageLabel {
   /** Coarse bucket the UI themes/iconifies. `write` (notes/tasks/pages),
    *  `calendar` (events), `message` (telegram/email sends), and `file` give the
    *  common write actions their own glyph instead of a generic tool wrench. */
-  kind: 'thinking' | 'web' | 'brain' | 'delegate' | 'tool' | 'write' | 'calendar' | 'message' | 'file';
+  kind:
+    | 'thinking'
+    | 'web'
+    | 'brain'
+    | 'delegate'
+    | 'tool'
+    | 'write'
+    | 'calendar'
+    | 'message'
+    | 'file';
 }
 
 /**
@@ -128,7 +137,10 @@ function toolArgs(input?: Record<string, unknown>): Record<string, unknown> | un
 function toolStage(slug: string, args?: Record<string, unknown>): StageLabel {
   if (slug === 'invoke_agent') {
     const who = pickString(args, AGENT_KEYS);
-    return { label: who ? `Delegating to ${who}…` : 'Delegating to a specialist…', kind: 'delegate' };
+    return {
+      label: who ? `Delegating to ${who}…` : 'Delegating to a specialist…',
+      kind: 'delegate',
+    };
   }
   if (slug === 'web_search') {
     const q = pickString(args, QUERY_KEYS);
@@ -137,7 +149,10 @@ function toolStage(slug: string, args?: Record<string, unknown>): StageLabel {
   if (slug === 'web_fetch') return { label: 'Reading a web page…', kind: 'web' };
   if (/^(search|find|recall|entity_|graph_|peer_)/.test(slug)) {
     const q = pickString(args, QUERY_KEYS);
-    return { label: q ? `Searching your brain for “${q}”…` : 'Searching your brain…', kind: 'brain' };
+    return {
+      label: q ? `Searching your brain for “${q}”…` : 'Searching your brain…',
+      kind: 'brain',
+    };
   }
 
   // Write / action tools — name the action (and subject) so the trail records
@@ -156,10 +171,12 @@ function toolStage(slug: string, args?: Record<string, unknown>): StageLabel {
   if (specific) return { label: specific, kind };
 
   // Verb fallback for any other tool — still better than a bare "Working on it".
-  if (/(_update$|^update_|_edit$|^edit_|_rename$)/.test(slug)) return { label: 'Updating that…', kind };
+  if (/(_update$|^update_|_edit$|^edit_|_rename$)/.test(slug))
+    return { label: 'Updating that…', kind };
   if (/(_delete$|^delete_|_remove$|^remove_)/.test(slug)) return { label: 'Removing that…', kind };
   if (/(_send$|^send_)/.test(slug)) return { label: 'Sending that…', kind };
-  if (/(_read$|_get$|_list$|^read_|^get_|^list_)/.test(slug)) return { label: 'Looking that up…', kind };
+  if (/(_read$|_get$|_list$|^read_|^get_|^list_)/.test(slug))
+    return { label: 'Looking that up…', kind };
   return { label: 'Working on it…', kind: 'tool' };
 }
 

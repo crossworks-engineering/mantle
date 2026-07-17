@@ -57,11 +57,15 @@ export type ConversationExternalRef = {
 export const assistantMessages = pgTable(
   'assistant_messages',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     direction: text('direction').notNull(), // 'inbound' | 'outbound' (CHECK enforced in SQL)
     text: text('text').notNull(),
-    agentId: uuid('agent_id').notNull().references(() => agents.id, { onDelete: 'set null' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'set null' }),
     model: text('model'),
     digestNodeId: uuid('digest_node_id').references(() => nodes.id, { onDelete: 'set null' }),
     /** Transport this turn arrived/left on. Defaults to 'web' so pre-unification
@@ -75,7 +79,10 @@ export const assistantMessages = pgTable(
     /** Back-reference to the originating transport row (Telegram chat/message ids,
      *  etc.) for reply threading + dedup. NULL for web turns. */
     externalRef: jsonb('external_ref').$type<ConversationExternalRef>(),
-    data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    data: jsonb('data')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     /** RESERVED execution-state projection. Not yet written: the current durable
      *  runner runs the turn and the web route AWAITS its result, so a failure
      *  surfaces synchronously (getResult rejects → the client shows the error)
@@ -87,10 +94,7 @@ export const assistantMessages = pgTable(
      *  with no backfill (same trick as `channel`). DBOS WorkflowStatus is the
      *  execution source of truth; this is the read-model. See docs/conversation.md
      *  + the dedicated-API Phase 1 plan. */
-    status: text('status')
-      .$type<'pending' | 'complete' | 'failed'>()
-      .default('complete')
-      .notNull(),
+    status: text('status').$type<'pending' | 'complete' | 'failed'>().default('complete').notNull(),
     /** Reserved (see `status`): human-readable failure reason for a 'failed'
      *  turn under the future async-delivery model; NULL today. */
     error: text('error'),

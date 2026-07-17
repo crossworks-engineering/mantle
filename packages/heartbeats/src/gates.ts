@@ -18,7 +18,11 @@ import { loadProfilePreferences } from '@mantle/content';
 
 export type GateResult =
   | { ok: true }
-  | { ok: false; reason: 'skipped_idle' | 'skipped_quiet' | 'skipped_cooldown' | 'skipped_earliest'; detail?: string };
+  | {
+      ok: false;
+      reason: 'skipped_idle' | 'skipped_quiet' | 'skipped_cooldown' | 'skipped_earliest';
+      detail?: string;
+    };
 
 export async function checkGates(hb: Heartbeat, now: Date = new Date()): Promise<GateResult> {
   // 1. earliest_at — hard floor. Cheapest check; do first.
@@ -44,7 +48,11 @@ export async function checkGates(hb: Heartbeat, now: Date = new Date()): Promise
   if (hb.quietHours) {
     const tz = hb.quietHours.tz ?? (await loadProfilePreferences(hb.ownerId)).timezone;
     if (isInsideWindow(now, hb.quietHours.from, hb.quietHours.to, tz)) {
-      return { ok: false, reason: 'skipped_quiet', detail: `inside ${hb.quietHours.from}–${hb.quietHours.to} ${tz}` };
+      return {
+        ok: false,
+        reason: 'skipped_quiet',
+        detail: `inside ${hb.quietHours.from}–${hb.quietHours.to} ${tz}`,
+      };
     }
   }
 
@@ -99,19 +107,16 @@ async function checkIdle(hb: Heartbeat, now: Date): Promise<GateResult> {
   const [chat] = await db
     .select({ pk: telegramChats.id })
     .from(telegramChats)
-    .where(and(eq(telegramChats.userId, hb.ownerId), eq(telegramChats.telegramChatId, surface.chat_id)))
+    .where(
+      and(eq(telegramChats.userId, hb.ownerId), eq(telegramChats.telegramChatId, surface.chat_id)),
+    )
     .limit(1);
   if (!chat) return { ok: true }; // no chat row = no recent activity to gate on
 
   const [lastInbound] = await db
     .select({ at: telegramMessages.createdAt })
     .from(telegramMessages)
-    .where(
-      and(
-        eq(telegramMessages.chatId, chat.pk),
-        eq(telegramMessages.direction, 'inbound'),
-      ),
-    )
+    .where(and(eq(telegramMessages.chatId, chat.pk), eq(telegramMessages.direction, 'inbound')))
     .orderBy(desc(telegramMessages.createdAt))
     .limit(1);
 

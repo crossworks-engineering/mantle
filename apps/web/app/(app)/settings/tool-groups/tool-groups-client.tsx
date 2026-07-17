@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { ToolPicker, type ToolOption } from '@/components/tool-picker';
 import { cn } from '@/lib/utils';
+import { slugify } from '@/lib/slugify';
 
 // List items carry the agent-grant fan-out from GET /api/tool-groups.
 type ToolGroupSummary = ToolGroupWithRefs;
@@ -52,14 +53,6 @@ function fromGroup(g: ToolGroupSummary): FormState {
     toolSlugs: g.toolSlugs,
     enabled: g.enabled,
   };
-}
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
 }
 
 export function ToolGroupsClient() {
@@ -120,7 +113,11 @@ export function ToolGroupsClient() {
   });
 
   const onName = (v: string) =>
-    setForm((f) => ({ ...f, name: v, slug: slugTouched ? f.slug : slugify(v) }));
+    setForm((f) => ({
+      ...f,
+      name: v,
+      slug: slugTouched ? f.slug : slugify(v, { allowUnderscore: true, maxLength: 64 }),
+    }));
 
   const openCreate = () => {
     setForm(emptyForm());
@@ -179,7 +176,12 @@ export function ToolGroupsClient() {
           ) : groupsQuery.isError ? (
             <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
               <p>Couldn’t load tool groups: {groupsQuery.error.message}</p>
-              <Button type="button" variant="outline" size="sm" onClick={() => groupsQuery.refetch()}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => groupsQuery.refetch()}
+              >
                 Retry
               </Button>
             </div>
@@ -340,9 +342,8 @@ export function ToolGroupsClient() {
                   />
                 )}
                 <p className="text-xs text-muted-foreground">
-                  When an agent is granted this group, every tool here joins its
-                  effective tool set. Capability only — no instructions (that&apos;s
-                  what skills are for).
+                  When an agent is granted this group, every tool here joins its effective tool set.
+                  Capability only — no instructions (that&apos;s what skills are for).
                 </p>
               </div>
 

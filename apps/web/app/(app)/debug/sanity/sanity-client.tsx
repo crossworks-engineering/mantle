@@ -11,7 +11,11 @@ import { copyText } from '@/lib/secure-context-fallbacks';
 const STATUS_STYLE: Record<SanityStatus, { badge: string; glyph: string; label: string }> = {
   pass: { badge: 'bg-primary/10 text-primary border-primary/30', glyph: '✓', label: 'PASS' },
   warn: { badge: 'bg-muted text-foreground border-border', glyph: '!', label: 'WARN' },
-  fail: { badge: 'bg-destructive/10 text-destructive border-destructive/30', glyph: '✗', label: 'FAIL' },
+  fail: {
+    badge: 'bg-destructive/10 text-destructive border-destructive/30',
+    glyph: '✗',
+    label: 'FAIL',
+  },
   na: { badge: 'bg-muted text-muted-foreground border-border', glyph: '—', label: 'N/A' },
 };
 
@@ -48,7 +52,9 @@ function CheckRow({ check }: { check: SanityCheck }) {
         disabled={!expandable}
         className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 text-left disabled:cursor-default"
       >
-        <span className={`inline-flex w-[56px] shrink-0 items-center justify-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${s.badge}`}>
+        <span
+          className={`inline-flex w-[56px] shrink-0 items-center justify-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${s.badge}`}
+        >
           <span className="font-mono">{s.glyph}</span>
           {s.label}
         </span>
@@ -57,7 +63,11 @@ function CheckRow({ check }: { check: SanityCheck }) {
           {check.category}
         </span>
         <span className="flex-1 text-xs text-muted-foreground">{check.detail}</span>
-        {expandable && <span className="shrink-0 text-[11px] text-muted-foreground">{open ? 'Hide fix' : 'Show fix'}</span>}
+        {expandable && (
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {open ? 'Hide fix' : 'Show fix'}
+          </span>
+        )}
       </button>
 
       {open && check.fix && (
@@ -97,9 +107,10 @@ export function SanityClient() {
 
   // Auto-run once on open. Not keyed on `run` — the toast api object isn't
   // memoized, so keying would re-fetch on every toast (see integrity-client).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-once; `run` re-identifies every render (toast api unmemoized), so keying on it would infinite-loop
   }, []);
 
   const sorted = report ? [...report.checks].sort((a, b) => ORDER[a.status] - ORDER[b.status]) : [];
@@ -115,14 +126,16 @@ export function SanityClient() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">System sanity</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            System sanity
+          </h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            Read-only checks for features that break <strong>silently</strong> — a setting hidden in env, or a
-            provisioning step only <code>scripts/up.sh</code> runs (so a registry-pull box that never ran it looks
-            healthy yet a feature is dead). Catches the missing MinIO bucket that fails every app build, an
-            unconfigured updater (<code>MANTLE_STACK_DIR</code>) that hangs updates, missing secrets, a stray
-            files root, a localhost public URL, an unloaded embedder model. Each failure shows the fix —
-            nothing is changed from here.
+            Read-only checks for features that break <strong>silently</strong> — a setting hidden in
+            env, or a provisioning step only <code>scripts/up.sh</code> runs (so a registry-pull box
+            that never ran it looks healthy yet a feature is dead). Catches the missing MinIO bucket
+            that fails every app build, an unconfigured updater (<code>MANTLE_STACK_DIR</code>) that
+            hangs updates, missing secrets, a stray files root, a localhost public URL, an unloaded
+            embedder model. Each failure shows the fix — nothing is changed from here.
           </p>
         </div>
         <Button onClick={run} disabled={running}>
@@ -136,7 +149,8 @@ export function SanityClient() {
             <span className="font-semibold">{headline}</span>
             <span className="text-muted-foreground">·</span>
             <span className="text-muted-foreground">
-              {report.checks.filter((c) => c.status === 'pass').length}/{report.checks.length} passing
+              {report.checks.filter((c) => c.status === 'pass').length}/{report.checks.length}{' '}
+              passing
             </span>
           </div>
           <ul className="divide-y divide-border rounded-md border border-border">

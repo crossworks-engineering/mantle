@@ -88,9 +88,7 @@ describe('listBlocks', () => {
         {
           type: 'callout',
           attrs: { variant: 'info' },
-          content: [
-            { type: 'paragraph', content: [{ type: 'text', text: 'inside' }] },
-          ],
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'inside' }] }],
         },
       ],
     });
@@ -160,10 +158,16 @@ describe('listBlocks', () => {
           attrs: { variant: 'info' },
           content: [
             { type: 'paragraph', content: [{ type: 'text', text: 'inner P' }] },
-            { type: 'blockquote', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'quote' }] }] },
+            {
+              type: 'blockquote',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'quote' }] }],
+            },
           ],
         },
-        { type: 'blockquote', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'top quote' }] }] },
+        {
+          type: 'blockquote',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'top quote' }] }],
+        },
       ],
     });
 

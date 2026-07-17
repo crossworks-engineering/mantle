@@ -31,7 +31,10 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
     if (!result.ok) {
       return NextResponse.json(
-        { error: 'draft changed since you loaded it — refetch and re-apply', current_rev: result.currentRev },
+        {
+          error: 'draft changed since you loaded it — refetch and re-apply',
+          current_rev: result.currentRev,
+        },
         { status: 409 },
       );
     }
@@ -39,6 +42,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   } catch (err) {
     // Truncation guard (plan §4): a whole-doc autosave past the materialize
     // window is refused loudly — the op route is the write path at that size.
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'draft save failed' }, { status: 400 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'draft save failed' },
+      { status: 400 },
+    );
   }
 }

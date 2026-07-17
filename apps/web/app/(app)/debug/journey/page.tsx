@@ -18,9 +18,9 @@ export default async function JourneyPage({
 }) {
   await requireOwner();
   const { cat, done } = await searchParams;
-  const category = (['content', 'dialog', 'automation'] as const).find(
-    (c) => c === cat,
-  ) as ActionCategory | undefined;
+  const category = (['content', 'dialog', 'automation'] as const).find((c) => c === cat) as
+    | ActionCategory
+    | undefined;
   const processedOnly = done === '1';
 
   return (

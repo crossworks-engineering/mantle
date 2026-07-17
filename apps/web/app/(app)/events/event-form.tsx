@@ -229,7 +229,11 @@ export function EventForm({
 
       <div className="space-y-1.5">
         <Label>Tags</Label>
-        <TagInput value={form.tags} onChange={(tags) => setForm({ ...form, tags })} placeholder="Add tags…" />
+        <TagInput
+          value={form.tags}
+          onChange={(tags) => setForm({ ...form, tags })}
+          placeholder="Add tags…"
+        />
       </div>
 
       <div className="space-y-1.5">

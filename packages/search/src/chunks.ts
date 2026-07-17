@@ -79,7 +79,8 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
   // must still find a chunk whose embed failed (keyword is its only signal).
   const scope: SQL[] = [eq(contentChunks.ownerId, opts.ownerId)];
   if (opts.branch) scope.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
-  if (opts.excludeSystemOrigin) scope.push(sql`(${nodes.data}->>'origin') is distinct from 'system'`);
+  if (opts.excludeSystemOrigin)
+    scope.push(sql`(${nodes.data}->>'origin') is distinct from 'system'`);
   if (opts.nodeIds)
     scope.push(sql`${contentChunks.nodeId} = any(${pgArrayLiteral(opts.nodeIds)}::uuid[])`);
   if (opts.nodeIdsOrTypes) scope.push(grantUnionFilter(contentChunks.nodeId, opts.nodeIdsOrTypes));
@@ -273,7 +274,8 @@ export function selectSectionChunks<T extends { ordinal: number; heading: string
     return [...hits].sort((a, b) => a.ordinal - b.ordinal);
   }
   return {
-    error: 'no selector — pass heading or from_ordinal/to_ordinal, or call with only node_id for the outline',
+    error:
+      'no selector — pass heading or from_ordinal/to_ordinal, or call with only node_id for the outline',
   };
 }
 
@@ -282,7 +284,10 @@ export function selectSectionChunks<T extends { ordinal: number; heading: string
  *  Reports `nextOrdinal` to continue from when the cap truncates. */
 export function assembleSection<
   T extends { ordinal: number; heading: string | null; text: string },
->(selected: ReadonlyArray<T>, maxChars: number): {
+>(
+  selected: ReadonlyArray<T>,
+  maxChars: number,
+): {
   text: string;
   taken: T[];
   truncated: boolean;

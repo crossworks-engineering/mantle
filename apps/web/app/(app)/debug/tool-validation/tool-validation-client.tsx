@@ -136,11 +136,11 @@ export function ToolValidationClient() {
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">Violations</span> are the enforce
-          question — calls warn mode let through that enforce would bounce with a teaching
-          error. <span className="font-medium text-foreground">Repairs</span> are drift the
-          coercer already absorbs (free in every mode). A violation cluster on one tool
-          usually means a schema bug to fix, not a model mistake.
+          <span className="font-medium text-foreground">Violations</span> are the enforce question —
+          calls warn mode let through that enforce would bounce with a teaching error.{' '}
+          <span className="font-medium text-foreground">Repairs</span> are drift the coercer already
+          absorbs (free in every mode). A violation cluster on one tool usually means a schema bug
+          to fix, not a model mistake.
         </p>
       </section>
 

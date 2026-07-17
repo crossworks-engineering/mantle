@@ -112,10 +112,12 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
   if (!instance) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'not_connected' };
 
   const prefs = await getPushPrefs();
-  if (!prefs.assistantMessages) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
+  if (!prefs.assistantMessages)
+    return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
 
   const devices = await listSubscriptions(ownerId);
-  if (devices.length === 0) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
+  if (devices.length === 0)
+    return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
 
   const msg = await latestOutbound(ownerId, agentSlug);
   if (!msg) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_message' };
@@ -154,7 +156,8 @@ export async function pushApproval(ownerId: string): Promise<PushResult> {
   }
 
   const devices = await listSubscriptions(ownerId);
-  if (devices.length === 0) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
+  if (devices.length === 0)
+    return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
 
   const count = await countPending(ownerId);
   if (count === 0) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_message' };

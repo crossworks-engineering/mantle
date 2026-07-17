@@ -17,7 +17,10 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
 export const dynamic = 'force-dynamic';
 
 function notFound() {
-  return NextResponse.json({ error: 'not found' }, { status: 404, headers: { 'cache-control': 'no-store' } });
+  return NextResponse.json(
+    { error: 'not found' },
+    { status: 404, headers: { 'cache-control': 'no-store' } },
+  );
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
@@ -30,7 +33,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   if (!ok) {
     return NextResponse.json(
       { error: 'too many requests' },
-      { status: 429, headers: { 'retry-after': String(retryAfterSec), 'cache-control': 'no-store' } },
+      {
+        status: 429,
+        headers: { 'retry-after': String(retryAfterSec), 'cache-control': 'no-store' },
+      },
     );
   }
 
@@ -42,7 +48,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
     .select({ storagePath: tables.storagePath })
     .from(tables)
     .innerJoin(nodes, eq(nodes.id, tables.nodeId))
-    .where(and(eq(tables.nodeId, share.nodeId), eq(nodes.ownerId, share.ownerId), eq(nodes.type, 'table')))
+    .where(
+      and(
+        eq(tables.nodeId, share.nodeId),
+        eq(nodes.ownerId, share.ownerId),
+        eq(nodes.type, 'table'),
+      ),
+    )
     .limit(1);
   // Legacy JSONB tables ship their whole doc in the share view — the presenter
   // never calls this route for them.

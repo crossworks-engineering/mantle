@@ -17,12 +17,17 @@ export async function POST(req: NextRequest) {
   const owner = await getOwnerOr401();
   if (owner instanceof NextResponse) return owner;
 
-  const body = (await req.json().catch(() => null)) as
-    | { platform?: unknown; osPushToken?: unknown }
-    | null;
+  const body = (await req.json().catch(() => null)) as {
+    platform?: unknown;
+    osPushToken?: unknown;
+  } | null;
   const platform = body?.platform;
   const osPushToken = body?.osPushToken;
-  if ((platform !== 'ios' && platform !== 'android') || typeof osPushToken !== 'string' || !osPushToken) {
+  if (
+    (platform !== 'ios' && platform !== 'android') ||
+    typeof osPushToken !== 'string' ||
+    !osPushToken
+  ) {
     return NextResponse.json({ error: 'invalid_body' }, { status: 400 });
   }
 
@@ -36,7 +41,10 @@ export async function POST(req: NextRequest) {
       await savePushInstance({ instanceToken, relayInstanceId: instanceId, relayUrl });
       instance = { instanceToken, relayInstanceId: instanceId, relayUrl };
     } catch (err) {
-      return NextResponse.json({ error: 'relay_unreachable', reason: (err as Error).message }, { status: 502 });
+      return NextResponse.json(
+        { error: 'relay_unreachable', reason: (err as Error).message },
+        { status: 502 },
+      );
     }
   }
 

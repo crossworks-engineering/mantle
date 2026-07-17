@@ -54,9 +54,7 @@ export function KpiCards({ items }: { items: Kpi[] }) {
                 </div>
               )}
             </CardHeader>
-            {k.hint && (
-              <CardFooter className="text-sm text-muted-foreground">{k.hint}</CardFooter>
-            )}
+            {k.hint && <CardFooter className="text-sm text-muted-foreground">{k.hint}</CardFooter>}
           </Card>
         );
         return k.href ? (

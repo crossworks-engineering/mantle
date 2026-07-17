@@ -32,7 +32,11 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 // ── Storage ──────────────────────────────────────────────────────────────────
 
 async function checkBucket(): Promise<SanityCheck> {
-  const base = { key: 'storage.bucket', label: 'Object-store bucket', category: 'Storage' as const };
+  const base = {
+    key: 'storage.bucket',
+    label: 'Object-store bucket',
+    category: 'Storage' as const,
+  };
   const s = await bucketStatus();
   if (!s.reachable) {
     return {
@@ -61,7 +65,12 @@ async function checkBucket(): Promise<SanityCheck> {
       fix: null,
     };
   }
-  return { ...base, status: 'pass', detail: `Bucket “${s.bucket}” exists and is reachable.`, fix: null };
+  return {
+    ...base,
+    status: 'pass',
+    detail: `Bucket “${s.bucket}” exists and is reachable.`,
+    fix: null,
+  };
 }
 
 // ── Updater ──────────────────────────────────────────────────────────────────
@@ -142,7 +151,12 @@ function checkSecrets(): SanityCheck {
       fix: { summary: `Regenerate as base64 of 32 bytes.`, command: `openssl rand -base64 32` },
     };
   }
-  return { ...base, status: 'pass', detail: `MANTLE_MASTER_KEY (32 bytes) and SESSION_SECRET are set.`, fix: null };
+  return {
+    ...base,
+    status: 'pass',
+    detail: `MANTLE_MASTER_KEY (32 bytes) and SESSION_SECRET are set.`,
+    fix: null,
+  };
 }
 
 async function checkFilesRoot(): Promise<SanityCheck> {
@@ -166,10 +180,17 @@ async function checkFilesRoot(): Promise<SanityCheck> {
       ...base,
       status: 'fail',
       detail: `Files root “${root}” is not writable by this process — uploads and extraction will fail.`,
-      fix: { summary: `Ensure the path exists and is writable by the container user (check the bind-mount ownership).` },
+      fix: {
+        summary: `Ensure the path exists and is writable by the container user (check the bind-mount ownership).`,
+      },
     };
   }
-  return { ...base, status: 'pass', detail: `Files root “${root}” is absolute and writable.`, fix: null };
+  return {
+    ...base,
+    status: 'pass',
+    detail: `Files root “${root}” is absolute and writable.`,
+    fix: null,
+  };
 }
 
 function checkPublicUrl(): SanityCheck {
@@ -209,7 +230,11 @@ async function checkEmbedder(userId: string): Promise<SanityCheck> {
       fix: null,
     };
   }
-  const baseUrl = (cfg.primary.baseUrl || process.env.MANTLE_LOCAL_EMBEDDING_URL || DEFAULT_LOCAL_EMBED_URL).replace(/\/+$/, '');
+  const baseUrl = (
+    cfg.primary.baseUrl ||
+    process.env.MANTLE_LOCAL_EMBEDDING_URL ||
+    DEFAULT_LOCAL_EMBED_URL
+  ).replace(/\/+$/, '');
   try {
     const res = await fetch(`${baseUrl}/models`, { signal: AbortSignal.timeout(1_500) });
     if (!res.ok) {
@@ -217,11 +242,15 @@ async function checkEmbedder(userId: string): Promise<SanityCheck> {
         ...base,
         status: 'fail',
         detail: `Local embedder at ${baseUrl} answered HTTP ${res.status}. Ingest can't embed → search/recall silently degrade.`,
-        fix: { summary: `Check the bundled ollama service is up and MANTLE_LOCAL_EMBEDDING_URL points at it.` },
+        fix: {
+          summary: `Check the bundled ollama service is up and MANTLE_LOCAL_EMBEDDING_URL points at it.`,
+        },
       };
     }
     const body = (await res.json()) as { data?: Array<{ id?: string }> };
-    const ids = (body.data ?? []).map((m) => m.id).filter((x): x is string => typeof x === 'string');
+    const ids = (body.data ?? [])
+      .map((m) => m.id)
+      .filter((x): x is string => typeof x === 'string');
     const norm = (s: string) => s.replace(/:latest$/, '');
     const present = ids.some((id) => norm(id) === norm(model));
     if (!present) {
@@ -241,7 +270,9 @@ async function checkEmbedder(userId: string): Promise<SanityCheck> {
       ...base,
       status: 'fail',
       detail: `Local embedder at ${baseUrl} is unreachable — ingest can't embed.`,
-      fix: { summary: `Check the bundled ollama service is up and MANTLE_LOCAL_EMBEDDING_URL points at it.` },
+      fix: {
+        summary: `Check the bundled ollama service is up and MANTLE_LOCAL_EMBEDDING_URL points at it.`,
+      },
     };
   }
 }
@@ -257,7 +288,9 @@ async function checkPgBoss(): Promise<SanityCheck> {
       SELECT 1 FROM information_schema.schemata WHERE schema_name = 'pgboss'
     ) AS present
   `);
-  const rows = (Array.isArray(result) ? result : (result as { rows?: SchemaRow[] }).rows ?? []) as SchemaRow[];
+  const rows = (
+    Array.isArray(result) ? result : ((result as { rows?: SchemaRow[] }).rows ?? [])
+  ) as SchemaRow[];
   const present = rows[0]?.present === true;
   if (!present) {
     return {
@@ -270,13 +303,22 @@ async function checkPgBoss(): Promise<SanityCheck> {
       },
     };
   }
-  return { ...base, status: 'pass', detail: `Background-job schema “pgboss” is present.`, fix: null };
+  return {
+    ...base,
+    status: 'pass',
+    detail: `Background-job schema “pgboss” is present.`,
+    fix: null,
+  };
 }
 
 // ── Table storage ────────────────────────────────────────────────────────────
 
 async function checkTableStorageDir(): Promise<SanityCheck> {
-  const base = { key: 'tables.storage', label: 'Table-storage volume', category: 'Storage' as const };
+  const base = {
+    key: 'tables.storage',
+    label: 'Table-storage volume',
+    category: 'Storage' as const,
+  };
   const { tableDbRoot, resolveStoragePath } = await import('@mantle/tabledb');
   const { db: dbc, sql: sqlc } = await import('@mantle/db');
   const root = tableDbRoot();
@@ -300,7 +342,9 @@ async function checkTableStorageDir(): Promise<SanityCheck> {
       ...base,
       status: 'fail',
       detail: `Table-storage root “${root}” is not writable by this process — every table create/edit fails. Check the ${'${MANTLE_DATA_DIR}'}/table-dbs bind mount (a tag-only update misses compose changes — refresh the deploy bundle).`,
-      fix: { summary: `Ensure the table-dbs mount exists in docker-compose.yml for BOTH web and api and is writable by the container user.` },
+      fix: {
+        summary: `Ensure the table-dbs mount exists in docker-compose.yml for BOTH web and api and is writable by the container user.`,
+      },
     };
   }
 
@@ -312,7 +356,9 @@ async function checkTableStorageDir(): Promise<SanityCheck> {
     SELECT node_id, storage_path FROM tables
     WHERE storage_path IS NOT NULL ORDER BY updated_at DESC LIMIT 50
   `);
-  const rows = (Array.isArray(result) ? result : (result as { rows?: Row[] }).rows ?? []) as Row[];
+  const rows = (
+    Array.isArray(result) ? result : ((result as { rows?: Row[] }).rows ?? [])
+  ) as Row[];
   const missing: string[] = [];
   for (const r of rows) {
     try {
@@ -326,7 +372,9 @@ async function checkTableStorageDir(): Promise<SanityCheck> {
       ...base,
       status: 'fail',
       detail: `${missing.length} of ${rows.length} sampled file-backed tables have NO workbook file on disk (${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ', …' : ''}). Those tables will error on open — restore the files from a backup (mantle-table-dbs-*).`,
-      fix: { summary: `Untar the latest mantle-table-dbs-*.tgz back into ${'${MANTLE_DATA_DIR}'}/table-dbs, or restore the per-table snapshot from the in-app backup directory.` },
+      fix: {
+        summary: `Untar the latest mantle-table-dbs-*.tgz back into ${'${MANTLE_DATA_DIR}'}/table-dbs, or restore the per-table snapshot from the in-app backup directory.`,
+      },
     };
   }
   return {
@@ -338,7 +386,11 @@ async function checkTableStorageDir(): Promise<SanityCheck> {
 }
 
 async function checkTableStorageProbes(): Promise<SanityCheck> {
-  const base = { key: 'tables.sqlite_probes', label: 'Table-storage engine', category: 'Database' as const };
+  const base = {
+    key: 'tables.sqlite_probes',
+    label: 'Table-storage engine',
+    category: 'Database' as const,
+  };
   const report = await runTableStorageProbes();
   if (!report.ok) {
     const failed = report.results.filter((r) => !r.ok && r.required);
@@ -369,16 +421,46 @@ async function checkTableStorageProbes(): Promise<SanityCheck> {
  * checker must never look like a broken system.
  */
 export async function runSanityChecks(userId: string): Promise<SanityReport> {
-  const defs: Array<{ key: string; label: string; category: SanityCheck['category']; run: () => Promise<SanityCheck> }> = [
+  const defs: Array<{
+    key: string;
+    label: string;
+    category: SanityCheck['category'];
+    run: () => Promise<SanityCheck>;
+  }> = [
     { key: 'storage.bucket', label: 'Object-store bucket', category: 'Storage', run: checkBucket },
     { key: 'updater.configured', label: 'In-app updater', category: 'Updater', run: checkUpdater },
-    { key: 'env.secrets', label: 'Required secrets', category: 'Environment', run: async () => checkSecrets() },
+    {
+      key: 'env.secrets',
+      label: 'Required secrets',
+      category: 'Environment',
+      run: async () => checkSecrets(),
+    },
     { key: 'env.files_root', label: 'Files root', category: 'Environment', run: checkFilesRoot },
-    { key: 'env.public_url', label: 'Public URL', category: 'Environment', run: async () => checkPublicUrl() },
-    { key: 'embedding.model', label: 'Embedding model', category: 'Embedding', run: () => checkEmbedder(userId) },
+    {
+      key: 'env.public_url',
+      label: 'Public URL',
+      category: 'Environment',
+      run: async () => checkPublicUrl(),
+    },
+    {
+      key: 'embedding.model',
+      label: 'Embedding model',
+      category: 'Embedding',
+      run: () => checkEmbedder(userId),
+    },
     { key: 'db.pgboss', label: 'Background-job schema', category: 'Database', run: checkPgBoss },
-    { key: 'tables.sqlite_probes', label: 'Table-storage engine', category: 'Database', run: checkTableStorageProbes },
-    { key: 'tables.storage', label: 'Table-storage volume', category: 'Storage', run: checkTableStorageDir },
+    {
+      key: 'tables.sqlite_probes',
+      label: 'Table-storage engine',
+      category: 'Database',
+      run: checkTableStorageProbes,
+    },
+    {
+      key: 'tables.storage',
+      label: 'Table-storage volume',
+      category: 'Storage',
+      run: checkTableStorageDir,
+    },
   ];
 
   const checks = await Promise.all(

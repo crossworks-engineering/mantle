@@ -10,14 +10,7 @@
  * member surface — auth is the team cookie, 401 renders the TokenGate, and
  * pages stay free of server DB reads (detached-safe, same as the old hub).
  */
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -186,7 +179,9 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
           </p>
           <div className="flex shrink-0 items-center gap-2">
             {data.memberName && (
-              <span className="hidden text-xs text-muted-foreground sm:inline">{data.memberName}</span>
+              <span className="hidden text-xs text-muted-foreground sm:inline">
+                {data.memberName}
+              </span>
             )}
             <ThemeToggle />
           </div>

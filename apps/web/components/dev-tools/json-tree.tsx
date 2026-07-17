@@ -63,9 +63,7 @@ function Node({
   };
 
   const keyLabel =
-    nodeKey !== null ? (
-      <span className="text-chart-1">&quot;{nodeKey}&quot;</span>
-    ) : null;
+    nodeKey !== null ? <span className="text-chart-1">&quot;{nodeKey}&quot;</span> : null;
 
   if (!isObject) {
     return (
@@ -112,9 +110,7 @@ function Node({
             {keyLabel && <span className="text-muted-foreground">: </span>}
             <span className="text-muted-foreground">
               {isArray ? '[' : '{'}
-              {!open && (
-                <span className="mx-1 text-[10px] uppercase tracking-wide">{summary}</span>
-              )}
+              {!open && <span className="mx-1 text-[10px] uppercase tracking-wide">{summary}</span>}
               {!open && (isArray ? ']' : '}')}
             </span>
           </span>

@@ -5,12 +5,7 @@
  * mismatches and malformed stored hashes.
  */
 import { describe, expect, it } from 'vitest';
-import {
-  PEER_TOKEN_PREFIX,
-  hashToken,
-  mintInboundToken,
-  tokenMatchesHash,
-} from './peers-crypto';
+import { PEER_TOKEN_PREFIX, hashToken, mintInboundToken, tokenMatchesHash } from './peers-crypto';
 
 describe('mintInboundToken', () => {
   it('carries the recognisable prefix', () => {

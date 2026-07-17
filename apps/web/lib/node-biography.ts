@@ -185,8 +185,7 @@ export async function loadNodeBiography(
     totalIn += t.tokensIn;
     totalOut += t.tokensOut;
   }
-  const firstSeenISO =
-    traceDetails[0]?.startedAt ?? node.createdAt.toISOString();
+  const firstSeenISO = traceDetails[0]?.startedAt ?? node.createdAt.toISOString();
   const lastTouchedISO =
     traceDetails[traceDetails.length - 1]?.startedAt ?? node.updatedAt.toISOString();
 
@@ -234,4 +233,3 @@ export async function loadNodeBiography(
     },
   };
 }
-

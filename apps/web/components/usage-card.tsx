@@ -1,6 +1,11 @@
 import Link from 'next/link';
 import { cookies } from 'next/headers';
-import { recentAgentContext, spendInRange, type AgentContext, type SpendRange } from '@/lib/metrics';
+import {
+  recentAgentContext,
+  spendInRange,
+  type AgentContext,
+  type SpendRange,
+} from '@/lib/metrics';
 import { formatMicroUsd } from '@/lib/traces-format';
 import { UsageCardPills } from '@/components/usage-card-pills';
 import { VitalsBar, vitalsLevel, type VitalsLevel } from '@/components/dashboard/vitals-bar';
@@ -127,7 +132,8 @@ function AgentContextRow({ ctx }: { ctx: AgentContext }) {
   const limitLabel = ctx.contextLimit ? formatTokens(ctx.contextLimit) : 'unknown';
   // Provenance of the limit, so the number is trustworthy at a glance:
   // 'live' = fetched from OpenRouter, 'fallback' = static table.
-  const sourceLabel = ctx.contextSource === 'live' ? 'live' : ctx.contextSource === 'fallback' ? 'fallback' : '';
+  const sourceLabel =
+    ctx.contextSource === 'live' ? 'live' : ctx.contextSource === 'fallback' ? 'fallback' : '';
   const title =
     ctx.pct != null
       ? `${label} (${ctx.modelSlug}) — last turn ${tokensLabel} / ${limitLabel} tokens` +

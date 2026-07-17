@@ -39,13 +39,17 @@ export function AddFeedForm() {
   }
 
   return (
-    <form ref={ref} onSubmit={onSubmit} className="space-y-3 rounded-lg border border-border bg-card p-4">
+    <form
+      ref={ref}
+      onSubmit={onSubmit}
+      className="space-y-3 rounded-lg border border-border bg-card p-4"
+    >
       <div className="space-y-1">
         <h3 className="text-sm font-semibold">Subscribe to a calendar</h3>
         <p className="text-xs text-muted-foreground">
-          Paste a calendar&apos;s <strong>iCal / .ics URL</strong> — Google (Settings → your calendar →
-          “Secret address in iCal format”), Outlook (Publish calendar → ICS), Apple, or any CalDAV
-          feed.
+          Paste a calendar&apos;s <strong>iCal / .ics URL</strong> — Google (Settings → your
+          calendar → “Secret address in iCal format”), Outlook (Publish calendar → ICS), Apple, or
+          any CalDAV feed.
         </p>
       </div>
       <div className="space-y-2">

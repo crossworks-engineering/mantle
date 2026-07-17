@@ -27,7 +27,11 @@ function sleep(ms: number): Promise<void> {
 /** Low-level call against an absolute Graph URL with an already-resolved token.
  *  Honours 429 `Retry-After`; throws a `GraphError` (carrying the status) on
  *  any non-2xx so callers can branch on auth (401) vs throttling vs the rest. */
-export async function graphFetchRaw(url: string, accessToken: string, init?: RequestInit): Promise<Response> {
+export async function graphFetchRaw(
+  url: string,
+  accessToken: string,
+  init?: RequestInit,
+): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url, {
       ...init,
@@ -35,13 +39,17 @@ export async function graphFetchRaw(url: string, accessToken: string, init?: Req
     });
     if (res.status === 429 && attempt < MAX_429_RETRIES) {
       const retryAfter = Number(res.headers.get('retry-after'));
-      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2 ** attempt * 1000;
+      const waitMs =
+        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2 ** attempt * 1000;
       await sleep(waitMs);
       continue;
     }
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw graphError(res.status, `Graph ${init?.method ?? 'GET'} ${url} → ${res.status}: ${body}`.slice(0, 500));
+      throw graphError(
+        res.status,
+        `Graph ${init?.method ?? 'GET'} ${url} → ${res.status}: ${body}`.slice(0, 500),
+      );
     }
     return res;
   }
@@ -50,7 +58,11 @@ export async function graphFetchRaw(url: string, accessToken: string, init?: Req
 /** Owner-scoped JSON GET. Resolves a fresh token for the account, then calls
  *  Graph. `path` is relative to the v1.0 base (e.g. `/me/drive/root/children`)
  *  or an absolute `@odata.nextLink`. */
-export async function graphGet<T>(userId: string, accountId: string, pathOrUrl: string): Promise<T> {
+export async function graphGet<T>(
+  userId: string,
+  accountId: string,
+  pathOrUrl: string,
+): Promise<T> {
   const token = await getValidAccessToken(userId, accountId);
   if (!token) throw graphError(401, 'no valid access token — account needs reconnect');
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${GRAPH_BASE}${pathOrUrl}`;

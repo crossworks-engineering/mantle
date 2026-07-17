@@ -41,9 +41,43 @@ function resolveCwd(override?: unknown): string {
   return process.env.MANTLE_TERMINAL_CWD || process.cwd();
 }
 
+/**
+ * Env passed to the child shell. This tool feeds stdout/stderr straight back to
+ * the model, so a single `env`/`printenv` would otherwise exfiltrate the at-rest
+ * encryption key (and every API key) in one call — collapsing the whole
+ * encryption story to "don't grant this tool". We drop the crypto/session/db
+ * roots by exact name and anything whose name looks secret-shaped, while
+ * keeping PATH, HOME, NODE_*, PNPM_*, etc. so git/pnpm/builds still run. An
+ * allowlist was rejected — it breaks too many legit toolchains; this denylist
+ * closes the exfil path without changing what commands work.
+ *
+ * Env names are UPPER_SNAKE, so we match secret words as whole `_`-delimited
+ * SEGMENTS: this catches S3_ACCESS_KEY / S3_SECRET_KEY / GITHUB_TOKEN / any
+ * *_KEY without the substring false-positives a bare /key/ would cause
+ * (MONKEY_BUSINESS, KEYCLOAK_URL both stay). */
+const SECRET_ENV_EXACT = new Set([
+  'MANTLE_MASTER_KEY',
+  'MANTLE_MASTER_KEY_NEXT',
+  'SESSION_SECRET',
+  'DATABASE_URL',
+  'DIRECT_DATABASE_URL',
+]);
+const SECRET_ENV_SEGMENT =
+  /(^|_)(secret|secrets|token|tokens|password|passwd|passwords|passphrase|credential|credentials|key|keys|apikey|privatekey)(_|$)/i;
+export function sanitizedEnv(): NodeJS.ProcessEnv {
+  const out = { ...process.env };
+  for (const k of Object.keys(out)) {
+    if (SECRET_ENV_EXACT.has(k) || SECRET_ENV_SEGMENT.test(k)) delete out[k];
+  }
+  return out;
+}
+
 function truncate(s: string): { text: string; truncated: boolean } {
   if (s.length <= OUTPUT_CAP) return { text: s, truncated: false };
-  return { text: `${s.slice(0, OUTPUT_CAP)}\n…[truncated ${s.length - OUTPUT_CAP} chars]`, truncated: true };
+  return {
+    text: `${s.slice(0, OUTPUT_CAP)}\n…[truncated ${s.length - OUTPUT_CAP} chars]`,
+    truncated: true,
+  };
 }
 
 const run_terminal: BuiltinToolDef = {
@@ -60,11 +94,12 @@ const run_terminal: BuiltinToolDef = {
     properties: {
       command: {
         type: 'string',
-        description: 'The shell command to run, e.g. "git -C . status" or "pnpm -C apps/web build".',
+        description:
+          'The shell command to run, e.g. "git -C . status" or "pnpm -C apps/web build".',
       },
       cwd: {
         type: 'string',
-        description: 'Absolute working directory. Defaults to the server\'s MANTLE_TERMINAL_CWD.',
+        description: "Absolute working directory. Defaults to the server's MANTLE_TERMINAL_CWD.",
       },
       timeout_seconds: {
         type: 'number',
@@ -81,7 +116,10 @@ const run_terminal: BuiltinToolDef = {
     const cwd = resolveCwd(input.cwd);
     const timeoutS = Math.min(
       MAX_TIMEOUT_S,
-      Math.max(1, typeof input.timeout_seconds === 'number' ? input.timeout_seconds : DEFAULT_TIMEOUT_S),
+      Math.max(
+        1,
+        typeof input.timeout_seconds === 'number' ? input.timeout_seconds : DEFAULT_TIMEOUT_S,
+      ),
     );
     ctx.step?.setMeta({ command, cwd, timeoutSeconds: timeoutS });
 
@@ -90,12 +128,24 @@ const run_terminal: BuiltinToolDef = {
     return await new Promise<ToolHandlerResult>((resolve) => {
       exec(
         command,
-        { cwd, timeout: timeoutS * 1000, maxBuffer: MAX_BUFFER, shell: '/bin/bash', env: process.env },
+        {
+          cwd,
+          timeout: timeoutS * 1000,
+          maxBuffer: MAX_BUFFER,
+          shell: '/bin/bash',
+          env: sanitizedEnv(),
+        },
         (err, stdout, stderr) => {
           const durationMs = Date.now() - started;
           const out = truncate(String(stdout));
           const errOut = truncate(String(stderr));
-          const e = err as (NodeJS.ErrnoException & { code?: number | string; killed?: boolean; signal?: string }) | null;
+          const e = err as
+            | (NodeJS.ErrnoException & {
+                code?: number | string;
+                killed?: boolean;
+                signal?: string;
+              })
+            | null;
 
           // Spawn failure (bad cwd / shell missing) — a real tool error.
           if (e && typeof e.code === 'string') {
@@ -105,7 +155,13 @@ const run_terminal: BuiltinToolDef = {
 
           const timedOut = !!e?.killed;
           const exitCode = timedOut ? null : e ? (typeof e.code === 'number' ? e.code : 1) : 0;
-          ctx.step?.setMeta({ exitCode, timedOut, durationMs, stdoutBytes: String(stdout).length, stderrBytes: String(stderr).length });
+          ctx.step?.setMeta({
+            exitCode,
+            timedOut,
+            durationMs,
+            stdoutBytes: String(stdout).length,
+            stderrBytes: String(stderr).length,
+          });
           ctx.step?.setOutput({ exitCode, timedOut, durationMs });
           resolve({
             ok: true,

@@ -74,7 +74,9 @@ describe('FTS shadows on published writes', () => {
     const tabs = describeWorkbook(file)[0]!;
     const db = openTableFile(file);
     try {
-      db.exec(`UPDATE ${tabs.physicalTable} SET c_c_notes = 'zebra quagga finding' WHERE _rid = 'r1'`);
+      db.exec(
+        `UPDATE ${tabs.physicalTable} SET c_c_notes = 'zebra quagga finding' WHERE _rid = 'r1'`,
+      );
       const hits = db
         .prepare(`SELECT rowid FROM ${tabs.ftsTable} WHERE ${tabs.ftsTable} MATCH ?`)
         .all(quoteFtsTerm('zebra quagga'));
@@ -150,7 +152,10 @@ describe('table_sql runner', () => {
 
   it('runs a query against the display-named view with a row cap', async () => {
     const file = published('sql');
-    const r = await runTableSql(file, `SELECT "Circuit", "Status" FROM "Circuits" WHERE "Status" = 'On hold' ORDER BY "Circuit"`);
+    const r = await runTableSql(
+      file,
+      `SELECT "Circuit", "Status" FROM "Circuits" WHERE "Status" = 'On hold' ORDER BY "Circuit"`,
+    );
     expect(r.columns).toEqual(['Circuit', 'Status']);
     expect(r.rowCount).toBe(8);
     expect(r.truncated).toBe(false);

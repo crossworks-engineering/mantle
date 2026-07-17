@@ -84,17 +84,31 @@ const CAP_LABELS: Record<keyof Capabilities, string> = {
 };
 
 function CapabilitiesPanel({ caps }: { caps: Capabilities }) {
-  const order: (keyof Capabilities)[] = ['extractor', 'embedding', 'tika', 'vision', 'summarizer', 'reflector', 'stt'];
+  const order: (keyof Capabilities)[] = [
+    'extractor',
+    'embedding',
+    'tika',
+    'vision',
+    'summarizer',
+    'reflector',
+    'stt',
+  ];
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card px-4 py-2.5">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Brain readiness</span>
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Brain readiness
+      </span>
       {order.map((k) => {
         const c = caps[k];
         const cls = c.available
           ? 'bg-primary/10 text-primary border-primary/30'
           : 'bg-muted text-muted-foreground border-border';
         return (
-          <span key={k} title={c.detail} className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] ${cls}`}>
+          <span
+            key={k}
+            title={c.detail}
+            className={`inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] ${cls}`}
+          >
             <span className="font-mono">{c.available ? '✓' : '—'}</span>
             {CAP_LABELS[k]}
           </span>
@@ -107,7 +121,10 @@ function CapabilitiesPanel({ caps }: { caps: Capabilities }) {
 // ─── live view ──────────────────────────────────────────────────────────────
 
 const LANDED_STATE_STYLE: Record<LandedState, { label: string; cls: string }> = {
-  indexing: { label: 'INDEXING', cls: 'bg-muted text-muted-foreground border-border animate-pulse' },
+  indexing: {
+    label: 'INDEXING',
+    cls: 'bg-muted text-muted-foreground border-border animate-pulse',
+  },
   ok: { label: 'OK', cls: 'bg-primary/10 text-primary border-primary/30' },
   skipped: { label: 'SKIPPED', cls: 'bg-muted text-muted-foreground border-border' },
   fail: { label: 'FAIL', cls: 'bg-destructive/10 text-destructive border-destructive/30' },
@@ -126,7 +143,15 @@ function relTime(iso: string): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-function LandedRow({ item, onDelete, deleting }: { item: LandedItem; onDelete: (id: string) => void; deleting: boolean }) {
+function LandedRow({
+  item,
+  onDelete,
+  deleting,
+}: {
+  item: LandedItem;
+  onDelete: (id: string) => void;
+  deleting: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const s = LANDED_STATE_STYLE[item.state];
   return (
@@ -142,13 +167,19 @@ function LandedRow({ item, onDelete, deleting }: { item: LandedItem; onDelete: (
           >
             {s.label}
           </span>
-          <span className="min-w-[8rem] max-w-[18rem] truncate text-sm font-medium text-foreground" title={item.title}>
+          <span
+            className="min-w-[8rem] max-w-[18rem] truncate text-sm font-medium text-foreground"
+            title={item.title}
+          >
             {item.title}
           </span>
           <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
             {item.nodeType}
           </span>
-          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground" title={new Date(item.updatedAt).toLocaleString()}>
+          <span
+            className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
+            title={new Date(item.updatedAt).toLocaleString()}
+          >
             {relTime(item.updatedAt)}
           </span>
           <span className="flex flex-wrap gap-1">
@@ -159,7 +190,12 @@ function LandedRow({ item, onDelete, deleting }: { item: LandedItem; onDelete: (
         </button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="sm" disabled={deleting} className="shrink-0 text-muted-foreground hover:text-destructive">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={deleting}
+              className="shrink-0 text-muted-foreground hover:text-destructive"
+            >
               {deleting ? '…' : '⌫'}
             </Button>
           </AlertDialogTrigger>
@@ -167,9 +203,9 @@ function LandedRow({ item, onDelete, deleting }: { item: LandedItem; onDelete: (
             <AlertDialogHeader>
               <AlertDialogTitle>Delete “{item.title}”?</AlertDialogTitle>
               <AlertDialogDescription>
-                Permanently deletes this <code>{item.nodeType}</code> node and its entire brain footprint —
-                summary, embedding, facts, and graph edges — via the real cascade + reaper path. This is your
-                actual data and cannot be undone.
+                Permanently deletes this <code>{item.nodeType}</code> node and its entire brain
+                footprint — summary, embedding, facts, and graph edges — via the real cascade +
+                reaper path. This is your actual data and cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -202,7 +238,9 @@ function LandedRow({ item, onDelete, deleting }: { item: LandedItem; onDelete: (
           )}
           <div className="flex gap-2 pt-1 text-muted-foreground">
             <span className="w-24 shrink-0">added</span>
-            <span className="tabular-nums text-foreground">{new Date(item.createdAt).toLocaleString()}</span>
+            <span className="tabular-nums text-foreground">
+              {new Date(item.createdAt).toLocaleString()}
+            </span>
           </div>
           <a href={`/nodes/${item.nodeId}/history`} className="inline-block pt-1 underline">
             node biography →
@@ -233,7 +271,9 @@ function LiveView() {
           order,
         });
         if (typeFilter !== 'all') params.set('types', typeFilter);
-        const data = await apiFetch<LandedReport>(`/api/debug/integrity/landed?${params.toString()}`);
+        const data = await apiFetch<LandedReport>(
+          `/api/debug/integrity/landed?${params.toString()}`,
+        );
         setReport(data);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) return;
@@ -264,14 +304,25 @@ function LiveView() {
     timer.current = setTimeout(() => void load(true), 500);
   }, [load]);
   useRealtime(LIVE_TYPES, scheduleRefetch);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
 
   async function remove(nodeId: string) {
     setDeleting(nodeId);
     try {
       await apiSend('/api/debug/integrity/landed/delete', 'POST', { nodeId });
       setReport((r) =>
-        r ? { ...r, items: r.items.filter((i) => i.nodeId !== nodeId), total: Math.max(0, r.total - 1) } : r,
+        r
+          ? {
+              ...r,
+              items: r.items.filter((i) => i.nodeId !== nodeId),
+              total: Math.max(0, r.total - 1),
+            }
+          : r,
       );
       toast.success('Deleted node + footprint');
     } catch (err) {
@@ -287,13 +338,16 @@ function LiveView() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Live brain activity</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          Live brain activity
+        </h2>
         <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-          The real content you add — notes, pages, tasks, events, contacts, secrets, files, email — as it lands in
-          the brain. Each row shows whether the extractor indexed it (L5 summary · 768-dim embedding · tsv · L4 facts ·
-          graph). <strong>Green</strong> = fully indexed; <strong>skipped</strong> shows a correct non-index with its
-          reason; <strong>fail</strong> flags a real gap (success but no summary, dimension drift, duplicate edges).
-          Filter by type and page through the whole corpus; new content still appears automatically.
+          The real content you add — notes, pages, tasks, events, contacts, secrets, files, email —
+          as it lands in the brain. Each row shows whether the extractor indexed it (L5 summary ·
+          768-dim embedding · tsv · L4 facts · graph). <strong>Green</strong> = fully indexed;{' '}
+          <strong>skipped</strong> shows a correct non-index with its reason; <strong>fail</strong>{' '}
+          flags a real gap (success but no summary, dimension drift, duplicate edges). Filter by
+          type and page through the whole corpus; new content still appears automatically.
         </p>
       </div>
 
@@ -343,7 +397,12 @@ function LiveView() {
         <div className="overflow-hidden rounded-md border border-border">
           <ul className="divide-y divide-border">
             {report.items.map((item) => (
-              <LandedRow key={item.nodeId} item={item} onDelete={remove} deleting={deleting === item.nodeId} />
+              <LandedRow
+                key={item.nodeId}
+                item={item}
+                onDelete={remove}
+                deleting={deleting === item.nodeId}
+              />
             ))}
           </ul>
           <ListPager
@@ -385,7 +444,8 @@ const SEVERITY_STYLE: Record<AuditSeverity, string> = {
  *  (the live pipeline may still be producing these) vs inert pre-fix sediment. */
 function spanMeta(check: AuditCheck): { text: string; recent: boolean } | null {
   if (check.ok || !check.oldestAt || !check.newestAt) return null;
-  const text = check.oldestAt === check.newestAt ? check.oldestAt : `${check.oldestAt} → ${check.newestAt}`;
+  const text =
+    check.oldestAt === check.newestAt ? check.oldestAt : `${check.oldestAt} → ${check.newestAt}`;
   const cutoff = localDay(new Date(Date.now() - 2 * 86_400_000)); // local date, not UTC
   return { text, recent: check.newestAt >= cutoff };
 }
@@ -400,20 +460,33 @@ function AuditRow({ check }: { check: AuditCheck }) {
       : 'bg-muted text-foreground border-border';
   return (
     <li className="px-3 py-2.5">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 text-left">
-        <span className={`inline-flex w-[64px] shrink-0 justify-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${countCls}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 text-left"
+      >
+        <span
+          className={`inline-flex w-[64px] shrink-0 justify-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${countCls}`}
+        >
           {check.ok ? 'OK' : `${check.count}${check.capped ? '+' : ''}`}
         </span>
         <span className="min-w-[200px] text-sm font-medium text-foreground">{check.label}</span>
-        <span className={`rounded-sm border px-1.5 py-0.5 text-[11px] uppercase tracking-wider ${SEVERITY_STYLE[check.severity]}`}>
+        <span
+          className={`rounded-sm border px-1.5 py-0.5 text-[11px] uppercase tracking-wider ${SEVERITY_STYLE[check.severity]}`}
+        >
           {check.severity}
         </span>
         {span && (
           <span
             className={`rounded-sm border px-1.5 py-0.5 text-[11px] tabular-nums ${span.recent ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground'}`}
-            title={span.recent ? 'Newest violation is recent — the live pipeline may still be producing these' : 'All violations are older — likely pre-fix sediment, safe to backfill/clean'}
+            title={
+              span.recent
+                ? 'Newest violation is recent — the live pipeline may still be producing these'
+                : 'All violations are older — likely pre-fix sediment, safe to backfill/clean'
+            }
           >
-            {span.recent ? '⚠ ' : ''}{span.text}
+            {span.recent ? '⚠ ' : ''}
+            {span.text}
           </span>
         )}
       </button>
@@ -423,17 +496,25 @@ function AuditRow({ check }: { check: AuditCheck }) {
           {span && (
             <p className="text-[11px] text-muted-foreground">
               Age span: <span className="tabular-nums text-foreground">{span.text}</span>
-              {span.recent ? ' · newest is recent — may be a live regression' : ' · all older — likely pre-fix sediment'}
+              {span.recent
+                ? ' · newest is recent — may be a live regression'
+                : ' · all older — likely pre-fix sediment'}
             </p>
           )}
           {check.samples.length > 0 && (
             <div className="space-y-1 border-t border-border pt-1.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Samples</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Samples
+              </div>
               {check.samples.map((sm) => (
                 <div key={sm.id} className="flex gap-2">
-                  <span className="rounded-sm bg-muted px-1 font-mono text-[11px] text-muted-foreground">{sm.kind}</span>
+                  <span className="rounded-sm bg-muted px-1 font-mono text-[11px] text-muted-foreground">
+                    {sm.kind}
+                  </span>
                   <span className="text-muted-foreground">{sm.detail}</span>
-                  <a href={`/nodes/${sm.id}/history`} className="font-mono text-[11px] underline">{sm.id.slice(0, 8)}</a>
+                  <a href={`/nodes/${sm.id}/history`} className="font-mono text-[11px] underline">
+                    {sm.id.slice(0, 8)}
+                  </a>
                 </div>
               ))}
             </div>
@@ -454,7 +535,11 @@ function AuditView() {
     try {
       const data = await apiFetch<AuditReport>('/api/debug/integrity/audit');
       setReport(data);
-      toast.success(data.totalViolations === 0 ? 'Corpus clean — no violations' : `${data.totalViolations} violations across ${data.checks.filter((c) => !c.ok).length} checks`);
+      toast.success(
+        data.totalViolations === 0
+          ? 'Corpus clean — no violations'
+          : `${data.totalViolations} violations across ${data.checks.filter((c) => !c.ok).length} checks`,
+      );
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
       toast.error(err instanceof Error ? err.message : 'Audit failed');
@@ -467,12 +552,15 @@ function AuditView() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Corpus audit</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Corpus audit
+          </h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            Read-only scan of your <strong>existing</strong> brain for invariant violations — silent-miss nodes,
-            embedding-dimension drift, unembedded or reaper-missed facts, duplicate edges, orphan/over-merged
-            entities. No writes, no cost. Complements the live view: the live view shows new content indexing
-            correctly; this proves the data already stored is consistent.
+            Read-only scan of your <strong>existing</strong> brain for invariant violations —
+            silent-miss nodes, embedding-dimension drift, unembedded or reaper-missed facts,
+            duplicate edges, orphan/over-merged entities. No writes, no cost. Complements the live
+            view: the live view shows new content indexing correctly; this proves the data already
+            stored is consistent.
           </p>
         </div>
         <Button onClick={runAudit} disabled={running}>
@@ -487,7 +575,9 @@ function AuditView() {
               {report.totalViolations === 0 ? 'Clean' : `${report.totalViolations} violations`}
             </span>
             <span className="text-muted-foreground">·</span>
-            <span className="text-muted-foreground">{report.checks.filter((c) => c.ok).length}/{report.checks.length} checks passed</span>
+            <span className="text-muted-foreground">
+              {report.checks.filter((c) => c.ok).length}/{report.checks.length} checks passed
+            </span>
           </div>
           <ul className="divide-y divide-border rounded-md border border-border">
             {report.checks.map((c) => (
@@ -518,11 +608,15 @@ function SystemRow({ check }: { check: SystemCheck }) {
         className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 text-left"
         disabled={!hasDetail}
       >
-        <span className={`inline-flex w-[64px] shrink-0 justify-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${badgeCls}`}>
+        <span
+          className={`inline-flex w-[64px] shrink-0 justify-center rounded-sm border px-1.5 py-0.5 text-[11px] font-semibold tracking-wider ${badgeCls}`}
+        >
           {check.ok ? 'OK' : `${check.samples?.length ?? '!'}`}
         </span>
         <span className="min-w-[200px] text-sm font-medium text-foreground">{check.label}</span>
-        <span className={`rounded-sm border px-1.5 py-0.5 text-[11px] uppercase tracking-wider ${SEVERITY_STYLE[check.severity]}`}>
+        <span
+          className={`rounded-sm border px-1.5 py-0.5 text-[11px] uppercase tracking-wider ${SEVERITY_STYLE[check.severity]}`}
+        >
           {check.severity}
         </span>
         <span className="text-xs text-muted-foreground">— {check.detail}</span>
@@ -531,7 +625,9 @@ function SystemRow({ check }: { check: SystemCheck }) {
         <div className="mt-2 space-y-1 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
           {check.samples!.map((sm) => (
             <div key={sm.id} className="flex gap-2">
-              <span className="rounded-sm bg-muted px-1 font-mono text-[11px] text-muted-foreground">{sm.id}</span>
+              <span className="rounded-sm bg-muted px-1 font-mono text-[11px] text-muted-foreground">
+                {sm.id}
+              </span>
               <span className="text-muted-foreground">{sm.detail}</span>
             </div>
           ))}
@@ -551,7 +647,11 @@ function SystemView() {
     try {
       const data = await apiFetch<SystemReport>('/api/debug/integrity/system');
       setReport(data);
-      toast.success(data.problems === 0 ? 'Config clean — every vital link resolves' : `${data.problems} config check(s) failing`);
+      toast.success(
+        data.problems === 0
+          ? 'Config clean — every vital link resolves'
+          : `${data.problems} config check(s) failing`,
+      );
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
       toast.error(err instanceof Error ? err.message : 'Check failed');
@@ -564,20 +664,24 @@ function SystemView() {
   // provider's api object isn't memoized, so `run` re-identifies every time a
   // toast is pushed — keying the effect on it would re-fetch on each success
   // toast, an infinite loop. Mount-once is the right shape for a one-shot check.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-once; `run` re-identifies every render (toast api unmemoized), so keying on it would infinite-loop
   }, []);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">System config</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            System config
+          </h2>
           <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            Read-only check of the <strong>agent / skill / tool / worker link graph</strong> against the system
-            manifest. Catches what the runtime hides: an agent referencing a skill or tool with no row (it silently
-            drops), a specialist not wired into the persona&apos;s <code>delegate_to</code>, a missing default worker.
+            Read-only check of the <strong>agent / skill / tool / worker link graph</strong> against
+            the system manifest. Catches what the runtime hides: an agent referencing a skill or
+            tool with no row (it silently drops), a specialist not wired into the persona&apos;s{' '}
+            <code>delegate_to</code>, a missing default worker.
             <strong> Green</strong> = every vital link resolves.
           </p>
         </div>
@@ -589,9 +693,15 @@ function SystemView() {
       {report && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card px-4 py-3 text-sm">
-            <span className="font-semibold">{report.problems === 0 ? 'Healthy' : `${report.problems} problem${report.problems === 1 ? '' : 's'}`}</span>
+            <span className="font-semibold">
+              {report.problems === 0
+                ? 'Healthy'
+                : `${report.problems} problem${report.problems === 1 ? '' : 's'}`}
+            </span>
             <span className="text-muted-foreground">·</span>
-            <span className="text-muted-foreground">{report.checks.filter((c) => c.ok).length}/{report.checks.length} checks passed</span>
+            <span className="text-muted-foreground">
+              {report.checks.filter((c) => c.ok).length}/{report.checks.length} checks passed
+            </span>
           </div>
           <ul className="divide-y divide-border rounded-md border border-border">
             {report.checks.map((c) => (
@@ -618,7 +728,9 @@ export function IntegrityClient() {
             onClick={() => setMode(m)}
             className={
               'rounded-t-md px-3 py-1.5 text-sm font-medium transition-colors ' +
-              (mode === m ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground')
+              (mode === m
+                ? 'border-b-2 border-primary text-foreground'
+                : 'text-muted-foreground hover:text-foreground')
             }
           >
             {LABELS[m]}

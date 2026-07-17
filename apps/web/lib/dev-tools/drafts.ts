@@ -107,7 +107,11 @@ export function catalogHaystack(e: CatalogEndpoint): string {
     .toLowerCase();
 }
 
-export function schemaHaystack(name: string, description: string, schema: Record<string, unknown> | null | undefined): string {
+export function schemaHaystack(
+  name: string,
+  description: string,
+  schema: Record<string, unknown> | null | undefined,
+): string {
   const props =
     schema && typeof schema === 'object'
       ? Object.keys((schema.properties as Record<string, unknown>) ?? {})

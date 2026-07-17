@@ -47,7 +47,8 @@ export async function FolderPresenter({
   // Breadcrumb: shared root ▸ …descendant labels (never above the share).
   // Labels display in dash form (the disk slug the folder cards show); the
   // sub links keep the raw ltree form the ?p= round-trip matches on.
-  const relLabels = currentPath === view.path ? [] : currentPath.slice(view.path.length + 1).split('.');
+  const relLabels =
+    currentPath === view.path ? [] : currentPath.slice(view.path.length + 1).split('.');
   const crumbs = [
     { label: view.title, sub: '' },
     ...relLabels.map((label, i) => ({
@@ -113,7 +114,9 @@ export async function FolderPresenter({
           </li>
         ))}
         {folders.length === 0 && files.length === 0 && (
-          <li className="px-4 py-8 text-center text-sm text-muted-foreground">This folder is empty.</li>
+          <li className="px-4 py-8 text-center text-sm text-muted-foreground">
+            This folder is empty.
+          </li>
         )}
       </ul>
     </div>

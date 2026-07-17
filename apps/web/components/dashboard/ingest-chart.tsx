@@ -14,7 +14,13 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 
-const PALETTE = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
+const PALETTE = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+];
 const MAX_SERIES = 5;
 
 /** Nodes ingested per day, stacked by node type. The set of types is derived
@@ -23,7 +29,8 @@ const MAX_SERIES = 5;
 export function IngestChart({ data }: { data: IngestDay[] }) {
   const { rows, config, keys } = React.useMemo(() => {
     const totals = new Map<string, number>();
-    for (const d of data) for (const [t, c] of Object.entries(d.byType)) totals.set(t, (totals.get(t) ?? 0) + c);
+    for (const d of data)
+      for (const [t, c] of Object.entries(d.byType)) totals.set(t, (totals.get(t) ?? 0) + c);
     const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
     const top = ranked.slice(0, MAX_SERIES);
     const hasOther = ranked.length > top.length;
@@ -57,7 +64,9 @@ export function IngestChart({ data }: { data: IngestDay[] }) {
     <Card className="h-full">
       <CardHeader>
         <CardTitle className="text-base">Ingest activity</CardTitle>
-        <CardDescription>{formatCount(total)} nodes added over {data.length} days</CardDescription>
+        <CardDescription>
+          {formatCount(total)} nodes added over {data.length} days
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={config} className="aspect-auto h-[220px] w-full">

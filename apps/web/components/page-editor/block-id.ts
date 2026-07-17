@@ -60,7 +60,10 @@ function mintId(): string {
 }
 
 function fallbackId(): string {
-  const r = () => Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
+  const r = () =>
+    Math.floor(Math.random() * 0xffffffff)
+      .toString(16)
+      .padStart(8, '0');
   return `${r()}-${r().slice(0, 4)}-4${r().slice(1, 4)}-${r().slice(0, 4)}-${r()}${r().slice(0, 4)}`;
 }
 

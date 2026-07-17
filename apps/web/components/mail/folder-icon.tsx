@@ -1,4 +1,13 @@
-import { Archive, ArchiveX, File, Folder, Inbox, Send, Trash2, type LucideIcon } from 'lucide-react';
+import {
+  Archive,
+  ArchiveX,
+  File,
+  Folder,
+  Inbox,
+  Send,
+  Trash2,
+  type LucideIcon,
+} from 'lucide-react';
 
 /**
  * Map an arbitrary IMAP folder name to a sensible icon. Folder names are free

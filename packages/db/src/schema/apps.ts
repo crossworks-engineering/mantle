@@ -28,7 +28,10 @@ export const apps = pgTable('apps', {
   // rendered or indexed; promoted into `source` on publish.
   draftSource: jsonb('draft_source').$type<AppSource>(),
   draftUpdatedAt: timestamp('draft_updated_at', { withTimezone: true }),
-  manifest: jsonb('manifest').$type<AppManifest>().default(sql`'{}'::jsonb`).notNull(),
+  manifest: jsonb('manifest')
+    .$type<AppManifest>()
+    .default(sql`'{}'::jsonb`)
+    .notNull(),
   // Pointer to the last esbuild bundle of the DRAFT (preview) and of the
   // PUBLISHED source (go-live). A failed build never clobbers the last green
   // ref — see app_build.

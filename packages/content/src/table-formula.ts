@@ -186,7 +186,8 @@ class Parser {
         this.next();
         const right = toNum(this.parseUnary());
         const l = toNum(left);
-        left = tok.v === '*' ? l * right : tok.v === '/' ? (right === 0 ? NaN : l / right) : l % right;
+        left =
+          tok.v === '*' ? l * right : tok.v === '/' ? (right === 0 ? NaN : l / right) : l % right;
       } else break;
     }
     return left;
@@ -311,7 +312,7 @@ function compare(op: string, a: EvalValue, b: EvalValue): boolean {
 function applyFn(name: FnName, args: EvalValue[]): EvalValue {
   switch (name) {
     case 'IF':
-      return truthy(args[0] ?? null) ? args[1] ?? null : args[2] ?? null;
+      return truthy(args[0] ?? null) ? (args[1] ?? null) : (args[2] ?? null);
     case 'ROUND': {
       const n = toNum(args[0] ?? null);
       const d = args.length > 1 ? toNum(args[1]!) : 0;

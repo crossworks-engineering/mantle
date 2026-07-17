@@ -61,11 +61,19 @@ async function exchange(oauthToken: string): Promise<string> {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new ChatHttpError({ provider: 'copilot', status: res.status, body: `token exchange: ${body.slice(0, 300)}` });
+    throw new ChatHttpError({
+      provider: 'copilot',
+      status: res.status,
+      body: `token exchange: ${body.slice(0, 300)}`,
+    });
   }
   const json = (await res.json()) as { token?: string; expires_at?: number };
   if (!json.token) {
-    throw new ChatHttpError({ provider: 'copilot', status: 502, body: 'token exchange: response had no token' });
+    throw new ChatHttpError({
+      provider: 'copilot',
+      status: 502,
+      body: 'token exchange: response had no token',
+    });
   }
   // expires_at is unix SECONDS; fall back to a conservative 20-min TTL.
   const expiresAtMs =

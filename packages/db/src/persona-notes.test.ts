@@ -39,7 +39,12 @@ describe('activeNotes', () => {
 
 describe('applyPersonaUpdate', () => {
   it('adds a new note with the supplied id', () => {
-    const res = applyPersonaUpdate([], { add: { kind: 'style', content: 'Be professional' } }, NOW, NEW_ID);
+    const res = applyPersonaUpdate(
+      [],
+      { add: { kind: 'style', content: 'Be professional' } },
+      NOW,
+      NEW_ID,
+    );
     expect(res.added?.id).toBe(NEW_ID);
     expect(res.notes).toHaveLength(1);
     expect(res.retired).toEqual([]);
@@ -91,14 +96,18 @@ describe('applyPersonaUpdate', () => {
     ];
     const res = applyPersonaUpdate(
       notes,
-      { add: { kind: 'style', content: 'Professional, formal tone' }, supersedeRefs: ['a', 'b', 'c'] },
+      {
+        add: { kind: 'style', content: 'Professional, formal tone' },
+        supersedeRefs: ['a', 'b', 'c'],
+      },
       NOW,
       NEW_ID,
     );
-    expect(activeNotes(res.notes).map((n) => n.content).sort()).toEqual([
-      'Professional, formal tone',
-      'calls the user Jay',
-    ]);
+    expect(
+      activeNotes(res.notes)
+        .map((n) => n.content)
+        .sort(),
+    ).toEqual(['Professional, formal tone', 'calls the user Jay']);
     expect(res.retired).toHaveLength(3);
   });
 
@@ -115,7 +124,12 @@ describe('applyPersonaUpdate', () => {
   });
 
   it('never re-retires an already-retired note', () => {
-    const already = note({ id: 'old', content: 'old', retiredAt: '2026-01-02T00:00:00.000Z', retiredReason: 'removed' });
+    const already = note({
+      id: 'old',
+      content: 'old',
+      retiredAt: '2026-01-02T00:00:00.000Z',
+      retiredReason: 'removed',
+    });
     const res = applyPersonaUpdate([already], { removeRefs: [noteRef(already)] }, NOW, NEW_ID);
     expect(res.retired).toEqual([]);
     expect(res.notes[0]!.retiredAt).toBe('2026-01-02T00:00:00.000Z'); // unchanged
@@ -129,7 +143,9 @@ describe('capNotes', () => {
   });
 
   it('never evicts active notes, drops oldest retired first', () => {
-    const active = Array.from({ length: 3 }, (_, i) => note({ id: `act${i}`, content: `active ${i}` }));
+    const active = Array.from({ length: 3 }, (_, i) =>
+      note({ id: `act${i}`, content: `active ${i}` }),
+    );
     const retired = Array.from({ length: 5 }, (_, i) =>
       note({
         id: `ret${i}`,

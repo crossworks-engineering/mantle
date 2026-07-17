@@ -25,6 +25,7 @@ import {
   type TaskStatus,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
+import { str, strArrOpt } from './coerce';
 import { notFound } from './errors';
 
 // Shared referential precondition (checked centrally in dispatch — see
@@ -33,16 +34,8 @@ const TASK_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'task', lookup: 'task_list / search_nodes' },
 ];
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-function strArr(v: unknown): string[] | undefined {
-  if (!Array.isArray(v)) return undefined;
-  const out = v.filter((s): s is string => typeof s === 'string');
-  return out.length > 0 ? out : undefined;
 }
 
 const task_list: BuiltinToolDef = {
@@ -88,9 +81,9 @@ const task_get: BuiltinToolDef = {
   slug: 'task_get',
   name: 'Get a task',
   description:
-    "Read one task by id — full row including body, status, priority, due_at. " +
-    "Use after `task_list` or `search_nodes` returns the id you want details on. " +
-    "For browsing/filtering tasks use `task_list`. " +
+    'Read one task by id — full row including body, status, priority, due_at. ' +
+    'Use after `task_list` or `search_nodes` returns the id you want details on. ' +
+    'For browsing/filtering tasks use `task_list`. ' +
     'Returns a `url` permalink — link the task as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
@@ -153,7 +146,7 @@ const task_create: BuiltinToolDef = {
         body: strOpt(input.body),
         priority: input.priority as TaskPriority | undefined,
         dueAt: strOpt(input.dueAt) ?? null,
-        tags: strArr(input.tags),
+        tags: strArrOpt(input.tags),
       });
       ctx.step?.setMeta({ taskId: row.id, title, priority: row.priority, dueAt: row.dueAt });
       return { ok: true, output: row };
@@ -192,7 +185,10 @@ const task_update: BuiltinToolDef = {
         enum: ['low', 'normal', 'high'],
         description: 'New urgency; omit to keep current.',
       },
-      dueAt: { type: 'string', description: "New due instant (UTC ISO 8601), e.g. '2026-07-10T09:00:00Z'." },
+      dueAt: {
+        type: 'string',
+        description: "New due instant (UTC ISO 8601), e.g. '2026-07-10T09:00:00Z'.",
+      },
       tags: {
         type: 'array',
         items: { type: 'string' },
@@ -212,7 +208,7 @@ const task_update: BuiltinToolDef = {
         status: input.status as TaskStatus | undefined,
         priority: input.priority as TaskPriority | undefined,
         dueAt: strOpt(input.dueAt),
-        tags: strArr(input.tags),
+        tags: strArrOpt(input.tags),
       });
       if (!row) return notFound('task', id, 'task_list');
       ctx.step?.setMeta({ taskId: id, status: row.status });
@@ -244,9 +240,7 @@ const task_delete: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id required' };
     const ok = await deleteTask(ctx.ownerId, id);
     ctx.step?.setMeta({ taskId: id, deleted: ok });
-    return ok
-      ? { ok: true, output: { deleted: true, id } }
-      : notFound('task', id, 'task_list');
+    return ok ? { ok: true, output: { deleted: true, id } } : notFound('task', id, 'task_list');
   },
 };
 

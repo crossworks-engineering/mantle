@@ -27,6 +27,9 @@ export async function ensureBranchPath(ownerId: string, path: string): Promise<v
         path: prefix,
         data: {},
       } as NewNode)
-      .onConflictDoNothing({ target: [nodes.ownerId, nodes.path], where: sql`${nodes.type} = 'branch'` });
+      .onConflictDoNothing({
+        target: [nodes.ownerId, nodes.path],
+        where: sql`${nodes.type} = 'branch'`,
+      });
   }
 }

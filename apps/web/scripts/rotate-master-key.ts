@@ -27,13 +27,7 @@
  *   - channels           → channel id
  *   - secrets            → `secret:<node_id>`
  */
-import {
-  db,
-  apiKeys,
-  channels,
-  emailAccounts,
-  secrets,
-} from '@mantle/db';
+import { db, apiKeys, channels, emailAccounts, secrets } from '@mantle/db';
 import { currentSealVersion, open, seal, sealedKeyVersion } from '@mantle/crypto';
 import { eq } from 'drizzle-orm';
 

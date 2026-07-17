@@ -13,15 +13,7 @@
  * per node or per category.
  */
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import {
-  db,
-  mantlePeers,
-  nodes,
-  peerShares,
-  peerShareScopes,
-  type MantlePeer,
-  type Node,
-} from '@mantle/db';
+import { db, mantlePeers, nodes, peerShares, peerShareScopes, type MantlePeer } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { grantUnionFilter, searchChunks, searchNodes } from '@mantle/search';
 import { hashToken, mintInboundToken, tokenMatchesHash } from './peers-crypto';
@@ -71,7 +63,9 @@ async function ensureRoot(ownerId: string): Promise<void> {
       title: 'Peers',
       slug: PEERS_ROOT_LABEL,
       path: PEERS_ROOT_LABEL,
-      data: { description: 'Federated Mantle peers. Each exchanges scoped data over the federation API.' },
+      data: {
+        description: 'Federated Mantle peers. Each exchanges scoped data over the federation API.',
+      },
     })
     .onConflictDoNothing({
       target: [nodes.ownerId, nodes.path],
@@ -278,10 +272,7 @@ export async function verifyInboundToken(token: string): Promise<MantlePeer | nu
   // Defence-in-depth: confirm in constant time (the unique-hash lookup already
   // matched, but never trust a single equality on an auth path).
   if (!tokenMatchesHash(token, row.inboundTokenHash)) return null;
-  await db
-    .update(mantlePeers)
-    .set({ lastSeenAt: new Date() })
-    .where(eq(mantlePeers.id, row.id));
+  await db.update(mantlePeers).set({ lastSeenAt: new Date() }).where(eq(mantlePeers.id, row.id));
   return row;
 }
 
@@ -546,10 +537,7 @@ export async function peerShareableTypeCounts(
     .select({ type: nodes.type, count: sql<number>`count(*)::int` })
     .from(nodes)
     .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        inArray(sql`${nodes.type}::text`, [...PEER_SHAREABLE_TYPES]),
-      ),
+      and(eq(nodes.ownerId, ownerId), inArray(sql`${nodes.type}::text`, [...PEER_SHAREABLE_TYPES])),
     )
     .groupBy(nodes.type);
   const counts = Object.fromEntries(PEER_SHAREABLE_TYPES.map((t) => [t, 0])) as Record<
@@ -642,7 +630,10 @@ const toPeerHit = (r: {
  * list the grants recency-first. Bumping the peer's last_contacted/seen
  * accounting is done by the caller (the API route, which also opens the trace).
  */
-export async function queryForPeer(peerId: string, opts: PeerQueryOpts = {}): Promise<PeerQueryHit[]> {
+export async function queryForPeer(
+  peerId: string,
+  opts: PeerQueryOpts = {},
+): Promise<PeerQueryHit[]> {
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
   const { ownerId, nodeIds, nodeTypes } = await activePeerGrantNodeIds(peerId);
   if (!ownerId || (nodeIds.length === 0 && nodeTypes.length === 0)) return [];
@@ -663,9 +654,10 @@ export async function queryForPeer(peerId: string, opts: PeerQueryOpts = {}): Pr
         id: n.id,
         type: n.type,
         title: n.title,
-        summary: typeof (n.data as Record<string, unknown> | null)?.summary === 'string'
-          ? ((n.data as Record<string, unknown>).summary as string)
-          : null,
+        summary:
+          typeof (n.data as Record<string, unknown> | null)?.summary === 'string'
+            ? ((n.data as Record<string, unknown>).summary as string)
+            : null,
         tags: n.tags,
         createdAt: n.createdAt,
       }),

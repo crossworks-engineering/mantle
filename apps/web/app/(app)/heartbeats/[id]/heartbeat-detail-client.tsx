@@ -66,7 +66,9 @@ export function HeartbeatDetailClient({ id }: { id: string }) {
         </div>
         {hb.description && <p className="text-sm text-muted-foreground">{hb.description}</p>}
         <p className="text-xs text-muted-foreground">
-          <Link href="/settings/heartbeats" className="underline">← back to heartbeats</Link>
+          <Link href="/settings/heartbeats" className="underline">
+            ← back to heartbeats
+          </Link>
         </p>
       </header>
 
@@ -78,9 +80,13 @@ export function HeartbeatDetailClient({ id }: { id: string }) {
         </Card>
         <Card title="Schedule">
           {hb.scheduleKind === 'interval' && hb.schedule.kind === 'interval' && (
-            <>every {hb.schedule.every_minutes}min ±{hb.schedule.jitter_minutes ?? 0}min</>
+            <>
+              every {hb.schedule.every_minutes}min ±{hb.schedule.jitter_minutes ?? 0}min
+            </>
           )}
-          {hb.scheduleKind === 'once' && hb.schedule.kind === 'once' && <>once at {hb.schedule.at}</>}
+          {hb.scheduleKind === 'once' && hb.schedule.kind === 'once' && (
+            <>once at {hb.schedule.at}</>
+          )}
           {hb.scheduleKind === 'manual' && <>manual only</>}
           {hb.scheduleKind === 'cron' && <>cron (unsupported v1)</>}
         </Card>
@@ -100,15 +106,21 @@ export function HeartbeatDetailClient({ id }: { id: string }) {
           Gates
         </h2>
         <ul className="space-y-1 text-sm">
-          <li>min_idle_minutes: <code>{hb.minIdleMinutes ?? 'null'}</code></li>
-          <li>cooldown_minutes: <code>{hb.cooldownMinutes ?? 'null'}</code></li>
+          <li>
+            min_idle_minutes: <code>{hb.minIdleMinutes ?? 'null'}</code>
+          </li>
+          <li>
+            cooldown_minutes: <code>{hb.cooldownMinutes ?? 'null'}</code>
+          </li>
           <li>
             quiet_hours:{' '}
             {hb.quietHours
               ? `${hb.quietHours.from}–${hb.quietHours.to} ${hb.quietHours.tz ?? '(profile tz)'}`
               : 'null'}
           </li>
-          <li>earliest_at: <code>{hb.earliestAt ?? 'null'}</code></li>
+          <li>
+            earliest_at: <code>{hb.earliestAt ?? 'null'}</code>
+          </li>
         </ul>
       </section>
 
@@ -131,7 +143,9 @@ export function HeartbeatDetailClient({ id }: { id: string }) {
             <li key={f.id} className="px-4 py-3 text-sm">
               <div className="flex flex-wrap items-baseline gap-2">
                 <span className="font-medium">{labels.fires[f.id] ?? '—'}</span>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${dispositionClass(f.disposition)}`}>
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${dispositionClass(f.disposition)}`}
+                >
                   {f.disposition}
                 </span>
                 {f.traceId && (

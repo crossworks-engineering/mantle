@@ -14,7 +14,8 @@ import { db, msDriveItems, msDrives, nodes, type MsAccount, type MsDrive } from 
 import { MAX_UPLOAD_BYTES } from '@mantle/files';
 import { getValidAccessToken } from '../token-store';
 import { graphFetchRaw, graphGetAll } from '../client';
-import { inScope, listScopes } from './scope';
+import { listScopes } from './scope';
+import { classifyDriveItem } from './classify';
 import { storeRemoteFileAsNode } from './store';
 import type { DriveItem } from './types';
 
@@ -44,7 +45,10 @@ async function downloadItem(
     }
     const token = await getValidAccessToken(ownerId, accountId);
     if (!token) return null;
-    const res = await graphFetchRaw(`${GRAPH_BASE}/drives/${driveId}/items/${item.id}/content`, token);
+    const res = await graphFetchRaw(
+      `${GRAPH_BASE}/drives/${driveId}/items/${item.id}/content`,
+      token,
+    );
     return Buffer.from(await res.arrayBuffer());
   } catch {
     return null;
@@ -93,26 +97,19 @@ export async function syncDrive(account: MsAccount, drive: MsDrive): Promise<Dri
   let removed = 0;
 
   for (const item of items) {
-    if (item.root) continue; // the drive root itself
+    // The per-item verdict (skip / remove / ingest) lives in classifyDriveItem
+    // so it's unit-tested away from the DB. Comments there explain each branch:
+    // tombstones + out-of-scope files are pruned; scope changes clear delta_link
+    // so a full re-walk applies scoping to every live item, not just changed ones.
+    const action = classifyDriveItem(item, scopes, MAX_UPLOAD_BYTES);
+    if (action === 'skip-root') continue; // the drive root itself (not counted)
     scanned++;
 
-    if (item.deleted) {
+    if (action === 'remove-deleted' || action === 'remove-out-of-scope') {
       removed += await removeItem(drive.id, item.id);
       continue;
     }
-    if (item.folder || !item.file) continue; // folders + non-file packages: skipped (flat v1)
-    // Scope gate: with selections saved, only files under a selected folder or
-    // exactly selected sync. Out-of-scope files that were ingested earlier (or
-    // moved out of a scoped folder) are pruned — removeItem no-ops otherwise.
-    // Scope changes clear delta_link, so the full re-walk applies this to
-    // every live item, not just changed ones.
-    if (!inScope(scopes, item)) {
-      removed += await removeItem(drive.id, item.id);
-      continue;
-    }
-    // Skip oversized files — they'd load fully into worker memory. Bounded sync
-    // only; raise the cap or stream if large media must be ingested.
-    if (typeof item.size === 'number' && item.size > MAX_UPLOAD_BYTES) continue;
+    if (action === 'skip-nonfile' || action === 'skip-oversize') continue;
 
     const [seen] = await db
       .select({ id: msDriveItems.id, etag: msDriveItems.etag })
@@ -129,7 +126,9 @@ export async function syncDrive(account: MsAccount, drive: MsDrive): Promise<Dri
       ownerId,
       path: branchPath,
       filename: item.name ?? 'file',
-      mimeType: item.file.mimeType,
+      // action === 'consider' guarantees a file facet (see classifyDriveItem);
+      // the optional chain keeps the compiler happy without re-checking.
+      mimeType: item.file?.mimeType,
       bytes,
       source,
     });
@@ -167,7 +166,12 @@ export async function syncDrive(account: MsAccount, drive: MsDrive): Promise<Dri
 
   await db
     .update(msDrives)
-    .set({ deltaLink: deltaLink ?? drive.deltaLink, lastSyncAt: new Date(), lastError: null, updatedAt: new Date() })
+    .set({
+      deltaLink: deltaLink ?? drive.deltaLink,
+      lastSyncAt: new Date(),
+      lastError: null,
+      updatedAt: new Date(),
+    })
     .where(eq(msDrives.id, drive.id));
 
   return { scanned, ingested, removed };

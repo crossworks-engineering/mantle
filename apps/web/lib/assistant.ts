@@ -11,12 +11,7 @@
  */
 
 import { and, desc, eq, inArray, lt } from 'drizzle-orm';
-import {
-  db,
-  agents,
-  assistantMessages,
-  type ConversationAttachment,
-} from '@mantle/db';
+import { db, agents, assistantMessages, type ConversationAttachment } from '@mantle/db';
 import { CHATTABLE_ROLES } from '@mantle/assistant-runtime';
 
 export {
@@ -70,8 +65,9 @@ function thoughtsFromData(data: unknown): AssistantTimelineRow['thoughts'] {
   const t = (data as { thoughts?: unknown } | null)?.thoughts;
   if (!Array.isArray(t) || t.length === 0) return undefined;
   return t
-    .filter((s): s is { kind: string; label: string; elapsedMs?: number } =>
-      Boolean(s) && typeof (s as { label?: unknown }).label === 'string',
+    .filter(
+      (s): s is { kind: string; label: string; elapsedMs?: number } =>
+        Boolean(s) && typeof (s as { label?: unknown }).label === 'string',
     )
     .map((s) => ({ kind: String(s.kind ?? 'tool'), label: s.label, elapsedMs: s.elapsedMs }));
 }
@@ -122,26 +118,22 @@ export async function recentAssistantMessages(
       createdAt: assistantMessages.createdAt,
     })
     .from(assistantMessages)
-    .where(
-      and(eq(assistantMessages.ownerId, ownerId), eq(assistantMessages.agentId, agentId)),
-    )
+    .where(and(eq(assistantMessages.ownerId, ownerId), eq(assistantMessages.agentId, agentId)))
     .orderBy(desc(assistantMessages.createdAt))
     .limit(limit);
-  return rows
-    .reverse()
-    .map((r) => ({
-      id: r.id,
-      direction: r.direction as 'inbound' | 'outbound',
-      text: r.text,
-      model: r.model,
-      channel: r.channel,
-      status: r.status,
-      error: r.error,
-      attachments: r.attachments ?? [],
-      ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
-      ...(toolStatsFromData(r.data) ? { toolStats: toolStatsFromData(r.data) } : {}),
-      createdAt: r.createdAt.toISOString(),
-    }));
+  return rows.reverse().map((r) => ({
+    id: r.id,
+    direction: r.direction as 'inbound' | 'outbound',
+    text: r.text,
+    model: r.model,
+    channel: r.channel,
+    status: r.status,
+    error: r.error,
+    attachments: r.attachments ?? [],
+    ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
+    ...(toolStatsFromData(r.data) ? { toolStats: toolStatsFromData(r.data) } : {}),
+    createdAt: r.createdAt.toISOString(),
+  }));
 }
 
 /**
@@ -179,21 +171,19 @@ export async function assistantMessagesBefore(
     )
     .orderBy(desc(assistantMessages.createdAt))
     .limit(limit);
-  return rows
-    .reverse()
-    .map((r) => ({
-      id: r.id,
-      direction: r.direction as 'inbound' | 'outbound',
-      text: r.text,
-      model: r.model,
-      channel: r.channel,
-      status: r.status,
-      error: r.error,
-      attachments: r.attachments ?? [],
-      ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
-      ...(toolStatsFromData(r.data) ? { toolStats: toolStatsFromData(r.data) } : {}),
-      createdAt: r.createdAt.toISOString(),
-    }));
+  return rows.reverse().map((r) => ({
+    id: r.id,
+    direction: r.direction as 'inbound' | 'outbound',
+    text: r.text,
+    model: r.model,
+    channel: r.channel,
+    status: r.status,
+    error: r.error,
+    attachments: r.attachments ?? [],
+    ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
+    ...(toolStatsFromData(r.data) ? { toolStats: toolStatsFromData(r.data) } : {}),
+    createdAt: r.createdAt.toISOString(),
+  }));
 }
 
 export type AssistantAgentOption = {
@@ -223,5 +213,11 @@ export async function listAssistantAgents(ownerId: string): Promise<AssistantAge
       ),
     )
     .orderBy(desc(agents.priority));
-  return rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name, role: r.role as string, model: r.model }));
+  return rows.map((r) => ({
+    id: r.id,
+    slug: r.slug,
+    name: r.name,
+    role: r.role as string,
+    model: r.model,
+  }));
 }

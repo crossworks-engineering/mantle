@@ -47,9 +47,7 @@ describe('adapter ↔ catalog drift guard', () => {
     // openai-tts adapter as a problem. Catches regressions in the
     // drift-detection logic itself.
     const broken = SUPPORTED_PROVIDERS.map((p) =>
-      p.id === 'openai'
-        ? { ...p, capabilities: p.capabilities.filter((c) => c !== 'tts') }
-        : p,
+      p.id === 'openai' ? { ...p, capabilities: p.capabilities.filter((c) => c !== 'tts') } : p,
     );
     const drift = findAdapterCatalogDrift(broken);
     // openai-tts is registered AND openai is now missing 'tts' from

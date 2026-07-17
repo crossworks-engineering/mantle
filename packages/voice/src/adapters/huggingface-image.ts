@@ -28,11 +28,7 @@
  * of larger models are gated).
  */
 
-import type {
-  GenerateImageOptions,
-  GenerateImageResult,
-  ImageGenDispatcher,
-} from './types';
+import type { GenerateImageOptions, GenerateImageResult, ImageGenDispatcher } from './types';
 import {
   HUGGINGFACE_INFERENCE_BASE_URL,
   HUGGINGFACE_IMAGE_DEFAULT_MODEL,

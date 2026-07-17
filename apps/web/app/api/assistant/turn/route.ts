@@ -95,7 +95,8 @@ async function processUpload(
   originalName: string,
   userText: string,
 ): Promise<Attachment> {
-  const isImage = mimeType.startsWith(IMAGE_MIME_PREFIX) || mimeForExt(extOf(originalName)).startsWith('image/');
+  const isImage =
+    mimeType.startsWith(IMAGE_MIME_PREFIX) || mimeForExt(extOf(originalName)).startsWith('image/');
   let nodeId: string | null = null;
   try {
     const parentPath = await ensureDatedUploadFolder({
@@ -120,7 +121,14 @@ async function processUpload(
       ownerId,
       nodeId: file.id,
       summary: `Uploaded via /assistant: ${originalName}`,
-      payload: { parentPath, filename, mimeType, sizeBytes: file.sizeBytes, originalName, via: 'web_assistant_chat' },
+      payload: {
+        parentPath,
+        filename,
+        mimeType,
+        sizeBytes: file.sizeBytes,
+        originalName,
+        via: 'web_assistant_chat',
+      },
     });
   } catch (err) {
     console.warn('[assistant/turn] upload save failed:', err);
@@ -135,11 +143,19 @@ async function processUpload(
       ownerId,
       subjectId: nodeId ?? undefined,
       subjectKind: 'node',
-      data: { source: 'assistant', filename: originalName, hasQuestion: userText.trim().length > 0 },
+      data: {
+        source: 'assistant',
+        filename: originalName,
+        hasQuestion: userText.trim().length > 0,
+      },
     },
     async () =>
       step(
-        { name: 'extract_attachment', kind: 'llm_call', input: { mime: mimeType, bytes: bytes.length } },
+        {
+          name: 'extract_attachment',
+          kind: 'llm_call',
+          input: { mime: mimeType, bytes: bytes.length },
+        },
         async (h) => {
           const r = await extractAttachmentForTurn({
             ownerId,
@@ -170,7 +186,14 @@ async function processUpload(
         }
       : null;
 
-  return { kind, nodeId, extractedText: extract.text, note: extract.note, imageArtifact, filename: originalName };
+  return {
+    kind,
+    nodeId,
+    extractedText: extract.text,
+    note: extract.note,
+    imageArtifact,
+    filename: originalName,
+  };
 }
 
 type TurnResult = { status: number; body: unknown };
@@ -246,9 +269,12 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
         }
         // Form's File interface has a name; plain Blob doesn't.
         const originalName =
-          'name' in file && typeof (file as File).name === 'string' ? (file as File).name : 'upload';
+          'name' in file && typeof (file as File).name === 'string'
+            ? (file as File).name
+            : 'upload';
         const ext = extOf(originalName);
-        const isImage = file.type.startsWith(IMAGE_MIME_PREFIX) || mimeForExt(ext).startsWith('image/');
+        const isImage =
+          file.type.startsWith(IMAGE_MIME_PREFIX) || mimeForExt(ext).startsWith('image/');
         const isDoc = INGESTABLE_EXTS.has(ext);
         if (!isImage && !isDoc) {
           return {
@@ -261,7 +287,13 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
           };
         }
         const bytes = Buffer.from(await file.arrayBuffer());
-        attachment = await processUpload(user.id, bytes, file.type || mimeForExt(ext), originalName, userText);
+        attachment = await processUpload(
+          user.id,
+          bytes,
+          file.type || mimeForExt(ext),
+          originalName,
+          userText,
+        );
       }
       if (!userText && !attachment) {
         return { status: 400, body: { error: 'either text or an attachment must be provided' } };
@@ -310,7 +342,10 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
             displayText: userText,
             attachmentKind: attachment.kind,
             image: attachment.imageArtifact
-              ? { base64: attachment.imageArtifact.base64, mimeType: attachment.imageArtifact.mimeType }
+              ? {
+                  base64: attachment.imageArtifact.base64,
+                  mimeType: attachment.imageArtifact.mimeType,
+                }
               : undefined,
             imageTranscript: attachment.extractedText || undefined,
             imageNote: attachment.note || undefined,

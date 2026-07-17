@@ -31,6 +31,7 @@ import {
   type RecurFreq,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
+import { str, strArrOpt } from './coerce';
 import { notFound } from './errors';
 
 // Shared referential precondition (checked centrally in dispatch — see
@@ -41,20 +42,12 @@ const EVENT_ID_PRE: readonly ToolPrecondition[] = [
 
 const RECUR_VALUES: readonly RecurFreq[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
 function num(v: unknown, dflt?: number): number | undefined {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
   return dflt;
-}
-function strArr(v: unknown): string[] | undefined {
-  if (!Array.isArray(v)) return undefined;
-  const out = v.filter((s): s is string => typeof s === 'string');
-  return out.length > 0 ? out : undefined;
 }
 /** Validated RecurFreq, or undefined to leave unchanged on update. */
 function recurOpt(v: unknown): RecurFreq | undefined {
@@ -103,9 +96,9 @@ const event_get: BuiltinToolDef = {
   slug: 'event_get',
   name: 'Get a calendar event',
   description:
-    "Read one event by id — full row including body, location, starts_at, ends_at. " +
-    "Use after `event_list` or `search_nodes` returns the id you want details on. " +
-    "For browsing/filtering events use `event_list`. " +
+    'Read one event by id — full row including body, location, starts_at, ends_at. ' +
+    'Use after `event_list` or `search_nodes` returns the id you want details on. ' +
+    'For browsing/filtering events use `event_list`. ' +
     'Returns a `url` permalink — link the event as a markdown `[title](url)` when you reference it to the user.',
   inputSchema: {
     type: 'object',
@@ -139,7 +132,8 @@ const event_create: BuiltinToolDef = {
         type: 'string',
         minLength: 1,
         maxLength: 200,
-        description: "Short event title as shown in lists and reminders, e.g. 'Dentist appointment'.",
+        description:
+          "Short event title as shown in lists and reminders, e.g. 'Dentist appointment'.",
       },
       startsAt: {
         type: 'string',
@@ -184,7 +178,7 @@ const event_create: BuiltinToolDef = {
       tags: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Optional tag list — e.g. [\'work\', \'meeting\'].',
+        description: "Optional tag list — e.g. ['work', 'meeting'].",
       },
     },
     required: ['title', 'startsAt'],
@@ -215,7 +209,7 @@ const event_create: BuiltinToolDef = {
         recur: recurOpt(input.recur),
         recurUntil: strOpt(input.recurUntil) ?? null,
         timezone,
-        tags: strArr(input.tags),
+        tags: strArrOpt(input.tags),
       });
       ctx.step?.setMeta({ eventId: row.id, title, startsAt, timezone });
       return { ok: true, output: row };
@@ -255,8 +249,7 @@ const event_update: BuiltinToolDef = {
         type: 'integer',
         minimum: 0,
         maximum: 60 * 24 * 30,
-        description:
-          'Minutes before startsAt to fire the Telegram reminder; omit to keep current.',
+        description: 'Minutes before startsAt to fire the Telegram reminder; omit to keep current.',
       },
       timezone: {
         type: 'string',
@@ -295,7 +288,7 @@ const event_update: BuiltinToolDef = {
         recur: recurOpt(input.recur),
         // Omit → leave unchanged (don't clobber an existing cutoff).
         recurUntil: strOpt(input.recurUntil),
-        tags: strArr(input.tags),
+        tags: strArrOpt(input.tags),
       });
       if (!row) return notFound('event', id, 'event_list');
       ctx.step?.setMeta({ eventId: id });
@@ -327,9 +320,7 @@ const event_delete: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id required' };
     const ok = await deleteEvent(ctx.ownerId, id);
     ctx.step?.setMeta({ eventId: id, deleted: ok });
-    return ok
-      ? { ok: true, output: { deleted: true, id } }
-      : notFound('event', id, 'event_list');
+    return ok ? { ok: true, output: { deleted: true, id } } : notFound('event', id, 'event_list');
   },
 };
 

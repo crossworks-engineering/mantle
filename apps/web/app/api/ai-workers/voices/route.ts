@@ -15,7 +15,10 @@ export async function POST(req: Request) {
   if (gate instanceof Response) return gate;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'invalid input' }, { status: 400 });
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
+      { status: 400 },
+    );
   }
   const { apiKeyId, providerId, modelId } = parsed.data;
   return NextResponse.json(await listVoices(apiKeyId, providerId, modelId));

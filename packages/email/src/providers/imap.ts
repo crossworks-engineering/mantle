@@ -2,7 +2,6 @@ import { ImapFlow, type FetchMessageObject } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { open } from '@mantle/crypto';
 import type { EmailAccount } from '@mantle/db';
-import { parseAddress, parseAddressList } from '../addresses';
 import { classifyDelivery, type DeliveryKind } from '../classify';
 import type {
   EmailProvider,
@@ -139,7 +138,9 @@ function unsealCredentials(account: EmailAccount): ImapCredentials {
   if (!account.imapConfigEnc) {
     throw new Error(`account ${account.address} has no IMAP credentials`);
   }
-  return JSON.parse(open(account.imapConfigEnc, `imap:${account.userId}:${account.address}`)) as ImapCredentials;
+  return JSON.parse(
+    open(account.imapConfigEnc, `imap:${account.userId}:${account.address}`),
+  ) as ImapCredentials;
 }
 
 /** Decrypt and return just the IMAP app password for a saved account. The
@@ -203,7 +204,11 @@ function encodeMsgId(folder: string, uidvalidity: number, uid: number): string {
   return `${safeFolder}:${uidvalidity}:${uid}`;
 }
 
-export function decodeMsgId(providerMsgId: string): { folder: string; uidvalidity: number; uid: number } {
+export function decodeMsgId(providerMsgId: string): {
+  folder: string;
+  uidvalidity: number;
+  uid: number;
+} {
   // Split from the right so escaped colons in the folder are preserved.
   const m = providerMsgId.match(/^(.+):(\d+):(\d+)$/);
   if (!m) throw new Error(`bad IMAP providerMsgId: ${providerMsgId}`);
@@ -237,7 +242,9 @@ function extractAttachmentRefs(
         filename: filename ?? 'unnamed',
         mimeType:
           ((node as { type?: string }).type ?? '') +
-          ((node as { subtype?: string }).subtype ? '/' + (node as { subtype?: string }).subtype : ''),
+          ((node as { subtype?: string }).subtype
+            ? '/' + (node as { subtype?: string }).subtype
+            : ''),
         sizeBytes: (node as { size?: number }).size,
       });
     }
@@ -272,9 +279,8 @@ function normalizeHeader(
   // IMAP it's always undefined. Both are sets of strings; union them.
   const flagLabels = msg.flags ? Array.from(msg.flags) : [];
   const gmailLabels = msg.labels ? Array.from(msg.labels) : [];
-  const labels = gmailLabels.length > 0
-    ? Array.from(new Set([...flagLabels, ...gmailLabels]))
-    : flagLabels;
+  const labels =
+    gmailLabels.length > 0 ? Array.from(new Set([...flagLabels, ...gmailLabels])) : flagLabels;
 
   const date =
     msg.internalDate instanceof Date
@@ -633,7 +639,10 @@ export async function probeImapConnection(opts: {
   // socket-level error during probe would crash the calling process
   // (Next.js worker thread or the test-connection request handler).
   client.on('error', (err) => {
-    console.warn('[imap] probe socket/protocol error -', err instanceof Error ? err.message : String(err));
+    console.warn(
+      '[imap] probe socket/protocol error -',
+      err instanceof Error ? err.message : String(err),
+    );
   });
   await client.connect();
   try {
@@ -642,7 +651,9 @@ export async function probeImapConnection(opts: {
       .map((m) => m.path)
       .filter((p) => !!p)
       .sort();
-    const caps = Array.from((client.capabilities as Map<string, unknown> | undefined)?.keys() ?? []);
+    const caps = Array.from(
+      (client.capabilities as Map<string, unknown> | undefined)?.keys() ?? [],
+    );
     return {
       serverGreeting: client.serverInfo?.name ?? undefined,
       folders,
@@ -703,7 +714,12 @@ export async function reclassifyByRefs(
         if (uids.length === 0) continue; // all stale for this folder
         for await (const msg of client.fetch(
           uids,
-          { envelope: true, flags: true, labels: true, headers: CLASSIFY_HEADERS as unknown as string[] },
+          {
+            envelope: true,
+            flags: true,
+            labels: true,
+            headers: CLASSIFY_HEADERS as unknown as string[],
+          },
           { uid: true },
         )) {
           const env = msg.envelope;
@@ -712,11 +728,16 @@ export async function reclassifyByRefs(
           const flagLabels = msg.flags ? Array.from(msg.flags) : [];
           const gmailLabels = msg.labels ? Array.from(msg.labels) : [];
           const labels =
-            gmailLabels.length > 0 ? Array.from(new Set([...flagLabels, ...gmailLabels])) : flagLabels;
+            gmailLabels.length > 0
+              ? Array.from(new Set([...flagLabels, ...gmailLabels]))
+              : flagLabels;
           const headerMap = parseHeaderBlock(
             (msg as FetchMessageObject & { headers?: Buffer | string }).headers,
           );
-          out.set(`${folder}:${msg.uid}`, classifyDelivery({ headers: headerMap, fromAddr, labels }));
+          out.set(
+            `${folder}:${msg.uid}`,
+            classifyDelivery({ headers: headerMap, fromAddr, labels }),
+          );
         }
       } finally {
         lock.release();

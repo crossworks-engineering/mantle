@@ -1,7 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useAssistantDock, type ContextRef, type ContextKind } from '@/components/assistant/assistant-dock';
+import {
+  useAssistantDock,
+  type ContextRef,
+  type ContextKind,
+} from '@/components/assistant/assistant-dock';
 import { useTurnStage } from '@/components/assistant/use-turn-stage';
 import { useTurnStream, type ThoughtEvent } from '@/components/assistant/use-turn-stream';
 import { ThoughtTrail } from '@/components/assistant/thought-trail';
@@ -175,7 +179,9 @@ function buildContextPreamble(pinned: ContextRef[], picked: ContextRef[]): strin
     );
   }
   if (picked.length > 0) {
-    parts.push(`Attached context (read these with your tools as needed):\n${picked.map(line).join('\n')}`);
+    parts.push(
+      `Attached context (read these with your tools as needed):\n${picked.map(line).join('\n')}`,
+    );
   }
   if (parts.length === 0) return '';
   return `\n\n---\n${parts.join('\n')}`;
@@ -310,7 +316,9 @@ export function AssistantClient({
   // when the route returns 202; consumed by the phase effect on done/error).
   // `startedAt` lets the safety poll find the turn's outbound row even if the
   // `turn-start` event (which carries the id) was missed.
-  const pendingTurnRef = useRef<{ optimisticId: string; turnId: string; startedAt: string } | null>(null);
+  const pendingTurnRef = useRef<{ optimisticId: string; turnId: string; startedAt: string } | null>(
+    null,
+  );
   const [error, setError] = useState<string>();
   // ── Voice-in state ──
   const [recording, setRecording] = useState(false);
@@ -390,7 +398,8 @@ export function AssistantClient({
     const el = scrollerRef.current;
     if (!el) return;
     if (pendingPrepend.current) {
-      el.scrollTop = el.scrollHeight - pendingPrepend.current.prevHeight + pendingPrepend.current.prevTop;
+      el.scrollTop =
+        el.scrollHeight - pendingPrepend.current.prevHeight + pendingPrepend.current.prevTop;
       pendingPrepend.current = null;
     } else if (atBottomRef.current) {
       el.scrollTop = el.scrollHeight;
@@ -659,7 +668,8 @@ export function AssistantClient({
               .pop();
         if (stopped || !pendingTurnRef.current) return;
         if (row?.status === 'complete') void reconcileDone(pending.optimisticId);
-        else if (row?.status === 'failed') failActiveTurn(pending.optimisticId, row.error ?? 'The turn failed.');
+        else if (row?.status === 'failed')
+          failActiveTurn(pending.optimisticId, row.error ?? 'The turn failed.');
       } catch {
         /* transient — try again next tick */
       }
@@ -750,16 +760,26 @@ export function AssistantClient({
   const toggleShareLocation = useCallback(async () => {
     if (shareLocation) {
       setShareLocation(false);
-      try { localStorage.setItem(SHARE_LOCATION_KEY, '0'); } catch { /* no storage */ }
+      try {
+        localStorage.setItem(SHARE_LOCATION_KEY, '0');
+      } catch {
+        /* no storage */
+      }
       return;
     }
     const fix = await getBrowserLocation();
     if (!fix) {
-      setError('Could not get your location — allow location access for this site, then try again.');
+      setError(
+        'Could not get your location — allow location access for this site, then try again.',
+      );
       return;
     }
     setShareLocation(true);
-    try { localStorage.setItem(SHARE_LOCATION_KEY, '1'); } catch { /* no storage */ }
+    try {
+      localStorage.setItem(SHARE_LOCATION_KEY, '1');
+    } catch {
+      /* no storage */
+    }
   }, [shareLocation, getBrowserLocation]);
 
   const submit = async (e: React.FormEvent) => {
@@ -941,8 +961,8 @@ export function AssistantClient({
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : MediaRecorder.isTypeSupported('audio/webm')
-        ? 'audio/webm'
-        : '';
+          ? 'audio/webm'
+          : '';
       const mr = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       recordChunksRef.current = [];
       mr.ondataavailable = (e) => {
@@ -1004,257 +1024,278 @@ export function AssistantClient({
   return (
     <>
       <div className="relative flex min-h-0 flex-1 flex-col">
-      {/* @container/thread: the turn layout (prompt-in-the-margin two-column
+        {/* @container/thread: the turn layout (prompt-in-the-margin two-column
           grid) keys off THIS pane's width, not the viewport — so the docked
           side column stacks prompts above responses while the full overlay
           keeps the margin layout. */}
-      <div ref={scrollerRef} onScroll={onScroll} className="@container/thread min-h-0 flex-1 overflow-y-auto scrollbar-thin px-6 py-6">
-        {/* Height-tracking wrapper: the ResizeObserver above watches this node so
+        <div
+          ref={scrollerRef}
+          onScroll={onScroll}
+          className="@container/thread min-h-0 flex-1 overflow-y-auto scrollbar-thin px-6 py-6"
+        >
+          {/* Height-tracking wrapper: the ResizeObserver above watches this node so
             late content growth (TipTap reply bodies, images loading in) re-pins
             the scroll to the bottom instead of stranding it mid-thread. */}
-        <div ref={contentRef}>
-        {turns.length === 0 ? (
-          <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
-            {agentAvatar ? (
-              <BoringAvatar
-                variant={agentAvatar.style}
-                seed={agentAvatar.seed}
-                size={48}
-                className="ring-2"
-                style={{ '--tw-ring-color': accent.border } as React.CSSProperties}
-              />
-            ) : (
-              <span
-                className="flex h-12 w-12 items-center justify-center rounded-full text-base font-semibold text-white ring-2"
-                style={{ backgroundColor: accent.solid, '--tw-ring-color': accent.border } as React.CSSProperties}
-                aria-hidden
-              >
-                {initials}
-              </span>
-            )}
-            <p className="text-sm text-muted-foreground">
-              No messages yet. Say hi to{' '}
-              <span className="font-medium text-foreground">{agentName ?? 'your assistant'}</span>.
-            </p>
-          </div>
-        ) : (
-          <>
-            {loadingOlder && (
-              <div className="flex justify-center py-2">
-                <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
-              </div>
-            )}
-            {!hasMore && (
-              <p className="py-2 text-center text-xs text-muted-foreground">
-                Beginning of the conversation
-              </p>
-            )}
-            <ul className="mx-auto flex max-w-5xl flex-col">
-              {turns.map((turn, idx) => {
-                const isLast = turn.id === lastTurnId;
-                const showTyping = isLast && sending && !turn.response;
-                return (
-                  <li
-                    key={turn.id}
-                    className={
-                      'group/turn grid gap-x-10 gap-y-3 pb-10 @3xl/thread:grid-cols-[minmax(0,1fr)_300px]' +
-                      // A thin divider between turns, in the agent's accent
-                      // colour (the accent moved here from the old left border).
-                      (idx > 0 ? ' border-t pt-10' : '')
-                    }
+          <div ref={contentRef}>
+            {turns.length === 0 ? (
+              <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
+                {agentAvatar ? (
+                  <BoringAvatar
+                    variant={agentAvatar.style}
+                    seed={agentAvatar.seed}
+                    size={48}
+                    className="ring-2"
+                    style={{ '--tw-ring-color': accent.border } as React.CSSProperties}
+                  />
+                ) : (
+                  <span
+                    className="flex h-12 w-12 items-center justify-center rounded-full text-base font-semibold text-white ring-2"
                     style={
-                      idx > 0
-                        ? { borderTopColor: `color-mix(in oklab, ${accent.border} 20%, transparent)` }
-                        : undefined
+                      {
+                        backgroundColor: accent.solid,
+                        '--tw-ring-color': accent.border,
+                      } as React.CSSProperties
                     }
+                    aria-hidden
                   >
-                    {/* RIGHT MARGIN (DOM-first so it stacks above the
+                    {initials}
+                  </span>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  No messages yet. Say hi to{' '}
+                  <span className="font-medium text-foreground">
+                    {agentName ?? 'your assistant'}
+                  </span>
+                  .
+                </p>
+              </div>
+            ) : (
+              <>
+                {loadingOlder && (
+                  <div className="flex justify-center py-2">
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+                  </div>
+                )}
+                {!hasMore && (
+                  <p className="py-2 text-center text-xs text-muted-foreground">
+                    Beginning of the conversation
+                  </p>
+                )}
+                <ul className="mx-auto flex max-w-5xl flex-col">
+                  {turns.map((turn, idx) => {
+                    const isLast = turn.id === lastTurnId;
+                    const showTyping = isLast && sending && !turn.response;
+                    return (
+                      <li
+                        key={turn.id}
+                        className={
+                          'group/turn grid gap-x-10 gap-y-3 pb-10 @3xl/thread:grid-cols-[minmax(0,1fr)_300px]' +
+                          // A thin divider between turns, in the agent's accent
+                          // colour (the accent moved here from the old left border).
+                          (idx > 0 ? ' border-t pt-10' : '')
+                        }
+                        style={
+                          idx > 0
+                            ? {
+                                borderTopColor: `color-mix(in oklab, ${accent.border} 20%, transparent)`,
+                              }
+                            : undefined
+                        }
+                      >
+                        {/* RIGHT MARGIN (DOM-first so it stacks above the
                         response on mobile): the user's prompt, anchored
                         beside the response it produced. */}
-                    <div className="@3xl/thread:col-start-2 @3xl/thread:row-start-1">
-                      {turn.prompt && (
-                        <PromptCard message={turn.prompt} />
-                      )}
-                    </div>
+                        <div className="@3xl/thread:col-start-2 @3xl/thread:row-start-1">
+                          {turn.prompt && <PromptCard message={turn.prompt} />}
+                        </div>
 
-                    {/* MAIN CANVAS: Saskia's reply as a rich document. */}
-                    <div className="min-w-0 @3xl/thread:col-start-1 @3xl/thread:row-start-1">
-                      {turn.response ? (
-                        turn.response.status === 'failed' ? (
-                          // Durable failed turn (reloaded after an error).
-                          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                            <span>{turn.response.error || 'This turn failed.'}</span>
-                          </div>
-                        ) : turn.response.status === 'pending' ? (
-                          // Durable pending turn (reloaded mid-flight) — the runner
-                          // is still working; show a thinking bubble.
-                          <div
-                            className="inline-flex items-center gap-2 rounded-2xl px-3.5 py-3"
-                            style={{ backgroundColor: accent.soft }}
-                          >
-                            <span className="flex items-center gap-1" aria-hidden>
-                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
-                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
-                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
-                            </span>
-                            <span className="text-xs text-current opacity-70">
-                              {agentName ?? 'Assistant'} is working…
-                            </span>
-                          </div>
-                        ) : (
-                        <article>
-                          <div className="mb-2 flex items-center gap-2">
-                            <span className="text-sm font-medium text-muted-foreground">
-                              {agentName ?? 'Assistant'}
-                            </span>
-                            <ChannelBadge channel={turn.response.channel} />
-                          </div>
-                          {turn.response.thoughts && turn.response.thoughts.length > 0 && (
-                            <ThoughtTrail
-                              steps={turn.response.thoughts}
-                              tokens={turn.response.tokens ?? null}
-                              durationMs={turn.response.durationMs ?? null}
-                              timestamp={turn.response.createdAt}
-                              className="mb-3 max-w-xl"
-                            />
-                          )}
-                          <div>
-                            <RichText markdown={turn.response.text} />
-                            {turn.response.attachments && turn.response.attachments.length > 0 && (
-                              <div className="mt-3 flex flex-col gap-2">
-                                {turn.response.attachments.map((a, i) => (
-                                  <StoredAttachmentView key={`${turn.id}-att-${i}`} attachment={a} />
-                                ))}
+                        {/* MAIN CANVAS: Saskia's reply as a rich document. */}
+                        <div className="min-w-0 @3xl/thread:col-start-1 @3xl/thread:row-start-1">
+                          {turn.response ? (
+                            turn.response.status === 'failed' ? (
+                              // Durable failed turn (reloaded after an error).
+                              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                                <span>{turn.response.error || 'This turn failed.'}</span>
                               </div>
-                            )}
-                            {turn.response.artifacts && turn.response.artifacts.length > 0 && (
-                              <div className="mt-3 flex flex-col gap-2">
-                                {turn.response.artifacts.map((a, i) => (
-                                  <ArtifactView key={`${turn.id}-art-${i}`} artifact={a} />
-                                ))}
-                              </div>
-                            )}
-                            {turn.response.toolStats && turn.response.toolStats.failed > 0 && (
-                              // Always visible (not hover-gated): the runtime's own
-                              // ledger says some calls failed, and the reply may not
-                              // admit it. Tooltip lists the failed slugs + errors.
-                              <p
-                                className="mt-1.5 text-[10px] text-destructive"
-                                title={turn.response.toolStats.failures
-                                  .map((f) => `${f.slug}: ${f.error}`)
-                                  .join('\n')}
+                            ) : turn.response.status === 'pending' ? (
+                              // Durable pending turn (reloaded mid-flight) — the runner
+                              // is still working; show a thinking bubble.
+                              <div
+                                className="inline-flex items-center gap-2 rounded-2xl px-3.5 py-3"
+                                style={{ backgroundColor: accent.soft }}
                               >
-                                {turn.response.toolStats.failed} of {turn.response.toolStats.calls}{' '}
-                                tool call{turn.response.toolStats.calls === 1 ? '' : 's'} failed this
-                                turn
-                              </p>
-                            )}
-                            <div className="mt-1.5 flex items-center justify-between gap-2 pointer-events-none opacity-0 transition-opacity group-hover/turn:pointer-events-auto group-hover/turn:opacity-100">
-                              <div className="flex items-baseline gap-2 text-[10px] text-muted-foreground">
-                                <span title={formatDateTime(turn.response.createdAt)}>
-                                  {new Date(turn.response.createdAt).toLocaleTimeString()}
+                                <span className="flex items-center gap-1" aria-hidden>
+                                  <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
+                                  <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
+                                  <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
                                 </span>
-                                {turn.response.model && (
-                                  <code className="font-mono">{turn.response.model}</code>
+                                <span className="text-xs text-current opacity-70">
+                                  {agentName ?? 'Assistant'} is working…
+                                </span>
+                              </div>
+                            ) : (
+                              <article>
+                                <div className="mb-2 flex items-center gap-2">
+                                  <span className="text-sm font-medium text-muted-foreground">
+                                    {agentName ?? 'Assistant'}
+                                  </span>
+                                  <ChannelBadge channel={turn.response.channel} />
+                                </div>
+                                {turn.response.thoughts && turn.response.thoughts.length > 0 && (
+                                  <ThoughtTrail
+                                    steps={turn.response.thoughts}
+                                    tokens={turn.response.tokens ?? null}
+                                    durationMs={turn.response.durationMs ?? null}
+                                    timestamp={turn.response.createdAt}
+                                    className="mb-3 max-w-xl"
+                                  />
                                 )}
-                                {turn.response.toolStats && (
-                                  <span
-                                    title={
-                                      `${turn.response.toolStats.succeeded} succeeded` +
-                                      (turn.response.toolStats.queued > 0
-                                        ? ` · ${turn.response.toolStats.queued} awaiting approval`
-                                        : '') +
-                                      (turn.response.toolStats.skipped > 0
-                                        ? ` · ${turn.response.toolStats.skipped} blocked by guards`
-                                        : '')
-                                    }
+                                <div>
+                                  <RichText markdown={turn.response.text} />
+                                  {turn.response.attachments &&
+                                    turn.response.attachments.length > 0 && (
+                                      <div className="mt-3 flex flex-col gap-2">
+                                        {turn.response.attachments.map((a, i) => (
+                                          <StoredAttachmentView
+                                            key={`${turn.id}-att-${i}`}
+                                            attachment={a}
+                                          />
+                                        ))}
+                                      </div>
+                                    )}
+                                  {turn.response.artifacts &&
+                                    turn.response.artifacts.length > 0 && (
+                                      <div className="mt-3 flex flex-col gap-2">
+                                        {turn.response.artifacts.map((a, i) => (
+                                          <ArtifactView key={`${turn.id}-art-${i}`} artifact={a} />
+                                        ))}
+                                      </div>
+                                    )}
+                                  {turn.response.toolStats &&
+                                    turn.response.toolStats.failed > 0 && (
+                                      // Always visible (not hover-gated): the runtime's own
+                                      // ledger says some calls failed, and the reply may not
+                                      // admit it. Tooltip lists the failed slugs + errors.
+                                      <p
+                                        className="mt-1.5 text-[10px] text-destructive"
+                                        title={turn.response.toolStats.failures
+                                          .map((f) => `${f.slug}: ${f.error}`)
+                                          .join('\n')}
+                                      >
+                                        {turn.response.toolStats.failed} of{' '}
+                                        {turn.response.toolStats.calls} tool call
+                                        {turn.response.toolStats.calls === 1 ? '' : 's'} failed this
+                                        turn
+                                      </p>
+                                    )}
+                                  <div className="mt-1.5 flex items-center justify-between gap-2 pointer-events-none opacity-0 transition-opacity group-hover/turn:pointer-events-auto group-hover/turn:opacity-100">
+                                    <div className="flex items-baseline gap-2 text-[10px] text-muted-foreground">
+                                      <span title={formatDateTime(turn.response.createdAt)}>
+                                        {new Date(turn.response.createdAt).toLocaleTimeString()}
+                                      </span>
+                                      {turn.response.model && (
+                                        <code className="font-mono">{turn.response.model}</code>
+                                      )}
+                                      {turn.response.toolStats && (
+                                        <span
+                                          title={
+                                            `${turn.response.toolStats.succeeded} succeeded` +
+                                            (turn.response.toolStats.queued > 0
+                                              ? ` · ${turn.response.toolStats.queued} awaiting approval`
+                                              : '') +
+                                            (turn.response.toolStats.skipped > 0
+                                              ? ` · ${turn.response.toolStats.skipped} blocked by guards`
+                                              : '')
+                                          }
+                                        >
+                                          {turn.response.toolStats.calls} tool call
+                                          {turn.response.toolStats.calls === 1 ? '' : 's'}
+                                          {turn.response.toolStats.queued > 0 &&
+                                            ` · ${turn.response.toolStats.queued} awaiting approval`}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <CopyButton text={turn.response.text} />
+                                  </div>
+                                </div>
+                              </article>
+                            )
+                          ) : showTyping ? (
+                            // Once status events arrive, the typing dots give way to
+                            // the live thought trail building in place, and — when
+                            // token streaming is on — the reply itself typing out
+                            // below it. Before any of that (or on the poll fallback)
+                            // keep the classic dots. The streamed reply is advisory:
+                            // when the durable turn.response lands above, this whole
+                            // branch is replaced by the authoritative <article>.
+                            streamTrail.length > 0 || streamReply ? (
+                              <div className="max-w-xl">
+                                <span className="sr-only">
+                                  {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
+                                </span>
+                                {streamTrail.length > 0 && (
+                                  <ThoughtTrail
+                                    steps={streamTrail}
+                                    live
+                                    mode={trailMode}
+                                    startedAt={streamStartedAt}
+                                    tokens={streamTokens}
+                                    tokensApprox={streamTokensApprox}
+                                    reasoning={streamReasoning}
+                                  />
+                                )}
+                                {streamReply && (
+                                  // Live buffer: a lightweight ReactMarkdown render, NOT the
+                                  // TipTap RichText editor — the editor's setContent() runs
+                                  // flushSync and collides with React mid-render when the buffer
+                                  // changes every token. The durable reply below swaps in RichText.
+                                  <div
+                                    className={`prose dark:prose-invert max-w-none [&>:first-child]:mt-0 [&>:last-child]:mb-0 ${
+                                      streamTrail.length > 0 ? 'mt-3' : ''
+                                    }`}
                                   >
-                                    {turn.response.toolStats.calls} tool call
-                                    {turn.response.toolStats.calls === 1 ? '' : 's'}
-                                    {turn.response.toolStats.queued > 0 &&
-                                      ` · ${turn.response.toolStats.queued} awaiting approval`}
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                      {streamReply}
+                                    </ReactMarkdown>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div
+                                className="inline-flex items-center gap-2 rounded-2xl px-3.5 py-3"
+                                style={{ backgroundColor: accent.soft }}
+                              >
+                                <span className="sr-only">
+                                  {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
+                                </span>
+                                <span className="flex items-center gap-1" aria-hidden>
+                                  <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
+                                  <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
+                                  <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
+                                </span>
+                                {stageLabel && (
+                                  <span className="text-xs text-current opacity-70" aria-hidden>
+                                    {stageLabel}
                                   </span>
                                 )}
                               </div>
-                              <CopyButton text={turn.response.text} />
-                            </div>
-                          </div>
-                        </article>
-                        )
-                      ) : showTyping ? (
-                        // Once status events arrive, the typing dots give way to
-                        // the live thought trail building in place, and — when
-                        // token streaming is on — the reply itself typing out
-                        // below it. Before any of that (or on the poll fallback)
-                        // keep the classic dots. The streamed reply is advisory:
-                        // when the durable turn.response lands above, this whole
-                        // branch is replaced by the authoritative <article>.
-                        streamTrail.length > 0 || streamReply ? (
-                          <div className="max-w-xl">
-                            <span className="sr-only">
-                              {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
-                            </span>
-                            {streamTrail.length > 0 && (
-              <ThoughtTrail
-                steps={streamTrail}
-                live
-                mode={trailMode}
-                startedAt={streamStartedAt}
-                tokens={streamTokens}
-                tokensApprox={streamTokensApprox}
-                reasoning={streamReasoning}
-              />
+                            )
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
+                  {foreignBusy && (
+                    <li className="flex items-center gap-2 px-1 py-2 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                      {agentName ?? 'Assistant'} is working… (started elsewhere)
+                    </li>
+                  )}
+                </ul>
+              </>
             )}
-                            {streamReply && (
-                              // Live buffer: a lightweight ReactMarkdown render, NOT the
-                              // TipTap RichText editor — the editor's setContent() runs
-                              // flushSync and collides with React mid-render when the buffer
-                              // changes every token. The durable reply below swaps in RichText.
-                              <div
-                                className={`prose dark:prose-invert max-w-none [&>:first-child]:mt-0 [&>:last-child]:mb-0 ${
-                                  streamTrail.length > 0 ? 'mt-3' : ''
-                                }`}
-                              >
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamReply}</ReactMarkdown>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div
-                            className="inline-flex items-center gap-2 rounded-2xl px-3.5 py-3"
-                            style={{ backgroundColor: accent.soft }}
-                          >
-                            <span className="sr-only">
-                              {agentName ?? 'Assistant'} is {stageLabel ?? 'typing'}
-                            </span>
-                            <span className="flex items-center gap-1" aria-hidden>
-                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.3s]" />
-                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60 [animation-delay:-0.15s]" />
-                              <span className="size-1.5 animate-bounce rounded-full bg-current opacity-60" />
-                            </span>
-                            {stageLabel && (
-                              <span className="text-xs text-current opacity-70" aria-hidden>
-                                {stageLabel}
-                              </span>
-                            )}
-                          </div>
-                        )
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-              {foreignBusy && (
-                <li className="flex items-center gap-2 px-1 py-2 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                  {agentName ?? 'Assistant'} is working… (started elsewhere)
-                </li>
-              )}
-            </ul>
-          </>
-        )}
+          </div>
         </div>
-      </div>
         {showJump && (
           <button
             type="button"
@@ -1434,7 +1475,11 @@ export function AssistantClient({
                       ? 'rounded-md bg-primary p-2 text-primary-foreground hover:bg-primary/90 disabled:opacity-40'
                       : 'rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-muted disabled:opacity-40'
                   }
-                  title={shareLocation ? 'Sharing your location with the assistant — click to stop' : 'Share your location with the assistant'}
+                  title={
+                    shareLocation
+                      ? 'Sharing your location with the assistant — click to stop'
+                      : 'Share your location with the assistant'
+                  }
                 >
                   <MapPin className="h-4 w-4" />
                 </button>
@@ -1474,12 +1519,12 @@ export function AssistantClient({
                   !agentReady
                     ? 'Configure an assistant or responder agent first at /settings/agents.'
                     : attachedFile
-                    ? 'Add a question about the attachment (optional) — Enter to send.'
-                    : recording
-                    ? 'Recording… press the stop button to transcribe.'
-                    : transcribing
-                    ? 'Transcribing your recording…'
-                    : 'Message your assistant — Enter to send, Shift+Enter for newline.'
+                      ? 'Add a question about the attachment (optional) — Enter to send.'
+                      : recording
+                        ? 'Recording… press the stop button to transcribe.'
+                        : transcribing
+                          ? 'Transcribing your recording…'
+                          : 'Message your assistant — Enter to send, Shift+Enter for newline.'
                 }
                 disabled={!agentReady || sending}
                 rows={2}
@@ -1568,9 +1613,7 @@ function PromptCard({ message }: { message: Message }) {
           {new Date(message.createdAt).toLocaleTimeString()}
         </span>
       </div>
-      {typed && (
-        <p className="whitespace-pre-wrap break-words text-foreground">{typed}</p>
-      )}
+      {typed && <p className="whitespace-pre-wrap break-words text-foreground">{typed}</p>}
       {appended && (
         <p
           className="mt-1.5 inline-flex cursor-help items-center gap-1 text-[10px] text-muted-foreground"
@@ -1610,8 +1653,7 @@ function ArtifactView({ artifact }: { artifact: Artifact }) {
   // localPreviewUrl wins when set — it's an object URL pointing at
   // the in-memory blob and renders instantly. Falls through to the
   // base64 data URL once the server returns the real bytes.
-  const dataUrl =
-    artifact.localPreviewUrl ?? `data:${artifact.mimeType};base64,${artifact.base64}`;
+  const dataUrl = artifact.localPreviewUrl ?? `data:${artifact.mimeType};base64,${artifact.base64}`;
   if (artifact.kind === 'audio') {
     return (
       <div className="rounded-lg border border-border bg-background/60 p-2">
@@ -1622,9 +1664,7 @@ function ArtifactView({ artifact }: { artifact: Artifact }) {
           Your browser doesn&apos;t support the audio element.
         </audio>
         {artifact.caption && (
-          <p className="mt-1 text-[11px] italic text-muted-foreground">
-            🔊 {artifact.caption}
-          </p>
+          <p className="mt-1 text-[11px] italic text-muted-foreground">🔊 {artifact.caption}</p>
         )}
       </div>
     );
@@ -1651,9 +1691,7 @@ function ArtifactView({ artifact }: { artifact: Artifact }) {
         }}
       />
       {artifact.caption && (
-        <p className="px-2 py-1 text-[11px] italic text-muted-foreground">
-          🎨 {artifact.caption}
-        </p>
+        <p className="px-2 py-1 text-[11px] italic text-muted-foreground">🎨 {artifact.caption}</p>
       )}
     </div>
   );
@@ -1664,8 +1702,7 @@ function ArtifactView({ artifact }: { artifact: Artifact }) {
  *  unified stream makes its cross-channel origin obvious at a glance. */
 function ChannelBadge({ channel }: { channel?: string }) {
   if (!channel || channel === 'web') return null;
-  const label =
-    channel === 'telegram' ? 'Telegram' : channel === 'whatsapp' ? 'WhatsApp' : channel;
+  const label = channel === 'telegram' ? 'Telegram' : channel === 'whatsapp' ? 'WhatsApp' : channel;
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
       <Send className="size-2.5" aria-hidden />

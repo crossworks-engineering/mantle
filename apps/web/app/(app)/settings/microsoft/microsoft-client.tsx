@@ -132,8 +132,8 @@ export function MicrosoftClient() {
                       </div>
                       <div className="mt-0.5 truncate text-xs text-muted-foreground">
                         {r.displayName ? `${r.displayName} · ` : ''}
-                        {r.scopes.length} scope{r.scopes.length === 1 ? '' : 's'} · token valid until{' '}
-                        {formatDateTime(r.tokenExpiresAt ?? null)}
+                        {r.scopes.length} scope{r.scopes.length === 1 ? '' : 's'} · token valid
+                        until {formatDateTime(r.tokenExpiresAt ?? null)}
                       </div>
                       {r.lastSyncError && (
                         <div className="mt-0.5 truncate text-xs text-destructive">

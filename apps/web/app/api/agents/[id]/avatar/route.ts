@@ -20,17 +20,11 @@ export const runtime = 'nodejs';
 const PALETTE = ['#6366F1', '#4F46E5', '#4338CA', '#3730A3', '#312E81'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function GET(
-  req: Request,
-  ctx: { params: Promise<{ id: string }> },
-) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const owner = await getOwnerOr401();
   if (owner instanceof NextResponse) return owner;
   const { id: key } = await ctx.params;
-  const size = Math.min(
-    256,
-    Math.max(16, Number(new URL(req.url).searchParams.get('size') ?? 96)),
-  );
+  const size = Math.min(256, Math.max(16, Number(new URL(req.url).searchParams.get('size') ?? 96)));
 
   const [agent] = await db
     .select({ avatar: agents.avatar, slug: agents.slug })

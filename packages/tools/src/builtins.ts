@@ -60,10 +60,7 @@ import { EVAL_TOOLS } from './builtins-eval';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
+import { str } from './coerce';
 
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
@@ -78,6 +75,12 @@ function bool(v: unknown): boolean | undefined {
   return typeof v === 'boolean' ? v : undefined;
 }
 
+/**
+ * Intentionally NOT the shared `strArrOpt` from './coerce': this variant also
+ * drops empty-string members (`s.length > 0`), which `strArrOpt` deliberately
+ * preserves. Kept local so that empty-dropping semantic stays with its one
+ * call site (`relations`) rather than silently changing the shared contract.
+ */
 function strArr(v: unknown): string[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const out = v.filter((s): s is string => typeof s === 'string' && s.length > 0);
@@ -95,7 +98,12 @@ const FILE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'file_id', nodeType: 'file', lookup: 'file_list / search_nodes' },
 ];
 const FOLDER_ID_PRE: readonly ToolPrecondition[] = [
-  { kind: 'node_exists', param: 'folder_id', nodeType: 'branch', lookup: 'folder_list / tree_list' },
+  {
+    kind: 'node_exists',
+    param: 'folder_id',
+    nodeType: 'branch',
+    lookup: 'folder_list / tree_list',
+  },
 ];
 
 // ─── search / tree ────────────────────────────────────────────────────────
@@ -108,7 +116,7 @@ const search_nodes: BuiltinToolDef = {
     "Use for topic/content questions — 'find emails about the Lister contract', 'notes mentioning the printer', 'anything about Alice's passport'. " +
     'This finds whole NODES (returns their spine — title/tags/summary). To pull the relevant *passages* from inside long documents — the cheaper move for a "what does X say about Y" question, and the one that avoids reading whole files into context — use `search_chunks`. ' +
     "For **time-windowed** questions ('what arrived today', 'last 5 days of email', 'this week's events') use the dedicated list tools — `email_list`, `event_list`, `task_list`, `note_list`, `page_list`, `file_list` — which ARE date-sorted and accept `since` / `window`. " +
-    "For past **conversation** recall (replaying what was actually said) use `find_window` + `recall_window`. For the **public web** use `web_search`. " +
+    'For past **conversation** recall (replaying what was actually said) use `find_window` + `recall_window`. For the **public web** use `web_search`. ' +
     "Optional `branch` (ltree prefix, e.g. 'files.work') scopes; `type` filters to one node kind; `tags` narrows further. " +
     'Each hit carries a `url` permalink — when you surface an item to the user, link it as a markdown `[title](url)` so they can click straight through to it.',
   inputSchema: {
@@ -206,7 +214,10 @@ const search_chunks: BuiltinToolDef = {
     type: 'object',
     properties: {
       q: { type: 'string', description: 'free-text query' },
-      branch: { type: 'string', description: "ltree prefix scope, e.g. 'files' or 'documentation'" },
+      branch: {
+        type: 'string',
+        description: "ltree prefix scope, e.g. 'files' or 'documentation'",
+      },
       limit: {
         type: 'integer',
         minimum: 1,
@@ -253,8 +264,8 @@ const read_section: BuiltinToolDef = {
   slug: 'read_section',
   name: 'Read a document section',
   description:
-    'Read one SECTION of a long document in full and in order — the rung between `search_chunks` (scattered passages) and `file_read`/`node_read` (the entire document). Reach for this once you know WHERE the answer lives: feed a `search_chunks` hit\'s `nodeId` plus its `heading` (or an ordinal range) here to read the whole procedure / clause / table contiguously, WITHOUT loading the entire file into context. ' +
-    'Pass ONLY `node_id` to get the OUTLINE (heading ranges with their ordinals) and pick a section from the document\'s structure. Output is capped (~24k chars) and returns `next_ordinal` to continue from when a section runs long. Only fall back to `file_read` for genuinely short documents, or when the outline says there are no indexed passages.',
+    "Read one SECTION of a long document in full and in order — the rung between `search_chunks` (scattered passages) and `file_read`/`node_read` (the entire document). Reach for this once you know WHERE the answer lives: feed a `search_chunks` hit's `nodeId` plus its `heading` (or an ordinal range) here to read the whole procedure / clause / table contiguously, WITHOUT loading the entire file into context. " +
+    "Pass ONLY `node_id` to get the OUTLINE (heading ranges with their ordinals) and pick a section from the document's structure. Output is capped (~24k chars) and returns `next_ordinal` to continue from when a section runs long. Only fall back to `file_read` for genuinely short documents, or when the outline says there are no indexed passages.",
   preconditions: NODE_ID_PRE,
   inputSchema: {
     type: 'object',
@@ -262,7 +273,8 @@ const read_section: BuiltinToolDef = {
       node_id: {
         type: 'string',
         format: 'uuid',
-        description: "the document node — the `nodeId` from a search_chunks hit, or any file/page id",
+        description:
+          'the document node — the `nodeId` from a search_chunks hit, or any file/page id',
       },
       heading: {
         type: 'string',
@@ -302,7 +314,12 @@ const read_section: BuiltinToolDef = {
     ctx.step?.setOutput(
       res.mode === 'outline'
         ? { mode: 'outline', passages: res.totalPassages, sections: res.sections.length }
-        : { mode: 'section', passages: res.passages, chars: res.text.length, truncated: res.truncated },
+        : {
+            mode: 'section',
+            passages: res.passages,
+            chars: res.text.length,
+            truncated: res.truncated,
+          },
     );
     return { ok: true, output: res };
   },
@@ -313,7 +330,7 @@ const tree_list: BuiltinToolDef = {
   name: 'List tree children',
   description:
     "List children of a branch in the user's tree (the universal navigator — whatever kinds of nodes live under that branch). Pass `path` to scope (ltree, e.g. 'files.work'). Omit for top-level branches. " +
-    "For files specifically use `file_list`; for folders use `folder_list`; for searching by content/topic use `search_nodes` (or `search_chunks` to pull the relevant passages from inside documents).",
+    'For files specifically use `file_list`; for folders use `folder_list`; for searching by content/topic use `search_nodes` (or `search_chunks` to pull the relevant passages from inside documents).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -350,7 +367,7 @@ const entity_search: BuiltinToolDef = {
   slug: 'entity_search',
   name: 'Search entities',
   description:
-    "Resolve a name or alias to entities the user has accumulated (people, projects, places, orgs, events). Returns hits with similarity scores. Use this when the user mentions someone or something by name and you need their internal id.",
+    'Resolve a name or alias to entities the user has accumulated (people, projects, places, orgs, events). Returns hits with similarity scores. Use this when the user mentions someone or something by name and you need their internal id.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -405,19 +422,22 @@ const entity_neighbors: BuiltinToolDef = {
         type: 'string',
         enum: ['in', 'out', 'both'],
         default: 'both',
-        description: "'out' = edges where this entity is the subject, 'in' = where it is the object",
+        description:
+          "'out' = edges where this entity is the subject, 'in' = where it is the object",
       },
       current_only: {
         type: 'boolean',
         default: false,
-        description: 'only relationships still current — exclude ones that have ended (superseded edges)',
+        description:
+          'only relationships still current — exclude ones that have ended (superseded edges)',
       },
       limit: {
         type: 'integer',
         minimum: 1,
         maximum: 100,
         default: 25,
-        description: "Max results to return. On 'both' the budget splits per direction, so odd values can return one extra row.",
+        description:
+          "Max results to return. On 'both' the budget splits per direction, so odd values can return one extra row.",
       },
     },
     required: ['entity_id'],
@@ -508,8 +528,8 @@ const entity_facts: BuiltinToolDef = {
   slug: 'entity_facts',
   name: 'List entity facts',
   description:
-    "All facts the user has accumulated about a specific entity (what they KNOW about that person/place/thing). Returns currently-valid facts by default; set include_retired=true to see superseded history. " +
-    "Get the entity id from `entity_search` first. For content nodes (emails, notes, files) that MENTION the entity use `entity_mentions`; to walk to connected entities use `entity_neighbors`.",
+    'All facts the user has accumulated about a specific entity (what they KNOW about that person/place/thing). Returns currently-valid facts by default; set include_retired=true to see superseded history. ' +
+    'Get the entity id from `entity_search` first. For content nodes (emails, notes, files) that MENTION the entity use `entity_mentions`; to walk to connected entities use `entity_neighbors`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -551,8 +571,8 @@ const entity_mentions: BuiltinToolDef = {
   slug: 'entity_mentions',
   name: 'List entity mentions',
   description:
-    "Content nodes (files, notes, emails, …) that mention a given entity, newest first. Returns title + per-node summary so the model can decide which to dig into. " +
-    "Get the entity id from `entity_search` first. For distilled facts ABOUT the entity (what the user knows) use `entity_facts`; to walk to connected entities use `entity_neighbors`.",
+    'Content nodes (files, notes, emails, …) that mention a given entity, newest first. Returns title + per-node summary so the model can decide which to dig into. ' +
+    'Get the entity id from `entity_search` first. For distilled facts ABOUT the entity (what the user knows) use `entity_facts`; to walk to connected entities use `entity_neighbors`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -663,8 +683,8 @@ const node_read: BuiltinToolDef = {
   slug: 'node_read',
   name: 'Read a node',
   description:
-    "Universal reader — read the full content of any node by id. Returns title, type, tags, path, summary, and the full `data` blob (markdown body for notes, body+location+starts_at for events, status+due_at for tasks, etc.). " +
-    "**Prefer type-specific readers when available** — `note_get` / `event_get` / `task_get` / `page_get` / `email_get` — they return cleaner shapes for their type. " +
+    'Universal reader — read the full content of any node by id. Returns title, type, tags, path, summary, and the full `data` blob (markdown body for notes, body+location+starts_at for events, status+due_at for tasks, etc.). ' +
+    '**Prefer type-specific readers when available** — `note_get` / `event_get` / `task_get` / `page_get` / `email_get` — they return cleaner shapes for their type. ' +
     "For nodes of `type='file'` the body lives in object storage — use `file_read` instead. This tool is the fallback that works for any node type (incl. secret, sermon, contact, telegram_message). " +
     'Returns a `url` permalink — link the item as a markdown `[title](url)` when you reference it to the user.',
   preconditions: NODE_ID_PRE,
@@ -696,7 +716,12 @@ const node_read: BuiltinToolDef = {
       .from(nodes)
       .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ctx.ownerId)))
       .limit(1);
-    if (!row) return { ok: false, error: 'node not found — the id may be stale or mistyped; find it with search_nodes / tree_list, then re-issue.' };
+    if (!row)
+      return {
+        ok: false,
+        error:
+          'node not found — the id may be stale or mistyped; find it with search_nodes / tree_list, then re-issue.',
+      };
     ctx.step?.setOutput({ type: row.type });
     return {
       ok: true,
@@ -715,14 +740,7 @@ const node_read: BuiltinToolDef = {
   },
 };
 
-const SECRET_KIND_VALUES = [
-  'password',
-  'token',
-  'server',
-  'card',
-  'note',
-  'other',
-] as const;
+const SECRET_KIND_VALUES = ['password', 'token', 'server', 'card', 'note', 'other'] as const;
 
 const SECRETS_ROOT_LABEL = 'secrets';
 
@@ -754,7 +772,8 @@ const secret_create: BuiltinToolDef = {
       },
       description: {
         type: 'string',
-        description: 'optional plaintext metadata visible to search (do NOT include the value here)',
+        description:
+          'optional plaintext metadata visible to search (do NOT include the value here)',
       },
       tags: {
         type: 'array',
@@ -776,9 +795,7 @@ const secret_create: BuiltinToolDef = {
       : [];
     if (!title) return { ok: false, error: 'title required' };
     if (!value) return { ok: false, error: 'value required' };
-    const kind = (SECRET_KIND_VALUES as readonly string[]).includes(kindRaw)
-      ? kindRaw
-      : 'other';
+    const kind = (SECRET_KIND_VALUES as readonly string[]).includes(kindRaw) ? kindRaw : 'other';
 
     // Lazy-create the `secrets` ltree root the same way the UI does.
     await db
@@ -854,7 +871,7 @@ const secret_create: BuiltinToolDef = {
         title: inserted.title,
         kind,
         message:
-          "Saved to /secrets. The value is sealed — confirm by title only, do not repeat it back to the user.",
+          'Saved to /secrets. The value is sealed — confirm by title only, do not repeat it back to the user.',
       },
     };
   },
@@ -874,7 +891,7 @@ const file_read: BuiltinToolDef = {
   name: 'Read a file',
   description:
     "Read a file's content by id. For text files (.md / .txt / .json / .yaml) returns the body as a utf-8 string. For binaries the extractor stores the parsed text (PDF / Word / Excel) as `data.text`, returned here so you can read or quote the document's actual contents. Returns `content: null` only when no text could be extracted (e.g. a scanned image with no OCR). " +
-    "**For a LARGE indexed document this returns the opening + a section outline, NOT the whole text** — to read a specific part, use `search_chunks` + `read_section`; pass `full: true` only when you truly need every word. Use `node_read` for notes/events/tasks/secrets.",
+    '**For a LARGE indexed document this returns the opening + a section outline, NOT the whole text** — to read a specific part, use `search_chunks` + `read_section`; pass `full: true` only when you truly need every word. Use `node_read` for notes/events/tasks/secrets.',
   preconditions: FILE_ID_PRE,
   inputSchema: {
     type: 'object',
@@ -897,7 +914,11 @@ const file_read: BuiltinToolDef = {
     if (!fileId) return { ok: false, error: 'file_id required' };
     const full = bool(input.full) === true;
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
-    if (!meta) return { ok: false, error: 'file not found — find the right id with file_list / search_nodes, then re-issue.' };
+    if (!meta)
+      return {
+        ok: false,
+        error: 'file not found — find the right id with file_list / search_nodes, then re-issue.',
+      };
 
     // Resolve the readable text once. Binary (pdf/docx/xlsx): the raw bytes
     // aren't useful to the LLM, but the extractor persists the parsed text as
@@ -915,7 +936,11 @@ const file_read: BuiltinToolDef = {
           : null;
     } else {
       const res = await readFileById({ ownerId: ctx.ownerId, fileId });
-      if (!res) return { ok: false, error: 'file not found — find the right id with file_list / search_nodes, then re-issue.' };
+      if (!res)
+        return {
+          ok: false,
+          error: 'file not found — find the right id with file_list / search_nodes, then re-issue.',
+        };
       text = res.bytes.toString('utf8');
     }
 
@@ -970,7 +995,7 @@ const file_get: BuiltinToolDef = {
   name: 'Fetch file metadata',
   description:
     "Fetch a file's metadata (filename, mime type, size, sha) — no bytes. Use to confirm size/type before deciding to read a large/binary file. " +
-    "For the actual file content use `file_read`; for listing files in a folder use `file_list`.",
+    'For the actual file content use `file_read`; for listing files in a folder use `file_list`.',
   preconditions: FILE_ID_PRE,
   inputSchema: {
     type: 'object',
@@ -987,7 +1012,11 @@ const file_get: BuiltinToolDef = {
     const fileId = str(input.file_id);
     if (!fileId) return { ok: false, error: 'file_id required' };
     const row = await fileById({ ownerId: ctx.ownerId, fileId });
-    if (!row) return { ok: false, error: 'file not found — find the right id with file_list / search_nodes, then re-issue.' };
+    if (!row)
+      return {
+        ok: false,
+        error: 'file not found — find the right id with file_list / search_nodes, then re-issue.',
+      };
     return { ok: true, output: row };
   },
 };
@@ -1012,7 +1041,11 @@ const folder_get_by_path: BuiltinToolDef = {
     const path = str(input.path);
     if (!path) return { ok: false, error: 'path required' };
     const row = await folderByPath({ ownerId: ctx.ownerId, path });
-    if (!row) return { ok: false, error: 'folder not found — find the right id with folder_list / tree_list, then re-issue.' };
+    if (!row)
+      return {
+        ok: false,
+        error: 'folder not found — find the right id with folder_list / tree_list, then re-issue.',
+      };
     return { ok: true, output: row };
   },
 };
@@ -1021,13 +1054,13 @@ const file_create: BuiltinToolDef = {
   slug: 'file_create',
   name: 'Create / overwrite a file',
   description:
-    "Create or overwrite a **named text file** in a specific folder (e.g. `notes.md`, `config.json`, `recipe.txt`). Use when the user asks for a file with a particular name/extension in a particular place. Filename is lowercased and sanitised automatically. " +
-    "For a plain note that goes into /notes (no filename/folder needed, auto-indexed) use `note_create`. For credentials/passwords use `secret_create`. For a rich-text doc (TipTap) use `page_create`.",
+    'Create or overwrite a **named text file** in a specific folder (e.g. `notes.md`, `config.json`, `recipe.txt`). Use when the user asks for a file with a particular name/extension in a particular place. Filename is lowercased and sanitised automatically. ' +
+    'For a plain note that goes into /notes (no filename/folder needed, auto-indexed) use `note_create`. For credentials/passwords use `secret_create`. For a rich-text doc (TipTap) use `page_create`.',
   requiresConfirm: false, // text-only writes are usually safe; user can flip per agent
   inputSchema: {
     type: 'object',
     properties: {
-      parent_path: { type: 'string', description: "ltree path of the parent folder" },
+      parent_path: { type: 'string', description: 'ltree path of the parent folder' },
       filename: { type: 'string', description: 'with extension, e.g. notes.md' },
       content: {
         type: 'string',
@@ -1108,7 +1141,11 @@ const file_rename: BuiltinToolDef = {
     if (!fileId || !newStem) return { ok: false, error: 'file_id + new_stem required' };
     try {
       const row = await renameFileById({ ownerId: ctx.ownerId, fileId, newStem });
-      if (!row) return { ok: false, error: 'file not found — find the right id with file_list / search_nodes, then re-issue.' };
+      if (!row)
+        return {
+          ok: false,
+          error: 'file not found — find the right id with file_list / search_nodes, then re-issue.',
+        };
       ctx.step?.setOutput({ fileId: row.id, filename: row.filename });
       return { ok: true, output: row };
     } catch (err) {
@@ -1133,7 +1170,8 @@ const folder_rename: BuiltinToolDef = {
       },
       new_name: {
         type: 'string',
-        description: "new display name, e.g. 'lister contracts' — lowercased and slugified automatically",
+        description:
+          "new display name, e.g. 'lister contracts' — lowercased and slugified automatically",
       },
     },
     required: ['folder_id', 'new_name'],
@@ -1144,7 +1182,12 @@ const folder_rename: BuiltinToolDef = {
     if (!folderId || !newName) return { ok: false, error: 'folder_id + new_name required' };
     try {
       const row = await renameFolderById({ ownerId: ctx.ownerId, folderId, newSlug: newName });
-      if (!row) return { ok: false, error: 'folder not found — find the right id with folder_list / tree_list, then re-issue.' };
+      if (!row)
+        return {
+          ok: false,
+          error:
+            'folder not found — find the right id with folder_list / tree_list, then re-issue.',
+        };
       ctx.step?.setOutput({ folderId: row.id, path: row.path });
       return { ok: true, output: row };
     } catch (err) {
@@ -1181,7 +1224,12 @@ const folder_describe: BuiltinToolDef = {
     if (!folderId) return { ok: false, error: 'folder_id required' };
     try {
       const row = await updateFolderDescription({ ownerId: ctx.ownerId, folderId, description });
-      if (!row) return { ok: false, error: 'folder not found — find the right id with folder_list / tree_list, then re-issue.' };
+      if (!row)
+        return {
+          ok: false,
+          error:
+            'folder not found — find the right id with folder_list / tree_list, then re-issue.',
+        };
       ctx.step?.setOutput({ folderId: row.id });
       return { ok: true, output: row };
     } catch (err) {
@@ -1205,7 +1253,11 @@ const process_extraction: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      node_id: { type: 'string', format: 'uuid', description: 'optional single node to re-extract' },
+      node_id: {
+        type: 'string',
+        format: 'uuid',
+        description: 'optional single node to re-extract',
+      },
       types: {
         type: 'array',
         items: { type: 'string' },
@@ -1228,9 +1280,7 @@ const process_extraction: BuiltinToolDef = {
       ctx.step?.setOutput({ fired: 1, node_id: input.node_id });
       return { ok: true, output: { fired: 1, node_id: input.node_id } };
     }
-    const typeFilter = Array.isArray(input.types)
-      ? (input.types as string[])
-      : null;
+    const typeFilter = Array.isArray(input.types) ? (input.types as string[]) : null;
     const conds = [
       eq(nodes.ownerId, ctx.ownerId),
       sql`${nodes.type} <> 'branch'`,
@@ -1269,7 +1319,7 @@ const telegram_send: BuiltinToolDef = {
         minLength: 1,
         description: 'the message body to send — plain text unless `markdown` is set',
       },
-      reply_to: { type: 'string', description: "optional telegram_message_id to thread under" },
+      reply_to: { type: 'string', description: 'optional telegram_message_id to thread under' },
       markdown: {
         type: 'boolean',
         default: false,
@@ -1288,9 +1338,7 @@ const telegram_send: BuiltinToolDef = {
     const [chat] = await db
       .select({ status: telegramChats.allowlistStatus })
       .from(telegramChats)
-      .where(
-        and(eq(telegramChats.userId, ctx.ownerId), eq(telegramChats.telegramChatId, chatId)),
-      )
+      .where(and(eq(telegramChats.userId, ctx.ownerId), eq(telegramChats.telegramChatId, chatId)))
       .limit(1);
     if (!chat || chat.status !== 'allowed') {
       return { ok: false, error: `chat ${chatId} is not allowlisted` };
@@ -1337,9 +1385,7 @@ const invoke_agent: BuiltinToolDef = {
     // Lazy imports keep the guard module + bridge out of the cold-
     // start path of every other builtin. They're tiny but the
     // separation lets us test them as pure helpers.
-    const { checkAgentDepth, checkDelegationAllowed } = await import(
-      './invoke-agent-guards'
-    );
+    const { checkAgentDepth, checkDelegationAllowed } = await import('./invoke-agent-guards');
     const { getAgentInvoker } = await import('./agent-bridge');
 
     if (!ctx.agent) {
@@ -1356,11 +1402,7 @@ const invoke_agent: BuiltinToolDef = {
     if (!prompt) return { ok: false, error: 'prompt is required' };
 
     // Guardrail 3: explicit allowlist + no self-call.
-    const allowed = checkDelegationAllowed(
-      ctx.agent.slug,
-      targetSlug,
-      ctx.agent.delegateTo,
-    );
+    const allowed = checkDelegationAllowed(ctx.agent.slug, targetSlug, ctx.agent.delegateTo);
     if (!allowed.ok) return { ok: false, error: allowed.reason };
 
     // Guardrail 1: bounded depth. checkAgentDepth returns the depth

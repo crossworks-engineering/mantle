@@ -1,4 +1,4 @@
-import * as React from "react";
+import * as React from 'react';
 import {
   ActivityIcon,
   BotIcon,
@@ -14,12 +14,12 @@ import {
   NetworkIcon,
   SearchIcon,
   SettingsIcon,
-} from "lucide-react";
+} from 'lucide-react';
 
-import { NavDocuments } from "@/components/examples/dashboard/components/nav-documents";
-import { NavMain } from "@/components/examples/dashboard/components/nav-main";
-import { NavSecondary } from "@/components/examples/dashboard/components/nav-secondary";
-import { NavUser } from "@/components/examples/dashboard/components/nav-user";
+import { NavDocuments } from '@/components/examples/dashboard/components/nav-documents';
+import { NavMain } from '@/components/examples/dashboard/components/nav-main';
+import { NavSecondary } from '@/components/examples/dashboard/components/nav-secondary';
+import { NavUser } from '@/components/examples/dashboard/components/nav-user';
 import {
   Sidebar,
   SidebarContent,
@@ -28,87 +28,87 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar";
+} from '@/components/ui/sidebar';
 
 const data = {
   user: {
-    name: "Jason",
-    email: "jason@schoeman.me",
-    avatar: "",
+    name: 'Jason',
+    email: 'jason@schoeman.me',
+    avatar: '',
   },
   navMain: [
     {
-      title: "Overview",
-      url: "#",
+      title: 'Overview',
+      url: '#',
       icon: LayoutDashboardIcon,
     },
     {
-      title: "Memory",
-      url: "#",
+      title: 'Memory',
+      url: '#',
       icon: BrainIcon,
     },
     {
-      title: "Agents",
-      url: "#",
+      title: 'Agents',
+      url: '#',
       icon: BotIcon,
     },
     {
-      title: "Traces",
-      url: "#",
+      title: 'Traces',
+      url: '#',
       icon: ActivityIcon,
     },
     {
-      title: "Entities",
-      url: "#",
+      title: 'Entities',
+      url: '#',
       icon: NetworkIcon,
     },
     {
-      title: "Ingest",
-      url: "#",
+      title: 'Ingest',
+      url: '#',
       icon: DownloadIcon,
     },
   ],
   navSecondary: [
     {
-      title: "Settings",
-      url: "#",
+      title: 'Settings',
+      url: '#',
       icon: SettingsIcon,
     },
     {
-      title: "Search",
-      url: "#",
+      title: 'Search',
+      url: '#',
       icon: SearchIcon,
     },
     {
-      title: "Get Help",
-      url: "#",
+      title: 'Get Help',
+      url: '#',
       icon: HelpCircleIcon,
     },
   ],
   documents: [
     {
-      name: "Notes",
-      url: "#",
+      name: 'Notes',
+      url: '#',
       icon: FileTextIcon,
     },
     {
-      name: "Pages",
-      url: "#",
+      name: 'Pages',
+      url: '#',
       icon: FileIcon,
     },
     {
-      name: "Events",
-      url: "#",
+      name: 'Events',
+      url: '#',
       icon: CalendarIcon,
     },
     {
-      name: "Tasks",
-      url: "#",
+      name: 'Tasks',
+      url: '#',
       icon: CheckSquareIcon,
     },
     {
-      name: "Files",
-      url: "#",
+      name: 'Files',
+      url: '#',
       icon: FolderIcon,
     },
   ],
@@ -120,10 +120,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className="data-[slot=sidebar-menu-button]:!p-1.5"
-            >
+            <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
               <a href="#">
                 <BrainIcon className="h-5 w-5" />
                 <span className="text-base font-semibold">Mantle</span>

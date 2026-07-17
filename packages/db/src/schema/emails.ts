@@ -52,7 +52,9 @@ export const ingestPolicy = pgEnum('ingest_policy', ['approve_list', 'block_list
 export const emailAccounts = pgTable(
   'email_accounts',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     userId: uuid('user_id').notNull(),
     provider: emailProvider('provider').notNull(),
     address: text('address').notNull(),
@@ -75,12 +77,17 @@ export const emailAccounts = pgTable(
     /** @deprecated as of migration 0002. The adapter now auto-discovers
      *  folders each sync and uses `imapExcludedFolders` to opt out. Kept
      *  in the schema for historical reads only. */
-    imapFolders: text('imap_folders').array().default(sql`'{INBOX}'::text[]`).notNull(),
+    imapFolders: text('imap_folders')
+      .array()
+      .default(sql`'{INBOX}'::text[]`)
+      .notNull(),
     /** Folders to skip during auto-discovery. The defaults cover Trash,
      *  Junk/spam, Drafts, and Blocked across common naming conventions. */
     imapExcludedFolders: text('imap_excluded_folders')
       .array()
-      .default(sql`'{INBOX.Trash, INBOX.Junk, INBOX.spam, INBOX.Drafts, INBOX.Blocked, Trash, Junk, Spam, Drafts}'::text[]`)
+      .default(
+        sql`'{INBOX.Trash, INBOX.Junk, INBOX.spam, INBOX.Drafts, INBOX.Blocked, Trash, Junk, Spam, Drafts}'::text[]`,
+      )
       .notNull(),
     /** Explicit allow-list of folders to scan (migration 0033). NULL/empty =
      *  legacy behaviour: auto-discover every folder minus `imapExcludedFolders`.
@@ -104,7 +111,10 @@ export const emailAccounts = pgTable(
      *  enforced in SQL (migration 0103) to avoid a schema import cycle. */
     msAccountId: uuid('ms_account_id'),
     // Provider-specific sync cursor (history id, delta link, UID/modseq pair…).
-    syncState: jsonb('sync_state').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    syncState: jsonb('sync_state')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
     lastSyncError: text('last_sync_error'),
     enabled: boolean('enabled').default(true).notNull(),
@@ -120,9 +130,15 @@ export const emailAccounts = pgTable(
 export const emails = pgTable(
   'emails',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    nodeId: uuid('node_id').notNull().references(() => nodes.id, { onDelete: 'cascade' }),
-    accountId: uuid('account_id').notNull().references(() => emailAccounts.id, { onDelete: 'cascade' }),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    nodeId: uuid('node_id')
+      .notNull()
+      .references(() => nodes.id, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => emailAccounts.id, { onDelete: 'cascade' }),
     /** Provider's stable message id (Gmail msg id, Graph message id, IMAP UID+UIDVALIDITY).
      *  Folder-scoped for IMAP — see `rfcMessageId` for the cross-folder key. */
     providerMsgId: text('provider_msg_id').notNull(),
@@ -137,16 +153,28 @@ export const emails = pgTable(
     threadId: text('thread_id'),
     fromAddr: text('from_addr').notNull(),
     fromName: text('from_name'),
-    toAddrs: text('to_addrs').array().default(sql`'{}'::text[]`).notNull(),
-    ccAddrs: text('cc_addrs').array().default(sql`'{}'::text[]`).notNull(),
-    bccAddrs: text('bcc_addrs').array().default(sql`'{}'::text[]`).notNull(),
+    toAddrs: text('to_addrs')
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
+    ccAddrs: text('cc_addrs')
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
+    bccAddrs: text('bcc_addrs')
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
     subject: text('subject'),
     snippet: text('snippet'),
     bodyText: text('body_text'),
     bodyHtml: text('body_html'),
     /** Provider-reported send time (internalDate / receivedDateTime / INTERNALDATE). */
     internalDate: timestamp('internal_date', { withTimezone: true }).notNull(),
-    labels: text('labels').array().default(sql`'{}'::text[]`).notNull(),
+    labels: text('labels')
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
     folder: text('folder'),
     isRead: boolean('is_read').default(false).notNull(),
     isStarred: boolean('is_starred').default(false).notNull(),
@@ -178,10 +206,16 @@ export const emails = pgTable(
 export const emailAttachments = pgTable(
   'email_attachments',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    emailId: uuid('email_id').notNull().references(() => emails.id, { onDelete: 'cascade' }),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    emailId: uuid('email_id')
+      .notNull()
+      .references(() => emails.id, { onDelete: 'cascade' }),
     /** Points at the deduped `file` node (one per unique sha256). */
-    fileNodeId: uuid('file_node_id').notNull().references(() => nodes.id, { onDelete: 'restrict' }),
+    fileNodeId: uuid('file_node_id')
+      .notNull()
+      .references(() => nodes.id, { onDelete: 'restrict' }),
     filename: text('filename').notNull(),
     mimeType: text('mime_type'),
     sizeBytes: bigint('size_bytes', { mode: 'number' }),

@@ -172,19 +172,22 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
   {
     slug: 'page_editing',
     name: 'Page editing',
-    description: 'Safe, scalable page authoring/editing; preserve words verbatim, prefer block tools.',
+    description:
+      'Safe, scalable page authoring/editing; preserve words verbatim, prefer block tools.',
     instructions: SKILL_INSTRUCTIONS['page_editing']!,
   },
   {
     slug: 'chat_writing',
     name: 'Chat writing',
-    description: 'Standard Markdown for conversational replies — portable to web, mobile, and voice; no rich page dialect.',
+    description:
+      'Standard Markdown for conversational replies — portable to web, mobile, and voice; no rich page dialect.',
     instructions: SKILL_INSTRUCTIONS['chat_writing']!,
   },
   {
     slug: 'rich_writing',
     name: 'Rich writing',
-    description: 'The rich Mantle dialect (callouts, asides, columns, KaTeX) for authoring PAGE documents — the Pages specialist.',
+    description:
+      'The rich Mantle dialect (callouts, asides, columns, KaTeX) for authoring PAGE documents — the Pages specialist.',
     instructions: SKILL_INSTRUCTIONS['rich_writing']!,
   },
   {
@@ -196,7 +199,8 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
   {
     slug: 'app_authoring',
     name: 'App authoring',
-    description: 'The mini-app sandbox contract: allowed imports, the host bridge, sqlite, draft→build→publish.',
+    description:
+      'The mini-app sandbox contract: allowed imports, the host bridge, sqlite, draft→build→publish.',
     instructions: SKILL_INSTRUCTIONS['app_authoring']!,
   },
   {
@@ -208,19 +212,22 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
   {
     slug: 'location_awareness',
     name: 'Location awareness',
-    description: 'Use the device location: resolve/cache addresses, find nearby places, reason about distance + timing.',
+    description:
+      'Use the device location: resolve/cache addresses, find nearby places, reason about distance + timing.',
     instructions: SKILL_INSTRUCTIONS['location_awareness']!,
   },
   {
     slug: 'navigation',
     name: 'Navigation',
-    description: 'Find a route to a place, plot it on an inline map, and give a short driving/walking overview (not live turn-by-turn).',
+    description:
+      'Find a route to a place, plot it on an inline map, and give a short driving/walking overview (not live turn-by-turn).',
     instructions: SKILL_INSTRUCTIONS['navigation']!,
   },
   {
     slug: 'integrations',
     name: 'Integrations',
-    description: 'Recognise "add/connect an API or service" requests and delegate them to the Toolsmith specialist to build, test, and grant.',
+    description:
+      'Recognise "add/connect an API or service" requests and delegate them to the Toolsmith specialist to build, test, and grant.',
     instructions: SKILL_INSTRUCTIONS['integrations']!,
   },
 ];
@@ -423,7 +430,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'page-share',
     name: 'Page sharing',
-    description: 'Toggle a page public/private — lets the persona share without the authoring toolkit.',
+    description:
+      'Toggle a page public/private — lets the persona share without the authoring toolkit.',
     toolSlugs: ['page_share', 'page_unshare'],
   },
   {
@@ -476,7 +484,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'contacts',
     name: 'Contacts',
-    description: 'The people/org index — also the email allowlist (docs/contacts.md). No delete (escape hatch).',
+    description:
+      'The people/org index — also the email allowlist (docs/contacts.md). No delete (escape hatch).',
     // No-delete subset (mirrors pages/tables, decision 3); contact_delete rides
     // the `contacts-admin` group. Matches CORE_AUTO_GRANT exactly, so an
     // auto-granted conversational agent qualifies for the whole group.
@@ -491,7 +500,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'journal',
     name: 'Journal',
-    description: "First-person self-knowledge — the identity context's source. No delete (escape hatch).",
+    description:
+      "First-person self-knowledge — the identity context's source. No delete (escape hatch).",
     // No-delete subset (decision 3 pattern); journal_delete rides the
     // `journal-admin` group. Matches CORE_AUTO_GRANT exactly so auto-granted
     // agents qualify for the group.
@@ -627,7 +637,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'team-read',
     name: 'Team Chat (member-facing)',
     description:
-      'The team responder\'s entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner\'s `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner\'s private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), recall_window (replays the OWNER\'s private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).',
+      "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner's `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner's private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), recall_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
     toolSlugs: [
       // memory-core reads
       'search_nodes',
@@ -737,7 +747,14 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'team-admin',
       'federation',
     ],
-    skillSlugs: ['tool_grounding', 'voice_reply', 'chat_writing', 'location_awareness', 'navigation', 'integrations'],
+    skillSlugs: [
+      'tool_grounding',
+      'voice_reply',
+      'chat_writing',
+      'location_awareness',
+      'navigation',
+      'integrations',
+    ],
     params: { temperature: 0.7, max_tokens: 16000 },
     // Context budgets for the generalist responder. Onboarding seeds these
     // verbatim; the persona's PROMPT stays an overlay (persona bank + the
@@ -843,7 +860,8 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
   {
     slug: 'reader',
     name: 'Reader',
-    description: 'Web page reader — opens a URL and reads its content back as context for the responder.',
+    description:
+      'Web page reader — opens a URL and reads its content back as context for the responder.',
     role: 'custom',
     model: 'anthropic/claude-sonnet-5',
     envModelVar: 'READER_MODEL',
@@ -860,7 +878,8 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
   {
     slug: 'toolsmith',
     name: 'Toolsmith',
-    description: 'API integration specialist — reads service docs, authors + tests agent-callable HTTP tools; backs the API Console Assist panel.',
+    description:
+      'API integration specialist — reads service docs, authors + tests agent-callable HTTP tools; backs the API Console Assist panel.',
     role: 'custom',
     model: 'anthropic/claude-sonnet-5',
     envModelVar: 'TOOLSMITH_MODEL',
@@ -896,7 +915,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     slug: 'appsmith',
     name: 'Appsmith',
     description:
-      'Mini-app builder — writes real TSX against the app\'s shadcn UI + theme, bundles with esbuild, renders in a sandbox; backs the /apps Assist panel.',
+      "Mini-app builder — writes real TSX against the app's shadcn UI + theme, bundles with esbuild, renders in a sandbox; backs the /apps Assist panel.",
     role: 'custom',
     model: 'anthropic/claude-opus-4.8',
     envModelVar: 'APPSMITH_MODEL',
@@ -919,7 +938,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     slug: 'team-responder',
     name: 'Team Responder',
     description:
-      'Permission-limited responder for the external Team Chat surface (/team) — serves team-member contacts, read-only plus filing change requests. Never appears in the owner\'s Conversations inbox and is never a delegate.',
+      "Permission-limited responder for the external Team Chat surface (/team) — serves team-member contacts, read-only plus filing change requests. Never appears in the owner's Conversations inbox and is never a delegate.",
     role: 'custom',
     model: 'anthropic/claude-sonnet-5',
     envModelVar: 'TEAM_RESPONDER_MODEL',
@@ -958,26 +977,89 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
 // (see resolveWorkerRoute + seedManifestWorkers). The tts `voice` is the female
 // default ('ara' = voiceForGender('female')); the personality step retunes it.
 export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
-  { kind: 'extractor', name: 'Extractor', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite', params: { extract_facts: true } },
-  { kind: 'summarizer', name: 'Summarizer', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-  { kind: 'reflector', name: 'Reflector', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-  { kind: 'document', name: 'Document reader', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-  { kind: 'vision', name: 'Read images', required: false, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-  { kind: 'image_gen', name: 'Image generation', required: false, provider: 'openrouter', model: 'google/gemini-3.1-flash-image-preview' },
   {
-    kind: 'tts', name: 'Assistant voice', required: false,
-    provider: 'openrouter', model: 'x-ai/grok-voice-tts-1.0', params: { voice: 'ara', format: 'mp3' },
-    altKeyService: 'xai', altProvider: 'xai', altModel: 'grok-voice-latest', altParams: { voice: 'ara', format: 'mp3' },
+    kind: 'extractor',
+    name: 'Extractor',
+    required: true,
+    provider: 'openrouter',
+    model: 'google/gemini-3.1-flash-lite',
+    params: { extract_facts: true },
   },
   {
-    kind: 'stt', name: 'Transcribe voice', required: false,
-    provider: 'openrouter', model: 'openai/gpt-4o-mini-transcribe', params: { language: 'en' },
-    altKeyService: 'xai', altProvider: 'xai', altModel: 'grok-stt', altParams: { language: 'en' },
+    kind: 'summarizer',
+    name: 'Summarizer',
+    required: true,
+    provider: 'openrouter',
+    model: 'google/gemini-3.1-flash-lite',
+  },
+  {
+    kind: 'reflector',
+    name: 'Reflector',
+    required: true,
+    provider: 'openrouter',
+    model: 'google/gemini-3.1-flash-lite',
+  },
+  {
+    kind: 'document',
+    name: 'Document reader',
+    required: true,
+    provider: 'openrouter',
+    model: 'google/gemini-3.1-flash-lite',
+  },
+  {
+    kind: 'vision',
+    name: 'Read images',
+    required: false,
+    provider: 'openrouter',
+    model: 'google/gemini-3.1-flash-lite',
+  },
+  {
+    kind: 'image_gen',
+    name: 'Image generation',
+    required: false,
+    provider: 'openrouter',
+    model: 'google/gemini-3.1-flash-image-preview',
+  },
+  {
+    kind: 'tts',
+    name: 'Assistant voice',
+    required: false,
+    provider: 'openrouter',
+    model: 'x-ai/grok-voice-tts-1.0',
+    params: { voice: 'ara', format: 'mp3' },
+    altKeyService: 'xai',
+    altProvider: 'xai',
+    altModel: 'grok-voice-latest',
+    altParams: { voice: 'ara', format: 'mp3' },
+  },
+  {
+    kind: 'stt',
+    name: 'Transcribe voice',
+    required: false,
+    provider: 'openrouter',
+    model: 'openai/gpt-4o-mini-transcribe',
+    params: { language: 'en' },
+    altKeyService: 'xai',
+    altProvider: 'xai',
+    altModel: 'grok-stt',
+    altParams: { language: 'en' },
   },
   // Web search tiers (Perplexity Sonar via OpenRouter). The researcher's
   // `web_search` uses the cheap/fast tier; `web_search_pro` the stronger one.
-  { kind: 'search', name: 'Web search', required: false, provider: 'openrouter', model: 'perplexity/sonar' },
-  { kind: 'search_advanced', name: 'Deep web search', required: false, provider: 'openrouter', model: 'perplexity/sonar-pro' },
+  {
+    kind: 'search',
+    name: 'Web search',
+    required: false,
+    provider: 'openrouter',
+    model: 'perplexity/sonar',
+  },
+  {
+    kind: 'search_advanced',
+    name: 'Deep web search',
+    required: false,
+    provider: 'openrouter',
+    model: 'perplexity/sonar-pro',
+  },
   // Narrator — restyles the live turn "thought trail" status into the assistant's
   // voice. A BASELINE worker: required so it auto-seeds on fresh onboarding AND
   // reaches existing brains on upgrade (the reconcile's requiredOnly pass). Same
@@ -986,7 +1068,13 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
   // summarizer — so narration degrades gracefully. Verbosity (phrase → sentence →
   // paragraph) is tuned via the worker's system prompt + max_tokens in Settings →
   // AI workers, not here.
-  { kind: 'narrator', name: 'Narrator', required: true, provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
+  {
+    kind: 'narrator',
+    name: 'Narrator',
+    required: true,
+    provider: 'openrouter',
+    model: 'google/gemini-3.1-flash-lite',
+  },
 ];
 
 // ── Derived selectors (single computation; kills the duplication) ────────────

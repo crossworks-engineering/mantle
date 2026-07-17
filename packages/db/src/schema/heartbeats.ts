@@ -40,21 +40,21 @@ export type HeartbeatScheduleSpec =
   | { kind: 'manual' };
 
 /** Where the agent's reply goes. Mirrors @mantle/tools surface shape. */
-export type HeartbeatSurface =
-  | { kind: 'telegram'; chat_id: string }
-  | { kind: 'web' };
+export type HeartbeatSurface = { kind: 'telegram'; chat_id: string } | { kind: 'web' };
 
 /** Optional quiet-hours window. null tz = use profile.preferences.timezone. */
 export type HeartbeatQuietHours = {
   from: string; // 'HH:MM'
-  to: string;   // 'HH:MM'
+  to: string; // 'HH:MM'
   tz?: string | null;
 };
 
 export const heartbeats = pgTable(
   'heartbeats',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     slug: text('slug').notNull(),
     name: text('name').notNull(),
@@ -80,7 +80,10 @@ export const heartbeats = pgTable(
     cooldownMinutes: integer('cooldown_minutes'),
 
     /** Free-form per skill. Mutated by heartbeat_update_state tool. */
-    state: jsonb('state').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    state: jsonb('state')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     status: heartbeatStatus('status').default('active').notNull(),
     completionReason: text('completion_reason'),
 
@@ -139,7 +142,9 @@ export type HeartbeatFireDisposition =
 export const heartbeatFires = pgTable(
   'heartbeat_fires',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     heartbeatId: uuid('heartbeat_id').notNull(),
     firedAt: timestamp('fired_at', { withTimezone: true }).defaultNow().notNull(),
     /** null on skips — no trace was opened. */

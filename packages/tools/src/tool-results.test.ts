@@ -86,7 +86,12 @@ describe('resolveResultHandling', () => {
 });
 
 describe('buildResultEnvelope', () => {
-  const handling = { inlineMaxBytes: 1000, embedMinBytes: 4000, pageBytes: 500, spillMaxBytes: 1_000_000 };
+  const handling = {
+    inlineMaxBytes: 1000,
+    embedMinBytes: 4000,
+    pageBytes: 500,
+    spillMaxBytes: 1_000_000,
+  };
 
   it('carries handle, bytes, page count, preview, and a read instruction', () => {
     const content = 'y'.repeat(2000);
@@ -180,7 +185,12 @@ describe('processToolResultForModel (inline fast-path)', () => {
       ownerId: 'owner-1',
       traceId: null,
       toolSlug: 'search_nodes',
-      handling: { inlineMaxBytes: 1000, embedMinBytes: 4000, pageBytes: 500, spillMaxBytes: 1_000_000 },
+      handling: {
+        inlineMaxBytes: 1000,
+        embedMinBytes: 4000,
+        pageBytes: 500,
+        spillMaxBytes: 1_000_000,
+      },
     });
     expect(r.spilled).toBe(false);
     expect(r.handle).toBeNull();

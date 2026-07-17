@@ -38,7 +38,11 @@ export function listCalendarAccounts(ownerId: string): Promise<CalendarAccount[]
     .orderBy(desc(calendarAccounts.createdAt));
 }
 
-export async function setCalendarEnabled(ownerId: string, id: string, enabled: boolean): Promise<boolean> {
+export async function setCalendarEnabled(
+  ownerId: string,
+  id: string,
+  enabled: boolean,
+): Promise<boolean> {
   const rows = await db
     .update(calendarAccounts)
     .set({ enabled, lastSyncError: null, updatedAt: new Date() })

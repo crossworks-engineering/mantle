@@ -49,8 +49,7 @@ export const OPENAI_IMAGE_MODELS: readonly ImageGenModelInfo[] = [
   {
     id: 'dall-e-2',
     label: 'DALL-E 2 (legacy)',
-    description:
-      'Older, cheaper. ~$0.02 per image. Use when quality matters less than throughput.',
+    description: 'Older, cheaper. ~$0.02 per image. Use when quality matters less than throughput.',
     supportedSizes: ['256x256', '512x512', '1024x1024'],
     pricePerImage: 0.02,
     tier: 'fast',

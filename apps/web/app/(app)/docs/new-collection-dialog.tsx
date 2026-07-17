@@ -22,18 +22,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SubmitButton } from '@/components/ui/submit-button';
+import { slugify } from '@/lib/slugify';
 import { useToast } from '@/components/ui/toast';
 import { apiSend } from '@/lib/api-fetch';
 
 /** Lowercase-slug a label for the default key (mirrors the action's regex). */
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
 /**
  * "New collection" form (Dialog) for the /docs index. Registers a new
  * doc collection pointing at a folder of markdown on disk; on success it's
@@ -155,7 +148,10 @@ export function NewCollectionDialog() {
 
           <div className="space-y-1.5">
             <Label htmlFor="nc-depth">Brain depth</Label>
-            <Select value={brainDepth} onValueChange={(v) => setBrainDepth(v as 'retrieval' | 'full')}>
+            <Select
+              value={brainDepth}
+              onValueChange={(v) => setBrainDepth(v as 'retrieval' | 'full')}
+            >
               <SelectTrigger id="nc-depth">
                 <SelectValue />
               </SelectTrigger>
@@ -171,7 +167,12 @@ export function NewCollectionDialog() {
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={pending}
+            >
               Cancel
             </Button>
             <SubmitButton pending={pending}>Create collection</SubmitButton>

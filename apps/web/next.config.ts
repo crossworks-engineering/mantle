@@ -12,9 +12,9 @@ import { dirname, join } from 'node:path';
 // .dockerignore), so inside the image we can't run git — the build script passes
 // MANTLE_GIT_SHA / MANTLE_BUILD_TIME as build args instead (see Dockerfile).
 const configDir = dirname(fileURLToPath(import.meta.url));
-const appVersion = (
-  JSON.parse(readFileSync(join(configDir, '../../package.json'), 'utf8')) as { version?: string }
-).version ?? '0.0.0';
+const appVersion =
+  (JSON.parse(readFileSync(join(configDir, '../../package.json'), 'utf8')) as { version?: string })
+    .version ?? '0.0.0';
 
 function resolveGitSha(): string {
   if (process.env.MANTLE_GIT_SHA) return process.env.MANTLE_GIT_SHA;
@@ -123,19 +123,24 @@ const nextConfig: NextConfig = {
         webpack: (config, { isServer }: { isServer: boolean }) => {
           if (isServer) {
             config.externals = config.externals || [];
-            config.externals.push((
-              { request }: { request?: string },
-              callback: (err?: null, result?: string) => void,
-            ) => {
-              if (request && (request === '@napi-rs/canvas' || request.startsWith('@napi-rs/canvas-'))) {
-                return callback(null, `commonjs ${request}`);
-              }
-              // /apps build pipeline native (see serverExternalPackages note).
-              if (request && request === 'esbuild') {
-                return callback(null, `commonjs ${request}`);
-              }
-              callback();
-            });
+            config.externals.push(
+              (
+                { request }: { request?: string },
+                callback: (err?: null, result?: string) => void,
+              ) => {
+                if (
+                  request &&
+                  (request === '@napi-rs/canvas' || request.startsWith('@napi-rs/canvas-'))
+                ) {
+                  return callback(null, `commonjs ${request}`);
+                }
+                // /apps build pipeline native (see serverExternalPackages note).
+                if (request && request === 'esbuild') {
+                  return callback(null, `commonjs ${request}`);
+                }
+                callback();
+              },
+            );
           }
           return config;
         },

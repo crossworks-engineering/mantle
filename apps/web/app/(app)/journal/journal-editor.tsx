@@ -66,6 +66,7 @@ export function JournalEditor({
     setCategory(entry?.category ?? '');
     setEntryDate(entry?.entryDate ? new Date(entry.entryDate) : null);
     setTags(entry?.tags ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-seed only on identity switch; keying on the fields would clobber in-progress edits when the parent re-passes the same entry
   }, [entry?.id]);
 
   const initialDate = entry?.entryDate ? new Date(entry.entryDate).getTime() : null;

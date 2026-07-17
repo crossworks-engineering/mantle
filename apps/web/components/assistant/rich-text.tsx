@@ -28,7 +28,8 @@ export function RichText({ markdown }: { markdown: string }) {
   // through the SPA router (no full reload); external links open in a new tab.
   const onClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0)
+        return;
       const anchor = (e.target as HTMLElement).closest('a');
       const href = anchor?.getAttribute('href');
       if (!href) return;

@@ -19,9 +19,7 @@ const NODE_W = 260;
 const NODE_H = 80;
 
 export function TraceDetail({ trace }: { trace: TraceDetailType }) {
-  const [selectedId, setSelectedId] = useState<string | null>(
-    trace.steps[0]?.id ?? null,
-  );
+  const [selectedId, setSelectedId] = useState<string | null>(trace.steps[0]?.id ?? null);
 
   const { nodes, edges } = useMemo(() => buildGraph(trace.steps), [trace.steps]);
 
@@ -45,7 +43,11 @@ export function TraceDetail({ trace }: { trace: TraceDetailType }) {
           <ReactFlow
             nodes={nodes.map((n) =>
               n.id === selectedId
-                ? { ...n, selected: true, style: { ...n.style, boxShadow: '0 0 0 2px rgb(59 130 246)' } }
+                ? {
+                    ...n,
+                    selected: true,
+                    style: { ...n.style, boxShadow: '0 0 0 2px rgb(59 130 246)' },
+                  }
                 : n,
             )}
             edges={edges}
@@ -238,13 +240,7 @@ function StepPanel({ step }: { step: TraceStepSummary }) {
   );
 }
 
-function JsonBlock({
-  title,
-  value,
-}: {
-  title: string;
-  value: Record<string, unknown>;
-}) {
+function JsonBlock({ title, value }: { title: string; value: Record<string, unknown> }) {
   if (!value || Object.keys(value).length === 0) return null;
   return (
     <div className="space-y-1">

@@ -21,8 +21,17 @@ function grid(): TableDoc {
 
 describe('formatCellText', () => {
   it('formats currency and percent and checkbox', () => {
-    expect(formatCellText(9.5, { id: 'c', name: 'P', type: 'currency', format: { currency: 'ZAR', decimals: 2 } })).toBe('ZAR 9.50');
-    expect(formatCellText(15, { id: 'c', name: 'P', type: 'percent', format: { decimals: 1 } })).toBe('15.0%');
+    expect(
+      formatCellText(9.5, {
+        id: 'c',
+        name: 'P',
+        type: 'currency',
+        format: { currency: 'ZAR', decimals: 2 },
+      }),
+    ).toBe('ZAR 9.50');
+    expect(
+      formatCellText(15, { id: 'c', name: 'P', type: 'percent', format: { decimals: 1 } }),
+    ).toBe('15.0%');
     expect(formatCellText(true, { id: 'c', name: 'P', type: 'checkbox' })).toBe('✓');
     expect(formatCellText(false, { id: 'c', name: 'P', type: 'checkbox' })).toBe('');
   });

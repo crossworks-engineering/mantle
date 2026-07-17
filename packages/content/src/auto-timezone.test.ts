@@ -4,11 +4,7 @@
  * coordinates), so these assert the actual behaviour a travelling user sees.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  decideAutoTimezone,
-  locationTrustedForTimezone,
-  timezoneForCoords,
-} from './auto-timezone';
+import { decideAutoTimezone, locationTrustedForTimezone, timezoneForCoords } from './auto-timezone';
 import type { LocationPing } from './location-ping';
 import type { ProfilePreferences } from './profile-preferences';
 
@@ -25,16 +21,24 @@ function prefs(p: Partial<ProfilePreferences>): ProfilePreferences {
 describe('locationTrustedForTimezone', () => {
   it('trusts GPS / fused fixes (mobile-grade) regardless of accuracy', () => {
     expect(locationTrustedForTimezone(ping({ ...BOSTON, source: 'gps' }))).toBe(true);
-    expect(locationTrustedForTimezone(ping({ ...BOSTON, source: 'fused', accuracy: 9000 }))).toBe(true);
+    expect(locationTrustedForTimezone(ping({ ...BOSTON, source: 'fused', accuracy: 9000 }))).toBe(
+      true,
+    );
   });
 
   it('never trusts a mock fix', () => {
-    expect(locationTrustedForTimezone(ping({ ...BOSTON, source: 'gps', isMock: true }))).toBe(false);
+    expect(locationTrustedForTimezone(ping({ ...BOSTON, source: 'gps', isMock: true }))).toBe(
+      false,
+    );
   });
 
   it('trusts a network fix only when accuracy is bounded (filters IP/VPN fallback)', () => {
-    expect(locationTrustedForTimezone(ping({ ...BOSTON, source: 'network', accuracy: 40 }))).toBe(true);
-    expect(locationTrustedForTimezone(ping({ ...BOSTON, source: 'network', accuracy: 60_000 }))).toBe(false);
+    expect(locationTrustedForTimezone(ping({ ...BOSTON, source: 'network', accuracy: 40 }))).toBe(
+      true,
+    );
+    expect(
+      locationTrustedForTimezone(ping({ ...BOSTON, source: 'network', accuracy: 60_000 })),
+    ).toBe(false);
     expect(locationTrustedForTimezone(ping({ ...BOSTON, source: 'network' }))).toBe(false); // no accuracy
   });
 });
@@ -64,11 +68,18 @@ describe('decideAutoTimezone', () => {
       ping({ ...BOSTON, source: 'gps' }),
       prefs({ timezone: 'Africa/Johannesburg' }),
     );
-    expect(d).toEqual({ action: 'switch', zone: 'America/New_York', previous: 'Africa/Johannesburg' });
+    expect(d).toEqual({
+      action: 'switch',
+      zone: 'America/New_York',
+      previous: 'Africa/Johannesburg',
+    });
   });
 
   it('only records (no switch) when the derived zone already matches the profile', () => {
-    const d = decideAutoTimezone(ping({ ...BOSTON, source: 'gps' }), prefs({ timezone: 'America/New_York' }));
+    const d = decideAutoTimezone(
+      ping({ ...BOSTON, source: 'gps' }),
+      prefs({ timezone: 'America/New_York' }),
+    );
     expect(d).toEqual({ action: 'record', zone: 'America/New_York' });
   });
 
@@ -88,7 +99,11 @@ describe('decideAutoTimezone', () => {
       ping({ ...JOBURG, source: 'gps' }),
       prefs({ timezone: 'America/New_York', lastAutoTimezone: 'America/New_York' }),
     );
-    expect(d).toEqual({ action: 'switch', zone: 'Africa/Johannesburg', previous: 'America/New_York' });
+    expect(d).toEqual({
+      action: 'switch',
+      zone: 'Africa/Johannesburg',
+      previous: 'America/New_York',
+    });
   });
 });
 
@@ -99,7 +114,9 @@ describe('applyAutoTimezone', () => {
     const mod = await import('./profile-preferences');
     const spy = vi
       .spyOn(mod, 'updateProfilePreferences')
-      .mockResolvedValue(prefs({ timezone: 'America/New_York', lastAutoTimezone: 'America/New_York' }));
+      .mockResolvedValue(
+        prefs({ timezone: 'America/New_York', lastAutoTimezone: 'America/New_York' }),
+      );
     const { applyAutoTimezone } = await import('./auto-timezone');
 
     const res = await applyAutoTimezone(

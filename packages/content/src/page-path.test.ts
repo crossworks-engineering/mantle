@@ -21,7 +21,9 @@ describe('childPagePath', () => {
   it('chains for grandchildren (descends from the parent path)', () => {
     const child = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     const parentPath = `pages.${ltreeLabelFromId(UUID)}`;
-    expect(childPagePath(parentPath, child)).toBe(`pages.${ltreeLabelFromId(UUID)}.${ltreeLabelFromId(child)}`);
+    expect(childPagePath(parentPath, child)).toBe(
+      `pages.${ltreeLabelFromId(UUID)}.${ltreeLabelFromId(child)}`,
+    );
   });
 
   it('stays a descendant of the pages root and is itself valid ltree', () => {

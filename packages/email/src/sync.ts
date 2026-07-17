@@ -53,7 +53,10 @@ class DuplicateRaceError extends Error {
  * pull a new sender in, add them as a contact (which also backfills their
  * recent history — see `backfillMatch`).
  */
-export async function syncAccount(account: EmailAccount, provider: EmailProvider): Promise<{
+export async function syncAccount(
+  account: EmailAccount,
+  provider: EmailProvider,
+): Promise<{
   scanned: number;
   ingested: number;
 }> {
@@ -148,7 +151,9 @@ async function ingestOne(
   account: EmailAccount,
   provider: EmailProvider,
   message: RawMessage,
-  rules: Awaited<ReturnType<typeof db.select> extends never ? never : Awaited<ReturnType<typeof loadRules>>>,
+  rules: Awaited<
+    ReturnType<typeof db.select> extends never ? never : Awaited<ReturnType<typeof loadRules>>
+  >,
 ): Promise<boolean> {
   // Dedup pre-check. Two unique constraints, two checks (OR'd in one query):
   //   1. (account_id, provider_msg_id) — same UID in same folder. Catches
@@ -162,9 +167,7 @@ async function ingestOne(
   // fast path that avoids spending OpenRouter on rule evaluation + an
   // attachment fetch we'd just throw away.
   const providerCond = eq(emails.providerMsgId, message.providerMsgId);
-  const rfcCond = message.rfcMessageId
-    ? eq(emails.rfcMessageId, message.rfcMessageId)
-    : undefined;
+  const rfcCond = message.rfcMessageId ? eq(emails.rfcMessageId, message.rfcMessageId) : undefined;
   const dupCond = rfcCond ? or(providerCond, rfcCond) : providerCond;
   const [existing] = await db
     .select({ id: emails.id })
@@ -294,7 +297,6 @@ async function ingestOne(
 async function loadRules(userId: string) {
   return db.select().from(ingestRules).where(eq(ingestRules.userId, userId));
 }
-
 
 /** Make sure every ltree label on `path` has a branch node so the tree
  *  navigator can render it. Idempotent — relies on the partial unique

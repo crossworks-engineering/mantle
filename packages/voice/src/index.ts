@@ -1,13 +1,6 @@
-export {
-  transcribeAudio,
-  filenameForMime,
-} from './transcribe';
+export { transcribeAudio, filenameForMime } from './transcribe';
 
-export {
-  synthesizeSpeech,
-  mimeForFormat,
-  isTtsVoice,
-} from './synthesize';
+export { synthesizeSpeech, mimeForFormat, isTtsVoice } from './synthesize';
 
 export type {
   TranscribeOptions,
@@ -33,11 +26,7 @@ export {
   type SttModelInfo,
 } from './catalog';
 
-export {
-  discoverTtsModels,
-  discoverSttModels,
-  type DiscoveryResult,
-} from './discover';
+export { discoverTtsModels, discoverSttModels, type DiscoveryResult } from './discover';
 
 export {
   SUPPORTED_PROVIDERS,
@@ -61,18 +50,12 @@ export * from './adapters';
 // any layer — used by the runtime prompt builder (to tell Saskia
 // which tags her TTS will honour) and by the text-out path (to
 // strip tags from replies that end up routed as plain text).
-export {
-  composeAudioTagInstructions,
-  stripAudioTags,
-} from './audio-tags';
+export { composeAudioTagInstructions, stripAudioTags } from './audio-tags';
 export type { AudioTag, WrappingTag } from './adapters/types';
 
 // ElevenLabs audio-tag catalog — exported so the UI can render the
 // hint list under the voice dropdown when the worker is on v3.
-export {
-  ELEVENLABS_V3_AUDIO_TAGS,
-  audioTagsForElevenLabsModel,
-} from './catalogs/elevenlabs';
+export { ELEVENLABS_V3_AUDIO_TAGS, audioTagsForElevenLabsModel } from './catalogs/elevenlabs';
 
 /** Default describe-and-transcribe prompt for passive image ingest. Shared
  *  by the web /assistant upload, the Telegram photo branch, and the

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { computeDiffOverlay } from './page-diff';
 
-const p = (id: string, text: string) => ({ type: 'paragraph', attrs: { id }, content: [{ type: 'text', text }] });
+const p = (id: string, text: string) => ({
+  type: 'paragraph',
+  attrs: { id },
+  content: [{ type: 'text', text }],
+});
 const doc = (content: unknown[]) => ({ type: 'doc', content });
 
 describe('computeDiffOverlay', () => {
@@ -68,6 +72,11 @@ describe('computeDiffOverlay', () => {
   it('is empty when docs match', () => {
     const same = doc([p('a', 'one')]);
     const o = computeDiffOverlay(same, structuredClone(same));
-    expect(o).toMatchObject({ addedIds: [], changedIds: [], removed: [], counts: { added: 0, changed: 0, removed: 0 } });
+    expect(o).toMatchObject({
+      addedIds: [],
+      changedIds: [],
+      removed: [],
+      counts: { added: 0, changed: 0, removed: 0 },
+    });
   });
 });

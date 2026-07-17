@@ -27,7 +27,11 @@ describe('sortModels', () => {
 
   it('name sort is case-insensitive', () => {
     const out = sortModels(
-      [m({ id: 'b', name: 'Beta' }), m({ id: 'a', name: 'alpha' }), m({ id: 'c', name: 'Charlie' })],
+      [
+        m({ id: 'b', name: 'Beta' }),
+        m({ id: 'a', name: 'alpha' }),
+        m({ id: 'c', name: 'Charlie' }),
+      ],
       'name',
     );
     expect(out.map((x) => x.id)).toEqual(['a', 'b', 'c']);
@@ -48,10 +52,7 @@ describe('sortModels', () => {
 
   it('cheapest sort handles half-priced rows (only input known)', () => {
     const out = sortModels(
-      [
-        m({ id: 'a', inputPricePerM: 5 }),
-        m({ id: 'b', inputPricePerM: 2 }),
-      ],
+      [m({ id: 'a', inputPricePerM: 5 }), m({ id: 'b', inputPricePerM: 2 })],
       'cheapest',
     );
     expect(out.map((x) => x.id)).toEqual(['b', 'a']);

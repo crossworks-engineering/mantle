@@ -17,7 +17,10 @@ import { sql } from 'drizzle-orm';
 export const auditLog = pgTable(
   'audit_log',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`).notNull(),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`)
+      .notNull(),
     actorId: uuid('actor_id'),
     actorEmail: text('actor_email').notNull(),
     action: text('action').notNull(),

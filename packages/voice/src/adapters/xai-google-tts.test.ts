@@ -47,7 +47,7 @@ describe('xAI TTS adapter', () => {
     expect(XAI_TTS_VOICES[0]?.id).toBe('eve');
   });
 
-  it("exposes the documented inline tags ([laugh], [giggle], [sigh] ...)", () => {
+  it('exposes the documented inline tags ([laugh], [giggle], [sigh] ...)', () => {
     const tagSet = new Set(XAI_AUDIO_TAGS.map((t) => t.tag));
     // The headline ones the user actually asked about when proposing
     // this feature must be present.
@@ -74,9 +74,7 @@ describe('xAI TTS adapter', () => {
   });
 
   it('adapter exposes supportedAudioTags hook returning the catalog', () => {
-    expect(xaiTtsAdapter.supportedAudioTags?.(XAI_TTS_MODEL_ID).length).toBe(
-      XAI_AUDIO_TAGS.length,
-    );
+    expect(xaiTtsAdapter.supportedAudioTags?.(XAI_TTS_MODEL_ID).length).toBe(XAI_AUDIO_TAGS.length);
     expect(xaiTtsAdapter.supportedAudioTags?.('not-a-real-model')).toEqual([]);
   });
 
@@ -98,12 +96,8 @@ describe('xAI TTS adapter', () => {
   });
 
   it('wrappingTagsForXaiTtsModel gates on the published model id', () => {
-    expect(wrappingTagsForXaiTtsModel(XAI_TTS_MODEL_ID).length).toBe(
-      XAI_WRAPPING_TAGS.length,
-    );
-    expect(wrappingTagsForXaiTtsModel('grok-voice').length).toBe(
-      XAI_WRAPPING_TAGS.length,
-    );
+    expect(wrappingTagsForXaiTtsModel(XAI_TTS_MODEL_ID).length).toBe(XAI_WRAPPING_TAGS.length);
+    expect(wrappingTagsForXaiTtsModel('grok-voice').length).toBe(XAI_WRAPPING_TAGS.length);
     expect(wrappingTagsForXaiTtsModel('grok-imaginary-model-9000')).toEqual([]);
   });
 
@@ -147,7 +141,7 @@ describe('Google (Gemini) TTS adapter', () => {
     expect(ids.has('Fenrir')).toBe(true);
   });
 
-  it("exposes inline tags including [whispers] and [laughs] (documented examples)", () => {
+  it('exposes inline tags including [whispers] and [laughs] (documented examples)', () => {
     const tagSet = new Set(GOOGLE_AUDIO_TAGS.map((t) => t.tag));
     // The two tags explicitly named in Gemini's docs.
     expect(tagSet.has('[whispers]')).toBe(true);
@@ -175,9 +169,9 @@ describe('Google (Gemini) TTS adapter', () => {
   });
 
   it('adapter exposes supportedAudioTags hook returning the catalog', () => {
-    expect(
-      googleTtsAdapter.supportedAudioTags?.('gemini-2.5-flash-preview-tts').length,
-    ).toBe(GOOGLE_AUDIO_TAGS.length);
+    expect(googleTtsAdapter.supportedAudioTags?.('gemini-2.5-flash-preview-tts').length).toBe(
+      GOOGLE_AUDIO_TAGS.length,
+    );
     expect(googleTtsAdapter.supportedAudioTags?.('made-up-model')).toEqual([]);
   });
 });

@@ -303,8 +303,7 @@ export const GOOGLE_IMAGE_MODELS: readonly ImageGenModelInfo[] = [
   {
     id: 'imagen-4.0-generate-001',
     label: 'Imagen 4',
-    description:
-      'Current Imagen flagship. Strong on detail + composition. Recommended.',
+    description: 'Current Imagen flagship. Strong on detail + composition. Recommended.',
     supportedSizes: ['1024x1024', '1408x768', '768x1408'],
     pricePerImage: 0.04,
     tier: 'quality',

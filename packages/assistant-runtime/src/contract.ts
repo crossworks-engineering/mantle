@@ -52,7 +52,13 @@ export type TeamTurnInput = {
 /** Serializable team-turn result DTO (dates pre-stringified). */
 export type TeamTurnRunResult = {
   inbound: { id: string; text: string; createdAt: string };
-  outbound: { id: string; text: string; model: string | null; traceId: string | null; createdAt: string };
+  outbound: {
+    id: string;
+    text: string;
+    model: string | null;
+    traceId: string | null;
+    createdAt: string;
+  };
   reply: string;
 };
 

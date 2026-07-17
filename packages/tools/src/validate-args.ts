@@ -93,7 +93,9 @@ export function validateToolArgs(
   if (!properties || Object.keys(properties).length === 0) return passthrough;
 
   const required = new Set(
-    Array.isArray(schema.required) ? schema.required.filter((k): k is string => typeof k === 'string') : [],
+    Array.isArray(schema.required)
+      ? schema.required.filter((k): k is string => typeof k === 'string')
+      : [],
   );
   const closedSchema = schema.additionalProperties === false;
   const declaredKeys = Object.keys(properties);
@@ -179,7 +181,12 @@ export function validateToolArgs(
     const enumValues = Array.isArray(prop.enum)
       ? prop.enum.filter((v): v is string => typeof v === 'string')
       : null;
-    if (enumValues && enumValues.length > 0 && typeof value === 'string' && !enumValues.includes(value)) {
+    if (
+      enumValues &&
+      enumValues.length > 0 &&
+      typeof value === 'string' &&
+      !enumValues.includes(value)
+    ) {
       const suggestion = closestMatch(value, enumValues);
       violations.push({
         key,
@@ -233,9 +240,10 @@ export function validateToolArgs(
     // guessing at intent; a mixed array is worth a corrective round-trip).
     if (Array.isArray(value)) {
       const items = asRecord(prop.items);
-      const itemType = items && typeof items.type === 'string' && KNOWN_TYPES.has(items.type)
-        ? (items.type as KnownType)
-        : null;
+      const itemType =
+        items && typeof items.type === 'string' && KNOWN_TYPES.has(items.type)
+          ? (items.type as KnownType)
+          : null;
       if (itemType) {
         const badIndex = value.findIndex((el) => !matchesType(el, itemType));
         if (badIndex !== -1) {
@@ -347,14 +355,23 @@ function matchesType(value: unknown, t: KnownType): boolean {
 }
 
 function requiredMessage(key: string, prop: PropSchema): string {
-  const desc = typeof prop.description === 'string' && prop.description.trim() !== ''
-    ? ` — ${truncate(prop.description.trim(), 120)}`
-    : '';
+  const desc =
+    typeof prop.description === 'string' && prop.description.trim() !== ''
+      ? ` — ${truncate(prop.description.trim(), 120)}`
+      : '';
   return `'${key}' is required${desc}`;
 }
 
 function typeList(expected: KnownType[]): string {
-  const names = expected.map((t) => (t === 'integer' ? 'an integer' : t === 'array' ? 'an array' : t === 'object' ? 'an object' : `a ${t}`));
+  const names = expected.map((t) =>
+    t === 'integer'
+      ? 'an integer'
+      : t === 'array'
+        ? 'an array'
+        : t === 'object'
+          ? 'an object'
+          : `a ${t}`,
+  );
   return names.join(' or ');
 }
 
@@ -376,7 +393,9 @@ function truncate(s: string, max: number): string {
 }
 
 function asRecord(v: unknown): Record<string, unknown> | null {
-  return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  return v !== null && typeof v === 'object' && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null;
 }
 
 /**

@@ -30,9 +30,12 @@ export function CopyButton({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear a pending revert if the component unmounts mid-confirm.
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
 
   const onCopy = useCallback(async () => {
     if (await copyText(text)) {

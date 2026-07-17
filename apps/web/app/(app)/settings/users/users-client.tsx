@@ -47,7 +47,6 @@ type UserRow = {
  * just mirrors them. (Access tiers are a separate team-member surface.)
  */
 export function UsersClient() {
-  const toast = useToast();
   const queryClient = useQueryClient();
   const usersQuery = useQuery({
     queryKey: ['users'],
@@ -116,7 +115,11 @@ export function UsersClient() {
                 )}
               </div>
               <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                {u.displayName ? u.email : u.lastLoginAt ? `Last login ${formatDateTime(u.lastLoginAt)}` : 'Never signed in'}
+                {u.displayName
+                  ? u.email
+                  : u.lastLoginAt
+                    ? `Last login ${formatDateTime(u.lastLoginAt)}`
+                    : 'Never signed in'}
               </div>
             </button>
           ))}
@@ -151,11 +154,7 @@ export function UsersClient() {
       />
       {selected && (
         <>
-          <ResetPasswordDialog
-            open={resetOpen}
-            onOpenChange={setResetOpen}
-            user={selected}
-          />
+          <ResetPasswordDialog open={resetOpen} onOpenChange={setResetOpen} user={selected} />
           <DeleteUserDialog
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
@@ -472,8 +471,8 @@ function DeleteUserDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {user.displayName || user.email}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Their login stops working immediately. Nothing in the brain is removed — everything
-            they created stays — and their past actions remain in the audit log.
+            Their login stops working immediately. Nothing in the brain is removed — everything they
+            created stays — and their past actions remain in the audit log.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

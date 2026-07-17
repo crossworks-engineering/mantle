@@ -62,6 +62,10 @@ type PageDetail = {
   updatedAt: string;
   doc: Record<string, unknown>;
   draft: Record<string, unknown> | null;
+  /** Draft etag (optimistic concurrency) — round-tripped on every autosave/
+   *  commit so a stale write from a second device or the Pages agent conflicts
+   *  (409) instead of clobbering newer edits. */
+  draftRev?: number;
 };
 
 // The body autosaves into a private *draft* (cheap, never rendered or indexed).
@@ -85,7 +89,9 @@ export function PageDetailClient({ pageId }: { pageId: string }) {
   const backlinksQuery = useQuery({
     queryKey: ['pages', pageId, 'backlinks'],
     queryFn: () =>
-      apiFetch<{ backlinks: Backlink[] }>(`/api/pages/${pageId}/backlinks`).then((r) => r.backlinks),
+      apiFetch<{ backlinks: Backlink[] }>(`/api/pages/${pageId}/backlinks`).then(
+        (r) => r.backlinks,
+      ),
   });
 
   if (pageQuery.isPending) {
@@ -96,10 +102,13 @@ export function PageDetailClient({ pageId }: { pageId: string }) {
     );
   }
   if (pageQuery.isError) {
-    const notFound = pageQuery.error instanceof Error && /not found|404/i.test(pageQuery.error.message);
+    const notFound =
+      pageQuery.error instanceof Error && /not found|404/i.test(pageQuery.error.message);
     return (
       <div className="flex h-dvh flex-col items-center justify-center gap-3 p-6 text-center text-sm">
-        <p className="text-muted-foreground">{notFound ? 'Page not found.' : 'Failed to load page.'}</p>
+        <p className="text-muted-foreground">
+          {notFound ? 'Page not found.' : 'Failed to load page.'}
+        </p>
         <BackLink href="/pages">Back to pages</BackLink>
       </div>
     );
@@ -108,13 +117,7 @@ export function PageDetailClient({ pageId }: { pageId: string }) {
   return <PageDetailEditor initial={pageQuery.data} backlinks={backlinksQuery.data ?? []} />;
 }
 
-function PageDetailEditor({
-  initial,
-  backlinks,
-}: {
-  initial: PageDetail;
-  backlinks: Backlink[];
-}) {
+function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlinks: Backlink[] }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -155,6 +158,7 @@ function PageDetailEditor({
   const committedRef = useRef(JSON.stringify(initial.doc)); // last published doc (string)
   const committedDocRef = useRef<JSONContent>(initial.doc as JSONContent); // …as object (diff baseline)
   const draftSavedRef = useRef(JSON.stringify(initial.draft ?? initial.doc)); // last autosaved
+  const draftRevRef = useRef(initial.draftRev ?? 0); // draft etag (optimistic concurrency)
   const metaSavedRef = useRef(
     JSON.stringify({ title: initial.title, tags: initial.tags, icon: initial.icon ?? '' }),
   );
@@ -163,27 +167,57 @@ function PageDetailEditor({
   const metaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deletedRef = useRef(false);
   const committingRef = useRef(false);
+  // Set when an autosave/commit hits a 409: another writer advanced the draft.
+  // Autosaving PAUSES until the refetch remounts the editor on server truth
+  // (the draft watcher below clears it). Without this, the user typing before
+  // the remount re-fires autosave with the stale rev → repeat 409 → toast spam.
+  const conflictRef = useRef(false);
 
   // ── Autosave the draft body (no publish, no index). ─────────────────
   const saveDraft = useCallback(async () => {
     if (deletedRef.current) return;
-    const s = JSON.stringify(docRef.current);
+    // Paused after a 409 until the reload remounts the editor on server truth.
+    // Adopting the server rev and continuing would let the next save CLOBBER the
+    // other writer's edit — the exact thing this concurrency guard prevents.
+    if (conflictRef.current) return;
+    // ONE snapshot for the whole save — the user can keep typing during the
+    // network await; marking the LIVE doc saved would drop those edits.
+    const snapshot = docRef.current;
+    const s = JSON.stringify(snapshot);
     if (s === draftSavedRef.current) return;
     setDraftSaving(true);
     try {
+      let saved: { draft_rev?: number };
       try {
-        await apiSend(`/api/pages/${initial.id}/draft`, 'PUT', { doc: docRef.current });
+        saved = await apiSend<{ draft_rev: number }>(`/api/pages/${initial.id}/draft`, 'PUT', {
+          doc: snapshot,
+          if_rev: draftRevRef.current,
+        });
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) return;
+        if (e instanceof ApiError && e.status === 409) {
+          // Another writer (a second device, or the Pages agent) advanced the
+          // draft. PAUSE autosaving (conflictRef) so continued typing before the
+          // remount can't re-fire with the stale rev and spam 409s/toasts — the
+          // flag is cleared when the refetch remounts the editor on server truth
+          // (the draft watcher below resets docRef + refs). Toast once. Mark this
+          // snapshot "saved" too so a racing flush is a no-op. Mirrors tables.
+          conflictRef.current = true;
+          draftSavedRef.current = s;
+          toast.error('This page changed elsewhere — reloading the latest draft');
+          void queryClient.invalidateQueries({ queryKey: ['pages', initial.id] });
+          return;
+        }
         toast.error(e instanceof Error ? e.message : 'Could not save draft');
         return;
       }
+      if (typeof saved.draft_rev === 'number') draftRevRef.current = saved.draft_rev;
       draftSavedRef.current = s;
       lastDraftAtRef.current = Date.now();
     } finally {
       setDraftSaving(false);
     }
-  }, [initial.id, toast]);
+  }, [initial.id, queryClient, toast]);
 
   // ── Title / tags save live (cheap metadata, never indexes). ─────────
   const saveMeta = useCallback(async () => {
@@ -212,9 +246,21 @@ function PageDetailEditor({
     try {
       await saveMeta(); // make sure title/tags reflect the screen too
       try {
-        await apiSend(`/api/pages/${initial.id}/commit`, 'POST', { doc: docRef.current });
+        const { page } = await apiSend<{ page: { draftRev?: number } }>(
+          `/api/pages/${initial.id}/commit`,
+          'POST',
+          { doc: docRef.current, if_rev: draftRevRef.current },
+        );
+        if (typeof page?.draftRev === 'number') draftRevRef.current = page.draftRev;
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) return;
+        if (e instanceof ApiError && e.status === 409) {
+          // The draft moved under us (another device / the Pages agent).
+          // Publishing would blow away their newer work — reload instead.
+          toast.error('This page changed elsewhere — reloading the latest draft');
+          void queryClient.invalidateQueries({ queryKey: ['pages', initial.id] });
+          return;
+        }
         toast.error(e instanceof Error ? e.message : 'Commit failed');
         return;
       }
@@ -230,7 +276,7 @@ function PageDetailEditor({
       committingRef.current = false;
       setCommitting(false);
     }
-  }, [initial.id, saveMeta, toast]);
+  }, [initial.id, queryClient, saveMeta, toast]);
 
   // Timers fire stale closures otherwise — always reach the latest fns.
   const saveDraftRef = useRef(saveDraft);
@@ -419,13 +465,7 @@ function PageDetailEditor({
       if (hits.length === 0) return;
       const cur = highlightCursor.current;
       const next =
-        dir === 1
-          ? cur < 0
-            ? 0
-            : (cur + 1) % hits.length
-          : cur <= 0
-            ? hits.length - 1
-            : cur - 1;
+        dir === 1 ? (cur < 0 ? 0 : (cur + 1) % hits.length) : cur <= 0 ? hits.length - 1 : cur - 1;
       highlightCursor.current = next;
       const dom = editor.view.nodeDOM(hits[next]!.pos);
       if (dom instanceof HTMLElement) dom.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -514,7 +554,7 @@ function PageDetailEditor({
         if (!n || typeof n !== 'object') return;
         const bid = n.attrs?.id;
         if (typeof bid === 'string') committedById.set(bid, n as JSONContent);
-        for (const c of (n.content as typeof n[] | undefined) ?? []) collect(c);
+        for (const c of (n.content as (typeof n)[] | undefined) ?? []) collect(c);
       };
       collect(committedDocRef.current as never);
 
@@ -591,32 +631,37 @@ function PageDetailEditor({
       committedRef.current = JSON.stringify(initial.doc);
       committedDocRef.current = initial.doc as JSONContent; // diff baseline
       draftSavedRef.current = nextStr;
+      // Adopt the freshly-loaded etag — a reload after a 409 (or an agent run)
+      // resyncs the base so the next autosave/commit isn't a guaranteed conflict.
+      draftRevRef.current = initial.draftRev ?? 0;
+      // Editor is reseeding on server truth — lift the post-409 autosave pause.
+      conflictRef.current = false;
       setDocDirty(nextStr !== committedRef.current);
       setEditorKey((k) => k + 1);
     }
-  }, [initial.draft, initial.doc]);
+  }, [initial.draft, initial.doc, initial.draftRev]);
 
-  const onAiChanged = useCallback((changedBlockIds?: string[]) => {
-    // An AI run (array arg, even empty) enters review mode so the user sees the
-    // diff; a discard (no arg) leaves it. The overlay itself is recomputed from
-    // committed-vs-draft after the remount — no need to thread block ids here.
-    setReviewMode(changedBlockIds !== undefined);
-    // Pull the latest draft from the server. Invalidating the page query
-    // refetches getPage; the new `initial.draft` propagates down through the
-    // outer gate, and the useEffect above detects the prop change and bumps
-    // editorKey THEN — so PageEditor remounts with the right content, not the
-    // stale-before-refetch content.
-    void queryClient.invalidateQueries({ queryKey: ['pages', initial.id] });
-  }, [queryClient, initial.id]);
+  const onAiChanged = useCallback(
+    (changedBlockIds?: string[]) => {
+      // An AI run (array arg, even empty) enters review mode so the user sees the
+      // diff; a discard (no arg) leaves it. The overlay itself is recomputed from
+      // committed-vs-draft after the remount — no need to thread block ids here.
+      setReviewMode(changedBlockIds !== undefined);
+      // Pull the latest draft from the server. Invalidating the page query
+      // refetches getPage; the new `initial.draft` propagates down through the
+      // outer gate, and the useEffect above detects the prop change and bumps
+      // editorKey THEN — so PageEditor remounts with the right content, not the
+      // stale-before-refetch content.
+      void queryClient.invalidateQueries({ queryKey: ['pages', initial.id] });
+    },
+    [queryClient, initial.id],
+  );
 
   // Wire the global assistant overlay to this page: arm the Pages specialist,
   // pin this page as context, fold the gutter marks into a focus directive, and
   // refresh the editor into review mode when Pages edits the draft. Replaces the
   // old in-page AI-assist panel; the draft/Commit flow is unchanged.
-  const focusDirective = useMemo(
-    () => (marks.length ? buildFocusDirective(marks) : null),
-    [marks],
-  );
+  const focusDirective = useMemo(() => (marks.length ? buildFocusDirective(marks) : null), [marks]);
   const onPagesEdited = useCallback(() => onAiChanged([]), [onAiChanged]);
   const { busy: aiPending } = useSurfaceAssist({
     surface: 'pages',
@@ -840,12 +885,7 @@ function PageDetailEditor({
               </aside>
             )}
             <div className="min-w-0 flex-1">
-              <div
-                className={cn(
-                  'mx-auto w-full',
-                  width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
-                )}
-              >
+              <div className={cn('mx-auto w-full', width !== 'wide' ? 'max-w-3xl' : 'max-w-none')}>
                 <PageEditor
                   key={editorKey}
                   content={initialDoc}
@@ -869,8 +909,8 @@ function PageDetailEditor({
                 )}
                 {markerMode && !aiPending && (
                   <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
-                    Marker on — drag down the left gutter to mark sections (click a marked
-                    row to unmark)
+                    Marker on — drag down the left gutter to mark sections (click a marked row to
+                    unmark)
                     {marks.length > 0 ? `; ${marks.length} marked` : ''}. Then ask Pages in the
                     assistant (⌘I) what to do with them.
                   </p>

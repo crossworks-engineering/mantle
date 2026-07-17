@@ -9,7 +9,11 @@
  * resolveTeamChatCaller, membership liveness re-checked on every call.
  */
 import { NextResponse } from 'next/server';
-import { TEAM_WORKSPACE_TYPES, listTeamVisibleShares, type TeamWorkspaceType } from '@mantle/content';
+import {
+  TEAM_WORKSPACE_TYPES,
+  listTeamVisibleShares,
+  type TeamWorkspaceType,
+} from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
 export const runtime = 'nodejs';

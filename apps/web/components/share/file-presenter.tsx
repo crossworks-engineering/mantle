@@ -39,9 +39,17 @@ export function FilePresenter({
           />
         </a>
       ) : isPdf ? (
-        <iframe src={src} title={view.filename} className="h-[82vh] w-full rounded-lg border border-border" />
+        <iframe
+          src={src}
+          title={view.filename}
+          className="h-[82vh] w-full rounded-lg border border-border"
+        />
       ) : isVideo ? (
-        <video src={src} controls className="mx-auto max-h-[80vh] w-full rounded-lg border border-border bg-black" />
+        <video
+          src={src}
+          controls
+          className="mx-auto max-h-[80vh] w-full rounded-lg border border-border bg-black"
+        />
       ) : isAudio ? (
         <div className="mx-auto max-w-xl rounded-lg border border-border bg-card p-4">
           <audio src={src} controls className="w-full" />

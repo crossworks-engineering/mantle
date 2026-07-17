@@ -71,9 +71,7 @@ export function buildVarMap(env: Environment | null): Record<string, string> {
 
 export function substituteVars(input: string, vars: Record<string, string>): string {
   if (!input) return input;
-  return input.replace(VAR_PATTERN, (match, key: string) =>
-    key in vars ? vars[key]! : match,
-  );
+  return input.replace(VAR_PATTERN, (match, key: string) => (key in vars ? vars[key]! : match));
 }
 
 /** Path placeholders present in a URL template (after var substitution). */
@@ -178,9 +176,7 @@ export function resolveHttpDraft(
     }
   }
 
-  const hasSecretRef = SECRET_REF_TEST.test(
-    url + Object.values(headers).join('\n') + (body ?? ''),
-  );
+  const hasSecretRef = SECRET_REF_TEST.test(url + Object.values(headers).join('\n') + (body ?? ''));
   const isAbsolute = /^https?:\/\//i.test(url);
   const crossOrigin =
     isAbsolute &&
@@ -377,7 +373,11 @@ export async function sendMcpCall(
       startedAt,
     };
   }
-  const result = (payload.result ?? {}) as { isError?: boolean; text?: string; durationMs?: number };
+  const result = (payload.result ?? {}) as {
+    isError?: boolean;
+    text?: string;
+    durationMs?: number;
+  };
   const text = result.text ?? '';
   return {
     via: 'mcp',

@@ -111,7 +111,12 @@ async function hfChat(opts: ChatOptions): Promise<ChatResult> {
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new ChatHttpError({ provider: 'huggingface', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
+    throw new ChatHttpError({
+      provider: 'huggingface',
+      status: res.status,
+      body: errBody,
+      retryAfterMs: parseRetryAfterMs(res.headers),
+    });
   }
   const parsed = (await res.json()) as HfChatResponse;
   const message = parsed.choices?.[0]?.message;

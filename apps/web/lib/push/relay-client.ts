@@ -32,7 +32,12 @@ export async function registerInstance(
 export async function relayNotify(
   relayUrl: string,
   instanceToken: string,
-  args: { routingToken: string; ciphertext: string; collapseKey?: string; priority?: 'high' | 'normal' },
+  args: {
+    routingToken: string;
+    ciphertext: string;
+    collapseKey?: string;
+    priority?: 'high' | 'normal';
+  },
 ): Promise<RelayNotifyResult> {
   let res: Response;
   try {

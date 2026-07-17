@@ -76,13 +76,7 @@ export async function getApiKey(
   const [row] = await db
     .select()
     .from(apiKeys)
-    .where(
-      and(
-        eq(apiKeys.userId, userId),
-        eq(apiKeys.service, service),
-        eq(apiKeys.label, label),
-      ),
-    )
+    .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), eq(apiKeys.label, label)))
     .limit(1);
   if (!row) return null;
   const plaintext = open(row.keyEnc, row.id);
@@ -111,9 +105,7 @@ export async function setApiKey(
   const [existing] = await db
     .select({ id: apiKeys.id })
     .from(apiKeys)
-    .where(
-      and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), eq(apiKeys.label, label)),
-    )
+    .where(and(eq(apiKeys.userId, userId), eq(apiKeys.service, service), eq(apiKeys.label, label)))
     .limit(1);
   if (existing) {
     const { ciphertext, keyVersion } = seal(plaintext, existing.id);

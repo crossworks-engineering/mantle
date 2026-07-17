@@ -164,7 +164,8 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
    *  (tool groups are the sole grant mechanism). */
   const effectiveToolCount = (a: { toolGroupSlugs?: string[] | null }): number => {
     const set = new Set<string>();
-    for (const g of a.toolGroupSlugs ?? []) for (const t of groupToolsBySlug.get(g) ?? []) set.add(t);
+    for (const g of a.toolGroupSlugs ?? [])
+      for (const t of groupToolsBySlug.get(g) ?? []) set.add(t);
     return set.size;
   };
   const agentSlugs = new Set(agents.map((a) => a.slug));
@@ -179,9 +180,12 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
     const issues: string[] = [];
     if (!a.enabled) issues.push('agent disabled');
     const groupGrants = a.toolGroupSlugs ?? [];
-    for (const s of a.skillSlugs) if (!enabledSkillSlugs.has(s)) issues.push(`skill '${s}' missing or disabled`);
-    for (const g of groupGrants) if (!enabledToolGroupSlugs.has(g)) issues.push(`tool group '${g}' missing or disabled`);
-    for (const d of delegates) if (!enabledAgentSlugs.has(d)) issues.push(`delegate '${d}' missing or disabled`);
+    for (const s of a.skillSlugs)
+      if (!enabledSkillSlugs.has(s)) issues.push(`skill '${s}' missing or disabled`);
+    for (const g of groupGrants)
+      if (!enabledToolGroupSlugs.has(g)) issues.push(`tool group '${g}' missing or disabled`);
+    for (const d of delegates)
+      if (!enabledAgentSlugs.has(d)) issues.push(`delegate '${d}' missing or disabled`);
 
     nodes.push({
       id: agentNodeId(a.slug),
@@ -196,17 +200,32 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
 
     for (const s of a.skillSlugs) {
       if (skillSlugs.has(s)) {
-        edges.push({ id: `${agentNodeId(a.slug)}__skill:${s}`, source: agentNodeId(a.slug), target: skillNodeId(s), kind: 'skill' });
+        edges.push({
+          id: `${agentNodeId(a.slug)}__skill:${s}`,
+          source: agentNodeId(a.slug),
+          target: skillNodeId(s),
+          kind: 'skill',
+        });
       }
     }
     for (const d of delegates) {
       if (agentSlugs.has(d)) {
-        edges.push({ id: `${agentNodeId(a.slug)}__deleg:${d}`, source: agentNodeId(a.slug), target: agentNodeId(d), kind: 'delegate' });
+        edges.push({
+          id: `${agentNodeId(a.slug)}__deleg:${d}`,
+          source: agentNodeId(a.slug),
+          target: agentNodeId(d),
+          kind: 'delegate',
+        });
       }
     }
     for (const g of groupGrants) {
       if (toolGroupSlugs.has(g)) {
-        edges.push({ id: `${agentNodeId(a.slug)}__group:${g}`, source: agentNodeId(a.slug), target: groupNodeId(g), kind: 'group' });
+        edges.push({
+          id: `${agentNodeId(a.slug)}__group:${g}`,
+          source: agentNodeId(a.slug),
+          target: groupNodeId(g),
+          kind: 'group',
+        });
       }
     }
   }
@@ -233,7 +252,8 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
   for (const g of toolGroups) {
     const issues: string[] = [];
     if (!g.enabled) issues.push('group disabled');
-    for (const t of g.toolSlugs) if (!enabledToolSlugs.has(t)) issues.push(`tool '${t}' has no enabled row`);
+    for (const t of g.toolSlugs)
+      if (!enabledToolSlugs.has(t)) issues.push(`tool '${t}' has no enabled row`);
     nodes.push({
       id: groupNodeId(g.slug),
       kind: 'group',
@@ -270,7 +290,11 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
       maxIterations: a.memoryConfig?.max_iterations,
       resettable: MANIFEST_AGENT_SLUGS.has(a.slug),
       systemPrompt: a.systemPrompt,
-      skillBlocks: attached.map((s) => ({ slug: s.slug, name: s.name, instructions: s.instructions })),
+      skillBlocks: attached.map((s) => ({
+        slug: s.slug,
+        name: s.name,
+        instructions: s.instructions,
+      })),
       composedPrompt: composeSystemPromptWithSkills(a.systemPrompt, attached),
     });
   }
@@ -281,7 +305,9 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
     name: s.name,
     enabled: s.enabled,
     instructions: s.instructions,
-    usedByAgentSlugs: agents.filter((a) => (a.skillSlugs ?? []).includes(s.slug)).map((a) => a.slug),
+    usedByAgentSlugs: agents
+      .filter((a) => (a.skillSlugs ?? []).includes(s.slug))
+      .map((a) => a.slug),
   }));
 
   const toolGroupDetails: StudioToolGroupDetail[] = toolGroups.map((g) => ({
@@ -290,12 +316,15 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
     name: g.name,
     enabled: g.enabled,
     toolSlugs: g.toolSlugs,
-    usedByAgentSlugs: agents.filter((a) => (a.toolGroupSlugs ?? []).includes(g.slug)).map((a) => a.slug),
+    usedByAgentSlugs: agents
+      .filter((a) => (a.toolGroupSlugs ?? []).includes(g.slug))
+      .map((a) => a.slug),
   }));
 
   const workerDetails: StudioWorkerDetail[] = workers.map((w) => {
     const params = (w.params ?? {}) as unknown as Record<string, unknown>;
-    const extraction = typeof params.extraction_prompt === 'string' ? params.extraction_prompt : null;
+    const extraction =
+      typeof params.extraction_prompt === 'string' ? params.extraction_prompt : null;
     const issues: string[] = [];
     if (!w.enabled) issues.push('worker disabled');
     return {

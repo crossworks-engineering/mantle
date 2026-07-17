@@ -32,7 +32,10 @@ const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
  *  backup can target different hosts) → the `MANTLE_LOCAL_EMBEDDING_URL` env
  *  → the Ollama default. */
 function baseUrl(override?: string): string {
-  return (override || process.env.MANTLE_LOCAL_EMBEDDING_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  return (override || process.env.MANTLE_LOCAL_EMBEDDING_URL || DEFAULT_BASE_URL).replace(
+    /\/+$/,
+    '',
+  );
 }
 
 function assertTextOnly(input: EmbedInput[]): void {

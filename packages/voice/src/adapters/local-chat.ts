@@ -125,7 +125,10 @@ function localChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<Ch
     opts,
     {
       url: `${baseUrl(opts.baseUrl)}/chat/completions`,
-      headers: { Authorization: `Bearer ${opts.apiKey || 'local'}`, 'content-type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${opts.apiKey || 'local'}`,
+        'content-type': 'application/json',
+      },
       provider: 'local',
       ...(opts.viaTailnet ? { fetchImpl: tailnetFetch as typeof fetch } : {}),
     },

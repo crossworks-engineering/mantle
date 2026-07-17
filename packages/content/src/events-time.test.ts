@@ -46,9 +46,7 @@ describe('computeRemindAt', () => {
   });
 
   it('handles a 1-day lead time', () => {
-    expect(computeRemindAt('2026-05-20T10:00:00Z', 60 * 24)).toBe(
-      '2026-05-19T10:00:00.000Z',
-    );
+    expect(computeRemindAt('2026-05-20T10:00:00Z', 60 * 24)).toBe('2026-05-19T10:00:00.000Z');
   });
 
   it('is DST-safe: same offset before and after a CET spring-forward', () => {
@@ -63,9 +61,7 @@ describe('computeRemindAt', () => {
   });
 
   it('crosses a day boundary', () => {
-    expect(computeRemindAt('2026-05-20T00:30:00Z', 60)).toBe(
-      '2026-05-19T23:30:00.000Z',
-    );
+    expect(computeRemindAt('2026-05-20T00:30:00Z', 60)).toBe('2026-05-19T23:30:00.000Z');
   });
 
   it('throws on invalid starts_at', () => {

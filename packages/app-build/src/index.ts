@@ -70,7 +70,11 @@ function normKey(k: string): string {
 
 /** Resolve a relative import against the source tree, trying common extensions
  *  and index files — mirrors how a bundler resolves `./x`. */
-function resolveInTree(files: Record<string, string>, fromKey: string, importPath: string): string | null {
+function resolveInTree(
+  files: Record<string, string>,
+  fromKey: string,
+  importPath: string,
+): string | null {
   const fromDir = fromKey === '<stdin>' ? '' : path.posix.dirname(fromKey);
   const base = normKey(path.posix.join(fromDir, importPath));
   const candidates = [
@@ -206,9 +210,7 @@ export async function buildApp(
   source: AppSource,
   opts: { declaredToolSlugs?: string[] } = {},
 ): Promise<BuildResult> {
-  const toolWarnings = opts.declaredToolSlugs
-    ? lintToolRefs(source, opts.declaredToolSlugs)
-    : [];
+  const toolWarnings = opts.declaredToolSlugs ? lintToolRefs(source, opts.declaredToolSlugs) : [];
   const withToolWarnings = (r: BuildResult): BuildResult =>
     toolWarnings.length ? { ...r, warnings: [...r.warnings, ...toolWarnings] } : r;
   return withToolWarnings(await buildAppInner(source));

@@ -46,7 +46,10 @@ function buildTree(files: string[]): TreeNode[] {
 function Chevron({ open }: { open: boolean }) {
   return (
     <ChevronRight
-      className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')}
+      className={cn(
+        'size-3.5 shrink-0 text-muted-foreground transition-transform',
+        open && 'rotate-90',
+      )}
       aria-hidden
     />
   );
@@ -190,7 +193,9 @@ export function DocsNav({ nav }: { nav: ReaderNav }) {
                   className="flex min-w-0 flex-1 items-center gap-1 py-0.5 text-left"
                 >
                   <Chevron open={open} />
-                  <span className="truncate text-xs font-semibold text-foreground">{col.label}</span>
+                  <span className="truncate text-xs font-semibold text-foreground">
+                    {col.label}
+                  </span>
                 </button>
                 <Badge
                   variant={col.enabled ? 'default' : 'outline'}

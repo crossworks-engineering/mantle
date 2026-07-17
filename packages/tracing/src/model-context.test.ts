@@ -21,7 +21,7 @@ import {
 } from './model-context';
 
 describe('maxImageBytesFor', () => {
-  it('keeps Anthropic under Bedrock\'s ~5 MB per-image cap', () => {
+  it("keeps Anthropic under Bedrock's ~5 MB per-image cap", () => {
     expect(maxImageBytesFor('anthropic/claude-sonnet-4.6')).toBeLessThan(5_000_000);
     expect(maxImageBytesFor('anthropic/claude-opus-4.7')).toBe(4_500_000);
   });
@@ -88,7 +88,11 @@ describe('parseCatalog', () => {
 
   it('reads vision from architecture.input_modalities (image ⇒ multimodal)', () => {
     const out = parseCatalog([
-      { id: 'a/sees', context_length: 1000, architecture: { input_modalities: ['text', 'image', 'file'] } },
+      {
+        id: 'a/sees',
+        context_length: 1000,
+        architecture: { input_modalities: ['text', 'image', 'file'] },
+      },
       { id: 'a/blind', context_length: 1000, architecture: { input_modalities: ['text'] } },
       { id: 'a/nomods', context_length: 1000 },
       { id: 'a/nullmods', context_length: 1000, architecture: { input_modalities: null } },

@@ -56,7 +56,12 @@ export type UpdateCheck = {
 /** Numeric segment-wise semver compare; pre-release suffixes (-alpha) are
  *  ignored for ordering. >0 when a > b. */
 export function compareVersions(a: string, b: string): number {
-  const norm = (v: string) => v.replace(/^v/, '').split('-')[0]!.split('.').map((n) => parseInt(n, 10) || 0);
+  const norm = (v: string) =>
+    v
+      .replace(/^v/, '')
+      .split('-')[0]!
+      .split('.')
+      .map((n) => parseInt(n, 10) || 0);
   const pa = norm(a);
   const pb = norm(b);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
@@ -94,7 +99,13 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
         res.status === 404
           ? 'No releases published yet.'
           : `GitHub API: ${res.status} ${res.statusText}`;
-      cachedCheck = { currentVersion: APP_VERSION, latest: null, updateAvailable: false, checkedAt, error };
+      cachedCheck = {
+        currentVersion: APP_VERSION,
+        latest: null,
+        updateAvailable: false,
+        checkedAt,
+        error,
+      };
       return cachedCheck;
     }
     const body = (await res.json()) as {
@@ -182,7 +193,10 @@ export async function readUpdaterStatus(): Promise<UpdaterStatus | null> {
       ok: typeof j.ok === 'boolean' ? j.ok : null,
       error: typeof j.error === 'string' && j.error ? j.error : null,
     };
-    if (pending && (status.phase === 'idle' || status.phase === 'done' || status.phase === 'error')) {
+    if (
+      pending &&
+      (status.phase === 'idle' || status.phase === 'done' || status.phase === 'error')
+    ) {
       return { ...status, phase: 'requested', error: null };
     }
     return status;
@@ -196,7 +210,10 @@ export async function readUpdaterLog(maxLines = 60): Promise<string> {
   try {
     const raw = await fs.readFile(path.join(SIGNAL_DIR, 'update.log'), 'utf8');
     const lines = raw.split('\n');
-    return lines.slice(Math.max(0, lines.length - maxLines)).join('\n').trim();
+    return lines
+      .slice(Math.max(0, lines.length - maxLines))
+      .join('\n')
+      .trim();
   } catch {
     return '';
   }
@@ -204,7 +221,9 @@ export async function readUpdaterLog(maxLines = 60): Promise<string> {
 
 /** Ask the sidecar to update to `target` (an image tag like "v0.20.68", or
  *  "latest"). Validation mirrors the sidecar's own whitelist. */
-export async function requestUpdate(target: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function requestUpdate(
+  target: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const tag = target.trim();
   if (!/^[A-Za-z0-9._-]+$/.test(tag)) return { ok: false, error: `invalid tag '${target}'` };
   if (!(await updaterAvailable())) {
@@ -222,7 +241,10 @@ export async function requestUpdate(target: string): Promise<{ ok: true } | { ok
         : 'updater is not configured (set MANTLE_STACK_DIR in .env)',
     };
   }
-  if (status && (status.phase === 'pulling' || status.phase === 'rolling' || status.phase === 'requested')) {
+  if (
+    status &&
+    (status.phase === 'pulling' || status.phase === 'rolling' || status.phase === 'requested')
+  ) {
     return { ok: false, error: 'an update is already in progress' };
   }
   try {

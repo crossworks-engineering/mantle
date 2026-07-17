@@ -90,7 +90,12 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
-    throw new ChatHttpError({ provider: 'deepseek', status: res.status, body: errBody, retryAfterMs: parseRetryAfterMs(res.headers) });
+    throw new ChatHttpError({
+      provider: 'deepseek',
+      status: res.status,
+      body: errBody,
+      retryAfterMs: parseRetryAfterMs(res.headers),
+    });
   }
   const parsed = (await res.json()) as DeepseekChatResponse;
   const message = parsed.choices?.[0]?.message;
@@ -116,9 +121,7 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
   };
 }
 
-async function deepseekDiscover(
-  apiKey: string,
-): Promise<DiscoveryResult<ChatModelInfo>> {
+async function deepseekDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo>> {
   try {
     const res = await fetch(`${DEEPSEEK_BASE_URL}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -136,8 +139,7 @@ async function deepseekDiscover(
     const ids = new Set((parsed.data ?? []).map((m) => m.id));
     const available = DEEPSEEK_CHAT_MODELS.filter((m) => ids.has(m.id));
     return {
-      available:
-        available.length > 0 ? available : [...DEEPSEEK_CHAT_MODELS],
+      available: available.length > 0 ? available : [...DEEPSEEK_CHAT_MODELS],
       filtered: available.length > 0,
       error: null,
     };

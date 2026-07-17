@@ -120,8 +120,7 @@ export const OPENAI_TTS_MODELS: readonly TtsModelInfo[] = [
   {
     id: 'tts-1',
     label: 'tts-1',
-    description:
-      'Original TTS model. 9 voices, low latency. Cheaper than gpt-4o-mini-tts.',
+    description: 'Original TTS model. 9 voices, low latency. Cheaper than gpt-4o-mini-tts.',
     voices: ['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'],
     supportsInstructions: false,
     tier: 'low-latency',
@@ -129,8 +128,7 @@ export const OPENAI_TTS_MODELS: readonly TtsModelInfo[] = [
   {
     id: 'tts-1-hd',
     label: 'tts-1-hd',
-    description:
-      'Higher-quality variant of tts-1. Same 9 voices, higher fidelity, ~2× cost.',
+    description: 'Higher-quality variant of tts-1. Same 9 voices, higher fidelity, ~2× cost.',
     voices: ['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'],
     supportsInstructions: false,
     tier: 'high-quality',

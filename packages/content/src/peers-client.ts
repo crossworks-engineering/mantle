@@ -21,9 +21,13 @@ async function resolvePeer(ownerId: string, ref: string): Promise<PeerRow | { er
   if (peers.length === 0) return { error: 'No peers are configured. Add one at /settings/peers.' };
   const trimmed = ref.trim();
   const byId = peers.find((p) => p.id === trimmed);
-  const cand = byId ? [byId] : peers.filter((p) => p.displayName.toLowerCase() === trimmed.toLowerCase());
-  if (cand.length === 0) return { error: `No peer matches "${ref}". Use peer_list to see configured peers.` };
-  if (cand.length > 1) return { error: `Multiple peers named "${ref}". Use the peer id (see peer_list).` };
+  const cand = byId
+    ? [byId]
+    : peers.filter((p) => p.displayName.toLowerCase() === trimmed.toLowerCase());
+  if (cand.length === 0)
+    return { error: `No peer matches "${ref}". Use peer_list to see configured peers.` };
+  if (cand.length > 1)
+    return { error: `Multiple peers named "${ref}". Use the peer id (see peer_list).` };
   const p = cand[0]!;
   if (p.enabled && p.status === 'pending') {
     return {
@@ -102,7 +106,11 @@ export async function queryPeer(
   const out = res.json as { nodes?: Array<Record<string, unknown>>; count?: number };
   return {
     ok: true,
-    data: { peer: r.peer.displayName, nodes: out.nodes ?? [], count: out.count ?? out.nodes?.length ?? 0 },
+    data: {
+      peer: r.peer.displayName,
+      nodes: out.nodes ?? [],
+      count: out.count ?? out.nodes?.length ?? 0,
+    },
   };
 }
 
@@ -141,7 +149,11 @@ export async function searchPeerChunks(
   const out = res.json as { chunks?: Array<Record<string, unknown>>; count?: number };
   return {
     ok: true,
-    data: { peer: r.peer.displayName, chunks: out.chunks ?? [], count: out.count ?? out.chunks?.length ?? 0 },
+    data: {
+      peer: r.peer.displayName,
+      chunks: out.chunks ?? [],
+      count: out.count ?? out.chunks?.length ?? 0,
+    },
   };
 }
 
@@ -153,9 +165,14 @@ export async function getPeerNode(
 ): Promise<PeerClientResult<{ peer: string; node: unknown }>> {
   const r = await withToken(ownerId, ref);
   if ('error' in r) return { ok: false, error: r.error };
-  const res = await callPeer(r.peer, r.token, `/api/federation/node/${encodeURIComponent(nodeId)}`, {
-    method: 'GET',
-  });
+  const res = await callPeer(
+    r.peer,
+    r.token,
+    `/api/federation/node/${encodeURIComponent(nodeId)}`,
+    {
+      method: 'GET',
+    },
+  );
   if (!res.ok) return { ok: false, error: res.error };
   await markPeerContacted(ownerId, r.peer.id);
   const out = res.json as { node?: unknown };

@@ -91,9 +91,7 @@ describe('openrouter-chat message translation', () => {
       ],
       cacheControl: { systemPrompt: true },
     });
-    const messages = sendCalls[0]!.chatRequest.messages as Array<
-      Record<string, unknown>
-    >;
+    const messages = sendCalls[0]!.chatRequest.messages as Array<Record<string, unknown>>;
     expect(messages[0]).toEqual({
       role: 'system',
       content: [
@@ -124,9 +122,7 @@ describe('openrouter-chat message translation', () => {
       ],
       cacheControl: { lastUserMessage: true },
     });
-    const messages = sendCalls[0]!.chatRequest.messages as Array<
-      Record<string, unknown>
-    >;
+    const messages = sendCalls[0]!.chatRequest.messages as Array<Record<string, unknown>>;
     expect(messages[0]).toEqual({ role: 'user', content: 'first' });
     expect(messages[1]).toEqual({ role: 'assistant', content: 'reply' });
     expect(messages[2]).toEqual({
@@ -161,26 +157,20 @@ describe('openrouter-chat message translation', () => {
         {
           role: 'assistant',
           content: null,
-          toolCalls: [
-            { id: 'call_1', type: 'function', function: { name: 'a', arguments: '{}' } },
-          ],
+          toolCalls: [{ id: 'call_1', type: 'function', function: { name: 'a', arguments: '{}' } }],
         },
         { role: 'tool', toolCallId: 'call_1', content: 'tool output' },
       ],
       cacheControl: { systemPrompt: true, lastUserMessage: true },
     });
-    const messages = sendCalls[0]!.chatRequest.messages as Array<
-      Record<string, unknown>
-    >;
+    const messages = sendCalls[0]!.chatRequest.messages as Array<Record<string, unknown>>;
     // Original question stays an unmarked plain string.
     expect(messages[0]).toEqual({ role: 'user', content: 'the question' });
     // The marker lands on the trailing tool result.
     expect(messages[2]).toEqual({
       role: 'tool',
       toolCallId: 'call_1',
-      content: [
-        { type: 'text', text: 'tool output', cacheControl: { type: 'ephemeral' } },
-      ],
+      content: [{ type: 'text', text: 'tool output', cacheControl: { type: 'ephemeral' } }],
     });
   });
 
@@ -224,15 +214,11 @@ describe('openrouter-chat multi-block + multimodal content', () => {
       messages: [
         {
           role: 'system',
-          content: [
-            { type: 'text', text: 'persona', cacheControl: { type: 'ephemeral' } },
-          ],
+          content: [{ type: 'text', text: 'persona', cacheControl: { type: 'ephemeral' } }],
         },
         {
           role: 'system',
-          content: [
-            { type: 'text', text: 'digest', cacheControl: { type: 'ephemeral' } },
-          ],
+          content: [{ type: 'text', text: 'digest', cacheControl: { type: 'ephemeral' } }],
         },
         { role: 'system', content: 'content hits' },
         { role: 'system', content: 'relations' },
@@ -241,9 +227,7 @@ describe('openrouter-chat multi-block + multimodal content', () => {
       ],
       cacheControl: { systemPrompt: true, lastUserMessage: true },
     });
-    const messages = sendCalls[0]!.chatRequest.messages as Array<
-      Record<string, unknown>
-    >;
+    const messages = sendCalls[0]!.chatRequest.messages as Array<Record<string, unknown>>;
     // Count cache_control markers across the whole request — must be ≤ 4
     // (Anthropic's hard cap). Pre-marked persona (1) + digest (1) + lastUser
     // (1) = 3. The string-system blocks must NOT receive markers because
@@ -285,18 +269,14 @@ describe('openrouter-chat multi-block + multimodal content', () => {
       ],
       cacheControl: { systemPrompt: true },
     });
-    const messages = sendCalls[0]!.chatRequest.messages as Array<
-      Record<string, unknown>
-    >;
+    const messages = sendCalls[0]!.chatRequest.messages as Array<Record<string, unknown>>;
     // First two system messages remain plain strings.
     expect(messages[0]).toEqual({ role: 'system', content: 'persona' });
     expect(messages[1]).toEqual({ role: 'system', content: 'digests' });
     // Last system gets the single ephemeral marker.
     expect(messages[2]).toEqual({
       role: 'system',
-      content: [
-        { type: 'text', text: 'tail', cacheControl: { type: 'ephemeral' } },
-      ],
+      content: [{ type: 'text', text: 'tail', cacheControl: { type: 'ephemeral' } }],
     });
   });
 
@@ -618,13 +598,27 @@ describe('openrouter-chat chatStream', () => {
   it('assembles tool calls from streamed argument fragments (by index)', async () => {
     mockSendImpl = async () =>
       streamOf([
-        { choices: [{ delta: { toolCalls: [{ index: 0, id: 'call_1', function: { name: 'search', arguments: '{"q":' } }] } }] },
+        {
+          choices: [
+            {
+              delta: {
+                toolCalls: [
+                  { index: 0, id: 'call_1', function: { name: 'search', arguments: '{"q":' } },
+                ],
+              },
+            },
+          ],
+        },
         { choices: [{ delta: { toolCalls: [{ index: 0, function: { arguments: '"cats"}' } }] } }] },
         { choices: [{ delta: {}, finishReason: 'tool_calls' }] },
         { usage: { promptTokens: 12, completionTokens: 8 } },
       ]);
     const r = await openrouterChatAdapter.chatStream!(
-      { apiKey: 'sk-test', model: 'openai/gpt-4o', messages: [{ role: 'user', content: 'find cats' }] },
+      {
+        apiKey: 'sk-test',
+        model: 'openai/gpt-4o',
+        messages: [{ role: 'user', content: 'find cats' }],
+      },
       () => {},
     );
     expect(r.text).toBe('');

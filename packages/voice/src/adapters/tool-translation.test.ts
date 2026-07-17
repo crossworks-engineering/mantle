@@ -20,11 +20,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  anthropicChatAdapter,
-  googleChatAdapter,
-  xaiChatAdapter,
-} from './index';
+import { anthropicChatAdapter, googleChatAdapter, xaiChatAdapter } from './index';
 import type { ChatToolDefinition } from './types';
 
 const realFetch = globalThis.fetch;
@@ -428,9 +424,7 @@ describe('google-chat tool translation', () => {
     // would collide and a tool result would resolve to the wrong function name.
     // So synthetic ids must be process-unique, not reset per response.
     const oneFnResponse = {
-      candidates: [
-        { content: { parts: [{ functionCall: { name: 'note_create', args: {} } }] } },
-      ],
+      candidates: [{ content: { parts: [{ functionCall: { name: 'note_create', args: {} } }] } }],
       usageMetadata: {},
       modelVersion: 'gemini-2.5-flash',
     };

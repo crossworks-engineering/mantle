@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import {
+  ephemeralBackupDirMessage,
+  isBackupDirPersistent,
   listBackups,
   loadBackupConfig,
   loadBackupStatus,
@@ -53,6 +55,14 @@ export async function POST(req: Request) {
     );
   }
   const cfg = normalizeBackupConfig({ ...parsed.data, location: parsed.data.location.trim() });
+  // Reject an ephemeral location at SAVE time (not at 2am when the scheduled run
+  // fails): a custom folder outside the persistent bind-mounts lands in the
+  // container's overlay and every dump is lost on the next recreate. No-op on
+  // dev / native node — only enforced inside a container.
+  const dir = resolveBackupDir(cfg);
+  if (!isBackupDirPersistent(dir)) {
+    return NextResponse.json({ error: ephemeralBackupDirMessage(dir) }, { status: 400 });
+  }
   await saveBackupConfig(user.id, cfg);
   return NextResponse.json({ ok: true });
 }

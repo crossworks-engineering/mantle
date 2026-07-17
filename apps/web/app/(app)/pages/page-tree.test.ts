@@ -32,7 +32,12 @@ describe('buildChildrenIndex', () => {
     // 'b' points at a parent that isn't in the loaded set (e.g. beyond the
     // load limit) — it must still surface, as a top-level row.
     const idx = buildChildrenIndex([p('a', null, 'Alpha'), p('b', 'missing', 'Beta')]);
-    expect(idx.get(null)?.map((n) => n.id).sort()).toEqual(['a', 'b']);
+    expect(
+      idx
+        .get(null)
+        ?.map((n) => n.id)
+        .sort(),
+    ).toEqual(['a', 'b']);
   });
 
   it('handles deep nesting (grandchildren)', () => {

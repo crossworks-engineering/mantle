@@ -26,7 +26,6 @@ import {
   db,
   agents,
   type Agent,
-  type AgentParams,
   type AssistantMessage,
   type ConversationAttachment,
   type ConversationChannel,
@@ -35,90 +34,37 @@ import { getApiKeyById } from '@mantle/api-keys';
 import {
   buildChatMessages,
   buildAttachmentContextText,
-  composeSystemPromptWithSkills,
-  effectiveToolSlugs,
   invokeAgent,
   loadConversationContext,
   recordTurn,
-  resolveAgentSkills,
-  resolveAgentToolGroups,
-  resolveAgentTools,
-  resolveBackupAdapter,
-  runToolLoop,
-  summarizeToolOutcomes,
   updateAssistantMessageOutcome,
   type UserImage,
 } from '@mantle/agent-runtime';
 import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 import {
-  buildIdentityContext,
   buildLocationContextLine,
-  buildTimeContextLine,
   loadProfilePreferences,
-  isStreamThoughtsEnabled,
-  isPersistThoughtsEnabled,
-  resolveThinkingBudget,
   noteInboundChannel,
   applyAutoTimezone,
   type LocationPing,
 } from '@mantle/content';
-import { stageLabelForStep } from './stage-label';
-import {
-  buildOpenHeartbeatContext,
-  HEARTBEAT_RESPONDER_TOOLS,
-  hasActiveHeartbeatsOnSurface,
-  openHeartbeatsForSurface,
-  registerHeartbeatTools,
-} from '@mantle/heartbeats';
+import { registerHeartbeatTools } from '@mantle/heartbeats';
 import {
   startTrace,
-  step,
   runDurableStep,
   emitTurnLifecycle,
   registerTurnAbort,
   unregisterTurnAbort,
-  modelSupportsVision,
-  maxImageBytesFor,
-  refreshModelCatalog,
 } from '@mantle/tracing';
 import { pickWebDefaultAgent } from './select';
-
-/** Rebuild the persistable thought trail from a turn's tool calls — the same
- *  grounded action labels the live trail shows (search/write/delegate), via the
- *  shared `stageLabelForStep`. Thinking rounds aren't tool calls, so the result
- *  is exactly the "real actions" set the record displays. Returns [] when no
- *  call maps to a recognised stage. */
-function buildPersistedTrail(
-  toolCalls: ReadonlyArray<{ slug: string; argsJson: string; durationMs: number }>,
-): Array<{ kind: string; label: string; elapsedMs?: number }> {
-  const out: Array<{ kind: string; label: string; elapsedMs?: number }> = [];
-  toolCalls.forEach((tc, i) => {
-    let parsed: Record<string, unknown> = {};
-    try {
-      const p = JSON.parse(tc.argsJson) as unknown;
-      if (p && typeof p === 'object') parsed = p as Record<string, unknown>;
-    } catch {
-      /* unparseable args — the label just won't be enriched */
-    }
-    const stage = stageLabelForStep(`tool: ${tc.slug}`, { args: parsed }, i);
-    if (stage && stage.kind !== 'thinking') {
-      out.push({ kind: stage.kind, label: stage.label, elapsedMs: tc.durationMs });
-    }
-  });
-  return out;
-}
-
-/** Decoded byte size of a base64 string (tolerates a leading data-URL
- *  prefix). Used to size-check an inline image before sending it to a
- *  vision responder, without allocating a Buffer. */
-function base64Bytes(b64: string): number {
-  const clean = b64.includes(',') ? b64.slice(b64.indexOf(',') + 1) : b64;
-  const len = clean.length;
-  if (len === 0) return 0;
-  const padding = clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0;
-  return Math.floor((len * 3) / 4) - padding;
-}
+import {
+  assembleResponderTurn,
+  base64Bytes,
+  decideImageRouting,
+  runWithImageFallback,
+} from './assemble-turn';
+import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
 // First module load wires it up. Idempotent — last call wins.
@@ -160,10 +106,7 @@ export type AssistantTurnResult = {
  *  `priority` wins, then a soft assistant→responder→custom tiebreak, then slug
  *  for determinism (the tiebreak + pick live in `pickWebDefaultAgent`, unit-
  *  tested). An explicit `?agent=` slug still wins outright. */
-export async function resolveAssistantAgent(
-  ownerId: string,
-  slug?: string,
-): Promise<Agent | null> {
+export async function resolveAssistantAgent(ownerId: string, slug?: string): Promise<Agent | null> {
   // Explicit pick (the /assistant agent selector). Owner-scoped + enabled;
   // falls through to the default if the slug isn't valid.
   if (slug) {
@@ -363,7 +306,6 @@ export async function runAssistantTurn(
     if (options?.streamId) unregisterTurnAbort(options.streamId);
   };
 
-  const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
   // Current-time / timezone / locale context so the assistant can resolve
   // relative time references in event_create calls. Carries a per-turn
   // millisecond timestamp, so it rides in the uncached volatile block —
@@ -383,60 +325,9 @@ export async function runAssistantTurn(
       prefs = res.prefs;
       timezoneSwitch = res.switched;
     } catch (err) {
-      console.error(
-        '[assistant] auto-timezone skipped:',
-        err instanceof Error ? err.message : err,
-      );
+      console.error('[assistant] auto-timezone skipped:', err instanceof Error ? err.message : err);
     }
   }
-  const timeContextLine = buildTimeContextLine(prefs);
-  const promptWithSkills = composeSystemPromptWithSkills(agent.systemPrompt, attachedSkills);
-
-  // Open-heartbeat awareness: if the user has heartbeats whose
-  // surface is the web /assistant and that are currently waiting
-  // on a reply (state.expecting_reply truthy), append a small
-  // awareness block. Same shape + builder as the Telegram path in
-  // apps/agent — keeps the proactive→reactive continuity working
-  // for web heartbeats too. Best-effort; a DB blip here shouldn't
-  // kill the turn. (P0-3 in the v1 heartbeats audit.)
-  //
-  // `relatedHeartbeatSlugs` is captured here and threaded into the
-  // startTrace data jsonb below, so /traces and the trace detail
-  // page show "this responder turn was influenced by heartbeat X"
-  // without needing a separate join. (Audit P-trace-5.)
-  let openHeartbeatBlock = '';
-  let relatedHeartbeatSlugs: string[] = [];
-  try {
-    const open = await openHeartbeatsForSurface(ownerId, { kind: 'web' });
-    relatedHeartbeatSlugs = open.map((o) => o.slug);
-    const block = buildOpenHeartbeatContext(open);
-    if (block) openHeartbeatBlock = `\n\n${block}`;
-  } catch (err) {
-    console.error(
-      '[assistant] open-heartbeat context skipped:',
-      err instanceof Error ? err.message : err,
-    );
-  }
-  // Always-on identity context — the "who you are" block distilled from the
-  // user's Journal (deterministic, no LLM; empty when there are none). Opt
-  // out per-agent with memory_config.inject_journal=false. Prepended so it
-  // reads as durable user-truth at the top of the (cached) system block.
-  let identityBlock = '';
-  if ((agent.memoryConfig as { inject_journal?: boolean } | null)?.inject_journal !== false) {
-    try {
-      const block = await buildIdentityContext(ownerId);
-      if (block) identityBlock = `${block}\n\n`;
-    } catch (err) {
-      console.error(
-        '[assistant] identity context skipped:',
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-  // Cached prefix (breakpoint 1): identity + persona + skills — stable
-  // across turns. The time line and the heartbeat block ("asked Nmin
-  // ago" churns) go to the uncached volatile slot instead.
-  const effectiveSystemPrompt = identityBlock + promptWithSkills;
   // Device location (when the companion app sent it) rides the uncached volatile
   // slot beside the time line — it's per-turn and changes constantly, so it must
   // never enter the cached persona prefix. The location_awareness skill teaches
@@ -450,45 +341,34 @@ export async function runAssistantTurn(
       `(was ${timezoneSwitch.previous}) based on their current location. Briefly let them ` +
       `know you've done this, and offer to switch it back when they're home.`
     : '';
-  const volatileContext = [
-    timeContextLine,
-    locationContextLine,
-    timezoneSwitchNote,
-    openHeartbeatBlock.trim(),
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-  // Heartbeat continuity tools are injected below as a per-turn affordance
-  // (P6) when there's an active heartbeat on this surface — not a stored grant.
 
-  // Image routing — transcript-default. The vision worker already described
-  // (and, when the user asked a question, answered) the image at ingest, so
-  // prefer its cheap, cacheable transcript as text. Only show the responder
-  // the raw pixels when there's NO usable transcript (worker failed or
-  // unconfigured) — and only if the model is vision-capable and the file is
-  // within that provider's per-image limit. (Anthropic via OpenRouter →
-  // Bedrock rejects oversized images with an opaque "Could not process
-  // image" the SDK masks as a validation error; the size guard avoids it.)
+  // Shared responder-turn assembly (audit #5c): identity + skills prompt,
+  // volatile context (time line + the two web extras above + open-heartbeat
+  // awareness), tool allowlist + heartbeat affordance, thinking budget, loop
+  // overrides. `relatedHeartbeatSlugs` is threaded into the startTrace data
+  // jsonb below, so /traces shows "this responder turn was influenced by
+  // heartbeat X" without needing a separate join. (Audit P-trace-5.)
+  const assembled = await assembleResponderTurn({
+    ownerId,
+    agent,
+    prefs,
+    logPrefix: '[assistant]',
+    volatileExtras: [locationContextLine, timezoneSwitchNote],
+    heartbeatSurface: { kind: 'web' },
+  });
+  const { effectiveSystemPrompt, volatileContext, relatedHeartbeatSlugs, allowedTools } = assembled;
+
+  // Image routing — transcript-default vision gating via the shared
+  // `decideImageRouting` (catalog warm + vision + per-provider size check).
   // Either way the node id is surfaced in the text so Saskia can pull the
   // picture back for a closer look via extract_from_image(node_id).
-  // Warm the live model catalog so the vision check below reads authoritative
-  // capability (architecture.input_modalities) rather than the heuristic.
-  // Fire-and-forget + TTL-gated; the static fallback covers the cold path.
-  if (options?.image) void refreshModelCatalog();
-  const hasTranscript = !!options?.imageTranscript?.trim();
-  const imageBytes = options?.image ? base64Bytes(options.image.base64) : 0;
-  const withinImageLimit = imageBytes > 0 && imageBytes <= maxImageBytesFor(agent.model);
-  const canSeeImage =
-    !!options?.image &&
-    !hasTranscript &&
-    modelSupportsVision(agent.model) &&
-    withinImageLimit;
-  if (options?.image && !hasTranscript && modelSupportsVision(agent.model) && !withinImageLimit) {
-    console.warn(
-      `[assistant] no transcript and image ${imageBytes}B exceeds ${agent.model} limit ` +
-        `(${maxImageBytesFor(agent.model)}B) — answering from the saved file node only`,
-    );
-  }
+  const canSeeImage = decideImageRouting({
+    model: agent.model,
+    hasImage: !!options?.image,
+    imageBytes: options?.image ? base64Bytes(options.image.base64) : 0,
+    hasTranscript: !!options?.imageTranscript?.trim(),
+    logPrefix: '[assistant]',
+  });
   const userImage = canSeeImage ? options!.image : undefined;
 
   // The user's text with the attachment's extracted text / note + node-id
@@ -503,24 +383,6 @@ export async function runAssistantTurn(
     filename: options?.imageFilename,
   });
 
-  const buildMessages = (image: UserImage | undefined, userText: string) =>
-    buildChatMessages({
-      model: agent.model,
-      provider: agent.provider,
-      systemPrompt: effectiveSystemPrompt,
-      volatileContext,
-      personaNotes: ctx.personaNotes,
-      facts: ctx.facts,
-      digests: ctx.digests,
-      corpusMap: ctx.corpusMap,
-      contentHits: ctx.contentHits,
-      chunkHits: ctx.chunkHits,
-      relations: ctx.relations,
-      history: filteredHistory,
-      newUserText: userText,
-      userImage: image,
-    });
-
   // Resolve the chat adapter for this agent's provider. Stored in
   // agents.provider (migration 0048); defaults to 'openrouter' for
   // rows that predate the column.
@@ -531,26 +393,7 @@ export async function runAssistantTurn(
     );
   }
 
-  const params = (agent.params ?? {}) as AgentParams;
-  // Resolve the agent's tool allowlist from its granted tool groups (P6: groups
-  // are the sole grant). Empty result → tool-loop sends no `tools` and the loop
-  // reduces to one LLM call.
-  const groupTools = await resolveAgentToolGroups(ownerId, agent.toolGroupSlugs ?? []);
-  let allowedToolSlugs = effectiveToolSlugs(groupTools);
-  // Heartbeat continuity tools are a per-turn AFFORDANCE (P6), not a stored
-  // grant: inject them only when there's an active heartbeat on this surface
-  // for the model to act on. Mirrors apps/agent/main.ts. See docs/heartbeats.md
-  // §4 "Permission model & runtime hygiene".
-  const hasHeartbeats = await hasActiveHeartbeatsOnSurface(ownerId, { kind: 'web' }).catch(() => false);
-  if (hasHeartbeats) {
-    allowedToolSlugs = [
-      ...allowedToolSlugs,
-      ...HEARTBEAT_RESPONDER_TOOLS.filter((s) => !allowedToolSlugs.includes(s)),
-    ];
-  }
-  const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
-
-  // Wrap the tool loop in a trace so every LLM call + tool dispatch
+  // Wrap the shared loop core in a trace so every LLM call + tool dispatch
   // gets persisted as a step. This is the Layer A treatment for the
   // web /assistant surface — previously turns ran silently and the
   // operator had no way to see whether Saskia actually called a tool
@@ -561,7 +404,8 @@ export async function runAssistantTurn(
   // any subject_id — operators can use it on assistant_messages too,
   // though those rows don't show in /files (different table).
   const runLoop = (
-    messages: ReturnType<typeof buildMessages>,
+    image: UserImage | undefined,
+    userText: string,
     dataExtra: Record<string, unknown> = {},
   ) =>
     startTrace(
@@ -586,104 +430,63 @@ export async function runAssistantTurn(
           ...dataExtra,
         },
       },
-      async () => {
-        // Persist the retrieval snapshot as a 'load_context' step — the same
-        // shape the Telegram responder records — so /debug/context can show
-        // what this turn's question retrieved (items, distances, near-misses).
-        // Context was loaded BEFORE the trace opened (step 1 above: history
-        // must not contain the new turn), so this step only records it.
-        await step(
-          { name: 'load_context', kind: 'compute', input: { agentId: agent.id } },
-          async (h) => {
-            h.setOutput({
-              turnCount: ctx.history.length,
-              factCount: ctx.facts.length,
-              contentHitCount: ctx.contentHits.length,
-              chunkHitCount: ctx.chunkHits.length,
-              relationCount: ctx.relations.length,
-              snapshot: ctx.snapshot,
-            });
-          },
-        );
-        return runToolLoop({
+      () =>
+        runResponderLoop({
+          ownerId,
+          agent,
           adapter: assistantAdapter,
           apiKey,
-          model: agent.model,
-          baseUrl: agent.baseUrl,
-          viaTailnet: agent.viaTailnet,
-          backup: await resolveBackupAdapter(ownerId, agent),
-          params,
-          ownerId,
-          agentId: agent.id,
-          agentSlug: agent.slug,
-          agentDepth: 1,
-          delegateTo: (agent.memoryConfig as { delegate_to?: string[] } | null)?.delegate_to ?? [],
-          resultHandling: agent.memoryConfig?.result_handling ?? null,
-          // Per-user adaptive thinking: gated by the live-thinking switch AND a
-          // positive budget (reuse the already-loaded prefs). 0 ⇒ no thinking.
-          thinkingBudget: resolveThinkingBudget(prefs),
-          // Honor the agent's per-turn iteration override for the TOP-LEVEL
-          // responder turn too (not just delegated children). A heavy
-          // gather-then-author task needs more than the runtime default of 6
-          // rounds or the loop force_finals mid-read and never authors. Clamp
-          // matches invoke-agent: positive ints only, hard-capped at 30.
-          // The tool-volume overrides (max_tool_calls / max_calls_per_tool)
-          // travel raw — runToolLoop validates + clamps them itself.
-          ...(() => {
-            const mc = agent.memoryConfig as {
-              max_iterations?: number;
-              max_tool_calls?: number;
-              max_calls_per_tool?: number;
-            } | null;
-            const requested = mc?.max_iterations;
-            return {
-              ...(typeof requested === 'number' && requested > 0
-                ? { maxIterations: Math.min(30, Math.floor(requested)) }
-                : {}),
-              ...(typeof mc?.max_tool_calls === 'number'
-                ? { maxToolCallsPerTurn: mc.max_tool_calls }
-                : {}),
-              ...(typeof mc?.max_calls_per_tool === 'number'
-                ? { maxCallsPerToolPerTurn: mc.max_calls_per_tool }
-                : {}),
-            };
-          })(),
-          initialMessages: messages,
-          tools: allowedTools,
+          prefs,
+          logPrefix: '[assistant]',
+          assembled,
+          // Context was loaded BEFORE the trace opened (step 1 above: history
+          // must not contain the new turn) — the core's load_context step
+          // just records the snapshot for /debug/context.
+          loadContext: async () => ctx,
+          buildMessages: (c) =>
+            buildChatMessages({
+              model: agent.model,
+              provider: agent.provider,
+              systemPrompt: effectiveSystemPrompt,
+              volatileContext,
+              personaNotes: c.personaNotes,
+              facts: c.facts,
+              digests: c.digests,
+              corpusMap: c.corpusMap,
+              contentHits: c.contentHits,
+              chunkHits: c.chunkHits,
+              relations: c.relations,
+              history: filteredHistory,
+              newUserText: userText,
+              userImage: image,
+            }),
           // /assistant has no outbound channel beyond the reply stream
           // itself — tools that want to "send a voice note" or similar
           // refuse here with a clean error so the LLM falls back to text.
           surface: { kind: 'web' },
-        });
-      },
+          abortSignal: abortController?.signal ?? null,
+        }),
     );
 
-  // Run the turn. When we attached a raw image and the responder errors —
-  // e.g. Bedrock's "Could not process image" surfacing as the SDK's
-  // ResponseValidationError — retry once WITHOUT the image, grounded in the
-  // vision-worker transcript instead, so a turn never hard-fails on a
-  // picture. The failed first attempt stays its own 'error' trace; the
-  // retry is a separate 'success' trace flagged image_retry_after_error.
-  let loopOutcome: Awaited<ReturnType<typeof runLoop>>;
+  // Run the turn via the shared image-fallback wrapper: when we attached a
+  // raw image and the responder errors — e.g. Bedrock's "Could not process
+  // image" surfacing as the SDK's ResponseValidationError — retry once
+  // WITHOUT the image, grounded in the vision-worker transcript instead, so a
+  // turn never hard-fails on a picture. The failed first attempt stays its
+  // own 'error' trace; the retry is a separate 'success' trace flagged
+  // image_retry_after_error.
+  let outcome: ResponderLoopResult;
   try {
-    if (canSeeImage) {
-      try {
-        loopOutcome = await runLoop(buildMessages(userImage, trimmed), { image_attached: true });
-      } catch (err) {
-        console.warn(
-          '[assistant] responder failed with image attached; retrying text-only:',
-          err instanceof Error ? err.message : err,
-        );
-        loopOutcome = await runLoop(buildMessages(undefined, textWithTranscript), {
+    outcome = await runWithImageFallback({
+      canSeeImage,
+      logPrefix: '[assistant]',
+      withImage: () => runLoop(userImage, trimmed, { image_attached: true }),
+      textOnly: (retryAfterImageError) =>
+        runLoop(undefined, textWithTranscript, {
           image_attached: false,
-          image_retry_after_error: true,
-        });
-      }
-    } else {
-      loopOutcome = await runLoop(buildMessages(undefined, textWithTranscript), {
-        image_attached: false,
-      });
-    }
+          ...(retryAfterImageError ? { image_retry_after_error: true } : {}),
+        }),
+    });
   } catch (err) {
     // A user Stop normally surfaces gracefully (the streaming adapter returns its
     // partial reply → the success path), but the one-shot/backup path can throw
@@ -691,9 +494,14 @@ export async function runAssistantTurn(
     // failure: synthesize an empty outcome and let the success path finalize the
     // (possibly partial-less) turn 'complete'.
     if (abortController?.signal.aborted) {
-      loopOutcome = { reply: '', artifacts: [], iterations: 0, toolCalls: [], tokensOut: 0 } as unknown as Awaited<
-        ReturnType<typeof runLoop>
-      >;
+      outcome = {
+        loop: emptyLoopResult(),
+        reply: '',
+        emptyReplySubstituted: false,
+        persistedThoughts: [],
+        toolStats: null,
+        ctx,
+      };
     } else {
       // Real failure: flip the pending outbound row to 'failed' so the durable
       // record + a reload + the non-blocking client all reflect it, emit the
@@ -715,47 +523,18 @@ export async function runAssistantTurn(
       throw err;
     }
   }
-  // A user Stop ends the turn with whatever partial reply streamed (often empty).
-  const stopped = abortController?.signal.aborted === true;
-  let rawReply = loopOutcome.reply;
-  if (!stopped && !rawReply.trim()) {
-    // The tool loop already retried an empty final response once (see
-    // retryEmptyReply in tool-loop.ts). Double-empty is rare enough that
-    // failing the whole turn (a 500 after the inbound row persisted) is
-    // worse than an honest fallback the user can react to.
-    console.error(
-      `[assistant] empty reply from model after retry (agent ${agent.slug}, ` +
-        `${loopOutcome.iterations} iterations, ${loopOutcome.toolCalls.length} tool calls) — ` +
-        'substituting fallback reply',
-    );
-    rawReply =
-      "Sorry — I gathered some information but couldn't compose a final answer " +
-      '(the model returned an empty response twice). Please ask that again, ' +
-      'perhaps more narrowly.';
-  }
-  // Defensive strip — the web /assistant is text-only today, so any
-  // audio tags Saskia emits (because she carried the habit over from
-  // her Telegram persona) would render as literal brackets in the
-  // chat bubble. If we ever add web TTS playback, this is the
-  // branch point where voice-mode reply would skip the strip.
-  const reply = stripAudioTags(rawReply).text;
+  // The core already applied the empty-reply fallback (a user Stop keeps its
+  // partial reply — see runResponderLoop) and computed the thought trail +
+  // tool-outcome ledger. Defensive strip — the web /assistant is text-only
+  // today, so any audio tags Saskia emits (because she carried the habit over
+  // from her Telegram persona) would render as literal brackets in the chat
+  // bubble. If we ever add web TTS playback, this is the branch point where
+  // voice-mode reply would skip the strip.
+  const reply = stripAudioTags(outcome.reply).text;
 
   // Finalize the pending outbound row: fill the composed reply + flip the status
   // to 'complete'. Journaled, so a crash-resume re-applies it idempotently.
-  // Persist the thought trail (grounded action labels rebuilt from this turn's
-  // tool calls) onto the row so the record survives a reload — only when the
-  // brain has live streaming AND persistence on (Settings → Profile). A turn
-  // with no recognised actions persists nothing (no empty record).
-  const persistedThoughts =
-    isStreamThoughtsEnabled(prefs) && isPersistThoughtsEnabled(prefs)
-      ? buildPersistedTrail(loopOutcome.toolCalls)
-      : [];
-  // Deterministic tool-outcome ledger for the turn — persisted whenever any
-  // tool ran, independent of the thoughts-persistence preference: it's what
-  // the UI footer shows so "12 calls, 2 failed" is the runtime's account,
-  // not the reply's.
-  const toolStats =
-    loopOutcome.toolCalls.length > 0 ? summarizeToolOutcomes(loopOutcome.toolCalls) : null;
+  const { persistedThoughts, toolStats } = outcome;
   const finalized = await runDurableStep('finalize_outbound', () =>
     updateAssistantMessageOutcome({
       ownerId,
@@ -770,8 +549,12 @@ export async function runAssistantTurn(
   // The row was inserted this same turn, so it should always still be there;
   // fall back to the pending row with the reply folded in if it somehow vanished
   // (e.g. a concurrent delete) so the turn still returns a coherent result.
-  const outbound: AssistantMessage =
-    finalized ?? { ...outboundPending, text: reply, model: agent.model, status: 'complete' };
+  const outbound: AssistantMessage = finalized ?? {
+    ...outboundPending,
+    text: reply,
+    model: agent.model,
+    status: 'complete',
+  };
 
   void db
     .update(agents)
@@ -793,9 +576,9 @@ export async function runAssistantTurn(
       outboundId: outboundPending.id,
       // Real output-token total for the turn — the client swaps its streamed
       // estimate for this once `done` lands (0 when no provider reported usage).
-      tokensOut: loopOutcome.tokensOut,
+      tokensOut: outcome.loop.tokensOut,
     });
   }
 
-  return { inbound, outbound, reply, artifacts: loopOutcome.artifacts };
+  return { inbound, outbound, reply, artifacts: outcome.loop.artifacts };
 }

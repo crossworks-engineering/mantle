@@ -15,8 +15,13 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
  * here when the user (or an explicitly-authorised AI call) opens it.
  */
 export const secrets = pgTable('secrets', {
-  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  nodeId: uuid('node_id').notNull().unique().references(() => nodes.id, { onDelete: 'cascade' }),
+  id: uuid('id')
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  nodeId: uuid('node_id')
+    .notNull()
+    .unique()
+    .references(() => nodes.id, { onDelete: 'cascade' }),
   ciphertext: bytea('ciphertext').notNull(),
   keyVersion: integer('key_version').default(1).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

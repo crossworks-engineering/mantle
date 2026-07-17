@@ -1,4 +1,4 @@
-import * as React from "react";
+import * as React from 'react';
 import {
   AlertCircle,
   Archive,
@@ -11,20 +11,20 @@ import {
   ShoppingCart,
   Trash2,
   Users2,
-} from "lucide-react";
+} from 'lucide-react';
 
-import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { AccountSwitcher } from "@/components/examples/mail/components/account-switcher";
-import { MailDisplay } from "@/components/examples/mail/components/mail-display";
-import { MailList } from "@/components/examples/mail/components/mail-list";
-import { Nav } from "@/components/examples/mail/components/nav";
-import { type Mail } from "@/components/examples/mail/data";
-import { useMail } from "@/components/examples/mail/use-mail";
+import { cn } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { AccountSwitcher } from '@/components/examples/mail/components/account-switcher';
+import { MailDisplay } from '@/components/examples/mail/components/mail-display';
+import { MailList } from '@/components/examples/mail/components/mail-list';
+import { Nav } from '@/components/examples/mail/components/nav';
+import { type Mail } from '@/components/examples/mail/data';
+import { useMail } from '@/components/examples/mail/use-mail';
 
 interface MailProps {
   accounts: {
@@ -68,13 +68,10 @@ export function Mail({
             setIsCollapsed(collapsed);
             document.cookie = `react-resizable-panels:collapsed=${JSON.stringify(collapsed)}`;
           }}
-          className={cn(isCollapsed && "min-w-[50px] transition-all duration-300 ease-in-out")}
+          className={cn(isCollapsed && 'min-w-[50px] transition-all duration-300 ease-in-out')}
         >
           <div
-            className={cn(
-              "flex items-center justify-center px-2 py-1.5",
-              isCollapsed && "px-0"
-            )}
+            className={cn('flex items-center justify-center px-2 py-1.5', isCollapsed && 'px-0')}
           >
             <AccountSwitcher isCollapsed={isCollapsed} accounts={accounts} />
           </div>
@@ -83,40 +80,40 @@ export function Mail({
             isCollapsed={isCollapsed}
             links={[
               {
-                title: "Inbox",
-                label: "128",
+                title: 'Inbox',
+                label: '128',
                 icon: Inbox,
-                variant: "default",
+                variant: 'default',
               },
               {
-                title: "Drafts",
-                label: "9",
+                title: 'Drafts',
+                label: '9',
                 icon: File,
-                variant: "ghost",
+                variant: 'ghost',
               },
               {
-                title: "Sent",
-                label: "",
+                title: 'Sent',
+                label: '',
                 icon: Send,
-                variant: "ghost",
+                variant: 'ghost',
               },
               {
-                title: "Junk",
-                label: "23",
+                title: 'Junk',
+                label: '23',
                 icon: ArchiveX,
-                variant: "ghost",
+                variant: 'ghost',
               },
               {
-                title: "Trash",
-                label: "",
+                title: 'Trash',
+                label: '',
                 icon: Trash2,
-                variant: "ghost",
+                variant: 'ghost',
               },
               {
-                title: "Archive",
-                label: "",
+                title: 'Archive',
+                label: '',
                 icon: Archive,
-                variant: "ghost",
+                variant: 'ghost',
               },
             ]}
           />
@@ -125,34 +122,34 @@ export function Mail({
             isCollapsed={isCollapsed}
             links={[
               {
-                title: "Social",
-                label: "972",
+                title: 'Social',
+                label: '972',
                 icon: Users2,
-                variant: "ghost",
+                variant: 'ghost',
               },
               {
-                title: "Updates",
-                label: "342",
+                title: 'Updates',
+                label: '342',
                 icon: AlertCircle,
-                variant: "ghost",
+                variant: 'ghost',
               },
               {
-                title: "Forums",
-                label: "128",
+                title: 'Forums',
+                label: '128',
                 icon: MessagesSquare,
-                variant: "ghost",
+                variant: 'ghost',
               },
               {
-                title: "Shopping",
-                label: "8",
+                title: 'Shopping',
+                label: '8',
                 icon: ShoppingCart,
-                variant: "ghost",
+                variant: 'ghost',
               },
               {
-                title: "Promotions",
-                label: "21",
+                title: 'Promotions',
+                label: '21',
                 icon: Archive,
-                variant: "ghost",
+                variant: 'ghost',
               },
             ]}
           />

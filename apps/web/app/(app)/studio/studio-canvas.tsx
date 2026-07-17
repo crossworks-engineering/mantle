@@ -166,8 +166,7 @@ function buildFlow(
 ): { nodes: Node[]; edges: Edge[] } {
   // The star centre: every edge studio-view feeds originates from the focused
   // agent. Fall back to the first agent node for the edgeless case.
-  const mainId =
-    studioEdges[0]?.source ?? studioNodes.find((n) => n.kind === 'agent')?.id ?? null;
+  const mainId = studioEdges[0]?.source ?? studioNodes.find((n) => n.kind === 'agent')?.id ?? null;
 
   const roleByNode = new Map<string, StarRole>();
   for (const n of studioNodes) {
@@ -221,7 +220,12 @@ function buildFlow(
         height: NODE_H,
         borderRadius: 10,
         border: `1px solid ${unhealthy ? 'var(--destructive)' : 'var(--border)'}`,
-        background: n.kind === 'agent' ? 'var(--card)' : n.kind === 'group' ? 'var(--accent)' : 'var(--muted)',
+        background:
+          n.kind === 'agent'
+            ? 'var(--card)'
+            : n.kind === 'group'
+              ? 'var(--accent)'
+              : 'var(--muted)',
         color: 'var(--card-foreground)',
         padding: 0,
         opacity: n.enabled ? 1 : 0.55,

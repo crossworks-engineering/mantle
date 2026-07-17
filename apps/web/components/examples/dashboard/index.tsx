@@ -1,15 +1,15 @@
-"use client";
+'use client';
 
-import { AppSidebar } from "@/components/examples/dashboard/components/app-sidebar";
-import { ChartAreaInteractive } from "@/components/examples/dashboard/components/chart-area-interactive";
-import { DataTable } from "@/components/examples/dashboard/components/data-table";
-import { SectionCards } from "@/components/examples/dashboard/components/section-cards";
-import { SiteHeader } from "@/components/examples/dashboard/components/site-header";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { ChartBarMixed } from "./components/chart-bar-mixed";
-import { ChartPieDonut } from "./components/chart-pie-donut";
+import { AppSidebar } from '@/components/examples/dashboard/components/app-sidebar';
+import { ChartAreaInteractive } from '@/components/examples/dashboard/components/chart-area-interactive';
+import { DataTable } from '@/components/examples/dashboard/components/data-table';
+import { SectionCards } from '@/components/examples/dashboard/components/section-cards';
+import { SiteHeader } from '@/components/examples/dashboard/components/site-header';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { ChartBarMixed } from './components/chart-bar-mixed';
+import { ChartPieDonut } from './components/chart-pie-donut';
 
-import data from "./data.json";
+import data from './data.json';
 
 export default function Dashboard() {
   return (

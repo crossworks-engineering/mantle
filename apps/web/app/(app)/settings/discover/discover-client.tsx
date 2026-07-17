@@ -45,7 +45,9 @@ export function DiscoverClient() {
   const scanQuery = useQuery({
     queryKey: ['email', 'discover'],
     queryFn: () =>
-      apiFetch<{ ok: true; senders: UnknownSender[] }>('/api/email/discover').then((r) => r.senders),
+      apiFetch<{ ok: true; senders: UnknownSender[] }>('/api/email/discover').then(
+        (r) => r.senders,
+      ),
     enabled: hasAccounts,
     // A live IMAP read — don't auto-refetch on focus/remount.
     staleTime: Infinity,

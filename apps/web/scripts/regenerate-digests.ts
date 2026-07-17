@@ -56,9 +56,7 @@ async function main() {
   }
   const adapter = getChatAdapter(worker.provider);
   if (!adapter) {
-    console.error(
-      `regenerate-digests: no chat adapter for provider '${worker.provider}'`,
-    );
+    console.error(`regenerate-digests: no chat adapter for provider '${worker.provider}'`);
     process.exit(1);
   }
 

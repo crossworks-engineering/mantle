@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
 
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState<boolean | null>(null);
@@ -12,8 +12,8 @@ const useMediaQuery = (query: string) => {
 
     const listener = () => setMatches(media.matches);
 
-    window.addEventListener("resize", listener);
-    return () => window.removeEventListener("resize", listener);
+    window.addEventListener('resize', listener);
+    return () => window.removeEventListener('resize', listener);
   }, [query, matches]);
 
   return matches;

@@ -23,9 +23,7 @@
 import type { AudioTag, WrappingTag } from './adapters/types';
 
 /** Group a tag list by its `category`, preserving first-seen order. */
-function groupByCategory<T extends { category?: string }>(
-  tags: readonly T[],
-): Map<string, T[]> {
+function groupByCategory<T extends { category?: string }>(tags: readonly T[]): Map<string, T[]> {
   const byCategory = new Map<string, T[]>();
   for (const t of tags) {
     const cat = t.category ?? 'other';
@@ -67,9 +65,7 @@ export function composeAudioTagInstructions(
 
   const wrappingSections: string[] = [];
   for (const [cat, list] of groupByCategory(wrapping)) {
-    const items = list
-      .map((t) => `  <${t.name}>…</${t.name}> — ${t.description}`)
-      .join('\n');
+    const items = list.map((t) => `  <${t.name}>…</${t.name}> — ${t.description}`).join('\n');
     wrappingSections.push(`${cat}:\n${items}`);
   }
 
@@ -179,10 +175,7 @@ export function stripAudioTags(text: string): { text: string; stripped: number }
 
   // Wrapping `<name>` / `</name>` for the known speech-style names.
   // Case-insensitive; removes the markers, keeps the inner text.
-  const wrappingPattern = new RegExp(
-    `</?(?:${WRAPPING_TAG_NAMES.join('|')})\\s*>`,
-    'gi',
-  );
+  const wrappingPattern = new RegExp(`</?(?:${WRAPPING_TAG_NAMES.join('|')})\\s*>`, 'gi');
   cleaned = cleaned.replace(wrappingPattern, () => {
     stripped++;
     return '';
@@ -190,6 +183,9 @@ export function stripAudioTags(text: string): { text: string; stripped: number }
 
   // Collapse runs of whitespace introduced by the strip, then trim
   // leading/trailing space without losing inline structure.
-  const tidied = cleaned.replace(/[ \t]+/g, ' ').replace(/ ?\n ?/g, '\n').trim();
+  const tidied = cleaned
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ ?\n ?/g, '\n')
+    .trim();
   return { text: tidied, stripped };
 }

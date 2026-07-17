@@ -8,11 +8,7 @@ import { requireOwner } from '@/lib/auth';
  * (`/api/notes/[id]`) and shows a not-found state if it's gone — no SSR DB read
  * needed here (Phase 2 · Task 4).
  */
-export default async function NoteDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function NoteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireOwner();
   const { id } = await params;
   redirect(`/notes?selected=${id}&edit=1`);

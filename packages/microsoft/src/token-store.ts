@@ -78,7 +78,10 @@ export async function upsertAccountFromTokens(args: {
  *
  * Returns null if the account is missing, disabled, or has no tokens yet.
  */
-export async function getValidAccessToken(userId: string, accountId: string): Promise<string | null> {
+export async function getValidAccessToken(
+  userId: string,
+  accountId: string,
+): Promise<string | null> {
   const [row] = await db
     .select()
     .from(msAccounts)
@@ -124,7 +127,10 @@ export async function getValidAccessToken(userId: string, accountId: string): Pr
       // caller (and pg-boss, once M1 lands) sees it.
       await tx
         .update(msAccounts)
-        .set({ lastSyncError: `token refresh failed: ${(err as Error).message}`.slice(0, 500), updatedAt: new Date() })
+        .set({
+          lastSyncError: `token refresh failed: ${(err as Error).message}`.slice(0, 500),
+          updatedAt: new Date(),
+        })
         .where(eq(msAccounts.id, locked.id));
       throw err;
     }

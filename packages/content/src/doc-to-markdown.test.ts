@@ -77,7 +77,9 @@ describe('docToMarkdown — round-trip stability', () => {
   });
 
   it('highlight and themed colour spans', () => {
-    roundTrips('Plain ==highlight== then [coloured]{color=chart-2} and [both]{color=chart-1 highlight=chart-3}.');
+    roundTrips(
+      'Plain ==highlight== then [coloured]{color=chart-2} and [both]{color=chart-1 highlight=chart-3}.',
+    );
   });
 
   it('bullet, ordered, and task lists (incl. nesting)', () => {
@@ -93,7 +95,9 @@ describe('docToMarkdown — round-trip stability', () => {
   });
 
   it('callouts and asides', () => {
-    roundTrips(':::info\nHeads up — something to note.\n:::\n\n:::aside chart-3\nA themed aside.\n:::');
+    roundTrips(
+      ':::info\nHeads up — something to note.\n:::\n\n:::aside chart-3\nA themed aside.\n:::',
+    );
   });
 
   it('columns', () => {

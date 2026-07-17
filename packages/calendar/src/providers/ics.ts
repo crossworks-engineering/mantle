@@ -97,7 +97,12 @@ export const icsProvider: CalendarProvider = {
       if (events.length >= MAX_TOTAL_EVENTS) break;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ev: any = new ICAL.Event(ve);
-      const cancelled = String((ve as any).getFirstPropertyValue?.('status') ?? '').toUpperCase() === 'CANCELLED';
+      const cancelled =
+        String(
+          (ve as { getFirstPropertyValue?: (name: string) => unknown }).getFirstPropertyValue?.(
+            'status',
+          ) ?? '',
+        ).toUpperCase() === 'CANCELLED';
       const baseUid = String(ev.uid ?? '').trim();
       if (!baseUid) continue;
 
@@ -110,7 +115,13 @@ export const icsProvider: CalendarProvider = {
           if (startMs > windowEnd) break;
           if (startMs >= windowStart) {
             const det = ev.getOccurrenceDetails(next);
-            const mapped = mapOne(`${baseUid}:${toIso(det.startDate)}`, det.startDate, det.endDate, ev, cancelled);
+            const mapped = mapOne(
+              `${baseUid}:${toIso(det.startDate)}`,
+              det.startDate,
+              det.endDate,
+              ev,
+              cancelled,
+            );
             if (mapped) events.push(mapped);
             count++;
           }

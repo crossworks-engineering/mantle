@@ -27,7 +27,9 @@ import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
  */
 export const oauthClients = pgTable('oauth_clients', {
   /** The `client_id` returned to the client. */
-  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  id: uuid('id')
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
   /** `client_name` from the registration request (e.g. "Claude"). */
   clientName: text('client_name'),
   /** Exact redirect URIs the client registered; the authorize/token endpoints
@@ -44,7 +46,9 @@ export const oauthClients = pgTable('oauth_clients', {
 export const oauthAuthCodes = pgTable(
   'oauth_auth_codes',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     /** SHA-256 of the code handed to the client. */
     codeHash: text('code_hash').notNull().unique(),
     clientId: uuid('client_id').notNull(),
@@ -71,7 +75,9 @@ export const oauthAuthCodes = pgTable(
 export const oauthAccessTokens = pgTable(
   'oauth_access_tokens',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     /** SHA-256 of the bearer access token. */
     tokenHash: text('token_hash').notNull().unique(),
     /** SHA-256 of the refresh token, rotated on each use; null if none issued. */

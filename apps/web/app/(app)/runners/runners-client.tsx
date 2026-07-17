@@ -46,7 +46,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { copyText } from '@/lib/secure-context-fallbacks';
 
-const PAGE_SIZE = 50;
 const HOURS_OPTIONS: Array<[number, string]> = [
   [1, '1h'],
   [6, '6h'],
@@ -83,9 +82,10 @@ export function RunnersClient({
   const qc = useQueryClient();
   const toast = useToast();
   const [forkOpen, setForkOpen] = useState(false);
-  const [confirm, setConfirm] = useState<{ action: Exclude<RunnerAction, 'fork'>; run: RunnerRun } | null>(
-    null,
-  );
+  const [confirm, setConfirm] = useState<{
+    action: Exclude<RunnerAction, 'fork'>;
+    run: RunnerRun;
+  } | null>(null);
   const hasFilters = statuses.length > 0 || !!name || hours !== 0;
 
   const listQuery = useQuery({
@@ -116,7 +116,8 @@ export function RunnersClient({
     queryKey: ['runner', selectedId],
     queryFn: () => apiFetch<{ run: RunnerRunDetail }>(`/api/runners/${selectedId}`),
     enabled: !!selectedId,
-    refetchInterval: (q) => (q.state.data && isRunnerActive(q.state.data.run.status) ? 3000 : false),
+    refetchInterval: (q) =>
+      q.state.data && isRunnerActive(q.state.data.run.status) ? 3000 : false,
   });
   const detail = detailQuery.data?.run ?? null;
 
@@ -182,7 +183,11 @@ export function RunnersClient({
       <div className="shrink-0 space-y-2 border-b border-border p-3">
         <FilterRow label="Status">
           {RUNNER_STATUSES.map((s) => (
-            <FilterChip key={s} href={href({ statuses: toggle(statuses, s), page: 1 })} active={statuses.includes(s)}>
+            <FilterChip
+              key={s}
+              href={href({ statuses: toggle(statuses, s), page: 1 })}
+              active={statuses.includes(s)}
+            >
               {runnerStatusLabel(s)}
             </FilterChip>
           ))}
@@ -203,7 +208,11 @@ export function RunnersClient({
           )}
           <FilterRow label="Window">
             {HOURS_OPTIONS.map(([value, label]) => (
-              <FilterChip key={value} href={href({ hours: value, page: 1 })} active={hours === value}>
+              <FilterChip
+                key={value}
+                href={href({ hours: value, page: 1 })}
+                active={hours === value}
+              >
                 {label}
               </FilterChip>
             ))}
@@ -244,9 +253,17 @@ export function RunnersClient({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <span className={cn('size-2 shrink-0 rounded-full', runnerStatusDot(r.status))} aria-hidden />
+                      <span
+                        className={cn('size-2 shrink-0 rounded-full', runnerStatusDot(r.status))}
+                        aria-hidden
+                      />
                       <span className="truncate text-sm font-medium">{r.name}</span>
-                      <span className={cn('shrink-0 text-[10px] uppercase tracking-wider', runnerStatusText(r.status))}>
+                      <span
+                        className={cn(
+                          'shrink-0 text-[10px] uppercase tracking-wider',
+                          runnerStatusText(r.status),
+                        )}
+                      >
                         {runnerStatusLabel(r.status)}
                       </span>
                     </div>
@@ -259,10 +276,14 @@ export function RunnersClient({
                     <span>queued {formatDuration(r.queuedMs ?? null)}</span>
                     {r.queue && <span>{r.queue}</span>}
                     {(r.recoveryAttempts ?? 0) > 1 && (
-                      <span className="text-amber-700 dark:text-amber-300">↻ {r.recoveryAttempts}</span>
+                      <span className="text-amber-700 dark:text-amber-300">
+                        ↻ {r.recoveryAttempts}
+                      </span>
                     )}
                   </div>
-                  {r.error && <div className="mt-0.5 truncate text-xs text-destructive">{r.error}</div>}
+                  {r.error && (
+                    <div className="mt-0.5 truncate text-xs text-destructive">{r.error}</div>
+                  )}
                 </Link>
               ))
             )}
@@ -274,7 +295,11 @@ export function RunnersClient({
               <PagerLink href={href({ page: page - 1 })} disabled={page <= 1} label="Previous page">
                 <ChevronLeft />
               </PagerLink>
-              <PagerLink href={href({ page: page + 1 })} disabled={!listQuery.data?.hasMore} label="Next page">
+              <PagerLink
+                href={href({ page: page + 1 })}
+                disabled={!listQuery.data?.hasMore}
+                label="Next page"
+              >
                 <ChevronRight />
               </PagerLink>
             </div>
@@ -312,15 +337,24 @@ export function RunnersClient({
       <AlertDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{confirm ? RUNNER_ACTION_LABEL[confirm.action] : ''} this run?</AlertDialogTitle>
-            <AlertDialogDescription>{confirm && confirmCopy(confirm.action)}</AlertDialogDescription>
+            <AlertDialogTitle>
+              {confirm ? RUNNER_ACTION_LABEL[confirm.action] : ''} this run?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirm && confirmCopy(confirm.action)}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep as is</AlertDialogCancel>
             <AlertDialogAction
-              className={confirm?.action === 'cancel' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : ''}
+              className={
+                confirm?.action === 'cancel'
+                  ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                  : ''
+              }
               onClick={() => {
-                if (confirm) actionMutation.mutate({ id: confirm.run.workflowID, action: confirm.action });
+                if (confirm)
+                  actionMutation.mutate({ id: confirm.run.workflowID, action: confirm.action });
                 setConfirm(null);
               }}
             >
@@ -362,13 +396,18 @@ function QueueHealth({ queue, loading }: { queue?: RunnerQueueHealth; loading: b
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
       <span className="flex items-center gap-1.5 font-medium">
-        <span className={cn('size-2 rounded-full', busy ? 'bg-amber-500' : 'bg-emerald-500')} aria-hidden />
+        <span
+          className={cn('size-2 rounded-full', busy ? 'bg-amber-500' : 'bg-emerald-500')}
+          aria-hidden
+        />
         Queue <span className="font-mono text-muted-foreground">{queue.name}</span>
       </span>
       <Stat label="running" value={queue.pending} highlight={queue.pending > 0} />
       <Stat label="queued" value={queue.enqueued} highlight={queue.enqueued > 0} />
       {queue.concurrency != null && <Stat label="concurrency" value={queue.concurrency} />}
-      {queue.workerConcurrency != null && <Stat label="per-worker" value={queue.workerConcurrency} />}
+      {queue.workerConcurrency != null && (
+        <Stat label="per-worker" value={queue.workerConcurrency} />
+      )}
       {queue.rateLimit && (
         <span className="text-muted-foreground">
           rate {queue.rateLimit.limitPerPeriod}/{queue.rateLimit.periodSec}s
@@ -381,7 +420,12 @@ function QueueHealth({ queue, loading }: { queue?: RunnerQueueHealth; loading: b
 function Stat({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
   return (
     <span className="flex items-baseline gap-1 tabular-nums">
-      <span className={cn('font-semibold', highlight ? 'text-amber-700 dark:text-amber-300' : 'text-foreground')}>
+      <span
+        className={cn(
+          'font-semibold',
+          highlight ? 'text-amber-700 dark:text-amber-300' : 'text-foreground',
+        )}
+      >
         {value}
       </span>
       <span className="text-muted-foreground">{label}</span>
@@ -451,20 +495,30 @@ function RunDetail({
       {/* Timing + meta */}
       <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
         <Field label="Enqueued" value={formatDateTime(new Date(run.createdAt).toISOString())} />
-        <Field label="Started" value={run.dequeuedAt ? formatDateTime(new Date(run.dequeuedAt).toISOString()) : '—'} />
-        <Field label="Completed" value={run.completedAt ? formatDateTime(new Date(run.completedAt).toISOString()) : '—'} />
+        <Field
+          label="Started"
+          value={run.dequeuedAt ? formatDateTime(new Date(run.dequeuedAt).toISOString()) : '—'}
+        />
+        <Field
+          label="Completed"
+          value={run.completedAt ? formatDateTime(new Date(run.completedAt).toISOString()) : '—'}
+        />
         <Field label="Run time" value={formatDuration(run.runMs ?? null)} />
         <Field label="Queue wait" value={formatDuration(run.queuedMs ?? null)} />
         <Field label="End-to-end" value={formatDuration(run.totalMs ?? null)} />
         {run.queue && <Field label="Queue" value={run.queue} mono />}
         {run.executorId && <Field label="Executor" value={run.executorId} mono />}
         {run.appVersion && <Field label="App version" value={run.appVersion} mono />}
-        {(run.recoveryAttempts ?? 0) > 0 && <Field label="Recovery attempts" value={String(run.recoveryAttempts)} />}
+        {(run.recoveryAttempts ?? 0) > 0 && (
+          <Field label="Recovery attempts" value={String(run.recoveryAttempts)} />
+        )}
       </dl>
 
       {/* Steps */}
       <section>
-        <h3 className="mb-2 text-sm font-semibold">Steps {run.steps.length > 0 && `(${run.steps.length})`}</h3>
+        <h3 className="mb-2 text-sm font-semibold">
+          Steps {run.steps.length > 0 && `(${run.steps.length})`}
+        </h3>
         {run.steps.length === 0 ? (
           <p className="text-sm text-muted-foreground">No journaled steps yet.</p>
         ) : (
@@ -477,10 +531,18 @@ function RunDetail({
                   s.error && 'border-destructive/40',
                 )}
               >
-                <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">{s.functionID}</span>
+                <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">
+                  {s.functionID}
+                </span>
                 <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
-                {s.childWorkflowID && <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">child</span>}
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatDuration(s.durationMs ?? null)}</span>
+                {s.childWorkflowID && (
+                  <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    child
+                  </span>
+                )}
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {formatDuration(s.durationMs ?? null)}
+                </span>
                 {s.error && <span className="shrink-0 text-xs text-destructive">error</span>}
               </li>
             ))}
@@ -507,7 +569,9 @@ function Field({ label, value, mono }: { label: string; value: string; mono?: bo
 function Payload({ label, body }: { label: string; body: string }) {
   return (
     <details className="rounded-md border border-border bg-muted/30">
-      <summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold">{label}</summary>
+      <summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold">
+        {label}
+      </summary>
       <pre className="overflow-x-auto px-3 pb-3 text-xs scrollbar-thin">{body}</pre>
     </details>
   );
@@ -534,8 +598,8 @@ function ForkDialog({
         <DialogHeader>
           <DialogTitle>Fork from a step</DialogTitle>
           <DialogDescription>
-            Creates a new run (new workflow id) that replays this run&apos;s completed steps up to the chosen step,
-            then re-executes from there. The original run is untouched.
+            Creates a new run (new workflow id) that replays this run&apos;s completed steps up to
+            the chosen step, then re-executes from there. The original run is untouched.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
@@ -583,19 +647,33 @@ function Empty({ children }: { children: React.ReactNode }) {
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
-  return <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">{children}</div>;
-}
-
-function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="w-14 shrink-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
+    <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
       {children}
     </div>
   );
 }
 
-function FilterChip({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
+function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="w-14 shrink-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function FilterChip({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <Link
       href={href}
@@ -624,7 +702,14 @@ function PagerLink({
 }) {
   if (disabled) {
     return (
-      <Button type="button" size="icon" variant="outline" className="size-7" disabled aria-label={label}>
+      <Button
+        type="button"
+        size="icon"
+        variant="outline"
+        className="size-7"
+        disabled
+        aria-label={label}
+      >
         {children}
       </Button>
     );

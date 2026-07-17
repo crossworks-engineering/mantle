@@ -73,7 +73,8 @@ export function NotesClient() {
   const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
   const query = searchParams.get('q')?.trim() ?? '';
   const activeTag = searchParams.get('tag')?.trim() || null;
-  const showDigests = searchParams.get('digests') === '1' || (!!activeTag && isDigestTag(activeTag));
+  const showDigests =
+    searchParams.get('digests') === '1' || (!!activeTag && isDigestTag(activeTag));
 
   const listQuery = useQuery({
     queryKey: ['notes', { q: query, tag: activeTag, digests: showDigests, page }],
@@ -89,10 +90,10 @@ export function NotesClient() {
     placeholderData: (prev) => prev,
   });
 
-  const notes = listQuery.data?.notes ?? [];
+  const notes = useMemo(() => listQuery.data?.notes ?? [], [listQuery.data?.notes]);
   const total = listQuery.data?.total ?? 0;
   const pageSize = listQuery.data?.pageSize ?? 50;
-  const tags = listQuery.data?.tags ?? [];
+  const tags = useMemo(() => listQuery.data?.tags ?? [], [listQuery.data?.tags]);
 
   // Selection + edit mode seed from the URL (a `/notes/[id]` deep-link redirects
   // to `?selected=&edit=1`), then live as local state.
@@ -105,8 +106,7 @@ export function NotesClient() {
   // right pane can open it even when it's not in `notes`.
   const selectedNoteQuery = useQuery({
     queryKey: ['notes', selectedId],
-    queryFn: () =>
-      apiFetch<{ note: NoteRow }>(`/api/notes/${selectedId}`).then((r) => r.note),
+    queryFn: () => apiFetch<{ note: NoteRow }>(`/api/notes/${selectedId}`).then((r) => r.note),
     enabled: !!selectedId && !notes.some((n) => n.id === selectedId),
   });
   const [creating, setCreating] = useState(false);
@@ -246,7 +246,8 @@ export function NotesClient() {
     const s = params.toString();
     return s ? `${pathname}?${s}` : pathname;
   };
-  const go = (over: Parameters<typeof buildHref>[0]) => startNav(() => router.push(buildHref(over)));
+  const go = (over: Parameters<typeof buildHref>[0]) =>
+    startNav(() => router.push(buildHref(over)));
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -373,7 +374,10 @@ export function NotesClient() {
             <Button
               size="sm"
               variant={showDigests ? 'default' : 'outline'}
-              className={cn('h-7 shrink-0 rounded-full px-3', !showDigests && 'text-muted-foreground')}
+              className={cn(
+                'h-7 shrink-0 rounded-full px-3',
+                !showDigests && 'text-muted-foreground',
+              )}
               onClick={() =>
                 go({
                   digests: !showDigests,
@@ -383,7 +387,9 @@ export function NotesClient() {
                   ...(showDigests && activeTag && isDigestTag(activeTag) ? { tag: null } : {}),
                 })
               }
-              title={showDigests ? 'Hide agent conversation digests' : 'Show agent conversation digests'}
+              title={
+                showDigests ? 'Hide agent conversation digests' : 'Show agent conversation digests'
+              }
             >
               <Sparkles /> Digests
             </Button>
@@ -496,10 +502,15 @@ export function NotesClient() {
             onDirtyChange={setDirty}
           />
         ) : selected ? (
-          <NotePreview note={selected} onEdit={startEdit} onDelete={() => setDeleteTarget(selected)} />
+          <NotePreview
+            note={selected}
+            onEdit={startEdit}
+            onDelete={() => setDeleteTarget(selected)}
+          />
         ) : (
           <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
-            Select a note, or click <span className="mx-1 font-medium text-foreground">New</span> to start one.
+            Select a note, or click <span className="mx-1 font-medium text-foreground">New</span> to
+            start one.
           </div>
         )}
       </div>
@@ -599,7 +610,8 @@ function NotePreview({
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{note.content}</ReactMarkdown>
           ) : (
             <p className="text-sm italic text-muted-foreground">
-              No content yet. Click <span className="font-medium not-italic text-foreground">Edit</span> to add some.
+              No content yet. Click{' '}
+              <span className="font-medium not-italic text-foreground">Edit</span> to add some.
             </p>
           )}
         </article>

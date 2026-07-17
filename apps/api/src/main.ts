@@ -13,6 +13,7 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { startProcessHeartbeat } from '@mantle/content';
 import { runTableStorageProbes } from '@mantle/tabledb';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency } from './config';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
@@ -26,6 +27,12 @@ import './workflows/team-turn';
 import { enqueueTelegramTurn } from './workflows/telegram-turn';
 
 async function main(): Promise<void> {
+  // Liveness: the api runner exposes no HTTP port (the DBOS admin server is off
+  // by default — see config.ts), so its container healthcheck reads a heartbeat
+  // file we touch on a timer. Catches a WEDGED process; a dead one is already
+  // covered by the restart policy. Measures event-loop liveness, not workflow
+  // progress — an idle runner with no queued turns is still healthy.
+  startProcessHeartbeat();
   // Boot sanity for sqlite-native table storage: node:sqlite is experimental
   // upstream, so the engine behaviors Tables v2 relies on are re-proven on
   // every boot (this is the same suite CI runs on the prod image). Loud but

@@ -32,7 +32,13 @@ interface DiffReviewState {
   deco: DecorationSet;
 }
 
-function actionButton(label: string, title: string, action: string, id: string, cls: string): HTMLButtonElement {
+function actionButton(
+  label: string,
+  title: string,
+  action: string,
+  id: string,
+  cls: string,
+): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = cls;
@@ -62,7 +68,9 @@ function ghostWidget(g: RemovedGhost): HTMLElement {
   tag.className = 'diff-removed-tag';
   tag.textContent = `− Removed ${g.kind}`;
   head.appendChild(tag);
-  head.appendChild(actionButton('Restore', 'Restore this block', 'restore', g.id, 'diff-pill diff-pill-restore'));
+  head.appendChild(
+    actionButton('Restore', 'Restore this block', 'restore', g.id, 'diff-pill diff-pill-restore'),
+  );
   card.appendChild(head);
 
   const body = document.createElement('div');
@@ -92,7 +100,13 @@ function decorate(doc: PMNode, overlay: DiffOverlay): DecorationSet {
     const cls = added.has(id) ? 'is-diff-added' : changed.has(id) ? 'is-diff-changed' : null;
     if (cls) {
       decos.push(Decoration.node(pos, pos + node.nodeSize, { class: cls }));
-      const pill = actionButton('Discard', 'Discard this change', 'discard', id, 'diff-pill diff-pill-discard');
+      const pill = actionButton(
+        'Discard',
+        'Discard this change',
+        'discard',
+        id,
+        'diff-pill diff-pill-discard',
+      );
       decos.push(
         Decoration.widget(pos + 1, pill, { side: -1, key: `act:${id}`, ignoreSelection: true }),
       );
@@ -103,9 +117,13 @@ function decorate(doc: PMNode, overlay: DiffOverlay): DecorationSet {
   // Removed ghosts — placed after their anchor (or at doc start). `side` keeps
   // multiple ghosts sharing an anchor in document order.
   overlay.removed.forEach((g, i) => {
-    const pos = g.afterId != null ? topEnd.get(g.afterId) ?? 0 : 0;
+    const pos = g.afterId != null ? (topEnd.get(g.afterId) ?? 0) : 0;
     decos.push(
-      Decoration.widget(pos, ghostWidget(g), { side: 100 + i, key: `ghost:${g.id}`, ignoreSelection: true }),
+      Decoration.widget(pos, ghostWidget(g), {
+        side: 100 + i,
+        key: `ghost:${g.id}`,
+        ignoreSelection: true,
+      }),
     );
   });
 
@@ -124,7 +142,10 @@ export const DiffReview = Extension.create({
           apply(tr, value, _old, newState) {
             const meta = tr.getMeta(diffReviewKey) as DiffOverlay | null | undefined;
             if (meta !== undefined) {
-              return { overlay: meta, deco: meta ? decorate(newState.doc, meta) : DecorationSet.empty };
+              return {
+                overlay: meta,
+                deco: meta ? decorate(newState.doc, meta) : DecorationSet.empty,
+              };
             }
             // Positions shift on edits — rebuild against the new doc (ids stable).
             if (tr.docChanged && value.overlay) {

@@ -131,7 +131,10 @@ export function ContactsClient() {
       <aside className="flex min-h-0 flex-col border-r border-border bg-muted/20">
         <div className="flex items-center gap-2 border-b border-border px-3 py-2">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Search
+              className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -184,9 +187,7 @@ export function ContactsClient() {
                       <span className="truncate">{c.email}</span>
                     ) : null}
                     {c.contactCounts.email && c.contactCounts.email > 0 ? (
-                      <span className="ml-auto whitespace-nowrap">
-                        ✉ {c.contactCounts.email}
-                      </span>
+                      <span className="ml-auto whitespace-nowrap">✉ {c.contactCounts.email}</span>
                     ) : null}
                   </div>
                 </button>
@@ -343,11 +344,9 @@ function ContactForm({ contact }: { contact: ContactRow }) {
   const teamAction = (action: 'enable' | 'rotate' | 'disable') => {
     startTeam(async () => {
       try {
-        const res = await apiSend<{ token?: string }>(
-          `/api/contacts/${contact.id}/team`,
-          'POST',
-          { action },
-        );
+        const res = await apiSend<{ token?: string }>(`/api/contacts/${contact.id}/team`, 'POST', {
+          action,
+        });
         if (action === 'disable') {
           toast.success('Team access revoked');
         } else if (res.token) {
@@ -380,9 +379,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-lg font-semibold">{contact.title}</h2>
-          <p className="text-xs text-muted-foreground">
-            Added {formatDateTime(contact.createdAt)}
-          </p>
+          <p className="text-xs text-muted-foreground">Added {formatDateTime(contact.createdAt)}</p>
         </div>
         {/* Header flags as Switches top-right + ghost Delete (screen convention). */}
         <div className="flex items-center gap-4">
@@ -415,7 +412,8 @@ function ContactForm({ contact }: { contact: ContactRow }) {
           <span className="inline-flex items-center gap-1.5">
             <Users className="size-3.5 text-muted-foreground" aria-hidden />
             <span className="text-muted-foreground">
-              Team member since <span className="text-foreground">{formatDateTime(contact.team.since)}</span>
+              Team member since{' '}
+              <span className="text-foreground">{formatDateTime(contact.team.since)}</span>
             </span>
           </span>
           <span className="text-muted-foreground">
@@ -519,9 +517,9 @@ function ContactForm({ contact }: { contact: ContactRow }) {
         </Button>
         <p className="text-xs text-muted-foreground">
           Each line is a full address (<code>orders@modular.co.za</code>) or a whole-domain wildcard
-          (<code>@modular.co.za</code>, trusting all mail from that domain). Mantle ingests mail from
-          these into the brain; Saskia can email the plain addresses. Adding one backfills the last
-          90 days.
+          (<code>@modular.co.za</code>, trusting all mail from that domain). Mantle ingests mail
+          from these into the brain; Saskia can email the plain addresses. Adding one backfills the
+          last 90 days.
         </p>
       </div>
 
@@ -561,8 +559,8 @@ function ContactForm({ contact }: { contact: ContactRow }) {
           placeholder="Modular is the aluminium-profile supplier we use for printer projects. Sells 2020 and 3030 profiles."
         />
         <p className="text-xs text-muted-foreground">
-          The brain indexes this — facts and entities land on this contact's identity,
-          so Saskia can later answer &quot;who supplies aluminium profiles?&quot;.
+          The brain indexes this — facts and entities land on this contact's identity, so Saskia can
+          later answer &quot;who supplies aluminium profiles?&quot;.
         </p>
       </div>
 
@@ -609,8 +607,8 @@ function ContactForm({ contact }: { contact: ContactRow }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove from team?</AlertDialogTitle>
             <AlertDialogDescription>
-              {contact.title}&apos;s token stops working immediately — they lose access to
-              anything shared with the team. The contact itself is kept.
+              {contact.title}&apos;s token stops working immediately — they lose access to anything
+              shared with the team. The contact itself is kept.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

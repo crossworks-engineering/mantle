@@ -1,11 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import {
-  clearConfig,
-  defaultRedirectUri,
-  getConfigStatus,
-  saveConfig,
-} from '@mantle/microsoft';
+import { clearConfig, defaultRedirectUri, getConfigStatus, saveConfig } from '@mantle/microsoft';
 import { getOwnerOr401 } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
 

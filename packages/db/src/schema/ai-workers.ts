@@ -252,7 +252,9 @@ export type AiWorkerParams =
 export const aiWorkers = pgTable(
   'ai_workers',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     slug: text('slug').notNull(),
     name: text('name').notNull(),
@@ -267,7 +269,9 @@ export const aiWorkers = pgTable(
      *  Not used by non-chat kinds (tts/stt/vision/embedding ignore it). */
     backupProvider: text('backup_provider'),
     backupModel: text('backup_model'),
-    backupApiKeyId: uuid('backup_api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    backupApiKeyId: uuid('backup_api_key_id').references(() => apiKeys.id, {
+      onDelete: 'set null',
+    }),
     backupEnabled: boolean('backup_enabled').default(false).notNull(),
     /** Per-route host + tailnet flag (migration 0063). See agents.ts for the
      *  full rationale — `baseUrl` overrides the provider default host for this
@@ -278,7 +282,10 @@ export const aiWorkers = pgTable(
     backupBaseUrl: text('backup_base_url'),
     backupViaTailnet: boolean('backup_via_tailnet').default(false).notNull(),
     systemPrompt: text('system_prompt'),
-    params: jsonb('params').$type<AiWorkerParams>().default(sql`'{}'::jsonb`).notNull(),
+    params: jsonb('params')
+      .$type<AiWorkerParams>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     enabled: boolean('enabled').default(true).notNull(),
     priority: integer('priority').default(100).notNull(),
     isDefault: boolean('is_default').default(false).notNull(),

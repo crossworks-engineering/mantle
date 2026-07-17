@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  captureLlmUsage,
-  recordChatUsage,
-  type LlmUsageSink,
-} from './llm-usage';
+import { captureLlmUsage, recordChatUsage, type LlmUsageSink } from './llm-usage';
 
 function mockSink() {
   const tokens: Array<{ input?: number; output?: number; cacheRead?: number }> = [];
@@ -42,7 +38,11 @@ describe('captureLlmUsage', () => {
   it('falls back to the static price table when no cost is reported', () => {
     const { sink, costs } = mockSink();
     // sonar-pro: 1000 in * 3e-6 + 500 out * 15e-6 = 0.003 + 0.0075 = 0.0105 USD
-    captureLlmUsage(sink, { usage: { promptTokens: 1000, completionTokens: 500 } }, 'perplexity/sonar-pro');
+    captureLlmUsage(
+      sink,
+      { usage: { promptTokens: 1000, completionTokens: 500 } },
+      'perplexity/sonar-pro',
+    );
     expect(costs[0]).toBe(10_500);
   });
 
@@ -54,7 +54,11 @@ describe('captureLlmUsage', () => {
 
   it('writes a meta summary', () => {
     const { sink, meta } = mockSink();
-    captureLlmUsage(sink, { usage: { promptTokens: 10, completionTokens: 5, cost: 0.001 } }, 'perplexity/sonar');
+    captureLlmUsage(
+      sink,
+      { usage: { promptTokens: 10, completionTokens: 5, cost: 0.001 } },
+      'perplexity/sonar',
+    );
     expect(meta[0]).toMatchObject({
       model: 'perplexity/sonar',
       tokens_in: 10,
@@ -145,11 +149,7 @@ describe('recordChatUsage (typed ChatResult)', () => {
 
   it('omits cache_write meta when cacheWriteTokens is undefined or zero', () => {
     const { sink, meta } = mockSink();
-    recordChatUsage(
-      sink,
-      { model: 'x', tokensIn: 10, tokensOut: 5 },
-      'mystery/model',
-    );
+    recordChatUsage(sink, { model: 'x', tokensIn: 10, tokensOut: 5 }, 'mystery/model');
     expect(meta[0]).not.toHaveProperty('cache_write');
   });
 

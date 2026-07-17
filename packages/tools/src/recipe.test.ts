@@ -25,7 +25,10 @@ import {
 
 const scope = (over: Partial<RecipeScope> = {}): RecipeScope => ({
   input: { note_id: 'n1', title: 'Hi', tags: ['a', 'b'] },
-  steps: { '0': { id: 'n1', content: '# Body', title: 'Note T' }, note: { id: 'n1', content: '# Body' } },
+  steps: {
+    '0': { id: 'n1', content: '# Body', title: 'Note T' },
+    note: { id: 'n1', content: '# Body' },
+  },
   ...over,
 });
 
@@ -36,7 +39,11 @@ describe('resolveTemplateValue — exact tokens preserve raw type', () => {
   });
 
   it('exact $index ref returns the whole prior output object', () => {
-    expect(resolveTemplateValue('$0', scope())).toEqual({ id: 'n1', content: '# Body', title: 'Note T' });
+    expect(resolveTemplateValue('$0', scope())).toEqual({
+      id: 'n1',
+      content: '# Body',
+      title: 'Note T',
+    });
   });
 
   it('exact $name.path ref dots into a prior output', () => {
@@ -94,30 +101,58 @@ describe('parseRecipeSteps', () => {
   });
 
   it('rejects a step missing a tool slug', () => {
-    expect(parseRecipeSteps([{ input: {} }])).toEqual({ error: expect.stringContaining("missing a 'tool'") });
+    expect(parseRecipeSteps([{ input: {} }])).toEqual({
+      error: expect.stringContaining("missing a 'tool'"),
+    });
   });
 
   it('rejects a non-object input and a duplicate / numeric `as`', () => {
-    expect(parseRecipeSteps([{ tool: 'a', input: [] }])).toEqual({ error: expect.stringContaining('input must be an object') });
+    expect(parseRecipeSteps([{ tool: 'a', input: [] }])).toEqual({
+      error: expect.stringContaining('input must be an object'),
+    });
     expect(
       parseRecipeSteps([
         { tool: 'a', as: 'x' },
         { tool: 'b', as: 'x' },
       ]),
     ).toEqual({ error: expect.stringContaining("reuses the name 'x'") });
-    expect(parseRecipeSteps([{ tool: 'a', as: '3' }])).toEqual({ error: expect.stringContaining("'as' must be a name") });
+    expect(parseRecipeSteps([{ tool: 'a', as: '3' }])).toEqual({
+      error: expect.stringContaining("'as' must be a name"),
+    });
   });
 
   it('normalizes a valid recipe, dropping empty input/as', () => {
-    const r = parseRecipeSteps([{ tool: 'note_get', input: { id: '{note_id}' }, as: 'note' }, { tool: 'page_create' }]);
-    expect(r).toEqual({ steps: [{ tool: 'note_get', input: { id: '{note_id}' }, as: 'note' }, { tool: 'page_create' }] });
+    const r = parseRecipeSteps([
+      { tool: 'note_get', input: { id: '{note_id}' }, as: 'note' },
+      { tool: 'page_create' },
+    ]);
+    expect(r).toEqual({
+      steps: [
+        { tool: 'note_get', input: { id: '{note_id}' }, as: 'note' },
+        { tool: 'page_create' },
+      ],
+    });
   });
 });
 
 describe('classifyRecipeStepTool — the safety envelope', () => {
   it('ok for a plain composable builtin', () => {
-    expect(classifyRecipeStepTool({ slug: 'note_get', exists: true, kind: 'builtin', requiresConfirm: false })).toBe('ok');
-    expect(classifyRecipeStepTool({ slug: 'some_http', exists: true, kind: 'http', requiresConfirm: false })).toBe('ok');
+    expect(
+      classifyRecipeStepTool({
+        slug: 'note_get',
+        exists: true,
+        kind: 'builtin',
+        requiresConfirm: false,
+      }),
+    ).toBe('ok');
+    expect(
+      classifyRecipeStepTool({
+        slug: 'some_http',
+        exists: true,
+        kind: 'http',
+        requiresConfirm: false,
+      }),
+    ).toBe('ok');
   });
 
   it('missing when the tool does not exist', () => {
@@ -125,14 +160,23 @@ describe('classifyRecipeStepTool — the safety envelope', () => {
   });
 
   it('forbidden for privilege/meta/terminal builtins', () => {
-    for (const slug of ['run_terminal', 'secret_create', 'invoke_agent', 'agent_grant_tool_group', 'recipe_tool_create', 'web_fetch']) {
+    for (const slug of [
+      'run_terminal',
+      'secret_create',
+      'invoke_agent',
+      'agent_grant_tool_group',
+      'recipe_tool_create',
+      'web_fetch',
+    ]) {
       expect(classifyRecipeStepTool({ slug, exists: true, kind: 'builtin' })).toBe('forbidden');
     }
   });
 
   it('shell and confirm-gated tools are refused', () => {
     expect(classifyRecipeStepTool({ slug: 'x', exists: true, kind: 'shell' })).toBe('shell');
-    expect(classifyRecipeStepTool({ slug: 'y', exists: true, kind: 'builtin', requiresConfirm: true })).toBe('confirm');
+    expect(
+      classifyRecipeStepTool({ slug: 'y', exists: true, kind: 'builtin', requiresConfirm: true }),
+    ).toBe('confirm');
   });
 
   it('every non-ok verdict has a human reason', () => {

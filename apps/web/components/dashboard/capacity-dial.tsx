@@ -1,11 +1,5 @@
 import { Gauge } from 'lucide-react';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCount } from '@/lib/format-bytes';
 import { cn } from '@/lib/utils';
 import type { BrainCapacity, CapacityZone } from '@/lib/dashboard';
@@ -57,9 +51,7 @@ function CapacityRing({ pct, zone }: { pct: number; zone: CapacityZone }) {
       </svg>
       <div className="absolute flex flex-col items-center">
         <span className="text-2xl font-semibold tabular-nums">{pct}%</span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          of split
-        </span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">of split</span>
       </div>
     </div>
   );
@@ -142,8 +134,8 @@ export function CapacityDial({ capacity }: { capacity: BrainCapacity }) {
             zone={capacity.chunkVectors.zone}
           />
           <p className="text-xs text-muted-foreground">
-            A brain is split into a federated breakout brain before any index
-            reaches the sizes where retrieval degradation has been measured.
+            A brain is split into a federated breakout brain before any index reaches the sizes
+            where retrieval degradation has been measured.
           </p>
         </div>
       </CardContent>

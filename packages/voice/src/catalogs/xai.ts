@@ -34,8 +34,7 @@ export const XAI_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
     id: 'grok-4.20-0309-reasoning',
     label: 'Grok 4.20 (reasoning)',
-    description:
-      'Reasoning variant. Configure effort with reasoning_effort: low | medium | high.',
+    description: 'Reasoning variant. Configure effort with reasoning_effort: low | medium | high.',
     contextTokens: 1_000_000,
     capabilities: ['reasoning', 'function_calling', 'json_mode'],
     inputPricePer1M: 1.25,
@@ -112,13 +111,21 @@ export const XAI_AUDIO_TAGS: readonly AudioTag[] = [
   { tag: '[sigh]', description: 'a resigned or reflective exhale', category: 'reaction' },
   { tag: '[cry]', description: 'a sob or weeping; use rarely', category: 'reaction' },
   { tag: '[tsk]', description: 'a disapproving cluck', category: 'reaction' },
-  { tag: '[tongue-click]', description: 'a sharp tongue cluck — punctuation', category: 'reaction' },
+  {
+    tag: '[tongue-click]',
+    description: 'a sharp tongue cluck — punctuation',
+    category: 'reaction',
+  },
   { tag: '[lip-smack]', description: 'a soft mouth sound; thoughtful beat', category: 'reaction' },
   { tag: '[hum-tune]', description: 'a short hummed melody', category: 'reaction' },
 
   // Breath.
   { tag: '[breath]', description: 'a soft audible breath', category: 'reaction' },
-  { tag: '[inhale]', description: 'a sharp inhale; surprise or anticipation', category: 'reaction' },
+  {
+    tag: '[inhale]',
+    description: 'a sharp inhale; surprise or anticipation',
+    category: 'reaction',
+  },
   { tag: '[exhale]', description: 'a deliberate exhale; release', category: 'reaction' },
 
   // Pacing.
@@ -152,13 +159,21 @@ export const XAI_WRAPPING_TAGS: readonly WrappingTag[] = [
   // Volume.
   { name: 'loud', description: 'speak the wrapped phrase loudly', category: 'volume' },
   { name: 'soft', description: 'speak the wrapped phrase quietly and gently', category: 'volume' },
-  { name: 'whisper', description: 'whisper the wrapped phrase — for secrets / asides', category: 'volume' },
+  {
+    name: 'whisper',
+    description: 'whisper the wrapped phrase — for secrets / asides',
+    category: 'volume',
+  },
   // Pitch.
   { name: 'high', description: 'raise the pitch across the wrapped phrase', category: 'pitch' },
   // Pacing.
   { name: 'slow', description: 'slow the delivery of the wrapped phrase down', category: 'pacing' },
   // Style.
-  { name: 'singing', description: 'sing the wrapped phrase rather than speak it; use rarely', category: 'style' },
+  {
+    name: 'singing',
+    description: 'sing the wrapped phrase rather than speak it; use rarely',
+    category: 'style',
+  },
 ];
 
 /**

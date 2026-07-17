@@ -66,7 +66,9 @@ export async function sendEmail(
   input: SendEmailInput,
 ): Promise<SendEmailResult> {
   if (!account.smtpHost || !account.smtpPort) {
-    throw new Error(`account ${account.address} has no SMTP host/port configured — set it on the account form to enable sending`);
+    throw new Error(
+      `account ${account.address} has no SMTP host/port configured — set it on the account form to enable sending`,
+    );
   }
   if (!input.text && !input.html) {
     throw new Error('email must have a text or html body');

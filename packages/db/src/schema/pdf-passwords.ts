@@ -18,7 +18,9 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 export const pdfPasswords = pgTable(
   'pdf_passwords',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     label: text('label').notNull().default(''),
     passwordEnc: bytea('password_enc').notNull(),

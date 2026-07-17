@@ -16,12 +16,16 @@ describe('normaliseOrgName', () => {
     expect(normaliseOrgName('1API GmbH')).toBe('1api');
   });
   it('collapses legal-suffix variants of the same org', () => {
-    expect(normaliseOrgName('Cross-Works Engineering')).toBe(normaliseOrgName('Cross-Works Engineering (Pty) Ltd'));
+    expect(normaliseOrgName('Cross-Works Engineering')).toBe(
+      normaliseOrgName('Cross-Works Engineering (Pty) Ltd'),
+    );
   });
   it('does NOT strip descriptive words (those are review-tier, not auto)', () => {
     // "Pivotal Accounting" vs "Pivotal Accounting Solutions" must NOT auto-collapse —
     // "Solutions" is descriptive, not a legal suffix.
-    expect(normaliseOrgName('Pivotal Accounting Solutions')).not.toBe(normaliseOrgName('Pivotal Accounting'));
+    expect(normaliseOrgName('Pivotal Accounting Solutions')).not.toBe(
+      normaliseOrgName('Pivotal Accounting'),
+    );
     expect(normaliseOrgName('ACM Group')).toBe('acm group');
   });
 });

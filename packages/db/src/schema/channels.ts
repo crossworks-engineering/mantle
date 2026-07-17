@@ -40,7 +40,9 @@ export const channelType = pgEnum('channel_type', ['telegram']);
 export const channels = pgTable(
   'channels',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     /** The agent this transport is attached to. Cascade-deletes the channel
      *  when the agent is removed (the binding is meaningless without it). */
@@ -54,7 +56,10 @@ export const channels = pgTable(
      *  id — re-seal (never raw-copy) if the row ever moves. */
     credentialsEnc: bytea('credentials_enc').notNull(),
     /** Non-secret transport config, e.g. { bot_username, branch_path }. */
-    config: jsonb('config').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    config: jsonb('config')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     enabled: boolean('enabled').default(true).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

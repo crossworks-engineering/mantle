@@ -103,7 +103,9 @@ export default async function SharePage({
             ownerId={share.ownerId}
             sub={typeof p === 'string' ? p : ''}
             assetUrl={assetUrl}
-            makeSubHref={(sub) => (sub ? `/s/${token}?p=${encodeURIComponent(sub)}` : `/s/${token}`)}
+            makeSubHref={(sub) =>
+              sub ? `/s/${token}?p=${encodeURIComponent(sub)}` : `/s/${token}`
+            }
           />
         );
       default:

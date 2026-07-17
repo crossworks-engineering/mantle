@@ -3,7 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, GitCommitHorizontal, Loader2, MoreHorizontal, Pencil, Plus, Trash2, Undo2, Upload } from 'lucide-react';
+import {
+  Check,
+  GitCommitHorizontal,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+  Undo2,
+  Upload,
+} from 'lucide-react';
 import { BackLink } from '@/components/layout/back-link';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { Button } from '@/components/ui/button';
@@ -39,7 +49,13 @@ const META_DEBOUNCE_MS = 800;
 
 type TabInfo = NonNullable<TableDetail['tabs']>[number];
 
-export function TableDetailClient({ initial, embedded = false }: { initial: TableDetail; embedded?: boolean }) {
+export function TableDetailClient({
+  initial,
+  embedded = false,
+}: {
+  initial: TableDetail;
+  embedded?: boolean;
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -88,7 +104,9 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
     setLoadingMore(true);
     try {
       const draftParam = initial.draft != null ? '&draft=1' : '';
-      const tabParam = activeTabRef.current ? `&tab=${encodeURIComponent(activeTabRef.current)}` : '';
+      const tabParam = activeTabRef.current
+        ? `&tab=${encodeURIComponent(activeTabRef.current)}`
+        : '';
       const page = await apiFetch<{ rows: TableDoc['rows']; total: number }>(
         `/api/tables/${initial.id}/rows?offset=${docRef.current.rows.length}&limit=1000${draftParam}${tabParam}`,
       );
@@ -175,10 +193,14 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
           setHasDraft(true);
         } else if (ops.length > 0) {
           const tabId = activeTabRef.current;
-          const j = await apiSend<{ draft_rev: number }>(`/api/tables/${initial.id}/draft-ops`, 'POST', {
-            ops: tabId ? ops.map((o) => ({ ...o, tabId })) : ops,
-            if_rev: draftRevRef.current,
-          });
+          const j = await apiSend<{ draft_rev: number }>(
+            `/api/tables/${initial.id}/draft-ops`,
+            'POST',
+            {
+              ops: tabId ? ops.map((o) => ({ ...o, tabId })) : ops,
+              if_rev: draftRevRef.current,
+            },
+          );
           draftRevRef.current = j.draft_rev;
           setHasDraft(true);
         }
@@ -235,7 +257,9 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
     if (title === metaSavedRef.current) return;
     const h = setTimeout(async () => {
       try {
-        await apiSend(`/api/tables/${initial.id}`, 'PATCH', { title: title.trim() || 'Untitled table' });
+        await apiSend(`/api/tables/${initial.id}`, 'PATCH', {
+          title: title.trim() || 'Untitled table',
+        });
         metaSavedRef.current = title;
       } catch {
         // metadata autosave is best-effort; the next edit retries.
@@ -380,10 +404,10 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
         const fd = new FormData();
         fd.append('file', file);
         // FormData body: apiFetch (NOT apiSend) so the multipart boundary survives.
-        const j = await apiFetch<{ sheets: number; tabs: { name: string; columns: number; rows: number }[] }>(
-          `/api/tables/${initial.id}/import`,
-          { method: 'POST', body: fd },
-        );
+        const j = await apiFetch<{
+          sheets: number;
+          tabs: { name: string; columns: number; rows: number }[];
+        }>(`/api/tables/${initial.id}/import`, { method: 'POST', body: fd });
         try {
           await reloadTab(undefined);
         } catch (e) {
@@ -458,7 +482,12 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
         </div>
         <div className="flex items-center gap-2 justify-self-end">
           <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={dirty} />
-          <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={importing}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => fileRef.current?.click()}
+            disabled={importing}
+          >
             {importing ? <Loader2 className="animate-spin" /> : <Upload />} Import
           </Button>
           <ExportMenu nodeId={initial.id} kind="table" />
@@ -469,7 +498,12 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
             teamHint="Visitors must enter their team token to open the link. The link always shows the last committed version — never your draft."
           />
           {dirty && (
-            <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => void discard()}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground"
+              onClick={() => void discard()}
+            >
               <Undo2 /> Discard
             </Button>
           )}
@@ -480,7 +514,13 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
           >
             <GitCommitHorizontal /> Commit
           </Button>
-          <Button size="icon" variant="ghost" className="size-8 text-muted-foreground hover:text-destructive" onClick={() => setConfirmDelete(true)} aria-label="Delete table">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8 text-muted-foreground hover:text-destructive"
+            onClick={() => setConfirmDelete(true)}
+            aria-label="Delete table"
+          >
             <Trash2 />
           </Button>
         </div>
@@ -509,7 +549,9 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
             );
           }}
           onRename={(id, name) => void tabOp({ op: 'tab_rename', tabId: id, name }, id)}
-          onDelete={(id) => void tabOp({ op: 'tab_delete', tabId: id }, (tabs ?? []).find((t) => t.id !== id)?.id)}
+          onDelete={(id) =>
+            void tabOp({ op: 'tab_delete', tabId: id }, (tabs ?? []).find((t) => t.id !== id)?.id)
+          }
         />
       )}
 
@@ -525,11 +567,17 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
           {clipped && (
             <div className="flex items-center justify-between gap-3 border-b border-border bg-accent px-3 py-1.5 text-xs text-accent-foreground">
               <span>
-                Large table — showing {doc.rows.length.toLocaleString()} of {loadedTotal.toLocaleString()} rows,
-                read-only in the grid. Edit rows via the assistant, or query with SQL.
+                Large table — showing {doc.rows.length.toLocaleString()} of{' '}
+                {loadedTotal.toLocaleString()} rows, read-only in the grid. Edit rows via the
+                assistant, or query with SQL.
               </span>
               {doc.rows.length < loadedTotal && (
-                <Button size="sm" variant="outline" onClick={() => void loadMore()} disabled={loadingMore}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void loadMore()}
+                  disabled={loadingMore}
+                >
                   {loadingMore ? <Loader2 className="animate-spin" aria-hidden /> : null}
                   Load more rows
                 </Button>
@@ -564,7 +612,10 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => void doDelete()}>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => void doDelete()}
+            >
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -603,7 +654,11 @@ function TabBar({
     if (name && current && name !== current.name) onRename(id, name);
   };
   return (
-    <div className="flex items-center gap-0.5 overflow-x-auto border-b border-border bg-muted/30 px-2" role="tablist" aria-label="Workbook tabs">
+    <div
+      className="flex items-center gap-0.5 overflow-x-auto border-b border-border bg-muted/30 px-2"
+      role="tablist"
+      aria-label="Workbook tabs"
+    >
       {tabs.map((t) => {
         const active = t.id === activeTab;
         return (
@@ -675,14 +730,29 @@ function TabBar({
           </span>
         );
       })}
-      <Button size="icon" variant="ghost" className="size-7 shrink-0 text-muted-foreground" onClick={onAdd} disabled={switching} aria-label="Add tab">
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-7 shrink-0 text-muted-foreground"
+        onClick={onAdd}
+        disabled={switching}
+        aria-label="Add tab"
+      >
         <Plus className="size-4" />
       </Button>
     </div>
   );
 }
 
-function StatusIndicator({ committing, draftSaving, dirty }: { committing: boolean; draftSaving: boolean; dirty: boolean }) {
+function StatusIndicator({
+  committing,
+  draftSaving,
+  dirty,
+}: {
+  committing: boolean;
+  draftSaving: boolean;
+  dirty: boolean;
+}) {
   if (committing) {
     return (
       <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">

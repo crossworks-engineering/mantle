@@ -72,7 +72,9 @@ export function MailClient({
             }}
             className={cn(isCollapsed && 'min-w-[50px] transition-all duration-300 ease-in-out')}
           >
-            <div className={cn('flex items-center justify-center px-2 py-2', isCollapsed && 'px-0')}>
+            <div
+              className={cn('flex items-center justify-center px-2 py-2', isCollapsed && 'px-0')}
+            >
               <AccountSwitcher
                 isCollapsed={isCollapsed}
                 accounts={accounts}
@@ -109,7 +111,9 @@ export function MailClient({
                     href={tabAllHref}
                     className={cn(
                       'rounded px-2 py-1',
-                      tab === 'all' ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground',
+                      tab === 'all'
+                        ? 'bg-accent font-medium text-accent-foreground'
+                        : 'text-muted-foreground',
                     )}
                   >
                     All mail
@@ -130,7 +134,10 @@ export function MailClient({
               <Separator />
               <div className="bg-background/95 supports-[backdrop-filter]:bg-background/60 p-3 backdrop-blur">
                 <div className="relative">
-                  <Search className="text-muted-foreground absolute top-2.5 left-2 h-4 w-4" aria-hidden />
+                  <Search
+                    className="text-muted-foreground absolute top-2.5 left-2 h-4 w-4"
+                    aria-hidden
+                  />
                   <Input placeholder="Search (coming soon)" disabled className="pl-8" />
                 </div>
               </div>

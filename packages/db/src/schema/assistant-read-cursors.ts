@@ -15,9 +15,7 @@ export const assistantReadCursors = pgTable(
     agentId: uuid('agent_id')
       .notNull()
       .references(() => agents.id, { onDelete: 'cascade' }),
-    lastReadAt: timestamp('last_read_at', { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    lastReadAt: timestamp('last_read_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [primaryKey({ columns: [t.ownerId, t.agentId] })],
 );

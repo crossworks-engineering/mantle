@@ -16,11 +16,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import {
-  sendHttpDraft,
-  sendMcpCall,
-  sendToolCall,
-} from '@/lib/dev-tools/client';
+import { sendHttpDraft, sendMcpCall, sendToolCall } from '@/lib/dev-tools/client';
 import { apiFetch, ApiError } from '@/lib/api-fetch';
 import {
   STORAGE_KEYS,
@@ -112,10 +108,7 @@ export function DevToolsProvider({
     STORAGE_KEYS.collections,
     () => [],
   );
-  const [history, setHistory] = usePersistedState<HistoryEntry[]>(
-    STORAGE_KEYS.history,
-    () => [],
-  );
+  const [history, setHistory] = usePersistedState<HistoryEntry[]>(STORAGE_KEYS.history, () => []);
 
   const [draft, setDraftState] = useState<DraftRequest>(emptyDraft);
   const [response, setResponse] = useState<ConsoleResponse | null>(null);
@@ -165,7 +158,9 @@ export function DevToolsProvider({
     setMcp({ status: 'loading' });
     void (async () => {
       try {
-        const payload = await apiFetch<{ tools?: McpToolInfo[]; error?: string }>('/api/dev-tools/mcp');
+        const payload = await apiFetch<{ tools?: McpToolInfo[]; error?: string }>(
+          '/api/dev-tools/mcp',
+        );
         if (!payload.tools) {
           mcpLoadStarted.current = false;
           setMcp({ status: 'error', error: payload.error ?? 'failed to list MCP tools' });
@@ -208,7 +203,9 @@ export function DevToolsProvider({
       } else {
         let args: Record<string, unknown> = {};
         try {
-          args = draft.argsText.trim() ? (JSON.parse(draft.argsText) as Record<string, unknown>) : {};
+          args = draft.argsText.trim()
+            ? (JSON.parse(draft.argsText) as Record<string, unknown>)
+            : {};
         } catch {
           setResponse({
             via: draft.kind,
@@ -284,10 +281,7 @@ export function DevToolsProvider({
       };
       setCollections((prev) => {
         if (collectionId === null) {
-          return [
-            ...prev,
-            { id: genId('col'), name: 'My requests', requests: [saved] },
-          ];
+          return [...prev, { id: genId('col'), name: 'My requests', requests: [saved] }];
         }
         return prev.map((c) =>
           c.id === collectionId ? { ...c, requests: [...c.requests, saved] } : c,

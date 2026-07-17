@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -83,10 +84,13 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(funct
       ?.scrollIntoView({ block: 'nearest' });
   }, [selected]);
 
-  const choose = (i: number) => {
-    const item = items[i];
-    if (item) command(item);
-  };
+  const choose = useCallback(
+    (i: number) => {
+      const item = items[i];
+      if (item) command(item);
+    },
+    [items, command],
+  );
 
   useImperativeHandle(
     ref,
@@ -108,7 +112,7 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(funct
         return false;
       },
     }),
-    [items, selected],
+    [items, selected, choose],
   );
 
   if (items.length === 0) {

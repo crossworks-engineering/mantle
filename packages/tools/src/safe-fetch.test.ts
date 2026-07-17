@@ -9,6 +9,11 @@ import { safeFetch } from './safe-fetch';
 
 const SECRET = 'pk.SUPER-SECRET-123';
 
+// The redirect/secret-stripping logic is what's under test here; drive it
+// against loopback test servers with a permissive egress guard. The real SSRF
+// guard (default arg) is covered by ssrf-guard.test.ts.
+const allowLoopback = async () => {};
+
 // Two independent origins on different ports so a hop between them is cross-origin.
 let evil: Server;
 let evilPort = 0;
@@ -55,6 +60,7 @@ describe('safeFetch', () => {
       `http://127.0.0.1:${appPort}/cross`,
       { headers: { 'x-api-key': SECRET } },
       [SECRET],
+      allowLoopback,
     );
     expect(await res.text()).toBe('evil-ok');
     expect(seenByEvil.at(-1)).toBeUndefined(); // header was stripped before the cross-origin hop
@@ -65,13 +71,20 @@ describe('safeFetch', () => {
       `http://127.0.0.1:${appPort}/same`,
       { headers: { 'x-api-key': SECRET } },
       [SECRET],
+      allowLoopback,
     );
     expect(await res.text()).toBe(`same-origin saw=${SECRET}`);
   });
 
   it('returns non-redirect responses unchanged', async () => {
-    const res = await safeFetch(`http://127.0.0.1:${appPort}/final`, {}, []);
+    const res = await safeFetch(`http://127.0.0.1:${appPort}/final`, {}, [], allowLoopback);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('same-origin saw=none');
+  });
+
+  it('applies the SSRF egress guard by default (blocks the metadata IP)', async () => {
+    await expect(safeFetch('http://169.254.169.254/latest/meta-data/', {}, [])).rejects.toThrow(
+      /private\/internal address/,
+    );
   });
 });

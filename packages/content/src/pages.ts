@@ -63,6 +63,11 @@ export type PageDetail = PageRow & {
    *  Optional: only the `getPage` read path populates it — write paths that
    *  synthesize a PageDetail from the row they just wrote skip it. */
   draftUpdatedAt?: string | null;
+  /** Draft etag the editor round-trips on every autosave/commit so a stale
+   *  writer can't clobber newer edits (optimistic concurrency). The read path
+   *  and `commitPage` populate it; other write paths (create/update) leave it
+   *  undefined and the client defaults to 0. */
+  draftRev?: number;
 };
 
 function rowOf(n: Node): PageRow {
@@ -87,8 +92,74 @@ function detailOf(
   n: Node,
   doc: Record<string, unknown>,
   draft: Record<string, unknown> | null = null,
+  extra: { draftRev?: number } = {},
 ): PageDetail {
-  return { ...rowOf(n), doc, draft };
+  return {
+    ...rowOf(n),
+    doc,
+    draft,
+    ...(extra.draftRev !== undefined ? { draftRev: extra.draftRev } : {}),
+  };
+}
+
+// ── Draft concurrency control (audit item #3) ────────────────────────────────
+// Page drafts mirror the Tables registry-lock spine (see table-storage.ts):
+// every draft write, commit, and discard bumps `pages.draft_rev` and serializes
+// on the pages row via SELECT … FOR UPDATE, so two autosave streams (a second
+// device, or a user editing while the Pages agent applies block ops) can't
+// interleave into a silent last-write-wins lost update.
+
+type PageTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** The pages-row fields the draft lock exposes to its critical section — null
+ *  when no pages sidecar exists for the id (page deleted / never created). */
+export type LockedPageRow = {
+  draftRev: number;
+  draftDoc: Record<string, unknown> | null;
+} | null;
+
+/**
+ * Run `fn` while holding SELECT … FOR UPDATE on the page's sidecar row.
+ * Serializes cross-process draft writers (desktop autosave vs phone vs the
+ * Pages agent's block ops); the lock releases when the transaction commits or
+ * rolls back. The locked row's `draftRev`/`draftDoc` are passed to `fn` (null
+ * when the row is gone). Mirrors `withTableRegistryLock`.
+ */
+export async function withPageLock<T>(
+  nodeId: string,
+  fn: (tx: PageTx, locked: LockedPageRow) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    const result = await tx.execute<{
+      draft_rev: number;
+      draft_doc: Record<string, unknown> | null;
+    }>(sql`SELECT draft_rev, draft_doc FROM pages WHERE node_id = ${nodeId} FOR UPDATE`);
+    const rows = (
+      Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? [])
+    ) as { draft_rev: number; draft_doc: Record<string, unknown> | null }[];
+    const locked: LockedPageRow = rows[0]
+      ? { draftRev: Number(rows[0].draft_rev), draftDoc: rows[0].draft_doc }
+      : null;
+    return fn(tx, locked);
+  });
+}
+
+/**
+ * The etag decision, extracted pure so it's unit-testable without a DB: given
+ * the row's current rev and the caller's optional `baseRev`, either report a
+ * conflict (stale base) or clear the write and hand back the next rev. Callers
+ * apply this INSIDE the lock, before writing — so a conflict never mutates the
+ * draft. `baseRev` absent (internal callers) always proceeds, serialized by the
+ * lock and rev-bumped so writes are never silently interleaved.
+ */
+export function evaluateDraftRev(
+  currentRev: number,
+  baseRev: number | undefined,
+): { conflict: false; nextRev: number } | { conflict: true; rev: number } {
+  if (baseRev !== undefined && baseRev !== currentRev) {
+    return { conflict: true, rev: currentRev };
+  }
+  return { conflict: false, nextRev: currentRev + 1 };
 }
 
 async function ensureRoot(ownerId: string): Promise<void> {
@@ -188,7 +259,13 @@ export async function listPageTags(ownerId: string): Promise<{ tag: string; coun
 
 export async function getPage(ownerId: string, id: string): Promise<PageDetail | null> {
   const [row] = await db
-    .select({ node: nodes, doc: pages.doc, draft: pages.draftDoc, draftUpdatedAt: pages.draftUpdatedAt })
+    .select({
+      node: nodes,
+      doc: pages.doc,
+      draft: pages.draftDoc,
+      draftUpdatedAt: pages.draftUpdatedAt,
+      draftRev: pages.draftRev,
+    })
     .from(nodes)
     .leftJoin(pages, eq(pages.nodeId, nodes.id))
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
@@ -220,7 +297,7 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
   }
 
   return {
-    ...detailOf(row.node, doc, draft),
+    ...detailOf(row.node, doc, draft, { draftRev: row.draftRev ?? 0 }),
     draftUpdatedAt: draft ? (row.draftUpdatedAt?.toISOString() ?? null) : null,
   };
 }
@@ -287,9 +364,7 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
     const [parent] = await db
       .select({ id: nodes.id, path: nodes.path })
       .from(nodes)
-      .where(
-        and(eq(nodes.id, input.parentId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')),
-      )
+      .where(and(eq(nodes.id, input.parentId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
       .limit(1);
     if (!parent) throw new ParentPageNotFoundError();
     parentId = parent.id;
@@ -353,7 +428,7 @@ export async function countPageDescendants(ownerId: string, id: string): Promise
     SELECT count(*)::int AS count FROM descendants
   `);
   const rows = (
-    Array.isArray(result) ? result : (result as { rows?: Array<{ count: number }> }).rows ?? []
+    Array.isArray(result) ? result : ((result as { rows?: Array<{ count: number }> }).rows ?? [])
   ) as Array<{ count: number }>;
   return rows[0]?.count ?? 0;
 }
@@ -387,7 +462,7 @@ async function isDescendantPage(
     SELECT EXISTS(SELECT 1 FROM descendants WHERE id = ${maybeDescendantId}) AS hit
   `);
   const rows = (
-    Array.isArray(result) ? result : (result as { rows?: Array<{ hit: boolean }> }).rows ?? []
+    Array.isArray(result) ? result : ((result as { rows?: Array<{ hit: boolean }> }).rows ?? [])
   ) as Array<{ hit: boolean }>;
   return rows[0]?.hit === true;
 }
@@ -757,8 +832,8 @@ export async function addPageMention(
     nextDoc = cloned;
   }
 
-  const ok = await saveDraft(ownerId, pageId, nextDoc);
-  if (!ok) return null;
+  const res = await saveDraft(ownerId, pageId, nextDoc);
+  if (!res.ok) return null;
   return { targetId: opts.targetId, label, ref, afterBlockId, appended: afterBlockId === null };
 }
 
@@ -847,33 +922,56 @@ export async function updatePage(
   return result;
 }
 
+/** Result of a draft/commit write under the `draft_rev` etag. `ok` carries the
+ *  NEW rev the client adopts; `conflict` carries the CURRENT server rev so the
+ *  client can resync; `missing` means the page is gone. */
+export type SaveDraftResult =
+  | { ok: true; rev: number }
+  | { ok: false; conflict: true; rev: number }
+  | { ok: false; missing: true };
+
 /**
  * Autosave the working draft. Persists to `pages.draft_doc` ONLY — the
  * published `doc`/`doc_text`, the summary, the embedding, and the extractor are
  * all left untouched. Cheap and frequent; nothing is rendered to other
- * surfaces or indexed from a draft. Returns false if the page doesn't exist.
+ * surfaces or indexed from a draft.
+ *
+ * Concurrency (audit item #3): the write runs under `withPageLock` and bumps
+ * `draft_rev`. When `opts.baseRev` is supplied (the editor's autosave etag) a
+ * stale value returns a typed conflict WITHOUT touching the draft, so a second
+ * device or the Pages agent can't silently overwrite newer edits. Internal
+ * callers omit `baseRev` — they still serialize on the lock and bump the rev,
+ * so concurrent programmatic writes are never interleaved (last-write-wins).
  */
 export async function saveDraft(
   ownerId: string,
   id: string,
   doc: Record<string, unknown>,
-): Promise<boolean> {
+  opts: { baseRev?: number } = {},
+): Promise<SaveDraftResult> {
   const [node] = await db
     .select({ id: nodes.id })
     .from(nodes)
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
-  if (!node) return false;
+  if (!node) return { ok: false, missing: true };
   // Guarantee every persisted draft carries stable block ids — the autosave
   // endpoint accepts whatever the editor sends, and an editor that doesn't
   // yet preserve the id global attr (or a programmatic write) would
   // otherwise strip them. Idempotent + cheap.
   const enriched = ensureBlockIds(repairTableRows(doc));
-  await db
-    .update(pages)
-    .set({ draftDoc: enriched, draftUpdatedAt: new Date() })
-    .where(eq(pages.nodeId, id));
-  return true;
+  return withPageLock(id, async (tx, locked) => {
+    if (!locked) return { ok: false as const, missing: true as const };
+    const decision = evaluateDraftRev(locked.draftRev, opts.baseRev);
+    if (decision.conflict) {
+      return { ok: false as const, conflict: true as const, rev: decision.rev };
+    }
+    await tx
+      .update(pages)
+      .set({ draftDoc: enriched, draftUpdatedAt: new Date(), draftRev: sql`${pages.draftRev} + 1` })
+      .where(eq(pages.nodeId, id));
+    return { ok: true as const, rev: decision.nextRev };
+  });
 }
 
 /**
@@ -888,6 +986,10 @@ export async function saveDraft(
  * is untouched; brain index untouched. Used by the AI-assist panel's
  * "Discard" button after the Pages agent writes changes the user
  * decides not to keep. Returns false if the page doesn't exist.
+ *
+ * Bumps `draft_rev` under the lock: discarding invalidates the base any
+ * in-flight writer holds, so their next conditional save conflicts (and
+ * refetches) instead of resurrecting the thrown-away draft.
  */
 export async function discardDraft(ownerId: string, id: string): Promise<boolean> {
   const [node] = await db
@@ -896,10 +998,13 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!node) return false;
-  await db
-    .update(pages)
-    .set({ draftDoc: null, draftUpdatedAt: null })
-    .where(eq(pages.nodeId, id));
+  await withPageLock(id, async (tx, locked) => {
+    if (!locked) return;
+    await tx
+      .update(pages)
+      .set({ draftDoc: null, draftUpdatedAt: null, draftRev: sql`${pages.draftRev} + 1` })
+      .where(eq(pages.nodeId, id));
+  });
   return true;
 }
 
@@ -966,17 +1071,26 @@ async function embeddedAssetText(ownerId: string, doc: unknown): Promise<string>
   return foldEmbeddedText(items);
 }
 
+/** Result of a commit under the `draft_rev` etag: the published detail (with
+ *  the bumped rev), a typed conflict (stale base — nothing published), or a
+ *  missing page. */
+export type CommitPageResult =
+  | { ok: true; page: PageDetail }
+  | { ok: false; conflict: true; rev: number }
+  | { ok: false; missing: true };
+
 export async function commitPage(
   ownerId: string,
   id: string,
   doc: Record<string, unknown>,
-): Promise<PageDetail | null> {
+  opts: { baseRev?: number } = {},
+): Promise<CommitPageResult> {
   const [node] = await db
     .select()
     .from(nodes)
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
-  if (!node) return null;
+  if (!node) return { ok: false, missing: true };
 
   // Guarantee the committed doc carries stable per-block ids so the
   // brain (via doc_text), Phase 2b block tools, and the editor diff
@@ -994,7 +1108,16 @@ export async function commitPage(
   const assetText = await embeddedAssetText(ownerId, enriched);
   const docText = assetText ? `${baseText}\n\n${assetText}` : baseText;
 
-  const result = await db.transaction(async (tx) => {
+  // Same etag guard as saveDraft, under the same lock: a stale `baseRev`
+  // returns a conflict WITHOUT publishing, so a client committing a doc it
+  // built on an out-of-date draft can't blow away a newer draft. The
+  // successful commit clears the draft and bumps `draft_rev` in the same tx.
+  const result = await withPageLock(id, async (tx, locked) => {
+    if (!locked) return { ok: false as const, missing: true as const };
+    const decision = evaluateDraftRev(locked.draftRev, opts.baseRev);
+    if (decision.conflict) {
+      return { ok: false as const, conflict: true as const, rev: decision.rev };
+    }
     const [row] = await tx
       .update(nodes)
       .set({ data: newData, embedding: null, updatedAt: new Date() })
@@ -1009,13 +1132,17 @@ export async function commitPage(
         draftDoc: null,
         draftUpdatedAt: null,
         version: sql`${pages.version} + 1`,
+        draftRev: sql`${pages.draftRev} + 1`,
         updatedAt: new Date(),
       })
       .where(eq(pages.nodeId, id));
-    return detailOf(row, enriched, null);
+    return {
+      ok: true as const,
+      page: detailOf(row, enriched, null, { draftRev: decision.nextRev }),
+    };
   });
 
-  await notifyNodeIngested(id);
+  if (result.ok) await notifyNodeIngested(id);
   return result;
 }
 

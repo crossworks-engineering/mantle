@@ -65,7 +65,9 @@ async function main() {
   const applyAuto = has('go');
   const applyReview = has('include-review');
   if (!applyAuto && !applyReview) {
-    console.log('\nDRY RUN — nothing changed. --go applies AUTO; add --include-review for the rest.');
+    console.log(
+      '\nDRY RUN — nothing changed. --go applies AUTO; add --include-review for the rest.',
+    );
     return;
   }
 

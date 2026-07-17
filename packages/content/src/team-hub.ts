@@ -144,10 +144,7 @@ export type TeamAppCard = {
  * delists rather than handing members a broken app. `excludeAppId` keeps the
  * designated hub app (prefs.teamHubAppId) off its own launcher.
  */
-export async function listTeamApps(
-  ownerId: string,
-  excludeAppId?: string,
-): Promise<TeamAppCard[]> {
+export async function listTeamApps(ownerId: string, excludeAppId?: string): Promise<TeamAppCard[]> {
   const rows = await db
     .select({
       token: shares.token,

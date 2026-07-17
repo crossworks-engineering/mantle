@@ -11,16 +11,8 @@
  */
 
 import type { BuiltinToolDef } from './types';
-import {
-  readResultPage,
-  grepResult,
-  queryResult,
-  DEFAULT_RESULT_HANDLING,
-} from './tool-results';
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
+import { str } from './coerce';
+import { readResultPage, grepResult, queryResult, DEFAULT_RESULT_HANDLING } from './tool-results';
 
 const read_result: BuiltinToolDef = {
   slug: 'read_result',
@@ -64,14 +56,26 @@ const read_result: BuiltinToolDef = {
     if (grep) {
       const r = await grepResult(ctx.ownerId, handle, grep);
       ctx.step?.setMeta({ mode: 'grep', handle, count: r.ok ? r.count : 0 });
-      return r.ok ? { ok: true, output: { mode: 'grep', handle, count: r.count, matches: r.matches } } : r;
+      return r.ok
+        ? { ok: true, output: { mode: 'grep', handle, count: r.count, matches: r.matches } }
+        : r;
     }
 
     const page = typeof input.page === 'number' && Number.isFinite(input.page) ? input.page : 1;
     const r = await readResultPage(ctx.ownerId, handle, page, DEFAULT_RESULT_HANDLING.pageBytes);
     ctx.step?.setMeta({ mode: 'page', handle, page: r.ok ? r.page : undefined });
     return r.ok
-      ? { ok: true, output: { mode: 'page', handle, page: r.page, pages: r.pages, bytes: r.bytes, text: r.text } }
+      ? {
+          ok: true,
+          output: {
+            mode: 'page',
+            handle,
+            page: r.page,
+            pages: r.pages,
+            bytes: r.bytes,
+            text: r.text,
+          },
+        }
       : r;
   },
 };

@@ -47,7 +47,10 @@ describe('buildPageToc', () => {
 
   it('falls back to placeholder labels for empty headings / untitled pages', () => {
     const toc = buildPageToc(
-      doc([{ type: 'heading', attrs: { id: 'a', level: 1 } }, { type: 'childPage', attrs: { id: 'p1' } }]),
+      doc([
+        { type: 'heading', attrs: { id: 'a', level: 1 } },
+        { type: 'childPage', attrs: { id: 'p1' } },
+      ]),
     );
     expect(toc[0]!.label).toBe('Untitled heading');
     expect(toc[1]!.label).toBe('Untitled page');

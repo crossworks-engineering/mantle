@@ -33,7 +33,11 @@ export function PageBacklinks({ backlinks }: { backlinks: Backlink[] }) {
           const inner = (
             <>
               <span className="grid size-5 shrink-0 place-items-center text-muted-foreground">
-                {b.icon ? <span aria-hidden>{b.icon}</span> : <Icon className="size-4" aria-hidden />}
+                {b.icon ? (
+                  <span aria-hidden>{b.icon}</span>
+                ) : (
+                  <Icon className="size-4" aria-hidden />
+                )}
               </span>
               <span className="min-w-0 truncate text-sm">{b.title || 'Untitled'}</span>
             </>

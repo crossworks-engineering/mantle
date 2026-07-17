@@ -22,7 +22,8 @@ async function main() {
   console.error(
     `app-dbs snapshot → ${destDir}: ${r.snapshotted.length} ok, ${r.missing.length} missing, ${r.failed.length} failed`,
   );
-  for (const m of r.missing) console.error(`  missing: ${m.ownerId}/${m.appNodeId} (${m.storagePath})`);
+  for (const m of r.missing)
+    console.error(`  missing: ${m.ownerId}/${m.appNodeId} (${m.storagePath})`);
   for (const f of r.failed) console.error(`  FAILED:  ${f.ownerId}/${f.appNodeId} — ${f.error}`);
   if (r.failed.length > 0) process.exitCode = 2;
 }

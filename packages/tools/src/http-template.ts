@@ -78,6 +78,7 @@ function encodeParam(value: unknown, mode: ParamEncoding): string {
   else s = JSON.stringify(value);
   // Strip NUL bytes: they delimit secret tokens (see buildHttpRequest), so an
   // input value carrying one could otherwise smuggle a token into raw output.
+  // eslint-disable-next-line no-control-regex -- stripping NUL is intentional
   s = s.replace(/\u0000/g, '');
   return mode === 'url' ? encodeURIComponent(s) : s;
 }

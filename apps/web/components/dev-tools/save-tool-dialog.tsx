@@ -41,6 +41,7 @@ import { useToast } from '@/components/ui/toast';
 import { buildVarMap, substituteVars } from '@/lib/dev-tools/client';
 import { apiSend, ApiError } from '@/lib/api-fetch';
 import { useDevTools } from './context';
+import { slugify } from '@/lib/slugify';
 
 const PARAM_PATTERN = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
@@ -50,14 +51,6 @@ type ParamSpec = {
   description: string;
   required: boolean;
 };
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 64);
-}
 
 export function SaveToolDialog({
   open,
@@ -87,11 +80,13 @@ export function SaveToolDialog({
     }
     const query: Record<string, string> = {};
     for (const p of draft.params) {
-      if (p.enabled && p.key.trim()) query[substituteVars(p.key, vars)] = substituteVars(p.value, vars);
+      if (p.enabled && p.key.trim())
+        query[substituteVars(p.key, vars)] = substituteVars(p.value, vars);
     }
     const headers: Record<string, string> = {};
     for (const h of draft.headers) {
-      if (h.enabled && h.key.trim()) headers[substituteVars(h.key, vars)] = substituteVars(h.value, vars);
+      if (h.enabled && h.key.trim())
+        headers[substituteVars(h.key, vars)] = substituteVars(h.value, vars);
     }
     // Mirror the run path: only add the bearer header if none is set manually,
     // so the saved tool can't carry both `authorization` and `Authorization`.
@@ -153,7 +148,13 @@ export function SaveToolDialog({
   useEffect(() => {
     if (!open) return;
     setName(draft.name === 'Untitled request' ? '' : draft.name);
-    setSlug(slugify(draft.name === 'Untitled request' ? '' : draft.name));
+    setSlug(
+      slugify(draft.name === 'Untitled request' ? '' : draft.name, {
+        allowUnderscore: true,
+        separator: '_',
+        maxLength: 64,
+      }),
+    );
     setSlugTouched(false);
     setDescription(draft.description ?? '');
     setRequiresConfirm(false);
@@ -239,7 +240,14 @@ export function SaveToolDialog({
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value);
-                    if (!slugTouched) setSlug(slugify(e.target.value));
+                    if (!slugTouched)
+                      setSlug(
+                        slugify(e.target.value, {
+                          allowUnderscore: true,
+                          separator: '_',
+                          maxLength: 64,
+                        }),
+                      );
                   }}
                   required
                   autoFocus
@@ -280,7 +288,10 @@ export function SaveToolDialog({
                 </div>
                 {handler.query && (
                   <div className="text-muted-foreground">
-                    query: {Object.entries(handler.query).map(([k, v]) => `${k}=${v}`).join(' · ')}
+                    query:{' '}
+                    {Object.entries(handler.query)
+                      .map(([k, v]) => `${k}=${v}`)
+                      .join(' · ')}
                   </div>
                 )}
                 {handler.headers && (
@@ -288,7 +299,9 @@ export function SaveToolDialog({
                     headers: {Object.keys(handler.headers).join(', ')}
                   </div>
                 )}
-                {handler.body !== undefined && <div className="text-muted-foreground">+ body template</div>}
+                {handler.body !== undefined && (
+                  <div className="text-muted-foreground">+ body template</div>
+                )}
               </div>
               {targetsOwnApi && (
                 <p className="text-[11px] text-chart-3">
@@ -312,8 +325,8 @@ export function SaveToolDialog({
               {params.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   Add <code className="font-mono">{'{param}'}</code> placeholders to the URL, query
-                  values, headers, or body to give the tool inputs. Without them it always sends
-                  the same request.
+                  values, headers, or body to give the tool inputs. Without them it always sends the
+                  same request.
                 </p>
               ) : (
                 <div className="space-y-1.5">
@@ -324,7 +337,9 @@ export function SaveToolDialog({
                         value={p.type}
                         onValueChange={(t) =>
                           setParams((prev) =>
-                            prev.map((x, j) => (j === i ? { ...x, type: t as ParamSpec['type'] } : x)),
+                            prev.map((x, j) =>
+                              j === i ? { ...x, type: t as ParamSpec['type'] } : x,
+                            ),
                           )
                         }
                       >
@@ -332,16 +347,24 @@ export function SaveToolDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="string" className="text-xs">string</SelectItem>
-                          <SelectItem value="number" className="text-xs">number</SelectItem>
-                          <SelectItem value="boolean" className="text-xs">boolean</SelectItem>
+                          <SelectItem value="string" className="text-xs">
+                            string
+                          </SelectItem>
+                          <SelectItem value="number" className="text-xs">
+                            number
+                          </SelectItem>
+                          <SelectItem value="boolean" className="text-xs">
+                            boolean
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <Input
                         value={p.description}
                         onChange={(e) =>
                           setParams((prev) =>
-                            prev.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)),
+                            prev.map((x, j) =>
+                              j === i ? { ...x, description: e.target.value } : x,
+                            ),
                           )
                         }
                         placeholder="description for the model"

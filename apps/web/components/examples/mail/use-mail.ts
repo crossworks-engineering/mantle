@@ -1,13 +1,11 @@
-import { create } from "zustand";
-import { Mail, mails } from "@/components/examples/mail/data";
+import { create } from 'zustand';
+import { Mail, mails } from '@/components/examples/mail/data';
 
 interface Config {
-  selected: Mail["id"] | null;
+  selected: Mail['id'] | null;
 }
 
-const useMailStore = create<
-  Config & { setState: (newState: Partial<Config>) => void }
->((set) => ({
+const useMailStore = create<Config & { setState: (newState: Partial<Config>) => void }>((set) => ({
   selected: mails[0]?.id ?? null,
   setState: (newState) => set((state) => ({ ...state, ...newState })),
 }));

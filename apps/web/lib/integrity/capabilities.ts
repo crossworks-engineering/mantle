@@ -16,7 +16,11 @@ import { tikaIsUp } from '@mantle/files';
 
 import type { Capability, Capabilities } from './types';
 
-async function workerCap(ownerId: string, kind: AiWorkerKind, requireKey: boolean): Promise<Capability> {
+async function workerCap(
+  ownerId: string,
+  kind: AiWorkerKind,
+  requireKey: boolean,
+): Promise<Capability> {
   const w = await getDefaultWorker(ownerId, kind);
   if (!w) return { available: false, detail: `no ${kind} worker configured` };
   if (requireKey && !w.apiKeyId) return { available: false, detail: `${w.slug}: no api key` };
@@ -38,16 +42,23 @@ async function embeddingCap(ownerId: string): Promise<Capability> {
   const res = await db.execute<EmbedCfgRow>(sql`
     SELECT model, primary_provider AS provider, primary_base_url AS base_url
     FROM embedding_config WHERE owner_id = ${ownerId} LIMIT 1`);
-  const row = (Array.isArray(res) ? res : (res as { rows?: EmbedCfgRow[] }).rows ?? [])[0];
+  const row = (Array.isArray(res) ? res : ((res as { rows?: EmbedCfgRow[] }).rows ?? []))[0];
   if (!row) return { available: false, detail: 'no embedding_config row' };
   const { model, provider } = row;
   if (provider !== 'local') return { available: true, detail: `${model} · ${provider}` };
-  const base = (row.base_url || process.env.MANTLE_LOCAL_EMBEDDING_URL || 'http://localhost:11434/v1').replace(/\/+$/, '');
+  const base = (
+    row.base_url ||
+    process.env.MANTLE_LOCAL_EMBEDDING_URL ||
+    'http://localhost:11434/v1'
+  ).replace(/\/+$/, '');
   try {
     const probe = await fetch(`${base}/models`, { signal: AbortSignal.timeout(1_500) });
-    if (!probe.ok) return { available: false, detail: `local embedder unreachable (HTTP ${probe.status})` };
+    if (!probe.ok)
+      return { available: false, detail: `local embedder unreachable (HTTP ${probe.status})` };
     const body = (await probe.json()) as { data?: Array<{ id?: string }> };
-    const ids = (body.data ?? []).map((m) => m.id).filter((x): x is string => typeof x === 'string');
+    const ids = (body.data ?? [])
+      .map((m) => m.id)
+      .filter((x): x is string => typeof x === 'string');
     const norm = (s: string) => s.replace(/:latest$/, '');
     return ids.some((id) => norm(id) === norm(model))
       ? { available: true, detail: `${model} · loaded (local)` }
@@ -68,7 +79,10 @@ export async function resolveCapabilities(ownerId: string): Promise<Capabilities
     workerCap(ownerId, 'stt', false),
   ]);
   return {
-    tika: { available: tikaUp, detail: tikaUp ? 'reachable' : 'unreachable (set TIKA_URL / start the service)' },
+    tika: {
+      available: tikaUp,
+      detail: tikaUp ? 'reachable' : 'unreachable (set TIKA_URL / start the service)',
+    },
     vision,
     extractor,
     embedding,

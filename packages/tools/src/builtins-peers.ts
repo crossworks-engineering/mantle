@@ -8,20 +8,13 @@
  */
 import { getPeerNode, listPeers, queryPeer, searchPeerChunks } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { str, strArrOpt } from './coerce';
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
 function numOpt(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
-}
-function strArr(v: unknown): string[] | undefined {
-  if (!Array.isArray(v)) return undefined;
-  const out = v.filter((s): s is string => typeof s === 'string');
-  return out.length > 0 ? out : undefined;
 }
 
 const peer_list: BuiltinToolDef = {
@@ -78,7 +71,7 @@ const peer_query: BuiltinToolDef = {
     if (!ref) return { ok: false, error: 'peer required' };
     const res = await queryPeer(ctx.ownerId, ref, {
       query: strOpt(input.query),
-      types: strArr(input.types),
+      types: strArrOpt(input.types),
       limit: numOpt(input.limit),
     });
     if (!res.ok) return { ok: false, error: res.error };

@@ -102,10 +102,7 @@ export function resolveResultHandling(override?: ResultHandlingConfig | null): R
  * with a small overlap so a match spanning a boundary isn't lost. Pure +
  * exported for unit testing.
  */
-export function chunkText(
-  text: string,
-  opts?: { maxChars?: number; overlap?: number },
-): string[] {
+export function chunkText(text: string, opts?: { maxChars?: number; overlap?: number }): string[] {
   const maxChars = opts?.maxChars ?? 1500;
   const overlap = Math.min(opts?.overlap ?? 150, Math.floor(maxChars / 2));
   const out: string[] = [];
@@ -367,15 +364,16 @@ export async function grepResult(
 }
 
 /** Ensure the result's chunks exist + are embedded (lazy). */
-async function ensureResultChunked(ownerId: string, handle: string, content: string): Promise<void> {
+async function ensureResultChunked(
+  ownerId: string,
+  handle: string,
+  content: string,
+): Promise<void> {
   // Adapt chunk size so we never embed more than TOOL_RESULT_MAX_CHUNKS chunks
   // while still covering the whole stored content (coarser chunks for bigger
   // results) — bounds embedding cost + latency on the first query. The slice
   // is a hard backstop against overlap-induced overflow.
-  const maxChars = Math.max(
-    BASE_CHUNK_CHARS,
-    Math.ceil(content.length / TOOL_RESULT_MAX_CHUNKS),
-  );
+  const maxChars = Math.max(BASE_CHUNK_CHARS, Math.ceil(content.length / TOOL_RESULT_MAX_CHUNKS));
   const chunks = chunkText(content, { maxChars }).slice(0, TOOL_RESULT_MAX_CHUNKS);
   if (chunks.length === 0) {
     await db.update(toolResults).set({ chunked: true }).where(eq(toolResults.id, handle));

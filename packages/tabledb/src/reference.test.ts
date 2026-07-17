@@ -39,7 +39,12 @@ function workbook(): WorkbookDocLike {
         name: 'Orders',
         columns: [
           { id: 'c-ref', name: 'Ref', type: 'text' },
-          { id: 'c-omodel', name: 'Model', type: 'reference', ref: { tabId: 'models', columnId: 'c-model' } },
+          {
+            id: 'c-omodel',
+            name: 'Model',
+            type: 'reference',
+            ref: { tabId: 'models', columnId: 'c-model' },
+          },
         ],
         rows: [
           { id: 'o1', cells: { 'c-ref': 'ORD-1', 'c-omodel': 'Corolla' } },
@@ -98,8 +103,13 @@ describe('reference columns', () => {
     });
     expect(q?.rows.map((r) => r.id)).toEqual(['o1']);
     // The editor's dropdown source: distinct values of the SOURCE column.
-    expect(distinctColumnValues(abs, { columnId: 'c-model', tabId: 'models' })).toEqual(['Corolla', 'Model 3']);
-    expect(distinctColumnValues(abs, { columnId: 'c-model', tabId: 'models', prefix: 'Cor' })).toEqual(['Corolla']);
+    expect(distinctColumnValues(abs, { columnId: 'c-model', tabId: 'models' })).toEqual([
+      'Corolla',
+      'Model 3',
+    ]);
+    expect(
+      distinctColumnValues(abs, { columnId: 'c-model', tabId: 'models', prefix: 'Cor' }),
+    ).toEqual(['Corolla']);
   });
 
   it('column_add validates the target exists and is not a formula/self', () => {
@@ -107,30 +117,70 @@ describe('reference columns', () => {
     expect(() =>
       applyOpsToFile(
         abs,
-        [{ op: 'column_add', tabId: 'orders', column: { id: 'c-bad', name: 'Bad', type: 'reference', ref: { tabId: 'models', columnId: 'nope' } } }],
+        [
+          {
+            op: 'column_add',
+            tabId: 'orders',
+            column: {
+              id: 'c-bad',
+              name: 'Bad',
+              type: 'reference',
+              ref: { tabId: 'models', columnId: 'nope' },
+            },
+          },
+        ],
         coerce,
       ),
     ).toThrow(/does not exist/);
     expect(() =>
       applyOpsToFile(
         abs,
-        [{ op: 'column_add', tabId: 'orders', column: { id: 'c-self', name: 'Self', type: 'reference', ref: { tabId: 'orders', columnId: 'c-self' } } }],
+        [
+          {
+            op: 'column_add',
+            tabId: 'orders',
+            column: {
+              id: 'c-self',
+              name: 'Self',
+              type: 'reference',
+              ref: { tabId: 'orders', columnId: 'c-self' },
+            },
+          },
+        ],
         coerce,
       ),
     ).toThrow(/reference itself/);
     // valid add works and persists
     applyOpsToFile(
       abs,
-      [{ op: 'column_add', tabId: 'models', column: { id: 'c-made-by', name: 'Made by', type: 'reference', ref: { tabId: 'models', columnId: 'c-make' } } }],
+      [
+        {
+          op: 'column_add',
+          tabId: 'models',
+          column: {
+            id: 'c-made-by',
+            name: 'Made by',
+            type: 'reference',
+            ref: { tabId: 'models', columnId: 'c-make' },
+          },
+        },
+      ],
       coerce,
     );
     const models = readDocFile(abs, { tabId: 'models' });
-    expect(models.columns.find((c) => c.id === 'c-made-by')?.ref).toEqual({ tabId: 'models', columnId: 'c-make' });
+    expect(models.columns.find((c) => c.id === 'c-made-by')?.ref).toEqual({
+      tabId: 'models',
+      columnId: 'c-make',
+    });
   });
 
   it('retyping away from reference clears the edge; deleting the source degrades it', () => {
     const abs = write('degrade');
-    applyOpsToFile(abs, [{ op: 'column_update', tabId: 'orders', columnId: 'c-omodel', patch: { type: 'text' } }], coerce);
+    applyOpsToFile(
+      abs,
+      [{ op: 'column_update', tabId: 'orders', columnId: 'c-omodel', patch: { type: 'text' } }],
+      coerce,
+    );
     const orders = readDocFile(abs, { tabId: 'orders' });
     const col = orders.columns.find((c) => c.id === 'c-omodel')!;
     expect(col.type).toBe('text');
@@ -144,7 +194,9 @@ describe('reference columns', () => {
     applyOpsToFile(abs2, [{ op: 'column_delete', tabId: 'models', columnId: 'c-model' }], coerce);
     const described = describeWorkbook(abs2).find((t) => t.name === 'Orders')!;
     expect(described.columns.find((c) => c.name === 'Model')?.refersTo).toBeUndefined();
-    expect(readDocFile(abs2, { tabId: 'orders' }).rows.find((r) => r.id === 'o1')?.cells['c-omodel']).toBe('Corolla');
+    expect(
+      readDocFile(abs2, { tabId: 'orders' }).rows.find((r) => r.id === 'o1')?.cells['c-omodel'],
+    ).toBe('Corolla');
   });
 
   it('pre-v2.1 files (no ref_json column) lazily upgrade on first ops write', () => {
@@ -152,17 +204,32 @@ describe('reference columns', () => {
     const abs = write('upgrade');
     const db = openTableFile(abs);
     // SQLite can't DROP a PK-adjacent column easily pre-3.35; rebuild _columns without ref_json.
-    db.exec(`CREATE TABLE _columns_old AS SELECT tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position FROM _columns WHERE type != 'reference'`);
+    db.exec(
+      `CREATE TABLE _columns_old AS SELECT tab_id, col_id, physical, name, type, format_json, options_json, formula_src, width, position FROM _columns WHERE type != 'reference'`,
+    );
     db.exec(`DROP TABLE _columns`);
     db.exec(`ALTER TABLE _columns_old RENAME TO _columns`);
     db.close();
     // Ops on the old-shape file work, including adding a reference column.
     applyOpsToFile(
       abs,
-      [{ op: 'column_add', tabId: 'models', column: { id: 'c-again', name: 'Again', type: 'reference', ref: { tabId: 'models', columnId: 'c-make' } } }],
+      [
+        {
+          op: 'column_add',
+          tabId: 'models',
+          column: {
+            id: 'c-again',
+            name: 'Again',
+            type: 'reference',
+            ref: { tabId: 'models', columnId: 'c-make' },
+          },
+        },
+      ],
       coerce,
     );
-    expect(readDocFile(abs, { tabId: 'models' }).columns.find((c) => c.id === 'c-again')?.ref).toEqual({
+    expect(
+      readDocFile(abs, { tabId: 'models' }).columns.find((c) => c.id === 'c-again')?.ref,
+    ).toEqual({
       tabId: 'models',
       columnId: 'c-make',
     });

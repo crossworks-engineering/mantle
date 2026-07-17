@@ -57,10 +57,7 @@ export type FindResult = {
  * Walks the whole tree — addressable blocks nested inside callouts /
  * columns / list items / table cells are all findable by id.
  */
-export function findBlock(
-  doc: Record<string, unknown>,
-  blockId: string,
-): FindResult | null {
+export function findBlock(doc: Record<string, unknown>, blockId: string): FindResult | null {
   return walk(doc as AnyNode, blockId);
 }
 

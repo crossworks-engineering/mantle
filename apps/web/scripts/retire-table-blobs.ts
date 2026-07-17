@@ -21,7 +21,12 @@ import { existsSync } from 'node:fs';
 async function main() {
   const apply = process.argv.includes('--apply');
   const rows = await db
-    .select({ nodeId: tables.nodeId, storagePath: tables.storagePath, stats: tables.stats, title: nodes.title })
+    .select({
+      nodeId: tables.nodeId,
+      storagePath: tables.storagePath,
+      stats: tables.stats,
+      title: nodes.title,
+    })
     .from(tables)
     .innerJoin(nodes, eq(nodes.id, tables.nodeId))
     .where(and(eq(nodes.type, 'table'), isNotNull(tables.storagePath)));
@@ -50,10 +55,7 @@ async function main() {
     }
     ok++;
     if (apply) {
-      await db
-        .update(tables)
-        .set({ data: {}, draftData: null })
-        .where(eq(tables.nodeId, r.nodeId));
+      await db.update(tables).set({ data: {}, draftData: null }).where(eq(tables.nodeId, r.nodeId));
       console.log(`  ✓ retired blobs for ${r.nodeId} (${r.title.slice(0, 40)})`);
     } else {
       console.log(`  · would retire blobs for ${r.nodeId} (${r.title.slice(0, 40)})`);

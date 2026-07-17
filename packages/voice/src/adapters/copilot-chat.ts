@@ -96,7 +96,10 @@ async function copilotChat(opts: ChatOptions): Promise<ChatResult> {
   return withCopilotAuth(opts.apiKey, async (token) => {
     const res = await fetch(`${COPILOT_BASE_URL}/chat/completions`, {
       method: 'POST',
-      headers: copilotHeaders({ Authorization: `Bearer ${token}`, 'content-type': 'application/json' }),
+      headers: copilotHeaders({
+        Authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      }),
       body: JSON.stringify(body),
       signal: chatAbortSignal(o.signal, 120_000),
     });
@@ -135,7 +138,10 @@ function copilotChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<
       o,
       {
         url: `${COPILOT_BASE_URL}/chat/completions`,
-        headers: copilotHeaders({ Authorization: `Bearer ${token}`, 'content-type': 'application/json' }),
+        headers: copilotHeaders({
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        }),
         provider: 'copilot',
         ...(effort ? { bodyExtra: { reasoning_effort: effort } } : {}),
       },
@@ -152,25 +158,49 @@ async function copilotDiscover(apiKey: string): Promise<DiscoveryResult<ChatMode
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
-      return { available: [...COPILOT_CHAT_MODELS], filtered: false, error: `copilot /models: HTTP ${res.status}` };
+      return {
+        available: [...COPILOT_CHAT_MODELS],
+        filtered: false,
+        error: `copilot /models: HTTP ${res.status}`,
+      };
     }
     const body = (await res.json()) as {
-      data?: Array<{ id?: string; capabilities?: { type?: string }; model_picker_enabled?: boolean }>;
+      data?: Array<{
+        id?: string;
+        capabilities?: { type?: string };
+        model_picker_enabled?: boolean;
+      }>;
     };
     const available: ChatModelInfo[] = (body.data ?? [])
-      .filter((m): m is { id: string; capabilities?: { type?: string }; model_picker_enabled?: boolean } => {
-        if (typeof m.id !== 'string' || !m.id) return false;
-        // Drop non-chat models (embeddings) and picker-hidden entries.
-        if (m.model_picker_enabled === false) return false;
-        const t = m.capabilities?.type;
-        return !t || t === 'chat';
-      })
-      .map((m) => ({ id: m.id, label: m.id, description: 'Copilot model reported by your account.' }));
+      .filter(
+        (
+          m,
+        ): m is {
+          id: string;
+          capabilities?: { type?: string };
+          model_picker_enabled?: boolean;
+        } => {
+          if (typeof m.id !== 'string' || !m.id) return false;
+          // Drop non-chat models (embeddings) and picker-hidden entries.
+          if (m.model_picker_enabled === false) return false;
+          const t = m.capabilities?.type;
+          return !t || t === 'chat';
+        },
+      )
+      .map((m) => ({
+        id: m.id,
+        label: m.id,
+        description: 'Copilot model reported by your account.',
+      }));
     return available.length > 0
       ? { available, filtered: true, error: null }
       : { available: [...COPILOT_CHAT_MODELS], filtered: false, error: null };
   } catch (e) {
-    return { available: [...COPILOT_CHAT_MODELS], filtered: false, error: e instanceof Error ? e.message : String(e) };
+    return {
+      available: [...COPILOT_CHAT_MODELS],
+      filtered: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
   }
 }
 

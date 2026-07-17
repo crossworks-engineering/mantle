@@ -40,7 +40,12 @@ export function isTurnTokenStreamingEnabled(): boolean {
 
 /** Build a `status` event for one step. `stepId` ties the grounded line to its
  *  later narrated upgrade so the client replaces it in place. */
-function statusEvent(e: StepObserverEvent, label: string, stage: StageLabel, stepId: string): TurnEvent {
+function statusEvent(
+  e: StepObserverEvent,
+  label: string,
+  stage: StageLabel,
+  stepId: string,
+): TurnEvent {
   return {
     v: TURN_EVENT_SCHEMA_VERSION,
     turnId: e.turnId,
@@ -86,7 +91,10 @@ function lifecycleEvent(e: TurnLifecycleEvent): TurnEvent {
     return {
       ...base,
       type: 'error',
-      data: { status: 'failed', message: typeof e.data.message === 'string' ? e.data.message : 'turn failed' },
+      data: {
+        status: 'failed',
+        message: typeof e.data.message === 'string' ? e.data.message : 'turn failed',
+      },
     };
   }
   return {

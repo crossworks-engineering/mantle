@@ -21,6 +21,9 @@ export async function POST(req: Request) {
     const dimensions = await probeEmbeddingRoute(user.id, parsed.data);
     return NextResponse.json({ ok: true, dimensions });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    return NextResponse.json({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }

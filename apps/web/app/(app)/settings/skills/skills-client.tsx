@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { slugify } from '@/lib/slugify';
 
 // Row + backref shapes come from the shared client-types package (the wire
 // contract), so this screen never imports @mantle/db just to name them.
@@ -57,14 +58,6 @@ function fromSkill(s: SkillSummary): FormState {
     defaultStateText: JSON.stringify(s.defaultState ?? {}, null, 2),
     enabled: s.enabled,
   };
-}
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
 }
 
 export function SkillsClient() {
@@ -117,7 +110,11 @@ export function SkillsClient() {
   });
 
   const onName = (v: string) =>
-    setForm((f) => ({ ...f, name: v, slug: slugTouched ? f.slug : slugify(v) }));
+    setForm((f) => ({
+      ...f,
+      name: v,
+      slug: slugTouched ? f.slug : slugify(v, { allowUnderscore: true, maxLength: 64 }),
+    }));
 
   const openCreate = () => {
     setForm(emptyForm());
@@ -148,7 +145,9 @@ export function SkillsClient() {
         }
         defaultState = parsed as Record<string, unknown>;
       } catch (err) {
-        toast.error(`Default state JSON is invalid: ${err instanceof Error ? err.message : String(err)}`);
+        toast.error(
+          `Default state JSON is invalid: ${err instanceof Error ? err.message : String(err)}`,
+        );
         return;
       }
     }
@@ -212,7 +211,12 @@ export function SkillsClient() {
           ) : skillsQuery.isError ? (
             <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
               <p>Couldn’t load skills: {skillsQuery.error.message}</p>
-              <Button type="button" variant="outline" size="sm" onClick={() => skillsQuery.refetch()}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => skillsQuery.refetch()}
+              >
                 Retry
               </Button>
             </div>
@@ -309,91 +313,101 @@ export function SkillsClient() {
               </div>
             </div>
             <form onSubmit={submit} className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="name">Name</Label>
+                  <Input
+                    id="name"
+                    value={form.name}
+                    onChange={(e) => onName(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="slug">Slug</Label>
+                  <Input
+                    id="slug"
+                    value={form.slug}
+                    onChange={(e) => {
+                      setSlugTouched(true);
+                      setForm((f) => ({ ...f, slug: e.target.value }));
+                    }}
+                    pattern="[a-z0-9_\-]+"
+                    required
+                    disabled={editing?.mode === 'edit'}
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1.5">
-                <Label htmlFor="name">Name</Label>
+                <Label htmlFor="description">
+                  Description (1 sentence — when to use this skill)
+                </Label>
                 <Input
-                  id="name"
-                  value={form.name}
-                  onChange={(e) => onName(e.target.value)}
+                  id="description"
+                  value={form.description}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="Triage an inbox: classify each email + draft a brief reply"
                   required
-                  autoFocus
                 />
               </div>
+
               <div className="space-y-1.5">
-                <Label htmlFor="slug">Slug</Label>
-                <Input
-                  id="slug"
-                  value={form.slug}
-                  onChange={(e) => {
-                    setSlugTouched(true);
-                    setForm((f) => ({ ...f, slug: e.target.value }));
-                  }}
-                  pattern="[a-z0-9_\-]+"
-                  required
-                  disabled={editing?.mode === 'edit'}
+                <Label htmlFor="instructions">Instructions (markdown)</Label>
+                <textarea
+                  id="instructions"
+                  value={form.instructions}
+                  onChange={(e) => setForm((f) => ({ ...f, instructions: e.target.value }))}
+                  rows={10}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                  placeholder={
+                    'Step 1: list pending emails with email_list.\nStep 2: for each, draft a reply with file_create under files/drafts/.\n...'
+                  }
                 />
+                <p className="text-xs text-muted-foreground">
+                  Appended verbatim to the system prompt of any agent this skill is attached to.
+                  Reference tools by their slug; the agent will see them in its tool list.
+                </p>
               </div>
-            </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="description">Description (1 sentence — when to use this skill)</Label>
-              <Input
-                id="description"
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                placeholder="Triage an inbox: classify each email + draft a brief reply"
-                required
-              />
-            </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="defaultState">
+                  Default state (JSON template for heartbeats using this skill)
+                </Label>
+                <textarea
+                  id="defaultState"
+                  value={form.defaultStateText}
+                  onChange={(e) => setForm((f) => ({ ...f, defaultStateText: e.target.value }))}
+                  rows={5}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                  placeholder={'{\n  "answered": [],\n  "expecting_reply": false\n}'}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Heartbeats created against this skill copy this as their initial{' '}
+                  <code>state</code>. Once a heartbeat exists, its own state is the source of truth
+                  — edits here don&apos;t propagate. Leave empty for <code>{'{}'}</code>. See
+                  well-known keys in{' '}
+                  <a
+                    href="https://github.com/TitanKing/mantle/blob/main/docs/heartbeats.md#10-conventions-well-known-state-keys"
+                    className="underline"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    docs/heartbeats.md §10
+                  </a>
+                  .
+                </p>
+              </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="instructions">Instructions (markdown)</Label>
-              <textarea
-                id="instructions"
-                value={form.instructions}
-                onChange={(e) => setForm((f) => ({ ...f, instructions: e.target.value }))}
-                rows={10}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
-                placeholder={'Step 1: list pending emails with email_list.\nStep 2: for each, draft a reply with file_create under files/drafts/.\n...'}
-              />
-              <p className="text-xs text-muted-foreground">
-                Appended verbatim to the system prompt of any agent this skill is
-                attached to. Reference tools by their slug; the agent will see them
-                in its tool list.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="defaultState">Default state (JSON template for heartbeats using this skill)</Label>
-              <textarea
-                id="defaultState"
-                value={form.defaultStateText}
-                onChange={(e) => setForm((f) => ({ ...f, defaultStateText: e.target.value }))}
-                rows={5}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
-                placeholder={'{\n  "answered": [],\n  "expecting_reply": false\n}'}
-              />
-              <p className="text-xs text-muted-foreground">
-                Heartbeats created against this skill copy this as their initial{' '}
-                <code>state</code>. Once a heartbeat exists, its own state is the source
-                of truth — edits here don&apos;t propagate. Leave empty for{' '}
-                <code>{'{}'}</code>. See well-known keys in{' '}
-                <a href="https://github.com/TitanKing/mantle/blob/main/docs/heartbeats.md#10-conventions-well-known-state-keys" className="underline" target="_blank" rel="noreferrer">
-                  docs/heartbeats.md §10
-                </a>
-                .
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-2 border-t border-border pt-3">
-              <Button type="button" variant="outline" onClick={close}>
-                Cancel
-              </Button>
-              <SubmitButton pending={saveMutation.isPending}>
-                {editing.mode === 'create' ? 'Create skill' : 'Save skill'}
-              </SubmitButton>
-            </div>
+              <div className="flex justify-end gap-2 border-t border-border pt-3">
+                <Button type="button" variant="outline" onClick={close}>
+                  Cancel
+                </Button>
+                <SubmitButton pending={saveMutation.isPending}>
+                  {editing.mode === 'create' ? 'Create skill' : 'Save skill'}
+                </SubmitButton>
+              </div>
             </form>
           </div>
         ) : (

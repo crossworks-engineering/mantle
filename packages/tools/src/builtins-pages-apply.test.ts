@@ -76,7 +76,7 @@ function makeBaseline() {
 }
 
 beforeEach(() => {
-  vi.mocked(saveDraft).mockReset().mockResolvedValue(true);
+  vi.mocked(saveDraft).mockReset().mockResolvedValue({ ok: true, rev: 1 });
   vi.mocked(getPage).mockReset();
 });
 
@@ -157,12 +157,15 @@ describe('page_blocks_apply', () => {
     }
   });
 
-  it('a second batch anchored on the previous batch\'s created_ids succeeds without re-listing', async () => {
+  it("a second batch anchored on the previous batch's created_ids succeeds without re-listing", async () => {
     const { doc, ids } = makeBaseline();
     vi.mocked(getPage).mockResolvedValue({ doc, draft: null } as never);
 
     const first = await apply.handler(
-      { page_id: PAGE_ID, ops: [{ op: 'insert_after', block_id: ids[3], markdown: 'New section' }] },
+      {
+        page_id: PAGE_ID,
+        ops: [{ op: 'insert_after', block_id: ids[3], markdown: 'New section' }],
+      },
       ctx,
     );
     expect(first.ok).toBe(true);
@@ -175,7 +178,10 @@ describe('page_blocks_apply', () => {
     vi.mocked(getPage).mockResolvedValue({ doc, draft: savedDraft } as never);
 
     const second = await apply.handler(
-      { page_id: PAGE_ID, ops: [{ op: 'insert_after', block_id: newId, markdown: 'Chained onto it' }] },
+      {
+        page_id: PAGE_ID,
+        ops: [{ op: 'insert_after', block_id: newId, markdown: 'Chained onto it' }],
+      },
       ctx,
     );
     expect(second.ok).toBe(true);
@@ -255,7 +261,13 @@ describe('page_blocks_apply', () => {
     });
     const corrupted = {
       type: 'doc',
-      content: [p(DUP, 'Step 1'), p(DUP, 'Step 2'), p(DUP, 'Step 3'), p('u-78', 'Note'), p(DUP, 'Step 4')],
+      content: [
+        p(DUP, 'Step 1'),
+        p(DUP, 'Step 2'),
+        p(DUP, 'Step 3'),
+        p('u-78', 'Note'),
+        p(DUP, 'Step 4'),
+      ],
     };
     vi.mocked(getPage).mockResolvedValue({ doc: corrupted, draft: null } as never);
 
@@ -361,6 +373,47 @@ describe('page_blocks_apply', () => {
       ctx,
     );
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toContain("op must be one of: 'update', 'insert_after', 'delete'");
+    if (!res.ok)
+      expect(res.error).toContain("op must be one of: 'update', 'insert_after', 'delete'");
+  });
+
+  it('threads the read draft_rev as saveDraft baseRev (agent-vs-user optimistic concurrency)', async () => {
+    // The whole batch is computed against the doc read here; passing that read's
+    // draft_rev as baseRev is what lets a user autosave landing mid-batch CONFLICT
+    // rather than be silently overwritten (audit item #3 — agent-vs-user race).
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null, draftRev: 4 } as never);
+
+    const res = await apply.handler(
+      { page_id: PAGE_ID, ops: [{ op: 'update', block_id: ids[0], markdown: '## New title' }] },
+      ctx,
+    );
+
+    expect(res.ok).toBe(true);
+    expect(saveDraft).toHaveBeenCalledTimes(1);
+    // 4th arg is the concurrency options; baseRev must equal the read's rev.
+    expect(vi.mocked(saveDraft).mock.calls[0]![3]).toEqual({ baseRev: 4 });
+  });
+
+  it('a saveDraft conflict becomes a re-read tool error — no clobber, no blind retry', async () => {
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null, draftRev: 2 } as never);
+    // A user autosave advanced the draft to rev 5 after our read; saveDraft refuses.
+    vi.mocked(saveDraft).mockResolvedValue({ ok: false, conflict: true, rev: 5 } as never);
+
+    const res = await apply.handler(
+      { page_id: PAGE_ID, ops: [{ op: 'update', block_id: ids[0], markdown: '## New title' }] },
+      ctx,
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toContain('changed since you read it');
+      expect(res.error).toContain('NOT saved');
+      expect(res.error).toContain('page_blocks_list');
+    }
+    // The tool must NOT auto-retry (a blind retry would clobber the user's edit):
+    // exactly one attempt, and it surfaced as a typed error, not a throw.
+    expect(saveDraft).toHaveBeenCalledTimes(1);
   });
 });

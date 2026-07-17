@@ -50,7 +50,8 @@ describe('buildApp — happy path', () => {
 
   it('resolves relative imports, including index files', async () => {
     const src = app({
-      'App.tsx': "import { greet } from './lib/util';\nexport default function App() { return <div>{greet()}</div>; }\n",
+      'App.tsx':
+        "import { greet } from './lib/util';\nexport default function App() { return <div>{greet()}</div>; }\n",
       'lib/util.ts': "export { greet } from './greet';\n",
       'lib/greet/index.ts': "export function greet() { return 'hi'; }\n",
     });
@@ -61,20 +62,29 @@ describe('buildApp — happy path', () => {
 
 describe('buildApp — the import allowlist (security boundary)', () => {
   it('rejects an arbitrary npm package with a clear message', async () => {
-    const src = app({ 'App.tsx': "import _ from 'lodash';\nexport default function App() { return <div>{String(_)}</div>; }\n" });
+    const src = app({
+      'App.tsx':
+        "import _ from 'lodash';\nexport default function App() { return <div>{String(_)}</div>; }\n",
+    });
     const res = await buildApp(src);
     expect(res.ok).toBe(false);
     expect(res.errors.some((e) => /not allowed in a mini app|lodash/i.test(e.text))).toBe(true);
   });
 
   it('rejects node builtins (no server reach from a mini app)', async () => {
-    const src = app({ 'App.tsx': "import fs from 'node:fs';\nexport default function App() { return <div>{String(fs)}</div>; }\n" });
+    const src = app({
+      'App.tsx':
+        "import fs from 'node:fs';\nexport default function App() { return <div>{String(fs)}</div>; }\n",
+    });
     const res = await buildApp(src);
     expect(res.ok).toBe(false);
   });
 
   it('rejects an unknown @/ alias import', async () => {
-    const src = app({ 'App.tsx': "import x from '@/components/ui/table';\nexport default function App() { return <div>{String(x)}</div>; }\n" });
+    const src = app({
+      'App.tsx':
+        "import x from '@/components/ui/table';\nexport default function App() { return <div>{String(x)}</div>; }\n",
+    });
     const res = await buildApp(src);
     expect(res.ok).toBe(false);
     expect(res.errors.some((e) => /Unknown import/i.test(e.text))).toBe(true);
@@ -89,14 +99,19 @@ describe('buildApp — error reporting', () => {
   });
 
   it('reports a file/line location for an unresolvable relative import', async () => {
-    const src = app({ 'App.tsx': "import { x } from './missing';\nexport default function App() { return <div>{x}</div>; }\n" });
+    const src = app({
+      'App.tsx':
+        "import { x } from './missing';\nexport default function App() { return <div>{x}</div>; }\n",
+    });
     const res = await buildApp(src);
     expect(res.ok).toBe(false);
     expect(res.errors.some((e) => /Cannot resolve/i.test(e.text))).toBe(true);
   });
 
   it('reports a location for a syntax error', async () => {
-    const src = app({ 'App.tsx': 'export default function App() { return <div>oops</div> // missing brace\n' });
+    const src = app({
+      'App.tsx': 'export default function App() { return <div>oops</div> // missing brace\n',
+    });
     const res = await buildApp(src);
     expect(res.ok).toBe(false);
     expect(res.errors.length).toBeGreaterThan(0);
@@ -109,9 +124,9 @@ describe('lintToolRefs — undeclared host.tools.call', () => {
     const src = app({
       'App.tsx':
         "import { host } from '@host';\n" +
-        "export default function App() {\n" +
+        'export default function App() {\n' +
         "  const go = () => host.tools.call('openweather_geocode', { q: 'x' });\n" +
-        "  return <button onClick={go}>go</button>;\n" +
+        '  return <button onClick={go}>go</button>;\n' +
         '}\n',
     });
     const res = await buildApp(src, { declaredToolSlugs: [] });
@@ -126,9 +141,9 @@ describe('lintToolRefs — undeclared host.tools.call', () => {
     const src = app({
       'App.tsx':
         "import { host } from '@host';\n" +
-        "export default function App() {\n" +
+        'export default function App() {\n' +
         "  void (() => host.tools.call('weather_now', {}));\n" +
-        "  return <div>ok</div>;\n" +
+        '  return <div>ok</div>;\n' +
         '}\n',
     });
     const res = await buildApp(src, { declaredToolSlugs: ['weather_now'] });
@@ -140,9 +155,9 @@ describe('lintToolRefs — undeclared host.tools.call', () => {
     const src = app({
       'App.tsx':
         "import { host } from '@host';\n" +
-        "export default function App() {\n" +
+        'export default function App() {\n' +
         "  void (() => host.tools.call('anything', {}));\n" +
-        "  return <div>ok</div>;\n" +
+        '  return <div>ok</div>;\n' +
         '}\n',
     });
     const res = await buildApp(src);
@@ -153,10 +168,10 @@ describe('lintToolRefs — undeclared host.tools.call', () => {
     const src = app({
       'App.tsx':
         "import { host } from '@host';\n" +
-        "export default function App() {\n" +
+        'export default function App() {\n' +
         "  const slug = 'x';\n" +
-        "  void (() => host.tools.call(slug, {}));\n" +
-        "  return <div>ok</div>;\n" +
+        '  void (() => host.tools.call(slug, {}));\n' +
+        '  return <div>ok</div>;\n' +
         '}\n',
     });
     const res = await buildApp(src, { declaredToolSlugs: [] });

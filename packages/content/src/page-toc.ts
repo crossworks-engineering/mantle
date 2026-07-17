@@ -56,13 +56,28 @@ export function buildPageToc(doc: unknown): TocEntry[] {
       const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 3);
       lastHeadingLevel = level;
       const label = inlineText(node);
-      entries.push({ id, kind: 'heading', level, depth: level - 1, label: label || 'Untitled heading' });
+      entries.push({
+        id,
+        kind: 'heading',
+        level,
+        depth: level - 1,
+        label: label || 'Untitled heading',
+      });
       return; // headings don't nest TOC-relevant children
     }
 
     if (node.type === 'childPage' && id) {
-      const title = typeof node.attrs?.title === 'string' && node.attrs.title ? node.attrs.title : 'Untitled page';
-      entries.push({ id, kind: 'page', level: lastHeadingLevel, depth: lastHeadingLevel, label: title });
+      const title =
+        typeof node.attrs?.title === 'string' && node.attrs.title
+          ? node.attrs.title
+          : 'Untitled page';
+      entries.push({
+        id,
+        kind: 'page',
+        level: lastHeadingLevel,
+        depth: lastHeadingLevel,
+        label: title,
+      });
       return;
     }
 

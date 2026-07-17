@@ -32,7 +32,8 @@ export function DrivesList({ accountId }: { accountId: string }) {
   });
 
   const discover = useMutation({
-    mutationFn: () => apiSend<{ drives: MsDriveDTO[] }>(`/api/microsoft/accounts/${accountId}/drives`, 'POST'),
+    mutationFn: () =>
+      apiSend<{ drives: MsDriveDTO[] }>(`/api/microsoft/accounts/${accountId}/drives`, 'POST'),
     onSuccess: (res) => queryClient.setQueryData(key, res.drives),
     onError: (err) => toast.error(err instanceof Error ? err.message : String(err)),
   });
@@ -71,12 +72,14 @@ export function DrivesList({ accountId }: { accountId: string }) {
         </div>
       ) : drivesQuery.isError ? (
         <p className="px-1 py-3 text-xs text-destructive">
-          {drivesQuery.error instanceof Error ? drivesQuery.error.message : 'Failed to load drives.'}
+          {drivesQuery.error instanceof Error
+            ? drivesQuery.error.message
+            : 'Failed to load drives.'}
         </p>
       ) : drives.length === 0 ? (
         <p className="px-1 py-3 text-xs text-muted-foreground">
-          No drives discovered yet. Click <strong>Refresh drives</strong> to list this account&apos;s
-          OneDrive and followed SharePoint libraries.
+          No drives discovered yet. Click <strong>Refresh drives</strong> to list this
+          account&apos;s OneDrive and followed SharePoint libraries.
         </p>
       ) : (
         <ul className="divide-y divide-border">
@@ -127,8 +130,9 @@ export function DrivesList({ accountId }: { accountId: string }) {
       )}
       <p className="px-1 text-xs text-muted-foreground">
         Listed here: this account&apos;s OneDrive plus the document libraries of SharePoint sites it{' '}
-        <strong>follows</strong>. Missing a site? Follow it in SharePoint (the ☆ Follow button on the
-        site), then Refresh drives. Access alone isn&apos;t enough — unfollowed sites don&apos;t appear.
+        <strong>follows</strong>. Missing a site? Follow it in SharePoint (the ☆ Follow button on
+        the site), then Refresh drives. Access alone isn&apos;t enough — unfollowed sites don&apos;t
+        appear.
       </p>
     </div>
   );

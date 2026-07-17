@@ -7,12 +7,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import {
-  SECRET_KINDS,
-  deleteSecret,
-  getSecretMetadata,
-  updateSecret,
-} from '@/lib/secrets';
+import { SECRET_KINDS, deleteSecret, getSecretMetadata, updateSecret } from '@/lib/secrets';
 
 const FieldSchema = z.object({
   label: z.string().max(80),
@@ -28,10 +23,7 @@ const PatchBody = z.object({
   fields: z.array(FieldSchema).max(32).optional(),
 });
 
-export async function GET(
-  _req: Request,
-  ctx: { params: Promise<{ id: string }> },
-) {
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
@@ -40,10 +32,7 @@ export async function GET(
   return NextResponse.json({ secret: row });
 }
 
-export async function PATCH(
-  req: Request,
-  ctx: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
@@ -60,10 +49,7 @@ export async function PATCH(
   return NextResponse.json({ secret: row });
 }
 
-export async function DELETE(
-  _req: Request,
-  ctx: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;

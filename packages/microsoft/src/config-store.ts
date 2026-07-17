@@ -75,7 +75,14 @@ export async function getConfigStatus(ownerId: string): Promise<MsConfigStatus> 
       secretMasked: mask(env.clientSecret),
     };
   }
-  return { configured: false, source: null, clientId: null, tenant: 'common', redirectUri: null, secretMasked: null };
+  return {
+    configured: false,
+    source: null,
+    clientId: null,
+    tenant: 'common',
+    redirectUri: null,
+    secretMasked: null,
+  };
 }
 
 /** True if a flow can be started (UI row OR env). Owner-scoped. */
@@ -113,7 +120,10 @@ export async function saveConfig(ownerId: string, input: SaveConfigInput): Promi
     const { ciphertext, keyVersion } = seal(secret, ownerId);
     const sealed = { clientSecretEnc: ciphertext, keyVersion, secretMasked: mask(secret) };
     if (existing) {
-      await db.update(microsoftConfig).set({ ...base, ...sealed }).where(eq(microsoftConfig.ownerId, ownerId));
+      await db
+        .update(microsoftConfig)
+        .set({ ...base, ...sealed })
+        .where(eq(microsoftConfig.ownerId, ownerId));
     } else {
       await db.insert(microsoftConfig).values({ ownerId, ...base, ...sealed });
     }

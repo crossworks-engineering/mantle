@@ -68,7 +68,10 @@ const KIND_META: Record<AiWorkerKind, { label: string; description: string }> = 
     description:
       'PDF → text, sent natively to the model (whole document, real tables) on Anthropic/Google — best for invoices & statements. Falls back to page OCR on other providers, or to the Vision worker if unset.',
   },
-  image_gen: { label: 'Image generation', description: 'Text → image. Reserved for future tooling.' },
+  image_gen: {
+    label: 'Image generation',
+    description: 'Text → image. Reserved for future tooling.',
+  },
   embedding: {
     label: 'Embedding',
     description:
@@ -105,10 +108,7 @@ const KIND_ORDER: AiWorkerKind[] = [
   'search_advanced',
 ];
 
-type Selection =
-  | { mode: 'edit'; id: string }
-  | { mode: 'create'; kind: AiWorkerKind }
-  | null;
+type Selection = { mode: 'edit'; id: string } | { mode: 'create'; kind: AiWorkerKind } | null;
 
 export function AiWorkersClient() {
   const queryClient = useQueryClient();
@@ -168,7 +168,8 @@ export function AiWorkersClient() {
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Delete failed.'),
   });
 
-  const createAction = (fd: FormData) => createMutation.mutateAsync(buildWorkerBody(fd)).then(() => {});
+  const createAction = (fd: FormData) =>
+    createMutation.mutateAsync(buildWorkerBody(fd)).then(() => {});
   const updateAction = (id: string, fd: FormData) =>
     updateMutation.mutateAsync({ id, body: buildWorkerBody(fd) });
 
@@ -186,7 +187,11 @@ export function AiWorkersClient() {
   const [enabled, setEnabled] = useState(true);
   const [isDefault, setIsDefault] = useState(false);
   const selKey =
-    sel?.mode === 'edit' ? `edit:${sel.id}` : sel?.mode === 'create' ? `create:${sel.kind}` : 'none';
+    sel?.mode === 'edit'
+      ? `edit:${sel.id}`
+      : sel?.mode === 'create'
+        ? `create:${sel.kind}`
+        : 'none';
   useEffect(() => {
     if (sel?.mode === 'edit') {
       const w = workers.find((x) => x.id === sel.id);
@@ -224,7 +229,12 @@ export function AiWorkersClient() {
           ) : workersQuery.isError ? (
             <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
               <p>Couldn’t load workers: {workersQuery.error.message}</p>
-              <Button type="button" variant="outline" size="sm" onClick={() => workersQuery.refetch()}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => workersQuery.refetch()}
+              >
                 Retry
               </Button>
             </div>

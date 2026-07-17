@@ -67,10 +67,16 @@ describe('stageLabelForStep', () => {
     // under `args`, not the top level. (Regression: brain search showed the bare
     // bucket label because `q` lived at input.args.q.)
     expect(
-      stageLabelForStep('tool: search_nodes', { slug: 'search_nodes', args: { q: 'streaming', limit: 20 } }),
+      stageLabelForStep('tool: search_nodes', {
+        slug: 'search_nodes',
+        args: { q: 'streaming', limit: 20 },
+      }),
     ).toBe('Searching your brain for “streaming”…');
     expect(
-      stageLabelForStep('tool: invoke_agent', { slug: 'invoke_agent', args: { agent: 'Researcher' } }),
+      stageLabelForStep('tool: invoke_agent', {
+        slug: 'invoke_agent',
+        args: { agent: 'Researcher' },
+      }),
     ).toBe('Delegating to Researcher…');
   });
 

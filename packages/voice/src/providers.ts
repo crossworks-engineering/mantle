@@ -48,13 +48,7 @@ export type ProviderId =
  *
  *  When a new ai_workers kind ships, add its capability here too so
  *  the provider filter knows which providers to expose for that kind. */
-export type ProviderCapability =
-  | 'chat'
-  | 'embedding'
-  | 'tts'
-  | 'stt'
-  | 'vision'
-  | 'image_gen';
+export type ProviderCapability = 'chat' | 'embedding' | 'tts' | 'stt' | 'vision' | 'image_gen';
 
 export type Provider = {
   id: ProviderId;
@@ -193,8 +187,7 @@ export const SUPPORTED_PROVIDERS: readonly Provider[] = [
   {
     id: 'assemblyai',
     label: 'AssemblyAI',
-    description:
-      'Transcription with speaker diarization, sentiment, and topic detection.',
+    description: 'Transcription with speaker diarization, sentiment, and topic detection.',
     capabilities: ['stt'],
     signupUrl: 'https://www.assemblyai.com/dashboard',
     docsUrl: 'https://www.assemblyai.com/docs',

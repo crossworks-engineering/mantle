@@ -117,9 +117,7 @@ export async function transcribeAudio(
     // for streaming APIs. But we DO want callers to know they're over
     // cap so they can refuse to proceed (e.g. send a polite "too long,
     // please text" reply rather than chain a giant LLM call on top).
-    throw new Error(
-      `voice clip too long: ${durationSeconds.toFixed(1)}s exceeds ${cap}s cap`,
-    );
+    throw new Error(`voice clip too long: ${durationSeconds.toFixed(1)}s exceeds ${cap}s cap`);
   }
 
   return {

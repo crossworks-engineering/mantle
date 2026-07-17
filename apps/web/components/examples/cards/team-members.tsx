@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown } from 'lucide-react';
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Command,
   CommandEmpty,
@@ -12,46 +12,46 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+} from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const agents = [
   {
-    name: "Saskia",
-    role: "Assistant",
-    initials: "Sa",
-    model: "Claude Sonnet 4.6",
+    name: 'Saskia',
+    role: 'Assistant',
+    initials: 'Sa',
+    model: 'Claude Sonnet 4.6',
   },
   {
-    name: "Remy",
-    role: "Memory recall",
-    initials: "Re",
-    model: "Claude Haiku 4.5",
+    name: 'Remy',
+    role: 'Memory recall',
+    initials: 'Re',
+    model: 'Claude Haiku 4.5',
   },
   {
-    name: "Researcher",
-    role: "Web search",
-    initials: "Rs",
-    model: "Perplexity Sonar",
+    name: 'Researcher',
+    role: 'Web search',
+    initials: 'Rs',
+    model: 'Perplexity Sonar',
   },
 ];
 
 const models = [
   {
-    name: "Claude Opus 4.7",
-    description: "Deepest reasoning, highest cost.",
+    name: 'Claude Opus 4.7',
+    description: 'Deepest reasoning, highest cost.',
   },
   {
-    name: "Claude Sonnet 4.6",
-    description: "Balanced default for the assistant.",
+    name: 'Claude Sonnet 4.6',
+    description: 'Balanced default for the assistant.',
   },
   {
-    name: "Claude Haiku 4.5",
-    description: "Fast and cheap for sub-agents.",
+    name: 'Claude Haiku 4.5',
+    description: 'Fast and cheap for sub-agents.',
   },
   {
-    name: "Local (Llama)",
-    description: "Runs on-box for ingest extraction.",
+    name: 'Local (Llama)',
+    description: 'Runs on-box for ingest extraction.',
   },
 ];
 

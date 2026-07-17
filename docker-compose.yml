@@ -23,6 +23,14 @@ name: mantle
 #                            pulls on first boot)
 #   OLLAMA_KEEP_ALIVE       (default: 5m — set to -1 to keep the embedder always
 #                            resident instead of unloading when idle)
+#   MINIO_IMAGE_TAG / MC_IMAGE_TAG / OLLAMA_IMAGE_TAG (optional — pin the minio,
+#                            minio/mc, and ollama images. Defaults are the newest
+#                            stable tags at time of writing; pinned (like
+#                            tailscale) so the in-app update path can't pull a
+#                            breaking upstream `:latest` mid-update.)
+#   AUTOHEAL_IMAGE_TAG      (optional — pin the willfarrell/autoheal sidecar that
+#                            docker-restarts a worker once its heartbeat probe
+#                            flips it unhealthy. Same pin-not-`:latest` rationale.)
 #
 # Persistent data — bind-mounted on the host so you can see/back up/move it:
 #   MANTLE_DATA_DIR         (default: ./data) — EVERYTHING lives under here:
@@ -66,6 +74,40 @@ volumes:
   # socket shared web↔tailscale (optional `tailnet` profile), not durable data
   # — a host bind there buys nothing and risks breaking the socket.
   mantle_tailscale_sock:
+
+# Log rotation for every service — Docker's default json-file driver grows
+# unbounded, so a crash-looping worker or chatty extract run can fill the disk
+# and take Postgres (and the whole brain) down with it. Cap each container's
+# logs at 3×10 MB. Applied via `logging: *default-logging` on every service.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Liveness probe for the port-less long-runners (api + the 8 workers). Those
+# services already restart-on-exit if the process DIES (restart: unless-stopped)
+# — what that misses is a WEDGED process: alive, event loop stalled, doing
+# nothing. Each one touches a heartbeat file every 30s (see
+# packages/content/src/process-heartbeat.ts); this probe fails when that file's
+# mtime goes stale (>90s = 3 missed ticks). A probe alone only FLAGS the
+# container `unhealthy` — plain compose acts on process EXIT, not on health — so
+# the `autoheal` sidecar (below) watches for that flag and docker-restarts the
+# hung container. Every service under this anchor also carries
+# `labels: [autoheal=true]` so autoheal picks it up.
+# node, not curl (curl is purged from the final image). The test line is
+# identical for every service, so it's a shared anchor. The heartbeat lives in
+# /tmp — per-container, never a shared mount, so two containers can't collide.
+x-worker-healthcheck: &worker-healthcheck
+  test:
+    - CMD
+    - node
+    - -e
+    - "const fs=require('fs');const f=process.env.MANTLE_HEARTBEAT_FILE||'/tmp/mantle-heartbeat';try{if(Date.now()-fs.statSync(f).mtimeMs<90000)process.exit(0);process.exit(1)}catch(e){process.exit(1)}"
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 60s
 
 # Shared env block for app services — anchor + alias keeps the app
 # services in lockstep.
@@ -162,6 +204,8 @@ services:
     image: pgvector/pgvector:pg17
     container_name: mantle_pg
     restart: unless-stopped
+    logging: *default-logging
+    # Deliberately NO mem_limit: an OOM-killed database is worse than a slow box.
     # Headroom above the default 100: the full stack (web + agent + 4 workers,
     # each a postgres-js pool, plus pg-boss + web SSE LISTEN conns) sits ~50 at
     # idle and climbs under load. A crash-looping service can briefly double its
@@ -185,9 +229,17 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    # Pinned (was :latest) — the in-app update path re-pulls images, so a
+    # breaking upstream release would land mid-update. Override via env.
+    image: minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
     container_name: mantle_minio
     restart: unless-stopped
+    logging: *default-logging
+    # ── Memory caps (mem_limit) — a GUARDRAIL, not a reservation ──────────────
+    # These cap a runaway leak so one service can't take the whole box down;
+    # they do NOT reserve memory, so the sum of all caps may exceed box RAM (the
+    # 4 GB minimum box idles ~2.5 GB). Sized ~2-4× each service's steady state.
+    mem_limit: 512m
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minio}
@@ -209,7 +261,8 @@ services:
   # Idempotent (`--ignore-existing`), so it's a no-op on every later boot. Every
   # service that writes object bytes depends_on this completing.
   createbuckets:
-    image: minio/mc:latest
+    # Pinned (was :latest) — same reason as minio above: the update path re-pulls.
+    image: minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-08-13T08-35-41Z}
     container_name: mantle_createbuckets
     restart: "no"
     depends_on:
@@ -234,6 +287,9 @@ services:
     image: apache/tika:3.3.0.0
     container_name: mantle_tika
     restart: unless-stopped
+    logging: *default-logging
+    # JVM already capped (-Xmx1g + non-heap overhead); this is the outer guardrail.
+    mem_limit: 1.5g
     environment:
       # Cap JVM heap so Tika can't balloon on a malicious or pathological
       # document, while leaving headroom for legitimately large Office files.
@@ -271,6 +327,9 @@ services:
     image: ghcr.io/browserless/chromium:v2.54.2
     container_name: mantle_browser
     restart: unless-stopped
+    logging: *default-logging
+    # Guardrail against a chromium render leak.
+    mem_limit: 1.5g
     environment:
       TOKEN: ${BROWSER_TOKEN:-mantle}
       # Two concurrent renders + a small queue covers a team clicking Download;
@@ -290,9 +349,14 @@ services:
   # OpenAI-compatible API. CPU-only; a small encoder (~300MB) that fits on the
   # base VPS. Self-hosted — the text the brain embeds never leaves the box.
   ollama:
-    image: ollama/ollama:latest
+    # Pinned (was :latest) — the update path re-pulls; override via env. Same var
+    # for both ollama services so they never drift to different builds.
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.1}
     container_name: mantle_ollama
     restart: unless-stopped
+    logging: *default-logging
+    # Higher cap than the sidecars: the embedding model needs room resident.
+    mem_limit: 2g
     # OPT-IN. The local embedder only starts with `--profile local-embedder`.
     # Online embedding (set up in onboarding) is the default; by default this
     # service does NOT run and NO app service waits on it — so a fresh box boots
@@ -312,7 +376,7 @@ services:
   # One-shot: pull the shipped embedder into the model volume, then exit.
   # Idempotent — a no-op once the model is already in the volume.
   ollama_pull:
-    image: ollama/ollama:latest
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.1}
     container_name: mantle_ollama_pull
     restart: "no"
     profiles: ["local-embedder"]
@@ -343,6 +407,8 @@ services:
     image: tailscale/tailscale:${TS_IMAGE_TAG:-v1.98.4}
     container_name: mantle_tailscale
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 256m
     entrypoint:
       - tailscaled
       - --tun=userspace-networking
@@ -391,6 +457,8 @@ services:
         MANTLE_BUILD_TIME: ${MANTLE_BUILD_TIME:-}
     container_name: mantle_web
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1.5g
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -443,6 +511,8 @@ services:
     image: caddy:2-alpine
     container_name: mantle_caddy
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 256m
     depends_on:
       web: { condition: service_healthy }
     ports:
@@ -471,6 +541,8 @@ services:
     image: docker:28-cli
     container_name: mantle_updater
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
     entrypoint: ["sh", "/updater.sh"]
     environment:
       MANTLE_STACK_DIR: ${MANTLE_STACK_DIR:-}
@@ -479,6 +551,39 @@ services:
       - ./infra/updater/updater.sh:/updater.sh:ro
       - .:${MANTLE_STACK_DIR:-/opt/mantle-stack}
       - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal
+
+  # ── Autoheal sidecar — the actuator for the worker liveness probes ─────────
+  # Plain `docker compose` treats `unhealthy` as a FLAG ONLY: `restart:
+  # unless-stopped` fires on process EXIT, and nothing here depends_on the
+  # port-less long-runners — so a WEDGED worker that trips its heartbeat probe
+  # (x-worker-healthcheck) would sit `unhealthy` forever, doing nothing, and
+  # never be restarted. This is the missing actuator: willfarrell/autoheal
+  # watches for containers that flip `unhealthy` and `docker restart`s them,
+  # turning the probe into an actual self-heal. Scope is deliberately narrow —
+  # AUTOHEAL_CONTAINER_LABEL=autoheal means it ONLY touches services that opt in
+  # with `labels: [autoheal=true]` (the api + the 8 heartbeat workers), never
+  # postgres/minio/caddy/web (whose healthchecks predate this and must NOT bounce
+  # on a blip — restarting postgres on a transient probe miss is worse than the
+  # blip).
+  #
+  # Security: like `updater` above, this holds the Docker socket
+  # (root-equivalent on the host). Mitigations mirror it — no ports, a single
+  # hardcoded behavior (restart-on-unhealthy for labeled containers only, baked
+  # into the image; no command/trigger surface an attacker could redirect), and
+  # a pinned image (override via AUTOHEAL_IMAGE_TAG, never `:latest`). The socket
+  # is used only to read container health and issue `restart` — nothing an
+  # operator couldn't already do with `docker restart`.
+  autoheal:
+    image: willfarrell/autoheal:${AUTOHEAL_IMAGE_TAG:-1.2.0}
+    container_name: mantle_autoheal
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 64m
+    environment:
+      # Only act on containers that opt in with `labels: [autoheal=true]`.
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   # Dedicated durable-runner service: executes assistant/agent LLM work as DBOS
   # workflows (journaled to the mantle_dbos_sys system DB, provisioned in the
@@ -491,6 +596,15 @@ services:
     command: ["pnpm", "-C", "apps/api", "start"]
     container_name: mantle_api
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1.5g
+    # Heartbeat-based liveness (no HTTP port; DBOS admin server off by default).
+    healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -512,6 +626,14 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/email-sync.ts"]
     container_name: mantle_worker_email
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1g
+    healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -525,6 +647,14 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/telegram-poll.ts"]
     container_name: mantle_worker_telegram
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1g
+    healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -539,6 +669,14 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/microsoft-sync.ts"]
     container_name: mantle_worker_microsoft
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1g
+    healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -554,6 +692,14 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/files-watch.ts"]
     container_name: mantle_worker_files
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1g
+    healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -574,6 +720,14 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/docs-sync.ts"]
     container_name: mantle_worker_docs
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1g
+    healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -587,6 +741,14 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/events-reminders.ts"]
     container_name: mantle_worker_events
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1g
+    healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -595,6 +757,13 @@ services:
     volumes:
       # Scheduled backups land here (see MANTLE_BACKUP_DIR in x-app-env).
       - ${MANTLE_DATA_DIR:-./data}/backups:/data/backups
+      # This worker also runs the scheduled-backup tick, which snapshots the
+      # sqlite sidecars (table-dbs + app-dbs) beside the pg_dump. Those dirs
+      # must be mounted HERE or the snapshot passes see an empty TABLE_DB_DIR/
+      # APP_DB_DIR and report every workbook/app as "missing" — a scheduled
+      # backup that silently contains no table or app data.
+      - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
+      - ${MANTLE_DATA_DIR:-./data}/app-dbs:/data/app-dbs
 
   # Calendar sync: pulls subscribed external calendars (ICS feeds; Google/MS
   # later) into the brain as event nodes. No volume — events live in Postgres.
@@ -603,6 +772,14 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/calendar-sync.ts"]
     container_name: mantle_worker_calendar
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1g
+    healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -617,6 +794,14 @@ services:
     command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/push-notify.ts"]
     container_name: mantle_worker_push
     restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1g
+    healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }

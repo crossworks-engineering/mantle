@@ -63,8 +63,12 @@ export function SystemVitals() {
   if (!data) return <SystemVitalsSkeleton />;
 
   const { host, postgres, storage, tika, browser, embedder, network } = data;
-  const memValue = host.mem ? `${formatBytes(host.mem.usedBytes)} / ${formatBytes(host.mem.totalBytes)}` : '—';
-  const diskValue = host.disk ? `${formatBytes(host.disk.usedBytes)} / ${formatBytes(host.disk.totalBytes)}` : '—';
+  const memValue = host.mem
+    ? `${formatBytes(host.mem.usedBytes)} / ${formatBytes(host.mem.totalBytes)}`
+    : '—';
+  const diskValue = host.disk
+    ? `${formatBytes(host.disk.usedBytes)} / ${formatBytes(host.disk.totalBytes)}`
+    : '—';
 
   return (
     <Card>
@@ -101,12 +105,18 @@ export function SystemVitals() {
         </Tile>
         {/* Memory */}
         <Tile icon={<MemoryStick className="size-4" />} title="Memory">
-          <VitalsBar pct={host.mem?.usedPct ?? null} value={formatPct(host.mem?.usedPct ?? null, true)} />
+          <VitalsBar
+            pct={host.mem?.usedPct ?? null}
+            value={formatPct(host.mem?.usedPct ?? null, true)}
+          />
           <p className="text-xs text-muted-foreground">{memValue}</p>
         </Tile>
         {/* Disk */}
         <Tile icon={<HardDrive className="size-4" />} title="Disk (files volume)">
-          <VitalsBar pct={host.disk?.usedPct ?? null} value={formatPct(host.disk?.usedPct ?? null, true)} />
+          <VitalsBar
+            pct={host.disk?.usedPct ?? null}
+            value={formatPct(host.disk?.usedPct ?? null, true)}
+          />
           <p className="truncate text-xs text-muted-foreground" title={host.disk?.mount}>
             {diskValue}
           </p>
@@ -139,16 +149,32 @@ function Pill({ ok, label, title }: { ok: boolean | null; label: string; title?:
         : 'bg-destructive/15 text-destructive';
   return (
     <span
-      className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium', tone)}
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+        tone,
+      )}
       title={title}
     >
-      <span className={cn('size-1.5 rounded-full', ok == null ? 'bg-muted-foreground' : ok ? 'bg-emerald-500' : 'bg-destructive')} />
+      <span
+        className={cn(
+          'size-1.5 rounded-full',
+          ok == null ? 'bg-muted-foreground' : ok ? 'bg-emerald-500' : 'bg-destructive',
+        )}
+      />
       {label}
     </span>
   );
 }
 
-function Tile({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+function Tile({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5 text-sm font-medium">

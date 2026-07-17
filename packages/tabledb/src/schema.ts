@@ -8,7 +8,10 @@ import type { WorkbookTabRef } from './engine';
  * names — so a retrieval hit grounds a table_sql call without a table_get
  * round-trip.
  */
-export function schemaToText(tabs: WorkbookTabRef[], opts: { title: string; nodeId?: string }): string {
+export function schemaToText(
+  tabs: WorkbookTabRef[],
+  opts: { title: string; nodeId?: string },
+): string {
   const lines: string[] = [`# ${opts.title} — table schema`];
   if (opts.nodeId) lines.push(`Table id: ${opts.nodeId}`);
   lines.push(
@@ -17,7 +20,9 @@ export function schemaToText(tabs: WorkbookTabRef[], opts: { title: string; node
   );
   for (const t of tabs) {
     lines.push(`## ${t.name}`);
-    lines.push(`View "${t.viewName}"${t.ftsTable ? ` · FTS shadow ${t.ftsTable}` : ''} · ${t.rowCount} rows.`);
+    lines.push(
+      `View "${t.viewName}"${t.ftsTable ? ` · FTS shadow ${t.ftsTable}` : ''} · ${t.rowCount} rows.`,
+    );
     lines.push(`Columns: ${t.columns.map((c) => `${c.name} (${c.type})`).join(', ') || 'none'}.`);
     const edges = t.columns.filter((c) => c.refersTo);
     for (const c of edges) {

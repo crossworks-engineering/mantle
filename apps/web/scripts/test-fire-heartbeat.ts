@@ -55,11 +55,7 @@ async function main() {
   if (result.replyText) console.error('reply (first 200c):', result.replyText.slice(0, 200));
 
   console.error('\n=== STATE AFTER FIRE ===');
-  const [after] = await db
-    .select()
-    .from(heartbeats)
-    .where(eq(heartbeats.id, hb.id))
-    .limit(1);
+  const [after] = await db.select().from(heartbeats).where(eq(heartbeats.id, hb.id)).limit(1);
   if (!after) {
     console.error('post-fire reload returned null!');
     process.exit(1);
@@ -72,7 +68,9 @@ async function main() {
   if (after.updatedAt.getTime() === hb.updatedAt.getTime()) {
     console.error('❌ updated_at unchanged — UPDATE never landed');
   } else if (JSON.stringify(after.state) === JSON.stringify(hb.state)) {
-    console.error('⚠️  updated_at changed but state unchanged — the post-fire UPDATE landed (fire_count etc) but heartbeat_update_state never persisted');
+    console.error(
+      '⚠️  updated_at changed but state unchanged — the post-fire UPDATE landed (fire_count etc) but heartbeat_update_state never persisted',
+    );
   } else {
     console.error('✅ state changed — heartbeat_update_state worked');
   }

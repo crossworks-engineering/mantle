@@ -148,58 +148,62 @@ function RequestsPanel({ requests }: { requests: TeamRequest[] }) {
     <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
       <div className="mx-auto w-full max-w-3xl space-y-4 p-4">
         {requests.map((r) => (
-        <div
-          key={r.taskId}
-          className={cn(
-            'rounded-lg border border-border bg-card p-4 text-card-foreground',
-            r.status === 'done' && 'opacity-70',
-          )}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold">{r.title}</h3>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                from {r.contactName ?? 'a team member'} ·{' '}
-                {new Date(r.createdAt).toLocaleDateString()}
-                {r.notifiedAt ? ' · replied' : ''}
-              </p>
+          <div
+            key={r.taskId}
+            className={cn(
+              'rounded-lg border border-border bg-card p-4 text-card-foreground',
+              r.status === 'done' && 'opacity-70',
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">{r.title}</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  from {r.contactName ?? 'a team member'} ·{' '}
+                  {new Date(r.createdAt).toLocaleDateString()}
+                  {r.notifiedAt ? ' · replied' : ''}
+                </p>
+              </div>
+              <span
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs',
+                  r.status === 'done'
+                    ? 'bg-muted text-muted-foreground'
+                    : 'bg-primary/10 text-primary',
+                )}
+              >
+                {r.status === 'done' ? <CheckCircle2 className="size-3" /> : null}
+                {r.status === 'done' ? 'done' : 'open'}
+              </span>
             </div>
-            <span
-              className={cn(
-                'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs',
-                r.status === 'done'
-                  ? 'bg-muted text-muted-foreground'
-                  : 'bg-primary/10 text-primary',
-              )}
-            >
-              {r.status === 'done' ? <CheckCircle2 className="size-3" /> : null}
-              {r.status === 'done' ? 'done' : 'open'}
-            </span>
-          </div>
-          {r.body ? (
-            <div className="prose prose-accent prose-sm mt-2 max-w-none dark:prose-invert">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.body}</ReactMarkdown>
-            </div>
-          ) : null}
-          <div className="mt-2 flex gap-3 text-xs">
-            <Link
-              href={`/tasks?selected=${r.taskId}`}
-              className="text-muted-foreground underline-offset-2 hover:underline"
-            >
-              Open task →
-            </Link>
-            {r.contactId ? (
+            {r.body ? (
+              <div className="prose prose-accent prose-sm mt-2 max-w-none dark:prose-invert">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{r.body}</ReactMarkdown>
+              </div>
+            ) : null}
+            <div className="mt-2 flex gap-3 text-xs">
               <Link
-                href={`/team-admin?contact=${r.contactId}`}
+                href={`/tasks?selected=${r.taskId}`}
                 className="text-muted-foreground underline-offset-2 hover:underline"
               >
-                View their chat →
+                Open task →
               </Link>
+              {r.contactId ? (
+                <Link
+                  href={`/team-admin?contact=${r.contactId}`}
+                  className="text-muted-foreground underline-offset-2 hover:underline"
+                >
+                  View their chat →
+                </Link>
+              ) : null}
+            </div>
+            {r.contactId ? (
+              <RequestReply
+                taskId={r.taskId}
+                contactName={r.contactName}
+                done={r.status === 'done'}
+              />
             ) : null}
-          </div>
-          {r.contactId ? (
-            <RequestReply taskId={r.taskId} contactName={r.contactName} done={r.status === 'done'} />
-          ) : null}
           </div>
         ))}
       </div>
@@ -234,9 +238,7 @@ export default async function TeamAdminPage({
       title: a.hasBuild ? a.title : `${a.title} (build failed — members see the built-in hub)`,
     }));
   const hubAppId =
-    prefs.teamHubAppId && apps.some((a) => a.id === prefs.teamHubAppId)
-      ? prefs.teamHubAppId
-      : null;
+    prefs.teamHubAppId && apps.some((a) => a.id === prefs.teamHubAppId) ? prefs.teamHubAppId : null;
 
   if (view === 'shares') {
     const active = await listActiveShares(user.id);
@@ -331,8 +333,8 @@ export default async function TeamAdminPage({
                 <div>
                   <h2 className="text-sm font-semibold">{selected.contactName}</h2>
                   <p className="text-xs text-muted-foreground">
-                    {selected.messageCount} messages · member since {fmtWhen(selected.memberSince)} ·
-                    token last used {fmtWhen(selected.tokenLastUsedAt)}
+                    {selected.messageCount} messages · member since {fmtWhen(selected.memberSince)}{' '}
+                    · token last used {fmtWhen(selected.tokenLastUsedAt)}
                   </p>
                 </div>
                 <Link
@@ -366,7 +368,9 @@ export default async function TeamAdminPage({
                           className="mr-auto w-full max-w-[85%] rounded-lg bg-card px-3 py-2 text-card-foreground"
                         >
                           {m.status === 'failed' ? (
-                            <p className="text-sm text-destructive">Turn failed: {m.error ?? 'unknown error'}</p>
+                            <p className="text-sm text-destructive">
+                              Turn failed: {m.error ?? 'unknown error'}
+                            </p>
                           ) : (
                             <div className="prose prose-accent prose-sm max-w-none dark:prose-invert">
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
@@ -398,7 +402,10 @@ export default async function TeamAdminPage({
                 ) : (
                   <ul className="flex flex-col gap-1">
                     {access.map((a) => (
-                      <li key={a.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <li
+                        key={a.id}
+                        className="flex items-center gap-2 text-xs text-muted-foreground"
+                      >
                         <span className="w-14 shrink-0 font-medium text-foreground">{a.kind}</span>
                         <span className="truncate">{JSON.stringify(a.detail)}</span>
                         <span className="ml-auto shrink-0">{fmtWhen(a.createdAt)}</span>

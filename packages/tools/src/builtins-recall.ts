@@ -34,6 +34,7 @@ import {
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import type { BuiltinToolDef } from './types';
+import { str } from './coerce';
 
 // ─── pure helpers (unit-tested in builtins-recall.test.ts) ──────────────────
 
@@ -80,9 +81,6 @@ export function mergeAndSortTurns(turns: RecallTurn[]): RecallTurn[] {
 
 // ─── input coercion (mirrors builtins.ts helpers) ───────────────────────────
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
@@ -147,7 +145,12 @@ async function fetchWindowTraces(ownerId: string, from: Date, to: Date): Promise
       output: traceSteps.output,
     })
     .from(traceSteps)
-    .where(inArray(traceSteps.traceId, traceRows.map((t) => t.id)))
+    .where(
+      inArray(
+        traceSteps.traceId,
+        traceRows.map((t) => t.id),
+      ),
+    )
     .orderBy(asc(traceSteps.ordinal));
 
   const byTrace = new Map<string, RecalledTrace['steps']>();
@@ -211,7 +214,10 @@ const find_window: BuiltinToolDef = {
     try {
       queryVec = await embed(ctx.ownerId, topic);
     } catch (err) {
-      return { ok: false, error: `embed failed: ${err instanceof Error ? err.message : String(err)}` };
+      return {
+        ok: false,
+        error: `embed failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
     }
     const vec = JSON.stringify(queryVec);
 
@@ -223,10 +229,14 @@ const find_window: BuiltinToolDef = {
     ];
     // Keep digests whose [period_start, period_end] overlaps the rough range.
     if (to) {
-      conds.push(sql`(${nodes.data}->>'period_start')::timestamptz <= ${to.toISOString()}::timestamptz`);
+      conds.push(
+        sql`(${nodes.data}->>'period_start')::timestamptz <= ${to.toISOString()}::timestamptz`,
+      );
     }
     if (from) {
-      conds.push(sql`(${nodes.data}->>'period_end')::timestamptz >= ${from.toISOString()}::timestamptz`);
+      conds.push(
+        sql`(${nodes.data}->>'period_end')::timestamptz >= ${from.toISOString()}::timestamptz`,
+      );
     }
 
     const rows = await db

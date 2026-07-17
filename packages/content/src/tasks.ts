@@ -43,8 +43,7 @@ function rowOf(n: Node): TaskRow {
       ? (d.status as TaskStatus)
       : 'open';
   const priority =
-    typeof d.priority === 'string' &&
-    (TASK_PRIORITIES as readonly string[]).includes(d.priority)
+    typeof d.priority === 'string' && (TASK_PRIORITIES as readonly string[]).includes(d.priority)
       ? (d.priority as TaskPriority)
       : 'normal';
   return {

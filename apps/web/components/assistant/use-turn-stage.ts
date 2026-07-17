@@ -25,7 +25,10 @@ export function useTurnStage(active: boolean): string | null {
 
     const poll = async () => {
       try {
-        const res = await fetch(apiUrl('/api/assistant/turn/stage'), withAuth({ cache: 'no-store' }));
+        const res = await fetch(
+          apiUrl('/api/assistant/turn/stage'),
+          withAuth({ cache: 'no-store' }),
+        );
         if (!cancelled && res.ok) {
           const data = (await res.json()) as { label?: string | null };
           setLabel(data.label ?? null);

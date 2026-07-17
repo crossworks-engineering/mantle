@@ -7,7 +7,12 @@ export { classifyDelivery, salienceForDeliveryKind } from './classify';
 export type { ClassifyInput, DeliveryKind } from './classify';
 export { syncAccount, backfillMatch } from './sync';
 export { enqueueBackfill, enqueueBackfills, BACKFILL_QUEUE } from './backfill-queue';
-export { peekLatestFromSender, peekRecentSenders, type SenderPreview, type RecentSender } from './peek';
+export {
+  peekLatestFromSender,
+  peekRecentSenders,
+  type SenderPreview,
+  type RecentSender,
+} from './peek';
 export { sanitizeEmailHtml } from './render';
 export {
   imap,

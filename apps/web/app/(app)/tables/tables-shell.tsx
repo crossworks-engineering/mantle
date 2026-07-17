@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Loader2, PanelLeftClose, PanelLeftOpen, Plus, Search, Trash2 } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListNav } from '@/lib/use-list-nav';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
@@ -60,7 +69,9 @@ export function TablesShell() {
   const query = searchParams.get('q')?.trim() ?? '';
   const activeTag = searchParams.get('tag')?.trim() || null;
   const sortParam = searchParams.get('sort');
-  const sort: TableSort = SORTS.includes(sortParam as TableSort) ? (sortParam as TableSort) : 'edited';
+  const sort: TableSort = SORTS.includes(sortParam as TableSort)
+    ? (sortParam as TableSort)
+    : 'edited';
 
   const listQuery = useQuery({
     queryKey: ['tables', { q: query, tag: activeTag, sort, page }],
@@ -110,7 +121,9 @@ export function TablesShell() {
   // loaded SSR), so without a cue the click feels dead for a beat. Set on click,
   // cleared once the new selection lands.
   const [pendingId, setPendingId] = useState<string | null>(null);
-  useEffect(() => { setPendingId(null); }, [selectedId]);
+  useEffect(() => {
+    setPendingId(null);
+  }, [selectedId]);
   const selectTable = (id: string) => {
     if (id === selectedId) return;
     setPendingId(id);
@@ -143,7 +156,10 @@ export function TablesShell() {
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (!drag.current) return;
-    const next = Math.min(MAX_W, Math.max(MIN_W, drag.current.startW + e.clientX - drag.current.startX));
+    const next = Math.min(
+      MAX_W,
+      Math.max(MIN_W, drag.current.startW + e.clientX - drag.current.startX),
+    );
     setListWidth(next);
   };
   const onPointerUp = (e: React.PointerEvent) => {
@@ -158,7 +174,10 @@ export function TablesShell() {
     localStorage.setItem('tables.listCollapsed', v ? '1' : '0');
   };
 
-  const openCreate = () => { setNewTitle(''); setCreateOpen(true); };
+  const openCreate = () => {
+    setNewTitle('');
+    setCreateOpen(true);
+  };
 
   async function createTable() {
     const title = newTitle.trim();
@@ -218,25 +237,64 @@ export function TablesShell() {
     <div className="flex h-full min-h-0">
       {collapsed ? (
         <div className="flex h-full w-11 shrink-0 flex-col items-center gap-1 border-r border-border py-2">
-          <Button size="icon" variant="ghost" className="size-8" onClick={() => setCollapse(false)} aria-label="Show table list" title="Show tables">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8"
+            onClick={() => setCollapse(false)}
+            aria-label="Show table list"
+            title="Show tables"
+          >
             <PanelLeftOpen />
           </Button>
-          <Button size="icon" variant="ghost" className="size-8" onClick={openCreate} aria-label="New table" title="New table">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8"
+            onClick={openCreate}
+            aria-label="New table"
+            title="New table"
+          >
             <Plus />
           </Button>
         </div>
       ) : (
-        <div className="relative flex h-full shrink-0 flex-col border-r border-border" style={{ width: listWidth }}>
+        <div
+          className="relative flex h-full shrink-0 flex-col border-r border-border"
+          style={{ width: listWidth }}
+        >
           <div className="space-y-3 border-b border-border p-3">
             <div className="flex items-center gap-2">
               <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                <Input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="Search tables…" className="h-8 pl-8" />
+                <Search
+                  className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+                <Input
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder="Search tables…"
+                  className="h-8 pl-8"
+                />
               </div>
-              <Button size="icon" variant="ghost" className="size-8 shrink-0" onClick={openCreate} aria-label="New table" title="New table">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-8 shrink-0"
+                onClick={openCreate}
+                aria-label="New table"
+                title="New table"
+              >
                 <Plus />
               </Button>
-              <Button size="icon" variant="ghost" className="size-8 shrink-0 text-muted-foreground" onClick={() => setCollapse(true)} aria-label="Collapse list" title="Collapse">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-8 shrink-0 text-muted-foreground"
+                onClick={() => setCollapse(true)}
+                aria-label="Collapse list"
+                title="Collapse"
+              >
                 <PanelLeftClose />
               </Button>
             </div>
@@ -277,23 +335,34 @@ export function TablesShell() {
                   )}
                 >
                   <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-base leading-none">
-                    {pendingId === t.id ? <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden /> : (t.icon || '📊')}
+                    {pendingId === t.id ? (
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+                    ) : (
+                      t.icon || '📊'
+                    )}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{t.title}</div>
                     <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                      Updated {new Date(t.updatedAt).toLocaleDateString()} · {t.columnCount} cols · {t.rowCount} rows
+                      Updated {new Date(t.updatedAt).toLocaleDateString()} · {t.columnCount} cols ·{' '}
+                      {t.rowCount} rows
                     </div>
                     {t.tags.length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-1">
-                        {t.tags.map((tag) => <TagPill key={tag} tag={tag} />)}
+                        {t.tags.map((tag) => (
+                          <TagPill key={tag} tag={tag} />
+                        ))}
                       </div>
                     )}
                   </div>
                   <span
                     role="button"
                     tabIndex={-1}
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(t); }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDeleteTarget(t);
+                    }}
                     className="shrink-0 self-center p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
                     aria-label={`Delete ${t.title}`}
                     title="Delete table"
@@ -309,9 +378,29 @@ export function TablesShell() {
             <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
               <span className="tabular-nums">{total} tables</span>
               <div className="flex items-center gap-1.5">
-                <span className="tabular-nums">{page} / {totalPages}</span>
-                <Button size="icon" variant="outline" className="size-7" disabled={page <= 1 || navPending} onClick={() => go({ page: page - 1 })} aria-label="Previous page"><ChevronLeft /></Button>
-                <Button size="icon" variant="outline" className="size-7" disabled={page >= totalPages || navPending} onClick={() => go({ page: page + 1 })} aria-label="Next page"><ChevronRight /></Button>
+                <span className="tabular-nums">
+                  {page} / {totalPages}
+                </span>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="size-7"
+                  disabled={page <= 1 || navPending}
+                  onClick={() => go({ page: page - 1 })}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="size-7"
+                  disabled={page >= totalPages || navPending}
+                  onClick={() => go({ page: page + 1 })}
+                  aria-label="Next page"
+                >
+                  <ChevronRight />
+                </Button>
               </div>
             </div>
           )}
@@ -376,18 +465,30 @@ export function TablesShell() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New table</DialogTitle>
-            <DialogDescription>Give it a name. You can add columns and import a spreadsheet in the editor.</DialogDescription>
+            <DialogDescription>
+              Give it a name. You can add columns and import a spreadsheet in the editor.
+            </DialogDescription>
           </DialogHeader>
           <Input
             autoFocus
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="e.g. Stock list"
-            onKeyDown={(e) => { if (e.key === 'Enter') void createTable(); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void createTable();
+            }}
           />
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <SubmitButton onClick={() => void createTable()} pending={creating} disabled={!newTitle.trim()}>Create table</SubmitButton>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </Button>
+            <SubmitButton
+              onClick={() => void createTable()}
+              pending={creating}
+              disabled={!newTitle.trim()}
+            >
+              Create table
+            </SubmitButton>
           </div>
         </DialogContent>
       </Dialog>
@@ -397,11 +498,18 @@ export function TablesShell() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{deleteTarget?.title}”?</AlertDialogTitle>
-            <AlertDialogDescription>This permanently removes the table and its index entries. This can’t be undone.</AlertDialogDescription>
+            <AlertDialogDescription>
+              This permanently removes the table and its index entries. This can’t be undone.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => void confirmDelete()}>Delete</AlertDialogAction>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => void confirmDelete()}
+            >
+              Delete
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

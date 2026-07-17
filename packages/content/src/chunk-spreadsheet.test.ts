@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  chunkSpreadsheetProfile,
-  hasSheetMarkers,
-  isSpreadsheetTitle,
-} from './chunk-spreadsheet';
+import { chunkSpreadsheetProfile, hasSheetMarkers, isSpreadsheetTitle } from './chunk-spreadsheet';
 
 const grid = (rows: number, prefix = 'r') =>
   Array.from({ length: rows }, (_, i) => `${prefix}${i + 1},10,20,30`).join('\n');

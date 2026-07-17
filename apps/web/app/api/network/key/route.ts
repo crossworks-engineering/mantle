@@ -19,7 +19,10 @@ export async function POST(req: Request) {
   const host = parsed.data.hostname.trim() || 'mantle';
   if (!key) return json({ ok: false, message: 'Paste a Tailscale auth key.' });
   if (!/^tskey-/.test(key)) {
-    return json({ ok: false, message: 'That does not look like a Tailscale auth key (expected tskey-…).' });
+    return json({
+      ok: false,
+      message: 'That does not look like a Tailscale auth key (expected tskey-…).',
+    });
   }
   try {
     await setTailscaleConfig(owner.id, key, host);

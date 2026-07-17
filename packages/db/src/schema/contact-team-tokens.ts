@@ -24,7 +24,9 @@ import { nodes } from './nodes';
 export const contactTeamTokens = pgTable(
   'contact_team_tokens',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     contactId: uuid('contact_id')
       .notNull()

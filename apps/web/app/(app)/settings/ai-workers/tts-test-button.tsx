@@ -79,12 +79,7 @@ export function TtsTestButton({ workerId }: { workerId: string }) {
       {audioUrl && (
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2">
           <Volume2 className="h-4 w-4 text-muted-foreground" />
-          <audio
-            id={`tts-preview-${workerId}`}
-            controls
-            src={audioUrl}
-            className="flex-1"
-          />
+          <audio id={`tts-preview-${workerId}`} controls src={audioUrl} className="flex-1" />
         </div>
       )}
     </div>

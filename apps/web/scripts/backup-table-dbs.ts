@@ -22,7 +22,10 @@ async function main() {
   console.error(
     `table-dbs snapshot → ${destDir}: ${r.snapshotted.length} ok, ${r.missing.length} missing, ${r.failed.length} failed`,
   );
-  for (const m of r.missing) console.error(`  missing: ${m.nodeId} (${m.storagePath}) — already-lost data, restore from an older backup`);
+  for (const m of r.missing)
+    console.error(
+      `  missing: ${m.nodeId} (${m.storagePath}) — already-lost data, restore from an older backup`,
+    );
   for (const f of r.failed) console.error(`  FAILED:  ${f.nodeId} — ${f.error}`);
   if (r.failed.length > 0) process.exitCode = 2;
 }

@@ -20,15 +20,8 @@
  * aren't in the model's supportedSizes list with a clear hint.
  */
 
-import type {
-  GenerateImageOptions,
-  GenerateImageResult,
-  ImageGenDispatcher,
-} from './types';
-import {
-  OPENAI_IMAGE_DEFAULT_MODEL,
-  OPENAI_IMAGE_MODELS,
-} from '../catalogs/openai-image';
+import type { GenerateImageOptions, GenerateImageResult, ImageGenDispatcher } from './types';
+import { OPENAI_IMAGE_DEFAULT_MODEL, OPENAI_IMAGE_MODELS } from '../catalogs/openai-image';
 
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations';
 

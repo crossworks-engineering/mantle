@@ -29,7 +29,7 @@ describe('diffBlocks', () => {
     expect(d.ordered).toEqual([]);
   });
 
-  it('reports an added block when the draft has one the doc doesn\'t', () => {
+  it("reports an added block when the draft has one the doc doesn't", () => {
     const doc = blocked({
       type: 'doc',
       content: [{ type: 'paragraph', content: [{ type: 'text', text: 'one' }] }],
@@ -107,7 +107,9 @@ describe('diffBlocks', () => {
         {
           type: 'callout',
           attrs: { id, variant: 'info' },
-          content: [{ type: 'paragraph', attrs: { id: 'p-1' }, content: [{ type: 'text', text: 'note' }] }],
+          content: [
+            { type: 'paragraph', attrs: { id: 'p-1' }, content: [{ type: 'text', text: 'note' }] },
+          ],
         },
       ],
     };
@@ -117,7 +119,9 @@ describe('diffBlocks', () => {
         {
           type: 'callout',
           attrs: { id, variant: 'warning' }, // only the variant changed
-          content: [{ type: 'paragraph', attrs: { id: 'p-1' }, content: [{ type: 'text', text: 'note' }] }],
+          content: [
+            { type: 'paragraph', attrs: { id: 'p-1' }, content: [{ type: 'text', text: 'note' }] },
+          ],
         },
       ],
     };

@@ -1,11 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import {
-  connectImapAccount,
-  latestSyncRuns,
-  listAccounts,
-  redactAccount,
-} from '@mantle/email';
+import { connectImapAccount, latestSyncRuns, listAccounts, redactAccount } from '@mantle/email';
 import { getOwnerOr401 } from '@/lib/auth';
 
 /** List the owner's email accounts plus the latest sync run per account. The

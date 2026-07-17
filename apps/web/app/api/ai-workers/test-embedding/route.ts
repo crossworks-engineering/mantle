@@ -10,6 +10,7 @@ export async function POST(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ ok: false, error: 'model required' }, { status: 400 });
+  if (!parsed.success)
+    return NextResponse.json({ ok: false, error: 'model required' }, { status: 400 });
   return NextResponse.json(await testEmbeddingModel(user.id, parsed.data.model));
 }

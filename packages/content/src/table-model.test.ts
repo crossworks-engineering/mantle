@@ -158,7 +158,14 @@ describe('column ops', () => {
 describe('addSelectOption', () => {
   function selDoc() {
     return {
-      columns: [{ id: 'c_s', name: 'Status', type: 'select' as const, options: [{ id: 'open', label: 'Open' }] }],
+      columns: [
+        {
+          id: 'c_s',
+          name: 'Status',
+          type: 'select' as const,
+          options: [{ id: 'open', label: 'Open' }],
+        },
+      ],
       rows: [{ id: 'r1', cells: {} }],
       aggregates: {},
       views: [],
@@ -289,10 +296,20 @@ describe('queryRows (ad-hoc filter + sort)', () => {
       const rows = queryRows(doc, { filters: [{ colId: 'c_price', op, value: 100 }] });
       expect(rows.some((r) => r.cells.c_item === 'Blank')).toBe(false);
     }
-    expect(queryRows(doc, { filters: [{ colId: 'c_price', op: 'lt', value: 100 }] }).map((r) => r.cells.c_item).sort()).toEqual(['Gadget', 'Widget']);
+    expect(
+      queryRows(doc, { filters: [{ colId: 'c_price', op: 'lt', value: 100 }] })
+        .map((r) => r.cells.c_item)
+        .sort(),
+    ).toEqual(['Gadget', 'Widget']);
     // `empty` still finds it; string ordered-compare on a populated text column is unaffected
-    expect(queryRows(doc, { filters: [{ colId: 'c_price', op: 'empty' }] }).map((r) => r.cells.c_item)).toEqual(['Blank']);
-    expect(queryRows(doc, { filters: [{ colId: 'c_item', op: 'gt', value: 'F' }] }).map((r) => r.cells.c_item).sort()).toEqual(['Gadget', 'Widget']);
+    expect(
+      queryRows(doc, { filters: [{ colId: 'c_price', op: 'empty' }] }).map((r) => r.cells.c_item),
+    ).toEqual(['Blank']);
+    expect(
+      queryRows(doc, { filters: [{ colId: 'c_item', op: 'gt', value: 'F' }] })
+        .map((r) => r.cells.c_item)
+        .sort(),
+    ).toEqual(['Gadget', 'Widget']);
   });
 });
 
@@ -325,8 +342,14 @@ describe('groupRows (group by)', () => {
   it('per-group aggregates compose with computeAggregate over bucket.rows', () => {
     const doc = catGrid();
     const buckets = groupRows(doc, { groupColIds: ['c_svc'] });
-    const maxByService = buckets.map((b) => [b.key[0], computeAggregate(doc, 'c_press', 'max', b.rows)]);
-    expect(maxByService).toEqual([['Steam', 2000], ['Amine', 3000]]);
+    const maxByService = buckets.map((b) => [
+      b.key[0],
+      computeAggregate(doc, 'c_press', 'max', b.rows),
+    ]);
+    expect(maxByService).toEqual([
+      ['Steam', 2000],
+      ['Amine', 3000],
+    ]);
   });
 
   it('filters rows before grouping', () => {
@@ -341,7 +364,11 @@ describe('groupRows (group by)', () => {
 
   it('supports a multi-column composite key', () => {
     const buckets = groupRows(catGrid(), { groupColIds: ['c_svc', 'c_metal'] });
-    expect(buckets.map((b) => b.key)).toEqual([['Steam', 'CS'], ['Amine', 'SS'], ['Amine', 'CS']]);
+    expect(buckets.map((b) => b.key)).toEqual([
+      ['Steam', 'CS'],
+      ['Amine', 'SS'],
+      ['Amine', 'CS'],
+    ]);
   });
 });
 

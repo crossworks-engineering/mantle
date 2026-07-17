@@ -6,7 +6,12 @@ import { describe, it, expect } from 'vitest';
 // browser bundle can see) exactly matches what actually registered. Add an
 // adapter without updating WIRED_PROVIDERS and this fails.
 import '../index';
-import { WIRED_PROVIDERS, registeredProviderIds, isProviderWired, type WiredCapability } from './registry';
+import {
+  WIRED_PROVIDERS,
+  registeredProviderIds,
+  isProviderWired,
+  type WiredCapability,
+} from './registry';
 
 const CAPS: WiredCapability[] = ['chat', 'tts', 'stt', 'vision', 'image_gen', 'embedding'];
 

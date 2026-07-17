@@ -1,8 +1,8 @@
-"use client"
+'use client';
 
-import * as React from "react"
-import { TrendingUp } from "lucide-react"
-import { Label, Pie, PieChart } from "recharts"
+import * as React from 'react';
+import { TrendingUp } from 'lucide-react';
+import { Label, Pie, PieChart } from 'recharts';
 
 import {
   Card,
@@ -11,51 +11,51 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card"
+} from '@/components/ui/card';
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from "@/components/ui/chart"
+} from '@/components/ui/chart';
 const chartData = [
-  { model: "opus", tokens: 275, fill: "var(--color-opus)" },
-  { model: "sonnet", tokens: 287, fill: "var(--color-sonnet)" },
-  { model: "haiku", tokens: 200, fill: "var(--color-haiku)" },
-  { model: "local", tokens: 173, fill: "var(--color-local)" },
-  { model: "embed", tokens: 190, fill: "var(--color-embed)" },
-]
+  { model: 'opus', tokens: 275, fill: 'var(--color-opus)' },
+  { model: 'sonnet', tokens: 287, fill: 'var(--color-sonnet)' },
+  { model: 'haiku', tokens: 200, fill: 'var(--color-haiku)' },
+  { model: 'local', tokens: 173, fill: 'var(--color-local)' },
+  { model: 'embed', tokens: 190, fill: 'var(--color-embed)' },
+];
 
 const chartConfig = {
   tokens: {
-    label: "Tokens",
+    label: 'Tokens',
   },
   opus: {
-    label: "Opus 4.7",
-    color: "var(--chart-1)",
+    label: 'Opus 4.7',
+    color: 'var(--chart-1)',
   },
   sonnet: {
-    label: "Sonnet 4.6",
-    color: "var(--chart-2)",
+    label: 'Sonnet 4.6',
+    color: 'var(--chart-2)',
   },
   haiku: {
-    label: "Haiku 4.5",
-    color: "var(--chart-3)",
+    label: 'Haiku 4.5',
+    color: 'var(--chart-3)',
   },
   local: {
-    label: "Local",
-    color: "var(--chart-4)",
+    label: 'Local',
+    color: 'var(--chart-4)',
   },
   embed: {
-    label: "Embeddings",
-    color: "var(--chart-5)",
+    label: 'Embeddings',
+    color: 'var(--chart-5)',
   },
-} satisfies ChartConfig
+} satisfies ChartConfig;
 
 export function ChartPieDonut() {
   const totalTokens = React.useMemo(() => {
-    return chartData.reduce((acc, curr) => acc + curr.tokens, 0)
-  }, [])
+    return chartData.reduce((acc, curr) => acc + curr.tokens, 0);
+  }, []);
 
   return (
     <Card className="flex flex-col h-full">
@@ -64,25 +64,13 @@ export function ChartPieDonut() {
         <CardDescription>Last 6 months</CardDescription>
       </CardHeader>
       <CardContent className="flex-1 pb-0">
-        <ChartContainer
-          config={chartConfig}
-          className="mx-auto aspect-square max-h-[300px]"
-        >
+        <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-[300px]">
           <PieChart>
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel />}
-            />
-            <Pie
-              data={chartData}
-              dataKey="tokens"
-              nameKey="model"
-              innerRadius={60}
-              strokeWidth={5}
-            >
+            <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+            <Pie data={chartData} dataKey="tokens" nameKey="model" innerRadius={60} strokeWidth={5}>
               <Label
                 content={({ viewBox }) => {
-                  if (viewBox && "cx" in viewBox && "cy" in viewBox) {
+                  if (viewBox && 'cx' in viewBox && 'cy' in viewBox) {
                     return (
                       <text
                         x={viewBox.cx}
@@ -105,7 +93,7 @@ export function ChartPieDonut() {
                           Tokens
                         </tspan>
                       </text>
-                    )
+                    );
                   }
                 }}
               />
@@ -122,5 +110,5 @@ export function ChartPieDonut() {
         </div>
       </CardFooter>
     </Card>
-  )
+  );
 }

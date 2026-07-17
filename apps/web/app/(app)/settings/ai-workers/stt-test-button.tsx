@@ -84,12 +84,7 @@ export function SttTestButton({ workerId }: { workerId: string }) {
     <div className="space-y-3">
       <div>
         {!recording ? (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={startRecording}
-            disabled={pending}
-          >
+          <Button type="button" variant="outline" onClick={startRecording} disabled={pending}>
             {pending ? (
               <>
                 <Loader2 className="animate-spin" />
@@ -114,8 +109,7 @@ export function SttTestButton({ workerId }: { workerId: string }) {
           <p className="font-medium">{result.text || '(empty transcript)'}</p>
           <p className="text-xs text-muted-foreground">
             {result.language && `language: ${result.language}`}
-            {result.duration != null &&
-              ` · ${result.duration.toFixed(1)}s of audio`}
+            {result.duration != null && ` · ${result.duration.toFixed(1)}s of audio`}
           </p>
         </div>
       )}

@@ -64,11 +64,7 @@ describe('coercion (safe repairs)', () => {
   });
 
   it('JSON-parses a stringified object/array for structured params', () => {
-    const r = validateToolArgs(
-      SCHEMA,
-      { q: 'x', filters: '{"a":1}', tags: '["a","b"]' },
-      't',
-    );
+    const r = validateToolArgs(SCHEMA, { q: 'x', filters: '{"a":1}', tags: '["a","b"]' }, 't');
     expect(r.error).toBeNull();
     expect(r.input.filters).toEqual({ a: 1 });
     expect(r.input.tags).toEqual(['a', 'b']);
@@ -122,7 +118,7 @@ describe('violations (teaching errors)', () => {
 
   it('suggests the nearest enum value on a near-miss', () => {
     const r = validateToolArgs(SCHEMA, { q: 'x', kind: 'emial' }, 't');
-    expect(r.error).toContain("must be one of: branch, email, file, note");
+    expect(r.error).toContain('must be one of: branch, email, file, note');
     expect(r.error).toContain("did you mean 'email'?");
   });
 

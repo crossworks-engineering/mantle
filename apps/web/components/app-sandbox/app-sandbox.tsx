@@ -159,7 +159,9 @@ const INSPECTOR = `
 function buildSrcDoc(bundleCode: string, importMapJson: string, viewport: boolean): string {
   const html = document.documentElement;
   const cls = html.className || '';
-  const colorTheme = html.dataset.colorTheme ? ` data-color-theme="${html.dataset.colorTheme}"` : '';
+  const colorTheme = html.dataset.colorTheme
+    ? ` data-color-theme="${html.dataset.colorTheme}"`
+    : '';
   const styleMarkup = hostStyleMarkup();
   // CSP: the app may only render — NO network of its own. `connect-src 'none'`
   // blocks fetch/XHR/WebSocket, but img/font loads are network too, so they're
@@ -318,11 +320,19 @@ export function AppSandbox({
     if (status !== 'ready') return;
     const send = () => {
       const h = document.documentElement;
-      postToFrame({ v: 1, kind: 'theme', cls: h.className || '', colorTheme: h.dataset.colorTheme ?? null });
+      postToFrame({
+        v: 1,
+        kind: 'theme',
+        cls: h.className || '',
+        colorTheme: h.dataset.colorTheme ?? null,
+      });
     };
     send();
     const obs = new MutationObserver(send);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-color-theme'] });
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'data-color-theme'],
+    });
     return () => obs.disconnect();
   }, [status, postToFrame]);
 
@@ -330,10 +340,7 @@ export function AppSandbox({
   const handleRequest = useCallback(
     async (req: BridgeReq) => {
       const reply = (res: { ok: boolean; output?: unknown; error?: string }) => {
-        iframeRef.current?.contentWindow?.postMessage(
-          { v: 1, id: req.id, ...res },
-          '*',
-        );
+        iframeRef.current?.contentWindow?.postMessage({ v: 1, id: req.id, ...res }, '*');
       };
       try {
         if (req.kind === 'hub.get') {
@@ -480,14 +487,18 @@ export function AppSandbox({
       }
     >
       {status === 'nobuild' && (
-        <div className={`flex items-center justify-center p-6 text-center text-sm text-muted-foreground ${isViewport ? 'h-full' : 'h-40'}`}>
+        <div
+          className={`flex items-center justify-center p-6 text-center text-sm text-muted-foreground ${isViewport ? 'h-full' : 'h-40'}`}
+        >
           {isViewport
             ? 'This app isn’t available right now.'
             : 'This app hasn’t been built yet. Ask Appsmith to build it, or run a build from the editor.'}
         </div>
       )}
       {status === 'error' && (
-        <div className={`flex items-center justify-center p-6 text-center text-sm text-destructive ${isViewport ? 'h-full' : 'h-40'}`}>
+        <div
+          className={`flex items-center justify-center p-6 text-center text-sm text-destructive ${isViewport ? 'h-full' : 'h-40'}`}
+        >
           {isViewport ? 'Couldn’t load the app.' : 'Couldn’t load the app preview.'}
         </div>
       )}
@@ -495,11 +506,15 @@ export function AppSandbox({
         ref={iframeRef}
         title={isViewport ? 'App' : 'App preview'}
         sandbox="allow-scripts"
-        className={status === 'ready' ? (isViewport ? 'block h-full w-full' : 'block w-full') : 'hidden'}
+        className={
+          status === 'ready' ? (isViewport ? 'block h-full w-full' : 'block w-full') : 'hidden'
+        }
         style={isViewport ? { border: '0' } : { height, border: '0', width: '100%' }}
       />
       {status === 'loading' && (
-        <div className={`flex items-center justify-center p-6 text-sm text-muted-foreground ${isViewport ? 'h-full' : 'h-40'}`}>
+        <div
+          className={`flex items-center justify-center p-6 text-sm text-muted-foreground ${isViewport ? 'h-full' : 'h-40'}`}
+        >
           {isViewport ? 'Loading…' : 'Loading preview…'}
         </div>
       )}

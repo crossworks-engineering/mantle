@@ -84,7 +84,9 @@ export const openrouterImageAdapter: ImageGenDispatcher = {
     const parsed = (await res.json()) as OpenRouterImageResponse;
     const url = parsed.choices?.[0]?.message?.images?.[0]?.image_url?.url;
     if (!url) {
-      throw new Error('openrouter-image: response contained no image (model may not support image output)');
+      throw new Error(
+        'openrouter-image: response contained no image (model may not support image output)',
+      );
     }
     const decoded = decodeDataUrl(url);
     if (!decoded) {

@@ -48,7 +48,14 @@ export async function POST(req: Request) {
   try {
     const versions =
       typeof payload.revertTo === 'number'
-        ? await revertProse({ ownerId: user.id, entityType, entityId, field, toVersion: payload.revertTo, author: user.id })
+        ? await revertProse({
+            ownerId: user.id,
+            entityType,
+            entityId,
+            field,
+            toVersion: payload.revertTo,
+            author: user.id,
+          })
         : await saveProse({
             ownerId: user.id,
             entityType,

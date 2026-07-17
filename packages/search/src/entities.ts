@@ -20,15 +20,7 @@
  */
 
 import { and, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
-import {
-  db,
-  entities,
-  entityEdges,
-  facts,
-  nodes,
-  type Entity,
-  type Fact,
-} from '@mantle/db';
+import { db, entities, entityEdges, facts, nodes, type Entity, type Fact } from '@mantle/db';
 
 export type EntitySearchOptions = {
   ownerId: string;
@@ -61,9 +53,13 @@ export async function searchEntities(opts: EntitySearchOptions): Promise<EntityH
 
   // Exact match first — covers "Sarah" -> the Sarah entity even when
   // there are similar names in the store.
+  // The alias branch uses the containment form `aliases @> array[q]` so the
+  // array GIN (entities_aliases_gin_idx) serves it — the scalar `q = any(...)`
+  // form is not indexable by that opclass (verified via EXPLAIN). lower(name) is
+  // covered by entities_owner_lname_kind_uq.
   const exactConds: SQL[] = [
     eq(entities.ownerId, opts.ownerId),
-    sql`(lower(${entities.name}) = lower(${trimmed}) or ${trimmed} = any(${entities.aliases}))`,
+    sql`(lower(${entities.name}) = lower(${trimmed}) or ${entities.aliases} @> array[${trimmed}]::text[])`,
   ];
   if (opts.kind) exactConds.push(eq(entities.kind, opts.kind));
   const exacts = await db
@@ -81,6 +77,15 @@ export async function searchEntities(opts: EntitySearchOptions): Promise<EntityH
     eq(entities.ownerId, opts.ownerId),
     sql`similarity(${entities.name}, ${trimmed}) >= ${minSim}`,
   ];
+  // Let the trigram GIN (entities_name_trgm_idx) prefilter with the `%`
+  // operator instead of computing similarity() over every same-owner row. `%`
+  // uses pg_trgm's default 0.3 threshold, so it's only a safe superset of the
+  // `>= minSim` filter when minSim is at least 0.3 — below that we keep the
+  // pure (unindexed) predicate so recall isn't silently clipped.
+  const PG_TRGM_DEFAULT_THRESHOLD = 0.3;
+  if (minSim >= PG_TRGM_DEFAULT_THRESHOLD) {
+    fuzzyConds.push(sql`${entities.name} % ${trimmed}`);
+  }
   if (opts.kind) fuzzyConds.push(eq(entities.kind, opts.kind));
   const fuzzy = await db
     .select({ row: entities, sim: sql<number>`similarity(${entities.name}, ${trimmed})` })
@@ -331,8 +336,7 @@ function assertUuid(v: string, field: string): string {
 export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult[]> {
   const maxDepth = Math.min(Math.max(1, Math.floor(opts.maxDepth ?? 3)), 6);
   const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? 50)), 200);
-  const relFilter =
-    opts.relations && opts.relations.length > 0 ? opts.relations : null;
+  const relFilter = opts.relations && opts.relations.length > 0 ? opts.relations : null;
 
   // This runs via postgres.js's SIMPLE query protocol (db.$client.unsafe().
   // simple()), NOT drizzle's db.execute — which uses the extended protocol
@@ -348,9 +352,7 @@ export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult
   const ownerId = assertUuid(opts.ownerId, 'ownerId');
   const toId = opts.toId ? assertUuid(opts.toId, 'toId') : null;
   const relList = relFilter
-    ? relFilter
-        .map((r) => r.toLowerCase().replace(/[^a-z0-9_]/g, ''))
-        .filter((r) => r.length > 0)
+    ? relFilter.map((r) => r.toLowerCase().replace(/[^a-z0-9_]/g, '')).filter((r) => r.length > 0)
     : null;
   const relCond =
     relList && relList.length > 0
@@ -390,17 +392,19 @@ export async function graphPath(opts: GraphPathOptions): Promise<GraphPathResult
     limit ${limit}`;
 
   // Simple protocol (see note above) — the raw postgres.js client, no params.
-  const client = (db as unknown as {
-    $client: { unsafe: (q: string) => { simple: () => Promise<unknown[]> } };
-  }).$client;
+  const client = (
+    db as unknown as {
+      $client: { unsafe: (q: string) => { simple: () => Promise<unknown[]> } };
+    }
+  ).$client;
   const rows = await client.unsafe(queryText).simple();
 
-  const raw = (rows as unknown as Array<{
+  const raw = rows as unknown as Array<{
     node_id: string;
     path_ids: string[];
     rels: string[];
     depth: number;
-  }>);
+  }>;
   if (raw.length === 0) return [];
 
   // Resolve every entity id that appears in any path, in one query.
@@ -492,7 +496,13 @@ export async function entityRelationsFor(
     const key = `${e.sourceId}|${e.relation}|${e.targetId}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ subjectId: e.sourceId, subject, relation: e.relation, objectId: e.targetId, object });
+    out.push({
+      subjectId: e.sourceId,
+      subject,
+      relation: e.relation,
+      objectId: e.targetId,
+      object,
+    });
     if (out.length >= limit) break;
   }
   return out;

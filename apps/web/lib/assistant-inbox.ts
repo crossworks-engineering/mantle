@@ -1,11 +1,5 @@
 import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
-import {
-  db,
-  agents,
-  assistantMessages,
-  assistantReadCursors,
-  type AgentAvatar,
-} from '@mantle/db';
+import { db, agents, assistantMessages, assistantReadCursors, type AgentAvatar } from '@mantle/db';
 
 /** Roles that hold a back-and-forth chat (mirrors listAssistantAgents). */
 const CHATTABLE_ROLES = ['assistant', 'responder', 'custom'] as const;
@@ -55,9 +49,7 @@ export async function markAssistantRead(
  * message preview and unread count (outbound messages newer than the read
  * cursor). Sorted by most-recent activity.
  */
-export async function assistantConversations(
-  ownerId: string,
-): Promise<ConversationSummary[]> {
+export async function assistantConversations(ownerId: string): Promise<ConversationSummary[]> {
   const agentRows = await db
     .select({
       id: agents.id,
@@ -86,12 +78,7 @@ export async function assistantConversations(
           createdAt: assistantMessages.createdAt,
         })
         .from(assistantMessages)
-        .where(
-          and(
-            eq(assistantMessages.ownerId, ownerId),
-            eq(assistantMessages.agentId, a.id),
-          ),
-        )
+        .where(and(eq(assistantMessages.ownerId, ownerId), eq(assistantMessages.agentId, a.id)))
         .orderBy(desc(assistantMessages.createdAt))
         .limit(1);
 

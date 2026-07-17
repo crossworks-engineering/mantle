@@ -1,0 +1,17 @@
+# Build output & deps (also in .gitignore; listed so `prettier --check` globs skip them)
+**/node_modules
+**/.next
+**/out
+**/dist
+**/coverage
+*.tsbuildinfo
+
+# Local stack runtime data (bind-mounts for the local Docker stack; gitignored,
+# and often root-owned mode 700 — prettier's glob must not try to traverse it)
+data
+**/data
+
+# Generated / vendored — not ours to format
+pnpm-lock.yaml
+packages/db/migrations/**
+THIRD-PARTY-NOTICES.md

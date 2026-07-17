@@ -30,7 +30,12 @@ vi.mock('@mantle/db', () => {
   };
   return {
     db: { select: () => makeChain() },
-    agents: { id: 'agents.id', name: 'agents.name', ownerId: 'agents.ownerId', slug: 'agents.slug' },
+    agents: {
+      id: 'agents.id',
+      name: 'agents.name',
+      ownerId: 'agents.ownerId',
+      slug: 'agents.slug',
+    },
     assistantMessages: {
       text: 'am.text',
       ownerId: 'am.ownerId',
@@ -66,7 +71,11 @@ import {
   deleteSubscriptionByRoutingToken,
 } from './store';
 
-const INSTANCE = { instanceToken: 'itok', relayInstanceId: 'iid', relayUrl: 'https://relay.example' };
+const INSTANCE = {
+  instanceToken: 'itok',
+  relayInstanceId: 'iid',
+  relayUrl: 'https://relay.example',
+};
 const PREFS = { assistantMessages: true, approvals: true };
 const device = (over: Partial<Record<string, unknown>> = {}) => ({
   id: 'dev-1',

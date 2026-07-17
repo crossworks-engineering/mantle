@@ -215,45 +215,47 @@ function ShellFrame({
   );
 
   return (
-      <div
-        className="group/shell h-screen bg-background"
-        data-nav-collapsed={navCollapsed ? 'true' : 'false'}
-        data-activity-collapsed={activityCollapsed ? 'true' : 'false'}
-        style={
-          {
-            '--nav-w': navCollapsed ? '3.5rem' : '16rem',
-            '--activity-w': activityCollapsed ? '3.5rem' : '20rem',
-            '--assistant-w': assistantW,
-            '--footer-h': '2.75rem',
-          } as React.CSSProperties
-        }
-      >
-        <Header
-          email={email}
-          userAvatar={userAvatar}
-          siteName={shellQuery.data?.siteName ?? null}
-          onMenuClick={() => setMobileOpen(true)}
-        />
+    <div
+      className="group/shell h-screen bg-background"
+      data-nav-collapsed={navCollapsed ? 'true' : 'false'}
+      data-activity-collapsed={activityCollapsed ? 'true' : 'false'}
+      style={
+        {
+          '--nav-w': navCollapsed ? '3.5rem' : '16rem',
+          '--activity-w': activityCollapsed ? '3.5rem' : '20rem',
+          '--assistant-w': assistantW,
+          '--footer-h': '2.75rem',
+        } as React.CSSProperties
+      }
+    >
+      <Header
+        email={email}
+        userAvatar={userAvatar}
+        siteName={shellQuery.data?.siteName ?? null}
+        onMenuClick={() => setMobileOpen(true)}
+      />
 
-        {/* Desktop sidebar — ends above the footer bar, which now owns the
+      {/* Desktop sidebar — ends above the footer bar, which now owns the
             collapse toggle (see <FooterBar/>). */}
-        <aside className="fixed top-0 bottom-[var(--footer-h)] left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar pt-16 transition-[width] duration-200 ease-in-out md:flex">
-          <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">{body(undefined, navCollapsed)}</div>
-        </aside>
+      <aside className="fixed top-0 bottom-[var(--footer-h)] left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar pt-16 transition-[width] duration-200 ease-in-out md:flex">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
+          {body(undefined, navCollapsed)}
+        </div>
+      </aside>
 
-        {/* Mobile sidebar drawer — portaled outside the shell root, so it
+      {/* Mobile sidebar drawer — portaled outside the shell root, so it
             always renders expanded regardless of collapse state. */}
-        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetContent side="left" className="w-80 overflow-y-auto p-0 pt-4 scrollbar-thin">
-            <SheetTitle className="sr-only">Navigation</SheetTitle>
-            {body(() => setMobileOpen(false))}
-          </SheetContent>
-        </Sheet>
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent side="left" className="w-80 overflow-y-auto p-0 pt-4 scrollbar-thin">
+          <SheetTitle className="sr-only">Navigation</SheetTitle>
+          {body(() => setMobileOpen(false))}
+        </SheetContent>
+      </Sheet>
 
-        {/* Right live-activity column */}
-        <LiveColumn collapsed={activityCollapsed} onToggle={toggleActivity} />
+      {/* Right live-activity column */}
+      <LiveColumn collapsed={activityCollapsed} onToggle={toggleActivity} />
 
-        {/* Content area. Own Suspense boundary: a page (children) that suspends
+      {/* Content area. Own Suspense boundary: a page (children) that suspends
             during SSR would otherwise bubble to the route boundary, wrapping the
             whole shell — header included — in a streaming boundary that's absent
             at client hydration, which shifts every radix `useId` in the header
@@ -261,34 +263,34 @@ function ShellFrame({
             is slow enough to stream). Containing it here, below the header, keeps
             the header's tree-context symmetric. Same rationale as UsageCard's
             boundary in layout.tsx. */}
-        <main className="fixed inset-0 top-16 bottom-[var(--footer-h)] overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w))]">
-          <Suspense fallback={null}>{children}</Suspense>
-        </main>
+      <main className="fixed inset-0 top-16 bottom-[var(--footer-h)] overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w))]">
+        <Suspense fallback={null}>{children}</Suspense>
+      </main>
 
-        {/* The full assistant as a content-area overlay — fills the same box as
+      {/* The full assistant as a content-area overlay — fills the same box as
             <main>, above every route, summoned from anywhere by the bubble/⌘I. */}
-        <AssistantPanel />
+      <AssistantPanel />
 
-        {/* Marker pick mode — highlights markable rows + intercepts their clicks
+      {/* Marker pick mode — highlights markable rows + intercepts their clicks
             while picking; renders nothing otherwise. */}
-        <PickMode />
+      <PickMode />
 
-        {/* Upload dock — floats just above the footer bar. Inside the shell so it
+      {/* Upload dock — floats just above the footer bar. Inside the shell so it
             inherits --activity-w (sits left of the activity rail) and persists
             across route changes. pointer-events-none lets clicks fall through the
             gaps; the dock re-enables its own. */}
-        <div className="pointer-events-none fixed bottom-[calc(var(--footer-h)+1rem)] right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+var(--assistant-w)+1rem)]">
-          <UploadDock />
-        </div>
-
-        {/* Footer toolbar: sidebar collapse · quick-menu · Highlight/Assistant ·
-            activity collapse. Full width, owns every shell collapse control. */}
-        <FooterBar
-          navCollapsed={navCollapsed}
-          onToggleNav={toggleNav}
-          activityCollapsed={activityCollapsed}
-          onToggleActivity={toggleActivity}
-        />
+      <div className="pointer-events-none fixed bottom-[calc(var(--footer-h)+1rem)] right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+var(--assistant-w)+1rem)]">
+        <UploadDock />
       </div>
+
+      {/* Footer toolbar: sidebar collapse · quick-menu · Highlight/Assistant ·
+            activity collapse. Full width, owns every shell collapse control. */}
+      <FooterBar
+        navCollapsed={navCollapsed}
+        onToggleNav={toggleNav}
+        activityCollapsed={activityCollapsed}
+        onToggleActivity={toggleActivity}
+      />
+    </div>
   );
 }

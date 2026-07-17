@@ -172,9 +172,7 @@ function toExplorerModels(
     };
     const orKey = openrouterSlugFor(provider, m.id);
     const orHit = orPricing[orKey];
-    const modality = wider.capabilities?.length
-      ? wider.capabilities.join(' · ')
-      : undefined;
+    const modality = wider.capabilities?.length ? wider.capabilities.join(' · ') : undefined;
     return {
       id: m.id,
       name: m.label,
@@ -239,9 +237,7 @@ export function WorkerForm({
   // for these, switching keys wouldn't trigger re-discovery.
   const [apiKeyId, setApiKeyId] = useState<string>(worker?.apiKeyId ?? '');
   const [model, setModel] = useState<string>(worker?.model ?? '');
-  const [provider, setProvider] = useState<string>(
-    worker?.provider ?? PROVIDER_FOR_KIND[kind],
-  );
+  const [provider, setProvider] = useState<string>(worker?.provider ?? PROVIDER_FOR_KIND[kind]);
 
   // Backup chat route (chat-shaped workers only). Unlike embeddings, a chat
   // backup may be a DIFFERENT provider + model — the enabler for a local
@@ -289,9 +285,7 @@ export function WorkerForm({
   // operator picks a provider the key doesn't cover.
   const eligibleProviderIds = new Set(eligibleProviders.map((p) => p.id as string));
   const eligibleKeys =
-    eligibleProviderIds.size > 0
-      ? keys.filter((k) => eligibleProviderIds.has(k.service))
-      : keys;
+    eligibleProviderIds.size > 0 ? keys.filter((k) => eligibleProviderIds.has(k.service)) : keys;
 
   // Reactive model catalogue. For tts/stt/chat-shaped kinds we hit
   // the adapter's discoverModels when the api_key is selected; for
@@ -330,9 +324,7 @@ export function WorkerForm({
   const staticCatalogFor = (
     forKind: AiWorkerKind,
     forProvider: string,
-  ): Array<
-    TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo | ImageGenModelInfo
-  > => {
+  ): Array<TtsModelInfo | SttModelInfo | ChatModelInfo | VisionModelInfo | ImageGenModelInfo> => {
     if (forKind === 'tts') return [...OPENAI_TTS_MODELS];
     if (forKind === 'stt') {
       // Each STT provider ships its own model list. Falls back to
@@ -428,12 +420,12 @@ export function WorkerForm({
       kind === 'document'
         ? 'vision'
         : kind === 'tts' || kind === 'stt' || kind === 'vision' || kind === 'image_gen'
-        ? kind
-        : kind === 'embedding'
-        ? 'embedding'
-        : chatShaped
-        ? 'chat'
-        : null;
+          ? kind
+          : kind === 'embedding'
+            ? 'embedding'
+            : chatShaped
+              ? 'chat'
+              : null;
     if (!discoveryKind) return;
     // Embedding discovery is keyless (OR's public catalog) — every other
     // kind needs the key to know which models the user can actually use.
@@ -531,7 +523,10 @@ export function WorkerForm({
             // Re-throw so React/Next can do its thing.
             // Same goes for 'NEXT_NOT_FOUND'.
             const digest = (err as { digest?: string } | null)?.digest;
-            if (typeof digest === 'string' && (digest.startsWith('NEXT_REDIRECT') || digest === 'NEXT_NOT_FOUND')) {
+            if (
+              typeof digest === 'string' &&
+              (digest.startsWith('NEXT_REDIRECT') || digest === 'NEXT_NOT_FOUND')
+            ) {
               throw err;
             }
             const msg = err instanceof Error ? err.message : String(err);
@@ -598,8 +593,8 @@ export function WorkerForm({
             {selectedProvider && !isProviderWired(selectedProvider.id, capability) && (
               <p className="text-xs text-amber-600 dark:text-amber-400">
                 No adapter registered for <code>{selectedProvider.id}</code> ·{' '}
-                <code>{capability}</code>. The UI saves the config, but calls will fail
-                until we ship the dispatch code for this provider.
+                <code>{capability}</code>. The UI saves the config, but calls will fail until we
+                ship the dispatch code for this provider.
               </p>
             )}
           </div>
@@ -678,9 +673,7 @@ export function WorkerForm({
                   onClick={() => void refreshDiscovery(apiKeyId)}
                   title="Re-query the provider for the latest model list"
                 >
-                  <RefreshCw
-                    className={discovery.loading ? 'animate-spin' : ''}
-                  />
+                  <RefreshCw className={discovery.loading ? 'animate-spin' : ''} />
                 </Button>
               </div>
               {model && (
@@ -691,8 +684,8 @@ export function WorkerForm({
               )}
               {!discovery.filtered && discovery.error && apiKeyId && (
                 <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Couldn't verify which models this key can use ({discovery.error}). Showing
-                  the full catalogue.
+                  Couldn't verify which models this key can use ({discovery.error}). Showing the
+                  full catalogue.
                 </p>
               )}
               {discovery.filtered && discovery.available.length === 0 && (
@@ -742,8 +735,8 @@ export function WorkerForm({
                 Backup route
               </h2>
               <p className="text-xs text-muted-foreground">
-                On a route-down / 429 / 5xx from the primary, fall over to a backup —
-                may be a different provider + model (e.g. local primary, cloud fallback).
+                On a route-down / 429 / 5xx from the primary, fall over to a backup — may be a
+                different provider + model (e.g. local primary, cloud fallback).
               </p>
             </div>
             <Switch
@@ -757,8 +750,8 @@ export function WorkerForm({
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
-                  The <strong>primary</strong> above is always the active route. Swap to
-                  promote this backup.
+                  The <strong>primary</strong> above is always the active route. Swap to promote
+                  this backup.
                 </p>
                 <Button
                   type="button"
@@ -802,8 +795,8 @@ export function WorkerForm({
                   </select>
                   {!isProviderWired(backupProvider, capability) && (
                     <p className="text-xs text-amber-600 dark:text-amber-400">
-                      No adapter registered for <code>{backupProvider}</code> — failover
-                      to it will fail until one ships.
+                      No adapter registered for <code>{backupProvider}</code> — failover to it will
+                      fail until one ships.
                     </p>
                   )}
                 </div>
@@ -869,21 +862,46 @@ export function WorkerForm({
         </h2>
 
         {kind === 'tts' && (
-          <TtsFields
-            params={params}
-            model={model}
-            provider={provider}
-            apiKeyId={apiKeyId}
-          />
+          <TtsFields params={params} model={model} provider={provider} apiKeyId={apiKeyId} />
         )}
         {kind === 'stt' && <SttFields params={params} />}
         {kind === 'vision' && <VisionFields params={params} systemPrompt={worker?.systemPrompt} />}
-        {kind === 'document' && <DocumentFields params={params} systemPrompt={worker?.systemPrompt} />}
+        {kind === 'document' && (
+          <DocumentFields params={params} systemPrompt={worker?.systemPrompt} />
+        )}
         {kind === 'image_gen' && <ImageGenFields params={params} />}
-        {kind === 'reflector' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="reflector" provider={provider} />}
-        {kind === 'extractor' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="extractor" provider={provider} />}
-        {kind === 'summarizer' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="summarizer" provider={provider} />}
-        {kind === 'narrator' && <LlmWorkerFields params={params} systemPrompt={worker?.systemPrompt} kind="narrator" provider={provider} />}
+        {kind === 'reflector' && (
+          <LlmWorkerFields
+            params={params}
+            systemPrompt={worker?.systemPrompt}
+            kind="reflector"
+            provider={provider}
+          />
+        )}
+        {kind === 'extractor' && (
+          <LlmWorkerFields
+            params={params}
+            systemPrompt={worker?.systemPrompt}
+            kind="extractor"
+            provider={provider}
+          />
+        )}
+        {kind === 'summarizer' && (
+          <LlmWorkerFields
+            params={params}
+            systemPrompt={worker?.systemPrompt}
+            kind="summarizer"
+            provider={provider}
+          />
+        )}
+        {kind === 'narrator' && (
+          <LlmWorkerFields
+            params={params}
+            systemPrompt={worker?.systemPrompt}
+            kind="narrator"
+            provider={provider}
+          />
+        )}
         {kind === 'embedding' && (
           <EmbeddingFields
             model={model}
@@ -915,8 +933,8 @@ export function WorkerForm({
         <section className="space-y-2 border-t border-border pt-6">
           <h3 className="text-sm font-semibold">Test the voice</h3>
           <p className="text-xs text-muted-foreground">
-            Synthesise a short sample using the saved configuration so you can hear it before
-            it ships. Uses the live API key.
+            Synthesise a short sample using the saved configuration so you can hear it before it
+            ships. Uses the live API key.
           </p>
           <TtsTestButton workerId={worker.id} />
         </section>
@@ -935,8 +953,8 @@ export function WorkerForm({
         <section className="space-y-2 border-t border-border pt-6">
           <h3 className="text-sm font-semibold">Test chat</h3>
           <p className="text-xs text-muted-foreground">
-            Send a one-shot prompt through this worker's adapter ({provider}) and see what comes back.
-            Uses the saved system prompt, model, and params — same path as production.
+            Send a one-shot prompt through this worker's adapter ({provider}) and see what comes
+            back. Uses the saved system prompt, model, and params — same path as production.
           </p>
           <ChatTestButton workerId={worker.id} />
         </section>
@@ -945,9 +963,9 @@ export function WorkerForm({
         <section className="space-y-2 border-t border-border pt-6">
           <h3 className="text-sm font-semibold">Test extraction</h3>
           <p className="text-xs text-muted-foreground">
-            Pick an image from disk and we'll run it through this worker's vision adapter
-            ({provider}) using the saved extraction prompt and model. Use this to dial in the
-            prompt before the ingest pipeline starts feeding it photos.
+            Pick an image from disk and we'll run it through this worker's vision adapter (
+            {provider}) using the saved extraction prompt and model. Use this to dial in the prompt
+            before the ingest pipeline starts feeding it photos.
           </p>
           <VisionTestButton workerId={worker.id} />
         </section>
@@ -956,9 +974,9 @@ export function WorkerForm({
         <section className="space-y-2 border-t border-border pt-6">
           <h3 className="text-sm font-semibold">Test extraction</h3>
           <p className="text-xs text-muted-foreground">
-            Pick a PDF from disk and we'll send it natively through this worker's adapter
-            ({provider}) using the saved prompt and model — the same path the ingest pipeline
-            uses. Use it to dial in the prompt before feeding it real invoices.
+            Pick a PDF from disk and we'll send it natively through this worker's adapter (
+            {provider}) using the saved prompt and model — the same path the ingest pipeline uses.
+            Use it to dial in the prompt before feeding it real invoices.
             {!nativeDocProviders.includes(provider) &&
               ' (This provider has no native-PDF adapter — at ingest it would rasterize instead.)'}
           </p>
@@ -969,9 +987,9 @@ export function WorkerForm({
         <section className="space-y-2 border-t border-border pt-6">
           <h3 className="text-sm font-semibold">Test generation</h3>
           <p className="text-xs text-muted-foreground">
-            Type a prompt and we'll send it through this worker's image adapter ({provider})
-            using the saved size/style/quality. The result is rendered here only — nothing is
-            persisted until Saskia (or another caller) invokes the `generate_image` tool.
+            Type a prompt and we'll send it through this worker's image adapter ({provider}) using
+            the saved size/style/quality. The result is rendered here only — nothing is persisted
+            until Saskia (or another caller) invokes the `generate_image` tool.
           </p>
           <ImageGenTestButton workerId={worker.id} />
         </section>
@@ -984,11 +1002,7 @@ export function WorkerForm({
         </p>
       )}
       <div className="flex justify-end gap-2 border-t border-border pt-3">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => router.push('/settings/ai-workers')}
-        >
+        <Button type="button" variant="outline" onClick={() => router.push('/settings/ai-workers')}>
           Cancel
         </Button>
         <SubmitButton
@@ -1098,9 +1112,8 @@ function RouteHostFields({
               Reach via Tailscale
             </Label>
             <p className="text-xs text-muted-foreground">
-              Route through the bundled Tailscale proxy so the Base URL (a MagicDNS
-              name) reaches a box behind NAT. Inert unless the <code>tailnet</code>{' '}
-              compose profile is up.
+              Route through the bundled Tailscale proxy so the Base URL (a MagicDNS name) reaches a
+              box behind NAT. Inert unless the <code>tailnet</code> compose profile is up.
             </p>
           </div>
           <Switch
@@ -1142,8 +1155,8 @@ function KeyValidityHint({
   if (kind === 'embedding') {
     return (
       <p className="text-xs text-muted-foreground">
-        Pick your OpenRouter key — embedding requests at runtime route through
-        it. Discovery itself is keyless.
+        Pick your OpenRouter key — embedding requests at runtime route through it. Discovery itself
+        is keyless.
       </p>
     );
   }
@@ -1174,23 +1187,20 @@ function KeyValidityHint({
   if (!supportsDiscovery) {
     return (
       <p className="text-xs text-muted-foreground">
-        Provider doesn't expose a model-list endpoint — type the model id by hand
-        below.
+        Provider doesn't expose a model-list endpoint — type the model id by hand below.
       </p>
     );
   }
 
   if (discovery.loading) {
-    return (
-      <p className="text-xs text-muted-foreground">Validating key against provider…</p>
-    );
+    return <p className="text-xs text-muted-foreground">Validating key against provider…</p>;
   }
 
   if (discovery.filtered && discovery.available.length === 0) {
     return (
       <p className="text-xs text-destructive">
-        ⚠ This key has no access to any <code>{capability}</code> models. Check
-        the key's scope/project at the provider.
+        ⚠ This key has no access to any <code>{capability}</code> models. Check the key's
+        scope/project at the provider.
       </p>
     );
   }
@@ -1198,9 +1208,8 @@ function KeyValidityHint({
   if (discovery.error) {
     return (
       <p className="text-xs text-amber-600 dark:text-amber-400">
-        ⚠ Couldn't verify key with provider ({discovery.error}). Showing the
-        provider's full static catalogue — model calls may still fail if the
-        key doesn't have access.
+        ⚠ Couldn't verify key with provider ({discovery.error}). Showing the provider's full static
+        catalogue — model calls may still fail if the key doesn't have access.
       </p>
     );
   }
@@ -1208,8 +1217,7 @@ function KeyValidityHint({
   return (
     <p className="text-xs text-emerald-700 dark:text-emerald-400">
       ✓ Key valid · {discovery.available.length} model
-      {discovery.available.length === 1 ? '' : 's'} discovered for{' '}
-      <code>{capability}</code>.
+      {discovery.available.length === 1 ? '' : 's'} discovered for <code>{capability}</code>.
     </p>
   );
 }
@@ -1241,9 +1249,9 @@ function TtsFields({
     provider === 'xai' ||
     provider === 'google' ||
     provider === 'openrouter';
-  const [liveVoices, setLiveVoices] = useState<
-    Array<{ id: string; description: string }> | null
-  >(null);
+  const [liveVoices, setLiveVoices] = useState<Array<{ id: string; description: string }> | null>(
+    null,
+  );
 
   useEffect(() => {
     if (providerWithLiveVoices && apiKeyId) {
@@ -1264,12 +1272,12 @@ function TtsFields({
   }, [provider, apiKeyId, model]);
 
   const availableVoices = providerWithLiveVoices
-    ? liveVoices ?? []
+    ? (liveVoices ?? [])
     : model
-    ? voicesForModel(model)
-    : (Object.entries(VOICE_DESCRIPTIONS) as Array<
-        [OpenAiVoice, string]
-      >).map(([id, description]) => ({ id, description }));
+      ? voicesForModel(model)
+      : (Object.entries(VOICE_DESCRIPTIONS) as Array<[OpenAiVoice, string]>).map(
+          ([id, description]) => ({ id, description }),
+        );
 
   // xAI and ElevenLabs both let operators use voice IDs that AREN'T in
   // the preset list — xAI's console generates opaque ids like
@@ -1291,10 +1299,8 @@ function TtsFields({
   const validVoice = presetIds.has(storedVoice)
     ? storedVoice
     : supportsCustomVoiceId && storedVoice.length > 0
-    ? storedVoice
-    : availableVoices.find((v) => v.id === 'nova')?.id ??
-      availableVoices[0]?.id ??
-      storedVoice;
+      ? storedVoice
+      : (availableVoices.find((v) => v.id === 'nova')?.id ?? availableVoices[0]?.id ?? storedVoice);
 
   // Controlled state for the voice field so the dropdown and the
   // custom-id input can stay in sync. Re-seeded when the worker model
@@ -1329,10 +1335,10 @@ function TtsFields({
     provider === 'elevenlabs'
       ? audioTagsForElevenLabsModel(model)
       : provider === 'xai'
-      ? audioTagsForXaiTtsModel(model)
-      : provider === 'google'
-      ? audioTagsForGoogleTtsModel(model)
-      : [];
+        ? audioTagsForXaiTtsModel(model)
+        : provider === 'google'
+          ? audioTagsForGoogleTtsModel(model)
+          : [];
 
   // Wrapping speech tags (<whisper>…</whisper>, <soft>, …). Only xAI
   // Grok voice exposes these today; other providers return [].
@@ -1405,21 +1411,18 @@ function TtsFields({
             {isElevenLabs
               ? 'available on your ElevenLabs account (includes any clones)'
               : provider === 'xai'
-              ? 'available for Grok TTS'
-              : provider === 'google'
-              ? 'available for Gemini TTS'
-              : `available for ${model}`}
+                ? 'available for Grok TTS'
+                : provider === 'google'
+                  ? 'available for Gemini TTS'
+                  : `available for ${model}`}
             {supportsCustomVoiceId ? '; custom ids accepted above.' : '.'}
           </p>
         )}
         {providerWithLiveVoices && !apiKeyId && (
           <p className="text-xs text-amber-600 dark:text-amber-400">
-            Pick your {provider === 'elevenlabs'
-              ? 'ElevenLabs'
-              : provider === 'xai'
-              ? 'xAI'
-              : 'Google'}{' '}
-            API key first; the voice list loads from the adapter.
+            Pick your{' '}
+            {provider === 'elevenlabs' ? 'ElevenLabs' : provider === 'xai' ? 'xAI' : 'Google'} API
+            key first; the voice list loads from the adapter.
           </p>
         )}
         {audioTags.length > 0 && (
@@ -1429,8 +1432,8 @@ function TtsFields({
             </summary>
             <div className="mt-2 space-y-1">
               <p className="text-muted-foreground">
-                The agent's prompt is auto-augmented with these so it can sprinkle them
-                inline in voice replies. Text replies have them stripped automatically.
+                The agent's prompt is auto-augmented with these so it can sprinkle them inline in
+                voice replies. Text replies have them stripped automatically.
               </p>
               <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 pt-1 font-mono text-[11px]">
                 {audioTags.map((t) => (
@@ -1559,8 +1562,8 @@ function SttFields({ params }: { params: Record<string, unknown> }) {
           placeholder="e.g. en, af, fr — leave blank for auto-detect"
         />
         <p className="text-xs text-muted-foreground">
-          ISO-639-1 code. Whisper auto-detects when blank; set this only if you speak one
-          language exclusively and want faster results.
+          ISO-639-1 code. Whisper auto-detects when blank; set this only if you speak one language
+          exclusively and want faster results.
         </p>
       </div>
       <div className="space-y-1.5">
@@ -1660,10 +1663,10 @@ function DocumentFields({
   return (
     <div className="space-y-4">
       <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-        PDFs are sent <strong>natively</strong> to the model (whole document, real
-        tables) on providers that support it — <strong>Anthropic (Claude)</strong> today,
-        Google next. Other providers fall back to page-by-page image OCR. If no document
-        worker is set, PDFs use the Vision worker.
+        PDFs are sent <strong>natively</strong> to the model (whole document, real tables) on
+        providers that support it — <strong>Anthropic (Claude)</strong> today, Google next. Other
+        providers fall back to page-by-page image OCR. If no document worker is set, PDFs use the
+        Vision worker.
       </p>
       <div className="space-y-1.5">
         <Label htmlFor="systemPrompt">System prompt</Label>
@@ -1690,8 +1693,8 @@ function DocumentFields({
           className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
         />
         <p className="text-xs text-muted-foreground">
-          Sent alongside the PDF. The default is a faithful, table-aware transcription —
-          ideal for invoices and statements.
+          Sent alongside the PDF. The default is a faithful, table-aware transcription — ideal for
+          invoices and statements.
         </p>
       </div>
       <div className="space-y-1.5">
@@ -1718,9 +1721,9 @@ function DocumentFields({
         <span>
           <span className="font-medium">Always read PDFs natively</span>
           <span className="block text-xs text-muted-foreground">
-            Send every PDF to the model, even when it has a text layer — best for tabular
-            docs (invoices/statements) whose text layer scrambles columns. Off by default:
-            PDFs with clean text use the cheap text path and skip the model.
+            Send every PDF to the model, even when it has a text layer — best for tabular docs
+            (invoices/statements) whose text layer scrambles columns. Off by default: PDFs with
+            clean text use the cheap text path and skip the model.
           </span>
         </span>
       </label>
@@ -1897,7 +1900,11 @@ function EmbeddingFields({
     setLastRebuild(null);
     try {
       const r = await apiSend<
-        | { ok: true; model: string; result: { totalRows: number; totalWritten: number; durationMs: number } }
+        | {
+            ok: true;
+            model: string;
+            result: { totalRows: number; totalWritten: number; durationMs: number };
+          }
         | { ok: false; error: string }
       >('/api/ai-workers/reembed', 'POST');
       if (r.ok) {
@@ -1927,10 +1934,9 @@ function EmbeddingFields({
   return (
     <div className="space-y-3 rounded-md border border-border bg-card/40 p-3 text-sm">
       <p className="text-muted-foreground">
-        Embedding is a single text→vector transformation. No temperature, no
-        max-tokens. Picking a model here applies it to every embedding call
-        in the stack — extractor writes, agent semantic-memory reads, recall,
-        MCP search, and the tool-result spill query.
+        Embedding is a single text→vector transformation. No temperature, no max-tokens. Picking a
+        model here applies it to every embedding call in the stack — extractor writes, agent
+        semantic-memory reads, recall, MCP search, and the tool-result spill query.
       </p>
       <dl className="grid grid-cols-[max-content_1fr] items-center gap-x-4 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Column shape</dt>
@@ -1988,32 +1994,31 @@ function EmbeddingFields({
       {mismatched && (
         <div className="space-y-1 rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
           <p>
-            <strong>Dimension mismatch.</strong> This model emits {dim}-dim
-            vectors; the brain's column is {COLUMN_DIMS}. Save is blocked —
-            switching would crash ingest on the first call.
+            <strong>Dimension mismatch.</strong> This model emits {dim}-dim vectors; the brain's
+            column is {COLUMN_DIMS}. Save is blocked — switching would crash ingest on the first
+            call.
           </p>
           <p className="text-destructive/80">
-            To use a non-{COLUMN_DIMS}-dim model you'd need a schema migration
-            on every <code className="font-mono">vector({COLUMN_DIMS})</code> column
-            (nodes, entities, facts, content_chunks) plus a full re-embed.
-            Not a button — drop into <code className="font-mono">psql</code>{' '}
-            and use <code className="font-mono">pnpm re-embed</code>.
+            To use a non-{COLUMN_DIMS}-dim model you'd need a schema migration on every{' '}
+            <code className="font-mono">vector({COLUMN_DIMS})</code> column (nodes, entities, facts,
+            content_chunks) plus a full re-embed. Not a button — drop into{' '}
+            <code className="font-mono">psql</code> and use{' '}
+            <code className="font-mono">pnpm re-embed</code>.
           </p>
         </div>
       )}
       {!mismatched && dim === null && slug && (
         <p className="text-xs text-muted-foreground">
-          Unverified. Click <strong>Test dimensions</strong> to confirm — if the
-          model emits anything other than {COLUMN_DIMS}-dim vectors, saving will
-          succeed but ingest will fail on first call.
+          Unverified. Click <strong>Test dimensions</strong> to confirm — if the model emits
+          anything other than {COLUMN_DIMS}-dim vectors, saving will succeed but ingest will fail on
+          first call.
         </p>
       )}
       {savedModel && modelDirty && !mismatched && (
         <p className="text-xs text-amber-700 dark:text-amber-400">
-          Model changed from <code className="font-mono">{savedModel}</code>. Save
-          first, then click <strong>Rebuild Index</strong> below — existing vectors
-          were embedded with the previous model and cosine similarity across
-          different models is meaningless.
+          Model changed from <code className="font-mono">{savedModel}</code>. Save first, then click{' '}
+          <strong>Rebuild Index</strong> below — existing vectors were embedded with the previous
+          model and cosine similarity across different models is meaningless.
         </p>
       )}
       {savedModel && !mismatched && (
@@ -2021,9 +2026,8 @@ function EmbeddingFields({
           <div className="space-y-0.5 text-xs">
             <p className="font-medium text-foreground">Rebuild Index</p>
             <p className="text-muted-foreground">
-              Re-embed every stored vector (nodes · entities · facts) against the
-              currently saved model. Cache-aware — re-running against the same
-              model is free.
+              Re-embed every stored vector (nodes · entities · facts) against the currently saved
+              model. Cache-aware — re-running against the same model is free.
             </p>
           </div>
           <Button
@@ -2044,9 +2048,12 @@ function EmbeddingFields({
       )}
       {lastRebuild?.ok && (
         <p className="text-xs text-muted-foreground">
-          Rebuilt <span className="font-mono tabular-nums">{lastRebuild.totalWritten}</span>{' '}
-          vectors against <code className="font-mono">{lastRebuild.model}</code> in{' '}
-          <span className="font-mono tabular-nums">{(lastRebuild.durationMs / 1000).toFixed(1)}s</span>.
+          Rebuilt <span className="font-mono tabular-nums">{lastRebuild.totalWritten}</span> vectors
+          against <code className="font-mono">{lastRebuild.model}</code> in{' '}
+          <span className="font-mono tabular-nums">
+            {(lastRebuild.durationMs / 1000).toFixed(1)}s
+          </span>
+          .
         </p>
       )}
       {lastRebuild && !lastRebuild.ok && (
@@ -2073,9 +2080,9 @@ function LlmWorkerFields({
         <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
           The narrator restyles the live “thought trail” into your assistant’s voice. The{' '}
           <strong>system prompt below is the verbosity dial</strong> — tell it to reply with a terse
-          phrase, a full sentence, or a short paragraph, and it follows. Raise <strong>Max tokens</strong>{' '}
-          if you ask for more words. It runs once per tool step, off the turn’s critical path; if it’s
-          slow or fails, the plain grounded line stays.
+          phrase, a full sentence, or a short paragraph, and it follows. Raise{' '}
+          <strong>Max tokens</strong> if you ask for more words. It runs once per tool step, off the
+          turn’s critical path; if it’s slow or fails, the plain grounded line stays.
         </p>
       )}
       <div className="space-y-1.5">
@@ -2176,9 +2183,7 @@ function LlmWorkerFields({
                 id="extract_cost_cap_micro_usd"
                 name="extract_cost_cap_micro_usd"
                 type="number"
-                defaultValue={
-                  (params.extract_cost_cap_micro_usd as number | undefined) ?? ''
-                }
+                defaultValue={(params.extract_cost_cap_micro_usd as number | undefined) ?? ''}
                 placeholder="blank = no cap"
               />
             </div>
@@ -2230,8 +2235,8 @@ function LlmWorkerFields({
             ))}
           </select>
           <p className="text-xs text-muted-foreground">
-            HF's router picks which sub-provider (Cerebras, Groq, Together…) actually serves
-            this call. Appended as a suffix to the model id at request time.
+            HF's router picks which sub-provider (Cerebras, Groq, Together…) actually serves this
+            call. Appended as a suffix to the model id at request time.
           </p>
         </div>
       )}

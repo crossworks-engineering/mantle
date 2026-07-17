@@ -39,7 +39,9 @@ export const telegramDirection = pgEnum('telegram_direction', ['inbound', 'outbo
 export const telegramAccounts = pgTable(
   'telegram_accounts',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     userId: uuid('user_id').notNull(),
     botUsername: text('bot_username').notNull(),
     /** ltree branch under which telegram messages get hung. */
@@ -70,7 +72,9 @@ export const telegramAccounts = pgTable(
 export const telegramChats = pgTable(
   'telegram_chats',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     accountId: uuid('account_id')
       .notNull()
       .references(() => telegramAccounts.id, { onDelete: 'cascade' }),
@@ -111,7 +115,9 @@ export const telegramChats = pgTable(
 export const telegramMessages = pgTable(
   'telegram_messages',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     nodeId: uuid('node_id')
       .notNull()
       .references(() => nodes.id, { onDelete: 'cascade' }),
@@ -134,7 +140,10 @@ export const telegramMessages = pgTable(
     text: text('text').notNull(),
     sentAt: timestamp('sent_at', { withTimezone: true }).notNull(),
     /** Array of { kind, file_id, name?, mime?, size? } for documents/photos/voice/etc. */
-    attachments: jsonb('attachments').$type<TelegramAttachment[]>().default(sql`'[]'::jsonb`).notNull(),
+    attachments: jsonb('attachments')
+      .$type<TelegramAttachment[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
     /** True once Claude (or any client) has responded / acknowledged this message. */
     processed: boolean('processed').default(false).notNull(),
     processedAt: timestamp('processed_at', { withTimezone: true }),

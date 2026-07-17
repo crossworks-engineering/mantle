@@ -42,9 +42,13 @@ export async function POST(req: Request) {
   const agentId = payload.agentId ?? '';
   const messages = Array.isArray(payload.messages) ? payload.messages : [];
   if (!agentId) return NextResponse.json({ error: 'agentId required' }, { status: 400 });
-  if (messages.length === 0) return NextResponse.json({ error: 'messages required' }, { status: 400 });
+  if (messages.length === 0)
+    return NextResponse.json({ error: 'messages required' }, { status: 400 });
   if (messages.length > MAX_MESSAGES) {
-    return NextResponse.json({ error: `too many turns (max ${MAX_MESSAGES}) — reset the sandbox` }, { status: 400 });
+    return NextResponse.json(
+      { error: `too many turns (max ${MAX_MESSAGES}) — reset the sandbox` },
+      { status: 400 },
+    );
   }
 
   const clean: Msg[] = messages.map((m) => ({
@@ -55,11 +59,23 @@ export async function POST(req: Request) {
   try {
     const agent = await getAgent(user.id, agentId);
     if (!agent) return NextResponse.json({ error: 'agent not found' }, { status: 404 });
-    if (!agent.apiKeyId) return NextResponse.json({ error: `${agent.name} has no API key — set one in Settings → Agents` }, { status: 400 });
+    if (!agent.apiKeyId)
+      return NextResponse.json(
+        { error: `${agent.name} has no API key — set one in Settings → Agents` },
+        { status: 400 },
+      );
     const apiKey = await getApiKeyById(agent.apiKeyId);
-    if (!apiKey) return NextResponse.json({ error: 'API key not found or could not decrypt' }, { status: 400 });
+    if (!apiKey)
+      return NextResponse.json(
+        { error: 'API key not found or could not decrypt' },
+        { status: 400 },
+      );
     const adapter = getChatAdapter(agent.provider);
-    if (!adapter) return NextResponse.json({ error: `no chat adapter for provider '${agent.provider}'` }, { status: 400 });
+    if (!adapter)
+      return NextResponse.json(
+        { error: `no chat adapter for provider '${agent.provider}'` },
+        { status: 400 },
+      );
 
     // Compose the same prompt a real turn assembles: base + attached skills.
     const skills = await resolveAgentSkills(user.id, agent.skillSlugs ?? []);

@@ -15,7 +15,9 @@ import { nodes } from './nodes';
 export const appDatabases = pgTable(
   'app_databases',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     appNodeId: uuid('app_node_id')
       .notNull()

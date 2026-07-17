@@ -56,7 +56,11 @@ const linkCol = (doc: { columns: Column[] }) => doc.columns.find((c) => c.id ===
 describe('linked (reference) column stores + reads as text', () => {
   it('stores + reads its picked value as text', () => {
     const abs = fileWith({ type: 'reference', ref: { tabId: 'src', columnId: 'c-opt' } });
-    applyOpsToFile(abs, [{ op: 'row_add', tabId: 'main', rowId: 'r1', cells: { 'c-k': 'a', 'c-link': 'yes' } }], coerce);
+    applyOpsToFile(
+      abs,
+      [{ op: 'row_add', tabId: 'main', rowId: 'r1', cells: { 'c-k': 'a', 'c-link': 'yes' } }],
+      coerce,
+    );
     const doc = readDocFile(abs, { tabId: 'main' });
     expect(doc.rows[0]!.cells['c-link']).toBe('yes');
     expect(linkCol(doc).type).toBe('reference');
@@ -64,7 +68,9 @@ describe('linked (reference) column stores + reads as text', () => {
   });
 
   it('is included in FTS (text storage)', () => {
-    const cols: Column[] = [{ id: 'a', name: 'A', type: 'reference', ref: { tabId: 'src', columnId: 'c-opt' } }];
+    const cols: Column[] = [
+      { id: 'a', name: 'A', type: 'reference', ref: { tabId: 'src', columnId: 'c-opt' } },
+    ];
     expect(ftsColumns(cols).map((c) => c.id)).toContain('a');
   });
 });
@@ -72,10 +78,21 @@ describe('linked (reference) column stores + reads as text', () => {
 describe('unlink keeps values', () => {
   it('delete link (→ text) keeps values, clears ref', () => {
     const abs = fileWith({ type: 'reference', ref: { tabId: 'src', columnId: 'c-opt' } });
-    applyOpsToFile(abs, [{ op: 'row_add', tabId: 'main', rowId: 'r1', cells: { 'c-k': 'a', 'c-link': 'yes' } }], coerce);
     applyOpsToFile(
       abs,
-      [{ op: 'column_update', tabId: 'main', columnId: 'c-link', patch: { type: 'text', ref: null } }],
+      [{ op: 'row_add', tabId: 'main', rowId: 'r1', cells: { 'c-k': 'a', 'c-link': 'yes' } }],
+      coerce,
+    );
+    applyOpsToFile(
+      abs,
+      [
+        {
+          op: 'column_update',
+          tabId: 'main',
+          columnId: 'c-link',
+          patch: { type: 'text', ref: null },
+        },
+      ],
       coerce,
     );
     const doc = readDocFile(abs, { tabId: 'main' });
@@ -88,7 +105,11 @@ describe('unlink keeps values', () => {
 describe('reads round-trip a workbook with reference columns', () => {
   it('window + sample reads do not throw', () => {
     const abs = fileWith({ type: 'reference', ref: { tabId: 'src', columnId: 'c-opt' } });
-    applyOpsToFile(abs, [{ op: 'row_add', tabId: 'main', rowId: 'r1', cells: { 'c-k': 'a', 'c-link': 'yes' } }], coerce);
+    applyOpsToFile(
+      abs,
+      [{ op: 'row_add', tabId: 'main', rowId: 'r1', cells: { 'c-k': 'a', 'c-link': 'yes' } }],
+      coerce,
+    );
     expect(() => queryRowsWindow(abs, { tabId: 'main', limit: 10 })).not.toThrow();
     expect(() => listRowsWindow(abs, { tabId: 'main', limit: 10 })).not.toThrow();
     expect(() => sampleRows(abs, 5)).not.toThrow();
@@ -101,8 +122,14 @@ describe('reads round-trip a workbook with reference columns', () => {
 describe('profile', () => {
   it('a linked column advertises its source edge', () => {
     const abs = fileWith({ type: 'reference', ref: { tabId: 'src', columnId: 'c-opt' } });
-    applyOpsToFile(abs, [{ op: 'row_add', tabId: 'main', rowId: 'r1', cells: { 'c-k': 'a', 'c-link': 'yes' } }], coerce);
-    const col = profileFile(abs).find((t) => t.name === 'Main')!.columns.find((c) => c.colId === 'c-link')!;
+    applyOpsToFile(
+      abs,
+      [{ op: 'row_add', tabId: 'main', rowId: 'r1', cells: { 'c-k': 'a', 'c-link': 'yes' } }],
+      coerce,
+    );
+    const col = profileFile(abs)
+      .find((t) => t.name === 'Main')!
+      .columns.find((c) => c.colId === 'c-link')!;
     expect(col.refersTo).toEqual({ tab: 'Source', column: 'Opt' });
   });
 });

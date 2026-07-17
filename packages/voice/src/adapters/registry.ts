@@ -46,18 +46,41 @@ export type WiredCapability = 'chat' | 'tts' | 'stt' | 'vision' | 'image_gen' | 
  * → the drift test fails). Mirror `adapters/index.ts` exactly when editing.
  */
 export const WIRED_PROVIDERS: Record<WiredCapability, ReadonlySet<ProviderId>> = {
-  chat: new Set<ProviderId>(['openrouter', 'anthropic', 'google', 'xai', 'huggingface', 'deepseek', 'copilot', 'custom', 'local']),
+  chat: new Set<ProviderId>([
+    'openrouter',
+    'anthropic',
+    'google',
+    'xai',
+    'huggingface',
+    'deepseek',
+    'copilot',
+    'custom',
+    'local',
+  ]),
   tts: new Set<ProviderId>(['openrouter', 'openai', 'elevenlabs', 'xai', 'google']),
-  stt: new Set<ProviderId>(['openrouter', 'openai', 'xai', 'elevenlabs', 'deepgram', 'assemblyai', 'google']),
+  stt: new Set<ProviderId>([
+    'openrouter',
+    'openai',
+    'xai',
+    'elevenlabs',
+    'deepgram',
+    'assemblyai',
+    'google',
+  ]),
   vision: new Set<ProviderId>(['openai', 'anthropic', 'google', 'xai', 'openrouter']),
   image_gen: new Set<ProviderId>(['openrouter', 'openai', 'xai', 'google', 'huggingface']),
   embedding: new Set<ProviderId>(['openrouter', 'openai', 'google', 'mistral', 'cohere', 'local']),
 };
 
 function mapFor(capability: WiredCapability): ReadonlyMap<ProviderId, unknown> {
-  return { chat: CHAT, tts: TTS, stt: STT, vision: VISION, image_gen: IMAGE_GEN, embedding: EMBEDDING }[
-    capability
-  ];
+  return {
+    chat: CHAT,
+    tts: TTS,
+    stt: STT,
+    vision: VISION,
+    image_gen: IMAGE_GEN,
+    embedding: EMBEDDING,
+  }[capability];
 }
 
 /** Live-registry provider ids for a capability — used by the drift test to prove
@@ -259,9 +282,10 @@ export function isProviderWired(providerId: string, capability: WiredCapability)
  * capabilities) and unwired ones separately as "supported but not
  * dispatched by Mantle yet."
  */
-export function wiredCapabilitiesFor(
-  provider: Provider,
-): { wired: ProviderCapability[]; unwired: ProviderCapability[] } {
+export function wiredCapabilitiesFor(provider: Provider): {
+  wired: ProviderCapability[];
+  unwired: ProviderCapability[];
+} {
   const wired: ProviderCapability[] = [];
   const unwired: ProviderCapability[] = [];
   for (const cap of provider.capabilities) {

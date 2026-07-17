@@ -58,7 +58,9 @@ export async function seedLocation(ownerId: string): Promise<void> {
       .set({ toolGroupSlugs: [...cur, ...missing], updatedAt: new Date() })
       .where(eq(agents.id, a.id));
     granted += 1;
-    console.log(`[location] granted ${missing.map((g) => `'${g}'`).join(' + ')} to agent '${a.slug}'`);
+    console.log(
+      `[location] granted ${missing.map((g) => `'${g}'`).join(' + ')} to agent '${a.slug}'`,
+    );
   }
   console.log(
     `[location] done — ${LOCATION_GROUPS.map((g) => `'${g}'`).join(' + ')} group(s) granted to ` +
@@ -77,9 +79,7 @@ async function resolveOwnerId(): Promise<string> {
     id: string;
   }[];
   if (list.length === 1) return list[0]!.id;
-  throw new Error(
-    'Could not resolve owner: set ALLOWED_USER_ID (auth.users has 0 or >1 rows).',
-  );
+  throw new Error('Could not resolve owner: set ALLOWED_USER_ID (auth.users has 0 or >1 rows).');
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

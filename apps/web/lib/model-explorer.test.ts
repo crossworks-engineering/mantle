@@ -64,7 +64,12 @@ describe('parseOpenAiLike', () => {
 describe('parseAnthropic', () => {
   it('uses display_name + created_at', () => {
     const m = parseAnthropic([
-      { type: 'model', id: 'claude-opus-4-7', display_name: 'Claude Opus 4.7', created_at: '2026-01-01T00:00:00Z' },
+      {
+        type: 'model',
+        id: 'claude-opus-4-7',
+        display_name: 'Claude Opus 4.7',
+        created_at: '2026-01-01T00:00:00Z',
+      },
     ])[0]!;
     expect(m.id).toBe('claude-opus-4-7');
     expect(m.name).toBe('Claude Opus 4.7');
@@ -143,7 +148,10 @@ describe('parseXaiLanguageModels', () => {
 });
 
 describe('queryModels', () => {
-  const mk = (over: Partial<ExplorerModel> & { id: string }): ExplorerModel => ({ raw: {}, ...over });
+  const mk = (over: Partial<ExplorerModel> & { id: string }): ExplorerModel => ({
+    raw: {},
+    ...over,
+  });
   const models: ExplorerModel[] = [
     mk({ id: 'a/chat', name: 'Alpha', kind: 'chat', contextTokens: 100, inputPricePerM: 5 }),
     mk({ id: 'b/embed', name: 'Beta', kind: 'embedding', contextTokens: 800, inputPricePerM: 1 }),

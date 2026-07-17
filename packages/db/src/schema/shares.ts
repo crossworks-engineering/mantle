@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { nodes, nodeType } from './nodes';
 
 /**
@@ -14,7 +23,9 @@ import { nodes, nodeType } from './nodes';
 export const shares = pgTable(
   'shares',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     token: text('token').notNull(),
     ownerId: uuid('owner_id').notNull(),
     nodeId: uuid('node_id')
@@ -26,7 +37,10 @@ export const shares = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     viewCount: integer('view_count').default(0).notNull(),
     lastViewedAt: timestamp('last_viewed_at', { withTimezone: true }),
-    settings: jsonb('settings').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    settings: jsonb('settings')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
   },
   (t) => [
     uniqueIndex('shares_token_uq').on(t.token),

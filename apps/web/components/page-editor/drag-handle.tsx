@@ -107,7 +107,11 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
     if (pos == null || pos < 0) return;
     const node = editor.state.doc.nodeAt(pos);
     if (!node) return;
-    editor.chain().focus().insertContentAt(pos + node.nodeSize, node.toJSON()).run();
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(pos + node.nodeSize, node.toJSON())
+      .run();
   };
 
   // Promote a heading + its body into a sub-page (Phase 4c). Client-side mirror
@@ -122,7 +126,10 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
     const node = editor.state.doc.nodeAt(pos);
     const headingId = node?.attrs.id as string | undefined;
     if (!node || node.type.name !== 'heading' || !headingId) return;
-    const storage = editor.storage as unknown as Record<string, { pageId?: string | null } | undefined>;
+    const storage = editor.storage as unknown as Record<
+      string,
+      { pageId?: string | null } | undefined
+    >;
     const parentId = storage.slashCommand?.pageId ?? null;
     if (!parentId) return;
     const section = extractSection(editor.getJSON() as Record<string, unknown>, headingId);
@@ -140,13 +147,19 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
       });
       const content = [
         ...section.before,
-        { type: 'childPage', attrs: { pageId: page.id, title: page.title, icon: page.icon ?? null } },
+        {
+          type: 'childPage',
+          attrs: { pageId: page.id, title: page.title, icon: page.icon ?? null },
+        },
         ...section.after,
       ];
       editor
         .chain()
         .focus()
-        .setContent(({ type: 'doc', content: content.length ? content : [{ type: 'paragraph' }] }) as JSONContent)
+        .setContent({
+          type: 'doc',
+          content: content.length ? content : [{ type: 'paragraph' }],
+        } as JSONContent)
         .run();
     } catch {
       // Best-effort; the section is left intact on failure.
@@ -162,7 +175,12 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
     close();
     if (pos == null || pos < 0) return;
     if (!editor.state.doc.nodeAt(pos)) return;
-    apply(editor.chain().focus().setTextSelection(pos + 1)).run();
+    apply(
+      editor
+        .chain()
+        .focus()
+        .setTextSelection(pos + 1),
+    ).run();
   };
 
   useEffect(() => {

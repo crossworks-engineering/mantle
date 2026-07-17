@@ -32,7 +32,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       );
     }
     if (err instanceof ParentPageNotFoundError) {
-      return NextResponse.json({ error: 'That destination page no longer exists.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'That destination page no longer exists.' },
+        { status: 400 },
+      );
     }
     throw err;
   }

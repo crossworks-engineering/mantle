@@ -20,12 +20,7 @@ import { entities } from './entities';
  * `semantic`    — a stable abstraction ("the user is a teacher").
  * `preference`  — a stable interaction preference ("the user prefers terse replies").
  */
-export const factKind = pgEnum('fact_kind', [
-  'factual',
-  'episodic',
-  'semantic',
-  'preference',
-]);
+export const factKind = pgEnum('fact_kind', ['factual', 'episodic', 'semantic', 'preference']);
 
 /**
  * The durable, declarative half of the profile layer. One row per fact;
@@ -42,7 +37,9 @@ export const factKind = pgEnum('fact_kind', [
 export const facts = pgTable(
   'facts',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     content: text('content').notNull(),
     kind: factKind('kind').notNull(),
@@ -53,7 +50,10 @@ export const facts = pgTable(
     sourceNodeId: uuid('source_node_id').references(() => nodes.id, { onDelete: 'set null' }),
     embedding: vector(768)('embedding'),
     supersededBy: uuid('superseded_by'),
-    data: jsonb('data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+    data: jsonb('data')
+      .$type<Record<string, unknown>>()
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     /** True if the source node was edited and this fact should be re-extracted. */
     dirty: boolean('dirty').default(false).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

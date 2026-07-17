@@ -40,11 +40,7 @@ export async function getDefaultWorker(
     .select()
     .from(aiWorkers)
     .where(
-      and(
-        eq(aiWorkers.ownerId, ownerId),
-        eq(aiWorkers.kind, kind),
-        eq(aiWorkers.enabled, true),
-      ),
+      and(eq(aiWorkers.ownerId, ownerId), eq(aiWorkers.kind, kind), eq(aiWorkers.enabled, true)),
     )
     .orderBy(desc(aiWorkers.priority), desc(aiWorkers.updatedAt))
     .limit(1);

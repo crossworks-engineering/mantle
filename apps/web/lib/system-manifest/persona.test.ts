@@ -30,7 +30,10 @@ describe('resolveEffectivePersona', () => {
   });
 
   it('falls back to the enabled responder when no `assistant` slug exists', () => {
-    const rows = [a({ slug: 'telegram-default', role: 'responder' }), a({ slug: 'coder', role: 'custom' })];
+    const rows = [
+      a({ slug: 'telegram-default', role: 'responder' }),
+      a({ slug: 'coder', role: 'custom' }),
+    ];
     expect(resolveEffectivePersona(rows)?.slug).toBe('telegram-default');
   });
 

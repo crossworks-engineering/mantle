@@ -22,7 +22,10 @@ export async function POST() {
     const { instanceId } = await registerInstance(relayUrl, instanceToken);
     await savePushInstance({ instanceToken, relayInstanceId: instanceId, relayUrl });
   } catch (err) {
-    return NextResponse.json({ error: 'relay_unreachable', reason: (err as Error).message }, { status: 502 });
+    return NextResponse.json(
+      { error: 'relay_unreachable', reason: (err as Error).message },
+      { status: 502 },
+    );
   }
 
   const invalidated = await deleteAllSubscriptions(owner.id);

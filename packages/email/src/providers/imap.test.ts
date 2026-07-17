@@ -89,8 +89,7 @@ describe('parseHeaderBlock', () => {
     // RFC 5322 lets a header value wrap across lines as long as the
     // continuation starts with whitespace. List-Unsubscribe is a frequent
     // offender because two URLs often blow past 78 chars.
-    const block =
-      'List-Unsubscribe: <mailto:u@example.com>,\r\n <https://example.com/u/abc>\r\n';
+    const block = 'List-Unsubscribe: <mailto:u@example.com>,\r\n <https://example.com/u/abc>\r\n';
     expect(parseHeaderBlock(block)['list-unsubscribe']).toBe(
       '<mailto:u@example.com>, <https://example.com/u/abc>',
     );

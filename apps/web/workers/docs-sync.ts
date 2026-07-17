@@ -18,6 +18,7 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { waitForOwner, type DocCollection } from '@mantle/db';
+import { startProcessHeartbeat } from '@mantle/content';
 import {
   collectionRoot,
   deleteDocByRelPath,
@@ -119,7 +120,9 @@ async function rebuildWatcher(): Promise<void> {
     awaitWriteFinish: { stabilityThreshold: 400, pollInterval: 100 },
     ignored: (p) => {
       const base = path.basename(p);
-      return base.startsWith('.') || base.endsWith('~') || base.endsWith('.swp') || base.endsWith('.tmp');
+      return (
+        base.startsWith('.') || base.endsWith('~') || base.endsWith('.swp') || base.endsWith('.tmp')
+      );
     },
   });
   watcher.on('add', handleUpsert);
@@ -151,6 +154,9 @@ async function refresh(): Promise<void> {
 }
 
 async function main() {
+  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
+  // WEDGED process; a dead one is already covered by the restart policy).
+  startProcessHeartbeat();
   USER_ID = await waitForOwner({ label: 'docs-sync' });
   await ensureDefaultCollections(USER_ID!);
   await refresh(); // boot reconcile + initial watcher

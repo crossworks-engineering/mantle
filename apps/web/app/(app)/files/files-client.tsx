@@ -94,6 +94,17 @@ type RenameTarget =
   | { kind: 'folder'; id: string; slug: string };
 
 /** Normalize a free-typed folder name into a slug (lowercase, dashes). */
+/**
+ * Folder-slug normaliser — deliberately NOT the shared `@/lib/slugify`.
+ *
+ * This one *deletes* punctuation ("Q1/Q2" → "q1q2") rather than turning runs of
+ * it into a separator ("q1-q2"), and it has no length cap. That's the folder
+ * on-disk path convention, and the slug it produces is sent to
+ * `/api/files/folders` as the persisted folder identity — so its output is
+ * load-bearing and must stay byte-stable. Kept local, and distinct from the
+ * shared slugify, precisely so a future "de-dupe" doesn't silently re-slug
+ * existing folders. See lib/slugify.ts for the divergence history.
+ */
 function slugify(input: string): string {
   return input
     .trim()
@@ -319,7 +330,12 @@ function FilesView({
         onDrop={onDrop}
       >
         {openFileId ? (
-          <FileEditor key={openFileId} fileId={openFileId} onClose={() => openFile(null)} onSaved={refresh} />
+          <FileEditor
+            key={openFileId}
+            fileId={openFileId}
+            onClose={() => openFile(null)}
+            onSaved={refresh}
+          />
         ) : (
           <>
             <SetPageTitle title={currentFolder?.slug ?? 'files'} />
@@ -355,7 +371,11 @@ function FilesView({
                     size="sm"
                     className="h-7"
                     onClick={() =>
-                      setRenameTarget({ kind: 'folder', id: currentFolder.id, slug: currentFolder.slug })
+                      setRenameTarget({
+                        kind: 'folder',
+                        id: currentFolder.id,
+                        slug: currentFolder.slug,
+                      })
                     }
                     disabled={busy}
                   >
@@ -981,7 +1001,9 @@ function ChildFolders({
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">{f.slug}</div>
                 {f.description && (
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{f.description}</div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {f.description}
+                  </div>
                 )}
                 <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
                   {f.childFolderCount} folders · {f.fileCount} files

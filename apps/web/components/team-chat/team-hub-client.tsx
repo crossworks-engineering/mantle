@@ -30,18 +30,6 @@ import { TeamChatClient } from '@/components/team-chat/team-chat-client';
 import { TokenGate } from '@/components/team-chat/token-gate';
 import type { HubData as BridgeHubData, HubNavTarget } from '@/lib/app-bridge/protocol';
 
-type HubSection = BridgeHubData['sections'][number];
-
-/** A launcher card — one of the owner's OTHER team-shared apps (active
- *  team-mode app share + green published build; the designated hub app is
- *  excluded server-side). Mirrors @mantle/content `TeamAppCard`. */
-type TeamAppCard = {
-  token: string;
-  title: string;
-  description: string | null;
-  updatedAt: string;
-};
-
 /** The /api/team/hub payload — the bridge `HubData` (what `hub.get` answers a
  *  hub app with; `apps` is now part of that contract) plus the shell-only
  *  fields. Composed from the protocol type so the two can't drift. */
@@ -337,9 +325,9 @@ export function TeamHubShell() {
             {firstName ? `Welcome, ${firstName}.` : 'Welcome.'}
           </h1>
           <p className="mt-4 max-w-2xl text-base text-muted-foreground md:text-lg">
-            Everything about {brainName} in one place — the vision, the plan, what&rsquo;s
-            shipped, and live numbers — served straight from the brain itself. Anything unclear?
-            Ask it directly.
+            Everything about {brainName} in one place — the vision, the plan, what&rsquo;s shipped,
+            and live numbers — served straight from the brain itself. Anything unclear? Ask it
+            directly.
           </p>
           <div className="mt-7">
             <Button size="lg" onClick={() => setView('chat')}>
@@ -371,7 +359,9 @@ export function TeamHubShell() {
                   aria-hidden
                 />
                 <div className="flex items-start justify-between gap-3">
-                  <span className={`inline-flex size-9 items-center justify-center rounded-lg ${f.chip}`}>
+                  <span
+                    className={`inline-flex size-9 items-center justify-center rounded-lg ${f.chip}`}
+                  >
                     <f.icon className="size-4.5" aria-hidden />
                   </span>
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
@@ -492,7 +482,10 @@ export function TeamHubShell() {
             </h2>
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {stats.map(([key, label]) => (
-                <div key={key} className="rounded-lg border border-border bg-card p-4 text-card-foreground">
+                <div
+                  key={key}
+                  className="rounded-lg border border-border bg-card p-4 text-card-foreground"
+                >
                   <p className="text-2xl font-semibold tabular-nums">
                     {(data.counts[key] ?? 0).toLocaleString('en-GB')}
                   </p>

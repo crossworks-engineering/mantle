@@ -99,7 +99,6 @@ async function keyIdByService(ownerId: string): Promise<Record<string, string>> 
 export async function provisionDefaults(ownerId: string): Promise<ProvisionResult> {
   const keys = await keyIdByService(ownerId);
   const openrouter = keys['openrouter'] ?? null;
-  const xai = keys['xai'] ?? null;
 
   // The Models-step overlay (assistant + worker model picks, optionally pinned
   // to an Azure OpenAI endpoint via the `custom` provider). The manifest stays
@@ -108,8 +107,7 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
   const prefs = await loadProfilePreferences(ownerId);
   const modelOverlay = prefs.onboardingModels;
   const customKey = keys['custom'] ?? null;
-  const azureRoute =
-    modelOverlay?.route === 'azure' && !!modelOverlay.azureBaseUrl && !!customKey;
+  const azureRoute = modelOverlay?.route === 'azure' && !!modelOverlay.azureBaseUrl && !!customKey;
 
   // Seed AI workers from the manifest (the single source for models/params +
   // the OpenRouter→xAI voice routing). Idempotent; skips kinds that need a key
@@ -229,10 +227,7 @@ export type SavePersonaInput = {
  * at the voice that matches the chosen gender. Returns false if the agent
  * doesn't exist (no OpenRouter key was provided).
  */
-export async function savePersonaAgent(
-  ownerId: string,
-  input: SavePersonaInput,
-): Promise<boolean> {
+export async function savePersonaAgent(ownerId: string, input: SavePersonaInput): Promise<boolean> {
   const [row] = await db
     .select({ id: agents.id })
     .from(agents)
@@ -243,7 +238,10 @@ export async function savePersonaAgent(
   const name = input.assistantName.trim() || DEFAULT_PERSONA_NAMES[input.gender];
   await updateAgent(ownerId, row.id, {
     name,
-    systemPrompt: buildPersonaPrompt(input.presetKey, { assistantName: name, gender: input.gender }),
+    systemPrompt: buildPersonaPrompt(input.presetKey, {
+      assistantName: name,
+      gender: input.gender,
+    }),
     // temperature is the user's overlay; max_tokens stays the manifest default.
     params: { temperature: input.temperature, max_tokens: PERSONA_MANIFEST.params.max_tokens },
   });

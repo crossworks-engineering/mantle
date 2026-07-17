@@ -45,11 +45,13 @@ export async function resolveAssistAgentSlug(
 
   // Try the saved preference first, then the default specialist. Dedupe so we
   // don't probe the same slug twice when the preference IS the default.
-  const candidates = [...new Set(
-    [preferred, DEFAULT_ASSIST_SLUG[surface]].filter(
-      (s): s is string => typeof s === 'string' && s.length > 0,
+  const candidates = [
+    ...new Set(
+      [preferred, DEFAULT_ASSIST_SLUG[surface]].filter(
+        (s): s is string => typeof s === 'string' && s.length > 0,
+      ),
     ),
-  )];
+  ];
 
   for (const slug of candidates) {
     const [row] = await db

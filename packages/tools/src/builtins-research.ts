@@ -30,10 +30,8 @@ import {
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { captureLlmUsage } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
+import { str } from './coerce';
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
@@ -89,7 +87,11 @@ export function extractCitations(resp: unknown): string[] {
   if (Array.isArray(top)) {
     for (const c of top) {
       if (typeof c === 'string') out.push(c);
-      else if (c && typeof c === 'object' && typeof (c as Record<string, unknown>).url === 'string') {
+      else if (
+        c &&
+        typeof c === 'object' &&
+        typeof (c as Record<string, unknown>).url === 'string'
+      ) {
         out.push((c as Record<string, unknown>).url as string);
       }
     }
@@ -119,7 +121,8 @@ const SEARCH_INPUT_SCHEMA = {
     recency: {
       type: 'string',
       enum: ['day', 'week', 'month', 'year'],
-      description: 'optional: bias toward results no older than this window (for time-sensitive queries)',
+      description:
+        'optional: bias toward results no older than this window (for time-sensitive queries)',
     },
   },
   required: ['query'],
@@ -214,7 +217,7 @@ const web_search_pro: BuiltinToolDef = {
   slug: 'web_search_pro',
   name: 'Deep web search',
   description:
-    "Like web_search but uses a STRONGER, SLOWER model — reserve it for hard, ambiguous, or high-stakes questions, or when standard web_search results conflict or are thin. It costs more and takes noticeably longer, so prefer web_search for routine lookups and reach for this only when the question warrants the extra depth.",
+    'Like web_search but uses a STRONGER, SLOWER model — reserve it for hard, ambiguous, or high-stakes questions, or when standard web_search results conflict or are thin. It costs more and takes noticeably longer, so prefer web_search for routine lookups and reach for this only when the question warrants the extra depth.',
   inputSchema: SEARCH_INPUT_SCHEMA,
   handler: (input, ctx) => runWebSearch(input, ctx, 'search_advanced'),
 };

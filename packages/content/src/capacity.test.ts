@@ -21,7 +21,11 @@ describe('computeCapacity', () => {
   it('reports both axes against the published policy', () => {
     const c = computeCapacity(3_000, 15_000);
     expect(c.docs).toMatchObject({ count: 3_000, ...CAPACITY_POLICY.docs, zone: 'green' });
-    expect(c.chunkVectors).toMatchObject({ count: 15_000, ...CAPACITY_POLICY.chunkVectors, zone: 'green' });
+    expect(c.chunkVectors).toMatchObject({
+      count: 15_000,
+      ...CAPACITY_POLICY.chunkVectors,
+      zone: 'green',
+    });
     expect(c.zone).toBe('green');
     expect(c.pctOfSplit).toBe(15); // docs 15% vs chunks 15% — equal, worst = 15
   });

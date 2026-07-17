@@ -116,11 +116,7 @@ export function parseCatalog(models: OpenRouterModel[]): Record<string, LiveMode
     const top = m.top_provider?.context_length;
     const base = m.context_length;
     const ctx =
-      typeof top === 'number' && top > 0
-        ? top
-        : typeof base === 'number' && base > 0
-          ? base
-          : 0;
+      typeof top === 'number' && top > 0 ? top : typeof base === 'number' && base > 0 ? base : 0;
     if (ctx <= 0) continue;
     const mods = m.architecture?.input_modalities;
     const vision = Array.isArray(mods) && mods.includes('image');
@@ -233,7 +229,10 @@ export function pricingFor(
 /** Bulk slug→pricing map for the UI to attach pricing badges to a list of
  *  models. Only slugs that have at least one priced side are included —
  *  consumers can treat absence as "pricing unavailable". */
-export function pricingMap(): Record<string, { inputPricePerM?: number; outputPricePerM?: number }> {
+export function pricingMap(): Record<
+  string,
+  { inputPricePerM?: number; outputPricePerM?: number }
+> {
   if (!liveModels) return {};
   const out: Record<string, { inputPricePerM?: number; outputPricePerM?: number }> = {};
   for (const [k, v] of Object.entries(liveModels)) {

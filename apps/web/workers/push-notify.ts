@@ -16,6 +16,7 @@
  */
 import postgres from 'postgres';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
+import { startProcessHeartbeat } from '@mantle/content';
 import { pushApproval, pushOutbound } from '../lib/push/notify';
 
 interface ConversationChange {
@@ -60,6 +61,11 @@ async function handlePending(ownerId: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
+  // WEDGED process; a dead one is already covered by the restart policy). This
+  // worker is a pure LISTEN loop with no business tick — the heartbeat measures
+  // event-loop liveness, which is exactly the health signal we want.
+  startProcessHeartbeat();
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL must be set');
   // Needed to decrypt the instance token at rest (@mantle/crypto).
@@ -88,6 +94,14 @@ async function main(): Promise<void> {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }
+
+// Keep-alive backstop, matching calendar-sync/microsoft-sync/docs-sync: a
+// transient rejection mid-delivery (e.g. a Postgres blip on markPushed) must
+// not let Node's default handler kill the worker and drop the rest of the
+// batch. Log and stay up; the next wake event re-drives.
+process.on('unhandledRejection', (reason) => {
+  console.error('[push-notify] unhandledRejection (kept alive):', reason);
+});
 
 main().catch((err) => {
   console.error(err);

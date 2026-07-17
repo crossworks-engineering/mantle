@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { readDocFile, shapeHashOf, shapeHashOfFile, writeDocFile, describeWorkbook } from './engine';
+import {
+  readDocFile,
+  shapeHashOf,
+  shapeHashOfFile,
+  writeDocFile,
+  describeWorkbook,
+} from './engine';
 import type { CellValue, ColumnType, TableDocLike } from './doc-types';
 import { applyOpsToFile, finalizePublishedFile, type TableOp } from './ops';
 import { aggregateWindow, listRowsWindow, queryRowsWindow } from './window';
@@ -86,7 +92,11 @@ describe('applyOpsToFile', () => {
     applyOpsToFile(
       file,
       [
-        { op: 'column_add', column: { id: 'c-due', name: 'Due', type: 'text' }, afterColumnId: 'c-name' },
+        {
+          op: 'column_add',
+          column: { id: 'c-due', name: 'Due', type: 'text' },
+          afterColumnId: 'c-name',
+        },
         { op: 'cell_set', rowId: 'r1', columnId: 'c-due', value: '2026-07-15' },
       ],
       coerce,
@@ -105,9 +115,13 @@ describe('applyOpsToFile', () => {
     );
     doc = readDocFile(file);
     expect(doc.rows[1]!.cells['c-due']).toBe(42);
-    expect(doc.rows[0]!.cells['c-due']).toBeNull; // '2026-07-15' isn't numeric → null (dropped)
+    expect(doc.rows[0]!.cells['c-due']).toBeUndefined(); // '2026-07-15' isn't numeric → cell dropped (absent)
 
-    applyOpsToFile(file, [{ op: 'column_update', columnId: 'c-name', patch: { name: 'Title' } }], coerce);
+    applyOpsToFile(
+      file,
+      [{ op: 'column_update', columnId: 'c-name', patch: { name: 'Title' } }],
+      coerce,
+    );
     const db = openTableFile(file, { readOnly: true });
     try {
       const row = db.prepare(`SELECT "Title" FROM "Sheet1" ORDER BY _pos LIMIT 1`).get();
@@ -147,7 +161,9 @@ describe('promote finalize', () => {
     expect(tabs[0]!.ftsTable).not.toBeNull();
     const db = openTableFile(published, { readOnly: true });
     try {
-      const hits = db.prepare(`SELECT rowid FROM ${tabs[0]!.ftsTable} WHERE ${tabs[0]!.ftsTable} MATCH '"beta"'`).all();
+      const hits = db
+        .prepare(`SELECT rowid FROM ${tabs[0]!.ftsTable} WHERE ${tabs[0]!.ftsTable} MATCH '"beta"'`)
+        .all();
       expect(hits).toHaveLength(1); // backfill indexed pre-existing rows
     } finally {
       db.close();
@@ -213,7 +229,11 @@ describe('windowed reads', () => {
     expect(aggregateWindow(file, { columnId: 'c-n', kind: 'avg' })).toBe(12);
     expect(aggregateWindow(file, { columnId: 'c-t', kind: 'filled' })).toBe(25);
     expect(
-      aggregateWindow(file, { columnId: 'c-n', kind: 'count', filters: [{ colId: 'c-t', op: 'eq', value: 'even' }] }),
+      aggregateWindow(file, {
+        columnId: 'c-n',
+        kind: 'count',
+        filters: [{ colId: 'c-t', op: 'eq', value: 'even' }],
+      }),
     ).toBe(13);
     expect(aggregateWindow(file, { columnId: 'c-t', kind: 'sum' })).toBeNull(); // non-numeric target refuses
   });

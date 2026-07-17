@@ -71,7 +71,11 @@ export async function GET(
     const chunk = bytes.subarray(start, end + 1);
     return new Response(new Uint8Array(chunk), {
       status: 206,
-      headers: { ...base, 'content-range': `bytes ${start}-${end}/${total}`, 'content-length': String(chunk.byteLength) },
+      headers: {
+        ...base,
+        'content-range': `bytes ${start}-${end}/${total}`,
+        'content-length': String(chunk.byteLength),
+      },
     });
   }
 

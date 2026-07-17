@@ -53,7 +53,8 @@ type Section = { label: string; items: EntityDiff[] };
 /** Group entities into the left-list sections (extras break out to the bottom). */
 function sectionize(entities: EntityDiff[]): Section[] {
   const pick = (fn: (e: EntityDiff) => boolean) => entities.filter(fn);
-  const notExtra = (k: EntityDiff['kind']) => (e: EntityDiff) => e.kind === k && e.status !== 'extra';
+  const notExtra = (k: EntityDiff['kind']) => (e: EntityDiff) =>
+    e.kind === k && e.status !== 'extra';
   const sections: Section[] = [
     { label: 'Persona', items: pick((e) => e.kind === 'persona') },
     { label: 'Specialists', items: pick(notExtra('agent')) },
@@ -164,9 +165,13 @@ function FieldRow({ field }: { field: FieldDiff }) {
       ) : isBody(field.field) ? (
         <details className="mt-2 text-xs">
           <summary className="cursor-pointer text-muted-foreground">
-            {field.info ? 'Prompt differs from the template' : 'Body differs from the template'} — show diff
+            {field.info ? 'Prompt differs from the template' : 'Body differs from the template'} —
+            show diff
           </summary>
-          <DiffBody before={asText(field.live) === '—' ? '' : asText(field.live)} after={asText(field.manifest) === '—' ? '' : asText(field.manifest)} />
+          <DiffBody
+            before={asText(field.live) === '—' ? '' : asText(field.live)}
+            after={asText(field.manifest) === '—' ? '' : asText(field.manifest)}
+          />
         </details>
       ) : (
         <div className="mt-2 grid gap-2 md:grid-cols-2">
@@ -239,8 +244,7 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(
     firstNonOk ? `${firstNonOk.kind}:${firstNonOk.slug}` : null,
   );
-  const selected =
-    report.entities.find((e) => `${e.kind}:${e.slug}` === selectedKey) ?? firstNonOk;
+  const selected = report.entities.find((e) => `${e.kind}:${e.slug}` === selectedKey) ?? firstNonOk;
 
   const { ok, modified, missing, extra } = report.counts;
 
@@ -305,17 +309,25 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
           {adoptAllCount > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button type="button" size="sm" variant="outline" className="mt-3 w-full" disabled={submitting}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-3 w-full"
+                  disabled={submitting}
+                >
                   Commit all ({adoptAllCount})
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Commit {adoptAllCount} change{adoptAllCount === 1 ? '' : 's'} from the template?</AlertDialogTitle>
+                  <AlertDialogTitle>
+                    Commit {adoptAllCount} change{adoptAllCount === 1 ? '' : 's'} from the template?
+                  </AlertDialogTitle>
                   <AlertDialogDescription>
-                    Applies every committable item now (the same syncs the next version bump
-                    would make). Worker model changes are excluded — commit those
-                    individually. Operator-added items are never removed.
+                    Applies every committable item now (the same syncs the next version bump would
+                    make). Worker model changes are excluded — commit those individually.
+                    Operator-added items are never removed.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -351,7 +363,9 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
                       <span className="truncate text-sm font-medium">{e.name}</span>
                       <StatusPill status={e.status} />
                     </div>
-                    <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{e.slug}</div>
+                    <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                      {e.slug}
+                    </div>
                   </button>
                 );
               })}
@@ -375,15 +389,19 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
               <StatusPill status={selected.status} />
             </div>
 
-            <p className={cn('text-sm', selected.status === 'ok' ? 'text-muted-foreground' : STATUS_TEXT[selected.status])}>
+            <p
+              className={cn(
+                'text-sm',
+                selected.status === 'ok' ? 'text-muted-foreground' : STATUS_TEXT[selected.status],
+              )}
+            >
               {selected.summary}
             </p>
 
             {selected.kind === 'persona' && (
               <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                The persona’s prompt, model, and parameters are operator-owned and are
-                deliberately not compared — only its structure (tool groups, skills,
-                delegation).
+                The persona’s prompt, model, and parameters are operator-owned and are deliberately
+                not compared — only its structure (tool groups, skills, delegation).
               </p>
             )}
 
@@ -394,7 +412,9 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
                 ))}
               </div>
             ) : selected.status === 'ok' ? (
-              <p className="text-sm text-muted-foreground">Nothing to reconcile — this matches the template.</p>
+              <p className="text-sm text-muted-foreground">
+                Nothing to reconcile — this matches the template.
+              </p>
             ) : null}
 
             <div className="border-t border-border pt-3">
@@ -408,12 +428,18 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Commit changes to “{selected.name}” from the template?</AlertDialogTitle>
-                        <AlertDialogDescription>{adoptDescription(selected)}</AlertDialogDescription>
+                        <AlertDialogTitle>
+                          Commit changes to “{selected.name}” from the template?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {adoptDescription(selected)}
+                        </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => runAdopt(selected)}>Commit</AlertDialogAction>
+                        <AlertDialogAction onClick={() => runAdopt(selected)}>
+                          Commit
+                        </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>

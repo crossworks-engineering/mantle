@@ -97,11 +97,7 @@ function rowOf(n: Node, team: TeamStatus | null = null): ContactRow {
     ? (d.emails as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0)
     : [];
   const emails =
-    emailsRaw.length > 0
-      ? emailsRaw
-      : typeof d.email === 'string' && d.email
-        ? [d.email]
-        : [];
+    emailsRaw.length > 0 ? emailsRaw : typeof d.email === 'string' && d.email ? [d.email] : [];
   const email = emails[0] ?? '';
   const countryCode = typeof d.country_code === 'string' ? d.country_code : '';
   const cell = typeof d.cell === 'string' ? d.cell : '';
@@ -188,10 +184,7 @@ export async function listContacts(
   return rows.map((r) => rowOf(r, teamMap.get(r.id) ?? null));
 }
 
-export async function countContacts(
-  ownerId: string,
-  opts: ListContactsOpts = {},
-): Promise<number> {
+export async function countContacts(ownerId: string, opts: ListContactsOpts = {}): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(nodes)
@@ -238,7 +231,9 @@ export async function contactEmails(ownerId: string): Promise<string[]> {
 function contactEmailEntries(data: unknown): string[] {
   const d = (data ?? {}) as Record<string, unknown>;
   if (Array.isArray(d.emails)) {
-    return (d.emails as unknown[]).filter((x): x is string => typeof x === 'string' && x.length > 0);
+    return (d.emails as unknown[]).filter(
+      (x): x is string => typeof x === 'string' && x.length > 0,
+    );
   }
   return typeof d.email === 'string' && d.email ? [d.email] : [];
 }
@@ -332,7 +327,7 @@ export async function recordContactSent(
   // postgres-js `execute` returns the underlying rows; checking count needs the
   // result shape — `result.count` works for INSERTs/UPDATEs in postgres-js.
   return (result as unknown as { count?: number }).count
-    ? ((result as unknown as { count: number }).count > 0)
+    ? (result as unknown as { count: number }).count > 0
     : true; // optimistic — even if drivers vary, we won't pretend it failed.
 }
 
@@ -449,7 +444,8 @@ export async function updateContact(
   // Emails: prefer the array; the deprecated single `email` (when explicitly
   // passed) replaces the list; otherwise keep the stored entries.
   const merged: CreateContactInput = {
-    firstName: input.firstName ?? (typeof oldData.first_name === 'string' ? oldData.first_name : ''),
+    firstName:
+      input.firstName ?? (typeof oldData.first_name === 'string' ? oldData.first_name : ''),
     lastName: input.lastName ?? (typeof oldData.last_name === 'string' ? oldData.last_name : ''),
     company: input.company ?? (typeof oldData.company === 'string' ? oldData.company : ''),
     emails: input.emails ?? (input.email !== undefined ? [input.email] : oldEntries),
@@ -473,8 +469,7 @@ export async function updateContact(
   // Did any extractor-visible field change? If so the prior summary/embedding
   // is stale — clear them so the re-extract on UPDATE writes a fresh pass.
   // The INSERT trigger doesn't fire on UPDATE, so we explicitly re-notify below.
-  const emailsChanged =
-    addedEmails.length > 0 || fields.emails.length !== oldEmailsNorm.length;
+  const emailsChanged = addedEmails.length > 0 || fields.emails.length !== oldEmailsNorm.length;
   const visibleChanged =
     fields.firstName !== (typeof oldData.first_name === 'string' ? oldData.first_name : '') ||
     fields.lastName !== (typeof oldData.last_name === 'string' ? oldData.last_name : '') ||

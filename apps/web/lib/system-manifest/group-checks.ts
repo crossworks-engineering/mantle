@@ -63,7 +63,10 @@ export function computeGroupToolFindings(
     }
     for (const t of row.toolSlugs ?? []) {
       if (!enabledToolSlugs.has(t)) {
-        findings.push({ id: `${slug}:${t}`, detail: `tool group '${slug}' → tool '${t}' has no enabled row` });
+        findings.push({
+          id: `${slug}:${t}`,
+          detail: `tool group '${slug}' → tool '${t}' has no enabled row`,
+        });
       }
     }
   }
@@ -72,7 +75,10 @@ export function computeGroupToolFindings(
     if (manifestSlugs.has(row.slug) || !row.enabled) continue;
     for (const t of row.toolSlugs ?? []) {
       if (!enabledToolSlugs.has(t)) {
-        findings.push({ id: `${row.slug}:${t}`, detail: `custom tool group '${row.slug}' → tool '${t}' has no enabled row` });
+        findings.push({
+          id: `${row.slug}:${t}`,
+          detail: `custom tool group '${row.slug}' → tool '${t}' has no enabled row`,
+        });
       }
     }
   }

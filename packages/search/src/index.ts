@@ -128,7 +128,12 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
       ? sql`ts_rank(${nodes.searchTsv}, plainto_tsquery('english', ${opts.q})) desc`
       : desc(nodes.updatedAt);
     if (opts.q) conds.push(sql`${nodes.searchTsv} @@ plainto_tsquery('english', ${opts.q})`);
-    return db.select().from(nodes).where(and(...conds)).orderBy(orderBy).limit(limit);
+    return db
+      .select()
+      .from(nodes)
+      .where(and(...conds))
+      .orderBy(orderBy)
+      .limit(limit);
   }
 
   // ── Hybrid path: fuse a vector pool with an FTS pool via weighted RRF. ────

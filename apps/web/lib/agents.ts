@@ -121,7 +121,9 @@ export async function getAgentBySlug(userId: string, slug: string): Promise<Agen
  * Telegram channel (docs/comms-channels.md). The profile page lets the operator
  * pick one as the event-reminder sender. Distinct, ordered by name.
  */
-export function listReminderCapableAgents(userId: string): Promise<{ slug: string; name: string }[]> {
+export function listReminderCapableAgents(
+  userId: string,
+): Promise<{ slug: string; name: string }[]> {
   return db
     .selectDistinct({ slug: agents.slug, name: agents.name })
     .from(agents)
@@ -167,10 +169,7 @@ export type CreateAgentInput = {
   enabled?: boolean;
 };
 
-export async function createAgent(
-  userId: string,
-  input: CreateAgentInput,
-): Promise<AgentSummary> {
+export async function createAgent(userId: string, input: CreateAgentInput): Promise<AgentSummary> {
   const [row] = await db
     .insert(agents)
     .values({
@@ -313,13 +312,16 @@ export function addPersonaNote(
   id: string,
   input: { kind: PersonaNoteKind; content: string },
 ): Promise<AgentSummary | null> {
-  return mutatePersonaNotes(userId, id, (notes) =>
-    applyPersonaUpdate(
-      notes,
-      { add: { kind: input.kind, content: input.content } },
-      new Date().toISOString(),
-      randomUUID(),
-    ).notes,
+  return mutatePersonaNotes(
+    userId,
+    id,
+    (notes) =>
+      applyPersonaUpdate(
+        notes,
+        { add: { kind: input.kind, content: input.content } },
+        new Date().toISOString(),
+        randomUUID(),
+      ).notes,
   );
 }
 
@@ -330,13 +332,16 @@ export function editPersonaNote(
   id: string,
   input: { ref: string; kind: PersonaNoteKind; content: string },
 ): Promise<AgentSummary | null> {
-  return mutatePersonaNotes(userId, id, (notes) =>
-    applyPersonaUpdate(
-      notes,
-      { add: { kind: input.kind, content: input.content }, supersedeRefs: [input.ref] },
-      new Date().toISOString(),
-      randomUUID(),
-    ).notes,
+  return mutatePersonaNotes(
+    userId,
+    id,
+    (notes) =>
+      applyPersonaUpdate(
+        notes,
+        { add: { kind: input.kind, content: input.content }, supersedeRefs: [input.ref] },
+        new Date().toISOString(),
+        randomUUID(),
+      ).notes,
   );
 }
 
@@ -346,8 +351,12 @@ export function retirePersonaNote(
   id: string,
   ref: string,
 ): Promise<AgentSummary | null> {
-  return mutatePersonaNotes(userId, id, (notes) =>
-    applyPersonaUpdate(notes, { removeRefs: [ref] }, new Date().toISOString(), randomUUID()).notes,
+  return mutatePersonaNotes(
+    userId,
+    id,
+    (notes) =>
+      applyPersonaUpdate(notes, { removeRefs: [ref] }, new Date().toISOString(), randomUUID())
+        .notes,
   );
 }
 

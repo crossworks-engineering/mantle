@@ -8,12 +8,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type {
-  DraftRequest,
-  Environment,
-  HistoryEntry,
-  KeyValueEntry,
-} from './types';
+import type { DraftRequest, Environment, HistoryEntry, KeyValueEntry } from './types';
 
 export const STORAGE_KEYS = {
   environments: 'dev-tools:environments:v1',
@@ -37,9 +32,7 @@ export function emptyKv(): KeyValueEntry {
 }
 
 export function defaultEnvironments(): Environment[] {
-  return [
-    { id: 'env_local', name: 'This server', baseUrl: '', vars: [] },
-  ];
+  return [{ id: 'env_local', name: 'This server', baseUrl: '', vars: [] }];
 }
 
 export function emptyDraft(): DraftRequest {
@@ -108,7 +101,10 @@ const HISTORY_BODY_CAP = 10_000;
 
 export function capDraftBody(d: DraftRequest): DraftRequest {
   if (d.body.text.length <= HISTORY_BODY_CAP) return d;
-  return { ...d, body: { ...d.body, text: `${d.body.text.slice(0, HISTORY_BODY_CAP)}…[truncated]` } };
+  return {
+    ...d,
+    body: { ...d.body, text: `${d.body.text.slice(0, HISTORY_BODY_CAP)}…[truncated]` },
+  };
 }
 
 /**
@@ -137,7 +133,6 @@ export function usePersistedState<T>(
       /* keep initial */
     }
     loaded.current = true;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
   const set = useCallback(

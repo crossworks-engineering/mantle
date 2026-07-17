@@ -96,9 +96,7 @@ export function applyPersonaUpdate(
   newId: string,
 ): PersonaUpdateResult {
   const retired: { ref: string; reason: 'superseded' | 'removed' }[] = [];
-  const toSupersede = new Set(
-    (update.supersedeRefs ?? []).map((s) => s.trim()).filter(Boolean),
-  );
+  const toSupersede = new Set((update.supersedeRefs ?? []).map((s) => s.trim()).filter(Boolean));
   const toRemove = new Set((update.removeRefs ?? []).map((s) => s.trim()).filter(Boolean));
 
   const added: PersonaNote | null =

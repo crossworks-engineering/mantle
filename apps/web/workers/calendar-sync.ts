@@ -11,6 +11,7 @@ import PgBoss from 'pg-boss';
 import { eq } from 'drizzle-orm';
 import { calendarAccounts, db } from '@mantle/db';
 import { syncCalendarAccount } from '@mantle/calendar';
+import { startProcessHeartbeat } from '@mantle/content';
 
 const SYNC_QUEUE = 'mantle.calendar.sync';
 const SCHEDULER_QUEUE = 'mantle.calendar.scheduler';
@@ -20,6 +21,9 @@ interface CalSyncJob {
 }
 
 async function main() {
+  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
+  // WEDGED process; a dead one is already covered by the restart policy).
+  startProcessHeartbeat();
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL must be set');
 
@@ -65,7 +69,10 @@ async function main() {
         console.error('[cal-sync] error on', account.displayName, err);
         await db
           .update(calendarAccounts)
-          .set({ lastSyncError: String((err as Error).message).slice(0, 500), updatedAt: new Date() })
+          .set({
+            lastSyncError: String((err as Error).message).slice(0, 500),
+            updatedAt: new Date(),
+          })
           .where(eq(calendarAccounts.id, account.id))
           .catch(() => {});
         throw err; // let pg-boss record failure + retry

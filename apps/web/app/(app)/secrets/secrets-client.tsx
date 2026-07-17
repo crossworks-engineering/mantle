@@ -11,7 +11,7 @@ import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import { SecretForm, emptySecretForm, KINDS, type Kind, type SecretBody } from './secret-form';
+import { SecretForm, emptySecretForm, KINDS, type SecretBody } from './secret-form';
 import { SecretDetail, type SecretRow } from './secret-detail';
 
 type Selection = { mode: 'create' } | { mode: 'view'; id: string } | null;
@@ -61,15 +61,7 @@ export function SecretsClient({
   return <SecretsView data={secretsQuery.data} query={query} kind={kind} />;
 }
 
-function SecretsView({
-  data,
-  query,
-  kind,
-}: {
-  data: SecretsPage;
-  query: string;
-  kind: string;
-}) {
+function SecretsView({ data, query, kind }: { data: SecretsPage; query: string; kind: string }) {
   const { secrets: initialSecrets, total, page, pageSize } = data;
   const { pending: navPending, go } = useListNav();
   const toast = useToast();
@@ -152,7 +144,9 @@ function SecretsView({
           </div>
           <select
             value={kind}
-            onChange={(e) => go({ kind: e.target.value === 'all' ? null : e.target.value, page: null })}
+            onChange={(e) =>
+              go({ kind: e.target.value === 'all' ? null : e.target.value, page: null })
+            }
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
             aria-label="Filter by kind"
           >

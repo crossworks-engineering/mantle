@@ -70,7 +70,12 @@ describe('parseXlsx', () => {
 
   it('does not flag a small, dense sheet as truncated', async () => {
     const text = await parseXlsx(
-      makeWorkbook({ Small: [['a', 'b'], [1, 2]] }),
+      makeWorkbook({
+        Small: [
+          ['a', 'b'],
+          [1, 2],
+        ],
+      }),
     );
     expect(text).not.toContain('[spreadsheet truncated');
   });

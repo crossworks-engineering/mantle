@@ -16,10 +16,24 @@ export {
 } from './run-turn';
 export { stageLabelForStep, type StageLabel } from './stage-label';
 export {
-  pickWebDefaultAgent,
-  ROLE_TIEBREAK,
-  type WebDefaultCandidate,
-} from './select';
+  assembleResponderTurn,
+  base64Bytes,
+  decideImageRouting,
+  runWithImageFallback,
+  type AssembledResponderTurn,
+  type AssembleResponderTurnOptions,
+  type HeartbeatSurface,
+  type ResponderLoopOverrides,
+} from './assemble-turn';
+export {
+  runResponderLoop,
+  buildPersistedTrail,
+  emptyLoopResult,
+  EMPTY_REPLY_FALLBACK,
+  type ResponderLoopResult,
+  type RunResponderLoopOptions,
+} from './responder-loop';
+export { pickWebDefaultAgent, ROLE_TIEBREAK, type WebDefaultCandidate } from './select';
 export {
   runTeamTurn,
   TEAM_RESPONDER_SLUG,

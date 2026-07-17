@@ -31,21 +31,24 @@ import {
 import { enqueueBackfills } from '@mantle/email';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
+import { str } from './coerce';
 
 const CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'contact', lookup: 'contact_find / contact_list' },
 ];
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
 }
 function num(v: unknown, dflt: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : dflt;
 }
-/** Coerce an `emails` input to a clean string[] (or undefined to leave alone). */
+/**
+ * Coerce an `emails` input to a clean string[] (or undefined to leave alone).
+ * Intentionally NOT the shared `strArr`/`strArrOpt` from './coerce': emails must
+ * be trimmed and empty entries dropped, which those don't do. Kept local so the
+ * address-cleaning contract lives next to its one call site.
+ */
 function strArr(v: unknown): string[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const out = v
@@ -145,7 +148,7 @@ const contact_get: BuiltinToolDef = {
   slug: 'contact_get',
   preconditions: CONTACT_ID_PRE,
   name: 'Read a contact',
-  description: "Fetch one contact by its node id. Returns the full record including counters.",
+  description: 'Fetch one contact by its node id. Returns the full record including counters.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -261,23 +264,28 @@ const contact_update: BuiltinToolDef = {
       emails: {
         type: 'array',
         items: { type: 'string' },
-        description:
-          'Replaces the email list. Each entry is an address or a `@domain` wildcard.',
+        description: 'Replaces the email list. Each entry is an address or a `@domain` wildcard.',
       },
       email: { type: 'string', description: 'Deprecated single-email shorthand; prefer `emails`.' },
-      country_code: { type: 'string', description: 'Dialling code, e.g. "+27"; required if `cell` is set.' },
+      country_code: {
+        type: 'string',
+        description: 'Dialling code, e.g. "+27"; required if `cell` is set.',
+      },
       cell: {
         type: 'string',
-        description: 'Cell number in any format — non-digits are stripped, stored with `country_code`.',
+        description:
+          'Cell number in any format — non-digits are stripped, stored with `country_code`.',
       },
       description: {
         type: 'string',
-        description: 'Who this is, for the AI — the relationship, what they do. Indexed into the brain for search.',
+        description:
+          'Who this is, for the AI — the relationship, what they do. Indexed into the brain for search.',
       },
       tags: {
         type: 'array',
         items: { type: 'string' },
-        description: "Labels for organisation and filtering, e.g. ['work']. Replaces the whole list.",
+        description:
+          "Labels for organisation and filtering, e.g. ['work']. Replaces the whole list.",
       },
     },
     required: ['id'],
