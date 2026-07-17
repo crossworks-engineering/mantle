@@ -132,9 +132,10 @@ chars, look-alike-free alphabet). The `/contacts` UI mints it via a header
 confirms; a list badge marks members).
 
 The token is that person's **only credential** on Mantle's external surfaces —
-team-mode app shares (`/s/<token>`, see
-[`app-authoring-guide.md`](./app-authoring-guide.md)) and Team Chat (`/team`,
-see [`team-chat.md`](./team-chat.md)) — and every action on those surfaces is
+team-mode shares (`/s/<token>`, see
+[`app-authoring-guide.md`](./app-authoring-guide.md)), the Team Workspace +
+its Assistant (`/team`), and the Team Hub (`/hub`) — see
+[`team-chat.md`](./team-chat.md) — and every action on those surfaces is
 audited against the contact. Membership is the single source of truth:
 disabling the toggle or deleting the contact deletes the row, and because
 every request re-checks liveness, access dies immediately, mid-session.

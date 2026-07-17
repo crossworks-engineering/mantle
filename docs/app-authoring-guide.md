@@ -260,11 +260,13 @@ out of an app you intend to share.
 anyone"; team = "identified, audited teammates who may use my tools and write
 data." Treat any share link as a secret; revoke by turning the share off.
 
-## Team Hub apps (a designated app as the /team hub)
+## Team Hub apps (a designated app as the /hub surface)
 
 A brain can designate one published app as its **Team Hub**: team members
-visiting `/team` get that app full-screen, while the platform keeps the token
-gate, the live Team Chat, and the briefing reader core. Hub apps get one extra
+visiting `/hub` get that app full-screen, while the platform keeps the token
+gate, the live Team Chat, and the briefing reader core. (`/team` itself is the
+read-only member **workspace** — see [`team-chat.md`](team-chat.md) §2; the
+same team cookie opens both surfaces.) Hub apps get one extra
 namespace — `host.hub.get()` (site name, member name, briefing sections, live
 stats), `host.hub.openChat()`, `host.hub.openBriefing(token)` — and the
 built-in hub renders automatically if the app ever breaks.

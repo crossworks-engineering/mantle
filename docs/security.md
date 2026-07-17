@@ -34,7 +34,7 @@
 | Credential | Who holds it | Scope | Revocation |
 |---|---|---|---|
 | Owner/admin login + session cookie | you and named admins | the whole app | change password; delete the admin user |
-| **Team token** (8 chars, shown once, SHA-256 at rest) | a Contact you flagged as team member | `/team` chat + team-mode app shares, nothing else | flip the toggle or delete the contact — instant, mid-session |
+| **Team token** (8 chars, shown once, SHA-256 at rest) | a Contact you flagged as team member | the `/team` workspace (every ACTIVE share, read-only) + its Assistant, `/hub`, and team-mode `/s` shares — nothing else | flip the toggle or delete the contact — instant, mid-session |
 | Share token (~128-bit CSPRNG in the URL) | anyone with the link | exactly one shared item (or one public app) | turn the share off |
 
 Notes that matter to a reviewer:
@@ -62,7 +62,8 @@ complete list of ways that surface can change the brain.
 | `/s/<token>` shared page/note/task/event/file | link token | that one item + its own embedded assets only | none | view count |
 | `/s/<token>` **public app** | link token | the app's own SQLite, read-only | none (no brain tools, no DB writes) | app access log |
 | `/s/<token>` **team app** | link token + team token | app SQLite + the app's *declared* tools (built-ins only) | app SQLite writes + declared tools | app access log, per member |
-| `/team` **Team Chat** | team token | brain knowledge via a read-only responder (email + journal excluded by default) | one wrapped tool that files a task for human review | access log + full per-turn traces |
+| `/team` **workspace** | team token | the owner's ACTIVE shares (team + public mode), rendered read-only through the `/s` presenters — the share stays the only content door | none | share view counts + access log |
+| `/team/assistant` **Team Chat** | team token | brain knowledge via a read-only responder (email + journal excluded by default) | one wrapped tool that files a task for human review | access log + full per-turn traces |
 | Telegram | explicit bot pairing | owner-level assistant (this is *your* channel, not a team one) | assistant tools per its grants | traces |
 | MCP (Claude Desktop etc.) | SSH/exec into the container — operator-only today | owner-level tools | owner-level tools | traces |
 

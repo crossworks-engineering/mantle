@@ -52,8 +52,9 @@ Non-negotiables (full detail in the guide):
   `isDetachedDev()` (see docs/db-less-dev.md "How it works"). Client code fetches via
   `apiFetch`/`apiSend`/`apiEventStream` only (never raw same-origin `fetch` for data).
 
-**Team Hub app** — `/team` can render a designated mini-app full-bleed instead of
-the built-in hub (Team admin → "Hub app"). The authoring contract (thin `host.hub`
+**Team Hub app** — `/hub` can render a designated mini-app full-bleed instead of
+the built-in hub (Team admin → "Hub app"); `/team` itself is the read-only
+member workspace (`components/team-workspace/`). The authoring contract (thin `host.hub`
 SDK, sandbox rules, fallback chain) is [`docs/team-hub-app-sdk.md`](../../docs/team-hub-app-sdk.md);
 the bridge protocol (`lib/app-bridge/protocol.ts`) and the `@host` kit string
 (`packages/app-build/src/kit.ts`) MUST stay mirrored (tripwire: `kit.test.ts`).
