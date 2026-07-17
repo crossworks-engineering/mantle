@@ -41,12 +41,7 @@ import {
 import { getApiKeyById } from '@mantle/api-keys';
 import {
   buildChatMessages,
-  composeSystemPromptWithSkills,
-  effectiveToolSlugs,
   loadConversationContext,
-  resolveAgentSkills,
-  resolveAgentToolGroups,
-  resolveAgentTools,
   resolveBackupAdapter,
   runToolLoop,
   type HistoryTurn,
@@ -56,11 +51,11 @@ import {
   appendTeamMessage,
   updateTeamMessageOutcome,
   recentTeamMessages,
-  buildTimeContextLine,
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
   TEAM_PRIVATE_READ_SLUGS,
 } from '@mantle/content';
+import { assembleResponderTurn } from './assemble-turn';
 import {
   startTrace,
   step,
@@ -206,26 +201,31 @@ export async function runTeamTurn(
     if (options.streamId) unregisterTurnAbort(options.streamId);
   };
 
-  const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
-  const promptWithSkills = composeSystemPromptWithSkills(agent.systemPrompt, attachedSkills);
   const prefs = await loadProfilePreferences(ownerId);
   // Member identity rides the VOLATILE block: per-contact text in the cached
   // prefix would bust the shared per-agent cache on every member switch.
   const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (contact ${contactId}). You are serving this person — an external team member, not the brain's owner.`;
-  const volatileContext = [buildTimeContextLine(prefs), memberLine].filter(Boolean).join('\n\n');
+
+  // Shared responder-turn assembly (audit #5c), configured for the team
+  // surface's HARD isolation: no identity/journal block, no heartbeats, no
+  // owner thinking budget, no delegation (fail closed). The private-reads
+  // switch (default OFF) is enforced HERE, at tool resolution — independent
+  // of the `team-read` group grant, so it can't be bypassed by a manifest
+  // change that re-adds the slugs.
+  const assembled = await assembleResponderTurn({
+    ownerId,
+    agent,
+    prefs,
+    logPrefix: '[team-turn]',
+    includeIdentity: false,
+    volatileExtras: [memberLine],
+    withThinking: false,
+    allowDelegation: false,
+    excludeToolSlugs: isTeamPrivateReadsEnabled(prefs) ? [] : TEAM_PRIVATE_READ_SLUGS,
+  });
+  const { volatileContext, allowedTools } = assembled;
 
   const params = (agent.params ?? {}) as Record<string, unknown>;
-  const groupTools = await resolveAgentToolGroups(ownerId, agent.toolGroupSlugs ?? []);
-  let allowedToolSlugs = effectiveToolSlugs(groupTools);
-  // Private-reads switch (default OFF): the owner's email + journal are only
-  // reachable by a team member when explicitly opted in. Enforced HERE, at tool
-  // resolution — independent of the `team-read` group grant, so the switch
-  // can't be bypassed by a manifest change that re-adds the slugs.
-  if (!isTeamPrivateReadsEnabled(prefs)) {
-    const gated = new Set(TEAM_PRIVATE_READ_SLUGS);
-    allowedToolSlugs = allowedToolSlugs.filter((s) => !gated.has(s));
-  }
-  const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 
   const adapter = getChatAdapter(agent.provider);
   if (!adapter) {
@@ -237,7 +237,7 @@ export async function runTeamTurn(
   const messages = buildChatMessages({
     model: agent.model,
     provider: agent.provider,
-    systemPrompt: promptWithSkills,
+    systemPrompt: assembled.effectiveSystemPrompt,
     volatileContext,
     // HARD isolation: no persona notes, no digests — owner-personal context
     // never reaches a team turn (see header invariants).
@@ -298,17 +298,13 @@ export async function runTeamTurn(
           agentId: agent.id,
           agentSlug: agent.slug,
           agentDepth: 1,
-          // Fail closed: the team responder never delegates.
-          delegateTo: [],
+          // Fail closed: the team responder never delegates (assembly ran
+          // with allowDelegation:false, so this is always []).
+          delegateTo: assembled.delegateTo,
+          resultHandling: assembled.resultHandling,
           initialMessages: messages,
           tools: allowedTools,
-          ...(() => {
-            const requested = (agent.memoryConfig as { max_iterations?: number } | null)
-              ?.max_iterations;
-            return typeof requested === 'number' && requested > 0
-              ? { maxIterations: Math.min(30, Math.floor(requested)) }
-              : {};
-          })(),
+          ...assembled.loopOverrides,
           // The provenance channel: team_request_create reads WHO is asking
           // from here; owner-side tools see 'team' and refuse.
           surface: {

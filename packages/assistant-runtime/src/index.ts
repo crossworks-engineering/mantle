@@ -15,6 +15,16 @@ export {
   type RunAssistantTurnOptions,
 } from './run-turn';
 export { stageLabelForStep, type StageLabel } from './stage-label';
+export {
+  assembleResponderTurn,
+  base64Bytes,
+  decideImageRouting,
+  runWithImageFallback,
+  type AssembledResponderTurn,
+  type AssembleResponderTurnOptions,
+  type HeartbeatSurface,
+  type ResponderLoopOverrides,
+} from './assemble-turn';
 export { pickWebDefaultAgent, ROLE_TIEBREAK, type WebDefaultCandidate } from './select';
 export {
   runTeamTurn,

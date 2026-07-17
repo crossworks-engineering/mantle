@@ -35,14 +35,9 @@ import { getApiKeyById } from '@mantle/api-keys';
 import {
   buildChatMessages,
   buildAttachmentContextText,
-  composeSystemPromptWithSkills,
-  effectiveToolSlugs,
   invokeAgent,
   loadConversationContext,
   recordTurn,
-  resolveAgentSkills,
-  resolveAgentToolGroups,
-  resolveAgentTools,
   resolveBackupAdapter,
   runToolLoop,
   summarizeToolOutcomes,
@@ -52,25 +47,16 @@ import {
 import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 import {
-  buildIdentityContext,
   buildLocationContextLine,
-  buildTimeContextLine,
   loadProfilePreferences,
   isStreamThoughtsEnabled,
   isPersistThoughtsEnabled,
-  resolveThinkingBudget,
   noteInboundChannel,
   applyAutoTimezone,
   type LocationPing,
 } from '@mantle/content';
 import { stageLabelForStep } from './stage-label';
-import {
-  buildOpenHeartbeatContext,
-  HEARTBEAT_RESPONDER_TOOLS,
-  hasActiveHeartbeatsOnSurface,
-  openHeartbeatsForSurface,
-  registerHeartbeatTools,
-} from '@mantle/heartbeats';
+import { registerHeartbeatTools } from '@mantle/heartbeats';
 import {
   startTrace,
   step,
@@ -78,11 +64,14 @@ import {
   emitTurnLifecycle,
   registerTurnAbort,
   unregisterTurnAbort,
-  modelSupportsVision,
-  maxImageBytesFor,
-  refreshModelCatalog,
 } from '@mantle/tracing';
 import { pickWebDefaultAgent } from './select';
+import {
+  assembleResponderTurn,
+  base64Bytes,
+  decideImageRouting,
+  runWithImageFallback,
+} from './assemble-turn';
 
 /** Rebuild the persistable thought trail from a turn's tool calls — the same
  *  grounded action labels the live trail shows (search/write/delegate), via the
@@ -107,17 +96,6 @@ function buildPersistedTrail(
     }
   });
   return out;
-}
-
-/** Decoded byte size of a base64 string (tolerates a leading data-URL
- *  prefix). Used to size-check an inline image before sending it to a
- *  vision responder, without allocating a Buffer. */
-function base64Bytes(b64: string): number {
-  const clean = b64.includes(',') ? b64.slice(b64.indexOf(',') + 1) : b64;
-  const len = clean.length;
-  if (len === 0) return 0;
-  const padding = clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0;
-  return Math.floor((len * 3) / 4) - padding;
 }
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
@@ -360,7 +338,6 @@ export async function runAssistantTurn(
     if (options?.streamId) unregisterTurnAbort(options.streamId);
   };
 
-  const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
   // Current-time / timezone / locale context so the assistant can resolve
   // relative time references in event_create calls. Carries a per-turn
   // millisecond timestamp, so it rides in the uncached volatile block —
@@ -383,54 +360,6 @@ export async function runAssistantTurn(
       console.error('[assistant] auto-timezone skipped:', err instanceof Error ? err.message : err);
     }
   }
-  const timeContextLine = buildTimeContextLine(prefs);
-  const promptWithSkills = composeSystemPromptWithSkills(agent.systemPrompt, attachedSkills);
-
-  // Open-heartbeat awareness: if the user has heartbeats whose
-  // surface is the web /assistant and that are currently waiting
-  // on a reply (state.expecting_reply truthy), append a small
-  // awareness block. Same shape + builder as the Telegram path in
-  // apps/agent — keeps the proactive→reactive continuity working
-  // for web heartbeats too. Best-effort; a DB blip here shouldn't
-  // kill the turn. (P0-3 in the v1 heartbeats audit.)
-  //
-  // `relatedHeartbeatSlugs` is captured here and threaded into the
-  // startTrace data jsonb below, so /traces and the trace detail
-  // page show "this responder turn was influenced by heartbeat X"
-  // without needing a separate join. (Audit P-trace-5.)
-  let openHeartbeatBlock = '';
-  let relatedHeartbeatSlugs: string[] = [];
-  try {
-    const open = await openHeartbeatsForSurface(ownerId, { kind: 'web' });
-    relatedHeartbeatSlugs = open.map((o) => o.slug);
-    const block = buildOpenHeartbeatContext(open);
-    if (block) openHeartbeatBlock = `\n\n${block}`;
-  } catch (err) {
-    console.error(
-      '[assistant] open-heartbeat context skipped:',
-      err instanceof Error ? err.message : err,
-    );
-  }
-  // Always-on identity context — the "who you are" block distilled from the
-  // user's Journal (deterministic, no LLM; empty when there are none). Opt
-  // out per-agent with memory_config.inject_journal=false. Prepended so it
-  // reads as durable user-truth at the top of the (cached) system block.
-  let identityBlock = '';
-  if ((agent.memoryConfig as { inject_journal?: boolean } | null)?.inject_journal !== false) {
-    try {
-      const block = await buildIdentityContext(ownerId);
-      if (block) identityBlock = `${block}\n\n`;
-    } catch (err) {
-      console.error(
-        '[assistant] identity context skipped:',
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-  // Cached prefix (breakpoint 1): identity + persona + skills — stable
-  // across turns. The time line and the heartbeat block ("asked Nmin
-  // ago" churns) go to the uncached volatile slot instead.
-  const effectiveSystemPrompt = identityBlock + promptWithSkills;
   // Device location (when the companion app sent it) rides the uncached volatile
   // slot beside the time line — it's per-turn and changes constantly, so it must
   // never enter the cached persona prefix. The location_awareness skill teaches
@@ -444,42 +373,34 @@ export async function runAssistantTurn(
       `(was ${timezoneSwitch.previous}) based on their current location. Briefly let them ` +
       `know you've done this, and offer to switch it back when they're home.`
     : '';
-  const volatileContext = [
-    timeContextLine,
-    locationContextLine,
-    timezoneSwitchNote,
-    openHeartbeatBlock.trim(),
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-  // Heartbeat continuity tools are injected below as a per-turn affordance
-  // (P6) when there's an active heartbeat on this surface — not a stored grant.
 
-  // Image routing — transcript-default. The vision worker already described
-  // (and, when the user asked a question, answered) the image at ingest, so
-  // prefer its cheap, cacheable transcript as text. Only show the responder
-  // the raw pixels when there's NO usable transcript (worker failed or
-  // unconfigured) — and only if the model is vision-capable and the file is
-  // within that provider's per-image limit. (Anthropic via OpenRouter →
-  // Bedrock rejects oversized images with an opaque "Could not process
-  // image" the SDK masks as a validation error; the size guard avoids it.)
+  // Shared responder-turn assembly (audit #5c): identity + skills prompt,
+  // volatile context (time line + the two web extras above + open-heartbeat
+  // awareness), tool allowlist + heartbeat affordance, thinking budget, loop
+  // overrides. `relatedHeartbeatSlugs` is threaded into the startTrace data
+  // jsonb below, so /traces shows "this responder turn was influenced by
+  // heartbeat X" without needing a separate join. (Audit P-trace-5.)
+  const assembled = await assembleResponderTurn({
+    ownerId,
+    agent,
+    prefs,
+    logPrefix: '[assistant]',
+    volatileExtras: [locationContextLine, timezoneSwitchNote],
+    heartbeatSurface: { kind: 'web' },
+  });
+  const { effectiveSystemPrompt, volatileContext, relatedHeartbeatSlugs, allowedTools } = assembled;
+
+  // Image routing — transcript-default vision gating via the shared
+  // `decideImageRouting` (catalog warm + vision + per-provider size check).
   // Either way the node id is surfaced in the text so Saskia can pull the
   // picture back for a closer look via extract_from_image(node_id).
-  // Warm the live model catalog so the vision check below reads authoritative
-  // capability (architecture.input_modalities) rather than the heuristic.
-  // Fire-and-forget + TTL-gated; the static fallback covers the cold path.
-  if (options?.image) void refreshModelCatalog();
-  const hasTranscript = !!options?.imageTranscript?.trim();
-  const imageBytes = options?.image ? base64Bytes(options.image.base64) : 0;
-  const withinImageLimit = imageBytes > 0 && imageBytes <= maxImageBytesFor(agent.model);
-  const canSeeImage =
-    !!options?.image && !hasTranscript && modelSupportsVision(agent.model) && withinImageLimit;
-  if (options?.image && !hasTranscript && modelSupportsVision(agent.model) && !withinImageLimit) {
-    console.warn(
-      `[assistant] no transcript and image ${imageBytes}B exceeds ${agent.model} limit ` +
-        `(${maxImageBytesFor(agent.model)}B) — answering from the saved file node only`,
-    );
-  }
+  const canSeeImage = decideImageRouting({
+    model: agent.model,
+    hasImage: !!options?.image,
+    imageBytes: options?.image ? base64Bytes(options.image.base64) : 0,
+    hasTranscript: !!options?.imageTranscript?.trim(),
+    logPrefix: '[assistant]',
+  });
   const userImage = canSeeImage ? options!.image : undefined;
 
   // The user's text with the attachment's extracted text / note + node-id
@@ -523,25 +444,6 @@ export async function runAssistantTurn(
   }
 
   const params = (agent.params ?? {}) as AgentParams;
-  // Resolve the agent's tool allowlist from its granted tool groups (P6: groups
-  // are the sole grant). Empty result → tool-loop sends no `tools` and the loop
-  // reduces to one LLM call.
-  const groupTools = await resolveAgentToolGroups(ownerId, agent.toolGroupSlugs ?? []);
-  let allowedToolSlugs = effectiveToolSlugs(groupTools);
-  // Heartbeat continuity tools are a per-turn AFFORDANCE (P6), not a stored
-  // grant: inject them only when there's an active heartbeat on this surface
-  // for the model to act on. Mirrors apps/agent/main.ts. See docs/heartbeats.md
-  // §4 "Permission model & runtime hygiene".
-  const hasHeartbeats = await hasActiveHeartbeatsOnSurface(ownerId, { kind: 'web' }).catch(
-    () => false,
-  );
-  if (hasHeartbeats) {
-    allowedToolSlugs = [
-      ...allowedToolSlugs,
-      ...HEARTBEAT_RESPONDER_TOOLS.filter((s) => !allowedToolSlugs.includes(s)),
-    ];
-  }
-  const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 
   // Wrap the tool loop in a trace so every LLM call + tool dispatch
   // gets persisted as a step. This is the Layer A treatment for the
@@ -610,37 +512,13 @@ export async function runAssistantTurn(
           agentId: agent.id,
           agentSlug: agent.slug,
           agentDepth: 1,
-          delegateTo: (agent.memoryConfig as { delegate_to?: string[] } | null)?.delegate_to ?? [],
-          resultHandling: agent.memoryConfig?.result_handling ?? null,
-          // Per-user adaptive thinking: gated by the live-thinking switch AND a
-          // positive budget (reuse the already-loaded prefs). 0 ⇒ no thinking.
-          thinkingBudget: resolveThinkingBudget(prefs),
-          // Honor the agent's per-turn iteration override for the TOP-LEVEL
-          // responder turn too (not just delegated children). A heavy
-          // gather-then-author task needs more than the runtime default of 6
-          // rounds or the loop force_finals mid-read and never authors. Clamp
-          // matches invoke-agent: positive ints only, hard-capped at 30.
-          // The tool-volume overrides (max_tool_calls / max_calls_per_tool)
-          // travel raw — runToolLoop validates + clamps them itself.
-          ...(() => {
-            const mc = agent.memoryConfig as {
-              max_iterations?: number;
-              max_tool_calls?: number;
-              max_calls_per_tool?: number;
-            } | null;
-            const requested = mc?.max_iterations;
-            return {
-              ...(typeof requested === 'number' && requested > 0
-                ? { maxIterations: Math.min(30, Math.floor(requested)) }
-                : {}),
-              ...(typeof mc?.max_tool_calls === 'number'
-                ? { maxToolCallsPerTurn: mc.max_tool_calls }
-                : {}),
-              ...(typeof mc?.max_calls_per_tool === 'number'
-                ? { maxCallsPerToolPerTurn: mc.max_calls_per_tool }
-                : {}),
-            };
-          })(),
+          // Delegation allowlist, thinking budget, and the per-agent loop
+          // overrides (max_iterations clamp + tool-volume caps) all come from
+          // the shared assembly above.
+          delegateTo: assembled.delegateTo,
+          resultHandling: assembled.resultHandling,
+          thinkingBudget: assembled.thinkingBudget,
+          ...assembled.loopOverrides,
           initialMessages: messages,
           tools: allowedTools,
           // /assistant has no outbound channel beyond the reply stream
@@ -651,32 +529,25 @@ export async function runAssistantTurn(
       },
     );
 
-  // Run the turn. When we attached a raw image and the responder errors —
-  // e.g. Bedrock's "Could not process image" surfacing as the SDK's
-  // ResponseValidationError — retry once WITHOUT the image, grounded in the
-  // vision-worker transcript instead, so a turn never hard-fails on a
-  // picture. The failed first attempt stays its own 'error' trace; the
-  // retry is a separate 'success' trace flagged image_retry_after_error.
+  // Run the turn via the shared image-fallback wrapper: when we attached a
+  // raw image and the responder errors — e.g. Bedrock's "Could not process
+  // image" surfacing as the SDK's ResponseValidationError — retry once
+  // WITHOUT the image, grounded in the vision-worker transcript instead, so a
+  // turn never hard-fails on a picture. The failed first attempt stays its
+  // own 'error' trace; the retry is a separate 'success' trace flagged
+  // image_retry_after_error.
   let loopOutcome: Awaited<ReturnType<typeof runLoop>>;
   try {
-    if (canSeeImage) {
-      try {
-        loopOutcome = await runLoop(buildMessages(userImage, trimmed), { image_attached: true });
-      } catch (err) {
-        console.warn(
-          '[assistant] responder failed with image attached; retrying text-only:',
-          err instanceof Error ? err.message : err,
-        );
-        loopOutcome = await runLoop(buildMessages(undefined, textWithTranscript), {
+    loopOutcome = await runWithImageFallback({
+      canSeeImage,
+      logPrefix: '[assistant]',
+      withImage: () => runLoop(buildMessages(userImage, trimmed), { image_attached: true }),
+      textOnly: (retryAfterImageError) =>
+        runLoop(buildMessages(undefined, textWithTranscript), {
           image_attached: false,
-          image_retry_after_error: true,
-        });
-      }
-    } else {
-      loopOutcome = await runLoop(buildMessages(undefined, textWithTranscript), {
-        image_attached: false,
-      });
-    }
+          ...(retryAfterImageError ? { image_retry_after_error: true } : {}),
+        }),
+    });
   } catch (err) {
     // A user Stop normally surfaces gracefully (the streaming adapter returns its
     // partial reply → the success path), but the one-shot/backup path can throw

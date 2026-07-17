@@ -203,10 +203,26 @@ vi.mock('@mantle/agent-runtime', () => ({
   resolveAgentToolGroups: vi.fn(async () => []),
   resolveAgentTools: vi.fn(async () => []),
   resolveBackupAdapter: vi.fn(async () => undefined),
+  // Used by run-turn via the real @mantle/assistant-runtime barrel.
+  summarizeToolOutcomes: vi.fn(() => ({
+    calls: 0,
+    succeeded: 0,
+    failed: 0,
+    skipped: 0,
+    queued: 0,
+    failures: [],
+  })),
+  updateAssistantMessageOutcome: vi.fn(async () => null),
   resolveChatKey: vi.fn(async () => ({ ok: true, apiKey: 'sk-live' })),
   runToolLoop: vi.fn(async (args: any) => {
     h.loopCalls.push(args);
-    if (h.loopError) throw h.loopError;
+    if (h.loopError) {
+      // One-shot: the next loop call (the shared image-fallback's text-only
+      // retry) succeeds, mirroring a Bedrock-style image-only failure.
+      const err = h.loopError;
+      h.loopError = null;
+      throw err;
+    }
     return h.loopResult;
   }),
 }));
@@ -232,6 +248,12 @@ vi.mock('@mantle/tracing', () => ({
   refreshModelCatalog: vi.fn(async () => {}),
   modelSupportsVision: vi.fn(() => true),
   maxImageBytesFor: vi.fn(() => 5 * 1024 * 1024),
+  // Used by run-turn/run-team-turn, which ride into the module graph via the
+  // real @mantle/assistant-runtime barrel (the assembly under test is REAL).
+  emitTurnLifecycle: vi.fn(),
+  registerTurnAbort: vi.fn(() => null),
+  unregisterTurnAbort: vi.fn(),
+  currentTrace: vi.fn(() => null),
 }));
 
 // ── Remaining collaborators ───────────────────────────────────────────────
@@ -243,6 +265,15 @@ vi.mock('@mantle/content', () => ({
   noteInboundChannel: (...a: unknown[]) => (h.noteInboundChannel(...a), Promise.resolve()),
   isStreamThoughtsEnabled: () => false,
   isPersistThoughtsEnabled: () => false,
+  // Used by run-turn/run-team-turn via the real @mantle/assistant-runtime
+  // barrel — never exercised by these tests.
+  applyAutoTimezone: vi.fn(async (_o: string, _l: unknown, prefs: unknown) => ({ prefs })),
+  buildLocationContextLine: () => '',
+  appendTeamMessage: vi.fn(),
+  updateTeamMessageOutcome: vi.fn(),
+  recentTeamMessages: vi.fn(async () => []),
+  isTeamPrivateReadsEnabled: () => false,
+  TEAM_PRIVATE_READ_SLUGS: [] as string[],
 }));
 vi.mock('@mantle/content/table-storage', () => ({ sweepLegacyTables: vi.fn(async () => {}) }));
 vi.mock('@mantle/files', () => ({
@@ -656,24 +687,23 @@ describe('handleTelegramMessage — attachments', () => {
   });
 });
 
-describe('handleTelegramMessage — parity-drift pins (audit #5c)', () => {
-  it('b1 PIN: per-turn loop overrides in memory_config are NOT forwarded', async () => {
-    // CURRENT behavior — the Telegram copy predates the web path's
-    // max_iterations / max_tool_calls / max_calls_per_tool forwarding
-    // (drift b1). The #5c refactor adopts the web behavior; this pin flips
-    // to expect the clamped values then.
+describe('handleTelegramMessage — parity-drift resolutions (audit #5c)', () => {
+  it('b1 RESOLVED: per-turn loop overrides in memory_config ARE forwarded (clamped)', async () => {
+    // Stage-0 pinned the OLD behavior (overrides silently ignored — the
+    // Telegram copy predated the web path's forwarding). Stage 1 routes the
+    // assembly through @mantle/assistant-runtime, adopting the web behavior:
+    // max_iterations clamped to 30, tool-volume caps forwarded raw.
     await runTurn(
       makeMsgRow(),
       makeAgent({
-        memoryConfig: { max_iterations: 12, max_tool_calls: 40, max_calls_per_tool: 9 },
+        memoryConfig: { max_iterations: 50, max_tool_calls: 40, max_calls_per_tool: 9 },
       }),
     );
 
     expect(h.loopCalls).toHaveLength(1);
-    expect(h.loopCalls[0].maxIterations).toBeUndefined();
-    expect(h.loopCalls[0].maxToolCallsPerTurn).toBeUndefined();
-    expect(h.loopCalls[0].maxCallsPerToolPerTurn).toBeUndefined();
-    // What IS forwarded today: the surface + thinking budget.
+    expect(h.loopCalls[0].maxIterations).toBe(30); // 50 clamped to the hard cap
+    expect(h.loopCalls[0].maxToolCallsPerTurn).toBe(40);
+    expect(h.loopCalls[0].maxCallsPerToolPerTurn).toBe(9);
     expect(h.loopCalls[0].surface).toEqual({
       kind: 'telegram',
       telegramChatId: '777',
@@ -681,13 +711,12 @@ describe('handleTelegramMessage — parity-drift pins (audit #5c)', () => {
     });
   });
 
-  it('b2 PIN: an LLM failure with a raw image attached fails the turn (no text-only retry)', async () => {
-    // CURRENT behavior — the web path retries once WITHOUT the image, grounded
-    // in the transcript (image_retry_after_error). The Telegram copy predates
-    // that fix (drift b2): the error propagates, the trace fails, no reply is
-    // sent. The #5c refactor adopts the retry; this pin flips then.
+  it('b2 RESOLVED: an LLM failure with a raw image attached retries once text-only', async () => {
+    // Stage-0 pinned the OLD behavior (the error killed the turn — no reply).
+    // Stage 1 adopts the web path's fix: retry WITHOUT the image, grounded in
+    // the transcript marker, inside the same responder_turn trace.
     h.extractResult = { kind: 'image', text: '', note: null }; // no transcript → raw pixels
-    h.loopError = new Error('Could not process image');
+    h.loopError = new Error('Could not process image'); // one-shot: retry succeeds
     await runTurn(
       makeMsgRow({
         text: '(photo)',
@@ -695,10 +724,16 @@ describe('handleTelegramMessage — parity-drift pins (audit #5c)', () => {
       }),
     );
 
-    expect(h.loopCalls).toHaveLength(1); // no second, text-only attempt
-    expect(h.sendMessage).not.toHaveBeenCalled();
-    expect(outboundTurns()).toHaveLength(0);
+    expect(h.loopCalls).toHaveLength(2);
+    // First attempt carried the raw image; the retry is text-only with the
+    // attachment marker (empty transcript, node id surfaced) folded in.
+    expect(h.buildArgs[0].userImage).toBeDefined();
+    expect(h.buildArgs[1].userImage).toBeUndefined();
+    expect(h.buildArgs[1].newUserText).toContain('node=file-node-1');
+    // The reply lands: sent + persisted, trace ends clean.
+    expect(h.sendMessage).toHaveBeenCalledTimes(1);
+    expect(outboundTurns()).toHaveLength(1);
     const responder = h.traces.find((t) => t.init.kind === 'responder_turn');
-    expect(responder!.error).toMatch(/Could not process image/);
+    expect(responder!.error).toBeNull();
   });
 });
