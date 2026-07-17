@@ -51,6 +51,7 @@ export {
   TEAM_TURN_WORKFLOW,
   FORUM_TURN_WORKFLOW,
   RUNNER_QUEUE,
+  FORUM_QUEUE,
   resolveSystemDatabaseUrl,
   type AssistantTurnInput,
   type AssistantTurnRunResult,

@@ -16,6 +16,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { startProcessHeartbeat } from '@mantle/content';
 import { runTableStorageProbes } from '@mantle/tabledb';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency } from './config';
+import { FORUM_QUEUE } from '@mantle/assistant-runtime';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 import { installTurnStreamObserver } from './turn-stream-observer';
 import { startTurnCancelListener, stopTurnCancelListener } from './turn-cancel';
@@ -77,8 +78,13 @@ async function main(): Promise<void> {
   // The shared runner queue — concurrency caps total in-flight runs across all
   // apps/api processes (LLM-provider backpressure).
   await DBOS.registerQueue(RUNNER_QUEUE, { concurrency: runnerConcurrency() });
+  // Partitioned forum queue: concurrency 1 PER PARTITION (partition key =
+  // topicId) serializes turns within a topic while different topics run in
+  // parallel. Off the shared RUNNER_QUEUE so a queued topic never starves the
+  // owner's assistant. This replaces the old in-workflow pending spin-lock.
+  await DBOS.registerQueue(FORUM_QUEUE, { concurrency: 1, partitionQueue: true });
   DBOS.logger.info(
-    `[api] runner service online — queue='${RUNNER_QUEUE}' concurrency=${runnerConcurrency()}`,
+    `[api] runner service online — queue='${RUNNER_QUEUE}' concurrency=${runnerConcurrency()}; forum queue='${FORUM_QUEUE}' (partitioned, concurrency=1/topic)`,
   );
 
   // Absorbed agent runtime: wires up the Telegram responder + background ticks

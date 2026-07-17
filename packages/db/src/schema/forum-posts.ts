@@ -58,6 +58,11 @@ export const forumPosts = pgTable(
     channel: text('channel').$type<TeamChannel>().default('web').notNull(),
     status: text('status').$type<'pending' | 'complete' | 'failed'>().default('complete').notNull(),
     error: text('error'),
+    /** DBOS forum-turn workflow that created an AGENT pending post. Lets a
+     *  recovery replay adopt its own prior pending row (by topic+workflow_id)
+     *  instead of conflicting with the one-pending-per-topic unique index.
+     *  Null on member/owner posts. */
+    workflowId: text('workflow_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     editedAt: timestamp('edited_at', { withTimezone: true }),
   },
@@ -66,11 +71,15 @@ export const forumPosts = pgTable(
     index('forum_posts_topic_idx').on(t.topicId, t.createdAt),
     // Drives "recent forum activity" (admin) and the member daily-cap count.
     index('forum_posts_recent_idx').on(t.ownerId, t.createdAt.desc()),
-    // Serial-per-topic agent turns: at most one in-flight pending agent post
-    // per topic — a concurrent turn's insert conflicts and waits (see
-    // runForumTurn's bounded retry + stale-pending sweep).
+    // Backstop invariant (the partitioned FORUM_QUEUE is the primary serializer
+    // now): at most one in-flight pending agent post per topic. A replay adopts
+    // its own row via workflow_id rather than tripping this.
     uniqueIndex('forum_posts_one_pending_agent_idx')
       .on(t.topicId)
+      .where(sql`${t.authorKind} = 'agent' AND ${t.status} = 'pending'`),
+    // Adopt-own-pending lookup for replay idempotency.
+    index('forum_posts_workflow_idx')
+      .on(t.topicId, t.workflowId)
       .where(sql`${t.authorKind} = 'agent' AND ${t.status} = 'pending'`),
   ],
 );

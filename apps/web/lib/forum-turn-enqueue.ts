@@ -10,7 +10,7 @@ import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
 import { mintTeamTurnId } from '@/lib/team-chat-gate';
 import {
   FORUM_TURN_WORKFLOW,
-  RUNNER_QUEUE,
+  FORUM_QUEUE,
   type ForumTurnInput,
   type ForumTurnRunResult,
 } from '@mantle/assistant-runtime';
@@ -55,7 +55,11 @@ export async function enqueueForumTurn(
   const handle = await client.enqueue<(i: ForumTurnInput) => Promise<ForumTurnRunResult>>(
     {
       workflowName: FORUM_TURN_WORKFLOW,
-      queueName: RUNNER_QUEUE,
+      queueName: FORUM_QUEUE,
+      // Partition by topic ⇒ turns in the same topic serialize (concurrency 1
+      // per partition); different topics run in parallel. This is the forum
+      // turn serializer — no in-workflow spin-lock.
+      queuePartitionKey: args.topicId,
       workflowID: turnId,
     },
     input,

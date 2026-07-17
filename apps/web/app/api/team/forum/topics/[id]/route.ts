@@ -55,7 +55,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       mine: p.contactId === caller.contactId,
       body: p.body,
       status: p.status,
-      error: p.error,
+      // Deliberately NOT p.error: a failed agent turn's raw message carries
+      // brain internals (provider errors, "api_key_id … not found") and this is
+      // an external, all-members-visible surface. Members see a generic note;
+      // the raw error stays owner-side (/team-admin + traces).
       attachments: p.attachments,
       createdAt: p.createdAt.toISOString(),
     })),

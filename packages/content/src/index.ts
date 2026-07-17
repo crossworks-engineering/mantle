@@ -399,7 +399,9 @@ export {
 export {
   createForumTopic,
   appendForumPost,
+  acquireForumAgentPending,
   finalizeForumPost,
+  getForumPost,
   listForumTopics,
   getForumTopic,
   listForumPosts,

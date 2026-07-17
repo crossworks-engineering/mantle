@@ -1,7 +1,22 @@
-import { describe, expect, it } from 'vitest';
-import { TEAM_REQUEST_TAG as CONTENT_TEAM_REQUEST_TAG } from '@mantle/content';
+import { describe, expect, it, vi } from 'vitest';
+import { TEAM_REQUEST_TAG as CONTENT_TEAM_REQUEST_TAG, createTask } from '@mantle/content';
 import { TEAM_TOOLS, TEAM_REQUEST_TAG } from './builtins-team';
 import type { ToolHandlerContext } from './types';
+
+// Override only the write + url helpers so the accept-path test can inspect the
+// provenance stamped into the task, without a live DB. Everything else
+// (TEAM_REQUEST_TAG, listTeamThread, …) stays real.
+vi.mock('@mantle/content', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/content')>();
+  return {
+    ...actual,
+    createTask: vi.fn(async (_ownerId: string, args: { title: string }) => ({
+      id: 'task-new',
+      title: args.title,
+    })),
+    nodeUrl: (id: string) => `/n/${id}`,
+  };
+});
 
 /**
  * Surface gating for the team tools — the boundary that keeps the two sides
@@ -61,6 +76,40 @@ describe('owner-side team tools refuse on the team surfaces', () => {
       if (!r.ok) expect(r.error).toMatch(/owner-side/i);
     });
   }
+});
+
+describe('team_request_create forum accept-path provenance', () => {
+  it('stamps topicId + postId from the forum surface, never from model args', async () => {
+    vi.mocked(createTask).mockClear();
+    const forumWithPost: ToolHandlerContext = {
+      ownerId: 'owner-1',
+      surface: {
+        kind: 'forum',
+        contactId: 'contact-9',
+        contactName: 'Sam',
+        topicId: 'topic-42',
+        inboundPostId: 'post-77',
+      },
+    };
+    // A hostile model tries to forge provenance via args — must be ignored.
+    const r = await bySlug.team_request_create!.handler(
+      {
+        title: 'Fix the RBI figure',
+        body: 'The value in the table is wrong.',
+        topicId: 'ATTACKER-TOPIC',
+        contactId: 'ATTACKER-CONTACT',
+      },
+      forumWithPost,
+    );
+    expect(r.ok).toBe(true);
+    expect(vi.mocked(createTask)).toHaveBeenCalledTimes(1);
+    const [, taskArgs] = vi.mocked(createTask).mock.calls[0]!;
+    const tr = (taskArgs.extraData as { teamRequest: Record<string, unknown> }).teamRequest;
+    expect(tr.contactId).toBe('contact-9'); // from surface, not the forged arg
+    expect(tr.topicId).toBe('topic-42');
+    expect(tr.postId).toBe('post-77');
+    expect(taskArgs.tags).toContain(TEAM_REQUEST_TAG);
+  });
 });
 
 describe('team-request tag', () => {

@@ -43,7 +43,6 @@ type Post = {
   mine: boolean;
   body: string;
   status: 'pending' | 'complete' | 'failed';
-  error: string | null;
   attachments: unknown[];
   createdAt: string;
 };
@@ -312,7 +311,6 @@ export function TopicViewClient({
         mine: true,
         body: text,
         status: 'complete',
-        error: null,
         attachments: [],
         createdAt: new Date().toISOString(),
       },

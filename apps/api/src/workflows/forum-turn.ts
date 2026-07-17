@@ -35,7 +35,9 @@ async function forumTurnImpl(input: ForumTurnInput): Promise<ForumTurnRunResult>
     dto = await withDurableSteps(
       (name, fn) => DBOS.runStep(fn, { name }),
       async (): Promise<ForumTurnRunResult> => {
-        const r = await runForumTurn(ownerId, options);
+        // The workflow id is the idempotency key for the agent pending row —
+        // a recovery replay adopts its own prior pending instead of conflicting.
+        const r = await runForumTurn(ownerId, { ...options, workflowId: DBOS.workflowID });
         return {
           outbound: {
             id: r.outbound.id,

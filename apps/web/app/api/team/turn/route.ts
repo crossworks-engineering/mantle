@@ -22,6 +22,7 @@ import { getDbosClient } from '@/lib/dbos-client';
 import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller, teamCallerName, mintTeamTurnId } from '@/lib/team-chat-gate';
+import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';
 import {
   TEAM_TURN_WORKFLOW,
   RUNNER_QUEUE,
@@ -29,7 +30,7 @@ import {
   type TeamTurnRunResult,
   type RunTeamTurnOptions,
 } from '@mantle/assistant-runtime';
-import { countTeamInboundSince, recordTeamAccess } from '@mantle/content';
+import { recordTeamAccess } from '@mantle/content';
 import {
   ensureDatedUploadFolder,
   extOf,
@@ -47,20 +48,28 @@ export const runtime = 'nodejs';
 const Body = z.object({ text: z.string().min(1).max(20_000) });
 
 const TEAM_UPLOADS_SLUG = 'team-uploads';
-const DAILY_TURN_CAP = (() => {
-  const n = Number(process.env.TEAM_CHAT_DAILY_TURNS);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 100;
-})();
 
-function startOfTodayUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
+// The 1:1 Team Chat became a READ-ONLY archive when the Team Forum shipped: the
+// member composer is gone and the conversation moved to /team/forum. This write
+// path is therefore CLOSED by default — closing it (a) makes the archive claim
+// true rather than UI-only (a curl/bearer member could otherwise keep chatting)
+// and (b) leaves the forum as the SINGLE spend path, so the shared daily cap
+// can't be exceeded by splitting turns across two surfaces. Set
+// TEAM_CHAT_POST_ENABLED=1 to reopen (e.g. to reactivate the MS Teams seam).
+const TEAM_CHAT_POST_ENABLED = process.env.TEAM_CHAT_POST_ENABLED === '1';
 
 export async function POST(req: Request): Promise<NextResponse> {
   const caller = await resolveTeamChatCaller(req);
   if (!caller) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { ownerId, contactId, channel } = caller;
+
+  if (!TEAM_CHAT_POST_ENABLED) {
+    recordTeamAccess({ ownerId, contactId, kind: 'denied', detail: { reason: 'chat_archived' } });
+    return NextResponse.json(
+      { error: 'Team Chat has moved to the Forum — start or reply to a topic there instead.' },
+      { status: 410 },
+    );
+  }
 
   // Per-contact turn rate (burst) + daily cap (budget). Rate first — it's free.
   const gate = rateLimit(`team-turn:${contactId}`, { max: 6, windowMs: 60_000 });
@@ -71,16 +80,18 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
     );
   }
-  const usedToday = await countTeamInboundSince(ownerId, contactId, startOfTodayUtc());
-  if (usedToday >= DAILY_TURN_CAP) {
+  // ONE shared daily budget across chat + forum (forumDailySpend sums both), so
+  // reopening this path can never double a member's cap.
+  const usedToday = await forumDailySpend(ownerId, contactId);
+  if (usedToday >= FORUM_DAILY_CAP) {
     recordTeamAccess({
       ownerId,
       contactId,
       kind: 'denied',
-      detail: { reason: 'daily_cap', cap: DAILY_TURN_CAP },
+      detail: { reason: 'daily_cap', cap: FORUM_DAILY_CAP },
     });
     return NextResponse.json(
-      { error: `daily message limit reached (${DAILY_TURN_CAP}/day) — try again tomorrow` },
+      { error: `daily message limit reached (${FORUM_DAILY_CAP}/day) — try again tomorrow` },
       { status: 429 },
     );
   }
