@@ -38,9 +38,11 @@ by default (§6).
 
 | Surface | Who | What |
 |---|---|---|
-| `/team` | member | Token gate → forever-thread chat with the brain: composer, attachments, live streaming. Outside the app shell; in `PUBLIC_PATHS`. Since v0.126.0 the thread uses the assistant chat's TURN layout (reply as a left-canvas document, the member's question as a sticky right-margin card, live status labels) — see the header comment in `components/team-chat/team-chat-client.tsx` for what is deliberately NOT ported (rich dialect, thought trail, tool ledger). |
-| `/team-admin` | owner | Sidebar **Team** entry. Chats tab: member index by recent activity with unread badges, read-only thread preview, per-turn `/traces` deep links. Requests tab: open team requests with reply / mark-done. Recent access log. Header switch for private reads (§6). |
-| `/api/team/*` | member (cookie or bearer) | The machine API — the same routes the web surface uses, so a future MS Teams adapter is a thin client, not a rebuild. |
+| `/team` | member | Token gate → the **Team Workspace**: a read-only mirror of the workspace shell (wordmark header in the brain's colour theme, section nav Notes/Pages/Tables/Apps/Tasks/Events, footer with shared folder chips + Assistant). Section lists are the owner's ACTIVE shares (team and public mode alike — `listTeamVisibleShares`); opening a card renders `/s/<token>` in a same-origin reader iframe, so the share surface stays the only content door. Outside the app shell; in `PUBLIC_PATHS`; no server DB reads (detached-safe). |
+| `/team/assistant` | member | The forever-thread chat with the brain (`TeamChatClient`): composer, attachments, live streaming. Since v0.126.0 the thread uses the assistant chat's TURN layout (reply as a left-canvas document, the member's question as a sticky right-margin card, live status labels) — see the header comment in `components/team-chat/team-chat-client.tsx` for what is deliberately NOT ported (rich dialect, thought trail, tool ledger). |
+| `/hub` | member | The Team Hub's home since the workspace took over `/team`: the designated hub APP full-bleed when the brain has one (see `docs/team-hub-app-sdk.md`), the built-in briefing hub otherwise. Same cookie as `/team` — members switch between the surfaces freely. |
+| `/team-admin` | owner | Sidebar **Team** entry. Chats tab: member index by recent activity with unread badges, read-only thread preview, per-turn `/traces` deep links. Requests tab: open team requests with reply / mark-done. Shared-links tab: every active share (public + team) with copy/open/revoke. Recent access log. Header switch for private reads (§6). |
+| `/api/team/*` | member (cookie or bearer) | The machine API — the same routes the web surface uses (`/api/team/workspace` + `/api/team/list` feed the workspace shell), so a future MS Teams adapter is a thin client, not a rebuild. |
 
 ## 3. Auth
 
