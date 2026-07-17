@@ -11,14 +11,27 @@ import {
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
   listActiveShares,
+  listForumTopics,
+  listForumPosts,
+  markForumTopicRead,
   type TeamMemberActivity,
   type TeamRequest,
+  type ForumTopicListItem,
 } from '@mantle/content';
 import { SharedLinksPanel } from '@/components/share/shared-links-panel';
 import { HubAppPicker } from '@/components/team-chat/hub-app-picker';
 import { PrivateReadsToggle } from '@/components/team-chat/private-reads-toggle';
 import { RequestReply } from '@/components/team-chat/request-reply';
-import { MessageSquare, ScrollText, ExternalLink, Inbox, CheckCircle2 } from 'lucide-react';
+import { TopicPinToggle, TopicReplyForm } from '@/components/team-forum/admin-topic-controls';
+import { KindBadge, TopicFlags } from '@/components/team-forum/forum-meta';
+import {
+  MessageSquare,
+  MessagesSquare,
+  ScrollText,
+  ExternalLink,
+  Inbox,
+  CheckCircle2,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -102,7 +115,7 @@ function TeamTabs({
   active,
   openRequestCount,
 }: {
-  active: 'chats' | 'requests' | 'shares';
+  active: 'chats' | 'topics' | 'requests' | 'shares';
   openRequestCount: number;
 }) {
   const tab = (label: string, href: string, isActive: boolean, badge?: number) => (
@@ -126,6 +139,7 @@ function TeamTabs({
   return (
     <div className="flex items-center gap-1 border-b border-border px-3">
       {tab('Chats', '/team-admin', active === 'chats')}
+      {tab('Topics', '/team-admin?view=topics', active === 'topics')}
       {tab('Requests', '/team-admin?view=requests', active === 'requests', openRequestCount)}
       {tab('Shared links', '/team-admin?view=shares', active === 'shares')}
     </div>
@@ -211,13 +225,64 @@ function RequestsPanel({ requests }: { requests: TeamRequest[] }) {
   );
 }
 
+function TopicList({
+  topics,
+  selectedId,
+}: {
+  topics: ForumTopicListItem[];
+  selectedId: string | null;
+}) {
+  if (topics.length === 0) {
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        No forum topics yet. Members start them at <code>/team/forum</code> — pinned topics float to
+        the top of everyone&rsquo;s list.
+      </div>
+    );
+  }
+  return (
+    <ul className="flex flex-col gap-1 p-2">
+      {topics.map((t) => (
+        <li key={t.id}>
+          <Link
+            href={`/team-admin?view=topics&topic=${t.id}`}
+            className={cn(
+              'block rounded-md border border-l-[3px] border-border border-l-border px-3 py-2 transition-colors hover:bg-muted/50',
+              t.id === selectedId && 'border-l-primary bg-muted/40',
+            )}
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="flex min-w-0 items-center gap-1.5">
+                {t.unread > 0 ? (
+                  <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden />
+                ) : null}
+                <span className="truncate text-sm font-medium">{t.title}</span>
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {fmtWhen(t.lastPostAt)}
+              </span>
+            </div>
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <TopicFlags pinned={t.pinned} visibility={t.visibility} status={t.status} />
+              <KindBadge kind={t.kind} />
+              <span className="min-w-0 truncate">
+                {t.authorName} · {t.postCount} {t.postCount === 1 ? 'post' : 'posts'}
+              </span>
+            </div>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default async function TeamAdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ contact?: string; view?: string }>;
+  searchParams: Promise<{ contact?: string; view?: string; topic?: string }>;
 }) {
   const user = await requireOwner();
-  const { contact, view } = await searchParams;
+  const { contact, view, topic: topicParam } = await searchParams;
   const showRequests = view === 'requests';
 
   const [members, prefs, openRequestCount, apps] = await Promise.all([
@@ -261,6 +326,118 @@ export default async function TeamAdminPage({
             lastViewedAt: s.lastViewedAt,
           }))}
         />
+      </div>
+    );
+  }
+
+  if (view === 'topics') {
+    const topics = await listForumTopics(user.id, { kind: 'owner' });
+    const selectedTopicId =
+      topicParam && topics.some((t) => t.id === topicParam) ? topicParam : (topics[0]?.id ?? null);
+    const selectedTopic = topics.find((t) => t.id === selectedTopicId) ?? null;
+    const posts = selectedTopicId
+      ? await listForumPosts(user.id, selectedTopicId, { limit: 100 })
+      : [];
+    if (selectedTopicId && selectedTopic) {
+      await markForumTopicRead(user.id, { kind: 'owner' }, selectedTopicId);
+      selectedTopic.unread = 0;
+    }
+    return (
+      <div className="flex h-full flex-col">
+        <SetPageTitle title="Team" />
+        <TeamTabs active="topics" openRequestCount={openRequestCount} />
+        <div className="min-h-0 flex-1 md:grid md:grid-cols-[340px_1fr]">
+          <aside className="flex min-h-0 flex-col border-r border-border">
+            <div className="flex items-center border-b border-border px-4 py-3">
+              <h2 className="text-sm font-semibold">Forum topics</h2>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+              <TopicList topics={topics} selectedId={selectedTopicId} />
+            </div>
+          </aside>
+
+          <section className="flex min-h-0 flex-col">
+            {selectedTopic ? (
+              <>
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-sm font-semibold">{selectedTopic.title}</h2>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <TopicFlags
+                        pinned={selectedTopic.pinned}
+                        visibility={selectedTopic.visibility}
+                        status={selectedTopic.status}
+                      />
+                      <KindBadge kind={selectedTopic.kind} />
+                      <span>
+                        started by {selectedTopic.authorName} · {fmtWhen(selectedTopic.createdAt)}
+                      </span>
+                    </p>
+                  </div>
+                  <TopicPinToggle topicId={selectedTopic.id} pinned={selectedTopic.pinned} />
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-4 py-4">
+                  <div className="mx-auto flex max-w-3xl flex-col gap-3">
+                    {posts.map((p) => (
+                      <div
+                        key={p.id}
+                        className={cn(
+                          'w-full rounded-lg border px-3 py-2',
+                          p.authorKind === 'member'
+                            ? 'border-primary/20 bg-primary/5'
+                            : 'border-border bg-card text-card-foreground',
+                        )}
+                      >
+                        <div className="mb-1 flex items-baseline gap-2 text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">{p.authorName}</span>
+                          {p.authorKind !== 'member' && (
+                            <span className="rounded-full border border-border px-1.5 py-px text-[10px] uppercase tracking-wider">
+                              {p.authorKind === 'agent' ? 'Assistant' : 'Owner'}
+                            </span>
+                          )}
+                          <span>{fmtWhen(p.createdAt.toISOString())}</span>
+                          {p.traceId ? (
+                            <Link
+                              href={`/traces/${p.traceId}`}
+                              className="ml-auto inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                            >
+                              <ExternalLink className="size-3" /> trace
+                            </Link>
+                          ) : null}
+                        </div>
+                        {p.status === 'failed' ? (
+                          <p className="text-sm text-destructive">
+                            Turn failed: {p.error ?? 'unknown error'}
+                          </p>
+                        ) : p.status === 'pending' ? (
+                          <p className="text-sm italic text-muted-foreground">answering…</p>
+                        ) : p.authorKind === 'member' ? (
+                          <p className="whitespace-pre-wrap text-sm">{p.body}</p>
+                        ) : (
+                          <div className="prose prose-accent prose-sm max-w-none dark:prose-invert">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{p.body}</ReactMarkdown>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="border-t border-border px-4 py-3">
+                  <div className="mx-auto max-w-3xl">
+                    <TopicReplyForm topicId={selectedTopic.id} status={selectedTopic.status} />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-1 items-center justify-center">
+                <div className="text-center text-sm text-muted-foreground">
+                  <MessagesSquare className="mx-auto mb-2 size-6" />
+                  <p>The team&rsquo;s shared forum threads land here.</p>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     );
   }

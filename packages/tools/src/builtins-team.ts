@@ -75,11 +75,12 @@ const team_request_create: BuiltinToolDef = {
     required: ['title', 'body'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    if (ctx.surface?.kind !== 'team') {
+    const surface = ctx.surface;
+    if (surface?.kind !== 'team' && surface?.kind !== 'forum') {
       return {
         ok: false,
         error:
-          'team_request_create only runs on the Team Chat surface — the requesting team member must be the one asking.',
+          'team_request_create only runs on the Team Chat / Team Forum surfaces — the requesting team member must be the one asking.',
       };
     }
     const title = str(input.title).trim();
@@ -87,7 +88,8 @@ const team_request_create: BuiltinToolDef = {
     if (!title || !body) return { ok: false, error: 'title and body required' };
 
     // Provenance comes from the authenticated surface context, not the model.
-    const { contactId, contactName, inboundMessageId } = ctx.surface;
+    const { contactId, contactName } = surface;
+    const inboundMessageId = surface.kind === 'team' ? surface.inboundMessageId : undefined;
     let attachments: { nodeId: string }[] = [];
     if (inboundMessageId) {
       const [msg] = await listTeamThread(ctx.ownerId, contactId, { limit: 200 }).then((rows) => [
@@ -113,6 +115,11 @@ const team_request_create: BuiltinToolDef = {
             contactId,
             contactName: contactName ?? null,
             threadMessageId: inboundMessageId ?? null,
+            // Forum provenance — which shared topic/post the ask came from,
+            // so Phase 2's review round-trip can deliver the owner's reply
+            // back into that thread.
+            topicId: surface.kind === 'forum' ? surface.topicId : null,
+            postId: surface.kind === 'forum' ? (surface.inboundPostId ?? null) : null,
             attachments: attachments.map((a) => a.nodeId),
             filedAt: new Date().toISOString(),
           },
@@ -140,8 +147,8 @@ const team_chat_list: BuiltinToolDef = {
     "List the brain's team members and their Team Chat activity: last message, thread size, membership since, token last used. Use for questions like 'who has been using team chat' or as the index before `team_chat_read`.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
-    if (ctx.surface?.kind === 'team') {
-      return { ok: false, error: 'owner-side tool — not available on the Team Chat surface' };
+    if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
+      return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
     }
     const members = await listTeamMemberActivity(ctx.ownerId);
     ctx.step?.setMeta({ count: members.length });
@@ -177,8 +184,8 @@ const team_chat_read: BuiltinToolDef = {
     required: ['contactId'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    if (ctx.surface?.kind === 'team') {
-      return { ok: false, error: 'owner-side tool — not available on the Team Chat surface' };
+    if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
+      return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
     }
     const contactId = str(input.contactId);
     if (!contactId) return { ok: false, error: 'contactId required' };
@@ -228,8 +235,8 @@ const team_access_list: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    if (ctx.surface?.kind === 'team') {
-      return { ok: false, error: 'owner-side tool — not available on the Team Chat surface' };
+    if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
+      return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
     }
     const rows = await listTeamAccess(ctx.ownerId, {
       contactId: strOpt(input.contactId),

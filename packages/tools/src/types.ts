@@ -78,6 +78,18 @@ export type ToolHandlerContext = {
         /** The inbound team_messages row that started this turn — stamped
          *  into a request task so the specialist can jump to the ask. */
         inboundMessageId?: string;
+      }
+    | {
+        /** Turn came from the Team Forum (/team/forum) — a team-member
+         *  CONTACT posting in a SHARED topic every member can read. Same
+         *  trust posture and provenance rules as 'team'; the topic/post ids
+         *  let `team_request_create` stamp which thread the ask came from. */
+        kind: 'forum';
+        contactId: string;
+        contactName?: string;
+        topicId: string;
+        /** The forum_posts row that triggered this turn. */
+        inboundPostId?: string;
       };
 };
 

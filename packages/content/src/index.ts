@@ -397,6 +397,27 @@ export {
 } from './team-requests';
 
 export {
+  createForumTopic,
+  appendForumPost,
+  finalizeForumPost,
+  listForumTopics,
+  getForumTopic,
+  listForumPosts,
+  recentForumPosts,
+  countForumMemberPostsSince,
+  sweepStaleForumAgentPosts,
+  markForumTopicRead,
+  setForumTopicPinned,
+  setForumTopicStatus,
+  type ForumViewer,
+  type ForumAuthor,
+  type CreateForumTopicInput,
+  type AppendForumPostInput,
+  type FinalizeForumPostInput,
+  type ForumTopicListItem,
+} from './forum';
+
+export {
   recordTeamAccess,
   listTeamAccess,
   type TeamAccessKind,

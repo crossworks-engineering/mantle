@@ -138,6 +138,13 @@ reaches them via the owner-side tools (§5), keeping team chatter out of the
 memory corpus unless explicitly promoted. (Uploaded *files* do ingest, with
 provenance — that's the point of "please update X, attached".)
 
+> **Scope note (Team Forum era):** this exclusion protects *private 1:1
+> conversations* — it is NOT a blanket rule for team content. The shared Team
+> Forum ([team-forum.md](team-forum.md)) deliberately reverses it for
+> shared-by-design topics, which become brain corpus in Forum Phase 3;
+> `private` forum topics stay excluded for exactly the reason above. The 1:1
+> chat itself is now a read-only archive (`/team/assistant`).
+
 ## 8. Request → task → reply loop
 
 1. Member asks for a change → responder calls `team_request_create` → a task
