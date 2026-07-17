@@ -10,7 +10,7 @@ export default async function DebugToolValidationPage() {
   await requireOwner();
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 px-6 py-8">
+    <div className="mx-auto max-w-6xl space-y-8 px-6 py-8">
       <DebugTabs />
       <SetPageTitle title="Tool validation" />
       <ToolValidationClient />

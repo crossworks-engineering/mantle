@@ -15,7 +15,7 @@ export default async function DebugTopicsPage({
   const query = sp.q?.trim() || '';
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 px-6 py-8">
+    <div className="mx-auto max-w-6xl space-y-4 px-6 py-8">
       <DebugTabs />
       <SetPageTitle title="Topics" />
       <TopicsClient page={page} query={query} />

@@ -24,7 +24,7 @@ export default async function JourneyPage({
   const processedOnly = done === '1';
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-6 py-8">
+    <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
       <DebugTabs />
       <SetPageTitle title="Journey" />
       <ActiveNow />

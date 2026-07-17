@@ -17,7 +17,7 @@ export default async function SanityPage() {
   await requireOwner();
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 px-6 py-8">
+    <div className="mx-auto max-w-6xl space-y-4 px-6 py-8">
       <DebugTabs />
       <SetPageTitle title="Sanity check" />
       <SanityClient />
