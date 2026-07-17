@@ -11,11 +11,8 @@
  */
 
 import type { BuiltinToolDef } from './types';
+import { str } from './coerce';
 import { readResultPage, grepResult, queryResult, DEFAULT_RESULT_HANDLING } from './tool-results';
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 
 const read_result: BuiltinToolDef = {
   slug: 'read_result',

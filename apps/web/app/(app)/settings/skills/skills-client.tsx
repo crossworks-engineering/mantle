@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { slugify } from '@/lib/slugify';
 
 // Row + backref shapes come from the shared client-types package (the wire
 // contract), so this screen never imports @mantle/db just to name them.
@@ -57,14 +58,6 @@ function fromSkill(s: SkillSummary): FormState {
     defaultStateText: JSON.stringify(s.defaultState ?? {}, null, 2),
     enabled: s.enabled,
   };
-}
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
 }
 
 export function SkillsClient() {
@@ -117,7 +110,11 @@ export function SkillsClient() {
   });
 
   const onName = (v: string) =>
-    setForm((f) => ({ ...f, name: v, slug: slugTouched ? f.slug : slugify(v) }));
+    setForm((f) => ({
+      ...f,
+      name: v,
+      slug: slugTouched ? f.slug : slugify(v, { allowUnderscore: true, maxLength: 64 }),
+    }));
 
   const openCreate = () => {
     setForm(emptyForm());

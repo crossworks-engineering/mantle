@@ -35,6 +35,7 @@ import { accountForChat, downloadTelegramFile, sendPhoto, sendVoice } from '@man
 import { createFolder, dashToLtree, fileById, readFileById, upsertFile } from '@mantle/files';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
+import { str } from './coerce';
 
 // ─── shared helpers ────────────────────────────────────────────────
 
@@ -50,9 +51,6 @@ const NODE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'node_id', lookup: 'search_nodes / tree_list' },
 ];
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }

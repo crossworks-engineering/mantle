@@ -13,6 +13,7 @@ import { createNote, getNote, getPage, docToMarkdown, listNotes, nodeUrl } from 
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
+import { str, strArr } from './coerce';
 import { notFound } from './errors';
 
 // Shared referential preconditions (checked centrally in dispatch — see
@@ -27,14 +28,8 @@ const PAGE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'page_id', nodeType: 'page', lookup: 'page_list / search_nodes' },
 ];
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
-}
-function strArr(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : [];
 }
 
 const note_create: BuiltinToolDef = {

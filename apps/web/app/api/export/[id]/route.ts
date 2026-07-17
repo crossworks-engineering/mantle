@@ -5,6 +5,7 @@ import { resolveExport, getPage } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@/lib/safe-download';
 import { renderUrlToPdf, printOrigin, PdfRendererUnavailableError } from '@/lib/render-pdf';
+import { slugify } from '@/lib/slugify';
 
 const IdParams = z.object({ id: z.string().uuid() });
 // Absent ⇒ docx (the original type-driven behavior; existing links keep working).
@@ -52,7 +53,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const cookie = req.headers.get('cookie') ?? '';
     try {
       const bytes = await renderUrlToPdf(`${printOrigin()}/print/pages/${id}`, cookie);
-      return download(bytes, 'application/pdf', `${slugify(page.title)}.pdf`);
+      return download(
+        bytes,
+        'application/pdf',
+        `${slugify(page.title, { maxLength: 80, fallback: 'export' })}.pdf`,
+      );
     } catch (e) {
       if (e instanceof PdfRendererUnavailableError) {
         console.error('[export] pdf renderer unavailable:', e.message);
@@ -92,11 +97,3 @@ function download(bytes: Buffer | Uint8Array, mimeType: string, filename: string
 }
 
 /** title → safe basename stem (mirrors resolveExport's slug for the PDF path). */
-function slugify(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-  return slug || 'export';
-}

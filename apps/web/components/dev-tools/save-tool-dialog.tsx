@@ -41,6 +41,7 @@ import { useToast } from '@/components/ui/toast';
 import { buildVarMap, substituteVars } from '@/lib/dev-tools/client';
 import { apiSend, ApiError } from '@/lib/api-fetch';
 import { useDevTools } from './context';
+import { slugify } from '@/lib/slugify';
 
 const PARAM_PATTERN = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 
@@ -50,14 +51,6 @@ type ParamSpec = {
   description: string;
   required: boolean;
 };
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 64);
-}
 
 export function SaveToolDialog({
   open,
@@ -155,7 +148,13 @@ export function SaveToolDialog({
   useEffect(() => {
     if (!open) return;
     setName(draft.name === 'Untitled request' ? '' : draft.name);
-    setSlug(slugify(draft.name === 'Untitled request' ? '' : draft.name));
+    setSlug(
+      slugify(draft.name === 'Untitled request' ? '' : draft.name, {
+        allowUnderscore: true,
+        separator: '_',
+        maxLength: 64,
+      }),
+    );
     setSlugTouched(false);
     setDescription(draft.description ?? '');
     setRequiresConfirm(false);
@@ -241,7 +240,14 @@ export function SaveToolDialog({
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value);
-                    if (!slugTouched) setSlug(slugify(e.target.value));
+                    if (!slugTouched)
+                      setSlug(
+                        slugify(e.target.value, {
+                          allowUnderscore: true,
+                          separator: '_',
+                          maxLength: 64,
+                        }),
+                      );
                   }}
                   required
                   autoFocus

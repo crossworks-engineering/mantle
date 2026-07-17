@@ -24,6 +24,7 @@ import {
   type TaskPriority,
 } from '@mantle/content';
 import type { ToolPrecondition, BuiltinToolDef, ToolHandlerResult } from './types';
+import { str } from './coerce';
 
 const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   {
@@ -34,9 +35,6 @@ const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   },
 ];
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }

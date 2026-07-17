@@ -22,18 +22,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SubmitButton } from '@/components/ui/submit-button';
+import { slugify } from '@/lib/slugify';
 import { useToast } from '@/components/ui/toast';
 import { apiSend } from '@/lib/api-fetch';
 
 /** Lowercase-slug a label for the default key (mirrors the action's regex). */
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
 /**
  * "New collection" form (Dialog) for the /docs index. Registers a new
  * doc collection pointing at a folder of markdown on disk; on success it's

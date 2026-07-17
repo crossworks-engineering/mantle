@@ -10,6 +10,7 @@ import { resolveExport } from '@mantle/content';
 import { ensureDatedUploadFolder, readFileById, upsertFile } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
+import { str } from './coerce';
 
 // Referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an existing node the owner holds.
@@ -18,10 +19,6 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 const NODE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'node_id', lookup: 'search_nodes / tree_list' },
 ];
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 
 const export_node: BuiltinToolDef = {
   slug: 'export_node',

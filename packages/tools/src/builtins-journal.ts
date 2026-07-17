@@ -26,6 +26,7 @@ import {
   type JournalRow,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
+import { str } from './coerce';
 import { notFound } from './errors';
 
 // Shared referential precondition (checked centrally in dispatch — see
@@ -34,9 +35,6 @@ const JOURNAL_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'journal', lookup: 'journal_list / search_nodes' },
 ];
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
 }

@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { ToolPicker, type ToolOption } from '@/components/tool-picker';
 import { cn } from '@/lib/utils';
+import { slugify } from '@/lib/slugify';
 
 // List items carry the agent-grant fan-out from GET /api/tool-groups.
 type ToolGroupSummary = ToolGroupWithRefs;
@@ -52,14 +53,6 @@ function fromGroup(g: ToolGroupSummary): FormState {
     toolSlugs: g.toolSlugs,
     enabled: g.enabled,
   };
-}
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
 }
 
 export function ToolGroupsClient() {
@@ -120,7 +113,11 @@ export function ToolGroupsClient() {
   });
 
   const onName = (v: string) =>
-    setForm((f) => ({ ...f, name: v, slug: slugTouched ? f.slug : slugify(v) }));
+    setForm((f) => ({
+      ...f,
+      name: v,
+      slug: slugTouched ? f.slug : slugify(v, { allowUnderscore: true, maxLength: 64 }),
+    }));
 
   const openCreate = () => {
     setForm(emptyForm());

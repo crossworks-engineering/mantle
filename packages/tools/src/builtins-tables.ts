@@ -60,6 +60,7 @@ import {
 } from '@mantle/tabledb';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { str, strArr } from './coerce';
 import { notFound } from './errors';
 import type { ToolPrecondition } from './types';
 
@@ -74,13 +75,6 @@ const TABLE_NODE_ID_PRE: readonly ToolPrecondition[] = [
 const FILE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'file_id', nodeType: 'file', lookup: 'file_list / search_nodes' },
 ];
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
-function strArr(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : [];
-}
 
 /** The doc an edit operates on: the in-flight draft if present, else published. */
 function baseline(table: TableDetail): TableDoc {

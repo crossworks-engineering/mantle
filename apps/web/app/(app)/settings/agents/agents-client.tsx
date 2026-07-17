@@ -41,6 +41,7 @@ import { BoringAvatar } from '@/components/boring-avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { PersonaNotesEditor } from './persona-notes-editor';
 import { AgentChatTestButton } from './chat-test-button';
+import { slugify } from '@/lib/slugify';
 
 /** Built-in node types the extractor can be allow-listed against. Matches
  *  the `node_type` enum in packages/db/src/schema/nodes.ts minus `branch`
@@ -411,14 +412,6 @@ function tempDescriptor(t: number): { word: string; hint: string } {
   return { word: 'Wild', hint: 'Highly random and surprising — it may wander or go off-topic.' };
 }
 
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
-}
-
 const SELECT_CLASS =
   'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50';
 const TEXTAREA_CLASS =
@@ -662,7 +655,7 @@ export function AgentsClient() {
     setForm((f) => ({
       ...f,
       name: v,
-      slug: slugTouched ? f.slug : slugify(v),
+      slug: slugTouched ? f.slug : slugify(v, { maxLength: 64 }),
     }));
   };
 

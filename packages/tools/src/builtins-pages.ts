@@ -43,6 +43,7 @@ import {
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
+import { str, strArr } from './coerce';
 import { notFound } from './errors';
 import type { ToolPrecondition } from './types';
 
@@ -60,14 +61,6 @@ const FILE_ID_PRE: readonly ToolPrecondition[] = [
 const NOTE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'note_id', nodeType: 'note', lookup: 'note_list / search_nodes' },
 ];
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
-
-function strArr(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : [];
-}
 
 const MARKDOWN_HINT =
   'Rich-markdown body. GFM markdown plus: callouts (`:::info` … `:::`, variants info|success|warning|danger), asides (`:::aside` … `:::`, a themed-gradient box; optional colour `:::aside chart-3`), columns (`:::columns` … `+++` … `:::`, 2+ parts), task lists (`- [ ]` / `- [x]`), tables, and `==highlight==`. Same dialect you write replies in.';

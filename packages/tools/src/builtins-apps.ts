@@ -36,6 +36,7 @@ import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './dispatch';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
+import { str, strArr } from './coerce';
 
 const APP_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'app', lookup: 'app_list' },
@@ -43,13 +44,6 @@ const APP_ID_PRE: readonly ToolPrecondition[] = [
 const APP_DB_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'app_id', nodeType: 'app', lookup: 'app_db_list / app_list' },
 ];
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
-function strArr(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : [];
-}
 
 const SOURCE_HINT =
   'Mini-app source is TSX. Allowed imports: `react`; the kit `@/components/ui/*` (button, card, input, label, badge, separator) + `cn` from `@/lib/utils`; `lucide-react` icons; the host bridge `host` from `@host` (host.tools.call(slug,input), host.db.query/exec(sql,params)); and relative files. Theme tokens only (bg-background, text-foreground, bg-card, bg-primary+text-primary-foreground, chart-1..5) — never hardcode colours. The entry file must `export default function App()`.';

@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { slugify } from '@/lib/slugify';
 
 type ToolSummary = ToolDTO;
 
@@ -93,14 +94,6 @@ function parseRecordField(label: string, raw: string): Record<string, string> | 
     out[k] = v;
   }
   return out;
-}
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
 }
 
 const DEFAULT_SETTINGS: ToolSettings = { requireApproval: false, egressGate: false };
@@ -489,7 +482,9 @@ export function ToolsClient() {
                       setForm((f) => ({
                         ...f,
                         name: e.target.value,
-                        slug: slugTouched ? f.slug : slugify(e.target.value),
+                        slug: slugTouched
+                          ? f.slug
+                          : slugify(e.target.value, { allowUnderscore: true, maxLength: 64 }),
                       }))
                     }
                     required

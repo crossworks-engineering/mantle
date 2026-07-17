@@ -31,6 +31,7 @@ import {
   type RecurFreq,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
+import { str, strArrOpt } from './coerce';
 import { notFound } from './errors';
 
 // Shared referential precondition (checked centrally in dispatch — see
@@ -41,20 +42,12 @@ const EVENT_ID_PRE: readonly ToolPrecondition[] = [
 
 const RECUR_VALUES: readonly RecurFreq[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
 function num(v: unknown, dflt?: number): number | undefined {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
   return dflt;
-}
-function strArr(v: unknown): string[] | undefined {
-  if (!Array.isArray(v)) return undefined;
-  const out = v.filter((s): s is string => typeof s === 'string');
-  return out.length > 0 ? out : undefined;
 }
 /** Validated RecurFreq, or undefined to leave unchanged on update. */
 function recurOpt(v: unknown): RecurFreq | undefined {
@@ -216,7 +209,7 @@ const event_create: BuiltinToolDef = {
         recur: recurOpt(input.recur),
         recurUntil: strOpt(input.recurUntil) ?? null,
         timezone,
-        tags: strArr(input.tags),
+        tags: strArrOpt(input.tags),
       });
       ctx.step?.setMeta({ eventId: row.id, title, startsAt, timezone });
       return { ok: true, output: row };
@@ -295,7 +288,7 @@ const event_update: BuiltinToolDef = {
         recur: recurOpt(input.recur),
         // Omit → leave unchanged (don't clobber an existing cutoff).
         recurUntil: strOpt(input.recurUntil),
-        tags: strArr(input.tags),
+        tags: strArrOpt(input.tags),
       });
       if (!row) return notFound('event', id, 'event_list');
       ctx.step?.setMeta({ eventId: id });

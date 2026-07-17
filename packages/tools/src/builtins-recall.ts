@@ -34,6 +34,7 @@ import {
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import type { BuiltinToolDef } from './types';
+import { str } from './coerce';
 
 // ─── pure helpers (unit-tested in builtins-recall.test.ts) ──────────────────
 
@@ -80,9 +81,6 @@ export function mergeAndSortTurns(turns: RecallTurn[]): RecallTurn[] {
 
 // ─── input coercion (mirrors builtins.ts helpers) ───────────────────────────
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }

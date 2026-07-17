@@ -31,21 +31,24 @@ import {
 import { enqueueBackfills } from '@mantle/email';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
+import { str } from './coerce';
 
 const CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'contact', lookup: 'contact_find / contact_list' },
 ];
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
 }
 function num(v: unknown, dflt: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : dflt;
 }
-/** Coerce an `emails` input to a clean string[] (or undefined to leave alone). */
+/**
+ * Coerce an `emails` input to a clean string[] (or undefined to leave alone).
+ * Intentionally NOT the shared `strArr`/`strArrOpt` from './coerce': emails must
+ * be trimmed and empty entries dropped, which those don't do. Kept local so the
+ * address-cleaning contract lives next to its one call site.
+ */
 function strArr(v: unknown): string[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const out = v

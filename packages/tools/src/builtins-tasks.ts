@@ -25,6 +25,7 @@ import {
   type TaskStatus,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
+import { str, strArrOpt } from './coerce';
 import { notFound } from './errors';
 
 // Shared referential precondition (checked centrally in dispatch — see
@@ -33,16 +34,8 @@ const TASK_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'task', lookup: 'task_list / search_nodes' },
 ];
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-function strArr(v: unknown): string[] | undefined {
-  if (!Array.isArray(v)) return undefined;
-  const out = v.filter((s): s is string => typeof s === 'string');
-  return out.length > 0 ? out : undefined;
 }
 
 const task_list: BuiltinToolDef = {
@@ -153,7 +146,7 @@ const task_create: BuiltinToolDef = {
         body: strOpt(input.body),
         priority: input.priority as TaskPriority | undefined,
         dueAt: strOpt(input.dueAt) ?? null,
-        tags: strArr(input.tags),
+        tags: strArrOpt(input.tags),
       });
       ctx.step?.setMeta({ taskId: row.id, title, priority: row.priority, dueAt: row.dueAt });
       return { ok: true, output: row };
@@ -215,7 +208,7 @@ const task_update: BuiltinToolDef = {
         status: input.status as TaskStatus | undefined,
         priority: input.priority as TaskPriority | undefined,
         dueAt: strOpt(input.dueAt),
-        tags: strArr(input.tags),
+        tags: strArrOpt(input.tags),
       });
       if (!row) return notFound('task', id, 'task_list');
       ctx.step?.setMeta({ taskId: id, status: row.status });

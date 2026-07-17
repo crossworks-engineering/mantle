@@ -28,6 +28,7 @@ import {
   type NewAiWorker,
 } from '@mantle/db';
 import type { AiWorkerDTO } from '@mantle/client-types';
+import { slugify } from './slugify';
 
 // Resolution helpers live in @mantle/db so apps/agent can use them
 // without depending on apps/web. Re-exported here for convenience.
@@ -94,21 +95,11 @@ export type CreateAiWorkerInput = {
   backupViaTailnet?: boolean;
 };
 
-/** Convert a free-form name into a slug-safe string. Lower-cased,
- *  hyphenated, alnum only, trimmed of leading/trailing hyphens. */
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-+|-+$)/g, '')
-    .slice(0, 60);
-}
-
 /** Build a default slug that includes the kind, so logs are
  *  self-explanatory. Falls back to a uuid stem if the name is empty
  *  after slugification (e.g. all unicode). */
 function defaultSlug(kind: AiWorkerKind, name: string): string {
-  const tail = slugify(name) || crypto.randomUUID().slice(0, 8);
+  const tail = slugify(name, { maxLength: 60 }) || crypto.randomUUID().slice(0, 8);
   return `${kind}-${tail}`;
 }
 

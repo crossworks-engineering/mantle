@@ -36,12 +36,9 @@ import {
   RECIPE_FORBIDDEN_SLUGS,
 } from './recipe';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { str } from './coerce';
 
 /* ───────────────────────────── helpers ───────────────────────────── */
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 
 function rec(v: unknown): Record<string, unknown> | null {
   return v !== null && typeof v === 'object' && !Array.isArray(v)

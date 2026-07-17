@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-datetime';
 import { apiFetch, apiSend } from '@/lib/api-fetch';
 import type { HeartbeatDTO, AgentOptionDTO, SkillDTO } from '@mantle/client-types';
+import { slugify } from '@/lib/slugify';
 
 type HeartbeatSummary = HeartbeatDTO;
 
@@ -160,14 +161,6 @@ function fromHeartbeat(h: HeartbeatSummary): FormState {
   };
 }
 
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
-}
-
 function statusBadgeClass(s: HeartbeatSummary['status']): string {
   switch (s) {
     case 'active':
@@ -237,7 +230,11 @@ export function HeartbeatsClient() {
   const close = () => setEditing(null);
 
   const onName = (v: string) =>
-    setForm((f) => ({ ...f, name: v, slug: slugTouched ? f.slug : slugify(v) }));
+    setForm((f) => ({
+      ...f,
+      name: v,
+      slug: slugTouched ? f.slug : slugify(v, { allowUnderscore: true, maxLength: 64 }),
+    }));
 
   const applyPreset = (preset: GatePreset) =>
     setForm((f) => {
@@ -558,7 +555,10 @@ export function HeartbeatsClient() {
                     disabled={editing.mode === 'edit'}
                     onChange={(e) => {
                       setSlugTouched(true);
-                      setForm((f) => ({ ...f, slug: slugify(e.target.value) }));
+                      setForm((f) => ({
+                        ...f,
+                        slug: slugify(e.target.value, { allowUnderscore: true, maxLength: 64 }),
+                      }));
                     }}
                   />
                 </div>

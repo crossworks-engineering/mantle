@@ -29,10 +29,8 @@ import {
 import { getApiKey } from '@mantle/api-keys';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
+import { str } from './coerce';
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
 }

@@ -30,10 +30,8 @@ import {
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { captureLlmUsage } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
+import { str } from './coerce';
 
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }

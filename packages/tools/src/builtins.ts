@@ -60,10 +60,7 @@ import { EVAL_TOOLS } from './builtins-eval';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
-
-function str(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
+import { str } from './coerce';
 
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
@@ -78,6 +75,12 @@ function bool(v: unknown): boolean | undefined {
   return typeof v === 'boolean' ? v : undefined;
 }
 
+/**
+ * Intentionally NOT the shared `strArrOpt` from './coerce': this variant also
+ * drops empty-string members (`s.length > 0`), which `strArrOpt` deliberately
+ * preserves. Kept local so that empty-dropping semantic stays with its one
+ * call site (`relations`) rather than silently changing the shared contract.
+ */
 function strArr(v: unknown): string[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const out = v.filter((s): s is string => typeof s === 'string' && s.length > 0);
