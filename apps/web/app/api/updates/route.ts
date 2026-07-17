@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { checkForUpdate, readUpdaterStatus, updaterAvailable } from '@/lib/updates';
+import {
+  checkForUpdate,
+  readComposeStatus,
+  readUpdaterStatus,
+  updaterAvailable,
+} from '@/lib/updates';
 import { APP_VERSION, GIT_SHA, BUILD_TIME } from '@/lib/version';
 import { getOwnerOr401 } from '@/lib/auth';
 
@@ -11,15 +16,17 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const [check, available, status] = await Promise.all([
+  const [check, available, status, compose] = await Promise.all([
     checkForUpdate(false),
     updaterAvailable(),
     readUpdaterStatus(),
+    readComposeStatus(),
   ]);
   return NextResponse.json({
     check,
     available,
     status,
+    compose,
     build: { version: APP_VERSION, sha: GIT_SHA, time: BUILD_TIME },
   });
 }

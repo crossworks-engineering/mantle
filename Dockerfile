@@ -113,5 +113,14 @@ ENV MANTLE_BUILD_TIME=$MANTLE_BUILD_TIME
 # drop it: it's the layer that changes every build, so this also keeps
 # incremental re-pulls small (the runtime .next is only ~50MB).
 RUN pnpm -C apps/web build && rm -rf apps/web/.next/cache
+# Release-owned deploy files, embedded so (a) the updater sidecar can extract
+# the CANONICAL docker-compose.yml for this exact release from the already-
+# pulled image (in-band — no extra network fetch) and refresh a pristine box
+# copy, and (b) the web app can fingerprint the canonical to flag compose
+# drift on /settings/updates. Kept AFTER the build layer: compose edits must
+# not invalidate the (expensive) next-build cache. See infra/updater/updater.sh
+# (compose refresh) + docs/deploy.md.
+COPY docker-compose.yml /app/release/docker-compose.yml
+COPY infra/updater/updater.sh /app/release/updater.sh
 EXPOSE 3000
 CMD ["pnpm", "-C", "apps/web", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3000"]

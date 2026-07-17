@@ -13,7 +13,14 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowUpCircle, CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowUpCircle,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -26,7 +33,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/components/ui/toast';
-import type { UpdateCheck, UpdaterStatus } from '@/lib/updates';
+import type { ComposeStatus, UpdateCheck, UpdaterStatus } from '@/lib/updates';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch, apiSend } from '@/lib/api-fetch';
 import { Spinner } from '@/components/ui/spinner';
@@ -37,6 +44,7 @@ type UpdatesData = {
   check: UpdateCheck;
   available: boolean;
   status: UpdaterStatus | null;
+  compose: ComposeStatus | null;
   build: Build;
 };
 
@@ -70,8 +78,42 @@ export function UpdatesClient() {
       initialCheck={d.check}
       updaterAvailable={d.available}
       initialStatus={d.status}
+      compose={d.compose}
       build={d.build}
     />
+  );
+}
+
+/** One line under the build identity: whether the box's docker-compose.yml
+ *  matches the canonical this release ships (the release-owned compose
+ *  contract — see docs/deploy.md). 'unknown' (dev, old sidecar) renders
+ *  nothing rather than a false alarm. */
+function ComposeLine({ compose }: { compose: ComposeStatus | null }) {
+  if (!compose || compose.state === 'unknown') return null;
+  if (compose.state === 'in-sync') {
+    return (
+      <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <CheckCircle2 className="size-3.5 text-emerald-500" />
+        Stack compose is in sync with this release.
+      </p>
+    );
+  }
+  const detail =
+    compose.state === 'modified'
+      ? 'docker-compose.yml has local edits, so release compose changes (services, healthchecks, mounts) are NOT applied on update. Move customization to docker-compose.override.yml + .env, then run scripts/compose-adopt.sh from the stack dir.'
+      : compose.state === 'no-baseline'
+        ? 'Compose auto-refresh is not adopted on this box yet. Run scripts/compose-adopt.sh once from the stack dir; updates refresh it automatically after that.'
+        : 'docker-compose.yml is from an older release (pristine, but the refresh has not run). Update via the updater to refresh it, or re-run scripts/compose-adopt.sh.';
+  return (
+    <p className="mt-2 flex items-start gap-1.5 text-xs text-destructive">
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+      <span>
+        <span className="font-medium">
+          {compose.state === 'stale' ? 'Stack compose is stale. ' : 'Stack compose has drifted. '}
+        </span>
+        {detail}
+      </span>
+    </p>
   );
 }
 
@@ -90,11 +132,13 @@ function UpdatesView({
   initialCheck,
   updaterAvailable,
   initialStatus,
+  compose,
   build,
 }: {
   initialCheck: UpdateCheck;
   updaterAvailable: boolean;
   initialStatus: UpdaterStatus | null;
+  compose: ComposeStatus | null;
   build: Build;
 }) {
   const toast = useToast();
@@ -228,6 +272,7 @@ function UpdatesView({
             {[build.sha, build.time ? build.time.slice(0, 10) : ''].filter(Boolean).join(' · ')}
           </span>
         </div>
+        <ComposeLine compose={compose} />
       </section>
 
       {/* ── Latest release ── */}

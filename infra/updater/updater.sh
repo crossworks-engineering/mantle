@@ -63,6 +63,93 @@ cur_phase() {
   sed -n 's/.*"phase"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SIG/status.json" 2>/dev/null | head -1
 }
 
+# ── release-owned compose: drift reporting + refresh ─────────────────────────
+# The canonical docker-compose.yml is owned by the RELEASE — embedded in the
+# app image at /app/release/docker-compose.yml (Dockerfile). A box whose copy
+# is PRISTINE (byte-identical to `docker-compose.yml.release`, the baseline of
+# the canonical it was installed/last refreshed with) gets the new canonical
+# swapped in automatically during an update, so compose-level changes (new
+# sidecars, healthchecks, mounts, mem caps) ship WITH the image instead of
+# silently drifting (the v0.137 table-dbs / v0.141 autoheal class). Box-local
+# customization belongs in docker-compose.override.yml (compose merges it
+# automatically) + .env — never in the canonical file. A MODIFIED canonical
+# file is never overwritten: the update proceeds on the old compose and the
+# drift is reported loudly (update.log + stack.json → /settings/updates).
+# Security note: the extraction source is the target image itself — content
+# this box is about to run anyway — so no new trust or network surface.
+
+REFRESH=none   # last compose-refresh outcome, reported via stack.json
+
+sha_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+
+# Compose fingerprints for the web app's drift check (best-effort).
+write_stack_info() {
+  printf '{"compose_sha":"%s","baseline_sha":"%s","refresh":"%s","checked_at":"%s"}\n' \
+    "$(sha_of "$STACK/docker-compose.yml")" \
+    "$(sha_of "$STACK/docker-compose.yml.release")" \
+    "$REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
+    && mv "$SIG/stack.json.tmp" "$SIG/stack.json"
+}
+
+# refresh_compose <tag> — extract the canonical compose from the target image
+# and swap it in when the box copy is pristine. Sets REFRESH; never blocks the
+# update (every outcome is reported, the image roll continues regardless).
+refresh_compose() {
+  ns=$(sed -n 's/^MANTLE_IMAGE_NAMESPACE=//p' "$STACK/.env" 2>/dev/null | head -1)
+  img="${ns:-titanwest}/mantle:$1"
+  incoming="$STACK/.compose-incoming.tmp"
+  rm -f "$incoming"
+  echo "[updater] compose refresh: reading canonical from $img" | tee -a "$SIG/update.log"
+  if ! docker pull "$img" >> "$SIG/update.log" 2>&1; then
+    REFRESH=pull-failed
+    echo "[updater] compose refresh skipped: could not pull $img" | tee -a "$SIG/update.log"
+    return
+  fi
+  cid=$(docker create "$img" 2>> "$SIG/update.log") || { REFRESH=extract-failed; return; }
+  docker cp "$cid:/app/release/docker-compose.yml" "$incoming" >> "$SIG/update.log" 2>&1
+  docker rm "$cid" > /dev/null 2>&1
+  if [ ! -s "$incoming" ]; then
+    # Target image predates the embedded canonical (< v0.142) — nothing to
+    # refresh from; on a deep rollback swap the compose manually
+    # (docker-compose.yml.prev holds the previous canonical).
+    REFRESH=unavailable
+    rm -f "$incoming"
+    echo "[updater] compose refresh skipped: $img ships no embedded canonical" | tee -a "$SIG/update.log"
+    return
+  fi
+  if [ ! -f "$STACK/docker-compose.yml.release" ]; then
+    REFRESH=no-baseline
+    rm -f "$incoming"
+    echo "[updater] ⚠ COMPOSE NOT REFRESHED: no baseline (pre-adoption box)." \
+         "Run scripts/compose-adopt.sh once from the stack dir to enable automatic" \
+         "compose refresh. Continuing on the EXISTING compose." | tee -a "$SIG/update.log"
+    return
+  fi
+  if cmp -s "$STACK/docker-compose.yml" "$STACK/docker-compose.yml.release"; then
+    # Pristine — swap in the new canonical (mv over cp: atomic, and never
+    # rewrites an inode a running process may hold open). Keep the outgoing
+    # file as .prev for one-step rollback.
+    if cp "$STACK/docker-compose.yml" "$STACK/docker-compose.yml.prev" \
+      && cp "$incoming" "$STACK/.compose-release.tmp" \
+      && mv "$STACK/.compose-release.tmp" "$STACK/docker-compose.yml.release" \
+      && mv "$incoming" "$STACK/docker-compose.yml"; then
+      REFRESH=refreshed
+      echo "[updater] compose refreshed to the $1 canonical" | tee -a "$SIG/update.log"
+    else
+      REFRESH=write-failed
+      rm -f "$incoming" "$STACK/.compose-release.tmp"
+      echo "[updater] ⚠ compose refresh FAILED writing files — continuing on the existing compose" | tee -a "$SIG/update.log"
+    fi
+  else
+    REFRESH=modified
+    rm -f "$incoming"
+    echo "[updater] ⚠ COMPOSE NOT REFRESHED: docker-compose.yml has LOCAL EDITS." \
+         "Move box-local customization to docker-compose.override.yml + .env, then run" \
+         "scripts/compose-adopt.sh to re-baseline. Running the new image on the OLD compose" \
+         "— release-level compose changes (sidecars/healthchecks/mounts) are MISSING here." | tee -a "$SIG/update.log"
+  fi
+}
+
 CFG_ERR=$(config_error)
 if [ -n "$CFG_ERR" ]; then
   echo "[updater] not configured: $CFG_ERR." \
@@ -76,6 +163,7 @@ else
     '' | unconfigured) write_status idle "" "" "" null "" ;;
   esac
   echo "[updater] ready — stack: $STACK"
+  write_stack_info
 fi
 
 # We deliberately do NOT dead-sleep when unconfigured. Staying in the poll loop
@@ -120,6 +208,10 @@ while true; do
     fi
 
     write_status pulling "$TARGET" "$STARTED" "" null ""
+    # Refresh the (pristine) compose from the target image BEFORE `compose
+    # pull`/`up`, so a release's compose-level changes — new services, mounts,
+    # healthchecks — take effect in the SAME roll as its image.
+    refresh_compose "$TARGET"
     if docker compose --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1; then
       write_status rolling "$TARGET" "$STARTED" "" null ""
       # Recreate every service EXCEPT this updater. A bare `up -d` would recreate
@@ -146,6 +238,15 @@ while true; do
     else
       write_status error "$TARGET" "$STARTED" "$(now)" false "compose pull failed — see update.log"
     fi
+    write_stack_info
+  fi
+  # Keep the compose fingerprint fresh (~5 min) so manual edits and manual
+  # `docker compose pull` rolls surface on /settings/updates without an update
+  # request. TICKS is cheap int arithmetic in busybox sh.
+  TICKS=$((${TICKS:-0} + 1))
+  if [ "$TICKS" -ge 60 ]; then
+    TICKS=0
+    [ -z "$(config_error)" ] && write_stack_info
   fi
   sleep 5
 done

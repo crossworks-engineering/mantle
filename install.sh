@@ -59,6 +59,11 @@ fetch() { # fetch <repo-path> <local-path>
 }
 
 fetch docker-compose.yml                 docker-compose.yml
+# Baseline for the release-owned compose contract: the updater sidecar
+# auto-refreshes docker-compose.yml on updates ONLY while it stays
+# byte-identical to this baseline (proof the box never hand-edited it —
+# box-local changes go in docker-compose.override.yml + .env instead).
+cp docker-compose.yml docker-compose.yml.release
 fetch .env.prod.example                  .env.prod.example
 fetch infra/caddy/Caddyfile              infra/caddy/Caddyfile
 fetch infra/postgres/init/01-extensions.sql  infra/postgres/init/01-extensions.sql
@@ -74,7 +79,8 @@ fetch scripts/db-restore.sh              scripts/db-restore.sh
 # bundle, then delegates so install/re-install/reconfigure share ONE code path.
 fetch scripts/install.sh                 scripts/install.sh
 fetch scripts/sanity.sh                  scripts/sanity.sh
-chmod +x scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh
+fetch scripts/compose-adopt.sh           scripts/compose-adopt.sh
+chmod +x scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh scripts/compose-adopt.sh
 ok "deploy bundle fetched"
 
 # ── 3. configure + start + verify — ONE code path ────────────────────────────
