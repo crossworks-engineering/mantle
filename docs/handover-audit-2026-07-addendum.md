@@ -20,6 +20,22 @@ Jason's design; the audit running log `de19ce14` is updated to match.
 | `0e18bab9` `1f09a697` `4a08a3fb`   | #5   | Telegram unification, staged (wholesale reroute through `runAssistantTurn` was assessed and **rejected** — delivery/persistence models are deliberately sibling, matching the `run-team-turn` precedent): 14 characterization tests first; then shared `assembleResponderTurn` (`packages/assistant-runtime/src/assemble-turn.ts`) — **fixing two real drift bugs Telegram had missed: `max_iterations`/tool-volume clamps and image retry-after-error**; then a single traced-loop core (`responder-loop.ts`) used by web, team, and telegram. Telegram also gains the empty-reply fallback (no more silent turns) and now persists thought trails + toolStats like web. Zero parallel orchestration remains in `apps/api/src/agent/runtime.ts`. |
 | `10f03cce`                         | #6   | Microsoft + calendar sync coverage (+51 tests): ICS recurrence/cancelled/malformed/timezones, full-set-deletion-by-absence vs delta-deletion-by-cancellation semantics, drive-item classify (skip/remove/ingest — new pure seam `drives/classify.ts`), Graph paging/deltaLink cursor, 429 retry budget, mail watermark + normalization. No real bugs found; `removeItem`'s DB internals flagged as the next integration-test target. |
 
+## Post-review fixes (2026-07-17, same day)
+
+A three-reviewer adversarial pass over `54db9ae3..HEAD` (new logic / refactor
+drift / runtime unification) found the refactors provably drift-free and the
+unification clean, plus 2 majors + 5 minors — all fixed:
+
+| Commit     | Fix                                                                                                                                                                                                                                       |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `6f5d6dd9` | **autoheal sidecar** (`willfarrell/autoheal:1.2.0`, pinned) — plain Compose never restarts `unhealthy` containers, so the heartbeat probes were observability-only; the sidecar restarts the 9 labeled services (api + 8 workers). Same docker.sock mitigations as the updater. |
+| `01a7c0e5` | **draft_rev threaded through agent page writers** — the four block-op tools now pass their read's rev as `baseRev`; a conflict returns a teaching tool-error (re-read, re-apply) instead of clobbering a concurrent user edit. Wholesale-replace tools stay unconditional by design. |
+| `eb958135` | **Review minors** — backup guard also rejects `tmpfs`/`ramfs` and resolves symlinks (fail-open); worker mem caps doubled 512m → 1g (large-file OOM headroom); pages client pauses autosave after a 409 until the reload reseeds (no toast spam, no stale-rev refiring); Team Chat clamp inheritance documented. |
+
+Suite after fixes: **2,293 tests**, all gates green. Note: `team-chat-auth.test.ts`
+showed the same parallel-load timeout flake class as `app-build/build.test.ts`
+(passes isolated) — the flaky-timeout class is worth a follow-up bump.
+
 ## Deploy caveats (supersedes the original list)
 
 1. **`docker-compose.yml` changed substantially** (healthcheck anchor, mem
