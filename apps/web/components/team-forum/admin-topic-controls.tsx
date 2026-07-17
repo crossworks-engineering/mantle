@@ -7,14 +7,91 @@
  * Server-rendered page + router.refresh() after each mutation, matching the
  * team-admin conventions.
  */
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Pin, PinOff } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Pin, PinOff, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { ListPager } from '@/components/layout/list-pager';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
+
+/** Owner topic-list search box (title OR post body). Debounced; pushes `?q=`
+ *  and drops `page`/`topic` so results start on page 1 with the first match.
+ *  When ?q= moves without an input edit (back/forward, external link), the box
+ *  adopts it instead of re-pushing stale text — lastInputRef tells the cases
+ *  apart. */
+export function AdminTopicSearch({ initialQuery }: { initialQuery: string }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [value, setValue] = useState(initialQuery);
+  const lastInputRef = useRef(initialQuery);
+
+  const query = searchParams.get('q')?.trim() ?? '';
+  useEffect(() => {
+    if (value === lastInputRef.current) {
+      if (query !== value.trim()) {
+        lastInputRef.current = query;
+        setValue(query);
+      }
+      return;
+    }
+    lastInputRef.current = value;
+    if (value.trim() === query) return;
+    const t = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('view', 'topics');
+      params.delete('page');
+      params.delete('topic');
+      if (value.trim()) params.set('q', value.trim());
+      else params.delete('q');
+      router.replace(`/team-admin?${params.toString()}`, { scroll: false });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [value, query, searchParams, router]);
+
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Search topics and posts…"
+        className="pl-8"
+      />
+    </div>
+  );
+}
+
+/** Owner topic-list pager — preserves the active `q` while paging. */
+export function AdminTopicPager({
+  page,
+  total,
+  pageSize,
+}: {
+  page: number;
+  total: number;
+  pageSize: number;
+}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  return (
+    <ListPager
+      page={page}
+      total={total}
+      pageSize={pageSize}
+      onGo={(p) => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set('view', 'topics');
+        if (p <= 1) params.delete('page');
+        else params.set('page', String(p));
+        router.replace(`/team-admin?${params.toString()}`, { scroll: false });
+      }}
+    />
+  );
+}
 
 export function TopicPinToggle({ topicId, pinned }: { topicId: string; pinned: boolean }) {
   const router = useRouter();

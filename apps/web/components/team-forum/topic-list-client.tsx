@@ -12,11 +12,26 @@
  * render, so a 401 here means mid-session revocation — surfaced as a plain
  * message rather than a second gate.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Loader2, MessageSquarePlus, MessagesSquare } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  ArrowUpDown,
+  ChevronDown,
+  Loader2,
+  MessageSquarePlus,
+  MessagesSquare,
+  Search,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ListPager } from '@/components/layout/list-pager';
 import {
   Dialog,
   DialogContent,
@@ -207,25 +222,70 @@ function NewTopicDialog() {
   );
 }
 
+type TopicListResponse = {
+  topics: ForumTopicItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+type TopicSort = 'activity' | 'newest' | 'oldest' | 'title';
+
+const SORT_LABELS: Record<TopicSort, string> = {
+  activity: 'Latest activity',
+  newest: 'Newest topics',
+  oldest: 'Oldest topics',
+  title: 'Title A–Z',
+};
+
+const SORTS = Object.keys(SORT_LABELS) as TopicSort[];
+
 export function TopicListClient() {
-  const [topics, setTopics] = useState<ForumTopicItem[] | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const query = searchParams.get('q')?.trim() ?? '';
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+  const sortParam = searchParams.get('sort');
+  const sort: TopicSort = SORTS.includes(sortParam as TopicSort)
+    ? (sortParam as TopicSort)
+    : 'activity';
+
+  const [data, setData] = useState<TopicListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState(query);
+
+  const go = useCallback(
+    (patch: Record<string, string | number | null>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === null || v === '') params.delete(k);
+        else params.set(k, String(v));
+      }
+      const s = params.toString();
+      router.replace(s ? `/team/forum?${s}` : '/team/forum', { scroll: false });
+    },
+    [router, searchParams],
+  );
 
   const refetch = useCallback(async () => {
     try {
-      const r = await fetch('/api/team/forum/topics', { cache: 'no-store' });
+      const qs = new URLSearchParams();
+      if (query) qs.set('q', query);
+      if (sort !== 'activity') qs.set('sort', sort);
+      if (page > 1) qs.set('page', String(page));
+      const s = qs.toString();
+      const r = await fetch(`/api/team/forum/topics${s ? `?${s}` : ''}`, { cache: 'no-store' });
       if (r.status === 401) {
         setError('Your team session ended — reload the page to sign in again.');
         return;
       }
       if (!r.ok) return;
-      const data = (await r.json()) as { topics: ForumTopicItem[] };
-      setTopics(data.topics);
+      setData((await r.json()) as TopicListResponse);
       setError(null);
     } catch {
       /* network blip — keep current state */
     }
-  }, []);
+  }, [query, sort, page]);
 
   useEffect(() => {
     void refetch();
@@ -233,6 +293,28 @@ export function TopicListClient() {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [refetch]);
+
+  // Debounced search: push ?q= when the INPUT changes. When ?q= moves without
+  // an input edit (back/forward, external link), adopt it into the box instead
+  // of re-pushing stale text — lastInputRef tells the two cases apart.
+  const lastInputRef = useRef(searchInput);
+  useEffect(() => {
+    if (searchInput === lastInputRef.current) {
+      if (query !== searchInput.trim()) {
+        lastInputRef.current = query;
+        setSearchInput(query);
+      }
+      return;
+    }
+    lastInputRef.current = searchInput;
+    if (searchInput.trim() === query) return;
+    const t = setTimeout(() => go({ q: searchInput.trim() || null, page: null }), 300);
+    return () => clearTimeout(t);
+  }, [searchInput, query, go]);
+
+  const topics = data?.topics ?? null;
+  const total = data?.total ?? 0;
+  const pageSize = data?.pageSize ?? 20;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -251,6 +333,43 @@ export function TopicListClient() {
             <NewTopicDialog />
           </div>
         </div>
+        <div className="mx-auto mt-3 flex w-full max-w-4xl items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Search topics and posts…"
+              className="pl-8"
+            />
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 gap-1 px-2 text-muted-foreground"
+                title="Sort topics"
+              >
+                <ArrowUpDown className="size-3.5" />
+                {SORT_LABELS[sort]}
+                <ChevronDown className="size-3.5 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuRadioGroup
+                value={sort}
+                onValueChange={(v) => go({ sort: v === 'activity' ? null : v, page: null })}
+              >
+                {SORTS.map((s) => (
+                  <DropdownMenuRadioItem key={s} value={s}>
+                    {SORT_LABELS[s]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-6 py-4">
@@ -262,14 +381,20 @@ export function TopicListClient() {
               <Loader2 className="size-4 animate-spin" aria-label="Loading topics" />
             </div>
           ) : topics.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-12 text-center">
-              <MessagesSquare className="size-6 text-muted-foreground" aria-hidden />
-              <p className="max-w-sm text-sm text-muted-foreground">
-                No topics yet. Start one — questions, ideas, reviews, bugs. The whole team sees the
-                thread, and the brain answers.
+            query ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                No topics or posts match “{query}”.
               </p>
-              <NewTopicDialog />
-            </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-12 text-center">
+                <MessagesSquare className="size-6 text-muted-foreground" aria-hidden />
+                <p className="max-w-sm text-sm text-muted-foreground">
+                  No topics yet. Start one — questions, ideas, reviews, bugs. The whole team sees the
+                  thread, and the brain answers.
+                </p>
+                <NewTopicDialog />
+              </div>
+            )
           ) : (
             <ul className="flex flex-col">
               {topics.map((t) => (
@@ -308,6 +433,19 @@ export function TopicListClient() {
           )}
         </div>
       </div>
+
+      {topics !== null && (
+        <div className="mx-auto w-full max-w-4xl px-6">
+          {/* page/total/pageSize all come from the same response snapshot, so
+              the pager never mixes a new URL page with a stale total. */}
+          <ListPager
+            page={data?.page ?? page}
+            total={total}
+            pageSize={pageSize}
+            onGo={(p) => go({ page: p <= 1 ? null : p })}
+          />
+        </div>
+      )}
     </div>
   );
 }

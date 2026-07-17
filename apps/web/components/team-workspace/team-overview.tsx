@@ -7,6 +7,7 @@
  * brains with a designated hub app).
  */
 import Link from 'next/link';
+import { StartTopicComposer } from '@/components/team-forum/start-topic-composer';
 import { useWorkspace, WORKSPACE_NAV } from './team-workspace-shell';
 
 export function TeamOverview() {
@@ -21,9 +22,13 @@ export function TeamOverview() {
           {firstName ? `Welcome, ${firstName}.` : 'Welcome.'}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Everything {data.siteName || 'this brain'} shares with the team, always current. Browse a
-          section, or ask the Assistant below.
+          Everything {data.siteName || 'this brain'} shares with the team, always current. Ask
+          something below to start a forum topic, or browse a section.
         </p>
+
+        <div className="mt-6">
+          <StartTopicComposer />
+        </div>
 
         <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {WORKSPACE_NAV.map((item) => {

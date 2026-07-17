@@ -19,14 +19,28 @@ import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
 import { enqueueForumTurn } from '@/lib/forum-turn-enqueue';
 import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';
-import { createForumTopic, listForumTopics, recordTeamAccess } from '@mantle/content';
+import { titleForTopic } from '@/lib/forum-title';
+import {
+  FORUM_TOPIC_SORTS,
+  countForumTopics,
+  createForumTopic,
+  listForumTopics,
+  recordTeamAccess,
+  type ForumTopicSort,
+} from '@mantle/content';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const PAGE_SIZE = 20;
+
 const CreateBody = z.object({
-  title: z.string().min(1).max(200),
-  body: z.string().min(1).max(20_000),
+  /** Omitted by the /team landing composer — the title is then a short
+   *  summary of the body (summarizer worker, heuristic fallback). */
+  title: z.string().trim().min(1).max(200).optional(),
+  // trim() so a whitespace-only body 400s here instead of 500ing when
+  // createForumTopic rejects the trimmed-empty opening post.
+  body: z.string().trim().min(1).max(20_000),
   kind: z.enum(['question', 'review', 'feature', 'bug', 'discussion']).optional(),
   visibility: z.enum(['team', 'private']).optional(),
   /** Wave the agent off. Defaults to true for 'discussion' topics. */
@@ -36,11 +50,26 @@ const CreateBody = z.object({
 export async function GET(req: Request) {
   const caller = await resolveTeamChatCaller(req);
   if (!caller) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  const topics = await listForumTopics(caller.ownerId, {
-    kind: 'member',
-    contactId: caller.contactId,
-  });
-  return NextResponse.json({ topics });
+
+  const sp = new URL(req.url).searchParams;
+  const page = Math.max(1, Number.parseInt(sp.get('page') ?? '1', 10) || 1);
+  const query = sp.get('q')?.trim() || undefined;
+  const sortParam = sp.get('sort');
+  const sort: ForumTopicSort = (FORUM_TOPIC_SORTS as readonly string[]).includes(sortParam ?? '')
+    ? (sortParam as ForumTopicSort)
+    : 'activity';
+  const viewer = { kind: 'member', contactId: caller.contactId } as const;
+
+  const [topics, total] = await Promise.all([
+    listForumTopics(caller.ownerId, viewer, {
+      query,
+      sort,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
+    }),
+    countForumTopics(caller.ownerId, viewer, { query }),
+  ]);
+  return NextResponse.json({ topics, total, page, pageSize: PAGE_SIZE });
 }
 
 export async function POST(req: Request) {
@@ -81,8 +110,11 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const { title, body, kind, visibility } = parsed.data;
+  const { body, kind, visibility } = parsed.data;
   const wantsReply = !(parsed.data.noReply ?? kind === 'discussion');
+  // Composer path: no explicit title → summarize the message into one.
+  // titleForTopic never throws and never returns empty (heuristic fallback).
+  const title = parsed.data.title ?? (await titleForTopic(ownerId, body));
 
   try {
     const { topic, post } = await createForumTopic({

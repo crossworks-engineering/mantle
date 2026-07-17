@@ -12,6 +12,7 @@ import {
   isTeamPrivateReadsEnabled,
   listActiveShares,
   listForumTopics,
+  countForumTopics,
   listForumPosts,
   markForumTopicRead,
   type TeamMemberActivity,
@@ -23,7 +24,12 @@ import { HubAppPicker } from '@/components/team-chat/hub-app-picker';
 import { PrivateReadsToggle } from '@/components/team-chat/private-reads-toggle';
 import { RequestReply } from '@/components/team-chat/request-reply';
 import { ThreadAccessSplit } from '@/components/team-chat/access-split';
-import { TopicPinToggle, TopicReplyForm } from '@/components/team-forum/admin-topic-controls';
+import {
+  AdminTopicPager,
+  AdminTopicSearch,
+  TopicPinToggle,
+  TopicReplyForm,
+} from '@/components/team-forum/admin-topic-controls';
 import { KindBadge, TopicFlags } from '@/components/team-forum/forum-meta';
 import { MessageSquare, MessagesSquare, ExternalLink, Inbox, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -222,15 +228,22 @@ function RequestsPanel({ requests }: { requests: TeamRequest[] }) {
 function TopicList({
   topics,
   selectedId,
+  query,
+  page,
 }: {
   topics: ForumTopicListItem[];
   selectedId: string | null;
+  query?: string;
+  page: number;
 }) {
+  const ctx =
+    `${query ? `&q=${encodeURIComponent(query)}` : ''}` + `${page > 1 ? `&page=${page}` : ''}`;
   if (topics.length === 0) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
-        No forum topics yet. Members start them at <code>/team/forum</code> — pinned topics float to
-        the top of everyone&rsquo;s list.
+        {query
+          ? `No topics or posts match “${query}”.`
+          : 'No forum topics yet. Members start them at /team/forum — pinned topics float to the top of everyone’s list.'}
       </div>
     );
   }
@@ -239,7 +252,7 @@ function TopicList({
       {topics.map((t) => (
         <li key={t.id}>
           <Link
-            href={`/team-admin?view=topics&topic=${t.id}`}
+            href={`/team-admin?view=topics&topic=${t.id}${ctx}`}
             className={cn(
               'block rounded-md border border-l-[3px] border-border border-l-border px-3 py-2 transition-colors hover:bg-muted/50',
               t.id === selectedId && 'border-l-primary bg-muted/40',
@@ -273,10 +286,16 @@ function TopicList({
 export default async function TeamAdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ contact?: string; view?: string; topic?: string }>;
+  searchParams: Promise<{
+    contact?: string;
+    view?: string;
+    topic?: string;
+    q?: string;
+    page?: string;
+  }>;
 }) {
   const user = await requireOwner();
-  const { contact, view, topic: topicParam } = await searchParams;
+  const { contact, view, topic: topicParam, q, page } = await searchParams;
   const showRequests = view === 'requests';
 
   const [members, prefs, openRequestCount, apps] = await Promise.all([
@@ -325,7 +344,17 @@ export default async function TeamAdminPage({
   }
 
   if (view === 'topics') {
-    const topics = await listForumTopics(user.id, { kind: 'owner' });
+    const TOPICS_PAGE_SIZE = 30;
+    const query = q?.trim() || undefined;
+    const pageNum = Math.max(1, Number.parseInt(page ?? '1', 10) || 1);
+    const [topics, topicTotal] = await Promise.all([
+      listForumTopics(user.id, { kind: 'owner' }, {
+        query,
+        limit: TOPICS_PAGE_SIZE,
+        offset: (pageNum - 1) * TOPICS_PAGE_SIZE,
+      }),
+      countForumTopics(user.id, { kind: 'owner' }, { query }),
+    ]);
     const selectedTopicId =
       topicParam && topics.some((t) => t.id === topicParam) ? topicParam : (topics[0]?.id ?? null);
     const selectedTopic = topics.find((t) => t.id === selectedTopicId) ?? null;
@@ -342,12 +371,19 @@ export default async function TeamAdminPage({
         <TeamTabs active="topics" openRequestCount={openRequestCount} />
         <div className="min-h-0 flex-1 md:grid md:grid-cols-[340px_1fr]">
           <aside className="flex min-h-0 flex-col border-r border-border">
-            <div className="flex items-center border-b border-border px-4 py-3">
+            <div className="flex flex-col gap-2 border-b border-border px-4 py-3">
               <h2 className="text-sm font-semibold">Forum topics</h2>
+              <AdminTopicSearch initialQuery={query ?? ''} />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
-              <TopicList topics={topics} selectedId={selectedTopicId} />
+              <TopicList
+                topics={topics}
+                selectedId={selectedTopicId}
+                query={query}
+                page={pageNum}
+              />
             </div>
+            <AdminTopicPager page={pageNum} total={topicTotal} pageSize={TOPICS_PAGE_SIZE} />
           </aside>
 
           <section className="flex min-h-0 flex-col">

@@ -10,7 +10,7 @@
  * Stats are coarse per-type node counts — headline numbers for the hub's
  * stat tiles, never content. Callers are team-authenticated routes.
  */
-import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { apps, db, nodes, shares } from '@mantle/db';
 
 export type TeamHubSection = {
@@ -244,12 +244,64 @@ export type TeamVisibleShare = {
   mode: 'team' | 'public';
 };
 
+/** Sort orders offered by the /team section list. `newest`/`oldest` rank by
+ *  when the OWNER shared (share createdAt); `updated` by the node's last edit;
+ *  `title` alphabetically. Default is `newest`. */
+export const TEAM_SHARE_SORTS = ['newest', 'oldest', 'updated', 'title'] as const;
+export type TeamShareSort = (typeof TEAM_SHARE_SORTS)[number];
+
+/** One page of a section list plus the unpaged total (for the pager). */
+export type TeamVisibleSharePage = {
+  items: TeamVisibleShare[];
+  total: number;
+};
+
+/** The active-share predicate shared by every team-visible listing: owned by
+ *  this brain, of this type, not revoked, not expired. */
+function teamShareVisiblePredicate(ownerId: string, nodeType: TeamWorkspaceType): SQL {
+  return and(
+    eq(shares.ownerId, ownerId),
+    eq(shares.nodeType, nodeType),
+    isNull(shares.revokedAt),
+    or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
+  )!;
+}
+
+const teamShareColumns = {
+  token: shares.token,
+  nodeId: nodes.id,
+  title: nodes.title,
+  data: nodes.data,
+  updatedAt: nodes.updatedAt,
+  settings: shares.settings,
+} as const;
+
+function mapTeamShareRow(r: {
+  token: string;
+  nodeId: string;
+  title: string;
+  data: Record<string, unknown> | null;
+  updatedAt: Date;
+  settings: unknown;
+}): TeamVisibleShare {
+  return {
+    token: r.token,
+    nodeId: r.nodeId,
+    title: r.title,
+    icon: typeof r.data?.icon === 'string' ? (r.data.icon as string) : null,
+    summary: typeof r.data?.summary === 'string' ? (r.data.summary as string) : null,
+    updatedAt: r.updatedAt.toISOString(),
+    mode: (r.settings as Record<string, unknown>)?.mode === 'team' ? 'team' : 'public',
+  };
+}
+
 /**
  * Every share of one type a TEAM MEMBER may open: ALL active shares — team
  * mode (members are exactly who it admits) and public mode (anyone with the
- * link, so a member too). Newest first. This is the section list behind the
- * /team workspace; the share stays the single source of truth for what the
- * team may read (same principle as {@link listTeamHubSections}).
+ * link, so a member too). Newest first. This is the UNPAGED listing (the shell
+ * bootstrap's folder chips; the section list uses {@link pageTeamVisibleShares}).
+ * The share stays the single source of truth for what the team may read (same
+ * principle as {@link listTeamHubSections}).
  *
  * Note: for `app` shares the listing does not re-check the published build —
  * a broken-build app 404s at its /s reader instead (loadShareView guards it).
@@ -259,34 +311,60 @@ export async function listTeamVisibleShares(
   nodeType: TeamWorkspaceType,
 ): Promise<TeamVisibleShare[]> {
   const rows = await db
-    .select({
-      token: shares.token,
-      nodeId: nodes.id,
-      title: nodes.title,
-      data: nodes.data,
-      updatedAt: nodes.updatedAt,
-      settings: shares.settings,
-    })
+    .select(teamShareColumns)
     .from(shares)
     .innerJoin(nodes, eq(shares.nodeId, nodes.id))
-    .where(
-      and(
-        eq(shares.ownerId, ownerId),
-        eq(shares.nodeType, nodeType),
-        isNull(shares.revokedAt),
-        or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
-      ),
-    )
+    .where(teamShareVisiblePredicate(ownerId, nodeType))
     .orderBy(sql`${shares.createdAt} DESC`);
-  return rows.map((r) => ({
-    token: r.token,
-    nodeId: r.nodeId,
-    title: r.title,
-    icon: typeof r.data?.icon === 'string' ? (r.data.icon as string) : null,
-    summary: typeof r.data?.summary === 'string' ? (r.data.summary as string) : null,
-    updatedAt: r.updatedAt.toISOString(),
-    mode: (r.settings as Record<string, unknown>)?.mode === 'team' ? 'team' : 'public',
-  }));
+  return rows.map(mapTeamShareRow);
+}
+
+/**
+ * A searched, sorted, paginated page of one section's team-visible shares plus
+ * the unpaged `total` — the data behind the /team workspace section list. Same
+ * visibility rule as {@link listTeamVisibleShares}; `query` matches the title
+ * or summary (case-insensitive substring).
+ */
+export async function pageTeamVisibleShares(
+  ownerId: string,
+  nodeType: TeamWorkspaceType,
+  opts: { query?: string; sort?: TeamShareSort; limit: number; offset: number },
+): Promise<TeamVisibleSharePage> {
+  const { query, sort = 'newest', limit, offset } = opts;
+  const search = query?.trim()
+    ? or(
+        ilike(nodes.title, `%${query.trim()}%`),
+        sql`${nodes.data} ->> 'summary' ILIKE ${`%${query.trim()}%`}`,
+      )
+    : undefined;
+  const where = and(teamShareVisiblePredicate(ownerId, nodeType), search);
+
+  const orderBy =
+    sort === 'oldest'
+      ? sql`${shares.createdAt} ASC`
+      : sort === 'updated'
+        ? sql`${nodes.updatedAt} DESC`
+        : sort === 'title'
+          ? sql`lower(${nodes.title}) ASC`
+          : sql`${shares.createdAt} DESC`;
+
+  const [rows, totals] = await Promise.all([
+    db
+      .select(teamShareColumns)
+      .from(shares)
+      .innerJoin(nodes, eq(shares.nodeId, nodes.id))
+      .where(where)
+      .orderBy(orderBy)
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(shares)
+      .innerJoin(nodes, eq(shares.nodeId, nodes.id))
+      .where(where),
+  ]);
+
+  return { items: rows.map(mapTeamShareRow), total: totals[0]?.count ?? 0 };
 }
 
 /** Per-type counts of team-visible (active) shares — the workspace nav badges

@@ -365,14 +365,18 @@ export {
   resolveTeamHubApp,
   TEAM_HUB_STAT_TYPES,
   TEAM_WORKSPACE_TYPES,
+  TEAM_SHARE_SORTS,
   listTeamVisibleShares,
+  pageTeamVisibleShares,
   countTeamVisibleShares,
   type TeamHubSection,
   type TeamAppCard,
   type TeamHubStatType,
   type TeamHubApp,
   type TeamWorkspaceType,
+  type TeamShareSort,
   type TeamVisibleShare,
+  type TeamVisibleSharePage,
 } from './team-hub';
 
 export {
@@ -403,8 +407,11 @@ export {
   finalizeForumPost,
   getForumPost,
   listForumTopics,
+  countForumTopics,
+  FORUM_TOPIC_SORTS,
   getForumTopic,
   listForumPosts,
+  searchForumPosts,
   recentForumPosts,
   countForumMemberPostsSince,
   sweepStaleForumAgentPosts,
@@ -417,6 +424,8 @@ export {
   type AppendForumPostInput,
   type FinalizeForumPostInput,
   type ForumTopicListItem,
+  type ForumTopicSort,
+  type ForumPostMatch,
 } from './forum';
 
 export {

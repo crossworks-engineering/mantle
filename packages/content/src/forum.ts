@@ -11,7 +11,7 @@
  * author, deliberately unlike team_messages. Member names are resolved HERE
  * from the contact node — callers never supply a member display name.
  */
-import { and, count, desc, eq, gte, lt, or, sql as dsql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, ilike, lt, or, sql as dsql } from 'drizzle-orm';
 import {
   db,
   forumPosts,
@@ -33,6 +33,7 @@ import {
   type ForumAuthor,
   type ForumViewer,
 } from './forum-visibility';
+import { matchSnippet } from './forum-search';
 
 // Re-exported so existing importers (index.ts, callers) keep resolving these
 // from '@mantle/content'; the definitions live in forum-visibility.ts, next to
@@ -50,6 +51,24 @@ function visibleTopicCond(viewer: ForumViewer) {
   return or(
     eq(forumTopics.visibility, 'team'),
     eq(forumTopics.createdByContactId, viewer.contactId),
+  );
+}
+
+/** SQL for the forum topic search: matches the topic TITLE, or any non-pending
+ *  post BODY in the topic (so "find the thread where X was discussed" works,
+ *  not just title hits). Case-insensitive substring. Undefined when no query. */
+function topicSearchCond(query?: string) {
+  const q = query?.trim();
+  if (!q) return undefined;
+  const like = `%${q}%`;
+  return or(
+    ilike(forumTopics.title, like),
+    dsql`exists (
+      select 1 from forum_posts p
+      where p.topic_id = ${forumTopics.id}
+        and p.status <> 'pending'
+        and p.body ilike ${like}
+    )`,
   );
 }
 
@@ -362,18 +381,34 @@ function readerIdOf(ownerId: string, viewer: ForumViewer): string {
   return viewer.kind === 'owner' ? ownerId : viewer.contactId;
 }
 
+/** Sort orders for the topic index. Pinned topics stay on top in every order
+ *  (they're the owner's announcements); the sort ranks the rest. `activity`
+ *  (latest post first) is the forum default. */
+export const FORUM_TOPIC_SORTS = ['activity', 'newest', 'oldest', 'title'] as const;
+export type ForumTopicSort = (typeof FORUM_TOPIC_SORTS)[number];
+
 /**
- * The topic list: pinned first, then latest activity. Visibility-scoped to
- * the viewer, annotated with a last-post preview and the viewer's unread
- * count (posts by others after their cursor — your own posts are never
- * unread to you).
+ * The topic list: pinned first, then the chosen sort (latest activity by
+ * default). Visibility-scoped to the viewer, annotated with a last-post
+ * preview and the viewer's unread count (posts by others after their cursor —
+ * your own posts are never unread to you).
  */
 export async function listForumTopics(
   ownerId: string,
   viewer: ForumViewer,
-  opts: { limit?: number } = {},
+  opts: { limit?: number; offset?: number; query?: string; sort?: ForumTopicSort } = {},
 ): Promise<ForumTopicListItem[]> {
   const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const sort = opts.sort ?? 'activity';
+  const sortOrder =
+    sort === 'newest'
+      ? desc(forumTopics.createdAt)
+      : sort === 'oldest'
+        ? asc(forumTopics.createdAt)
+        : sort === 'title'
+          ? dsql`lower(${forumTopics.title}) ASC`
+          : desc(forumTopics.lastPostAt);
   const readerId = readerIdOf(ownerId, viewer);
   const notMine =
     viewer.kind === 'member'
@@ -383,6 +418,8 @@ export async function listForumTopics(
   const conds = [eq(forumTopics.ownerId, ownerId)];
   const vis = visibleTopicCond(viewer);
   if (vis) conds.push(vis);
+  const search = topicSearchCond(opts.query);
+  if (search) conds.push(search);
 
   const rows = await db
     .select({
@@ -426,14 +463,34 @@ export async function listForumTopics(
       dsql`true`,
     )
     .where(and(...conds))
-    .orderBy(desc(forumTopics.pinned), desc(forumTopics.lastPostAt))
-    .limit(limit);
+    .orderBy(desc(forumTopics.pinned), sortOrder)
+    .limit(limit)
+    .offset(offset);
 
   return rows.map((r) => ({
     ...r,
     lastPostAt: r.lastPostAt.toISOString(),
     createdAt: r.createdAt.toISOString(),
   }));
+}
+
+/** Total topics matching the same visibility + search predicate as
+ *  {@link listForumTopics} — the count behind the forum index pager. */
+export async function countForumTopics(
+  ownerId: string,
+  viewer: ForumViewer,
+  opts: { query?: string } = {},
+): Promise<number> {
+  const conds = [eq(forumTopics.ownerId, ownerId)];
+  const vis = visibleTopicCond(viewer);
+  if (vis) conds.push(vis);
+  const search = topicSearchCond(opts.query);
+  if (search) conds.push(search);
+  const [row] = await db
+    .select({ n: count() })
+    .from(forumTopics)
+    .where(and(...conds));
+  return row?.n ?? 0;
 }
 
 /** One topic, visibility-enforced for the viewer. Null when absent OR when a
@@ -483,6 +540,57 @@ export async function listForumPosts(
     .orderBy(desc(forumPosts.createdAt))
     .limit(limit);
   return rows.reverse();
+}
+
+export type ForumPostMatch = {
+  id: string;
+  authorKind: ForumPost['authorKind'];
+  authorName: string;
+  /** A short excerpt of the post body centred on the first match. */
+  snippet: string;
+  createdAt: string;
+};
+
+/** Posts in ONE topic whose body matches `query` (case-insensitive substring),
+ *  newest first — the in-thread search. Only settled, member-visible posts
+ *  (`complete`): pending bubbles and failed turns render placeholders in the
+ *  thread, so a match there would jump to text the reader can't see.
+ *  Visibility is the caller's job (resolve the topic through getForumTopic
+ *  first, exactly like listForumPosts). */
+export async function searchForumPosts(
+  ownerId: string,
+  topicId: string,
+  opts: { query: string; limit?: number },
+): Promise<ForumPostMatch[]> {
+  const q = opts.query.trim();
+  if (!q) return [];
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const rows = await db
+    .select({
+      id: forumPosts.id,
+      authorKind: forumPosts.authorKind,
+      authorName: forumPosts.authorName,
+      body: forumPosts.body,
+      createdAt: forumPosts.createdAt,
+    })
+    .from(forumPosts)
+    .where(
+      and(
+        eq(forumPosts.ownerId, ownerId),
+        eq(forumPosts.topicId, topicId),
+        eq(forumPosts.status, 'complete'),
+        ilike(forumPosts.body, `%${q}%`),
+      ),
+    )
+    .orderBy(desc(forumPosts.createdAt))
+    .limit(limit);
+  return rows.map((r) => ({
+    id: r.id,
+    authorKind: r.authorKind,
+    authorName: r.authorName,
+    snippet: matchSnippet(r.body, q),
+    createdAt: r.createdAt.toISOString(),
+  }));
 }
 
 /** Most recent N posts ASCENDING — the turn-context loader shape. */
