@@ -19,6 +19,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
 import { enqueueForumTurn } from '@/lib/forum-turn-enqueue';
 import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';
+import { resolveStagedAttachments } from '@/lib/forum-attachments';
 import { titleForTopic } from '@/lib/forum-title';
 import {
   FORUM_TOPIC_SORTS,
@@ -45,6 +46,9 @@ const CreateBody = z.object({
   visibility: z.enum(['team', 'private']).optional(),
   /** Wave the agent off. Defaults to true for 'discussion' topics. */
   noReply: z.boolean().optional(),
+  /** Staged forum-upload blob ids (POST /api/team/forum/uploads) to attach to
+   *  the opening post. Metadata is derived server-side from the blob rows. */
+  attachmentIds: z.array(z.string().uuid()).max(5).optional(),
 });
 
 export async function GET(req: Request) {
@@ -116,6 +120,13 @@ export async function POST(req: Request) {
   // titleForTopic never throws and never returns empty (heuristic fallback).
   const title = parsed.data.title ?? (await titleForTopic(ownerId, body));
 
+  const resolved = await resolveStagedAttachments(
+    ownerId,
+    contactId,
+    parsed.data.attachmentIds ?? [],
+  );
+  if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: 400 });
+
   try {
     const { topic, post } = await createForumTopic({
       ownerId,
@@ -125,6 +136,8 @@ export async function POST(req: Request) {
       visibility,
       author: { kind: 'member', contactId },
       channel,
+      attachments: resolved.attachments,
+      bindUploadIds: resolved.bindIds,
     });
 
     recordTeamAccess({

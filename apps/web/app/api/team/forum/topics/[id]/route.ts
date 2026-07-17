@@ -6,7 +6,7 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getForumTopic, listForumPosts } from '@mantle/content';
+import { getForumTopic, listForumPosts, listForumUploadStatesForTopic } from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
 export const runtime = 'nodejs';
@@ -32,7 +32,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const before = url.searchParams.get('before') ?? undefined;
   const limitRaw = Number(url.searchParams.get('limit'));
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 50;
-  const posts = await listForumPosts(caller.ownerId, topicId, { before, limit });
+  const [posts, uploadStates] = await Promise.all([
+    listForumPosts(caller.ownerId, topicId, { before, limit }),
+    // Blob review states for the attachment chips ("in review" badge) —
+    // clients join posts[].attachments[].fileId → uploadStates[].id.
+    listForumUploadStatesForTopic(caller.ownerId, topicId),
+  ]);
 
   return NextResponse.json({
     topic: {
@@ -62,5 +67,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       attachments: p.attachments,
       createdAt: p.createdAt.toISOString(),
     })),
+    uploadStates: uploadStates.map((u) => ({ id: u.id, status: u.status, sizeBytes: u.sizeBytes })),
   });
 }

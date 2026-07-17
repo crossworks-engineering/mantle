@@ -104,7 +104,14 @@ async function resolveTeamResponder(ownerId: string): Promise<Agent | null> {
  *  who said what in a multi-author room. */
 function humanLine(post: ForumPost): string {
   const who = post.authorKind === 'owner' ? `${post.authorName} (brain owner)` : post.authorName;
-  return `${who}: ${post.body}`;
+  // Uploads v1: the agent sees FILENAMES only — the bytes are quarantined
+  // until the owner reviews them, so no vision/document reading here.
+  const attached = (post.attachments ?? [])
+    .filter((a) => a.caption)
+    .map((a) => a.caption)
+    .join(', ');
+  const attachedLine = attached ? `\n[attached: ${attached}]` : '';
+  return `${who}: ${post.body}${attachedLine}`;
 }
 
 /**

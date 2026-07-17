@@ -41,6 +41,19 @@ export function filesRoot(): string {
 }
 
 /**
+ * The forum-upload QUARANTINE root — a SIBLING of the files root, deliberately
+ * outside the `files` ltree so nothing under it is ever picked up by ingestion
+ * (the migration-0018 trigger fires on file NODES; quarantined bytes have no
+ * node until the owner files them). Layout: `<root>/<ownerId>/<uploadId>`,
+ * see quarantine.ts. With the default files root `./data/files` this resolves
+ * to `./data/forum-uploads`, staying inside the same MANTLE_DATA_DIR
+ * bind-mount in production.
+ */
+export function quarantineRoot(): string {
+  return path.resolve(filesRoot(), '..', 'forum-uploads');
+}
+
+/**
  * Is this ltree path inside the host-mirrored `files` subtree?
  * Accepts the root itself ('files') and any descendant ('files.x.y').
  */

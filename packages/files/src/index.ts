@@ -25,12 +25,20 @@ export { MAX_UPLOAD_BYTES } from './limits';
 
 export {
   filesRoot,
+  quarantineRoot,
   isFilesPath,
   diskPathForLtree,
   diskPathForFile,
   ltreeForDiskPath,
   FILES_ROOT_LABEL,
 } from './paths';
+
+export {
+  quarantinePathFor,
+  writeQuarantineBytes,
+  readQuarantineBytes,
+  deleteQuarantineBytes,
+} from './quarantine';
 
 export {
   ensureRoot,

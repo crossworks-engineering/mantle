@@ -22,6 +22,13 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@/lib/composer-style';
 import { KindBadge, TopicFlags, type ForumKind, type ForumStatus } from './forum-meta';
+import {
+  AttachmentChips,
+  ComposerAttachments,
+  type PostAttachment,
+  type StagedUpload,
+  type UploadState,
+} from './attachment-ui';
 
 type TopicDetail = {
   id: string;
@@ -44,7 +51,7 @@ type Post = {
   mine: boolean;
   body: string;
   status: 'pending' | 'complete' | 'failed';
-  attachments: unknown[];
+  attachments: PostAttachment[];
   createdAt: string;
 };
 
@@ -111,7 +118,15 @@ function AuthorLine({ post }: { post: Post }) {
   );
 }
 
-function PostRow({ post, live }: { post: Post; live: LiveTurn | null }) {
+function PostRow({
+  post,
+  live,
+  uploadStates,
+}: {
+  post: Post;
+  live: LiveTurn | null;
+  uploadStates: Map<string, UploadState>;
+}) {
   // A durable pending agent post hosts the live stream (or the bubble alone
   // when the stream hasn't produced text yet / isn't connected).
   if (post.authorKind === 'agent' && post.status === 'pending') {
@@ -148,6 +163,7 @@ function PostRow({ post, live }: { post: Post; live: LiveTurn | null }) {
       >
         <AuthorLine post={post} />
         <p className="whitespace-pre-wrap break-words text-sm text-foreground">{post.body}</p>
+        <AttachmentChips attachments={post.attachments} states={uploadStates} />
       </div>
     );
   }
@@ -156,6 +172,7 @@ function PostRow({ post, live }: { post: Post; live: LiveTurn | null }) {
     <div>
       <AuthorLine post={post} />
       <Prose markdown={post.body} />
+      <AttachmentChips attachments={post.attachments} states={uploadStates} />
     </div>
   );
 }
@@ -185,6 +202,10 @@ export function TopicViewClient({
   const [noReply, setNoReply] = useState<boolean | null>(null); // null = follow kind default
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [staged, setStaged] = useState<StagedUpload[]>([]);
+  const [attachBusy, setAttachBusy] = useState(false);
+  // Blob review states (id → status/size) for the attachment chips.
+  const [uploadStateRows, setUploadStateRows] = useState<UploadState[]>([]);
   const [live, setLive] = useState<LiveTurn | null>(null);
   const [showJump, setShowJump] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -209,7 +230,11 @@ export function TopicViewClient({
         return;
       }
       if (!r.ok) return;
-      const data = (await r.json()) as { topic: TopicDetail; posts: Post[] };
+      const data = (await r.json()) as {
+        topic: TopicDetail;
+        posts: Post[];
+        uploadStates?: UploadState[];
+      };
       // The tail window slides forward as posts arrive: anything in the old
       // window but older than the new one would silently fall out and leave a
       // hole between `earlier` and `posts`. Fold those into `earlier` so the
@@ -218,8 +243,7 @@ export function TopicViewClient({
       const newOldest = data.posts[0]?.createdAt;
       const dropped = newOldest
         ? postsRef.current.filter(
-            (p) =>
-              !p.id.startsWith('optimistic-') && !newIds.has(p.id) && p.createdAt < newOldest,
+            (p) => !p.id.startsWith('optimistic-') && !newIds.has(p.id) && p.createdAt < newOldest,
           )
         : [];
       if (dropped.length) {
@@ -232,6 +256,7 @@ export function TopicViewClient({
       }
       setTopic(data.topic);
       setPosts(data.posts);
+      setUploadStateRows(data.uploadStates ?? []);
       // Mark read — best-effort, clears the unread dot on the list.
       void fetch(`/api/team/forum/topics/${topicId}/read`, { method: 'POST' }).catch(() => {});
     } catch {
@@ -350,6 +375,11 @@ export function TopicViewClient({
     return out;
   }, [earlier, posts]);
 
+  const uploadStates = useMemo(
+    () => new Map(uploadStateRows.map((u) => [u.id, u])),
+    [uploadStateRows],
+  );
+
   // Keep the async-loop mirrors current.
   useEffect(() => {
     postsRef.current = posts;
@@ -455,9 +485,12 @@ export function TopicViewClient({
     setSearching(true);
     const t = setTimeout(async () => {
       try {
-        const r = await fetch(`/api/team/forum/topics/${topicId}/search?q=${encodeURIComponent(q)}`, {
-          cache: 'no-store',
-        });
+        const r = await fetch(
+          `/api/team/forum/topics/${topicId}/search?q=${encodeURIComponent(q)}`,
+          {
+            cache: 'no-store',
+          },
+        );
         if (r.ok) setMatches(((await r.json()) as { matches: Match[] }).matches);
       } catch {
         /* keep prior matches on a blip */
@@ -502,13 +535,15 @@ export function TopicViewClient({
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending || !topic) return;
+    if (!text || sending || attachBusy || !topic) return;
     setSendError(null);
     setSending(true);
     pinnedRef.current = true;
     setShowJump(false);
 
-    // Optimistic own post.
+    const attachmentIds = staged.map((s) => s.blobId);
+    // Optimistic own post (staged chips ride along; the refetch replaces them
+    // with the server truth, including the "in review" state).
     setPosts((p) => [
       ...p,
       {
@@ -518,7 +553,12 @@ export function TopicViewClient({
         mine: true,
         body: text,
         status: 'complete',
-        attachments: [],
+        attachments: staged.map((s) => ({
+          kind: s.kind,
+          mime: s.mime,
+          caption: s.filename,
+          fileId: s.blobId,
+        })),
         createdAt: new Date().toISOString(),
       },
     ]);
@@ -529,20 +569,27 @@ export function TopicViewClient({
       const r = await fetch(`/api/team/forum/topics/${topicId}/posts`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
-        body: JSON.stringify({ text, noReply: effectiveNoReply }),
+        body: JSON.stringify({
+          text,
+          noReply: effectiveNoReply,
+          ...(attachmentIds.length ? { attachmentIds } : {}),
+        }),
       });
       if (r.status === 202) {
+        setStaged([]);
         const data = (await r.json().catch(() => ({}))) as { turnId?: string };
         if (data.turnId) openStream(data.turnId);
         else finishTurn();
         return;
       }
       if (!r.ok) {
+        // Keep `staged` — the member can retry the post with its attachments.
         const data = (await r.json().catch(() => ({}))) as { error?: string };
         setSendError(data.error ?? 'Posting failed — try again.');
         finishTurn();
         return;
       }
+      setStaged([]);
       finishTurn();
     } catch {
       setSendError('Could not reach the server — try again.');
@@ -628,7 +675,9 @@ export function TopicViewClient({
               {searchInput.trim() && (
                 <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-border">
                   {matches === null ? (
-                    <p className="px-3 py-4 text-center text-xs text-muted-foreground">Searching…</p>
+                    <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                      Searching…
+                    </p>
                   ) : matches.length === 0 ? (
                     <p className="px-3 py-4 text-center text-xs text-muted-foreground">
                       No posts match “{searchInput.trim()}”.
@@ -644,7 +693,9 @@ export function TopicViewClient({
                           >
                             <div className="flex items-baseline gap-2 text-xs">
                               <span className="font-medium">{m.authorName}</span>
-                              <span className="text-muted-foreground">{formatTime(m.createdAt)}</span>
+                              <span className="text-muted-foreground">
+                                {formatTime(m.createdAt)}
+                              </span>
                             </div>
                             <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                               {m.snippet}
@@ -691,7 +742,7 @@ export function TopicViewClient({
                     : ''
                 }`}
               >
-                <PostRow post={p} live={live} />
+                <PostRow post={p} live={live} uploadStates={uploadStates} />
               </div>
             ))}
             {live && !hasPendingHost ? (
@@ -746,19 +797,28 @@ export function TopicViewClient({
                 <Button
                   className="h-auto"
                   onClick={() => void send()}
-                  disabled={sending || !draft.trim()}
+                  disabled={sending || attachBusy || !draft.trim()}
                   aria-label="Post"
                 >
                   <SendHorizontal />
                 </Button>
               </div>
-              <label className="mt-2 flex w-fit items-center gap-2 text-xs text-muted-foreground">
-                <Checkbox
-                  checked={effectiveNoReply}
-                  onCheckedChange={(v) => setNoReply(v === true)}
+              <div className="mt-2 flex flex-wrap items-start justify-between gap-2">
+                <ComposerAttachments
+                  topicId={topicId}
+                  staged={staged}
+                  onStagedChange={setStaged}
+                  onUploadingChange={setAttachBusy}
+                  disabled={sending}
                 />
-                No answer needed — just posting for the team
-              </label>
+                <label className="flex w-fit items-center gap-2 pt-1.5 text-xs text-muted-foreground">
+                  <Checkbox
+                    checked={effectiveNoReply}
+                    onCheckedChange={(v) => setNoReply(v === true)}
+                  />
+                  No answer needed — just posting for the team
+                </label>
+              </div>
             </>
           )}
         </div>

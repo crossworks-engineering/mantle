@@ -62,6 +62,7 @@ import {
   type ForumKind,
   type ForumStatus,
 } from './forum-meta';
+import { ComposerAttachments, type StagedUpload } from './attachment-ui';
 
 export type ForumTopicItem = {
   id: string;
@@ -92,14 +93,17 @@ function NewTopicDialog() {
   const [noReplyTouched, setNoReplyTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [staged, setStaged] = useState<StagedUpload[]>([]);
+  const [attachBusy, setAttachBusy] = useState(false);
 
   const effectiveNoReply = noReplyTouched ? noReply : kind === 'discussion';
 
   const create = async () => {
-    if (!title.trim() || !body.trim() || submitting) return;
+    if (!title.trim() || !body.trim() || submitting || attachBusy) return;
     setSubmitting(true);
     setError(null);
     try {
+      const attachmentIds = staged.map((s) => s.blobId);
       const r = await fetch('/api/team/forum/topics', {
         method: 'POST',
         headers: {
@@ -112,6 +116,7 @@ function NewTopicDialog() {
           kind,
           visibility: isPrivate ? 'private' : 'team',
           noReply: effectiveNoReply,
+          ...(attachmentIds.length ? { attachmentIds } : {}),
         }),
       });
       const data = (await r.json().catch(() => ({}))) as {
@@ -185,6 +190,12 @@ function NewTopicDialog() {
               rows={5}
               placeholder="Ask, propose, or report — the more context, the better the answer."
             />
+            <ComposerAttachments
+              staged={staged}
+              onStagedChange={setStaged}
+              onUploadingChange={setAttachBusy}
+              disabled={submitting}
+            />
           </div>
           <div className="flex items-center justify-between gap-4">
             <label className="flex items-center gap-2 text-sm">
@@ -212,7 +223,7 @@ function NewTopicDialog() {
           <SubmitButton
             pending={submitting}
             onClick={() => void create()}
-            disabled={!title.trim() || !body.trim()}
+            disabled={!title.trim() || !body.trim() || attachBusy}
           >
             Create topic
           </SubmitButton>
@@ -389,8 +400,8 @@ export function TopicListClient() {
               <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-12 text-center">
                 <MessagesSquare className="size-6 text-muted-foreground" aria-hidden />
                 <p className="max-w-sm text-sm text-muted-foreground">
-                  No topics yet. Start one — questions, ideas, reviews, bugs. The whole team sees the
-                  thread, and the brain answers.
+                  No topics yet. Start one — questions, ideas, reviews, bugs. The whole team sees
+                  the thread, and the brain answers.
                 </p>
                 <NewTopicDialog />
               </div>

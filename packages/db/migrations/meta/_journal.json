@@ -883,6 +883,13 @@
       "when": 1785628800000,
       "tag": "0125_node_supersede",
       "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1785715200000,
+      "tag": "0126_forum_uploads",
+      "breakpoints": true
     }
   ]
 }

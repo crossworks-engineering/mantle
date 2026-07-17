@@ -429,6 +429,31 @@ export {
 } from './forum';
 
 export {
+  stageForumUpload,
+  listStagedForumUploads,
+  bindForumUploadsTx,
+  getForumUpload,
+  listForumUploadStatesForTopic,
+  listPendingForumUploads,
+  countPendingForumUploads,
+  markForumUploadFiled,
+  markForumUploadDismissed,
+  sumForumUploadBytesSince,
+  listStaleStagedForumUploads,
+  deleteForumUploadRow,
+  type StageForumUploadInput,
+  type PendingForumUpload,
+} from './forum-uploads';
+
+export {
+  attachmentKindForMime,
+  topicFolderSlug,
+  dedupeFilename,
+  formatAttachmentSize,
+  type ForumAttachmentKind,
+} from './forum-uploads-meta';
+
+export {
   supersedeNode,
   unsupersedeNode,
   salienceForSupersedeReason,
