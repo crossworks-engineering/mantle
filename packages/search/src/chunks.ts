@@ -30,6 +30,10 @@ export type ChunkHit = {
   text: string;
   /** Cosine distance — lower = closer. */
   distance: number;
+  /** Set when the parent node is SUPERSEDED (raw edge — the immediate
+   *  successor id). Callers resolve the living end of the chain + title via
+   *  resolveSupersededTargets and tell the model to prefer it. */
+  nodeSupersededBy: string | null;
 };
 
 export type ChunkSearchOptions = {
@@ -98,10 +102,11 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
     const conds = [...scope, isNotNull(contentChunks.embedding)];
     const rows = (await withHnswPool(pool, (tx) =>
       tx.execute(sql`
-        select node_id, node_title, node_type, ordinal, heading_path, text, dist from (
+        select node_id, node_title, node_type, ordinal, heading_path, text, superseded_by, dist from (
           select ${contentChunks.nodeId} as node_id, ${nodes.title} as node_title,
                  ${nodes.type} as node_type, ${contentChunks.ordinal} as ordinal,
                  ${contentChunks.headingPath} as heading_path, ${contentChunks.text} as text,
+                 ${nodes.supersededBy} as superseded_by,
                  ${nodes.salience} as salience,
                  ${contentChunks.embedding} <=> ${vec}::vector as dist
           from ${contentChunks}
@@ -169,6 +174,7 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
            ${nodes.title} as node_title, ${nodes.type} as node_type,
            ${contentChunks.ordinal} as ordinal,
            ${contentChunks.headingPath} as heading_path, ${contentChunks.text} as text,
+           ${nodes.supersededBy} as superseded_by,
            coalesce(${contentChunks.embedding} <=> ${vec}::vector, 1) as dist
     from ${contentChunks}
     inner join ${nodes} on ${nodes.id} = ${contentChunks.nodeId}
@@ -188,6 +194,7 @@ type RawChunkRow = {
   ordinal: number;
   heading_path: string | null;
   text: string;
+  superseded_by: string | null;
   dist: number;
 };
 
@@ -198,6 +205,7 @@ const toChunkHit = (r: RawChunkRow): ChunkHit => ({
   ordinal: r.ordinal,
   headingPath: r.heading_path,
   text: r.text,
+  nodeSupersededBy: r.superseded_by ?? null,
   // postgres-js returns numerics as numbers here, but coalesce(...) can come
   // back as a string on some driver paths — normalize defensively.
   distance: typeof r.dist === 'number' ? r.dist : Number(r.dist),

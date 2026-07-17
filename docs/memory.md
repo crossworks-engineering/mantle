@@ -1055,6 +1055,28 @@ email is still found by an explicit `search`. Set at ingest; legacy mail
 reclassified by `pnpm -C apps/web classify:backfill`. The audit caught newsletters
 crowding out personal notes; this fixes it without losing anything.
 
+### 7b. Supersession — the content-currency layer
+
+`nodes.superseded_by` + `superseded_reason` (migration 0125) lift the facts-layer
+lineage primitive (`facts.superseded_by`) to content: an uploaded file whose
+content was migrated into a corrected page, an older versioned export, or an
+explicitly-corrected node points at its living replacement. Measured motivation
+(NATREF, 2026-07): stale source files often carry MORE chunk vectors than the
+pages that replaced them, so passage retrieval preferred the dead copy daily.
+
+Mechanics: the demotion is **materialized into `salience`** at write time
+(`version`/`migrated` → `MANTLE_SUPERSEDED_SALIENCE`, default 0.5; `corrected` →
+`MANTLE_CORRECTED_SALIENCE`, default 0.3), so every existing ranker picks it up
+with zero query changes — still a nudge, never a filter. On the read side,
+`search_nodes` / `search_chunks` / `node_read` hits and the responder's
+auto-context annotate superseded items with the **living end of the chain**
+(`resolveSupersededTargets`, ≤5 hops; cycles are refused at write time) and the
+context-block headers instruct the model to prefer the successor. Writers:
+`page_from_file` / `page_from_note(s)` stamp `reason='migrated'` automatically
+(`supersede_source: false` opts out), the extractor's version-family step stamps
+`reason='version'` (never touching manual marks), and the `content_supersede`
+tool (owner-side only; `curation` group) handles corrections + undo.
+
 ---
 
 ## 8. Build sequence

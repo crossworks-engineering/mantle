@@ -34,6 +34,8 @@ export {
   type GraphPathResult,
 } from './entities';
 
+export { resolveSupersededTargets, terminalSuccessors, type SupersededTarget } from './supersede';
+
 export {
   searchChunks,
   readSection,

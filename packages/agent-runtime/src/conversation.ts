@@ -40,7 +40,13 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import { searchChunks, entityRelationsFor, pgArrayLiteral, withHnswPool } from '@mantle/search';
+import {
+  searchChunks,
+  entityRelationsFor,
+  pgArrayLiteral,
+  resolveSupersededTargets,
+  withHnswPool,
+} from '@mantle/search';
 import type {
   ChunkContextHit,
   ContentHit,
@@ -514,6 +520,7 @@ export async function loadConversationContext(args: {
             title: nodes.title,
             type: nodes.type,
             data: nodes.data,
+            supersededBy: nodes.supersededBy,
             // Salience-adjusted distance: bulk/marketing mail (low salience) is
             // pushed back so it can't crowd out real content. Non-email nodes have
             // salience 1.0 → no change.
@@ -546,6 +553,7 @@ export async function loadConversationContext(args: {
           title: r.title,
           type: r.type as string,
           summary: typeof data.summary === 'string' ? data.summary : null,
+          ...(r.supersededBy ? { supersededBy: { id: r.supersededBy, title: '' } } : {}),
         };
       });
     const toSnapItem = (r: (typeof rows)[number]): SnapshotItem => {
@@ -594,6 +602,7 @@ export async function loadConversationContext(args: {
       title: h.nodeTitle,
       heading: h.headingPath,
       text: h.text,
+      ...(h.nodeSupersededBy ? { supersededBy: { id: h.nodeSupersededBy, title: '' } } : {}),
     }));
     const toSnapItem = (h: (typeof hits)[number]): SnapshotItem => ({
       text: snip(h.text),
@@ -607,6 +616,34 @@ export async function loadConversationContext(args: {
       .filter((h) => !selected.includes(h))
       .slice(0, SNAP_DROPPED_CAP)
       .map(toSnapItem);
+  }
+
+  // ─── Content-currency: resolve supersession pointers ─────────────────────
+  // Hits from superseded nodes (a stale file replaced by a corrected page can
+  // still be cosine-closest) get their LIVING successor's id+title so the
+  // prompt marks them and the model prefers the current copy. One batched
+  // resolution for both hit kinds; zero queries when nothing is superseded.
+  {
+    const staleIds = [
+      ...contentHits.filter((h) => h.supersededBy).map((h) => h.nodeId),
+      ...chunkHits.filter((h) => h.supersededBy).map((h) => h.nodeId),
+    ];
+    if (staleIds.length > 0) {
+      const successors = await resolveSupersededTargets(ownerId, staleIds);
+      const patch = <T extends { nodeId: string; supersededBy?: { id: string; title: string } }>(
+        h: T,
+      ): T => {
+        if (!h.supersededBy) return h;
+        const succ = successors.get(h.nodeId);
+        // A dangling edge (successor deleted) drops the annotation rather
+        // than pointing the model at a ghost.
+        return succ
+          ? { ...h, supersededBy: { id: succ.id, title: succ.title } }
+          : { ...h, supersededBy: undefined };
+      };
+      contentHits = contentHits.map(patch);
+      chunkHits = chunkHits.map(patch);
+    }
   }
 
   // ─── Corpus map: the cached "what exists" index ─────────────────────────

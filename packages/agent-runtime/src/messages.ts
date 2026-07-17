@@ -56,6 +56,10 @@ export type ContentHit = {
   type: string;
   summary: string | null;
   nodeId: string;
+  /** Set when this node is SUPERSEDED: the living end of its supersession
+   *  chain (content-currency layer). Rendering flags the hit so the model
+   *  prefers the successor instead of presenting stale content as current. */
+  supersededBy?: { id: string; title: string };
 };
 
 /** A section-level passage pulled into context — the fine-grained complement to
@@ -66,6 +70,8 @@ export type ChunkContextHit = {
   title: string;
   heading: string | null;
   text: string;
+  /** Set when the parent node is SUPERSEDED — see ContentHit.supersededBy. */
+  supersededBy?: { id: string; title: string };
 };
 
 /** One entry of the corpus map — the cached "what exists" index injected so
@@ -459,10 +465,18 @@ export function buildChatMessages(args: {
       .map((h) => {
         const tag = `${h.type}#${h.nodeId.slice(0, 8)}`;
         const summary = h.summary ? ` — ${h.summary}` : '';
-        return `• "${h.title}" (${tag})${summary}`;
+        const stale = h.supersededBy
+          ? ` [SUPERSEDED by "${h.supersededBy.title}" (#${h.supersededBy.id.slice(0, 8)})]`
+          : '';
+        return `• "${h.title}" (${tag})${summary}${stale}`;
       })
       .join('\n');
-    const text = `Possibly relevant items the user may be referencing (refer to them by title if helpful):\n${fenceRetrieved(lines)}`;
+    // The currency rule rides the block header (engine-owned, applies to every
+    // responder) rather than any editable persona prompt.
+    const staleNote = contentHits.some((h) => h.supersededBy)
+      ? ' Items marked SUPERSEDED have a newer replacement — prefer the successor and never present the old copy as current.'
+      : '';
+    const text = `Possibly relevant items the user may be referencing (refer to them by title if helpful).${staleNote}\n${fenceRetrieved(lines)}`;
     messages.push({ role: 'system', content: text });
   }
 
@@ -485,10 +499,16 @@ export function buildChatMessages(args: {
     const blocks = chunkHits
       .map((c) => {
         const head = c.heading ? `${c.title} › ${c.heading}` : c.title;
-        return `— from "${head}":\n${c.text.trim()}`;
+        const stale = c.supersededBy
+          ? ` [SUPERSEDED by "${c.supersededBy.title}" (#${c.supersededBy.id.slice(0, 8)})]`
+          : '';
+        return `— from "${head}"${stale}:\n${c.text.trim()}`;
       })
       .join('\n\n');
-    const text = `Relevant passages from the user's own content (quote or cite by title; don't go beyond what they say):\n\n${fenceRetrieved(blocks)}`;
+    const staleNote = chunkHits.some((c) => c.supersededBy)
+      ? ' Passages marked SUPERSEDED are from an outdated copy — read the successor before relying on them.'
+      : '';
+    const text = `Relevant passages from the user's own content (quote or cite by title; don't go beyond what they say).${staleNote}\n\n${fenceRetrieved(blocks)}`;
     messages.push({ role: 'system', content: text });
   }
 
