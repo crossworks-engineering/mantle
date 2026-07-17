@@ -376,4 +376,44 @@ describe('page_blocks_apply', () => {
     if (!res.ok)
       expect(res.error).toContain("op must be one of: 'update', 'insert_after', 'delete'");
   });
+
+  it('threads the read draft_rev as saveDraft baseRev (agent-vs-user optimistic concurrency)', async () => {
+    // The whole batch is computed against the doc read here; passing that read's
+    // draft_rev as baseRev is what lets a user autosave landing mid-batch CONFLICT
+    // rather than be silently overwritten (audit item #3 — agent-vs-user race).
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null, draftRev: 4 } as never);
+
+    const res = await apply.handler(
+      { page_id: PAGE_ID, ops: [{ op: 'update', block_id: ids[0], markdown: '## New title' }] },
+      ctx,
+    );
+
+    expect(res.ok).toBe(true);
+    expect(saveDraft).toHaveBeenCalledTimes(1);
+    // 4th arg is the concurrency options; baseRev must equal the read's rev.
+    expect(vi.mocked(saveDraft).mock.calls[0]![3]).toEqual({ baseRev: 4 });
+  });
+
+  it('a saveDraft conflict becomes a re-read tool error — no clobber, no blind retry', async () => {
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null, draftRev: 2 } as never);
+    // A user autosave advanced the draft to rev 5 after our read; saveDraft refuses.
+    vi.mocked(saveDraft).mockResolvedValue({ ok: false, conflict: true, rev: 5 } as never);
+
+    const res = await apply.handler(
+      { page_id: PAGE_ID, ops: [{ op: 'update', block_id: ids[0], markdown: '## New title' }] },
+      ctx,
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toContain('changed since you read it');
+      expect(res.error).toContain('NOT saved');
+      expect(res.error).toContain('page_blocks_list');
+    }
+    // The tool must NOT auto-retry (a blind retry would clobber the user's edit):
+    // exactly one attempt, and it surfaced as a typed error, not a throw.
+    expect(saveDraft).toHaveBeenCalledTimes(1);
+  });
 });

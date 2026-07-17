@@ -213,6 +213,10 @@ const page_replace_from_file: BuiltinToolDef = {
       // Body: bytes → doc → draft. saveDraft runs ensureBlockIds so the
       // imported content lands with stable per-block ids, ready for the
       // Phase 2b block tools + the editor diff view.
+      // Intentionally UNCONDITIONAL (no baseRev): the new body is built wholesale
+      // from the file bytes, never from a read of the page's current draft — this
+      // tool's contract is a full-body replace, so there is no concurrent edit to
+      // preserve. (Contrast the block-op tools, which DO thread baseRev.)
       const markdown = res.bytes.toString('utf8');
       const doc = markdownToDoc(markdown);
       const saved = await saveDraft(ctx.ownerId, pageId, doc);
@@ -347,6 +351,10 @@ const page_update_draft: BuiltinToolDef = {
     let draftSaved = false;
     if (typeof input.markdown === 'string') {
       try {
+        // Intentionally UNCONDITIONAL (no baseRev): the draft is replaced wholesale
+        // from agent-supplied markdown, never derived from a read of the current
+        // draft — so there is no concurrent edit to lose. (The block-op tools, which
+        // DO base their doc on a read, thread baseRev to guard the user's edits.)
         const doc = markdownToDoc(input.markdown);
         const res = await saveDraft(ctx.ownerId, id, doc);
         if (!res.ok) return notFound('page', id, 'page_list / search_nodes');
@@ -1084,6 +1092,25 @@ const DRAFT_REVIEW_HINT = (pageId: string) =>
   `user to open /pages/${pageId} to review; the editor shows the draft. ` +
   `Commit publishes, Discard reverts.`;
 
+/**
+ * The draft moved between our read and our conditional save — a user autosave
+ * (or another agent op) bumped `draft_rev` under us, so `saveDraft` refused
+ * rather than clobber it (optimistic concurrency, audit item #3). The block ops
+ * computed their new doc from the stale baseline, so a blind retry would clobber
+ * just the same: the correct merge point is the AGENT re-reading. Bounce it back
+ * with that instruction — never auto-retry here.
+ */
+const draftConflict = (pageId: string): { ok: false; error: string } => ({
+  ok: false,
+  error:
+    `page ${pageId} changed since you read it — a concurrent edit (a user autosave ` +
+    `in the editor, or another block op) advanced the draft. Your change was ` +
+    `computed against the older content and was NOT saved (saving it would have ` +
+    `silently overwritten that edit). Re-read the page with page_blocks_list ` +
+    `(or page_get for one block), re-apply your edit against the current content, ` +
+    `then re-issue.`,
+});
+
 const page_block_get: BuiltinToolDef = {
   slug: 'page_block_get',
   preconditions: PAGE_ID_PRE,
@@ -1179,6 +1206,9 @@ const page_block_update: BuiltinToolDef = {
     }
 
     const baseline = pickEditingBaseline(page);
+    // Rev of the draft we just read (0 when none) — threaded into saveDraft so a
+    // user autosave that lands between this read and our write is not clobbered.
+    const baseRev = page.draftRev ?? 0;
     const result = replaceBlock(baseline, blockId, parsedBlocks as PMBlockNode[]);
     if (!result.found) {
       return {
@@ -1187,8 +1217,11 @@ const page_block_update: BuiltinToolDef = {
       };
     }
     try {
-      const res = await saveDraft(ctx.ownerId, pageId, result.doc);
-      if (!res.ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+      const res = await saveDraft(ctx.ownerId, pageId, result.doc, { baseRev });
+      if (!res.ok) {
+        if ('conflict' in res) return draftConflict(pageId);
+        return { ok: false, error: `page ${pageId} not found (race?)` };
+      }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -1253,6 +1286,9 @@ const page_block_insert_after: BuiltinToolDef = {
     }
 
     const baseline = pickEditingBaseline(page);
+    // Rev of the draft we just read (0 when none) — threaded into saveDraft so a
+    // user autosave that lands between this read and our write is not clobbered.
+    const baseRev = page.draftRev ?? 0;
     const result = insertAfterBlock(baseline, afterId, parsedBlocks as PMBlockNode[]);
     if (!result.found) {
       return {
@@ -1261,8 +1297,11 @@ const page_block_insert_after: BuiltinToolDef = {
       };
     }
     try {
-      const res = await saveDraft(ctx.ownerId, pageId, result.doc);
-      if (!res.ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+      const res = await saveDraft(ctx.ownerId, pageId, result.doc, { baseRev });
+      if (!res.ok) {
+        if ('conflict' in res) return draftConflict(pageId);
+        return { ok: false, error: `page ${pageId} not found (race?)` };
+      }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -1304,6 +1343,9 @@ const page_block_delete: BuiltinToolDef = {
     if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     const baseline = pickEditingBaseline(page);
+    // Rev of the draft we just read (0 when none) — threaded into saveDraft so a
+    // user autosave that lands between this read and our write is not clobbered.
+    const baseRev = page.draftRev ?? 0;
     const result = deleteBlock(baseline, blockId);
     if (!result.found) {
       return {
@@ -1315,8 +1357,11 @@ const page_block_delete: BuiltinToolDef = {
       return { ok: false, error: result.reason ?? 'delete refused' };
     }
     try {
-      const res = await saveDraft(ctx.ownerId, pageId, result.doc);
-      if (!res.ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+      const res = await saveDraft(ctx.ownerId, pageId, result.doc, { baseRev });
+      if (!res.ok) {
+        if ('conflict' in res) return draftConflict(pageId);
+        return { ok: false, error: `page ${pageId} not found (race?)` };
+      }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -1405,6 +1450,10 @@ const page_blocks_apply: BuiltinToolDef = {
     if (!page) return notFound('page', pageId, 'page_list / search_nodes');
 
     let doc = pickEditingBaseline(page);
+    // Rev of the draft this whole batch is computed against (0 when none) — the
+    // single conditional save at the end conflicts (rather than clobbers) if a
+    // user autosave lands while the batch is assembling.
+    const baseRev = page.draftRev ?? 0;
     const counts = { updated: 0, inserted: 0, deleted: 0 };
     // Chaining record: multi-batch jobs died on stale anchors in the wild (a
     // 2026-07-08 pilot-deployment turn burned 4 batches re-listing after its own
@@ -1509,8 +1558,11 @@ const page_blocks_apply: BuiltinToolDef = {
     }
 
     try {
-      const res = await saveDraft(ctx.ownerId, pageId, doc);
-      if (!res.ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+      const res = await saveDraft(ctx.ownerId, pageId, doc, { baseRev });
+      if (!res.ok) {
+        if ('conflict' in res) return draftConflict(pageId);
+        return { ok: false, error: `page ${pageId} not found (race?)` };
+      }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
