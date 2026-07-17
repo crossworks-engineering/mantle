@@ -41,6 +41,11 @@ Jason's design; the audit running log `de19ce14` is updated to match.
    - an agent with `memory_config.max_iterations` configured — **now enforced
      on Telegram for the first time**; agents with large configured values may
      run longer/cost more per turn than before;
+     - Same inheritance applies to **Team Chat**: `runTeamTurn` now spreads
+       `assembled.loopOverrides`, so a `team-responder` agent's
+       `memory_config.max_tool_calls` / `max_calls_per_tool` clamps are enforced
+       where they previously weren't. Safe direction (tighter caps), and inert
+       unless those keys are configured — no behavior change on stock brains.
    - the empty-reply fallback message where Telegram used to go silent;
    - /traces on a telegram turn (`load_context` → `build_messages` → loop →
      `send_telegram` → `persist_outbound`), thought trail + tool stats visible

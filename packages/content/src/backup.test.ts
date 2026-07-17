@@ -116,6 +116,20 @@ describe('isResolvedBackupDirPersistent', () => {
     expect(isResolvedBackupDirPersistent('/root/dumps', CONTAINER_MOUNTS, true)).toBe(false);
   });
 
+  it('tmpfs / ramfs mount winning → NOT persistent (RAM dies on recreate)', () => {
+    const mounts = [
+      'overlay / overlay rw 0 0',
+      'tmpfs /dev/shm tmpfs rw,nosuid,nodev 0 0',
+      'ramfs /run/keys ramfs rw 0 0',
+      '/dev/sda1 /data/backups ext4 rw,relatime 0 0',
+    ].join('\n');
+    // A backup dir on a RAM-backed mount is just as ephemeral as the overlay.
+    expect(isResolvedBackupDirPersistent('/dev/shm/mantle', mounts, true)).toBe(false);
+    expect(isResolvedBackupDirPersistent('/run/keys/dumps', mounts, true)).toBe(false);
+    // The ext4 bind mount alongside them is still persistent.
+    expect(isResolvedBackupDirPersistent('/data/backups', mounts, true)).toBe(true);
+  });
+
   it('dir under an ext4 bind-mounted path → persistent', () => {
     expect(isResolvedBackupDirPersistent('/data/backups', CONTAINER_MOUNTS, true)).toBe(true);
     expect(isResolvedBackupDirPersistent('/data/backups/nightly', CONTAINER_MOUNTS, true)).toBe(

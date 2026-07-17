@@ -29,7 +29,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { createWriteStream, existsSync, readFileSync } from 'node:fs';
+import { createWriteStream, existsSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdir, open, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -108,6 +108,12 @@ export function resolveBackupDir(cfg?: Pick<BackupConfig, 'location'> | null): s
 // Only enforced INSIDE a container — a dev/native-node box has no overlay root
 // and must be entirely unaffected (any local path is fine there).
 
+// Filesystem types a backup must NEVER land on: `overlay` is the container's
+// own writable layer; `tmpfs`/`ramfs` are RAM-backed (/dev/shm, /run). All
+// three are destroyed on container recreate, so a dump written there isn't a
+// backup at all.
+const EPHEMERAL_FSTYPES = new Set(['overlay', 'tmpfs', 'ramfs']);
+
 type MountEntry = { device: string; mountpoint: string; fstype: string };
 
 /** The kernel octal-escapes whitespace/backslash in /proc mount fields
@@ -151,9 +157,10 @@ function mountpointCovers(mountpoint: string, dir: string): boolean {
  *
  * Not in a container → always persistent (dev is never enforced). In a
  * container we find the LONGEST mountpoint that covers `dir` and treat the dir
- * as ephemeral only when that winning mount's fstype is `overlay` (the
- * container's own writable layer). Unreadable mounts inside a container →
- * fail OPEN (persistent) so an exotic runtime can never brick backups.
+ * as ephemeral when that winning mount's fstype is one of EPHEMERAL_FSTYPES
+ * (the container's own overlay layer, or RAM-backed tmpfs/ramfs). Unreadable
+ * mounts inside a container → fail OPEN (persistent) so an exotic runtime can
+ * never brick backups.
  */
 export function isResolvedBackupDirPersistent(
   dir: string,
@@ -176,12 +183,36 @@ export function isResolvedBackupDirPersistent(
     }
   }
   if (!winner) return true; // no covering mount (can't happen with '/') → fail open
-  return winner.fstype !== 'overlay';
+  return !EPHEMERAL_FSTYPES.has(winner.fstype);
+}
+
+/** Canonicalize `dir` by resolving symlinks on its NEAREST EXISTING ancestor
+ *  (the backup dir itself may not exist yet). Without this the persistence
+ *  check is purely lexical (path.resolve), so a symlink under a bind mount that
+ *  points back into the overlay would slip past it. Fails OPEN — returns the
+ *  lexical `dir` unchanged if realpath throws — so an exotic FS can never brick
+ *  backups. */
+function realpathNearestExisting(dir: string): string {
+  try {
+    let ancestor = dir;
+    while (!existsSync(ancestor)) {
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) return dir; // hit the root without an existing dir
+      ancestor = parent;
+    }
+    const realAncestor = realpathSync(ancestor);
+    const suffix = path.relative(ancestor, dir); // '' when ancestor === dir
+    return suffix ? path.join(realAncestor, suffix) : realAncestor;
+  } catch {
+    return dir; // fail open
+  }
 }
 
 /** Thin wrapper: reads the real /.dockerenv + /proc/self/mounts and decides
- *  whether `dir` lives on persistent storage. Exported for the settings route
- *  and the backup runner. Never throws. */
+ *  whether `dir` lives on persistent storage. Symlink-resolves the path first
+ *  (realpathNearestExisting) so the mount match sees the real target, not a
+ *  lexical alias. Exported for the settings route and the backup runner. Never
+ *  throws. */
 export function isBackupDirPersistent(dir: string): boolean {
   let dockerEnv = false;
   try {
@@ -195,7 +226,7 @@ export function isBackupDirPersistent(dir: string): boolean {
   } catch {
     mountsContent = null;
   }
-  return isResolvedBackupDirPersistent(dir, mountsContent, dockerEnv);
+  return isResolvedBackupDirPersistent(realpathNearestExisting(dir), mountsContent, dockerEnv);
 }
 
 /** Shared, plain-language error for an ephemeral backup location — used both at
@@ -203,9 +234,10 @@ export function isBackupDirPersistent(dir: string): boolean {
  *  operator sees the same explanation in both places. */
 export function ephemeralBackupDirMessage(dir: string): string {
   return (
-    `Backup location ${dir} is inside the container's ephemeral filesystem — dumps ` +
-    `written there are destroyed when the container is recreated. Use a path under a ` +
-    `mounted directory (e.g. /data/backups) or clear the custom location.`
+    `Backup location ${dir} is on the container's ephemeral filesystem (its overlay ` +
+    `layer or a RAM-backed tmpfs/ramfs) — dumps written there are destroyed when the ` +
+    `container is recreated. Use a path under a mounted directory (e.g. /data/backups) ` +
+    `or clear the custom location.`
   );
 }
 

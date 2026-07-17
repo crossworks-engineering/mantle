@@ -277,7 +277,11 @@ export async function runTeamTurn(
           prefs,
           logPrefix: '[team-turn]',
           // Fail closed: the team responder never delegates (assembly ran
-          // with allowDelegation:false / withThinking:false).
+          // with allowDelegation:false / withThinking:false). `assembled` also
+          // carries loopOverrides (spread by runResponderLoop): since the
+          // unification, the team-responder's memory_config max_tool_calls /
+          // max_calls_per_tool clamps are enforced here where they weren't
+          // before — safe (tighter caps), inert unless the agent configures them.
           assembled,
           // Retrieval ran before the trace; the member's REAL history came
           // from their own team thread, so the step's turnCount reflects

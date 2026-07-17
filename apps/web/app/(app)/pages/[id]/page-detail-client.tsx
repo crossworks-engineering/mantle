@@ -167,10 +167,19 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
   const metaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deletedRef = useRef(false);
   const committingRef = useRef(false);
+  // Set when an autosave/commit hits a 409: another writer advanced the draft.
+  // Autosaving PAUSES until the refetch remounts the editor on server truth
+  // (the draft watcher below clears it). Without this, the user typing before
+  // the remount re-fires autosave with the stale rev → repeat 409 → toast spam.
+  const conflictRef = useRef(false);
 
   // ── Autosave the draft body (no publish, no index). ─────────────────
   const saveDraft = useCallback(async () => {
     if (deletedRef.current) return;
+    // Paused after a 409 until the reload remounts the editor on server truth.
+    // Adopting the server rev and continuing would let the next save CLOBBER the
+    // other writer's edit — the exact thing this concurrency guard prevents.
+    if (conflictRef.current) return;
     // ONE snapshot for the whole save — the user can keep typing during the
     // network await; marking the LIVE doc saved would drop those edits.
     const snapshot = docRef.current;
@@ -188,10 +197,12 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
         if (e instanceof ApiError && e.status === 401) return;
         if (e instanceof ApiError && e.status === 409) {
           // Another writer (a second device, or the Pages agent) advanced the
-          // draft. Stop clobbering it: mark this snapshot "saved" so the loop
-          // doesn't re-fire, tell the user, and reload the latest draft — the
-          // query refetch remounts the editor on server truth (the draft
-          // watcher below resets docRef + refs). Mirrors the tables client.
+          // draft. PAUSE autosaving (conflictRef) so continued typing before the
+          // remount can't re-fire with the stale rev and spam 409s/toasts — the
+          // flag is cleared when the refetch remounts the editor on server truth
+          // (the draft watcher below resets docRef + refs). Toast once. Mark this
+          // snapshot "saved" too so a racing flush is a no-op. Mirrors tables.
+          conflictRef.current = true;
           draftSavedRef.current = s;
           toast.error('This page changed elsewhere — reloading the latest draft');
           void queryClient.invalidateQueries({ queryKey: ['pages', initial.id] });
@@ -623,6 +634,8 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       // Adopt the freshly-loaded etag — a reload after a 409 (or an agent run)
       // resyncs the base so the next autosave/commit isn't a guaranteed conflict.
       draftRevRef.current = initial.draftRev ?? 0;
+      // Editor is reseeding on server truth — lift the post-409 autosave pause.
+      conflictRef.current = false;
       setDocDirty(nextStr !== committedRef.current);
       setEditorKey((k) => k + 1);
     }

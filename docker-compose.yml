@@ -627,7 +627,7 @@ services:
     container_name: mantle_worker_email
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 512m
+    mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
     # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
@@ -648,7 +648,7 @@ services:
     container_name: mantle_worker_telegram
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 512m
+    mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
     # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
@@ -670,7 +670,7 @@ services:
     container_name: mantle_worker_microsoft
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 512m
+    mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
     # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
@@ -693,7 +693,7 @@ services:
     container_name: mantle_worker_files
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 512m
+    mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
     # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
@@ -721,7 +721,7 @@ services:
     container_name: mantle_worker_docs
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 512m
+    mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
     # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
@@ -742,7 +742,7 @@ services:
     container_name: mantle_worker_events
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 512m
+    mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
     # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
@@ -773,7 +773,7 @@ services:
     container_name: mantle_worker_calendar
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 512m
+    mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
     # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
@@ -795,7 +795,7 @@ services:
     container_name: mantle_worker_push
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 512m
+    mem_limit: 1g
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
     # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
