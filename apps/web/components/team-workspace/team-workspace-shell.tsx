@@ -27,6 +27,7 @@ import {
   CheckSquare,
   FileText,
   Folder,
+  FolderTree,
   Menu,
   MessageCircle,
   Table2,
@@ -61,6 +62,9 @@ export const WORKSPACE_NAV: Array<{
   { type: 'app', label: 'Apps', href: '/team/apps', icon: AppWindow },
   { type: 'task', label: 'Tasks', href: '/team/tasks', icon: CheckSquare },
   { type: 'event', label: 'Events', href: '/team/events', icon: CalendarDays },
+  // Shared folders — the same section the footer's folder chips deep-link into
+  // (count = shared folders, not files; every file under one is downloadable).
+  { type: 'branch', label: 'Files', href: '/team/files', icon: FolderTree },
 ];
 
 const WorkspaceContext = createContext<WorkspaceData | null>(null);
@@ -153,9 +157,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
       ? null
       : pathname.startsWith('/team/assistant')
         ? 'Assistant'
-        : pathname.startsWith('/team/files')
-          ? 'Folders'
-          : (WORKSPACE_NAV.find((i) => pathname.startsWith(i.href))?.label ?? null);
+        : (WORKSPACE_NAV.find((i) => pathname.startsWith(i.href))?.label ?? null);
 
   return (
     <WorkspaceContext.Provider value={data}>
