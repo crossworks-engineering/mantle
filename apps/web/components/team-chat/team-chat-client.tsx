@@ -556,7 +556,9 @@ export function TeamChatClient() {
         )}
       </div>
 
-      <div className="border-t border-border/60 bg-background px-6 py-3">
+      {/* Composer band: a brand-tinted gradient rising from the edge makes the
+          input read as the surface's anchor (tokens only — recolors per theme). */}
+      <div className="border-t border-border/60 bg-gradient-to-t from-primary/15 via-primary/5 to-background px-6 py-4">
         <div className="mx-auto w-full max-w-5xl">
           {sendError ? <p className="mb-2 text-sm text-destructive">{sendError}</p> : null}
           {file ? (
@@ -576,7 +578,9 @@ export function TeamChatClient() {
           {/* No Stop button (the assistant chat has one): there is no abort
               route for team turns — the runner always completes and the reply
               is durable. Deliberate omission, not an oversight. */}
-          <div className="flex items-end gap-2">
+          {/* items-stretch: both buttons track the textarea's height, so the
+              composer reads as one block however tall the draft grows. */}
+          <div className="flex items-stretch gap-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -586,6 +590,7 @@ export function TeamChatClient() {
             <Button
               variant="ghost"
               size="sm"
+              className="h-auto"
               onClick={() => fileInputRef.current?.click()}
               disabled={sending}
               aria-label="Attach a file"
@@ -603,10 +608,11 @@ export function TeamChatClient() {
               }}
               placeholder="Ask the brain… (Enter to send, Shift+Enter for a new line)"
               rows={2}
-              className="min-h-0 flex-1 resize-none"
+              className="min-h-24 flex-1 resize-none border-[3px] bg-background"
               disabled={sending}
             />
             <Button
+              className="h-auto"
               onClick={() => void send()}
               disabled={sending || (!draft.trim() && !file)}
               aria-label="Send"
