@@ -10,6 +10,7 @@ export * from './team-read-cursors';
 export * from './forum-topics';
 export * from './forum-posts';
 export * from './forum-read-cursors';
+export * from './forum-uploads';
 export * from './oauth';
 export * from './assistant-read-cursors';
 export * from './push';

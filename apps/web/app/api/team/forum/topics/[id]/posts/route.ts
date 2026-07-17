@@ -12,6 +12,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
 import { enqueueForumTurn } from '@/lib/forum-turn-enqueue';
 import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';
+import { resolveStagedAttachments } from '@/lib/forum-attachments';
 import { appendForumPost, getForumTopic, recordTeamAccess } from '@mantle/content';
 
 export const runtime = 'nodejs';
@@ -22,6 +23,9 @@ const Body = z.object({
   text: z.string().min(1).max(20_000),
   /** Wave the agent off (member-to-member discussion). */
   noReply: z.boolean().optional(),
+  /** Staged forum-upload blob ids (POST /api/team/forum/uploads) to attach.
+   *  Metadata is derived server-side from the blob rows. */
+  attachmentIds: z.array(z.string().uuid()).max(5).optional(),
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -76,6 +80,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const wantsReply = !(parsed.data.noReply ?? topic.kind === 'discussion');
 
+  const resolved = await resolveStagedAttachments(
+    ownerId,
+    contactId,
+    parsed.data.attachmentIds ?? [],
+  );
+  if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: 400 });
+
   try {
     const post = await appendForumPost({
       ownerId,
@@ -83,6 +94,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       author: { kind: 'member', contactId },
       body: parsed.data.text,
       channel,
+      attachments: resolved.attachments,
+      bindUploadIds: resolved.bindIds,
     });
 
     recordTeamAccess({

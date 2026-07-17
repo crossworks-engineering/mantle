@@ -12,6 +12,14 @@ export const FORUM_DAILY_CAP = (() => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 100;
 })();
 
+/** Per-member daily upload budget in bytes (forum attachments). Separate from
+ *  the turn cap — bytes and turns exhaust different resources (disk vs
+ *  wallet). Env TEAM_UPLOAD_DAILY_BYTES, default 100 MB. */
+export const UPLOAD_DAILY_BYTES = (() => {
+  const n = Number(process.env.TEAM_UPLOAD_DAILY_BYTES);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 100 * 1024 * 1024;
+})();
+
 function startOfTodayUtc(): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));

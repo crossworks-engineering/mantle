@@ -34,6 +34,7 @@ import {
   type ForumViewer,
 } from './forum-visibility';
 import { matchSnippet } from './forum-search';
+import { bindForumUploadsTx } from './forum-uploads';
 
 // Re-exported so existing importers (index.ts, callers) keep resolving these
 // from '@mantle/content'; the definitions live in forum-visibility.ts, next to
@@ -95,6 +96,10 @@ export type CreateForumTopicInput = {
   author: Exclude<ForumAuthor, { kind: 'agent' }>;
   channel?: TeamChannel;
   attachments?: ConversationAttachment[];
+  /** Staged forum_uploads ids the attachments reference (attachment.fileId).
+   *  Bound to the opening post INSIDE the create transaction — a failed bind
+   *  rolls the topic back. Member authors only. */
+  bindUploadIds?: string[];
 };
 
 /** Create a topic together with its opening post (one transaction — a topic
@@ -112,6 +117,9 @@ export async function createForumTopic(
       ? await memberName(input.ownerId, input.author.contactId)
       : input.author.name;
   const contactId = input.author.kind === 'member' ? input.author.contactId : null;
+  if (input.bindUploadIds?.length && !contactId) {
+    throw new Error('forum: only member posts carry uploads');
+  }
 
   return db.transaction(async (tx) => {
     const [topic] = await tx
@@ -141,6 +149,15 @@ export async function createForumTopic(
       })
       .returning();
     if (!post) throw new Error('forum: post insert returned no row');
+    if (input.bindUploadIds?.length && contactId) {
+      await bindForumUploadsTx(tx, {
+        ownerId: input.ownerId,
+        contactId,
+        topicId: topic.id,
+        postId: post.id,
+        ids: input.bindUploadIds,
+      });
+    }
     return { topic, post };
   });
 }
@@ -152,6 +169,9 @@ export type AppendForumPostInput = {
   body: string;
   channel?: TeamChannel;
   attachments?: ConversationAttachment[];
+  /** Staged forum_uploads ids the attachments reference — bound to this post
+   *  inside its transaction (see CreateForumTopicInput). Member authors only. */
+  bindUploadIds?: string[];
   /** Set when this post files a review/feature/bug request (Phase 2). */
   requestKind?: ForumPostRequestKind;
   /** Set on owner posts delivered from the review queue (Phase 2). */
@@ -192,6 +212,10 @@ export async function appendForumPost(input: AppendForumPostInput): Promise<Foru
     input.author.kind === 'member'
       ? await memberName(input.ownerId, input.author.contactId)
       : input.author.name;
+  const uploadContactId = input.author.kind === 'member' ? input.author.contactId : null;
+  if (input.bindUploadIds?.length && !uploadContactId) {
+    throw new Error('forum: only member posts carry uploads');
+  }
 
   return db.transaction(async (tx) => {
     const [post] = await tx
@@ -215,6 +239,15 @@ export async function appendForumPost(input: AppendForumPostInput): Promise<Foru
       })
       .returning();
     if (!post) throw new Error('forum: post insert returned no row');
+    if (input.bindUploadIds?.length && uploadContactId) {
+      await bindForumUploadsTx(tx, {
+        ownerId: input.ownerId,
+        contactId: uploadContactId,
+        topicId: input.topicId,
+        postId: post.id,
+        ids: input.bindUploadIds,
+      });
+    }
     const now = new Date();
     await tx
       .update(forumTopics)

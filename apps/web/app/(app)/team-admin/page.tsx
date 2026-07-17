@@ -15,9 +15,13 @@ import {
   countForumTopics,
   listForumPosts,
   markForumTopicRead,
+  listPendingForumUploads,
+  countPendingForumUploads,
+  formatAttachmentSize,
   type TeamMemberActivity,
   type TeamRequest,
   type ForumTopicListItem,
+  type PendingForumUpload,
 } from '@mantle/content';
 import { SharedLinksPanel } from '@/components/share/shared-links-panel';
 import { HubAppPicker } from '@/components/team-chat/hub-app-picker';
@@ -30,8 +34,16 @@ import {
   TopicPinToggle,
   TopicReplyForm,
 } from '@/components/team-forum/admin-topic-controls';
+import { UploadReviewActions } from '@/components/team-forum/admin-upload-controls';
 import { KindBadge, TopicFlags } from '@/components/team-forum/forum-meta';
-import { MessageSquare, MessagesSquare, ExternalLink, Inbox, CheckCircle2 } from 'lucide-react';
+import {
+  MessageSquare,
+  MessagesSquare,
+  ExternalLink,
+  Inbox,
+  CheckCircle2,
+  Paperclip,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -146,14 +158,89 @@ function TeamTabs({
   );
 }
 
-function RequestsPanel({ requests }: { requests: TeamRequest[] }) {
-  if (requests.length === 0) {
+/** Pending forum uploads grouped by topic — the review queue's file half.
+ *  Approving ("Move to files") is the ONLY path from quarantine into the
+ *  brain; a topic title links to its thread for context. */
+function UploadsSection({ uploads }: { uploads: PendingForumUpload[] }) {
+  if (uploads.length === 0) return null;
+  const groups = new Map<string, PendingForumUpload[]>();
+  for (const u of uploads) {
+    const key = u.topicId ?? 'unbound';
+    const list = groups.get(key);
+    if (list) list.push(u);
+    else groups.set(key, [u]);
+  }
+  return (
+    <section className="space-y-3">
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+        <Paperclip className="size-4" aria-hidden />
+        Uploads awaiting review
+        <span className="text-xs font-normal text-muted-foreground">
+          — files stay out of the brain until you move them to files/review
+        </span>
+      </h2>
+      {[...groups.entries()].map(([topicId, blobs]) => (
+        <div key={topicId} className="rounded-lg border border-border bg-card text-card-foreground">
+          <div className="border-b border-border/60 px-4 py-2">
+            {topicId !== 'unbound' ? (
+              <Link
+                href={`/team-admin?view=topics&topic=${topicId}`}
+                className="text-sm font-medium underline-offset-2 hover:underline"
+              >
+                {blobs[0]?.topicTitle ?? 'Untitled topic'} →
+              </Link>
+            ) : (
+              <span className="text-sm font-medium text-muted-foreground">No topic (staged)</span>
+            )}
+          </div>
+          <ul className="divide-y divide-border/60">
+            {blobs.map((u) => (
+              <li
+                key={u.id}
+                className="flex flex-wrap items-center justify-between gap-2 px-4 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm">
+                    {u.filename}
+                    <span className="text-muted-foreground">
+                      {' '}
+                      ({formatAttachmentSize(u.sizeBytes)})
+                    </span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    from {u.contactName ?? 'a team member'} ·{' '}
+                    {new Date(u.createdAt).toLocaleString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                </div>
+                <UploadReviewActions uploadId={u.id} filename={u.filename} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function RequestsPanel({
+  requests,
+  uploads,
+}: {
+  requests: TeamRequest[];
+  uploads: PendingForumUpload[];
+}) {
+  if (requests.length === 0 && uploads.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="text-center text-sm text-muted-foreground">
           <Inbox className="mx-auto mb-2 size-6" />
-          <p>No change requests yet. When a team member asks for content to be updated,</p>
-          <p>it lands here for a specialist to review and apply.</p>
+          <p>No change requests or uploads yet. When a team member asks for content to be</p>
+          <p>updated or attaches a file, it lands here for a specialist to review.</p>
         </div>
       </div>
     );
@@ -161,6 +248,7 @@ function RequestsPanel({ requests }: { requests: TeamRequest[] }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
       <div className="mx-auto w-full max-w-3xl space-y-4 p-4">
+        <UploadsSection uploads={uploads} />
         {requests.map((r) => (
           <div
             key={r.taskId}
@@ -298,12 +386,16 @@ export default async function TeamAdminPage({
   const { contact, view, topic: topicParam, q, page } = await searchParams;
   const showRequests = view === 'requests';
 
-  const [members, prefs, openRequestCount, apps] = await Promise.all([
+  const [members, prefs, openRequests, apps, pendingUploadCount] = await Promise.all([
     listTeamMemberActivity(user.id),
     loadProfilePreferences(user.id),
     listTeamRequests(user.id, { status: 'open' }).then((r) => r.length),
     listApps(user.id, { limit: 200 }),
+    countPendingForumUploads(user.id),
   ]);
+  // The Requests badge counts everything awaiting the specialist: open change
+  // requests + forum uploads pending review.
+  const openRequestCount = openRequests + pendingUploadCount;
   const privateReads = isTeamPrivateReadsEnabled(prefs);
   // Designation candidates: published apps only (the API enforces it too).
   // Include the current designee even if its build went red, LABELLED — the
@@ -348,11 +440,15 @@ export default async function TeamAdminPage({
     const query = q?.trim() || undefined;
     const pageNum = Math.max(1, Number.parseInt(page ?? '1', 10) || 1);
     const [topics, topicTotal] = await Promise.all([
-      listForumTopics(user.id, { kind: 'owner' }, {
-        query,
-        limit: TOPICS_PAGE_SIZE,
-        offset: (pageNum - 1) * TOPICS_PAGE_SIZE,
-      }),
+      listForumTopics(
+        user.id,
+        { kind: 'owner' },
+        {
+          query,
+          limit: TOPICS_PAGE_SIZE,
+          offset: (pageNum - 1) * TOPICS_PAGE_SIZE,
+        },
+      ),
       countForumTopics(user.id, { kind: 'owner' }, { query }),
     ]);
     const selectedTopicId =
@@ -448,6 +544,24 @@ export default async function TeamAdminPage({
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>{p.body}</ReactMarkdown>
                           </div>
                         )}
+                        {p.attachments.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {p.attachments.map((a) =>
+                              a.fileId ? (
+                                <a
+                                  key={a.fileId}
+                                  href={`/api/team-admin/forum/uploads/${a.fileId}/download`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                                >
+                                  <Paperclip className="size-3" aria-hidden />
+                                  {a.caption ?? 'attachment'}
+                                </a>
+                              ) : null,
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -473,12 +587,15 @@ export default async function TeamAdminPage({
   }
 
   if (showRequests) {
-    const requests = await listTeamRequests(user.id, { status: 'all', limit: 200 });
+    const [requests, uploads] = await Promise.all([
+      listTeamRequests(user.id, { status: 'all', limit: 200 }),
+      listPendingForumUploads(user.id),
+    ]);
     return (
       <div className="flex h-full flex-col">
         <SetPageTitle title="Team" />
         <TeamTabs active="requests" openRequestCount={openRequestCount} />
-        <RequestsPanel requests={requests} />
+        <RequestsPanel requests={requests} uploads={uploads} />
       </div>
     );
   }

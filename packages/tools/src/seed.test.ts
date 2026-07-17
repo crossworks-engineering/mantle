@@ -9,8 +9,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
 // seed.ts imports @mantle/db at module scope; the pure function under test
-// never touches it.
-vi.mock('@mantle/db', () => ({ db: {}, tools: {} }));
+// never touches it. Spread the REAL module (its `db` export is a lazy proxy —
+// importing it opens no connection) so transitive schema imports keep
+// resolving as tables are added; only `db` and `tools` stay stubbed.
+vi.mock('@mantle/db', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  db: {},
+  tools: {},
+}));
 
 import { closeToolInputSchema } from './seed';
 
