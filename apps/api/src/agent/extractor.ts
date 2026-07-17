@@ -1855,12 +1855,15 @@ async function supersedeFileVersions(
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       const [newest, ...older] = family;
       // Manual marks outrank this heuristic: a sibling explicitly superseded
-      // ('corrected') or replaced by a page ('migrated') keeps that edge — the
-      // step manages only its own 'version' marks and unmarked rows.
+      // ('corrected') or replaced by a page ('migrated') keeps that mark — the
+      // step manages only its own 'version' marks and pristine rows. Ownership
+      // keys on the REASON, not the edge: a bare manual mark ("this is
+      // outdated", no successor pointer) has superseded_by null but must not
+      // be touched either.
       const heuristicOwned = (s: (typeof family)[number]) =>
-        s.supersededBy === null || s.supersededReason === 'version';
+        s.supersededReason === null || s.supersededReason === 'version';
       // If the newest sibling was itself MANUALLY superseded (e.g. marked
-      // 'corrected' pointing at an older sibling because the new export was
+      // 'corrected' — with or without a pointer — because the new export was
       // garbage), the heuristic stands down entirely — appointing it family
       // head would write edges INTO a retired node and could close a cycle.
       const headId = newest && heuristicOwned(newest) ? newest.id : null;
@@ -1886,7 +1889,12 @@ async function supersedeFileVersions(
             ),
           );
       }
-      if (headId && newest && newest.salience < 1) {
+      // Restore the head whenever a prior pass (or stale family membership —
+      // e.g. a rename moved a version-marked node into this family as newest)
+      // left a heuristic-owned demotion or edge on it. Clearing the head's own
+      // outgoing edge in the same pass keeps the family acyclic: siblings now
+      // point at it, so it must not point back into the chain.
+      if (headId && newest && (newest.salience < 1 || newest.supersededBy !== null)) {
         await db
           .update(nodes)
           .set({ salience: 1, supersededBy: null, supersededReason: null })

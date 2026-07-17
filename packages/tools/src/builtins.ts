@@ -750,6 +750,7 @@ const node_read: BuiltinToolDef = {
         tags: nodes.tags,
         data: nodes.data,
         supersededBy: nodes.supersededBy,
+        supersededReason: nodes.supersededReason,
         createdAt: nodes.createdAt,
         updatedAt: nodes.updatedAt,
       })
@@ -790,6 +791,16 @@ const node_read: BuiltinToolDef = {
               },
             }
           : {}),
+        // A bare mark (or a dangling successor) has no pointer to offer but
+        // must still read as outdated.
+        ...(row.supersededReason && !succ
+          ? {
+              superseded: {
+                reason: row.supersededReason,
+                note: 'MARKED OUTDATED — no living successor recorded; treat the content with caution.',
+              },
+            }
+          : {}),
       },
     };
   },
@@ -799,7 +810,7 @@ const content_supersede: BuiltinToolDef = {
   slug: 'content_supersede',
   name: 'Mark content superseded',
   description:
-    'Mark a node OUTDATED, optionally naming its replacement — the old copy is down-weighted in retrieval and every future hit on it carries a "superseded by" pointer to the successor. Returns the updated mark. ' +
+    'Mark a node OUTDATED, optionally naming its replacement — the old copy is down-weighted in retrieval, and when a replacement is named every future hit on it carries a "superseded by" pointer to the successor (a bare mark down-weights only). Returns the updated mark. ' +
     'Use when the user says content is stale, wrong, or replaced ("this file is outdated — the page is the current version"). For deleting content outright use the type\'s delete tool instead; this is the reversible, history-preserving move. ' +
     'Pass `clear: true` to un-mark (restores full weight); omit `superseded_by` for a bare outdated mark. ' +
     '`page_from_file` / `page_from_note` stamp this automatically; use this for corrections and lineage the system could not see.',
@@ -810,7 +821,8 @@ const content_supersede: BuiltinToolDef = {
       node_id: {
         type: 'string',
         format: 'uuid',
-        description: 'the outdated node (any type — file, page, note, …)',
+        description:
+          'the outdated node (file, page, note, … — not emails or folders; those are refused)',
       },
       superseded_by: {
         type: 'string',

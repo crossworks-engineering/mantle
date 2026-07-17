@@ -41,11 +41,11 @@ describe('wouldCreateSupersedeCycle', () => {
     ).toBe(true);
   });
 
-  it('caps the walk — a loop beyond the cap cannot sneak through as "no cycle" for in-cap targets', () => {
-    // Chain b→c→d→e→f→g→a with cap 5: the walk stops before reaching 'a', so
-    // the check returns false — but such a chain can only exist if earlier
-    // writes each passed the guard, and each of THOSE walks was over a shorter
-    // chain. Assert the documented cap behaviour explicitly.
+  it('an under-sized cap ACCEPTS a deep cycle — which is why supersedeNode passes an exact one', () => {
+    // Chain b→c→d→e→f→g→a: with cap 5 the walk stops before reaching 'a' and
+    // the closing mark a→b reads as safe (returns false) — the unsafe
+    // direction. supersedeNode therefore preloads the FULL chain and passes
+    // cap = chain.size + 1, which catches the cycle exactly.
     const long = edges([
       ['b', 'c'],
       ['c', 'd'],
@@ -55,6 +55,7 @@ describe('wouldCreateSupersedeCycle', () => {
       ['g', 'a'],
     ]);
     expect(wouldCreateSupersedeCycle(long, 'a', 'b', 5)).toBe(false);
+    expect(wouldCreateSupersedeCycle(long, 'a', 'b', long.size + 1)).toBe(true);
     expect(wouldCreateSupersedeCycle(long, 'a', 'b', 10)).toBe(true);
   });
 });
