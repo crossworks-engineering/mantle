@@ -6,7 +6,10 @@
  * catch is a WEDGED process: still running, event loop stalled, doing nothing.
  * A container-level healthcheck needs a signal it can read from outside the
  * process — so each service periodically touches a heartbeat file, and the
- * compose healthcheck asserts that file's mtime is fresh.
+ * compose healthcheck asserts that file's mtime is fresh. When it goes stale the
+ * container is flagged `unhealthy`; the `autoheal` sidecar (docker-compose.yml)
+ * watches for that flag and docker-restarts the container — plain compose only
+ * acts on process EXIT, so the sidecar is what turns "unhealthy" into a restart.
  *
  * Design point that matters: the interval measures EVENT-LOOP liveness, not
  * business progress. It just rewrites the file on a timer. A wedged DB
@@ -14,8 +17,8 @@
  * probe stays green — exactly right. Only a stalled/blocked event loop lets the
  * mtime go stale and trips the probe. The timer is `unref()`'d so it can never
  * keep an otherwise-dead process alive: if everything else stops, Node exits,
- * the heartbeat stops with it, the mtime goes stale, and Docker restarts the
- * container — same outcome as a hard crash, which is what we want.
+ * the heartbeat stops with it, the mtime goes stale, and the autoheal sidecar
+ * restarts the container — same outcome as a hard crash, which is what we want.
  */
 
 import { writeFile } from 'node:fs/promises';

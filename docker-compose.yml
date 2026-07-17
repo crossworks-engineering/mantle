@@ -28,6 +28,9 @@ name: mantle
 #                            stable tags at time of writing; pinned (like
 #                            tailscale) so the in-app update path can't pull a
 #                            breaking upstream `:latest` mid-update.)
+#   AUTOHEAL_IMAGE_TAG      (optional — pin the willfarrell/autoheal sidecar that
+#                            docker-restarts a worker once its heartbeat probe
+#                            flips it unhealthy. Same pin-not-`:latest` rationale.)
 #
 # Persistent data — bind-mounted on the host so you can see/back up/move it:
 #   MANTLE_DATA_DIR         (default: ./data) — EVERYTHING lives under here:
@@ -87,7 +90,11 @@ x-logging: &default-logging
 # — what that misses is a WEDGED process: alive, event loop stalled, doing
 # nothing. Each one touches a heartbeat file every 30s (see
 # packages/content/src/process-heartbeat.ts); this probe fails when that file's
-# mtime goes stale (>90s = 3 missed ticks), so Docker restarts a hung container.
+# mtime goes stale (>90s = 3 missed ticks). A probe alone only FLAGS the
+# container `unhealthy` — plain compose acts on process EXIT, not on health — so
+# the `autoheal` sidecar (below) watches for that flag and docker-restarts the
+# hung container. Every service under this anchor also carries
+# `labels: [autoheal=true]` so autoheal picks it up.
 # node, not curl (curl is purged from the final image). The test line is
 # identical for every service, so it's a shared anchor. The heartbeat lives in
 # /tmp — per-container, never a shared mount, so two containers can't collide.
@@ -545,6 +552,39 @@ services:
       - .:${MANTLE_STACK_DIR:-/opt/mantle-stack}
       - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal
 
+  # ── Autoheal sidecar — the actuator for the worker liveness probes ─────────
+  # Plain `docker compose` treats `unhealthy` as a FLAG ONLY: `restart:
+  # unless-stopped` fires on process EXIT, and nothing here depends_on the
+  # port-less long-runners — so a WEDGED worker that trips its heartbeat probe
+  # (x-worker-healthcheck) would sit `unhealthy` forever, doing nothing, and
+  # never be restarted. This is the missing actuator: willfarrell/autoheal
+  # watches for containers that flip `unhealthy` and `docker restart`s them,
+  # turning the probe into an actual self-heal. Scope is deliberately narrow —
+  # AUTOHEAL_CONTAINER_LABEL=autoheal means it ONLY touches services that opt in
+  # with `labels: [autoheal=true]` (the api + the 8 heartbeat workers), never
+  # postgres/minio/caddy/web (whose healthchecks predate this and must NOT bounce
+  # on a blip — restarting postgres on a transient probe miss is worse than the
+  # blip).
+  #
+  # Security: like `updater` above, this holds the Docker socket
+  # (root-equivalent on the host). Mitigations mirror it — no ports, a single
+  # hardcoded behavior (restart-on-unhealthy for labeled containers only, baked
+  # into the image; no command/trigger surface an attacker could redirect), and
+  # a pinned image (override via AUTOHEAL_IMAGE_TAG, never `:latest`). The socket
+  # is used only to read container health and issue `restart` — nothing an
+  # operator couldn't already do with `docker restart`.
+  autoheal:
+    image: willfarrell/autoheal:${AUTOHEAL_IMAGE_TAG:-1.2.0}
+    container_name: mantle_autoheal
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 64m
+    environment:
+      # Only act on containers that opt in with `labels: [autoheal=true]`.
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
   # Dedicated durable-runner service: executes assistant/agent LLM work as DBOS
   # workflows (journaled to the mantle_dbos_sys system DB, provisioned in the
   # migrate gate) so a turn survives navigation + a web restart. It ALSO hosts
@@ -560,6 +600,11 @@ services:
     mem_limit: 1.5g
     # Heartbeat-based liveness (no HTTP port; DBOS admin server off by default).
     healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -584,6 +629,11 @@ services:
     logging: *default-logging
     mem_limit: 512m
     healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -600,6 +650,11 @@ services:
     logging: *default-logging
     mem_limit: 512m
     healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -617,6 +672,11 @@ services:
     logging: *default-logging
     mem_limit: 512m
     healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -635,6 +695,11 @@ services:
     logging: *default-logging
     mem_limit: 512m
     healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -658,6 +723,11 @@ services:
     logging: *default-logging
     mem_limit: 512m
     healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -674,6 +744,11 @@ services:
     logging: *default-logging
     mem_limit: 512m
     healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -700,6 +775,11 @@ services:
     logging: *default-logging
     mem_limit: 512m
     healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -717,6 +797,11 @@ services:
     logging: *default-logging
     mem_limit: 512m
     healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
