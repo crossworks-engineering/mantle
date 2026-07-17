@@ -9,12 +9,23 @@ import { randomBytes } from 'node:crypto';
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db, nodes, shares, type Share } from '@mantle/db';
 
-/** Node types that may be shared publicly. Sensitive types are excluded. */
-export const SHAREABLE_TYPES = ['page', 'note', 'task', 'event', 'file', 'app'] as const;
+/** Node types that may be shared publicly. Sensitive types are excluded.
+ *  `branch` = a FILES FOLDER only — sharing one shares every file under it,
+ *  subfolders included, evaluated per request (see {@link isShareableFolderPath}
+ *  and docs/sharing.md §folders). Branches outside the files tree (and the
+ *  files root itself) are rejected at {@link createShare}. */
+export const SHAREABLE_TYPES = ['page', 'note', 'task', 'event', 'file', 'app', 'table', 'branch'] as const;
 export type ShareableType = (typeof SHAREABLE_TYPES)[number];
 
 export function isShareable(type: string): type is ShareableType {
   return (SHAREABLE_TYPES as readonly string[]).includes(type);
+}
+
+/** A `branch` node is shareable only when it's a folder strictly under the
+ *  `files` root. The root itself is deliberately not shareable — "share my
+ *  entire filesystem" should never be one accidental toggle. */
+export function isShareableFolderPath(path: string | null | undefined): boolean {
+  return typeof path === 'string' && path.startsWith('files.');
 }
 
 /**
@@ -141,12 +152,15 @@ export async function getActiveShareForNode(
  */
 export async function createShare(ownerId: string, nodeId: string): Promise<ShareSummary> {
   const [node] = await db
-    .select({ id: nodes.id, type: nodes.type })
+    .select({ id: nodes.id, type: nodes.type, path: nodes.path })
     .from(nodes)
     .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
     .limit(1);
   if (!node) throw new Error('node not found');
   if (!isShareable(node.type)) throw new Error(`type '${node.type}' is not shareable`);
+  if (node.type === 'branch' && !isShareableFolderPath(node.path)) {
+    throw new Error('only folders under files can be shared');
+  }
 
   const existing = await getActiveShareForNode(ownerId, nodeId);
   if (existing) return existing;
@@ -187,6 +201,37 @@ export async function recordShareView(shareId: string): Promise<void> {
     .update(shares)
     .set({ viewCount: sql`${shares.viewCount} + 1`, lastViewedAt: new Date() })
     .where(eq(shares.id, shareId));
+}
+
+export type ActiveShareListing = ShareSummary & {
+  /** Display fields joined off the shared node. */
+  title: string;
+  nodeIcon: string | null;
+  nodePath: string | null;
+  lastViewedAt: string | null;
+};
+
+/** Every ACTIVE share the owner has, newest first — the "what is exposed right
+ *  now" registry behind the owner's shared-links overview. One query. Inner
+ *  join: shares.node_id is ON DELETE CASCADE, so a share never outlives its
+ *  node. */
+export async function listActiveShares(ownerId: string): Promise<ActiveShareListing[]> {
+  const rows = await db
+    .select({ share: shares, title: nodes.title, data: nodes.data, path: nodes.path })
+    .from(shares)
+    .innerJoin(nodes, eq(nodes.id, shares.nodeId))
+    .where(and(eq(shares.ownerId, ownerId), activePredicate()))
+    .orderBy(sql`${shares.createdAt} DESC`);
+  return rows.map((r) => {
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    return {
+      ...toSummary(r.share),
+      title: r.title,
+      nodeIcon: typeof d.icon === 'string' ? d.icon : null,
+      nodePath: r.path ?? null,
+      lastViewedAt: r.share.lastViewedAt ? r.share.lastViewedAt.toISOString() : null,
+    };
+  });
 }
 
 // ─── Subtree ("Share children") ──────────────────────────────────────────────

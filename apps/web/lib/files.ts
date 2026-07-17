@@ -22,6 +22,7 @@ export {
   bulkDeleteFiles,
   listFiles,
   fileById,
+  ltreeToDash,
   type FolderRow,
   type FileRow,
 } from '@mantle/files';

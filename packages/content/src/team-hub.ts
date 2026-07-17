@@ -218,3 +218,104 @@ export async function teamHubContentCounts(
   }
   return counts;
 }
+
+// ─── Team workspace (the /team read-only workspace surface) ─────────────────
+
+/** Node types the member workspace lists as sections. `branch` = shared files
+ *  folders (the footer's folder chips + the Files section). A whitelist so a
+ *  new node type never leaks into the member surface by default. */
+export const TEAM_WORKSPACE_TYPES = [
+  'note',
+  'page',
+  'table',
+  'app',
+  'task',
+  'event',
+  'branch',
+] as const;
+export type TeamWorkspaceType = (typeof TEAM_WORKSPACE_TYPES)[number];
+
+export type TeamVisibleShare = {
+  /** Share token — the workspace opens /s/<token>. */
+  token: string;
+  nodeId: string;
+  title: string;
+  icon: string | null;
+  summary: string | null;
+  updatedAt: string;
+  /** 'team' or 'public' — a member may open both, the badge tells them apart. */
+  mode: 'team' | 'public';
+};
+
+/**
+ * Every share of one type a TEAM MEMBER may open: ALL active shares — team
+ * mode (members are exactly who it admits) and public mode (anyone with the
+ * link, so a member too). Newest first. This is the section list behind the
+ * /team workspace; the share stays the single source of truth for what the
+ * team may read (same principle as {@link listTeamHubSections}).
+ *
+ * Note: for `app` shares the listing does not re-check the published build —
+ * a broken-build app 404s at its /s reader instead (loadShareView guards it).
+ */
+export async function listTeamVisibleShares(
+  ownerId: string,
+  nodeType: TeamWorkspaceType,
+): Promise<TeamVisibleShare[]> {
+  const rows = await db
+    .select({
+      token: shares.token,
+      nodeId: nodes.id,
+      title: nodes.title,
+      data: nodes.data,
+      updatedAt: nodes.updatedAt,
+      settings: shares.settings,
+    })
+    .from(shares)
+    .innerJoin(nodes, eq(shares.nodeId, nodes.id))
+    .where(
+      and(
+        eq(shares.ownerId, ownerId),
+        eq(shares.nodeType, nodeType),
+        isNull(shares.revokedAt),
+        or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
+      ),
+    )
+    .orderBy(sql`${shares.createdAt} DESC`);
+  return rows.map((r) => ({
+    token: r.token,
+    nodeId: r.nodeId,
+    title: r.title,
+    icon: typeof r.data?.icon === 'string' ? (r.data.icon as string) : null,
+    summary: typeof r.data?.summary === 'string' ? (r.data.summary as string) : null,
+    updatedAt: r.updatedAt.toISOString(),
+    mode: (r.settings as Record<string, unknown>)?.mode === 'team' ? 'team' : 'public',
+  }));
+}
+
+/** Per-type counts of team-visible (active) shares — the workspace nav badges
+ *  and overview tiles. Same predicate as {@link listTeamVisibleShares}. */
+export async function countTeamVisibleShares(
+  ownerId: string,
+): Promise<Record<TeamWorkspaceType, number>> {
+  const rows = await db
+    .select({ type: shares.nodeType, count: sql<number>`count(*)::int` })
+    .from(shares)
+    .where(
+      and(
+        eq(shares.ownerId, ownerId),
+        isNull(shares.revokedAt),
+        or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
+      ),
+    )
+    .groupBy(shares.nodeType);
+  const counts = Object.fromEntries(TEAM_WORKSPACE_TYPES.map((t) => [t, 0])) as Record<
+    TeamWorkspaceType,
+    number
+  >;
+  for (const r of rows) {
+    if ((TEAM_WORKSPACE_TYPES as readonly string[]).includes(r.type)) {
+      counts[r.type as TeamWorkspaceType] = r.count;
+    }
+  }
+  return counts;
+}

@@ -10,9 +10,11 @@ import {
   markTeamThreadRead,
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
+  listActiveShares,
   type TeamMemberActivity,
   type TeamRequest,
 } from '@mantle/content';
+import { SharedLinksPanel } from '@/components/share/shared-links-panel';
 import { HubAppPicker } from '@/components/team-chat/hub-app-picker';
 import { PrivateReadsToggle } from '@/components/team-chat/private-reads-toggle';
 import { RequestReply } from '@/components/team-chat/request-reply';
@@ -100,7 +102,7 @@ function TeamTabs({
   active,
   openRequestCount,
 }: {
-  active: 'chats' | 'requests';
+  active: 'chats' | 'requests' | 'shares';
   openRequestCount: number;
 }) {
   const tab = (label: string, href: string, isActive: boolean, badge?: number) => (
@@ -125,6 +127,7 @@ function TeamTabs({
     <div className="flex items-center gap-1 border-b border-border px-3">
       {tab('Chats', '/team-admin', active === 'chats')}
       {tab('Requests', '/team-admin?view=requests', active === 'requests', openRequestCount)}
+      {tab('Shared links', '/team-admin?view=shares', active === 'shares')}
     </div>
   );
 }
@@ -234,6 +237,31 @@ export default async function TeamAdminPage({
     prefs.teamHubAppId && apps.some((a) => a.id === prefs.teamHubAppId)
       ? prefs.teamHubAppId
       : null;
+
+  if (view === 'shares') {
+    const active = await listActiveShares(user.id);
+    return (
+      <div className="flex h-full flex-col">
+        <SetPageTitle title="Team" />
+        <TeamTabs active="shares" openRequestCount={openRequestCount} />
+        <SharedLinksPanel
+          initial={active.map((s) => ({
+            id: s.id,
+            path: `/s/${s.token}`,
+            nodeId: s.nodeId,
+            nodeType: s.nodeType,
+            title: s.title,
+            icon: s.nodeIcon,
+            mode: s.mode,
+            cascade: s.cascade,
+            createdAt: s.createdAt,
+            viewCount: s.viewCount,
+            lastViewedAt: s.lastViewedAt,
+          }))}
+        />
+      </div>
+    );
+  }
 
   if (showRequests) {
     const requests = await listTeamRequests(user.id, { status: 'all', limit: 200 });

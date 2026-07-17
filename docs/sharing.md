@@ -1,13 +1,16 @@
 # Public sharing — read-only links to any content
 
-> **Status: BUILT.** Read-only public sharing ships for all five types
-> (page, note, task, event, file): the `shares` table + tokens, the public
-> `/s/[token]` route + scoped asset route, the server page renderer, per-type
-> presenters, and the owner `<ShareControl>` wired into every detail surface.
+> **Status: BUILT.** Read-only public sharing ships for every workspace type
+> (page, note, task, event, file, app, **table**, **folder**): the `shares`
+> table + tokens, the public `/s/[token]` route + scoped asset route, the
+> server page renderer, per-type presenters, and the owner `<ShareControl>`
+> wired into every detail surface — plus the owner's **Shared links** registry
+> (`/team-admin?view=shares`) listing every active link with copy/revoke.
 > **Deferred (schema-ready):** per-link expiry UI and per-link indexability
 > opt-in (`expires_at` / `settings` columns exist; no UI yet).
 >
-> Share any **page, note, task, event, or file** with anyone who has the URL.
+> Share any **page, note, task, event, file, app, table, or folder** with
+> anyone who has the URL.
 > The link opens a clean, auth-free page tailored to the content — files in a
 > proper media viewer, pages in their full formatting — centered and quiet, with
 > nothing from the owner's account exposed beyond that one item.
@@ -21,9 +24,27 @@
 
 ## 1. Scope + decisions
 
-**Shareable** node types: `page`, `note`, `task`, `event`, `file`.
-**Never shareable:** `secret`, `email` / `email_thread`, `contact` (sensitive) —
-the share API rejects them.
+**Shareable** node types: `page`, `note`, `task`, `event`, `file`, `app`,
+`table`, `branch` (= a **files folder**).
+**Never shareable:** `secret`, `email` / `email_thread`, `contact`, `journal`
+(sensitive) — the share API rejects them.
+
+Two of these carry extra semantics:
+
+- **Table** — the link shows the **published** workbook only, never the owner's
+  draft (same rule as page drafts). Rows page in through
+  `GET /s/[token]/rows` (offset windows off the published sqlite file — no SQL
+  passthrough, no draft switch, no distinct endpoint); legacy JSONB tables ship
+  their whole doc in the share view. Formula columns aren't stored per-row, so
+  they don't appear on the public surface.
+- **Folder** (`branch`) — shares **every file under the folder, subfolders
+  included, evaluated per request**: a file added later is covered with no
+  re-share; a file moved out is denied on its next fetch. Only folders strictly
+  under the `files` root qualify (`isShareableFolderPath`) — the root itself is
+  deliberately not shareable, so "share my entire filesystem" can never be one
+  accidental toggle. Visitors get a read-only listing with downloads; subfolder
+  navigation stays inside the share (`?p=` is validated as a descendant before
+  anything is listed).
 
 Settled design decisions:
 
@@ -84,7 +105,9 @@ them through without a session cookie.
 - **`GET /s/[token]/a/[fileId]`** — public **asset** bytes (P2). The
   security-critical route: serves a file only if `fileId` is in the share's
   **allowed set** — for a `file` share, the file itself; for a `page` share, the
-  file ids referenced in its doc (walk `image`/`fileEmbed` nodeIds). Streams via
+  file ids referenced in its doc (walk `image`/`fileEmbed` nodeIds); for a
+  `branch` (folder) share, any file whose ltree path is under the folder
+  (`path <@ folder.path`, re-derived per request). Streams via
   `readFileById` with content-type + range support (video/audio seeking) +
   cache headers. Anything outside the set → 404.
 - `apps/web/app/s/layout.tsx` — minimal public chrome: clean default theme,
@@ -158,6 +181,8 @@ Clean, centered, media-appropriate (`apps/web/components/share/`):
 | **File** | Switch on `mimeType`: image (centered, zoom) · pdf (embedded viewer) · video/audio (`<video>`/`<audio controls>`) · text/markdown/code (rendered / lowlight) · else download card (icon, name, size). |
 | **Task** | Card: title, status badge, priority, due date, body markdown. |
 | **Event** | Card: title, formatted date/time range, location, body, **"Add to calendar" (.ics)**. |
+| **Table** | Read-only grid (client): tab bar for multi-tab workbooks, sticky header, "Load more" offset paging via `GET /s/[token]/rows`; legacy JSONB docs render inline. |
+| **Folder** | Read-only listing (server): breadcrumbs scoped to the share, subfolder navigation via `?p=`, per-file **Download** through the scoped asset route. |
 
 All themed via tokens. *(Note: the in-app file view only handles text today — the
 media presenters are net-new here.)*
@@ -167,7 +192,7 @@ media presenters are net-new here.)*
 ## 7. Owner-side UX
 
 A reusable **`<ShareControl>`** (`components/share/share-control.tsx`) on every
-detail screen (pages, notes, tasks, events, files): a *"Anyone with the link can
+detail screen (pages, notes, tasks, events, files, apps, tables, folders): a *"Anyone with the link can
 view"* toggle → mint token → show URL + **Copy** → **Revoke** (and, P4, expiry +
 "allow search engines"). API (owner-scoped via `requireOwner`):
 

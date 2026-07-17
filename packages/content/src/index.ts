@@ -332,6 +332,9 @@ export { referencedFileIds } from './doc-assets';
 export {
   SHAREABLE_TYPES,
   isShareable,
+  isShareableFolderPath,
+  listActiveShares,
+  type ActiveShareListing,
   getActiveShareForNode,
   createShare,
   revokeShare,
@@ -365,10 +368,15 @@ export {
   teamHubContentCounts,
   resolveTeamHubApp,
   TEAM_HUB_STAT_TYPES,
+  TEAM_WORKSPACE_TYPES,
+  listTeamVisibleShares,
+  countTeamVisibleShares,
   type TeamHubSection,
   type TeamAppCard,
   type TeamHubStatType,
   type TeamHubApp,
+  type TeamWorkspaceType,
+  type TeamVisibleShare,
 } from './team-hub';
 
 export {

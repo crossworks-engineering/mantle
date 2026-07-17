@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { CopyButton } from '@/components/assistant/copy-button';
 import { TokenGate } from '@/components/team-chat/token-gate';
+import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@/lib/composer-style';
 
 type TeamMessage = {
   id: string;
@@ -556,7 +557,9 @@ export function TeamChatClient() {
         )}
       </div>
 
-      <div className="border-t border-border/60 bg-background px-6 py-3">
+      {/* Composer band: a brand-tinted gradient rising from the edge makes the
+          input read as the surface's anchor (shared with the owner assistant). */}
+      <div className={`border-t border-border/60 ${COMPOSER_BAND_GRADIENT} px-6 py-4`}>
         <div className="mx-auto w-full max-w-5xl">
           {sendError ? <p className="mb-2 text-sm text-destructive">{sendError}</p> : null}
           {file ? (
@@ -576,16 +579,21 @@ export function TeamChatClient() {
           {/* No Stop button (the assistant chat has one): there is no abort
               route for team turns — the runner always completes and the reply
               is durable. Deliberate omission, not an oversight. */}
-          <div className="flex items-end gap-2">
+          {/* items-stretch: both buttons track the textarea's height, so the
+              composer reads as one block however tall the draft grows. */}
+          <div className="flex items-stretch gap-2">
             <input
               ref={fileInputRef}
               type="file"
               className="hidden"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
+            {/* Bordered like the owner assistant's attach button — the two
+                composers are styled as one design. */}
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
+              className="h-auto text-muted-foreground"
               onClick={() => fileInputRef.current?.click()}
               disabled={sending}
               aria-label="Attach a file"
@@ -603,10 +611,11 @@ export function TeamChatClient() {
               }}
               placeholder="Ask the brain… (Enter to send, Shift+Enter for a new line)"
               rows={2}
-              className="min-h-0 flex-1 resize-none"
+              className={`${COMPOSER_BOX} flex-1 resize-none bg-background`}
               disabled={sending}
             />
             <Button
+              className="h-auto"
               onClick={() => void send()}
               disabled={sending || (!draft.trim() && !file)}
               aria-label="Send"

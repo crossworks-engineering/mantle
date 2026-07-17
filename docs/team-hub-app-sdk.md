@@ -1,7 +1,7 @@
 # Team Hub apps — the builder's guide
 
 How to build, structure, and maintain a **team hub app**: the mini-app a brain
-designates to render as its `/team` hub for external team members. This is the
+designates to render as its Team Hub (served at `/hub` since the Team Workspace took over `/team`) for external team members. This is the
 canonical reference for hub-app authors (human or agent). It builds on the
 general mini-app reference — read
 [app-authoring-guide.md](app-authoring-guide.md) first for the build loop,
@@ -14,7 +14,7 @@ follow, and the content-update patterns.
 ## 1. What a hub app is
 
 An ordinary `/apps` mini-app plus one namespace. When designated (Team admin →
-"Hub app"), the `/team` shell renders it full-bleed for authenticated team
+"Hub app"), the `/hub` shell renders it full-bleed for authenticated team
 members. The shell keeps everything that must stay core:
 
 - the **member token gate** and cookie minting/revocation,
@@ -33,7 +33,7 @@ link — pref unset, app deleted, build red, share revoked, bundle fails to fetc
 *or* fetches but never boots — members get the built-in hub. Designation can
 never cost a team a working page.
 
-## 2. The designation chain (how `/team` decides what to render)
+## 2. The designation chain (how `/hub` decides what to render)
 
 ```
 prefs.teamHubAppId  →  app exists under this owner
@@ -239,14 +239,14 @@ reserved, not implemented. Propose additions there rather than overloading
 | Briefing set / order | share or revoke team-mode pages (share time = order) | next hub load |
 | Revert to built-in hub | Team admin → Hub app → "Built-in hub" | immediately |
 
-Members with `/team` already open see updates on their next load — there is no
+Members with `/hub` already open see updates on their next load — there is no
 live push to an open tab. The shell keeps the app mounted across chat/reader
 round-trips, so in-app state survives navigation but not a reload; anything
 that must survive a reload goes in SQLite (Tier 3).
 
 ## 8. Definition of done
 
-1. Build green, published, designated; renders on `/team` as a real member in
+1. Build green, published, designated; renders on `/hub` as a real member in
    light **and** dark.
 2. Off-hub preview renders in the `/apps` editor (labelled, placeholder data).
 3. Chat and every briefing open via `host.hub` and "back" returns to the app.

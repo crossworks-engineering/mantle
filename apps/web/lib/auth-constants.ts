@@ -36,11 +36,13 @@ export const PUBLIC_PATHS = [
   '/api/oauth',
   '/.well-known/oauth-authorization-server',
   '/.well-known/oauth-protected-resource',
-  // Team Chat: the external member surface (/team page + /api/team/* routes)
-  // self-authenticates with contact team tokens (signed team-chat cookie or
-  // bearer), never the session cookie. The owner's admin view lives inside the
-  // (app) group as /team-admin and stays session-gated.
+  // Team surfaces: the external member workspace (/team + /api/team/* routes)
+  // and the Team Hub's home (/hub — the designated hub app or the built-in
+  // briefing hub) self-authenticate with contact team tokens (signed team-chat
+  // cookie or bearer), never the session cookie. The owner's admin view lives
+  // inside the (app) group as /team-admin and stays session-gated.
   '/team',
+  '/hub',
   '/api/team',
 ];
 

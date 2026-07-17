@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ExportMenu } from '@/components/export/export-menu';
+import { ShareControl } from '@/components/share/share-control';
 import { TableGrid } from '@/components/table-grid/table-grid';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import { diffTableDocs, ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
@@ -461,6 +462,12 @@ export function TableDetailClient({ initial, embedded = false }: { initial: Tabl
             {importing ? <Loader2 className="animate-spin" /> : <Upload />} Import
           </Button>
           <ExportMenu nodeId={initial.id} kind="table" />
+          <ShareControl
+            nodeId={initial.id}
+            iconOnly
+            teamMode
+            teamHint="Visitors must enter their team token to open the link. The link always shows the last committed version — never your draft."
+          />
           {dirty && (
             <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => void discard()}>
               <Undo2 /> Discard
