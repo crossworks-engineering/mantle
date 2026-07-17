@@ -38,6 +38,7 @@ import {
   syncFileFromDisk,
 } from '@mantle/files';
 import { waitForOwner } from '@mantle/db';
+import { startProcessHeartbeat } from '@mantle/content';
 
 // Resolved in main() via waitForOwner — ALLOWED_USER_ID when set, else the sole
 // auth.users row. Left undefined until then so a fresh install boots and idles
@@ -113,6 +114,9 @@ async function handleUnlink(absPath: string): Promise<void> {
 }
 
 async function main() {
+  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
+  // WEDGED process; a dead one is already covered by the restart policy).
+  startProcessHeartbeat();
   USER_ID = await waitForOwner({ label: 'files-watch' });
   const root = filesRoot();
   await ensureRoot(); // mkdir -p

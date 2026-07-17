@@ -16,6 +16,7 @@ import PgBoss from 'pg-boss';
 import { and, eq } from 'drizzle-orm';
 import { BACKFILL_QUEUE, backfillMatch, imap, syncAccount } from '@mantle/email';
 import { db, emailAccounts } from '@mantle/db';
+import { startProcessHeartbeat } from '@mantle/content';
 
 const SYNC_QUEUE = 'mantle.email.sync';
 const SCHEDULER_QUEUE = 'mantle.email.scheduler';
@@ -46,6 +47,9 @@ function pickProvider(provider: 'imap' | 'gmail' | 'microsoft') {
 }
 
 async function main() {
+  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
+  // WEDGED process; a dead one is already covered by the restart policy).
+  startProcessHeartbeat();
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL must be set');
 

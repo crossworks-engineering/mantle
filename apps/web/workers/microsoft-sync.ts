@@ -14,6 +14,7 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 import { db, emailAccounts, msAccounts, msDrives } from '@mantle/db';
 import { graphMailProvider, syncDrive } from '@mantle/microsoft';
 import { syncAccount } from '@mantle/email';
+import { startProcessHeartbeat } from '@mantle/content';
 
 const SYNC_QUEUE = 'mantle.microsoft.drive-sync';
 const MAIL_QUEUE = 'mantle.microsoft.mail-sync';
@@ -28,6 +29,9 @@ interface MailSyncJob {
 }
 
 async function main() {
+  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
+  // WEDGED process; a dead one is already covered by the restart policy).
+  startProcessHeartbeat();
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL must be set');
 

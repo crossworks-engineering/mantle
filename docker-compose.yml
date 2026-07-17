@@ -23,6 +23,11 @@ name: mantle
 #                            pulls on first boot)
 #   OLLAMA_KEEP_ALIVE       (default: 5m — set to -1 to keep the embedder always
 #                            resident instead of unloading when idle)
+#   MINIO_IMAGE_TAG / MC_IMAGE_TAG / OLLAMA_IMAGE_TAG (optional — pin the minio,
+#                            minio/mc, and ollama images. Defaults are the newest
+#                            stable tags at time of writing; pinned (like
+#                            tailscale) so the in-app update path can't pull a
+#                            breaking upstream `:latest` mid-update.)
 #
 # Persistent data — bind-mounted on the host so you can see/back up/move it:
 #   MANTLE_DATA_DIR         (default: ./data) — EVERYTHING lives under here:
@@ -76,6 +81,26 @@ x-logging: &default-logging
   options:
     max-size: "10m"
     max-file: "3"
+
+# Liveness probe for the port-less long-runners (api + the 8 workers). Those
+# services already restart-on-exit if the process DIES (restart: unless-stopped)
+# — what that misses is a WEDGED process: alive, event loop stalled, doing
+# nothing. Each one touches a heartbeat file every 30s (see
+# packages/content/src/process-heartbeat.ts); this probe fails when that file's
+# mtime goes stale (>90s = 3 missed ticks), so Docker restarts a hung container.
+# node, not curl (curl is purged from the final image). The test line is
+# identical for every service, so it's a shared anchor. The heartbeat lives in
+# /tmp — per-container, never a shared mount, so two containers can't collide.
+x-worker-healthcheck: &worker-healthcheck
+  test:
+    - CMD
+    - node
+    - -e
+    - "const fs=require('fs');const f=process.env.MANTLE_HEARTBEAT_FILE||'/tmp/mantle-heartbeat';try{if(Date.now()-fs.statSync(f).mtimeMs<90000)process.exit(0);process.exit(1)}catch(e){process.exit(1)}"
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 60s
 
 # Shared env block for app services — anchor + alias keeps the app
 # services in lockstep.
@@ -173,6 +198,7 @@ services:
     container_name: mantle_pg
     restart: unless-stopped
     logging: *default-logging
+    # Deliberately NO mem_limit: an OOM-killed database is worse than a slow box.
     # Headroom above the default 100: the full stack (web + agent + 4 workers,
     # each a postgres-js pool, plus pg-boss + web SSE LISTEN conns) sits ~50 at
     # idle and climbs under load. A crash-looping service can briefly double its
@@ -196,10 +222,17 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    # Pinned (was :latest) — the in-app update path re-pulls images, so a
+    # breaking upstream release would land mid-update. Override via env.
+    image: minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
     container_name: mantle_minio
     restart: unless-stopped
     logging: *default-logging
+    # ── Memory caps (mem_limit) — a GUARDRAIL, not a reservation ──────────────
+    # These cap a runaway leak so one service can't take the whole box down;
+    # they do NOT reserve memory, so the sum of all caps may exceed box RAM (the
+    # 4 GB minimum box idles ~2.5 GB). Sized ~2-4× each service's steady state.
+    mem_limit: 512m
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minio}
@@ -221,7 +254,8 @@ services:
   # Idempotent (`--ignore-existing`), so it's a no-op on every later boot. Every
   # service that writes object bytes depends_on this completing.
   createbuckets:
-    image: minio/mc:latest
+    # Pinned (was :latest) — same reason as minio above: the update path re-pulls.
+    image: minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-08-13T08-35-41Z}
     container_name: mantle_createbuckets
     restart: "no"
     depends_on:
@@ -247,6 +281,8 @@ services:
     container_name: mantle_tika
     restart: unless-stopped
     logging: *default-logging
+    # JVM already capped (-Xmx1g + non-heap overhead); this is the outer guardrail.
+    mem_limit: 1.5g
     environment:
       # Cap JVM heap so Tika can't balloon on a malicious or pathological
       # document, while leaving headroom for legitimately large Office files.
@@ -285,6 +321,8 @@ services:
     container_name: mantle_browser
     restart: unless-stopped
     logging: *default-logging
+    # Guardrail against a chromium render leak.
+    mem_limit: 1.5g
     environment:
       TOKEN: ${BROWSER_TOKEN:-mantle}
       # Two concurrent renders + a small queue covers a team clicking Download;
@@ -304,10 +342,14 @@ services:
   # OpenAI-compatible API. CPU-only; a small encoder (~300MB) that fits on the
   # base VPS. Self-hosted — the text the brain embeds never leaves the box.
   ollama:
-    image: ollama/ollama:latest
+    # Pinned (was :latest) — the update path re-pulls; override via env. Same var
+    # for both ollama services so they never drift to different builds.
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.1}
     container_name: mantle_ollama
     restart: unless-stopped
     logging: *default-logging
+    # Higher cap than the sidecars: the embedding model needs room resident.
+    mem_limit: 2g
     # OPT-IN. The local embedder only starts with `--profile local-embedder`.
     # Online embedding (set up in onboarding) is the default; by default this
     # service does NOT run and NO app service waits on it — so a fresh box boots
@@ -327,7 +369,7 @@ services:
   # One-shot: pull the shipped embedder into the model volume, then exit.
   # Idempotent — a no-op once the model is already in the volume.
   ollama_pull:
-    image: ollama/ollama:latest
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.1}
     container_name: mantle_ollama_pull
     restart: "no"
     profiles: ["local-embedder"]
@@ -359,6 +401,7 @@ services:
     container_name: mantle_tailscale
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 256m
     entrypoint:
       - tailscaled
       - --tun=userspace-networking
@@ -408,6 +451,7 @@ services:
     container_name: mantle_web
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 1.5g
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -461,6 +505,7 @@ services:
     container_name: mantle_caddy
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 256m
     depends_on:
       web: { condition: service_healthy }
     ports:
@@ -490,6 +535,7 @@ services:
     container_name: mantle_updater
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 128m
     entrypoint: ["sh", "/updater.sh"]
     environment:
       MANTLE_STACK_DIR: ${MANTLE_STACK_DIR:-}
@@ -511,6 +557,9 @@ services:
     container_name: mantle_api
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 1.5g
+    # Heartbeat-based liveness (no HTTP port; DBOS admin server off by default).
+    healthcheck: *worker-healthcheck
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -533,6 +582,8 @@ services:
     container_name: mantle_worker_email
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 512m
+    healthcheck: *worker-healthcheck
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -547,6 +598,8 @@ services:
     container_name: mantle_worker_telegram
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 512m
+    healthcheck: *worker-healthcheck
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -562,6 +615,8 @@ services:
     container_name: mantle_worker_microsoft
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 512m
+    healthcheck: *worker-healthcheck
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -578,6 +633,8 @@ services:
     container_name: mantle_worker_files
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 512m
+    healthcheck: *worker-healthcheck
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -599,6 +656,8 @@ services:
     container_name: mantle_worker_docs
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 512m
+    healthcheck: *worker-healthcheck
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -613,6 +672,8 @@ services:
     container_name: mantle_worker_events
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 512m
+    healthcheck: *worker-healthcheck
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -637,6 +698,8 @@ services:
     container_name: mantle_worker_calendar
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 512m
+    healthcheck: *worker-healthcheck
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }
@@ -652,6 +715,8 @@ services:
     container_name: mantle_worker_push
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 512m
+    healthcheck: *worker-healthcheck
     depends_on:
       postgres: { condition: service_healthy }
       migrate:  { condition: service_completed_successfully }

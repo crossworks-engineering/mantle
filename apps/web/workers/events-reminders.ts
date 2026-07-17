@@ -35,7 +35,11 @@ import {
 } from '@mantle/db';
 import { sendMessage } from '@mantle/telegram';
 import { recordTurn } from '@mantle/agent-runtime';
-import { loadProfilePreferences, maybeRunScheduledBackups } from '@mantle/content';
+import {
+  loadProfilePreferences,
+  maybeRunScheduledBackups,
+  startProcessHeartbeat,
+} from '@mantle/content';
 import { maybeSweep } from '@mantle/tools';
 import { pickWebDefaultAgent } from '@mantle/assistant-runtime';
 import {
@@ -264,6 +268,9 @@ async function main(): Promise<void> {
     console.error('[events-reminders] DATABASE_URL must be set');
     process.exit(1);
   }
+  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
+  // WEDGED process; a dead one is already covered by the restart policy).
+  startProcessHeartbeat();
   console.log(`[events-reminders] up. Polling every ${TICK_MS / 1000}s.`);
   let running = false;
   // Shared runner so the immediate boot-time tick goes through the

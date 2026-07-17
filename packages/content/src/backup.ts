@@ -29,7 +29,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, existsSync, readFileSync } from 'node:fs';
 import { mkdir, open, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -94,6 +94,119 @@ export function resolveBackupDir(cfg?: Pick<BackupConfig, 'location'> | null): s
     path.join(process.cwd(), 'data', 'backups');
   const expanded = raw.startsWith('~') ? path.join(os.homedir(), raw.slice(1)) : raw;
   return path.resolve(expanded);
+}
+
+// ── Ephemeral-location guard ────────────────────────────────────────────────
+// The footgun this closes: in the prod container the operator can type any
+// custom backup directory at /settings/backups. If that path is NOT under one
+// of the persistent host bind-mounts, `mkdir -p` happily creates it inside the
+// container's overlay (ephemeral) filesystem, pg_dump writes there, the run
+// reports ok:true — and every "successful" dump is destroyed the next time the
+// container is recreated (a redeploy, an update, a `compose down`). So we
+// REJECT such a location rather than silently accept it.
+//
+// Only enforced INSIDE a container — a dev/native-node box has no overlay root
+// and must be entirely unaffected (any local path is fine there).
+
+type MountEntry = { device: string; mountpoint: string; fstype: string };
+
+/** The kernel octal-escapes whitespace/backslash in /proc mount fields
+ *  (space=\040, tab=\011, newline=\012, backslash=\134). Decode them. */
+function unescapeMountField(field: string): string {
+  return field.replace(/\\([0-7]{3})/g, (_, oct: string) => String.fromCharCode(parseInt(oct, 8)));
+}
+
+/** Parse the CONTENT of /proc/self/mounts into (device, mountpoint, fstype)
+ *  rows. Injectable so the persistence logic is unit-testable. */
+export function parseProcMounts(content: string): MountEntry[] {
+  const out: MountEntry[] = [];
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue;
+    const [device, mountpoint, fstype] = line.split(' ');
+    if (!device || !mountpoint || !fstype) continue;
+    out.push({
+      device: unescapeMountField(device),
+      mountpoint: unescapeMountField(mountpoint),
+      fstype: unescapeMountField(fstype),
+    });
+  }
+  return out;
+}
+
+/** True when `mountpoint` is `dir` itself or a path-SEGMENT ancestor of it.
+ *  Root ('/') is an ancestor of every absolute path. Segment-aware, NOT string
+ *  prefix: '/data/back' is not an ancestor of '/data/backups'. */
+function mountpointCovers(mountpoint: string, dir: string): boolean {
+  if (mountpoint === dir) return true;
+  if (mountpoint === '/') return dir.startsWith('/');
+  return dir.startsWith(`${mountpoint}/`);
+}
+
+/**
+ * Core, unit-testable persistence decision for a resolved backup directory.
+ *
+ * @param dir           absolute resolved backup directory
+ * @param mountsContent contents of /proc/self/mounts, or null if unreadable
+ * @param dockerEnv     whether /.dockerenv exists
+ *
+ * Not in a container → always persistent (dev is never enforced). In a
+ * container we find the LONGEST mountpoint that covers `dir` and treat the dir
+ * as ephemeral only when that winning mount's fstype is `overlay` (the
+ * container's own writable layer). Unreadable mounts inside a container →
+ * fail OPEN (persistent) so an exotic runtime can never brick backups.
+ */
+export function isResolvedBackupDirPersistent(
+  dir: string,
+  mountsContent: string | null,
+  dockerEnv: boolean,
+): boolean {
+  const mounts = mountsContent != null ? parseProcMounts(mountsContent) : null;
+  const rootIsOverlay =
+    mounts?.some((m) => m.mountpoint === '/' && m.fstype === 'overlay') ?? false;
+  const inContainer = dockerEnv || rootIsOverlay;
+  if (!inContainer) return true; // dev / native node — never enforced
+  if (!mounts) return true; // in a container but mounts unreadable → fail open
+  let winner: MountEntry | null = null;
+  for (const m of mounts) {
+    if (
+      mountpointCovers(m.mountpoint, dir) &&
+      (!winner || m.mountpoint.length > winner.mountpoint.length)
+    ) {
+      winner = m;
+    }
+  }
+  if (!winner) return true; // no covering mount (can't happen with '/') → fail open
+  return winner.fstype !== 'overlay';
+}
+
+/** Thin wrapper: reads the real /.dockerenv + /proc/self/mounts and decides
+ *  whether `dir` lives on persistent storage. Exported for the settings route
+ *  and the backup runner. Never throws. */
+export function isBackupDirPersistent(dir: string): boolean {
+  let dockerEnv = false;
+  try {
+    dockerEnv = existsSync('/.dockerenv');
+  } catch {
+    dockerEnv = false;
+  }
+  let mountsContent: string | null = null;
+  try {
+    mountsContent = readFileSync('/proc/self/mounts', 'utf8');
+  } catch {
+    mountsContent = null;
+  }
+  return isResolvedBackupDirPersistent(dir, mountsContent, dockerEnv);
+}
+
+/** Shared, plain-language error for an ephemeral backup location — used both at
+ *  save time (the settings 400) and at run time (the backupStatus error) so the
+ *  operator sees the same explanation in both places. */
+export function ephemeralBackupDirMessage(dir: string): string {
+  return (
+    `Backup location ${dir} is inside the container's ephemeral filesystem — dumps ` +
+    `written there are destroyed when the container is recreated. Use a path under a ` +
+    `mounted directory (e.g. /data/backups) or clear the custom location.`
+  );
 }
 
 export async function loadBackupConfig(userId: string): Promise<BackupConfig> {
@@ -245,6 +358,13 @@ async function runBackupInner(
 
   const cfg = await loadBackupConfig(userId);
   const dir = resolveBackupDir(cfg);
+  // Refuse to write into the container's ephemeral overlay: creating the dir
+  // there would succeed and the dump would report ok, but every byte is lost on
+  // the next container recreate. Better a loud failed status than a silent
+  // "backup" that isn't one. (No-op on dev / native node.)
+  if (!isBackupDirPersistent(dir)) {
+    return fail(ephemeralBackupDirMessage(dir));
+  }
   try {
     await mkdir(dir, { recursive: true });
   } catch (err) {

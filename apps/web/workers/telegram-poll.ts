@@ -23,6 +23,7 @@ import { eq } from 'drizzle-orm';
 import { channels, db, telegramAccounts, type Channel, type TelegramAccount } from '@mantle/db';
 import { pollOnce, evictBot, type PollHandlers } from '@mantle/telegram';
 import { approvePendingCall, rejectPendingCall } from '@mantle/tools';
+import { startProcessHeartbeat } from '@mantle/content';
 
 const CHANNEL_REFRESH_MS = 60_000;
 const BACKOFF_BASE_MS = 1_000;
@@ -81,6 +82,9 @@ const approvalHandlers: PollHandlers = {
 };
 
 async function main() {
+  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
+  // WEDGED process; a dead one is already covered by the restart policy).
+  startProcessHeartbeat();
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL must be set');
   if (!process.env.MANTLE_MASTER_KEY) throw new Error('MANTLE_MASTER_KEY must be set');
 

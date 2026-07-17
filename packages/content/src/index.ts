@@ -453,12 +453,16 @@ export {
 
 export {
   DEFAULT_BACKUP_CONFIG,
+  ephemeralBackupDirMessage,
+  isBackupDirPersistent,
   isBackupDue,
+  isResolvedBackupDirPersistent,
   listBackups,
   loadBackupConfig,
   loadBackupStatus,
   maybeRunScheduledBackups,
   normalizeBackupConfig,
+  parseProcMounts,
   resolveBackupDir,
   runBackup,
   saveBackupConfig,
@@ -467,6 +471,12 @@ export {
   type BackupFrequency,
   type BackupStatus,
 } from './backup';
+
+export {
+  HEARTBEAT_INTERVAL_MS,
+  heartbeatFilePath,
+  startProcessHeartbeat,
+} from './process-heartbeat';
 
 export {
   CONTACTS_ROOT_LABEL,
