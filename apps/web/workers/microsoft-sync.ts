@@ -1,8 +1,13 @@
 /**
  * Microsoft drive-sync worker — mirrors workers/email-sync.ts.
  *
- * Two queues:
+ * Queues:
  *   - mantle.microsoft.drive-sync  — single-flight per-drive incremental sync
+ *   - mantle.microsoft.mail-sync   — per-companion-mailbox incremental sync
+ *   - mantle.microsoft.backfill    — per-sender 90-day backfill for Microsoft
+ *                                     mailboxes (enqueueBackfill routes jobs
+ *                                     here by provider; IMAP jobs go to the
+ *                                     email-sync worker's queue)
  *   - mantle.microsoft.scheduler   — fan-out: enqueue a sync for every enabled
  *                                     drive on an enabled account, every 2 min
  *
@@ -13,7 +18,7 @@ import PgBoss from 'pg-boss';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { db, emailAccounts, msAccounts, msDrives } from '@mantle/db';
 import { graphMailProvider, syncDrive } from '@mantle/microsoft';
-import { syncAccount } from '@mantle/email';
+import { MS_BACKFILL_QUEUE, backfillMatch, syncAccount } from '@mantle/email';
 import { startProcessHeartbeat } from '@mantle/content';
 
 const SYNC_QUEUE = 'mantle.microsoft.drive-sync';
@@ -26,6 +31,13 @@ interface DriveSyncJob {
 
 interface MailSyncJob {
   emailAccountId: string;
+}
+
+interface BackfillJob {
+  accountId: string;
+  /** A contact email entry to backfill from: a full address (`alex@x.com`)
+   *  or a bare domain (`x.com`, from an `@domain` wildcard). */
+  target: string;
 }
 
 async function main() {
@@ -41,6 +53,7 @@ async function main() {
 
   await boss.createQueue(SYNC_QUEUE);
   await boss.createQueue(MAIL_QUEUE);
+  await boss.createQueue(MS_BACKFILL_QUEUE);
   await boss.createQueue(SCHEDULER_QUEUE);
 
   // ── scheduler ────────────────────────────────────────────────────────
@@ -139,9 +152,33 @@ async function main() {
     }
   });
 
+  // ── backfill worker ──────────────────────────────────────────────────
+  // Same job shape as email-sync's backfill; enqueueBackfill routes Microsoft
+  // companion accounts here so Graph-token work stays in this process.
+  await boss.work<BackfillJob>(MS_BACKFILL_QUEUE, async (jobs) => {
+    for (const job of jobs) {
+      const [account] = await db
+        .select()
+        .from(emailAccounts)
+        .where(eq(emailAccounts.id, job.data.accountId))
+        .limit(1);
+      if (!account || account.provider !== 'microsoft') continue;
+      try {
+        const t0 = Date.now();
+        const { ingested } = await backfillMatch(account, graphMailProvider, job.data.target);
+        console.log(
+          `[ms-backfill] ${account.address} ← ${job.data.target}: ingested ${ingested} in ${Date.now() - t0}ms`,
+        );
+      } catch (err) {
+        console.error('[ms-backfill] error', err);
+        throw err; // let pg-boss record failure + retry
+      }
+    }
+  });
+
   console.log(
     '[microsoft-sync] worker up. Queues:',
-    [SYNC_QUEUE, MAIL_QUEUE, SCHEDULER_QUEUE].join(', '),
+    [SYNC_QUEUE, MAIL_QUEUE, MS_BACKFILL_QUEUE, SCHEDULER_QUEUE].join(', '),
   );
 
   const shutdown = async () => {

@@ -70,6 +70,25 @@ export async function graphGet<T>(
   return (await res.json()) as T;
 }
 
+/** Owner-scoped JSON POST. Returns the parsed JSON body, or `null` for the
+ *  bodyless 202/204 responses Graph actions like `sendMail` reply with. */
+export async function graphPost<T = unknown>(
+  userId: string,
+  accountId: string,
+  path: string,
+  body: unknown,
+): Promise<T | null> {
+  const token = await getValidAccessToken(userId, accountId);
+  if (!token) throw graphError(401, 'no valid access token — account needs reconnect');
+  const res = await graphFetchRaw(`${GRAPH_BASE}${path}`, token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 202 || res.status === 204) return null;
+  return (await res.json()) as T;
+}
+
 interface GraphPage<T> {
   value: T[];
   '@odata.nextLink'?: string;

@@ -8,8 +8,10 @@ import { apiFetch, apiSend } from '@/lib/api-fetch';
 
 /** Opt-in toggle for Outlook mail sync on a connected account. Mail flows
  *  through the same pipeline (and contact gate) as IMAP. Self-fetches its
- *  enabled state via `/api/microsoft/accounts/[id]/mail`. */
-export function MailToggle({ msAccountId }: { msAccountId: string }) {
+ *  enabled state via `/api/microsoft/accounts/[id]/mail`. `canSend` reflects
+ *  whether the granted scopes include Mail.Send — accounts connected before
+ *  that scope existed must reconnect to also SEND from this address. */
+export function MailToggle({ msAccountId, canSend }: { msAccountId: string; canSend: boolean }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const key = ['microsoft', 'mail', msAccountId];
@@ -43,6 +45,12 @@ export function MailToggle({ msAccountId }: { msAccountId: string }) {
           </a>{' '}
           are ingested.
         </div>
+        {!canSend && (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            Sending from this address is off — it was connected before send permission was
+            requested. Reconnect the account to also send mail from it.
+          </div>
+        )}
       </div>
       <Switch
         checked={enabled}

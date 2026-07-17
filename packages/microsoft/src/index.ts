@@ -63,3 +63,5 @@ export type { DriveItem, GraphDrive, GraphSite } from './drives/types';
 // ── M2: Outlook mail (reuses the email pipeline via a Graph provider) ───────
 export { graphMailProvider } from './outlook/mail';
 export { ensureMailAccount, setMailEnabled, getMailAccount } from './outlook/manage';
+export { sendViaGraph, msAccountCanSend } from './outlook/send';
+export { MAIL_SEND_SCOPE } from './config';

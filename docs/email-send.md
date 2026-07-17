@@ -109,13 +109,39 @@ emits `<img src="cid:…">` and the tool attaches the bytes inline
 blocks remote images and never exposes a public asset URL. Inline attachments
 ride on `SendEmailInput.attachments`, new on `sendEmail`.
 
+## Microsoft accounts send via Graph, not SMTP
+
+A connected Microsoft account (`provider='microsoft'` companion row — see
+[`microsoft-graph-ingest.md`](./microsoft-graph-ingest.md)) has no app password
+and its tenant may disable SMTP AUTH outright, so it sends through Graph's
+first-class action instead: `POST /me/sendMail`
+([`packages/microsoft/src/outlook/send.ts`](../packages/microsoft/src/outlook/send.ts),
+`sendViaGraph`). Same `SendEmailInput` contract, including inline `cid`
+attachments (mapped to `fileAttachment` + `isInline`/`contentId`), and the sent
+message lands in the account's Sent Items.
+
+The dispatch lives in the tools layer (`sendFromAccount` /`canSendFrom` in
+`builtins-email.ts`) because `@mantle/microsoft` already depends on
+`@mantle/email` — the email package stays SMTP-only.
+
+**Gate:** send requires the `Mail.Send` delegated scope. It's requested by
+`MS_SCOPES` at connect time, and eligibility checks the *granted* scopes on
+`ms_accounts.scopes` — an account connected before the scope existed keeps
+reading mail fine but won't be picked for send until reconnected (the
+`/settings/microsoft` mail card says so).
+
+Limits (v1): attachments capped ~2.5 MB total (Graph's simple-request limit;
+upload sessions if ever needed), and Graph returns no RFC message id on send
+(202, empty body) — `messageId` in the result is empty for Graph sends.
+
 ## Layers
 
 | Concern | Where |
 |---|---|
 | Send + SMTP probe | [`packages/email/src/send.ts`](../packages/email/src/send.ts) (`sendEmail`, `probeSmtpConnection`, `accountCanSend`) — nodemailer; `attachments` for inline images |
-| Credentials | reuses `unsealImapPassword(account)` — same sealed app password as IMAP |
-| Tools | [`packages/tools/src/builtins-email.ts`](../packages/tools/src/builtins-email.ts) (`email_send`, `email_page`) |
+| Graph send | [`packages/microsoft/src/outlook/send.ts`](../packages/microsoft/src/outlook/send.ts) (`sendViaGraph`, `msAccountCanSend`) — Microsoft companions only |
+| Credentials | reuses `unsealImapPassword(account)` — same sealed app password as IMAP; Microsoft uses the sealed OAuth token store |
+| Tools + provider dispatch | [`packages/tools/src/builtins-email.ts`](../packages/tools/src/builtins-email.ts) (`email_send`, `email_page`; `sendFromAccount` routes SMTP vs Graph) |
 | Page → email HTML | [`packages/content/src/render-page-email.ts`](../packages/content/src/render-page-email.ts) (`renderPageEmail`, `cidForPageImage`) |
 | Grant | `CORE_AUTO_GRANT_SLUGS` in `apps/agent/src/main.ts` (`email_send`, `email_page`, `page_share`, `page_unshare` auto-granted to responder/assistant at boot) |
 | Schema | `smtp_*` on `email_accounts` (migration 0041) |

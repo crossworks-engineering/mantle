@@ -31,6 +31,9 @@ const MAIL_SELECT =
 const PAGE = 50;
 /** Bound for the header-only discovery/backfill paths. */
 const MAX_DISCOVERY_PAGES = 6;
+/** Wider bound for the domain-wildcard backfill scan, which pages ALL recent
+ *  mail (Graph can't filter by sender domain) and match-filters caller-side. */
+const MAX_BACKFILL_SCAN_PAGES = 20;
 
 interface GraphPage<T> {
   value: T[];
@@ -182,13 +185,26 @@ export const graphMailProvider: EmailProvider = {
   },
 
   async *listFromSender(account, senderAddress, since) {
-    const filter = `from/emailAddress/address eq '${senderAddress.replace(/'/g, "''")}' and receivedDateTime ge ${since.toISOString()}`;
+    // `senderAddress` may be a bare domain (`x.com`, from an `@domain` contact
+    // wildcard — see backfillMatch, which does its own sender match on every
+    // yielded message). Graph's $filter only does address equality, so for a
+    // domain we page recent mail newest-first and let the caller filter —
+    // the same contract IMAP provides via its substring FROM search.
+    const isDomain = !senderAddress.includes('@');
     let url: string | undefined = buildPath('/me/messages', {
       $select: MAIL_SELECT,
       $top: String(PAGE),
-      $filter: filter,
+      ...(isDomain
+        ? {
+            $filter: `receivedDateTime ge ${since.toISOString()}`,
+            $orderby: 'receivedDateTime desc',
+          }
+        : {
+            $filter: `from/emailAddress/address eq '${senderAddress.replace(/'/g, "''")}' and receivedDateTime ge ${since.toISOString()}`,
+          }),
     });
-    for (let i = 0; url && i < MAX_DISCOVERY_PAGES; i++) {
+    const maxPages = isDomain ? MAX_BACKFILL_SCAN_PAGES : MAX_DISCOVERY_PAGES;
+    for (let i = 0; url && i < maxPages; i++) {
       const page: GraphPage<GraphMessage> = await graphGet(account.userId, msId(account), url);
       for (const m of page.value ?? []) yield normalize(m);
       url = page['@odata.nextLink'];

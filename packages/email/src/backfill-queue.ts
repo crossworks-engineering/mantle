@@ -13,8 +13,12 @@ import PgBoss from 'pg-boss';
 import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts } from '@mantle/db';
 
-/** Queue name — must match the worker's `BACKFILL_QUEUE`. */
+/** Queue name — must match the email-sync worker's `BACKFILL_QUEUE`. */
 export const BACKFILL_QUEUE = 'mantle.email.backfill';
+/** Microsoft companion accounts backfill in the microsoft-sync worker (Graph
+ *  tokens live there); jobs are routed per-provider at enqueue time so the two
+ *  workers never contend for one queue. Must match microsoft-sync.ts. */
+export const MS_BACKFILL_QUEUE = 'mantle.microsoft.backfill';
 
 let _boss: PgBoss | undefined;
 async function boss(): Promise<PgBoss> {
@@ -24,13 +28,15 @@ async function boss(): Promise<PgBoss> {
   _boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
   await _boss.start();
   await _boss.createQueue(BACKFILL_QUEUE);
+  await _boss.createQueue(MS_BACKFILL_QUEUE);
   return _boss;
 }
 
 /**
  * Enqueue a 90-day backfill of `target` (a contact email entry — a full address
  * `alex@x.com` or a `@domain` wildcard) across every enabled account for the
- * owner. `singletonKey` collapses duplicate enqueues for the same target.
+ * owner, routed to the worker that owns each account's provider.
+ * `singletonKey` collapses duplicate enqueues for the same target.
  * Best-effort: a queue hiccup must never make a contact write look failed, so
  * callers typically swallow errors.
  */
@@ -38,14 +44,15 @@ export async function enqueueBackfill(userId: string, target: string): Promise<v
   const t = target.trim();
   if (!t) return;
   const accounts = await db
-    .select({ id: emailAccounts.id })
+    .select({ id: emailAccounts.id, provider: emailAccounts.provider })
     .from(emailAccounts)
     .where(and(eq(emailAccounts.userId, userId), eq(emailAccounts.enabled, true)));
   if (accounts.length === 0) return;
   const b = await boss();
   for (const a of accounts) {
+    const queue = a.provider === 'microsoft' ? MS_BACKFILL_QUEUE : BACKFILL_QUEUE;
     await b.send(
-      BACKFILL_QUEUE,
+      queue,
       { accountId: a.id, target: t },
       { singletonKey: `backfill:${a.id}:${t}` },
     );

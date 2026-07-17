@@ -22,6 +22,7 @@
     "@mantle/embeddings": "workspace:*",
     "@mantle/tabledb": "workspace:*",
     "@mantle/files": "workspace:*",
+    "@mantle/microsoft": "workspace:*",
     "@mantle/search": "workspace:*",
     "@mantle/storage": "workspace:*",
     "@mantle/telegram": "workspace:*",

@@ -6,7 +6,12 @@ export * from './addresses';
 export { classifyDelivery, salienceForDeliveryKind } from './classify';
 export type { ClassifyInput, DeliveryKind } from './classify';
 export { syncAccount, backfillMatch } from './sync';
-export { enqueueBackfill, enqueueBackfills, BACKFILL_QUEUE } from './backfill-queue';
+export {
+  enqueueBackfill,
+  enqueueBackfills,
+  BACKFILL_QUEUE,
+  MS_BACKFILL_QUEUE,
+} from './backfill-queue';
 export {
   peekLatestFromSender,
   peekRecentSenders,
@@ -68,4 +73,5 @@ export {
   type UnknownSender,
   type RecentUnknownResult,
   type AddSenderResult,
+  type PeekProviderResolver,
 } from './discover';

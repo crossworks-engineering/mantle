@@ -25,8 +25,11 @@ const AUTHORITY = 'https://login.microsoftonline.com';
 /**
  * Delegated scopes the foundation asks for up front, so a single consent
  * covers every surface (SharePoint/OneDrive files, Outlook mail + calendar)
- * and users never have to re-consent as M1–M3 land. All read-only for v1 —
- * widen to `.ReadWrite` only when a write feature actually needs it.
+ * and users never have to re-consent as milestones land. Read-only except
+ * `Mail.Send`, which outbound send (Graph `sendMail`) requires — accounts
+ * connected before it was added must reconnect to grant it (send is gated on
+ * the *granted* scopes in `ms_accounts.scopes`, so everything else keeps
+ * working without it).
  */
 export const MS_SCOPES = [
   'offline_access',
@@ -35,8 +38,12 @@ export const MS_SCOPES = [
   'Files.Read.All',
   'Sites.Read.All',
   'Mail.Read',
+  'Mail.Send',
   'Calendars.Read',
 ] as const;
+
+/** Scope outbound send is gated on (see `ms_accounts.scopes`). */
+export const MAIL_SEND_SCOPE = 'Mail.Send';
 
 export function msScopeString(): string {
   return MS_SCOPES.join(' ');

@@ -3,6 +3,23 @@
 **Status:** M0 (OAuth) + M1 (SharePoint/OneDrive) + M2 (Outlook mail) built — migrations `0100`–`0103` pending apply. **M3 (calendar) HELD** — superseded by the provider-agnostic calendar pipeline (`docs/calendar-ingest.md`); M3 becomes "implement `CalendarProvider` for Graph `/me/calendarView/delta`", reusing `ms_accounts` tokens, exactly as Outlook mail reused the email pipeline.
 **Author:** drafted 2026-06-24
 
+> **M2 follow-up (2026-07-15).** Three of the v1 simplifications below are
+> closed:
+> - **Outbound send** — `outlook/send.ts` (`sendViaGraph`) sends via Graph
+>   `sendMail`; `Mail.Send` joined `MS_SCOPES` and send is gated on the
+>   *granted* scopes (`ms_accounts.scopes`, `msAccountCanSend`) with a
+>   reconnect nudge in the mail card. Dispatch (SMTP vs Graph) lives in
+>   `@mantle/tools` `builtins-email.ts`. See `docs/email-send.md`.
+> - **Sender-approval backfill** — `enqueueBackfill` now routes companion
+>   accounts to `mantle.microsoft.backfill`, consumed by the microsoft-sync
+>   worker via `backfillMatch(account, graphMailProvider, target)`. Domain
+>   wildcards page recent mail newest-first (Graph can't filter by sender
+>   domain) and match caller-side, bounded at 20 pages.
+> - **`/settings/discover`** — the live peek is provider-aware
+>   (`PeekProviderResolver` injected by the API route), so Microsoft
+>   mailboxes are scanned alongside IMAP.
+> Still open from v1: Inbox folder only.
+
 > **M2 build notes (2026-06-24).** Outlook mail reuses the email pipeline
 > wholesale (Choice A): `@mantle/microsoft/outlook/mail.ts` implements
 > `@mantle/email`'s `EmailProvider` interface (listSince / fetchFull /
