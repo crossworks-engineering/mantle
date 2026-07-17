@@ -62,6 +62,10 @@ type PageDetail = {
   updatedAt: string;
   doc: Record<string, unknown>;
   draft: Record<string, unknown> | null;
+  /** Draft etag (optimistic concurrency) — round-tripped on every autosave/
+   *  commit so a stale write from a second device or the Pages agent conflicts
+   *  (409) instead of clobbering newer edits. */
+  draftRev?: number;
 };
 
 // The body autosaves into a private *draft* (cheap, never rendered or indexed).
@@ -154,6 +158,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
   const committedRef = useRef(JSON.stringify(initial.doc)); // last published doc (string)
   const committedDocRef = useRef<JSONContent>(initial.doc as JSONContent); // …as object (diff baseline)
   const draftSavedRef = useRef(JSON.stringify(initial.draft ?? initial.doc)); // last autosaved
+  const draftRevRef = useRef(initial.draftRev ?? 0); // draft etag (optimistic concurrency)
   const metaSavedRef = useRef(
     JSON.stringify({ title: initial.title, tags: initial.tags, icon: initial.icon ?? '' }),
   );
@@ -166,23 +171,42 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
   // ── Autosave the draft body (no publish, no index). ─────────────────
   const saveDraft = useCallback(async () => {
     if (deletedRef.current) return;
-    const s = JSON.stringify(docRef.current);
+    // ONE snapshot for the whole save — the user can keep typing during the
+    // network await; marking the LIVE doc saved would drop those edits.
+    const snapshot = docRef.current;
+    const s = JSON.stringify(snapshot);
     if (s === draftSavedRef.current) return;
     setDraftSaving(true);
     try {
+      let saved: { draft_rev?: number };
       try {
-        await apiSend(`/api/pages/${initial.id}/draft`, 'PUT', { doc: docRef.current });
+        saved = await apiSend<{ draft_rev: number }>(`/api/pages/${initial.id}/draft`, 'PUT', {
+          doc: snapshot,
+          if_rev: draftRevRef.current,
+        });
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) return;
+        if (e instanceof ApiError && e.status === 409) {
+          // Another writer (a second device, or the Pages agent) advanced the
+          // draft. Stop clobbering it: mark this snapshot "saved" so the loop
+          // doesn't re-fire, tell the user, and reload the latest draft — the
+          // query refetch remounts the editor on server truth (the draft
+          // watcher below resets docRef + refs). Mirrors the tables client.
+          draftSavedRef.current = s;
+          toast.error('This page changed elsewhere — reloading the latest draft');
+          void queryClient.invalidateQueries({ queryKey: ['pages', initial.id] });
+          return;
+        }
         toast.error(e instanceof Error ? e.message : 'Could not save draft');
         return;
       }
+      if (typeof saved.draft_rev === 'number') draftRevRef.current = saved.draft_rev;
       draftSavedRef.current = s;
       lastDraftAtRef.current = Date.now();
     } finally {
       setDraftSaving(false);
     }
-  }, [initial.id, toast]);
+  }, [initial.id, queryClient, toast]);
 
   // ── Title / tags save live (cheap metadata, never indexes). ─────────
   const saveMeta = useCallback(async () => {
@@ -211,9 +235,21 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
     try {
       await saveMeta(); // make sure title/tags reflect the screen too
       try {
-        await apiSend(`/api/pages/${initial.id}/commit`, 'POST', { doc: docRef.current });
+        const { page } = await apiSend<{ page: { draftRev?: number } }>(
+          `/api/pages/${initial.id}/commit`,
+          'POST',
+          { doc: docRef.current, if_rev: draftRevRef.current },
+        );
+        if (typeof page?.draftRev === 'number') draftRevRef.current = page.draftRev;
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) return;
+        if (e instanceof ApiError && e.status === 409) {
+          // The draft moved under us (another device / the Pages agent).
+          // Publishing would blow away their newer work — reload instead.
+          toast.error('This page changed elsewhere — reloading the latest draft');
+          void queryClient.invalidateQueries({ queryKey: ['pages', initial.id] });
+          return;
+        }
         toast.error(e instanceof Error ? e.message : 'Commit failed');
         return;
       }
@@ -229,7 +265,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       committingRef.current = false;
       setCommitting(false);
     }
-  }, [initial.id, saveMeta, toast]);
+  }, [initial.id, queryClient, saveMeta, toast]);
 
   // Timers fire stale closures otherwise — always reach the latest fns.
   const saveDraftRef = useRef(saveDraft);
@@ -584,10 +620,13 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       committedRef.current = JSON.stringify(initial.doc);
       committedDocRef.current = initial.doc as JSONContent; // diff baseline
       draftSavedRef.current = nextStr;
+      // Adopt the freshly-loaded etag — a reload after a 409 (or an agent run)
+      // resyncs the base so the next autosave/commit isn't a guaranteed conflict.
+      draftRevRef.current = initial.draftRev ?? 0;
       setDocDirty(nextStr !== committedRef.current);
       setEditorKey((k) => k + 1);
     }
-  }, [initial.draft, initial.doc]);
+  }, [initial.draft, initial.doc, initial.draftRev]);
 
   const onAiChanged = useCallback(
     (changedBlockIds?: string[]) => {

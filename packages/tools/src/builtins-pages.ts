@@ -222,8 +222,8 @@ const page_replace_from_file: BuiltinToolDef = {
       // Phase 2b block tools + the editor diff view.
       const markdown = res.bytes.toString('utf8');
       const doc = markdownToDoc(markdown);
-      const ok = await saveDraft(ctx.ownerId, pageId, doc);
-      if (!ok) return { ok: false, error: `page ${pageId} disappeared mid-call` };
+      const saved = await saveDraft(ctx.ownerId, pageId, doc);
+      if (!saved.ok) return { ok: false, error: `page ${pageId} disappeared mid-call` };
 
       ctx.step?.setOutput({
         page_id: pageId,
@@ -355,8 +355,8 @@ const page_update_draft: BuiltinToolDef = {
     if (typeof input.markdown === 'string') {
       try {
         const doc = markdownToDoc(input.markdown);
-        const ok = await saveDraft(ctx.ownerId, id, doc);
-        if (!ok) return notFound('page', id, 'page_list / search_nodes');
+        const res = await saveDraft(ctx.ownerId, id, doc);
+        if (!res.ok) return notFound('page', id, 'page_list / search_nodes');
         draftSaved = true;
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -1194,8 +1194,8 @@ const page_block_update: BuiltinToolDef = {
       };
     }
     try {
-      const ok = await saveDraft(ctx.ownerId, pageId, result.doc);
-      if (!ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+      const res = await saveDraft(ctx.ownerId, pageId, result.doc);
+      if (!res.ok) return { ok: false, error: `page ${pageId} not found (race?)` };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -1268,8 +1268,8 @@ const page_block_insert_after: BuiltinToolDef = {
       };
     }
     try {
-      const ok = await saveDraft(ctx.ownerId, pageId, result.doc);
-      if (!ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+      const res = await saveDraft(ctx.ownerId, pageId, result.doc);
+      if (!res.ok) return { ok: false, error: `page ${pageId} not found (race?)` };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -1322,8 +1322,8 @@ const page_block_delete: BuiltinToolDef = {
       return { ok: false, error: result.reason ?? 'delete refused' };
     }
     try {
-      const ok = await saveDraft(ctx.ownerId, pageId, result.doc);
-      if (!ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+      const res = await saveDraft(ctx.ownerId, pageId, result.doc);
+      if (!res.ok) return { ok: false, error: `page ${pageId} not found (race?)` };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -1516,8 +1516,8 @@ const page_blocks_apply: BuiltinToolDef = {
     }
 
     try {
-      const ok = await saveDraft(ctx.ownerId, pageId, doc);
-      if (!ok) return { ok: false, error: `page ${pageId} not found (race?)` };
+      const res = await saveDraft(ctx.ownerId, pageId, doc);
+      if (!res.ok) return { ok: false, error: `page ${pageId} not found (race?)` };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

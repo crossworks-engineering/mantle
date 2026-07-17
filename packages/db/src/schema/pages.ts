@@ -23,6 +23,11 @@ export const pages = pgTable('pages', {
   draftDoc: jsonb('draft_doc').$type<Record<string, unknown>>(),
   draftUpdatedAt: timestamp('draft_updated_at', { withTimezone: true }),
   version: integer('version').default(1).notNull(),
+  // Draft etag (optimistic concurrency): bumped on every draft write, commit,
+  // and discard. Autosave/commit callers round-trip it as a baseRev so a stale
+  // debounced doc (a second device, or the Pages agent's ops) can't silently
+  // overwrite a newer draft — the mirror of `tables.draft_rev`.
+  draftRev: integer('draft_rev').default(0).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

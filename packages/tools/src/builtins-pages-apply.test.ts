@@ -76,7 +76,7 @@ function makeBaseline() {
 }
 
 beforeEach(() => {
-  vi.mocked(saveDraft).mockReset().mockResolvedValue(true);
+  vi.mocked(saveDraft).mockReset().mockResolvedValue({ ok: true, rev: 1 });
   vi.mocked(getPage).mockReset();
 });
 
