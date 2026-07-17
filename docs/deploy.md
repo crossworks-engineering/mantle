@@ -231,6 +231,41 @@ if a deploy migrated the DB, rolling back the image may leave the schema ahead.
 This is why the pre-deploy dump matters: to truly roll back a bad migration,
 restore the dump into a fresh DB (§3b–c).
 
+## 5b. The release-owned compose contract (drift guard)
+
+`docker-compose.yml` is **owned by the release**, not the box. Tag-only updates
+used to run the new image on whatever compose the box happened to have — losing
+every compose-level change a release carried (the v0.137 `table-dbs` mount 500'd
+NATREF; the v0.141 hardening batch — autoheal sidecar, healthchecks, mem caps —
+would silently not exist on a tag-only box). Since v0.142:
+
+- The canonical compose for a release is **embedded in its image** at
+  `/app/release/docker-compose.yml` (and shipped in the deploy bundle, as
+  always).
+- On every update the **updater sidecar** extracts the target release's
+  canonical and, when the box's file is **pristine** (byte-identical to the
+  `docker-compose.yml.release` baseline written at install/last refresh), swaps
+  it in before `compose pull`/`up` — compose changes land in the SAME roll as
+  the image. The outgoing file is kept as `docker-compose.yml.prev`.
+- A **modified** compose is never overwritten: the update proceeds on the old
+  file and the drift is reported loudly — update.log, `/signal/stack.json`, and
+  a warning on `/settings/updates` ("image is release X, compose is not").
+- **Box-local customization goes in `docker-compose.override.yml`** (compose
+  merges it automatically; verify with `docker compose config`) **+ `.env`** —
+  never in the canonical file. That's what keeps a box pristine and
+  auto-refreshable.
+- Existing boxes (pre-v0.142, no baseline) adopt once with
+  `scripts/compose-adopt.sh` from the stack dir: it diffs the box file against
+  the canonical, you port local edits to the override file, `--apply` installs
+  canonical + baseline. Automatic from then on.
+- Rollback: to a ≥v0.142 tag, the refresh installs THAT release's canonical
+  (compose downgrades with the image). To an older tag, the target ships no
+  canonical — swap `docker-compose.yml.prev` back manually.
+
+Manual `docker compose pull` rolls skip the refresh (it lives in the updater) —
+`/settings/updates` will show the compose as **stale** until an updater-driven
+update runs or you re-run `scripts/compose-adopt.sh`.
+
 ---
 
 ## 6. Staging on the VPS (for tailnet / remote-inference testing)

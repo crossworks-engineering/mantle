@@ -13,6 +13,7 @@
  *      → everything degrades to "updater not available".
  */
 
+import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { APP_VERSION } from './version';
@@ -202,6 +203,69 @@ export async function readUpdaterStatus(): Promise<UpdaterStatus | null> {
     return status;
   } catch {
     return null;
+  }
+}
+
+// ── compose drift (release-owned compose contract) ──────────────────────────
+// The canonical docker-compose.yml ships INSIDE this image (Dockerfile →
+// /app/release/docker-compose.yml); the updater sidecar fingerprints the box's
+// actual stack files into /signal/stack.json (it mounts the stack dir — this
+// container can't see the host compose directly). Comparing the two flags
+// "image is release X but compose is from release Y" even on boxes where the
+// auto-refresh can't run. See infra/updater/updater.sh + docs/deploy.md.
+
+const RELEASE_COMPOSE_PATH =
+  process.env.MANTLE_RELEASE_COMPOSE_PATH ?? '/app/release/docker-compose.yml';
+
+export type ComposeState =
+  | 'in-sync' // box compose == this release's canonical
+  | 'stale' // pristine (== baseline) but not this release's — refresh hasn't run
+  | 'modified' // hand-edited canonical file — auto-refresh disabled, needs adoption
+  | 'no-baseline' // pre-adoption box — run scripts/compose-adopt.sh once
+  | 'unknown'; // no stack.json (old updater.sh / no sidecar / dev)
+
+export type ComposeStatus = {
+  state: ComposeState;
+  /** The updater's last refresh outcome verbatim (e.g. 'refreshed',
+   *  'modified', 'no-baseline', 'unavailable'), for the details view. */
+  refresh: string | null;
+  checkedAt: string | null;
+};
+
+/** Canonical-compose hash is constant for the life of the build. */
+let canonicalComposeSha: string | null | undefined;
+
+async function releaseComposeSha(): Promise<string | null> {
+  if (canonicalComposeSha !== undefined) return canonicalComposeSha;
+  try {
+    const buf = await fs.readFile(RELEASE_COMPOSE_PATH);
+    canonicalComposeSha = createHash('sha256').update(buf).digest('hex');
+  } catch {
+    canonicalComposeSha = null; // dev / pre-embed image
+  }
+  return canonicalComposeSha;
+}
+
+export async function readComposeStatus(): Promise<ComposeStatus> {
+  try {
+    const [raw, canonical] = await Promise.all([
+      fs.readFile(path.join(SIGNAL_DIR, 'stack.json'), 'utf8'),
+      releaseComposeSha(),
+    ]);
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    const composeSha = typeof j.compose_sha === 'string' ? j.compose_sha : '';
+    const baselineSha = typeof j.baseline_sha === 'string' ? j.baseline_sha : '';
+    const refresh = typeof j.refresh === 'string' && j.refresh ? j.refresh : null;
+    const checkedAt = typeof j.checked_at === 'string' && j.checked_at ? j.checked_at : null;
+    if (!canonical || !composeSha) return { state: 'unknown', refresh, checkedAt };
+    let state: ComposeState;
+    if (composeSha === canonical) state = 'in-sync';
+    else if (!baselineSha) state = 'no-baseline';
+    else if (composeSha === baselineSha) state = 'stale';
+    else state = 'modified';
+    return { state, refresh, checkedAt };
+  } catch {
+    return { state: 'unknown', refresh: null, checkedAt: null };
   }
 }
 

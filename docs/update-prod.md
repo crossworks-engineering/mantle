@@ -80,12 +80,20 @@ Then smoke-test the surface the release actually changed in the browser (and
 
 ## Gotchas
 
+- **Compose is release-owned (v0.142+)** — updates driven by the in-app
+  **updater** auto-refresh a pristine `docker-compose.yml` from the target
+  image, so compose-level changes (new services, healthchecks, mounts) land
+  with the roll (deploy.md §5b). The MANUAL ssh loop above skips that refresh:
+  on a release that changed compose, either update via `/settings/updates`
+  instead, or run `scripts/compose-adopt.sh --apply` after bumping the tag.
+  `/settings/updates` shows the compose state (in sync / stale / drifted);
+  box-local customization belongs in `docker-compose.override.yml` + `.env`,
+  never in the canonical file.
 - **Topology-change releases** (a renamed / added / removed service in
-  `docker-compose.yml`) need the **release bundle's compose swapped onto the box**
-  before the roll, plus `docker compose up -d --wait --remove-orphans` — otherwise
-  a renamed service's old container keeps running under its former name. Grab the
-  compose from that release's `mantle-deploy-vX.Y.Z.tar.gz`. Both production boxes
-  hit this on the v0.79.0 split (apps/agent → apps/api).
+  `docker-compose.yml`) also need `docker compose up -d --wait
+  --remove-orphans` — otherwise a renamed service's old container keeps running
+  under its former name (the updater passes `--remove-orphans` already; both
+  production boxes hit this on the v0.79.0 split, apps/agent → apps/api).
 - **telegram poller**: leave `worker_telegram` RUNNING (`restart: unless-stopped`).
   The dev/prod bot split (2026-06-02) means prod polls only `saskianewbot` and dev
   only `saskiadevbot` — disjoint tokens, no 409. If you ever re-share a token across
