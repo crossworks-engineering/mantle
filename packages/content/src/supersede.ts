@@ -14,11 +14,14 @@
  *    expression (`dist + λ·(1-salience)`) picks it up with ZERO query changes.
  *    A down-weight, never a filter — superseded content stays findable.
  *  - Reversible: `unsupersedeNode` clears the edge and restores salience 1.
- *    (Restoring to 1 is correct for every real writer today — files, pages,
- *    notes. Bulk-mail salience is set on EMAILS, which nothing supersedes.)
- *  - Cycle-safe: the write walks the successor chain first and refuses a mark
- *    that would close a loop (A→B→A never exists, so read-path walks are
- *    bounded by construction; the hop cap is belt-and-suspenders).
+ *    Restoring to 1 is correct because supersession never applies to nodes
+ *    whose salience another subsystem manages: emails carry ingest-assigned
+ *    bulk-mail weights (salienceForDeliveryKind), so `supersedeNode` REFUSES
+ *    email (and branch) targets — enforced below, not just assumed.
+ *  - Cycle-safe: the write walks the successor's FULL chain first and refuses
+ *    a mark that would close a loop, so read-path walks are bounded by
+ *    construction. (Two concurrent marks racing each other are the one
+ *    remaining window — the read-side hop cap keeps even that bounded.)
  *
  * Read-side (annotation + terminal-successor resolution) lives in
  * @mantle/search (resolveSupersededTargets) so tools and the agent runtime can
@@ -43,17 +46,19 @@ export function salienceForSupersedeReason(reason: SupersedeReason): number {
   return reason === 'corrected' ? CORRECTED_SALIENCE : SUPERSEDED_SALIENCE;
 }
 
-/** Max successor hops any walk will follow. Cycles can't be written (the guard
- *  below), so this only bounds pathological hand-edited data. Keep in sync with
- *  @mantle/search resolveSupersededTargets. */
+/** Max successor hops a READ-side walk will follow. Cycles can't be written
+ *  (the exact guard below), so this only bounds pathological hand-edited data.
+ *  Keep in sync with @mantle/search resolveSupersededTargets. */
 export const SUPERSEDE_CHAIN_CAP = 5;
 
 /**
  * Pure cycle check over a preloaded successor map: would setting
  * `from.superseded_by = to` close a loop? True when walking `to`'s successor
- * chain reaches `from` (including the degenerate `from === to`). The walk is
- * capped — an existing malformed cycle beyond the cap reads as unreachable,
- * which REJECTS the write (safe direction).
+ * chain reaches `from` (including the degenerate `from === to`). The cap only
+ * guarantees termination on a MALFORMED map (a pre-existing cycle not
+ * involving `from`) — for exact detection callers must preload the full chain
+ * and pass a cap ≥ its length, as `supersedeNode` does. A cap smaller than the
+ * chain makes a deep `from` read as unreachable, i.e. ACCEPTS the write.
  */
 export function wouldCreateSupersedeCycle(
   successorOf: ReadonlyMap<string, string>,
@@ -82,8 +87,9 @@ export type SupersedeNodeInput = {
 /**
  * Mark a node superseded: set the lineage edge + reason and materialize the
  * salience demotion. Idempotent — re-marking updates the edge/reason in place.
- * Throws on: missing node, missing successor, cross-owner successor, self- or
- * cycle-closing marks.
+ * Throws on: missing node, email/branch targets (their salience is managed
+ * elsewhere / supersession is meaningless), missing successor, cross-owner
+ * successor, self- or cycle-closing marks.
  */
 export async function supersedeNode(input: SupersedeNodeInput): Promise<Node> {
   const successorId = input.supersededBy ?? null;
@@ -91,11 +97,24 @@ export async function supersedeNode(input: SupersedeNodeInput): Promise<Node> {
     throw new Error('supersede: a node cannot supersede itself');
   }
   const [target] = await db
-    .select({ id: nodes.id })
+    .select({ id: nodes.id, type: nodes.type })
     .from(nodes)
     .where(and(eq(nodes.ownerId, input.ownerId), eq(nodes.id, input.id)))
     .limit(1);
   if (!target) throw new Error('supersede: node not found');
+  // Emails carry ingest-assigned bulk-mail salience (salienceForDeliveryKind);
+  // a supersede/undo round-trip would clobber that weighting — and the newer
+  // message in a thread already outranks the old one naturally.
+  if (target.type === 'email') {
+    throw new Error(
+      'supersede: emails cannot be superseded — their retrieval weight is assigned at ingest, and newer messages in the thread already take precedence.',
+    );
+  }
+  if (target.type === 'branch') {
+    throw new Error(
+      'supersede: folders cannot be superseded — mark the specific content nodes inside instead.',
+    );
+  }
 
   if (successorId) {
     const [successor] = await db
@@ -105,11 +124,14 @@ export async function supersedeNode(input: SupersedeNodeInput): Promise<Node> {
       .limit(1);
     if (!successor) throw new Error('supersede: successor node not found');
 
-    // Walk the successor's chain (bounded) to refuse cycle-closing marks.
+    // Walk the successor's FULL chain to refuse cycle-closing marks — exact,
+    // not capped: a capped walk would ACCEPT a mark whose cycle closes beyond
+    // the cap. Terminates on the chain's end, a missing row, or a repeated
+    // node (a pre-existing malformed cycle in hand-edited data).
     const chain = new Map<string, string>();
     let cur = successor.supersededBy;
     let prev = successor.id;
-    for (let hops = 0; cur && hops < SUPERSEDE_CHAIN_CAP; hops++) {
+    while (cur && !chain.has(prev)) {
       chain.set(prev, cur);
       const [next] = await db
         .select({ id: nodes.id, supersededBy: nodes.supersededBy })
@@ -120,7 +142,7 @@ export async function supersedeNode(input: SupersedeNodeInput): Promise<Node> {
       prev = next.id;
       cur = next.supersededBy;
     }
-    if (wouldCreateSupersedeCycle(chain, input.id, successor.id)) {
+    if (wouldCreateSupersedeCycle(chain, input.id, successor.id, chain.size + 1)) {
       throw new Error(
         'supersede: refusing a mark that would close a supersession cycle — ' +
           "the proposed successor is itself (transitively) superseded by this node; clear that mark first (undo) if it's wrong.",

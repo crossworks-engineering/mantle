@@ -1074,8 +1074,11 @@ auto-context annotate superseded items with the **living end of the chain**
 context-block headers instruct the model to prefer the successor. Writers:
 `page_from_file` / `page_from_note(s)` stamp `reason='migrated'` automatically
 (`supersede_source: false` opts out), the extractor's version-family step stamps
-`reason='version'` (never touching manual marks), and the `content_supersede`
-tool (owner-side only; `curation` group) handles corrections + undo.
+`reason='version'` (never touching manual marks — ownership keys on the
+reason column, so bare marks are safe too), and the `content_supersede` tool
+(owner-side only; `curation` group) handles corrections + undo. Emails and
+folders are refused: email salience is ingest-assigned bulk-mail weighting
+that a supersede/undo round-trip would clobber.
 
 ---
 
