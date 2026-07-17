@@ -13,10 +13,17 @@
  *      user/assistant alternation never see back-to-back user messages);
  *      agent posts become assistant turns. The volatile block tells the
  *      model it is speaking to a room, not one person.
- *   3. Serial-per-topic: the durable "thinking…" post is guarded by a partial
- *      unique index (one pending agent post per topic). A concurrent turn's
- *      insert conflicts and retries with backoff; a stale-pending sweep
- *      guarantees an abandoned turn can never wedge its topic.
+ *   3. Serial-per-topic is enforced UPSTREAM by the partitioned FORUM_QUEUE
+ *      (concurrency 1 per topicId) — this workflow only runs when it is this
+ *      topic's turn, so there is NO in-workflow wait. Consequences the old
+ *      spin-lock got wrong and this design gets right:
+ *        - History loads at the TOP, when the turn actually runs, so a queued
+ *          turn sees every prior turn's ANSWER (not a stale pre-wait snapshot).
+ *        - The pending "thinking…" insert is idempotent on the workflow id
+ *          (acquireForumAgentPending), so a DBOS replay adopts its own row
+ *          instead of deadlocking on the unique index.
+ *        - The trigger post is fetched BY ID, never through the recency window
+ *          (it can't fall out of a window that no longer gates history).
  *
  * Isolation invariants are IDENTICAL to runTeamTurn (no persona notes, no
  * digests, no owner journal/identity; private reads stripped unless the
@@ -33,8 +40,9 @@ import {
 } from '@mantle/agent-runtime';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 import {
-  appendForumPost,
+  acquireForumAgentPending,
   finalizeForumPost,
+  getForumPost,
   getForumTopic,
   recentForumPosts,
   sweepStaleForumAgentPosts,
@@ -63,19 +71,19 @@ export type RunForumTurnOptions = {
   /** The already-persisted forum_posts row that triggered this turn. */
   inboundPostId: string;
   channel?: TeamChannel;
-  /** Server-minted correlation id for live streaming (forum-<contactId>.<nonce>). */
+  /** Server-minted correlation id for live streaming, in the shared
+   *  `team-<contactId>.<nonce>` namespace so the existing team stream route
+   *  serves forum turns unchanged. */
   streamId?: string;
+  /** DBOS workflow id (from the workflow wrapper) — the idempotency key for the
+   *  agent pending row on a recovery replay. Required. */
+  workflowId?: string;
 };
 
 export type ForumTurnResult = {
   outbound: ForumPost;
   reply: string;
 };
-
-/** How long a concurrent turn waits for the topic's in-flight agent post to
- *  clear before giving up (the queue itself retries nothing beyond this). */
-const PENDING_WAIT_MS = 4 * 60_000;
-const PENDING_POLL_MS = 2_000;
 
 async function resolveTeamResponder(ownerId: string): Promise<Agent | null> {
   const [row] = await db
@@ -121,208 +129,196 @@ export function forumPostsToHistory(posts: ForumPost[]): HistoryTurn[] {
   return out;
 }
 
-/** Postgres unique-violation on the one-pending-agent-post-per-topic index —
- *  another turn holds the topic. */
-function isPendingConflict(err: unknown): boolean {
-  const seen = new Set<unknown>();
-  for (let e = err; e && typeof e === 'object' && !seen.has(e); ) {
-    seen.add(e);
-    const rec = e as { code?: unknown; message?: unknown; cause?: unknown };
-    if (rec.code === '23505') return true;
-    if (
-      typeof rec.message === 'string' &&
-      rec.message.includes('forum_posts_one_pending_agent_idx')
-    ) {
-      return true;
-    }
-    e = rec.cause;
-  }
-  return false;
-}
-
 export async function runForumTurn(
   ownerId: string,
   options: RunForumTurnOptions,
 ): Promise<ForumTurnResult> {
-  const { contactId, topicId, inboundPostId } = options;
+  const { contactId, topicId, inboundPostId, workflowId } = options;
   if (!contactId) throw new Error('runForumTurn: contactId required');
   if (!topicId) throw new Error('runForumTurn: topicId required');
   if (!inboundPostId) throw new Error('runForumTurn: inboundPostId required');
+  if (!workflowId) throw new Error('runForumTurn: workflowId required');
   const channel: TeamChannel = options.channel ?? 'web';
 
-  const agent = await resolveTeamResponder(ownerId);
-  if (!agent) {
-    throw new Error(
-      "The Team Forum isn't provisioned on this brain — the 'team-responder' agent is missing or disabled.",
-    );
-  }
-  if (!agent.apiKeyId) {
-    throw new Error(`Agent '${agent.slug}' has no api_key_id set — edit at /settings/agents.`);
-  }
-  const apiKey = await getApiKeyById(agent.apiKeyId);
-  if (!apiKey) {
-    throw new Error(`api_key_id ${agent.apiKeyId} not found for agent '${agent.slug}'.`);
-  }
-
-  // The topic frames the whole turn. Owner viewer: the runner is trusted and
-  // must load private topics too (their author is the one asking in them).
-  const topic = await getForumTopic(ownerId, topicId, { kind: 'owner' });
-  if (!topic) throw new Error(`runForumTurn: topic ${topicId} not found`);
-
-  const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
-  const transcript = await recentForumPosts(ownerId, topicId, memoryConfig.history_limit ?? 30);
-  const trigger = transcript.find((p) => p.id === inboundPostId);
-  if (!trigger) {
-    // Outside the recency window or deleted — either way there is nothing
-    // trustworthy to answer.
-    throw new Error(`runForumTurn: triggering post ${inboundPostId} not found in topic window`);
-  }
-  const history = forumPostsToHistory(
-    transcript.filter((p) => p.createdAt < trigger.createdAt && p.id !== trigger.id),
-  );
-  const newUserText = humanLine(trigger);
-
-  // Retrieval context (the team-responder's own history is structurally
-  // empty; digests are off via its memoryConfig — see runTeamTurn).
-  const ctx = await loadConversationContext({ ownerId, agent, inboundText: trigger.body });
-
-  // Serial-per-topic gate: sweep abandoned pendings, then take the topic's
-  // pending slot — the partial unique index makes the insert the lock.
-  const outboundPending = await runDurableStep('record_forum_outbound_pending', async () => {
-    await sweepStaleForumAgentPosts(ownerId, topicId);
-    const deadline = Date.now() + PENDING_WAIT_MS;
-    for (;;) {
-      try {
-        return await appendForumPost({
-          ownerId,
-          topicId,
-          author: { kind: 'agent', agentId: agent.id, name: agent.name ?? agent.slug },
-          body: '',
-          channel,
-          model: agent.model,
-          status: 'pending',
-        });
-      } catch (err) {
-        if (!isPendingConflict(err)) throw err;
-        if (Date.now() >= deadline) {
-          throw new Error(
-            `runForumTurn: topic ${topicId} still has an in-flight agent turn after ${PENDING_WAIT_MS / 1000}s`,
-          );
-        }
-        await new Promise((r) => setTimeout(r, PENDING_POLL_MS));
-        await sweepStaleForumAgentPosts(ownerId, topicId);
-      }
+  // Every failure path must reach the member. Without a universal terminal
+  // emit, a throw BEFORE the trace (misconfig, topic/trigger gone) would leave
+  // the SSE stream pinging and the composer stuck on "Thinking…" forever.
+  let outboundPending: ForumPost | null = null;
+  let terminalEmitted = false;
+  const emitError = (message: string) => {
+    if (options.streamId && !terminalEmitted) {
+      emitTurnLifecycle(options.streamId, ownerId, 'error', { message });
+      terminalEmitted = true;
     }
-  });
-
-  if (options.streamId) {
-    emitTurnLifecycle(options.streamId, ownerId, 'turn-start', {
-      agentSlug: agent.slug,
-      model: agent.model,
-      inboundId: inboundPostId,
-      outboundId: outboundPending.id,
-    });
-  }
-  const abortController = options.streamId ? registerTurnAbort(options.streamId, ownerId) : null;
+  };
   const retireAbort = () => {
     if (options.streamId) unregisterTurnAbort(options.streamId);
   };
 
-  const prefs = await loadProfilePreferences(ownerId);
-  // Per-member and per-topic text rides the VOLATILE block — the cached
-  // system prefix stays shared across members and topics.
-  const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (contact ${contactId}). You are serving this person — an external team member, not the brain's owner.`;
-  const topicLine =
-    `Forum topic: "${topic.title}" (kind ${topic.kind}, ${topic.status}${topic.visibility === 'private' ? ', PRIVATE — visible to its author and the owner only' : ''}). ` +
-    "You are answering in a shared team forum: every team member can read this thread, and user messages are prefixed with their author's name. " +
-    'Address the member whose post you are answering, but write for the room.';
-
-  const assembled = await assembleResponderTurn({
-    ownerId,
-    agent,
-    prefs,
-    logPrefix: '[forum-turn]',
-    includeIdentity: false,
-    volatileExtras: [memberLine, topicLine],
-    withThinking: false,
-    allowDelegation: false,
-    excludeToolSlugs: isTeamPrivateReadsEnabled(prefs) ? [] : TEAM_PRIVATE_READ_SLUGS,
-  });
-  const { volatileContext, allowedTools } = assembled;
-
-  const adapter = getChatAdapter(agent.provider);
-  if (!adapter) {
-    throw new Error(
-      `forum turn: no chat adapter for provider '${agent.provider}' (agent ${agent.slug})`,
-    );
-  }
-
-  const messages = buildChatMessages({
-    model: agent.model,
-    provider: agent.provider,
-    systemPrompt: assembled.effectiveSystemPrompt,
-    volatileContext,
-    // HARD isolation, exactly as runTeamTurn: no persona notes, no digests.
-    personaNotes: [],
-    facts: ctx.facts,
-    digests: [],
-    contentHits: ctx.contentHits,
-    chunkHits: ctx.chunkHits,
-    relations: ctx.relations,
-    history,
-    newUserText,
-  });
-
-  let capturedTraceId: string | null = null;
-  let outcome: ResponderLoopResult;
   try {
-    outcome = await startTrace(
-      {
-        kind: 'responder_turn',
+    const agent = await resolveTeamResponder(ownerId);
+    if (!agent) {
+      throw new Error(
+        "The Team Forum isn't provisioned on this brain — the 'team-responder' agent is missing or disabled.",
+      );
+    }
+    if (!agent.apiKeyId) {
+      throw new Error(`Agent '${agent.slug}' has no api_key_id set — edit at /settings/agents.`);
+    }
+    const apiKey = await getApiKeyById(agent.apiKeyId);
+    if (!apiKey) {
+      throw new Error(`api_key_id ${agent.apiKeyId} not found for agent '${agent.slug}'.`);
+    }
+
+    // Owner viewer: the runner is trusted and must load private topics too
+    // (their author is the one asking in them).
+    const topic = await getForumTopic(ownerId, topicId, { kind: 'owner' });
+    if (!topic) throw new Error(`runForumTurn: topic ${topicId} not found`);
+
+    // Fetch the trigger BY ID (not through a window), and load history at the
+    // TOP of the turn: the partitioned queue guarantees this runs only when it
+    // is this topic's turn, so the transcript already contains every PRIOR
+    // turn's ANSWER. Exclude only the trigger (it becomes the new user
+    // message) — NO createdAt window, which is what fixes the stale-history bug.
+    const trigger = await getForumPost(ownerId, topicId, inboundPostId);
+    if (!trigger) throw new Error(`runForumTurn: triggering post ${inboundPostId} not found`);
+
+    const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
+    const transcript = await recentForumPosts(ownerId, topicId, memoryConfig.history_limit ?? 30);
+    const history = forumPostsToHistory(transcript.filter((p) => p.id !== trigger.id));
+    const newUserText = humanLine(trigger);
+
+    // Retrieval context (the team-responder's own history is structurally
+    // empty; digests are off via its memoryConfig — see runTeamTurn).
+    const ctx = await loadConversationContext({ ownerId, agent, inboundText: trigger.body });
+
+    // Belt-and-suspenders: fail out any TRULY abandoned (>15min) pending so a
+    // wedged topic self-heals even before the P1 global sweep worker. The
+    // FORUM_QUEUE already serializes, so this never touches a healthy turn.
+    await sweepStaleForumAgentPosts(ownerId, topicId);
+
+    // Take the topic's single "thinking…" slot — idempotent on workflowId, so a
+    // recovery replay adopts its own row instead of tripping the unique index.
+    const pending = await runDurableStep('record_forum_outbound_pending', () =>
+      acquireForumAgentPending({
         ownerId,
-        turnId: options.streamId,
-        subjectId: inboundPostId,
-        subjectKind: 'forum_turn',
+        topicId,
         agentId: agent.id,
-        data: {
-          surface: 'forum',
-          contact_id: contactId,
-          topic_id: topicId,
-          channel,
-          model: agent.model,
-          agent_slug: agent.slug,
-          tool_count: allowedTools.length,
-        },
-      },
-      async () => {
-        capturedTraceId = currentTrace()?.id ?? null;
-        return runResponderLoop({
-          ownerId,
-          agent,
-          adapter,
-          apiKey,
-          prefs,
-          logPrefix: '[forum-turn]',
-          assembled,
-          loadContext: async () => ctx,
-          contextStepInput: { agentId: agent.id, contactId },
-          contextStepExtra: { turnCount: history.length, topicId },
-          buildMessages: () => messages,
-          // The provenance channel: team_request_create reads WHO is asking
-          // and WHICH topic from here; owner-side tools see 'forum' and refuse.
-          surface: {
-            kind: 'forum',
-            contactId,
-            contactName: options.contactName,
-            topicId,
-            inboundPostId,
-          },
-          abortSignal: abortController?.signal ?? null,
-        });
-      },
+        agentName: agent.name ?? agent.slug,
+        model: agent.model,
+        channel,
+        workflowId,
+      }),
     );
-  } catch (err) {
-    if (abortController?.signal.aborted) {
+    outboundPending = pending;
+
+    if (options.streamId) {
+      emitTurnLifecycle(options.streamId, ownerId, 'turn-start', {
+        agentSlug: agent.slug,
+        model: agent.model,
+        inboundId: inboundPostId,
+        outboundId: pending.id,
+      });
+    }
+    const abortController = options.streamId ? registerTurnAbort(options.streamId, ownerId) : null;
+
+    const prefs = await loadProfilePreferences(ownerId);
+    // Per-member and per-topic text rides the VOLATILE block — the cached
+    // system prefix stays shared across members and topics.
+    const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (contact ${contactId}). You are serving this person — an external team member, not the brain's owner.`;
+    const topicLine =
+      `Forum topic: "${topic.title}" (kind ${topic.kind}, ${topic.status}${topic.visibility === 'private' ? ', PRIVATE — visible to its author and the owner only' : ''}). ` +
+      "You are answering in a shared team forum: every team member can read this thread, and user messages are prefixed with their author's name. " +
+      'Address the member whose post you are answering, but write for the room.';
+
+    const assembled = await assembleResponderTurn({
+      ownerId,
+      agent,
+      prefs,
+      logPrefix: '[forum-turn]',
+      includeIdentity: false,
+      volatileExtras: [memberLine, topicLine],
+      withThinking: false,
+      allowDelegation: false,
+      excludeToolSlugs: isTeamPrivateReadsEnabled(prefs) ? [] : TEAM_PRIVATE_READ_SLUGS,
+    });
+    const { volatileContext, allowedTools } = assembled;
+
+    const adapter = getChatAdapter(agent.provider);
+    if (!adapter) {
+      throw new Error(
+        `forum turn: no chat adapter for provider '${agent.provider}' (agent ${agent.slug})`,
+      );
+    }
+
+    const messages = buildChatMessages({
+      model: agent.model,
+      provider: agent.provider,
+      systemPrompt: assembled.effectiveSystemPrompt,
+      volatileContext,
+      // HARD isolation, exactly as runTeamTurn: no persona notes, no digests.
+      personaNotes: [],
+      facts: ctx.facts,
+      digests: [],
+      contentHits: ctx.contentHits,
+      chunkHits: ctx.chunkHits,
+      relations: ctx.relations,
+      history,
+      newUserText,
+    });
+
+    let capturedTraceId: string | null = null;
+    let outcome: ResponderLoopResult;
+    try {
+      outcome = await startTrace(
+        {
+          kind: 'responder_turn',
+          ownerId,
+          turnId: options.streamId,
+          subjectId: inboundPostId,
+          subjectKind: 'forum_turn',
+          agentId: agent.id,
+          data: {
+            surface: 'forum',
+            contact_id: contactId,
+            topic_id: topicId,
+            channel,
+            model: agent.model,
+            agent_slug: agent.slug,
+            tool_count: allowedTools.length,
+          },
+        },
+        async () => {
+          capturedTraceId = currentTrace()?.id ?? null;
+          return runResponderLoop({
+            ownerId,
+            agent,
+            adapter,
+            apiKey,
+            prefs,
+            logPrefix: '[forum-turn]',
+            assembled,
+            loadContext: async () => ctx,
+            contextStepInput: { agentId: agent.id, contactId },
+            contextStepExtra: { turnCount: history.length, topicId },
+            buildMessages: () => messages,
+            // The provenance channel: team_request_create reads WHO is asking
+            // and WHICH topic from here; owner-side tools see 'forum' and refuse.
+            surface: {
+              kind: 'forum',
+              contactId,
+              contactName: options.contactName,
+              topicId,
+              inboundPostId,
+            },
+            abortSignal: abortController?.signal ?? null,
+          });
+        },
+      );
+    } catch (err) {
+      // A deliberate abort is not a failure — keep the partial reply. Any other
+      // error propagates to the outer catch, which fails the pending + emits.
+      if (!abortController?.signal.aborted) throw err;
       outcome = {
         loop: emptyLoopResult(),
         reply: '',
@@ -331,49 +327,48 @@ export async function runForumTurn(
         toolStats: null,
         ctx,
       };
-    } else {
-      const msg = err instanceof Error ? err.message : String(err);
-      await runDurableStep('fail_forum_outbound', () =>
-        finalizeForumPost({
-          ownerId,
-          id: outboundPending.id,
-          status: 'failed',
-          error: msg,
-          traceId: capturedTraceId,
-        }),
-      ).catch((e) => console.error('[forum-turn] could not mark turn failed:', e));
-      if (options.streamId) emitTurnLifecycle(options.streamId, ownerId, 'error', { message: msg });
-      retireAbort();
-      throw err;
     }
-  }
 
-  const reply = stripAudioTags(outcome.reply).text;
+    const reply = stripAudioTags(outcome.reply).text;
 
-  const finalized = await runDurableStep('finalize_forum_outbound', () =>
-    finalizeForumPost({
-      ownerId,
-      id: outboundPending.id,
-      status: 'complete',
+    const finalized = await runDurableStep('finalize_forum_outbound', () =>
+      finalizeForumPost({
+        ownerId,
+        id: pending.id,
+        status: 'complete',
+        body: reply,
+        model: agent.model,
+        traceId: capturedTraceId,
+      }),
+    );
+    const outbound: ForumPost = finalized ?? {
+      ...pending,
       body: reply,
-      model: agent.model,
+      status: 'complete',
       traceId: capturedTraceId,
-    }),
-  );
-  const outbound: ForumPost = finalized ?? {
-    ...outboundPending,
-    body: reply,
-    status: 'complete',
-    traceId: capturedTraceId,
-  };
+    };
 
-  retireAbort();
-  if (options.streamId) {
-    emitTurnLifecycle(options.streamId, ownerId, 'done', {
-      outboundId: outboundPending.id,
-      tokensOut: outcome.loop.tokensOut,
-    });
+    retireAbort();
+    if (options.streamId) {
+      emitTurnLifecycle(options.streamId, ownerId, 'done', {
+        outboundId: pending.id,
+        tokensOut: outcome.loop.tokensOut,
+      });
+      terminalEmitted = true;
+    }
+
+    return { outbound, reply };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Fail the pending (if we got that far) so no member is left with a
+    // permanent "answering…" bubble, and make sure the stream terminates.
+    if (outboundPending) {
+      await runDurableStep('fail_forum_outbound', () =>
+        finalizeForumPost({ ownerId, id: outboundPending!.id, status: 'failed', error: msg }),
+      ).catch((e) => console.error('[forum-turn] could not mark turn failed:', e));
+    }
+    emitError(msg);
+    retireAbort();
+    throw err;
   }
-
-  return { outbound, reply };
 }

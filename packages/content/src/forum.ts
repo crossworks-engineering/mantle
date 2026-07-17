@@ -27,20 +27,24 @@ import {
   type ForumTopicVisibility,
   type TeamChannel,
 } from '@mantle/db';
+import {
+  canPostToTopic,
+  canViewTopic,
+  type ForumAuthor,
+  type ForumViewer,
+} from './forum-visibility';
 
-/** Who is looking. Scopes visibility (owner sees everything, a member sees
- *  'team' topics + their own 'private' ones) and the unread counts. */
-export type ForumViewer = { kind: 'owner' } | { kind: 'member'; contactId: string };
-
-export type ForumAuthor =
-  | { kind: 'member'; contactId: string }
-  | { kind: 'owner'; name: string }
-  | { kind: 'agent'; agentId: string; name: string };
+// Re-exported so existing importers (index.ts, callers) keep resolving these
+// from '@mantle/content'; the definitions live in forum-visibility.ts, next to
+// the predicates that are the single source of truth for the rule.
+export type { ForumViewer, ForumAuthor };
 
 const TITLE_MAX = 200;
 
-/** Topic rows a viewer may see: everything for the owner; 'team' topics plus
- *  the member's own 'private' topics for a member. */
+/** SQL form of the read-visibility rule for the LIST/GET queries. MUST mirror
+ *  `canViewTopic` (forum-visibility.ts) — that pure predicate is the source of
+ *  truth and is the belt to this SQL's suspenders (getForumTopic re-checks it
+ *  post-fetch). Owner ⇒ no filter (sees all); member ⇒ 'team' OR own topic. */
 function visibleTopicCond(viewer: ForumViewer) {
   if (viewer.kind === 'owner') return undefined;
   return or(
@@ -158,12 +162,11 @@ export async function appendForumPost(input: AppendForumPostInput): Promise<Foru
     .where(and(eq(forumTopics.id, input.topicId), eq(forumTopics.ownerId, input.ownerId)))
     .limit(1);
   if (!topic) throw new Error('forum: topic not found');
-  if (
-    input.author.kind === 'member' &&
-    topic.visibility === 'private' &&
-    topic.createdByContactId !== input.author.contactId
-  ) {
-    throw new Error('forum: topic not found'); // indistinguishable from absent, on purpose
+  // Single source of truth for the write-visibility rule (forum-visibility.ts).
+  // A member may not post into another member's private topic; owner + agent
+  // may post anywhere. Indistinguishable from absent, on purpose.
+  if (!canPostToTopic(input.author, topic)) {
+    throw new Error('forum: topic not found');
   }
 
   const authorName =
@@ -206,6 +209,98 @@ export async function appendForumPost(input: AppendForumPostInput): Promise<Foru
   });
 }
 
+export type AcquireForumAgentPendingInput = {
+  ownerId: string;
+  topicId: string;
+  agentId: string;
+  agentName: string;
+  model?: string | null;
+  channel?: TeamChannel;
+  /** The DBOS forum-turn workflow id — the idempotency key on replay. */
+  workflowId: string;
+};
+
+/**
+ * Take the topic's single agent "thinking…" pending slot for a forum turn,
+ * IDEMPOTENTLY on `workflowId`. If this workflow already inserted its pending
+ * row (a DBOS recovery replay after a crash between commit and step-journal),
+ * adopt it; otherwise insert one and bump the topic's activity counters.
+ *
+ * The partitioned FORUM_QUEUE (concurrency 1 per topic) is the real serializer,
+ * so at most one turn runs per topic and the one-pending-per-topic unique index
+ * is a backstop, never a contention point — a healthy turn never conflicts, and
+ * a replay finds its OWN row here instead of tripping the index.
+ */
+export async function acquireForumAgentPending(
+  input: AcquireForumAgentPendingInput,
+): Promise<ForumPost> {
+  const [existing] = await db
+    .select()
+    .from(forumPosts)
+    .where(
+      and(
+        eq(forumPosts.ownerId, input.ownerId),
+        eq(forumPosts.topicId, input.topicId),
+        eq(forumPosts.authorKind, 'agent'),
+        eq(forumPosts.status, 'pending'),
+        eq(forumPosts.workflowId, input.workflowId),
+      ),
+    )
+    .limit(1);
+  if (existing) return existing;
+
+  return db.transaction(async (tx) => {
+    const [post] = await tx
+      .insert(forumPosts)
+      .values({
+        ownerId: input.ownerId,
+        topicId: input.topicId,
+        authorKind: 'agent',
+        authorName: input.agentName,
+        agentId: input.agentId,
+        model: input.model ?? null,
+        body: '',
+        channel: input.channel ?? 'web',
+        status: 'pending',
+        workflowId: input.workflowId,
+      })
+      .returning();
+    if (!post) throw new Error('forum: agent pending insert returned no row');
+    const now = new Date();
+    await tx
+      .update(forumTopics)
+      .set({
+        postCount: dsql`${forumTopics.postCount} + 1`,
+        lastPostAt: now,
+        updatedAt: now,
+      })
+      .where(eq(forumTopics.id, input.topicId));
+    return post;
+  });
+}
+
+/** One post by id, owner+topic-scoped. The turn pipeline fetches its trigger
+ *  through this — by id, NOT through the recency window (on a busy topic the
+ *  trigger can fall out of the window while the turn is queued). Null if gone. */
+export async function getForumPost(
+  ownerId: string,
+  topicId: string,
+  postId: string,
+): Promise<ForumPost | null> {
+  const [row] = await db
+    .select()
+    .from(forumPosts)
+    .where(
+      and(
+        eq(forumPosts.ownerId, ownerId),
+        eq(forumPosts.topicId, topicId),
+        eq(forumPosts.id, postId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 export type FinalizeForumPostInput = {
   ownerId: string;
   id: string;
@@ -218,7 +313,10 @@ export type FinalizeForumPostInput = {
 
 /** Finalize a pending agent post (the durable "thinking…" bubble): fill the
  *  reply + flip status, or mark it failed. Mirrors updateTeamMessageOutcome.
- *  Returns the updated row, or null if it vanished. */
+ *  The `status = 'pending'` guard is load-bearing: a row already resolved
+ *  (e.g. swept to 'failed', or a double finalize on replay) is NOT overwritten,
+ *  so a late-completing turn can't resurrect a failed post into a duplicate
+ *  answer. Returns the updated row, or null when nothing pending matched. */
 export async function finalizeForumPost(args: FinalizeForumPostInput): Promise<ForumPost | null> {
   const [row] = await db
     .update(forumPosts)
@@ -229,7 +327,13 @@ export async function finalizeForumPost(args: FinalizeForumPostInput): Promise<F
       ...(args.traceId !== undefined ? { traceId: args.traceId } : {}),
       ...(args.error !== undefined ? { error: args.error } : {}),
     })
-    .where(and(eq(forumPosts.ownerId, args.ownerId), eq(forumPosts.id, args.id)))
+    .where(
+      and(
+        eq(forumPosts.ownerId, args.ownerId),
+        eq(forumPosts.id, args.id),
+        eq(forumPosts.status, 'pending'),
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -347,7 +451,12 @@ export async function getForumTopic(
     .from(forumTopics)
     .where(and(...conds))
     .limit(1);
-  return row ?? null;
+  if (!row) return null;
+  // Belt-and-suspenders: the SQL already filtered, but re-assert the rule
+  // through the pure predicate so a future divergence between the two fails
+  // CLOSED (null) rather than leaking. Same null on absent-or-forbidden.
+  if (!canViewTopic(viewer, row)) return null;
+  return row;
 }
 
 /**

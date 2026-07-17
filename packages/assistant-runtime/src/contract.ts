@@ -26,6 +26,14 @@ export const FORUM_TURN_WORKFLOW = 'forumTurnWorkflow';
  *  LLM-provider backpressure valve. */
 export const RUNNER_QUEUE = 'mantle';
 
+/** Dedicated PARTITIONED queue for forum turns (registered in apps/api with
+ *  `{ concurrency: 1, partitionQueue: true }`). Enqueue with
+ *  `queuePartitionKey = topicId` ⇒ at most one forum turn runs per topic at a
+ *  time (the serializer that replaces the in-workflow spin-lock), while
+ *  different topics run in parallel. Forum turns live here, NOT on
+ *  RUNNER_QUEUE, so a waiting topic can never starve the owner's assistant. */
+export const FORUM_QUEUE = 'mantle_forum';
+
 /** Serializable input the runner carries in its journal — mirrors
  *  runAssistantTurn's (ownerId, text, options) arguments. */
 export type AssistantTurnInput = {
