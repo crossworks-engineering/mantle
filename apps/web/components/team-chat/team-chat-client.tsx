@@ -587,10 +587,12 @@ export function TeamChatClient() {
               className="hidden"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
+            {/* Bordered like the owner assistant's attach button — the two
+                composers are styled as one design. */}
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="h-auto"
+              className="h-auto text-muted-foreground"
               onClick={() => fileInputRef.current?.click()}
               disabled={sending}
               aria-label="Attach a file"

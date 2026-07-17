@@ -1268,7 +1268,9 @@ export function AssistantClient({
 
       <form
         onSubmit={submit}
-        className="border-t border-border bg-background px-6 py-3"
+        // Brand-tinted gradient rising from the edge — matches the team chat
+        // composer band (tokens only — recolors per theme).
+        className="border-t border-border bg-gradient-to-t from-primary/15 via-primary/5 to-background px-6 py-4"
       >
         {/* The composer spans the full conversation width (max-w-5xl) — the same
             box the turns occupy above (response column + prompt margin) — rather
@@ -1480,7 +1482,7 @@ export function AssistantClient({
                 }
                 disabled={!agentReady || sending}
                 rows={2}
-                className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="min-h-24 flex-1 resize-none rounded-md border-[3px] border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
