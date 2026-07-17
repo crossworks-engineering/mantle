@@ -37,7 +37,10 @@ export function TablePresenter({
   const tab = tabs.find((t) => t.id === tabId) ?? tabs[0] ?? null;
 
   const [rows, setRows] = useState<PublicRow[]>([]);
-  const [total, setTotal] = useState(0);
+  // Seeded from the tab's registry count so the header is accurate before the
+  // first row page lands (and after a failed fetch); the server total from
+  // each successful page overrides it.
+  const [total, setTotal] = useState(tabs[0]?.rowCount ?? 0);
   const [loading, setLoading] = useState(!!tab);
   const [failed, setFailed] = useState(false);
   // Tab-switch race guard: a stale page for the previous tab must not land.
@@ -70,6 +73,7 @@ export function TablePresenter({
   useEffect(() => {
     if (tab) {
       setRows([]);
+      setTotal(tab.rowCount);
       void fetchPage(0, tab.id);
     }
   }, [tab?.id]); // eslint-disable-line react-hooks/exhaustive-deps

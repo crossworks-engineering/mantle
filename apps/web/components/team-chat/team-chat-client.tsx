@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { CopyButton } from '@/components/assistant/copy-button';
 import { TokenGate } from '@/components/team-chat/token-gate';
+import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@/lib/composer-style';
 
 type TeamMessage = {
   id: string;
@@ -557,8 +558,8 @@ export function TeamChatClient() {
       </div>
 
       {/* Composer band: a brand-tinted gradient rising from the edge makes the
-          input read as the surface's anchor (tokens only — recolors per theme). */}
-      <div className="border-t border-border/60 bg-gradient-to-t from-primary/15 via-primary/5 to-background px-6 py-4">
+          input read as the surface's anchor (shared with the owner assistant). */}
+      <div className={`border-t border-border/60 ${COMPOSER_BAND_GRADIENT} px-6 py-4`}>
         <div className="mx-auto w-full max-w-5xl">
           {sendError ? <p className="mb-2 text-sm text-destructive">{sendError}</p> : null}
           {file ? (
@@ -610,7 +611,7 @@ export function TeamChatClient() {
               }}
               placeholder="Ask the brain… (Enter to send, Shift+Enter for a new line)"
               rows={2}
-              className="min-h-24 flex-1 resize-none border-[3px] bg-background"
+              className={`${COMPOSER_BOX} flex-1 resize-none bg-background`}
               disabled={sending}
             />
             <Button

@@ -30,6 +30,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiFetch } from '@/lib/api-fetch';
 import { assetUrl } from '@/lib/asset-url';
+import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@/lib/composer-style';
 import { uuid } from '@/lib/secure-context-fallbacks';
 
 /** A sidecar artifact attached to a message. Mirrors @mantle/tools
@@ -1268,9 +1269,9 @@ export function AssistantClient({
 
       <form
         onSubmit={submit}
-        // Brand-tinted gradient rising from the edge — matches the team chat
-        // composer band (tokens only — recolors per theme).
-        className="border-t border-border bg-gradient-to-t from-primary/15 via-primary/5 to-background px-6 py-4"
+        // Brand-tinted gradient rising from the edge — one definition shared
+        // with the Team Chat composer (lib/composer-style).
+        className={`border-t border-border ${COMPOSER_BAND_GRADIENT} px-6 py-4`}
       >
         {/* The composer spans the full conversation width (max-w-5xl) — the same
             box the turns occupy above (response column + prompt margin) — rather
@@ -1482,7 +1483,7 @@ export function AssistantClient({
                 }
                 disabled={!agentReady || sending}
                 rows={2}
-                className="min-h-24 flex-1 resize-none rounded-md border-[3px] border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={`${COMPOSER_BOX} flex-1 resize-none rounded-md border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();

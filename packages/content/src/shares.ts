@@ -204,8 +204,7 @@ export async function recordShareView(shareId: string): Promise<void> {
 }
 
 export type ActiveShareListing = ShareSummary & {
-  /** Display fields joined off the shared node (title falls back to the file
-   *  name for file shares; folders show their ltree path as the subtitle). */
+  /** Display fields joined off the shared node. */
   title: string;
   nodeIcon: string | null;
   nodePath: string | null;
@@ -213,21 +212,21 @@ export type ActiveShareListing = ShareSummary & {
 };
 
 /** Every ACTIVE share the owner has, newest first — the "what is exposed right
- *  now" registry behind the owner's shared-links overview. One query; the node
- *  join also catches shares whose node vanished (deleted after minting) so the
- *  UI can surface them for cleanup rather than hide them. */
+ *  now" registry behind the owner's shared-links overview. One query. Inner
+ *  join: shares.node_id is ON DELETE CASCADE, so a share never outlives its
+ *  node. */
 export async function listActiveShares(ownerId: string): Promise<ActiveShareListing[]> {
   const rows = await db
     .select({ share: shares, title: nodes.title, data: nodes.data, path: nodes.path })
     .from(shares)
-    .leftJoin(nodes, eq(nodes.id, shares.nodeId))
+    .innerJoin(nodes, eq(nodes.id, shares.nodeId))
     .where(and(eq(shares.ownerId, ownerId), activePredicate()))
     .orderBy(sql`${shares.createdAt} DESC`);
   return rows.map((r) => {
     const d = (r.data ?? {}) as Record<string, unknown>;
     return {
       ...toSummary(r.share),
-      title: r.title ?? '(deleted)',
+      title: r.title,
       nodeIcon: typeof d.icon === 'string' ? d.icon : null,
       nodePath: r.path ?? null,
       lastViewedAt: r.share.lastViewedAt ? r.share.lastViewedAt.toISOString() : null,

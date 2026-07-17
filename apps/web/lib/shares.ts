@@ -197,8 +197,17 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
     return referencedFileIds(page.doc).includes(fileId);
   }
   if (share.nodeType === 'branch') {
-    const folder = await folderById({ ownerId: share.ownerId, folderId: share.nodeId });
-    if (!folder) return false;
+    // Hot path (one call per file/download under a folder share): fetch only
+    // the folder's path — folderById would also run two folderCounts queries
+    // whose results this check never reads.
+    const [folder] = await db
+      .select({ path: nodes.path })
+      .from(nodes)
+      .where(
+        and(eq(nodes.id, share.nodeId), eq(nodes.ownerId, share.ownerId), eq(nodes.type, 'branch')),
+      )
+      .limit(1);
+    if (!folder?.path) return false;
     const [hit] = await db
       .select({ id: nodes.id })
       .from(nodes)

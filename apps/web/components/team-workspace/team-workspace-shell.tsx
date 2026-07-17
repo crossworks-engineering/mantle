@@ -34,6 +34,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { navItemMatches } from '@/components/layout/nav-items';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { TokenGate } from '@/components/team-chat/token-gate';
@@ -49,22 +50,24 @@ export type WorkspaceData = {
 };
 
 /** The left-nav sections, in display order — mirrors the owner sidebar's
- *  Workspace group (same icons), minus everything a member can't have. */
+ *  Workspace group (same icons), minus everything a member can't have.
+ *  Shaped as NavItem (+ the share `type`) so active-route matching reuses the
+ *  canonical navItemMatches helper instead of a drifting reimplementation. */
 export const WORKSPACE_NAV: Array<{
   type: string;
-  label: string;
+  name: string;
   href: string;
   icon: LucideIcon;
 }> = [
-  { type: 'note', label: 'Notes', href: '/team/notes', icon: FileText },
-  { type: 'page', label: 'Pages', href: '/team/pages', icon: BookText },
-  { type: 'table', label: 'Tables', href: '/team/tables', icon: Table2 },
-  { type: 'app', label: 'Apps', href: '/team/apps', icon: AppWindow },
-  { type: 'task', label: 'Tasks', href: '/team/tasks', icon: CheckSquare },
-  { type: 'event', label: 'Events', href: '/team/events', icon: CalendarDays },
+  { type: 'note', name: 'Notes', href: '/team/notes', icon: FileText },
+  { type: 'page', name: 'Pages', href: '/team/pages', icon: BookText },
+  { type: 'table', name: 'Tables', href: '/team/tables', icon: Table2 },
+  { type: 'app', name: 'Apps', href: '/team/apps', icon: AppWindow },
+  { type: 'task', name: 'Tasks', href: '/team/tasks', icon: CheckSquare },
+  { type: 'event', name: 'Events', href: '/team/events', icon: CalendarDays },
   // Shared folders — the same section the footer's folder chips deep-link into
   // (count = shared folders, not files; every file under one is downloadable).
-  { type: 'branch', label: 'Files', href: '/team/files', icon: FolderTree },
+  { type: 'branch', name: 'Files', href: '/team/files', icon: FolderTree },
 ];
 
 const WorkspaceContext = createContext<WorkspaceData | null>(null);
@@ -81,7 +84,7 @@ function NavList({ data, onNavigate }: { data: WorkspaceData; onNavigate?: () =>
   return (
     <nav className="flex flex-col gap-0.5 p-2">
       {WORKSPACE_NAV.map((item) => {
-        const active = pathname === item.href || pathname.startsWith(item.href + '/');
+        const active = navItemMatches(item, pathname);
         const count = data.counts[item.type] ?? 0;
         const Icon = item.icon;
         return (
@@ -97,7 +100,7 @@ function NavList({ data, onNavigate }: { data: WorkspaceData; onNavigate?: () =>
             )}
           >
             <Icon className="size-4 shrink-0" aria-hidden />
-            <span className="flex-1">{item.label}</span>
+            <span className="flex-1">{item.name}</span>
             {count > 0 && <span className="text-xs text-muted-foreground">{count}</span>}
           </Link>
         );
@@ -157,7 +160,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
       ? null
       : pathname.startsWith('/team/assistant')
         ? 'Assistant'
-        : (WORKSPACE_NAV.find((i) => pathname.startsWith(i.href))?.label ?? null);
+        : (WORKSPACE_NAV.find((i) => navItemMatches(i, pathname))?.name ?? null);
 
   return (
     <WorkspaceContext.Provider value={data}>

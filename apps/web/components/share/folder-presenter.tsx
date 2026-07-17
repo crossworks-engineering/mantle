@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Download, File as FileIcon, Folder as FolderIcon } from 'lucide-react';
-import { listFolders, listFiles, folderByPath } from '@/lib/files';
+import { listFolders, listFiles, folderByPath, ltreeToDash } from '@/lib/files';
 import { formatBytes } from '@/lib/format-bytes';
 
 /**
@@ -45,10 +45,15 @@ export async function FolderPresenter({
   ]);
 
   // Breadcrumb: shared root ▸ …descendant labels (never above the share).
+  // Labels display in dash form (the disk slug the folder cards show); the
+  // sub links keep the raw ltree form the ?p= round-trip matches on.
   const relLabels = currentPath === view.path ? [] : currentPath.slice(view.path.length + 1).split('.');
   const crumbs = [
     { label: view.title, sub: '' },
-    ...relLabels.map((label, i) => ({ label, sub: relLabels.slice(0, i + 1).join('.') })),
+    ...relLabels.map((label, i) => ({
+      label: ltreeToDash(label),
+      sub: relLabels.slice(0, i + 1).join('.'),
+    })),
   ];
 
   return (

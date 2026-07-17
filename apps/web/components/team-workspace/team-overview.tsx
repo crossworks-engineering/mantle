@@ -36,7 +36,7 @@ export function TeamOverview() {
                 className="rounded-xl border border-border bg-card p-4 transition-colors hover:bg-muted/40"
               >
                 <Icon className="size-5 text-muted-foreground" aria-hidden />
-                <p className="mt-2 text-sm font-medium">{item.label}</p>
+                <p className="mt-2 text-sm font-medium">{item.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {count} shared item{count === 1 ? '' : 's'}
                 </p>
