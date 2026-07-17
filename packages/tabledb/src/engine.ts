@@ -493,6 +493,8 @@ export function readDocFile(absPath: string, opts: { maxRows?: number; tabId?: s
 }
 
 export type WorkbookColumnRef = {
+  /** Stable column id (`_columns.col_id`) — the key row cells are keyed by. */
+  colId: string;
   name: string;
   physical: string;
   type: ColumnType;
@@ -501,6 +503,8 @@ export type WorkbookColumnRef = {
   refersTo?: { tab: string; column: string };
 };
 export type WorkbookTabRef = {
+  /** Stable tab id (`_tabs.tab_id`) — what windowed readers take as `tabId`. */
+  tabId: string;
   name: string;
   viewName: string;
   physicalTable: string;
@@ -525,6 +529,7 @@ export function describeWorkbook(absPath: string): WorkbookTabRef[] {
       ),
     );
     return tabs.map((t) => {
+      const tabId = String(t.tab_id);
       const physicalTable = String(t.physical_table);
       // SELECT * — pre-v2.1 files have no ref_json column.
       const cols = db
@@ -534,6 +539,7 @@ export function describeWorkbook(absPath: string): WorkbookTabRef[] {
         .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
         .get(`${physicalTable}_fts`);
       return {
+        tabId,
         name: String(t.name),
         viewName: String(t.view_name),
         physicalTable,
@@ -541,6 +547,7 @@ export function describeWorkbook(absPath: string): WorkbookTabRef[] {
         rowCount: Number(db.prepare(`SELECT count(*) AS n FROM ${physicalTable}`).get()?.n ?? 0),
         columns: cols.map((c) => {
           const out: WorkbookColumnRef = {
+            colId: String(c.col_id),
             name: String(c.name),
             physical: String(c.physical),
             type: String(c.type) as ColumnType,

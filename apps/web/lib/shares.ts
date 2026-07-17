@@ -5,10 +5,19 @@
  * calls requireOwner — the public surface trusts a resolved active token and
  * only ever reaches the one shared node (+ its referenced files).
  */
-import { and, eq } from 'drizzle-orm';
-import { db, nodes, type Share } from '@mantle/db';
-import { getPage, getApp, referencedFileIds } from '@mantle/content';
-import { fileById } from '@/lib/files';
+import { and, eq, sql } from 'drizzle-orm';
+import { db, nodes, tables, type Share } from '@mantle/db';
+import {
+  getPage,
+  getApp,
+  referencedFileIds,
+  ensureTableDoc,
+  emptyTableDoc,
+  type Column,
+  type Row,
+} from '@mantle/content';
+import { describeWorkbook, resolveStoragePath } from '@mantle/tabledb';
+import { fileById, folderById } from '@/lib/files';
 
 export {
   createShare,
@@ -40,7 +49,25 @@ export type ShareView =
       location: string | null;
     }
   | { kind: 'file'; fileId: string; filename: string; mimeType: string; size: number }
-  | { kind: 'app'; appId: string; title: string };
+  | { kind: 'app'; appId: string; title: string }
+  | {
+      kind: 'table';
+      tableId: string;
+      title: string;
+      icon: string | null;
+      /** File-backed workbooks: tab list + the column set rows are keyed by
+       *  (formula columns are not stored, so they don't appear on the public
+       *  surface). Rows page in through GET /s/[token]/rows. */
+      tabs: Array<{
+        id: string;
+        name: string;
+        rowCount: number;
+        columns: Array<{ id: string; name: string; type: string }>;
+      }> | null;
+      /** Legacy JSONB tables (pre-registry, small): the whole doc inline. */
+      legacyDoc: { columns: Column[]; rows: Row[] } | null;
+    }
+  | { kind: 'folder'; folderId: string; title: string; path: string };
 
 async function loadNode(ownerId: string, nodeId: string) {
   const [row] = await db
@@ -104,13 +131,63 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       if (!app || !app.publishedBuild?.ok) return null;
       return { kind: 'app', appId: nodeId, title: app.title };
     }
+    case 'table': {
+      // PUBLISHED state only — the draft file is the owner's working copy and
+      // never crosses the share boundary (same rule as page drafts).
+      const [row] = await db
+        .select({
+          title: nodes.title,
+          data: nodes.data,
+          storagePath: tables.storagePath,
+          doc: tables.data,
+        })
+        .from(nodes)
+        .leftJoin(tables, eq(tables.nodeId, nodes.id))
+        .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
+        .limit(1);
+      if (!row) return null;
+      const d = (row.data ?? {}) as Record<string, unknown>;
+      const icon = typeof d.icon === 'string' ? d.icon : null;
+      if (row.storagePath) {
+        let tabs: NonNullable<Extract<ShareView, { kind: 'table' }>['tabs']>;
+        try {
+          tabs = describeWorkbook(resolveStoragePath(row.storagePath)).map((t) => ({
+            id: t.tabId,
+            name: t.name,
+            rowCount: t.rowCount,
+            columns: t.columns.map((c) => ({ id: c.colId, name: c.name, type: c.type })),
+          }));
+        } catch {
+          // Published file missing/unreadable (e.g. never committed) — treat
+          // as vanished rather than leak an error page.
+          return null;
+        }
+        return { kind: 'table', tableId: nodeId, title: row.title, icon, tabs, legacyDoc: null };
+      }
+      const doc = ensureTableDoc(row.doc ?? emptyTableDoc());
+      return {
+        kind: 'table',
+        tableId: nodeId,
+        title: row.title,
+        icon,
+        tabs: null,
+        legacyDoc: { columns: doc.columns, rows: doc.rows },
+      };
+    }
+    case 'branch': {
+      const folder = await folderById({ ownerId, folderId: nodeId });
+      if (!folder) return null;
+      return { kind: 'folder', folderId: nodeId, title: folder.slug, path: folder.path };
+    }
     default:
       return null;
   }
 }
 
 /** Is `fileId` allowed to be served under this share? A file share serves
- *  itself; a page share serves only the files its doc references. Anything else
+ *  itself; a page share serves only the files its doc references; a folder
+ *  share serves every file under the folder's subtree (recursive, evaluated
+ *  per request — a file moved out is denied on its next fetch). Anything else
  *  is denied — this is the asset route's authorization. */
 export async function isAssetAllowed(share: Share, fileId: string): Promise<boolean> {
   if (share.nodeType === 'file') return share.nodeId === fileId;
@@ -118,6 +195,23 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
     const page = await getPage(share.ownerId, share.nodeId);
     if (!page) return false;
     return referencedFileIds(page.doc).includes(fileId);
+  }
+  if (share.nodeType === 'branch') {
+    const folder = await folderById({ ownerId: share.ownerId, folderId: share.nodeId });
+    if (!folder) return false;
+    const [hit] = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.id, fileId),
+          eq(nodes.ownerId, share.ownerId),
+          eq(nodes.type, 'file'),
+          sql`${nodes.path} <@ ${folder.path}::ltree`,
+        ),
+      )
+      .limit(1);
+    return !!hit;
   }
   return false;
 }

@@ -332,6 +332,9 @@ export { referencedFileIds } from './doc-assets';
 export {
   SHAREABLE_TYPES,
   isShareable,
+  isShareableFolderPath,
+  listActiveShares,
+  type ActiveShareListing,
   getActiveShareForNode,
   createShare,
   revokeShare,

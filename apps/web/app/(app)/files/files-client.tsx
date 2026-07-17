@@ -24,6 +24,7 @@ import { useRealtime } from '@/components/realtime/use-realtime';
 import { useUploads } from '@/components/uploads/upload-provider';
 import { formatDate } from '@/lib/format-datetime';
 import { SetPageTitle } from '@/components/layout/page-title';
+import { ShareControl } from '@/components/share/share-control';
 import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
@@ -344,6 +345,11 @@ function FilesView({
 
               {currentFolder && currentFolder.path !== FILES_ROOT && (
                 <div className="mt-1 flex items-center justify-end gap-1">
+                  <ShareControl
+                    nodeId={currentFolder.id}
+                    teamMode
+                    teamHint="Visitors must enter their team token to open the link. The link covers every file in this folder and its subfolders — including files added later."
+                  />
                   <Button
                     variant="ghost"
                     size="sm"

@@ -12,6 +12,8 @@ import { FilePresenter } from '@/components/share/file-presenter';
 import { TaskPresenter } from '@/components/share/task-presenter';
 import { EventPresenter } from '@/components/share/event-presenter';
 import { AppPresenter } from '@/components/share/app-presenter';
+import { TablePresenter } from '@/components/share/table-presenter';
+import { FolderPresenter } from '@/components/share/folder-presenter';
 
 // Always dynamic — resolves a DB token per request; never statically cached
 // (a revoked link must 404 immediately).
@@ -39,8 +41,15 @@ export async function generateMetadata({
   };
 }
 
-export default async function SharePage({ params }: { params: Promise<{ token: string }> }) {
+export default async function SharePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ token: string }>;
+  searchParams: Promise<{ p?: string }>;
+}) {
   const { token } = await params;
+  const { p } = await searchParams;
   // Invalid / revoked / expired all 404 — never reveal that a token existed.
   const share = await resolveActiveShareByToken(token);
   if (!share) notFound();
@@ -85,6 +94,18 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
         return <EventPresenter view={view} />;
       case 'app':
         return <AppPresenter view={view} token={token} />;
+      case 'table':
+        return <TablePresenter view={view} token={token} />;
+      case 'folder':
+        return (
+          <FolderPresenter
+            view={view}
+            ownerId={share.ownerId}
+            sub={typeof p === 'string' ? p : ''}
+            assetUrl={assetUrl}
+            makeSubHref={(sub) => (sub ? `/s/${token}?p=${encodeURIComponent(sub)}` : `/s/${token}`)}
+          />
+        );
       default:
         return null;
     }
