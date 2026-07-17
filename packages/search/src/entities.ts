@@ -53,9 +53,13 @@ export async function searchEntities(opts: EntitySearchOptions): Promise<EntityH
 
   // Exact match first — covers "Sarah" -> the Sarah entity even when
   // there are similar names in the store.
+  // The alias branch uses the containment form `aliases @> array[q]` so the
+  // array GIN (entities_aliases_gin_idx) serves it — the scalar `q = any(...)`
+  // form is not indexable by that opclass (verified via EXPLAIN). lower(name) is
+  // covered by entities_owner_lname_kind_uq.
   const exactConds: SQL[] = [
     eq(entities.ownerId, opts.ownerId),
-    sql`(lower(${entities.name}) = lower(${trimmed}) or ${trimmed} = any(${entities.aliases}))`,
+    sql`(lower(${entities.name}) = lower(${trimmed}) or ${entities.aliases} @> array[${trimmed}]::text[])`,
   ];
   if (opts.kind) exactConds.push(eq(entities.kind, opts.kind));
   const exacts = await db

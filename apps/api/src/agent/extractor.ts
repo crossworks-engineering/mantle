@@ -984,8 +984,11 @@ async function reconcileEntity(
   mention: { name: string; kind: string },
 ): Promise<{ entity: Entity; created: boolean }> {
   // 1. Exact name (case-insensitive) or alias match first — cheapest. Both OR
-  //    branches are indexed (entities_owner_lname_kind_uq for lower(name),
-  //    entities_aliases_gin_idx for the alias membership — migration 0121).
+  //    branches are indexed: entities_owner_lname_kind_uq for lower(name), and
+  //    entities_aliases_gin_idx for the alias membership. The alias test MUST be
+  //    the containment form `aliases @> array[q]` — the scalar `q = any(aliases)`
+  //    form is NOT recognized by the array GIN opclass (verified via EXPLAIN),
+  //    so it would filter after an owner scan instead of using the index.
   const trimmed = mention.name.trim();
   const [exact] = await db
     .select()
@@ -993,7 +996,7 @@ async function reconcileEntity(
     .where(
       and(
         eq(entities.ownerId, ownerId),
-        sql`lower(${entities.name}) = lower(${trimmed}) or ${trimmed} = any(${entities.aliases})`,
+        sql`lower(${entities.name}) = lower(${trimmed}) or ${entities.aliases} @> array[${trimmed}]::text[]`,
       ),
     )
     .limit(1);
