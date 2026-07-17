@@ -24,6 +24,7 @@ import { startTurnCancelListener, stopTurnCancelListener } from './turn-cancel';
 import './workflows/ping';
 import './workflows/assistant-turn';
 import './workflows/team-turn';
+import './workflows/forum-turn';
 import { enqueueTelegramTurn } from './workflows/telegram-turn';
 
 async function main(): Promise<void> {

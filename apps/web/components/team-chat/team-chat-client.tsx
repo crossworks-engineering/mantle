@@ -167,7 +167,7 @@ function ReplyBody({ markdown }: { markdown: string }) {
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
-export function TeamChatClient() {
+export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) {
   const [authed, setAuthed] = useState<boolean | null>(null); // null = resolving
   const [messages, setMessages] = useState<TeamMessage[]>([]);
   const [draft, setDraft] = useState('');
@@ -406,13 +406,27 @@ export function TeamChatClient() {
       <header className="border-b border-border/60 px-6 py-3">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between">
           <h1 className="text-sm font-semibold">
-            Team Chat <span className="font-logo lowercase text-muted-foreground">mantle</span>
+            {archive ? 'Chat archive' : 'Team Chat'}{' '}
+            <span className="font-logo lowercase text-muted-foreground">mantle</span>
           </h1>
           <p className="text-xs text-muted-foreground">
-            Conversations are visible to the brain admin
+            {archive
+              ? 'Read-only — conversations moved to the Forum'
+              : 'Conversations are visible to the brain admin'}
           </p>
         </div>
       </header>
+      {archive && (
+        <div className="border-b border-border/60 bg-muted/40 px-6 py-2">
+          <p className="mx-auto w-full max-w-5xl text-center text-xs text-muted-foreground">
+            Team Chat has moved to the{' '}
+            <a href="/team/forum" className="underline underline-offset-2 hover:text-foreground">
+              Forum
+            </a>{' '}
+            — shared topics the whole team can read. This thread stays as your archive.
+          </p>
+        </div>
+      )}
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
@@ -562,73 +576,76 @@ export function TeamChatClient() {
       </div>
 
       {/* Composer band: a brand-tinted gradient rising from the edge makes the
-          input read as the surface's anchor (shared with the owner assistant). */}
-      <div className={`border-t border-border/60 ${COMPOSER_BAND_GRADIENT} px-6 py-4`}>
-        <div className="mx-auto w-full max-w-5xl">
-          {sendError ? <p className="mb-2 text-sm text-destructive">{sendError}</p> : null}
-          {file ? (
-            <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
-              <Paperclip className="size-4" />
-              <span className="truncate">{file.name}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setFile(null)}
-                aria-label="Remove attachment"
-              >
-                <X />
-              </Button>
-            </div>
-          ) : null}
-          {/* No Stop button (the assistant chat has one): there is no abort
+          input read as the surface's anchor (shared with the owner assistant).
+          Absent entirely in archive mode — the thread is read-only. */}
+      {archive ? null : (
+        <div className={`border-t border-border/60 ${COMPOSER_BAND_GRADIENT} px-6 py-4`}>
+          <div className="mx-auto w-full max-w-5xl">
+            {sendError ? <p className="mb-2 text-sm text-destructive">{sendError}</p> : null}
+            {file ? (
+              <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
+                <Paperclip className="size-4" />
+                <span className="truncate">{file.name}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setFile(null)}
+                  aria-label="Remove attachment"
+                >
+                  <X />
+                </Button>
+              </div>
+            ) : null}
+            {/* No Stop button (the assistant chat has one): there is no abort
               route for team turns — the runner always completes and the reply
               is durable. Deliberate omission, not an oversight. */}
-          {/* items-stretch: both buttons track the textarea's height, so the
+            {/* items-stretch: both buttons track the textarea's height, so the
               composer reads as one block however tall the draft grows. */}
-          <div className="flex items-stretch gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
-            {/* Bordered like the owner assistant's attach button — the two
+            <div className="flex items-stretch gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              {/* Bordered like the owner assistant's attach button — the two
                 composers are styled as one design. */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-auto text-muted-foreground"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={sending}
-              aria-label="Attach a file"
-            >
-              <Paperclip />
-            </Button>
-            <Textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-              placeholder="Ask the brain… (Enter to send, Shift+Enter for a new line)"
-              rows={2}
-              className={`${COMPOSER_BOX} flex-1 resize-none bg-background`}
-              disabled={sending}
-            />
-            <Button
-              className="h-auto"
-              onClick={() => void send()}
-              disabled={sending || (!draft.trim() && !file)}
-              aria-label="Send"
-            >
-              <SendHorizontal />
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-auto text-muted-foreground"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={sending}
+                aria-label="Attach a file"
+              >
+                <Paperclip />
+              </Button>
+              <Textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+                placeholder="Ask the brain… (Enter to send, Shift+Enter for a new line)"
+                rows={2}
+                className={`${COMPOSER_BOX} flex-1 resize-none bg-background`}
+                disabled={sending}
+              />
+              <Button
+                className="h-auto"
+                onClick={() => void send()}
+                disabled={sending || (!draft.trim() && !file)}
+                aria-label="Send"
+              >
+                <SendHorizontal />
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

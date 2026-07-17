@@ -21,12 +21,16 @@ const teamCtx: ToolHandlerContext = {
   ownerId: 'owner-1',
   surface: { kind: 'team', contactId: 'contact-9', contactName: 'Sam' },
 };
+const forumCtx: ToolHandlerContext = {
+  ownerId: 'owner-1',
+  surface: { kind: 'forum', contactId: 'contact-9', contactName: 'Sam', topicId: 'topic-1' },
+};
 
 describe('team_request_create surface gate', () => {
-  it('refuses off the team surface (web)', async () => {
+  it('refuses off the team surfaces (web)', async () => {
     const r = await bySlug.team_request_create!.handler({ title: 't', body: 'b' }, ownerCtx);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/Team Chat surface/i);
+    if (!r.ok) expect(r.error).toMatch(/Team Chat \/ Team Forum surfaces/i);
   });
 
   it('refuses with no surface at all (background callers)', async () => {
@@ -44,10 +48,15 @@ describe('team_request_create surface gate', () => {
   });
 });
 
-describe('owner-side team tools refuse on the team surface', () => {
+describe('owner-side team tools refuse on the team surfaces', () => {
   for (const slug of ['team_chat_list', 'team_chat_read', 'team_access_list'] as const) {
-    it(`${slug} refuses`, async () => {
+    it(`${slug} refuses on team chat`, async () => {
       const r = await bySlug[slug]!.handler({ contactId: 'contact-9' }, teamCtx);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/owner-side/i);
+    });
+    it(`${slug} refuses on the forum`, async () => {
+      const r = await bySlug[slug]!.handler({ contactId: 'contact-9' }, forumCtx);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error).toMatch(/owner-side/i);
     });

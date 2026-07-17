@@ -41,12 +41,21 @@ export {
   type RunTeamTurnOptions,
 } from './run-team-turn';
 export {
+  runForumTurn,
+  forumPostsToHistory,
+  type ForumTurnResult,
+  type RunForumTurnOptions,
+} from './run-forum-turn';
+export {
   ASSISTANT_TURN_WORKFLOW,
   TEAM_TURN_WORKFLOW,
+  FORUM_TURN_WORKFLOW,
   RUNNER_QUEUE,
   resolveSystemDatabaseUrl,
   type AssistantTurnInput,
   type AssistantTurnRunResult,
   type TeamTurnInput,
   type TeamTurnRunResult,
+  type ForumTurnInput,
+  type ForumTurnRunResult,
 } from './contract';

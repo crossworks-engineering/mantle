@@ -22,7 +22,7 @@ import {
   Folder,
   FolderTree,
   Menu,
-  MessageCircle,
+  MessagesSquare,
   Table2,
   type LucideIcon,
 } from 'lucide-react';
@@ -52,6 +52,9 @@ export const WORKSPACE_NAV: Array<{
   href: string;
   icon: LucideIcon;
 }> = [
+  // The Forum leads: it's the team's shared threads with the brain — the
+  // successor to the 1:1 Assistant chat (now the read-only Archive).
+  { type: 'forum', name: 'Forum', href: '/team/forum', icon: MessagesSquare },
   { type: 'note', name: 'Notes', href: '/team/notes', icon: FileText },
   { type: 'page', name: 'Pages', href: '/team/pages', icon: BookText },
   { type: 'table', name: 'Tables', href: '/team/tables', icon: Table2 },
@@ -152,7 +155,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
     pathname === '/team'
       ? null
       : pathname.startsWith('/team/assistant')
-        ? 'Assistant'
+        ? 'Chat archive'
         : (WORKSPACE_NAV.find((i) => navItemMatches(i, pathname))?.name ?? null);
 
   return (
@@ -210,8 +213,8 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
             ))}
           </div>
           <Button variant="ghost" size="sm" className="h-8 shrink-0" asChild>
-            <Link href="/team/assistant">
-              <MessageCircle /> Assistant
+            <Link href="/team/forum">
+              <MessagesSquare /> Forum
             </Link>
           </Button>
         </footer>
