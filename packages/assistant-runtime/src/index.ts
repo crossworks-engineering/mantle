@@ -25,6 +25,14 @@ export {
   type HeartbeatSurface,
   type ResponderLoopOverrides,
 } from './assemble-turn';
+export {
+  runResponderLoop,
+  buildPersistedTrail,
+  emptyLoopResult,
+  EMPTY_REPLY_FALLBACK,
+  type ResponderLoopResult,
+  type RunResponderLoopOptions,
+} from './responder-loop';
 export { pickWebDefaultAgent, ROLE_TIEBREAK, type WebDefaultCandidate } from './select';
 export {
   runTeamTurn,

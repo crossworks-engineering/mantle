@@ -56,6 +56,8 @@ const h = vi.hoisted(() => {
     buildAttachmentArgs: [] as any[],
     recordTurnCalls: [] as any[],
     recordTurnSeq: 0,
+    /** Owner thought-trail persistence prefs (both gates share the flag). */
+    thoughtsOn: false,
     /** Per-test worker/adapter fixtures. */
     sttWorker: null as any,
     ttsWorker: null as any,
@@ -263,8 +265,8 @@ vi.mock('@mantle/content', () => ({
   loadProfilePreferences: vi.fn(async () => ({})),
   resolveThinkingBudget: () => 0,
   noteInboundChannel: (...a: unknown[]) => (h.noteInboundChannel(...a), Promise.resolve()),
-  isStreamThoughtsEnabled: () => false,
-  isPersistThoughtsEnabled: () => false,
+  isStreamThoughtsEnabled: () => h.thoughtsOn,
+  isPersistThoughtsEnabled: () => h.thoughtsOn,
   // Used by run-turn/run-team-turn via the real @mantle/assistant-runtime
   // barrel — never exercised by these tests.
   applyAutoTimezone: vi.fn(async (_o: string, _l: unknown, prefs: unknown) => ({ prefs })),
@@ -406,6 +408,7 @@ beforeEach(() => {
   h.buildAttachmentArgs = [];
   h.recordTurnCalls = [];
   h.recordTurnSeq = 0;
+  h.thoughtsOn = false;
   h.sttWorker = null;
   h.ttsWorker = null;
   h.extractResult = { kind: 'image', text: 'a cat', note: null };
@@ -495,19 +498,40 @@ describe('handleTelegramMessage — text turn', () => {
     expect(outboundTurns()[0].externalRef.messageId).toBe('111');
   });
 
-  it('an empty model reply sends nothing and persists no outbound', async () => {
-    // CURRENT behavior (pre-#5c): the turn goes silent — no send, no outbound
-    // rows, trace still ends clean. The shared runtime instead substitutes an
-    // honest fallback reply; the refactor adopts that deliberately (b3).
+  it('b3 RESOLVED: an empty model reply sends + persists the shared fallback', async () => {
+    // Stage-0 pinned the OLD behavior (the turn went silent — no send, no
+    // outbound rows). Stage 2 routes the loop through the shared core, which
+    // substitutes the same honest fallback the web /assistant sends, so the
+    // user gets a reply they can react to instead of dead air.
     h.loopResult.reply = '';
     await runTurn(makeMsgRow());
 
-    expect(h.sendMessage).not.toHaveBeenCalled();
-    expect(h.sendVoice).not.toHaveBeenCalled();
-    expect(insertsInto('nodes')).toHaveLength(0);
-    expect(insertsInto('telegramMessages')).toHaveLength(0);
-    expect(outboundTurns()).toHaveLength(0);
+    expect(h.sendMessage).toHaveBeenCalledTimes(1);
+    expect(h.sendMessage.mock.calls[0]![2]).toMatch(/couldn't compose a final answer/);
+    expect(insertsInto('telegramMessages')).toHaveLength(1);
+    expect(outboundTurns()).toHaveLength(1);
+    expect(outboundTurns()[0].text).toMatch(/couldn't compose a final answer/);
     expect(h.traces[0]!.error).toBeNull();
+  });
+
+  it('b4/b5 RESOLVED: thought trail + tool-outcome ledger land on the outbound mirror', async () => {
+    // Stage 2: the shared core computes the persistable thought trail
+    // (prefs-gated) and the deterministic toolStats ledger; the Telegram
+    // adapter persists them on the assistant_messages mirror under the same
+    // data keys the web path writes — /assistant renders both identically.
+    h.thoughtsOn = true;
+    h.loopResult.toolCalls = [
+      { slug: 'note_create', argsJson: '{"title":"Q3 plan"}', durationMs: 42, error: null },
+    ];
+    await runTurn(makeMsgRow());
+
+    const outbound = outboundTurns()[0];
+    expect(outbound.data.thoughts).toEqual([
+      { kind: 'write', label: 'Saving “Q3 plan” to your notes…', elapsedMs: 42 },
+    ]);
+    // The ledger comes from summarizeToolOutcomes (mocked here — the real
+    // tally is unit-tested with the shared core).
+    expect(outbound.data.toolStats).toBeDefined();
   });
 
   it('a Telegram send failure persists the reply undelivered and fails the trace', async () => {

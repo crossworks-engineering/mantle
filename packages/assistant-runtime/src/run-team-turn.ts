@@ -42,8 +42,6 @@ import { getApiKeyById } from '@mantle/api-keys';
 import {
   buildChatMessages,
   loadConversationContext,
-  resolveBackupAdapter,
-  runToolLoop,
   type HistoryTurn,
 } from '@mantle/agent-runtime';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
@@ -56,9 +54,9 @@ import {
   TEAM_PRIVATE_READ_SLUGS,
 } from '@mantle/content';
 import { assembleResponderTurn } from './assemble-turn';
+import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
 import {
   startTrace,
-  step,
   runDurableStep,
   emitTurnLifecycle,
   registerTurnAbort,
@@ -225,8 +223,6 @@ export async function runTeamTurn(
   });
   const { volatileContext, allowedTools } = assembled;
 
-  const params = (agent.params ?? {}) as Record<string, unknown>;
-
   const adapter = getChatAdapter(agent.provider);
   if (!adapter) {
     throw new Error(
@@ -252,9 +248,9 @@ export async function runTeamTurn(
   });
 
   let capturedTraceId: string | null = null;
-  let loopOutcome: Awaited<ReturnType<typeof runToolLoop>>;
+  let outcome: ResponderLoopResult;
   try {
-    loopOutcome = await startTrace(
+    outcome = await startTrace(
       {
         kind: 'responder_turn',
         ownerId,
@@ -273,38 +269,23 @@ export async function runTeamTurn(
       },
       async () => {
         capturedTraceId = currentTrace()?.id ?? null;
-        await step(
-          { name: 'load_context', kind: 'compute', input: { agentId: agent.id, contactId } },
-          async (h) => {
-            h.setOutput({
-              turnCount: history.length,
-              factCount: ctx.facts.length,
-              contentHitCount: ctx.contentHits.length,
-              chunkHitCount: ctx.chunkHits.length,
-              relationCount: ctx.relations.length,
-              snapshot: ctx.snapshot,
-            });
-          },
-        );
-        return runToolLoop({
+        return runResponderLoop({
+          ownerId,
+          agent,
           adapter,
           apiKey,
-          model: agent.model,
-          baseUrl: agent.baseUrl,
-          viaTailnet: agent.viaTailnet,
-          backup: await resolveBackupAdapter(ownerId, agent),
-          params,
-          ownerId,
-          agentId: agent.id,
-          agentSlug: agent.slug,
-          agentDepth: 1,
+          prefs,
+          logPrefix: '[team-turn]',
           // Fail closed: the team responder never delegates (assembly ran
-          // with allowDelegation:false, so this is always []).
-          delegateTo: assembled.delegateTo,
-          resultHandling: assembled.resultHandling,
-          initialMessages: messages,
-          tools: allowedTools,
-          ...assembled.loopOverrides,
+          // with allowDelegation:false / withThinking:false).
+          assembled,
+          // Retrieval ran before the trace; the member's REAL history came
+          // from their own team thread, so the step's turnCount reflects
+          // that thread, not the structurally-empty ctx history.
+          loadContext: async () => ctx,
+          contextStepInput: { agentId: agent.id, contactId },
+          contextStepExtra: { turnCount: history.length },
+          buildMessages: () => messages,
           // The provenance channel: team_request_create reads WHO is asking
           // from here; owner-side tools see 'team' and refuse.
           surface: {
@@ -313,18 +294,20 @@ export async function runTeamTurn(
             contactName: options.contactName,
             inboundMessageId: inbound.id,
           },
+          abortSignal: abortController?.signal ?? null,
         });
       },
     );
   } catch (err) {
     if (abortController?.signal.aborted) {
-      loopOutcome = {
+      outcome = {
+        loop: emptyLoopResult(),
         reply: '',
-        artifacts: [],
-        iterations: 0,
-        toolCalls: [],
-        tokensOut: 0,
-      } as unknown as Awaited<ReturnType<typeof runToolLoop>>;
+        emptyReplySubstituted: false,
+        persistedThoughts: [],
+        toolStats: null,
+        ctx,
+      };
     } else {
       const msg = err instanceof Error ? err.message : String(err);
       await runDurableStep('fail_team_outbound', () =>
@@ -342,13 +325,9 @@ export async function runTeamTurn(
     }
   }
 
-  const stopped = abortController?.signal.aborted === true;
-  let rawReply = loopOutcome.reply;
-  if (!stopped && !rawReply.trim()) {
-    rawReply =
-      "Sorry — I gathered some information but couldn't compose a final answer. Please ask that again, perhaps more narrowly.";
-  }
-  const reply = stripAudioTags(rawReply).text;
+  // The core already applied the shared empty-reply fallback (a Stop keeps
+  // its partial reply). Strip audio tags — the team surface is text-only.
+  const reply = stripAudioTags(outcome.reply).text;
 
   const finalized = await runDurableStep('finalize_team_outbound', () =>
     updateTeamMessageOutcome({
@@ -371,7 +350,7 @@ export async function runTeamTurn(
   if (options.streamId) {
     emitTurnLifecycle(options.streamId, ownerId, 'done', {
       outboundId: outboundPending.id,
-      tokensOut: loopOutcome.tokensOut,
+      tokensOut: outcome.loop.tokensOut,
     });
   }
 

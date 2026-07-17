@@ -62,7 +62,6 @@ import {
   bumpWorkerUsage as bumpAiWorkerUsage,
   getDefaultWorker,
   getAgentTtsWorker,
-  type AgentParams,
   type SttParams,
   type TelegramAttachment,
   type TtsParams,
@@ -76,14 +75,14 @@ import {
   invokeAgent,
   loadConversationContext,
   recordTurn,
-  resolveBackupAdapter,
   resolveChatKey,
-  runToolLoop,
+  type ConversationContext,
   type UserImage,
 } from '@mantle/agent-runtime';
 import {
   assembleResponderTurn,
   decideImageRouting,
+  runResponderLoop,
   runWithImageFallback,
 } from '@mantle/assistant-runtime';
 import { registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
@@ -694,45 +693,6 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         // Best-effort — must never break the inbound. See reminder-delivery-routing.md.
         void noteInboundChannel(USER_ID!, 'telegram');
 
-        const {
-          personaNotes,
-          facts: relevantFacts,
-          digests,
-          corpusMap,
-          contentHits,
-          chunkHits,
-          relations,
-          history,
-        } = await step(
-          { name: 'load_context', kind: 'compute', input: { agentId: agent.id } },
-          async (h) => {
-            const ctx = await loadConversationContext({
-              ownerId: USER_ID!,
-              agent,
-              inboundText: row.text,
-              // Exclude the inbound we just recorded; only look before it.
-              excludeMessageId: convInbound.id,
-              // `new Date(...)` because on a crash-resume replay the journaled
-              // record_inbound row deserializes createdAt to an ISO string.
-              before: new Date(convInbound.createdAt),
-            });
-            h.setOutput({
-              turnCount: ctx.history.length,
-              digestCount: ctx.digests.length,
-              factCount: ctx.facts.length,
-              contentHitCount: ctx.contentHits.length,
-              chunkHitCount: ctx.chunkHits.length,
-              corpusMapCount: ctx.corpusMap.entries.length,
-              relationCount: ctx.relations.length,
-              personaNoteCount: ctx.personaNotes.length,
-              // Full retrieval audit record (items + distances + near-misses)
-              // — what /debug/context renders per turn.
-              snapshot: ctx.snapshot,
-            });
-            return ctx;
-          },
-        );
-
         // Tell Saskia which speech tags her configured TTS will honour:
         // inline cues (ElevenLabs v3 [laughs]/[sighs]; OpenAI none) AND
         // wrapping styles (xAI Grok <whisper>…</whisper>/<soft>/<slow>).
@@ -830,32 +790,6 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
           }
         }
 
-        const buildMessages = (image: UserImage | undefined, userText: string) =>
-          step({ name: 'build_messages', kind: 'compute' }, async (h) => {
-            const m = buildChatMessages({
-              model: agent.model,
-              provider: agent.provider,
-              systemPrompt: assembled.effectiveSystemPrompt,
-              volatileContext: assembled.volatileContext,
-              personaNotes,
-              facts: relevantFacts,
-              digests,
-              corpusMap,
-              contentHits,
-              chunkHits,
-              relations,
-              history,
-              newUserText: userText,
-              userImage: image,
-            });
-            h.setMeta({
-              blockCount: m.length,
-              skillCount: assembled.attachedSkills.length,
-              hasImage: !!image,
-            });
-            return m;
-          });
-
         // Resolve the chat adapter for this agent's provider. The
         // agents table grew a `provider` column in migration 0048
         // (defaulted to 'openrouter' for existing rows, equivalent to
@@ -867,48 +801,77 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
           );
         }
 
-        console.log(
-          `[agent] → ${row.fromName ?? 'unknown'} via ${chatAdapter.adapterName}:${agent.model} (${row.text.length}c, ${history.length} turns, ${digests.length} digests, ${relevantFacts.length} facts, ${contentHits.length} content)`,
-        );
+        // Retrieval context loads ONCE (memoized) inside the shared core's
+        // load_context step; the image-retry path reuses the same context
+        // rather than re-paying retrieval.
+        let ctxPromise: Promise<ConversationContext> | null = null;
+        const loadContext = () =>
+          (ctxPromise ??= loadConversationContext({
+            ownerId: USER_ID!,
+            agent,
+            inboundText: row.text,
+            // Exclude the inbound we just recorded; only look before it.
+            excludeMessageId: convInbound.id,
+            // `new Date(...)` because on a crash-resume replay the journaled
+            // record_inbound row deserializes createdAt to an ISO string.
+            before: new Date(convInbound.createdAt),
+          }).then((ctx) => {
+            console.log(
+              `[agent] → ${row.fromName ?? 'unknown'} via ${chatAdapter.adapterName}:${agent.model} (${row.text.length}c, ${ctx.history.length} turns, ${ctx.digests.length} digests, ${ctx.facts.length} facts, ${ctx.contentHits.length} content)`,
+            );
+            return ctx;
+          }));
 
-        const backup = await resolveBackupAdapter(USER_ID!, agent);
-        const runLoop = (image: UserImage | undefined, userText: string) =>
-          buildMessages(image, userText).then((messages) =>
-            runToolLoop({
-              adapter: chatAdapter,
-              apiKey,
-              model: agent.model,
-              baseUrl: agent.baseUrl,
-              viaTailnet: agent.viaTailnet,
-              backup,
-              params: (agent.params ?? {}) as AgentParams,
-              ownerId: USER_ID!,
-              agentId: agent.id,
-              agentSlug: agent.slug,
-              agentDepth: 1,
-              // Delegation allowlist, thinking budget, and the per-agent loop
-              // overrides (max_iterations clamp + tool-volume caps) come from
-              // the shared assembly — the Telegram copy used to miss the loop
-              // overrides entirely (parity drift b1, audit #5c).
-              delegateTo: assembled.delegateTo,
-              resultHandling: assembled.resultHandling,
-              thinkingBudget: assembled.thinkingBudget,
-              ...assembled.loopOverrides,
-              initialMessages: messages,
-              tools: assembled.allowedTools,
-              // Surface lets worker-delegation tools (synthesize_speech,
-              // etc.) target the right Telegram chat. The replyTo is the
-              // message that triggered this turn so the bot's outbound
-              // threads under it.
-              surface: {
-                kind: 'telegram',
-                telegramChatId: row.telegramChatId,
-                ...(row.telegramMessageId
-                  ? { replyToTelegramMessageId: row.telegramMessageId }
-                  : {}),
-              },
-            }),
-          );
+        // The shared loop core (audit #5c stage 2): load_context step + tool
+        // loop + post-loop bookkeeping (empty-reply fallback b3, thought
+        // trail b4, tool-outcome ledger b5) — one implementation with the web
+        // /assistant and Team Chat paths. Runs inside this turn's single
+        // responder_turn trace; delivery + persistence below stay Telegram's.
+        const runCore = (image: UserImage | undefined, userText: string) =>
+          runResponderLoop({
+            ownerId: USER_ID!,
+            agent,
+            adapter: chatAdapter,
+            apiKey,
+            prefs,
+            logPrefix: '[agent]',
+            assembled,
+            loadContext,
+            buildMessages: (ctx) =>
+              step({ name: 'build_messages', kind: 'compute' }, async (h) => {
+                const m = buildChatMessages({
+                  model: agent.model,
+                  provider: agent.provider,
+                  systemPrompt: assembled.effectiveSystemPrompt,
+                  volatileContext: assembled.volatileContext,
+                  personaNotes: ctx.personaNotes,
+                  facts: ctx.facts,
+                  digests: ctx.digests,
+                  corpusMap: ctx.corpusMap,
+                  contentHits: ctx.contentHits,
+                  chunkHits: ctx.chunkHits,
+                  relations: ctx.relations,
+                  history: ctx.history,
+                  newUserText: userText,
+                  userImage: image,
+                });
+                h.setMeta({
+                  blockCount: m.length,
+                  skillCount: assembled.attachedSkills.length,
+                  hasImage: !!image,
+                });
+                return m;
+              }),
+            // Surface lets worker-delegation tools (synthesize_speech,
+            // etc.) target the right Telegram chat. The replyTo is the
+            // message that triggered this turn so the bot's outbound
+            // threads under it.
+            surface: {
+              kind: 'telegram',
+              telegramChatId: row.telegramChatId,
+              ...(row.telegramMessageId ? { replyToTelegramMessageId: row.telegramMessageId } : {}),
+            },
+          });
 
         // Run via the shared image-fallback wrapper: if the responder errors
         // with the raw image attached, retry once text-only, grounded in the
@@ -916,14 +879,18 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         // this after Bedrock's opaque "Could not process image" failures).
         // Both attempts run inside this turn's single responder_turn trace
         // (the web path traces per-attempt); the retry shows up as a second
-        // build_messages step + the loop's own steps.
-        const loopOutcome = await runWithImageFallback({
+        // load_context (memoized) + build_messages step pair.
+        const outcome = await runWithImageFallback({
           canSeeImage,
           logPrefix: '[agent]',
-          withImage: () => runLoop(userImage, imagePrimaryText),
-          textOnly: () => runLoop(undefined, responderUserText),
+          withImage: () => runCore(userImage, imagePrimaryText),
+          textOnly: () => runCore(undefined, responderUserText),
         });
-        const rawReply = loopOutcome.reply;
+        const loopOutcome = outcome.loop;
+        // The core substitutes the shared fallback when the model returns
+        // empty twice (b3 — the old Telegram copy went silent instead), so
+        // this guard is now defensive only.
+        const rawReply = outcome.reply;
         if (!rawReply) {
           console.error('[agent] empty reply from model — not sending');
           return;
@@ -1129,6 +1096,10 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
           // full reply text — the per-chunk telegram_messages rows above are
           // the transport record). channel='telegram'; external_ref points at
           // the first sent chunk for reply threading. See docs/conversation.md.
+          // The thought trail (b4, prefs-gated) + tool-outcome ledger (b5)
+          // land on the row's data jsonb — the same keys the web path
+          // persists via updateAssistantMessageOutcome, so /assistant renders
+          // Telegram turns' records identically.
           await recordTurn({
             ownerId: USER_ID!,
             agentId: agent.id,
@@ -1143,6 +1114,16 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
                 ? { messageId: String(telegramMessageIds[0]) }
                 : {}),
             },
+            ...(outcome.persistedThoughts.length > 0 || outcome.toolStats
+              ? {
+                  data: {
+                    ...(outcome.persistedThoughts.length > 0
+                      ? { thoughts: outcome.persistedThoughts }
+                      : {}),
+                    ...(outcome.toolStats ? { toolStats: outcome.toolStats } : {}),
+                  },
+                }
+              : {}),
           });
           h.setMeta({ rows: targets.length, delivered, ...(sendError ? { sendError } : {}) });
         });
