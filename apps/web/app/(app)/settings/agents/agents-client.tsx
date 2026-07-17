@@ -22,16 +22,10 @@ import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import type { ExplorerModel } from '@/lib/model-explorer';
-import {
-  SUPPORTED_PROVIDERS,
-  getProvider,
-  isProviderWired,
-  providersForCapability,
-} from '@mantle/voice/client';
+import { getProvider, isProviderWired, providersForCapability } from '@mantle/voice/client';
 import type {
   AgentDTO,
   AgentAvatarDTO,
-  PersonaNoteDTO,
   AgentMemoryConfigDTO,
   SkillDTO,
   ToolGroupWithRefs,
@@ -93,7 +87,6 @@ type Role = (typeof ROLES)[number]['value'];
 // DTO; the others are aliases for the jsonb sub-shapes the form reads/writes.
 type MemoryConfig = AgentMemoryConfigDTO;
 type AgentAvatar = AgentAvatarDTO;
-type PersonaNote = PersonaNoteDTO;
 
 type AgentSummary = AgentDTO;
 
@@ -467,7 +460,7 @@ export function AgentsClient() {
     queryFn: () => apiFetch<{ peers: string[] }>('/api/tailscale/peers').then((r) => r.peers),
   });
 
-  const agents = agentsQuery.data ?? [];
+  const agents = useMemo(() => agentsQuery.data ?? [], [agentsQuery.data]);
   const apiKeys = keysQuery.data ?? [];
   const tailnetPeers = tailnetQuery.data ?? [];
   // Only enabled skills / tool groups are grantable; TTS pickers want kind='tts'.

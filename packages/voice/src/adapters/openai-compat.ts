@@ -25,7 +25,7 @@
 import type { ChatOptions, ChatResult, ChatStreamSink, ChatToolCall } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import { readSSE, safeDelta } from './sse';
-import { StreamingThinkScrubber, scrubThinkBlocks } from './think-scrubber';
+import { StreamingThinkScrubber } from './think-scrubber';
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
 
@@ -271,7 +271,6 @@ export async function streamOpenAICompatChat(
   }
 
   let text = '';
-  let reasoning = '';
   let model = opts.model;
   let usage: OpenAICompatStreamChunk['usage'];
   const toolAccum = new Map<number, { id: string; name: string; args: string }>();
@@ -305,7 +304,6 @@ export async function streamOpenAICompatChat(
         }
       }
       if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0) {
-        reasoning += delta.reasoning_content;
         safeDelta(onDelta, { type: 'reasoning', text: delta.reasoning_content });
       }
       if (Array.isArray(delta.tool_calls)) {

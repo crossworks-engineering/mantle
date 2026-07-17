@@ -12,13 +12,9 @@
  * misbehaving transform can never silently overwrite the live table.
  */
 import {
-  addColumn,
-  addRow,
   commitTable,
   computeAggregate,
   createTable,
-  deleteColumn,
-  deleteRow,
   deleteTable,
   ensureTableDoc,
   findColumn,
@@ -31,13 +27,8 @@ import {
   queryRows,
   resolveCell,
   applyTableOps,
-  saveTableDraft,
   setAggregate,
-  setCell,
-  setView,
   tableDocFromGrid,
-  updateColumn,
-  updateRow,
   updateTable,
   nodeUrl,
   AGGREGATE_KINDS,

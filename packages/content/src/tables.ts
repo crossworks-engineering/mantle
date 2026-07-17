@@ -28,7 +28,6 @@ import {
   draftPathFor,
   fileStats,
   finalizePublishedFile,
-  openTableFile,
   publishedPath,
   readDocClipped,
   relativeStoragePath,
@@ -198,16 +197,6 @@ function docsOf(
     totalRows: data.rows.length,
     docClipped: false,
   };
-}
-
-/** Truncation guard (plan §4): whole-doc writes past the materialize window
- *  are refused on BOTH the draft and commit routes — a windowed doc committed
- *  whole would BE published truncation. Imports split at 10k today, so this
- *  cannot fire for legitimate docs; it exists to make the failure loud. */
-function guardWholeDoc(doc: TableDoc): void {
-  if (doc.rows.length > MATERIALIZE_MAX) {
-    throw new TableTooLargeError(doc.rows.length, MATERIALIZE_MAX);
-  }
 }
 
 /** P1 workbooks carry the single engine-default tab; real tab names arrive

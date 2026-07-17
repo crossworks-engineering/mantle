@@ -22,7 +22,7 @@
  *     and nothing else to the LLM).
  */
 
-import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, secrets, type Node } from '@mantle/db';
 import { seal, open } from '@mantle/crypto';
 

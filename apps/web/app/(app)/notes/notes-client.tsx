@@ -90,10 +90,10 @@ export function NotesClient() {
     placeholderData: (prev) => prev,
   });
 
-  const notes = listQuery.data?.notes ?? [];
+  const notes = useMemo(() => listQuery.data?.notes ?? [], [listQuery.data?.notes]);
   const total = listQuery.data?.total ?? 0;
   const pageSize = listQuery.data?.pageSize ?? 50;
-  const tags = listQuery.data?.tags ?? [];
+  const tags = useMemo(() => listQuery.data?.tags ?? [], [listQuery.data?.tags]);
 
   // Selection + edit mode seed from the URL (a `/notes/[id]` deep-link redirects
   // to `?selected=&edit=1`), then live as local state.

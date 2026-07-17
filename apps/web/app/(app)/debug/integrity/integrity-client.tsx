@@ -667,6 +667,7 @@ function SystemView() {
 
   useEffect(() => {
     void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-once; `run` re-identifies every render (toast api unmemoized), so keying on it would infinite-loop
   }, []);
 
   return (

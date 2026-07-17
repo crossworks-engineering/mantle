@@ -30,18 +30,6 @@ import { TeamChatClient } from '@/components/team-chat/team-chat-client';
 import { TokenGate } from '@/components/team-chat/token-gate';
 import type { HubData as BridgeHubData, HubNavTarget } from '@/lib/app-bridge/protocol';
 
-type HubSection = BridgeHubData['sections'][number];
-
-/** A launcher card — one of the owner's OTHER team-shared apps (active
- *  team-mode app share + green published build; the designated hub app is
- *  excluded server-side). Mirrors @mantle/content `TeamAppCard`. */
-type TeamAppCard = {
-  token: string;
-  title: string;
-  description: string | null;
-  updatedAt: string;
-};
-
 /** The /api/team/hub payload — the bridge `HubData` (what `hub.get` answers a
  *  hub app with; `apps` is now part of that contract) plus the shell-only
  *  fields. Composed from the protocol type so the two can't drift. */

@@ -14,7 +14,6 @@ import {
   profileToText,
   publishedPath,
   readDocClipped,
-  readDocFile,
   relativeStoragePath,
   resolveStoragePath,
   snapshotFile,

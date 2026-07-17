@@ -50,11 +50,9 @@ import {
   type ResultHandlingConfig,
   type ToolCallRecord,
 } from '@mantle/tools';
-import { and, eq, sql } from 'drizzle-orm';
 import { db, pendingToolCalls, type Tool, type AgentParams } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
 import {
-  getChatAdapter,
   type ChatDispatcher,
   type ChatOptions,
   type ChatResult,

@@ -11,7 +11,7 @@ import { ListPager } from '@/components/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import { SecretForm, emptySecretForm, KINDS, type Kind, type SecretBody } from './secret-form';
+import { SecretForm, emptySecretForm, KINDS, type SecretBody } from './secret-form';
 import { SecretDetail, type SecretRow } from './secret-detail';
 
 type Selection = { mode: 'create' } | { mode: 'view'; id: string } | null;

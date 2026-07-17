@@ -32,15 +32,15 @@ export default tseslint.config(
     rules: {
       // noUnusedLocals is OFF in tsconfig, so ESLint is the only thing catching
       // dead variables/imports. Allow intentional `_`-prefixed throwaways.
-      // Starts at `warn` (the tree carries a backlog); ratchet to `error` once
-      // burned down so CI blocks new dead code.
+      // Backlog burned down (audit #4) — now `error` so CI blocks new dead code.
       '@typescript-eslint/no-unused-vars': [
-        'warn',
+        'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
       ],
-      // `any` is a smell but the codebase has pragmatic uses at untyped
-      // boundaries — surface as a warning, don't block the gate.
-      '@typescript-eslint/no-explicit-any': 'warn',
+      // `any` is a smell; the few pragmatic untyped-boundary uses carry an
+      // inline `eslint-disable` with a reason. Backlog burned down (audit #4) —
+      // now `error` so new `any` must be justified explicitly.
+      '@typescript-eslint/no-explicit-any': 'error',
       // The `cond ? a() : b()` / `cond && side()` statement idiom is used
       // deliberately for side effects across the UI — allow it while still
       // catching a genuinely dead bare expression.
@@ -60,13 +60,13 @@ export default tseslint.config(
     // React/Next linting for the web app. These resolve the inline
     // `eslint-disable react-hooks/*` / `@next/next/*` directives left from the
     // old `next lint` setup, and add real value (hook-deps, next foot-guns).
-    // Kept at `warn` initially — there's an existing suppression backlog the
-    // audit flagged for triage.
+    // exhaustive-deps backlog triaged + burned down (audit #4) — now `error`;
+    // intentional omissions carry an inline `eslint-disable` with a reason.
     files: ['apps/web/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
     rules: {
       'react-hooks/rules-of-hooks': 'warn',
-      'react-hooks/exhaustive-deps': 'warn',
+      'react-hooks/exhaustive-deps': 'error',
       '@next/next/no-img-element': 'warn',
     },
   },

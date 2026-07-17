@@ -11,12 +11,11 @@
  * Leaves push_instance + one subscription seeded so the worker test can fire a
  * pg_notify next; clean up with --cleanup.
  */
-import { eq } from 'drizzle-orm';
 import { db, pushInstance } from '@mantle/db';
 import { generateDeviceKeypair, openSealed, sealToDevice } from '../lib/push/seal';
 import { generateInstanceToken } from '../lib/push/tokens';
 import { mintTicket } from '../lib/push/ticket';
-import { registerInstance, relayNotify, relayDeleteDevice } from '../lib/push/relay-client';
+import { registerInstance, relayNotify } from '../lib/push/relay-client';
 import { deleteAllSubscriptions, insertSubscription, savePushInstance } from '../lib/push/store';
 import { pushOutbound } from '../lib/push/notify';
 

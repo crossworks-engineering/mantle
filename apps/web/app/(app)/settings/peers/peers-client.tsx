@@ -114,7 +114,6 @@ export function PeersClient() {
 /** Once peers are loaded, this owns the working list (seeds from the fetch,
  *  then mutates locally as peers are added/edited/removed). */
 function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
-  const toast = useToast();
   const [peers, setPeers] = useState<Peer[]>(initialPeers);
   const [sel, setSel] = useState<Selection>(
     initialPeers[0] ? { mode: 'view', id: initialPeers[0].id } : { mode: 'create' },

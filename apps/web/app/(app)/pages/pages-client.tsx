@@ -143,7 +143,7 @@ export function PagesClient() {
   });
 
   const mode = listQuery.data?.mode ?? (query || activeTag ? 'list' : 'tree');
-  const pages = listQuery.data?.pages ?? [];
+  const pages = useMemo(() => listQuery.data?.pages ?? [], [listQuery.data?.pages]);
   const total = listQuery.data?.total ?? 0;
   const pageSize = listQuery.data?.pageSize ?? 50;
   const tags = listQuery.data?.tags ?? [];

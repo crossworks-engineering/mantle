@@ -76,7 +76,7 @@ export function JournalClient() {
     placeholderData: (prev) => prev,
   });
 
-  const entries = listQuery.data?.journals ?? [];
+  const entries = useMemo(() => listQuery.data?.journals ?? [], [listQuery.data?.journals]);
   const total = listQuery.data?.total ?? 0;
   const pageSize = listQuery.data?.pageSize ?? 50;
   const tags = listQuery.data?.tags ?? [];

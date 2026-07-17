@@ -47,7 +47,6 @@ type UserRow = {
  * just mirrors them. (Access tiers are a separate team-member surface.)
  */
 export function UsersClient() {
-  const toast = useToast();
   const queryClient = useQueryClient();
   const usersQuery = useQuery({
     queryKey: ['users'],

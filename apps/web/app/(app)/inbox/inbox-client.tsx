@@ -61,7 +61,7 @@ export function InboxClient() {
     queryFn: () => apiFetch<{ isEmpty: boolean }>('/api/email/contact-gate').then((r) => r.isEmpty),
   });
 
-  const accounts = accountsQuery.data ?? [];
+  const accounts = React.useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
   const currentAccount = accounts.find((a) => a.id === accountParam) ?? accounts[0];
   const accountId = currentAccount?.id;
 

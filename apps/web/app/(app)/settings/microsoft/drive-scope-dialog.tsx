@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronRight, File, Folder, FolderOpen, Loader2 } from 'lucide-react';
+import { ChevronRight, File, Folder, FolderOpen } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { MsDriveChildDTO, MsDriveDTO, MsDriveScopeDTO } from '@mantle/client-types';
 import { Button } from '@/components/ui/button';

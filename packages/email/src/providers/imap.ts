@@ -2,7 +2,6 @@ import { ImapFlow, type FetchMessageObject } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { open } from '@mantle/crypto';
 import type { EmailAccount } from '@mantle/db';
-import { parseAddress, parseAddressList } from '../addresses';
 import { classifyDelivery, type DeliveryKind } from '../classify';
 import type {
   EmailProvider,

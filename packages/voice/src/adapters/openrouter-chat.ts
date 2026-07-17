@@ -748,7 +748,6 @@ async function openrouterChatStream(
   }
 
   let text = '';
-  let reasoning = '';
   let model = opts.model;
   let usage: OrStreamChunk['usage'];
   // Tool-call fragments accumulate by index: id+name land first, arguments arrive
@@ -785,7 +784,6 @@ async function openrouterChatStream(
         }
       }
       if (typeof delta.reasoning === 'string' && delta.reasoning.length > 0) {
-        reasoning += delta.reasoning;
         safeDelta(onDelta, { type: 'reasoning', text: delta.reasoning });
       }
       reasoningDetails.add(delta.reasoningDetails ?? delta.reasoning_details);

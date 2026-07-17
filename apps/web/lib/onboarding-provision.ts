@@ -99,7 +99,6 @@ async function keyIdByService(ownerId: string): Promise<Record<string, string>> 
 export async function provisionDefaults(ownerId: string): Promise<ProvisionResult> {
   const keys = await keyIdByService(ownerId);
   const openrouter = keys['openrouter'] ?? null;
-  const xai = keys['xai'] ?? null;
 
   // The Models-step overlay (assistant + worker model picks, optionally pinned
   // to an Azure OpenAI endpoint via the `custom` provider). The manifest stays

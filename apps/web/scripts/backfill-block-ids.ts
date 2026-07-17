@@ -17,7 +17,7 @@
  *   pnpm -C apps/web backfill:block-ids --dry      (count only, no writes)
  */
 
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db, nodes, pages } from '@mantle/db';
 import { ensureBlockIds } from '@mantle/content/block-ids';
 

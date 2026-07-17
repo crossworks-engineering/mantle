@@ -30,7 +30,6 @@ import {
   db,
   agents,
   toolGroups,
-  assistantMessages,
   channels,
   nodes,
   telegramMessages,

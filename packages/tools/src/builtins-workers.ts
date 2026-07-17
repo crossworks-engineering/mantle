@@ -34,13 +34,7 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { accountForChat, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
 import { createFolder, dashToLtree, fileById, readFileById, upsertFile } from '@mantle/files';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
-import type {
-  BuiltinToolDef,
-  ToolArtifact,
-  ToolHandlerContext,
-  ToolHandlerResult,
-  ToolPrecondition,
-} from './types';
+import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
 
 // ─── shared helpers ────────────────────────────────────────────────
 

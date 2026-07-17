@@ -30,10 +30,9 @@
  * pg_notify channel to extractNode().
  */
 
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   db,
-  agents,
   bumpWorkerUsage,
   facts,
   entities,
@@ -45,12 +44,9 @@ import {
   pages,
   tables,
   contentChunks,
-  type Agent,
-  type AgentMemoryConfig,
   type AiWorker,
   type ExtractorParams,
   type Entity,
-  type Fact,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import {
@@ -238,14 +234,7 @@ Output STRICT JSON, no markdown:
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-import {
-  isValidEntity,
-  isValidFact,
-  parseExtractorOutput,
-  sanitiseFactEntities,
-  type ExtractedFact,
-  type ExtractorOutput,
-} from './extractor-parse';
+import { parseExtractorOutput, type ExtractedFact } from './extractor-parse';
 
 type ClassifierDecision = {
   decision: 'ADD' | 'UPDATE' | 'DELETE' | 'NOOP';

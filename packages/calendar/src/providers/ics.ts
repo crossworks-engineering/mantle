@@ -98,7 +98,11 @@ export const icsProvider: CalendarProvider = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ev: any = new ICAL.Event(ve);
       const cancelled =
-        String((ve as any).getFirstPropertyValue?.('status') ?? '').toUpperCase() === 'CANCELLED';
+        String(
+          (ve as { getFirstPropertyValue?: (name: string) => unknown }).getFirstPropertyValue?.(
+            'status',
+          ) ?? '',
+        ).toUpperCase() === 'CANCELLED';
       const baseUid = String(ev.uid ?? '').trim();
       if (!baseUid) continue;
 

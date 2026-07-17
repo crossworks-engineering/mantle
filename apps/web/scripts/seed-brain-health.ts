@@ -21,7 +21,7 @@
  * /settings/agents (the manifest defines the group; grants stay explicit).
  */
 import { readFileSync } from 'node:fs';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { db, agents, heartbeats, nodes, skills } from '@mantle/db';
 import { computeNextFireAt } from '@mantle/heartbeats';
 import { createNote } from '@mantle/content';

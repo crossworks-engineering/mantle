@@ -117,7 +117,7 @@ export function DevToolsSidebar() {
     })).filter((g) => g.endpoints.length > 0 || g.name.toLowerCase().includes(q));
   }, [q]);
 
-  const mcpTools = mcp.status === 'ready' ? mcp.tools : [];
+  const mcpTools = useMemo(() => (mcp.status === 'ready' ? mcp.tools : []), [mcp]);
   const filteredMcp = useMemo(
     () =>
       q

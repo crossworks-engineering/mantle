@@ -46,7 +46,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { copyText } from '@/lib/secure-context-fallbacks';
 
-const PAGE_SIZE = 50;
 const HOURS_OPTIONS: Array<[number, string]> = [
   [1, '1h'],
   [6, '6h'],

@@ -19,7 +19,7 @@
  * worker rolls the single row forward to its next occurrence (re-arming
  * the reminder) instead of marking it sent — see `rollForwardRecurrence`.
  */
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
 
 export type { RecurFreq } from './events-time';

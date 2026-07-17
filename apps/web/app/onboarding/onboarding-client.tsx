@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Check, ExternalLink, Loader2, Sparkles, X } from 'lucide-react';
 // Import the browser-safe LEAVES directly, NOT the @mantle/content barrel —
@@ -1256,7 +1256,6 @@ function Field({
 }
 
 function KeyFields({
-  service,
   label,
   link,
   value,
@@ -1352,7 +1351,6 @@ function KeyStep(props: {
 }
 
 function Footer({
-  index,
   busy,
   canBack,
   onBack,

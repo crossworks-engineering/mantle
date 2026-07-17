@@ -13,15 +13,7 @@
  * per node or per category.
  */
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import {
-  db,
-  mantlePeers,
-  nodes,
-  peerShares,
-  peerShareScopes,
-  type MantlePeer,
-  type Node,
-} from '@mantle/db';
+import { db, mantlePeers, nodes, peerShares, peerShareScopes, type MantlePeer } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { grantUnionFilter, searchChunks, searchNodes } from '@mantle/search';
 import { hashToken, mintInboundToken, tokenMatchesHash } from './peers-crypto';

@@ -102,7 +102,7 @@ import {
   updateNote,
   updateTask,
 } from '@mantle/content';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, type SQL } from 'drizzle-orm';
 
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON). Module-scope (env is process-stable) so the gate is evaluated once, not
@@ -192,10 +192,7 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
         .select({ id: nodes.id, title: nodes.title, type: nodes.type, path: nodes.path })
         .from(nodes)
         .where(
-          and(
-            eq(nodes.ownerId, ownerId),
-            path ? (eq as any)(nodes.path, path) : eq(nodes.type, 'branch'),
-          ),
+          and(eq(nodes.ownerId, ownerId), path ? eq(nodes.path, path) : eq(nodes.type, 'branch')),
         )
         .limit(200);
       return jsonReply(rows);
@@ -321,9 +318,9 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
       limit: z.number().int().min(1).max(200).optional(),
     },
     async ({ accountId, since, limit }) => {
-      const conds: any[] = [];
+      const conds: SQL[] = [];
       if (accountId) conds.push(eq(emails.accountId, accountId));
-      if (since) conds.push((eq as any)(emails.internalDate, new Date(since))); // placeholder until gte helper imported
+      if (since) conds.push(eq(emails.internalDate, new Date(since)));
       const rows = await db
         .select()
         .from(emails)

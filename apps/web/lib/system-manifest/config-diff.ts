@@ -263,7 +263,7 @@ function diffPersona(live: LiveConfig, m: ManifestSlices): EntityDiffCore {
   };
 }
 
-function diffSpecialist(a: ManifestAgent, live: LiveConfig, m: ManifestSlices): EntityDiffCore {
+function diffSpecialist(a: ManifestAgent, live: LiveConfig, _m: ManifestSlices): EntityDiffCore {
   const row = live.agents.find((r) => r.slug === a.slug);
   const base = { kind: 'agent' as const, slug: a.slug, name: row?.name || a.name };
 

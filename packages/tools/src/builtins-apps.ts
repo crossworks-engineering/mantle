@@ -12,7 +12,6 @@ import {
   createApp,
   getApp,
   listApps,
-  updateAppMeta,
   writeDraftFile,
   deleteDraftFile,
   saveDraftSource,
