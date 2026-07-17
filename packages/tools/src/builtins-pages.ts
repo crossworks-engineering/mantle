@@ -39,6 +39,7 @@ import {
   nodeUrl,
   getNote,
   getJournal,
+  supersedeNode,
 } from '@mantle/content';
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
@@ -508,7 +509,7 @@ const page_from_file: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Create page from file',
   description:
-    "Create a page by importing a markdown/text file's bytes directly — the bytes go server-side from `files` → `markdownToDoc` → `createPage` without round-tripping through your output. **Always prefer this over `file_read` + `page_create` for file → page operations.** It scales to arbitrarily large files (a 100 KB Notion export imports in one tool call instead of choking on your max_tokens cap) and the result is byte-faithful to the source. Returns the new page's id + title; the body is never echoed back to you (use page_get if you need to verify content). Title defaults to the file's basename without extension if you omit it. Only text-like files are accepted (markdown / plain text) — binaries (PDF / docx / xlsx) are rejected with a clear error since their indexed text already lives on the file node and can't be losslessly converted to a page.",
+    "Create a page by importing a markdown/text file's bytes directly — the bytes go server-side from `files` → `markdownToDoc` → `createPage` without round-tripping through your output. **Always prefer this over `file_read` + `page_create` for file → page operations.** It scales to arbitrarily large files (a 100 KB Notion export imports in one tool call instead of choking on your max_tokens cap) and the result is byte-faithful to the source. Returns the new page's id + title; the body is never echoed back to you (use page_get if you need to verify content). Title defaults to the file's basename without extension if you omit it. Only text-like files are accepted (markdown / plain text) — binaries (PDF / docx / xlsx) are rejected with a clear error since their indexed text already lives on the file node and can't be losslessly converted to a page. The source file is marked SUPERSEDED by the new page (a reversible retrieval down-weight — the page is now the living copy; undo with `content_supersede`); pass `supersede_source: false` to keep both at full retrieval weight.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -523,6 +524,12 @@ const page_from_file: BuiltinToolDef = {
         description: "Labels for organisation and filtering, e.g. ['work'].",
       },
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
+      supersede_source: {
+        type: 'boolean',
+        default: true,
+        description:
+          'mark the source file superseded by the new page (reversible retrieval down-weight); false keeps both at full weight',
+      },
     },
     required: ['file_id'],
   },
@@ -576,11 +583,32 @@ const page_from_file: BuiltinToolDef = {
         tags,
         ...(icon ? { icon } : {}),
       });
+      // The page is now the living copy — stamp the lineage edge so retrieval
+      // demotes the source file and annotates hits with the successor
+      // (content-currency layer). Best-effort: a failed stamp must not fail
+      // the import; the mark is recoverable via content_supersede.
+      const supersedeSource =
+        input.supersede_source === undefined ? true : input.supersede_source === true;
+      let sourceSuperseded = false;
+      if (supersedeSource) {
+        try {
+          await supersedeNode({
+            ownerId: ctx.ownerId,
+            id: fileId,
+            supersededBy: page.id,
+            reason: 'migrated',
+          });
+          sourceSuperseded = true;
+        } catch (err) {
+          console.error('[page_from_file] could not mark source superseded:', err);
+        }
+      }
       ctx.step?.setOutput({
         id: page.id,
         title: page.title,
         source_file_id: fileId,
         source_byte_size: res.bytes.length,
+        source_superseded: sourceSuperseded,
       });
       void recordIngest({
         source: 'agent_tool',
@@ -607,6 +635,7 @@ const page_from_file: BuiltinToolDef = {
           tags: page.tags,
           source_file_id: fileId,
           source_byte_size: res.bytes.length,
+          source_superseded: sourceSuperseded,
         },
       };
     } catch (err) {
@@ -620,11 +649,17 @@ const page_from_note: BuiltinToolDef = {
   preconditions: NOTE_ID_PRE,
   name: 'Create page from note',
   description:
-    "Promote an EXISTING note into a rich page — the note's body is copied server-side WITHOUT round-tripping through your output, byte-faithful however long the note is. **Always prefer this over `note_get` + `page_create` when the user wants a note turned into a page** — you pass the note id, NOT its text. Pass `parent_id` to nest the new page UNDER an existing page. Title/tags default to the note's own unless you override. The original note is LEFT IN PLACE (non-destructive). Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off the note id + parent id only — never paste the note body into the prompt.**",
+    "Promote an EXISTING note into a rich page — the note's body is copied server-side WITHOUT round-tripping through your output, byte-faithful at any size. **Always prefer this over `note_get` + `page_create` when the user wants a note turned into a page** — you pass the note id, NOT its text. Pass `parent_id` to nest the new page UNDER an existing page. Title/tags default to the note's own unless you override. The note is marked SUPERSEDED — a reversible down-weight (`supersede_source: false` to skip). Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off the note id + parent id only — never paste the note body into the prompt.**",
   inputSchema: {
     type: 'object',
     properties: {
       note_id: { type: 'string', format: 'uuid', description: 'id of the note to promote' },
+      supersede_source: {
+        type: 'boolean',
+        default: true,
+        description:
+          'mark the source note superseded by the new page (reversible retrieval down-weight); false keeps both at full weight',
+      },
       parent_id: {
         type: 'string',
         format: 'uuid',
@@ -672,10 +707,30 @@ const page_from_note: BuiltinToolDef = {
         ...(icon ? { icon } : {}),
         ...(parentId ? { parentId } : {}),
       });
+      // The page is the note's promotion — stamp the lineage edge (reversible
+      // retrieval down-weight on the note; content-currency layer). Opt out
+      // with supersede_source: false. Best-effort: never fails the promotion.
+      const supersedeSource =
+        input.supersede_source === undefined ? true : input.supersede_source === true;
+      let sourceSuperseded = false;
+      if (supersedeSource) {
+        try {
+          await supersedeNode({
+            ownerId: ctx.ownerId,
+            id: noteId,
+            supersededBy: page.id,
+            reason: 'migrated',
+          });
+          sourceSuperseded = true;
+        } catch (err) {
+          console.error('[page_from_note] could not mark source superseded:', err);
+        }
+      }
       ctx.step?.setOutput({
         id: page.id,
         title: page.title,
         source_note_id: noteId,
+        source_superseded: sourceSuperseded,
         ...(parentId ? { parent_id: parentId } : {}),
       });
       void recordIngest({
@@ -699,6 +754,7 @@ const page_from_note: BuiltinToolDef = {
           title: page.title,
           tags: page.tags,
           source_note_id: noteId,
+          source_superseded: sourceSuperseded,
           ...(parentId ? { parent_id: parentId } : {}),
         },
       };
@@ -721,7 +777,7 @@ const page_from_notes: BuiltinToolDef = {
   slug: 'page_from_notes',
   name: 'Create page from several notes',
   description:
-    "Stitch SEVERAL existing notes into ONE rich page — every note's body is copied server-side and concatenated in the order given, byte-faithful at any size. **Prefer this over `note_get` + re-typing into `page_create`** — you pass the note ids, NOT their text. Each note becomes a section under an `## ` heading from its title; `headings: false` concatenates the bodies raw. Pass `parent_id` to nest under an existing page. Tags default to the union of the source notes' tags. The originals are LEFT IN PLACE. Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off note ids + title + parent id only — never paste note bodies.**",
+    "Stitch SEVERAL existing notes into ONE rich page — every note's body is copied server-side and concatenated in the order given, byte-faithful at any size. **Prefer this over `note_get` + re-typing into `page_create`** — you pass the note ids, NOT their text. Each note becomes an `## ` section from its title; `headings: false` concatenates raw. Pass `parent_id` to nest under an existing page. Tags default to the union of the source notes' tags. Originals are marked SUPERSEDED — a reversible down-weight (`supersede_source: false` to skip). Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off note ids + title + parent id only — never paste note bodies.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -749,6 +805,12 @@ const page_from_notes: BuiltinToolDef = {
         description: "page tags; defaults to the union of the source notes' tags if omitted",
       },
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
+      supersede_source: {
+        type: 'boolean',
+        default: true,
+        description:
+          'mark each source note superseded by the compiled page (reversible retrieval down-weight); false keeps them at full weight',
+      },
     },
     required: ['note_ids', 'title'],
   },
@@ -804,11 +866,33 @@ const page_from_notes: BuiltinToolDef = {
         ...(icon ? { icon } : {}),
         ...(parentId ? { parentId } : {}),
       });
+      // Each source note is now represented in the compiled page — stamp the
+      // lineage edges (reversible retrieval down-weight; content-currency
+      // layer). Opt out with supersede_source: false. Best-effort per note.
+      const supersedeSource =
+        input.supersede_source === undefined ? true : input.supersede_source === true;
+      let supersededCount = 0;
+      if (supersedeSource) {
+        for (const id of noteIds) {
+          try {
+            await supersedeNode({
+              ownerId: ctx.ownerId,
+              id,
+              supersededBy: page.id,
+              reason: 'migrated',
+            });
+            supersededCount++;
+          } catch (err) {
+            console.error('[page_from_notes] could not mark source superseded:', err);
+          }
+        }
+      }
       ctx.step?.setOutput({
         id: page.id,
         title: page.title,
         source_note_ids: noteIds,
         note_count: notes.length,
+        sources_superseded: supersededCount,
         ...(parentId ? { parent_id: parentId } : {}),
       });
       void recordIngest({
@@ -834,6 +918,7 @@ const page_from_notes: BuiltinToolDef = {
           tags: page.tags,
           source_note_ids: noteIds,
           note_count: notes.length,
+          sources_superseded: supersededCount,
           ...(parentId ? { parent_id: parentId } : {}),
         },
       };

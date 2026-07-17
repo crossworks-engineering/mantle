@@ -482,6 +482,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['export_node'],
   },
   {
+    slug: 'curation',
+    name: 'Content curation',
+    description:
+      'Mark content superseded/outdated so retrieval prefers the living copy — the content-currency layer. Reversible down-weights, never deletes.',
+    toolSlugs: ['content_supersede'],
+  },
+  {
     slug: 'contacts',
     name: 'Contacts',
     description:
@@ -742,6 +749,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'location',
       'profile',
       'export',
+      'curation',
       'tables-import',
       'app-data',
       'team-admin',
@@ -794,7 +802,15 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // (delete/overwrite) + `page-share` reassemble the complete PAGE_TOOL_SLUGS
     // set; `files`/`memory-core` cover source reads + cross-context lookups.
     // (Approach A: this coarsens to full `files`/`memory-core`, a benign gain.)
-    toolGroupSlugs: ['pages', 'page-admin', 'page-share', 'files', 'memory-core', 'export'],
+    toolGroupSlugs: [
+      'pages',
+      'page-admin',
+      'page-share',
+      'files',
+      'memory-core',
+      'export',
+      'curation',
+    ],
     skillSlugs: ['rich_writing', 'page_editing'],
     isDelegate: true,
     assistSurface: 'pages',

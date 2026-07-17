@@ -21,6 +21,7 @@ import {
   entityFacts,
   entityMentions,
   graphPath,
+  resolveSupersededTargets,
 } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
 import {
@@ -36,7 +37,7 @@ import {
   upsertFile,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
-import { corpusCapacity, nodeUrl } from '@mantle/content';
+import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { EVENT_TOOLS } from './builtins-events';
@@ -182,21 +183,41 @@ const search_nodes: BuiltinToolDef = {
         queryEmbedding,
       });
       ctx.step?.setOutput({ count: rows.length });
+      // Content-currency annotation: a superseded hit still surfaces (the
+      // demotion is a nudge, not a filter) but must carry its living
+      // successor so the model prefers the current copy.
+      const successors = await resolveSupersededTargets(
+        ctx.ownerId,
+        rows.filter((r) => r.supersededBy).map((r) => r.id),
+      );
       return {
         ok: true,
-        output: rows.map((r) => ({
-          id: r.id,
-          type: r.type,
-          title: r.title,
-          path: r.path,
-          tags: r.tags,
-          url: nodeUrl(r.id),
-          summary:
-            typeof (r.data as Record<string, unknown> | null)?.summary === 'string'
-              ? (r.data as Record<string, unknown>).summary
-              : null,
-          updatedAt: r.updatedAt.toISOString(),
-        })),
+        output: rows.map((r) => {
+          const succ = successors.get(r.id);
+          return {
+            id: r.id,
+            type: r.type,
+            title: r.title,
+            path: r.path,
+            tags: r.tags,
+            url: nodeUrl(r.id),
+            summary:
+              typeof (r.data as Record<string, unknown> | null)?.summary === 'string'
+                ? (r.data as Record<string, unknown>).summary
+                : null,
+            updatedAt: r.updatedAt.toISOString(),
+            ...(succ
+              ? {
+                  superseded_by: {
+                    id: succ.id,
+                    title: succ.title,
+                    url: nodeUrl(succ.id),
+                    note: 'SUPERSEDED — prefer this successor; do not present the old copy as current.',
+                  },
+                }
+              : {}),
+          };
+        }),
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -243,16 +264,34 @@ const search_chunks: BuiltinToolDef = {
         limit: num(input.limit, 10),
       });
       ctx.step?.setOutput({ count: hits.length });
+      // Content-currency annotation: passages from a superseded node carry
+      // their living successor so the model quotes the current copy instead.
+      const successors = await resolveSupersededTargets(
+        ctx.ownerId,
+        hits.filter((h) => h.nodeSupersededBy).map((h) => h.nodeId),
+      );
       return {
         ok: true,
-        output: hits.map((h) => ({
-          nodeId: h.nodeId,
-          nodeTitle: h.nodeTitle,
-          nodeType: h.nodeType,
-          heading: h.headingPath,
-          ordinal: h.ordinal,
-          text: h.text,
-        })),
+        output: hits.map((h) => {
+          const succ = successors.get(h.nodeId);
+          return {
+            nodeId: h.nodeId,
+            nodeTitle: h.nodeTitle,
+            nodeType: h.nodeType,
+            heading: h.headingPath,
+            ordinal: h.ordinal,
+            text: h.text,
+            ...(succ
+              ? {
+                  superseded_by: {
+                    id: succ.id,
+                    title: succ.title,
+                    note: 'SUPERSEDED — this passage is from an outdated copy; check the successor before quoting.',
+                  },
+                }
+              : {}),
+          };
+        }),
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -710,6 +749,7 @@ const node_read: BuiltinToolDef = {
         path: nodes.path,
         tags: nodes.tags,
         data: nodes.data,
+        supersededBy: nodes.supersededBy,
         createdAt: nodes.createdAt,
         updatedAt: nodes.updatedAt,
       })
@@ -723,6 +763,11 @@ const node_read: BuiltinToolDef = {
           'node not found — the id may be stale or mistyped; find it with search_nodes / tree_list, then re-issue.',
       };
     ctx.step?.setOutput({ type: row.type });
+    // Content-currency annotation: reading a superseded node names its living
+    // successor so stale content is never presented as current.
+    const succ = row.supersededBy
+      ? (await resolveSupersededTargets(ctx.ownerId, [row.id])).get(row.id)
+      : undefined;
     return {
       ok: true,
       output: {
@@ -735,8 +780,109 @@ const node_read: BuiltinToolDef = {
         data: row.data,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
+        ...(succ
+          ? {
+              superseded_by: {
+                id: succ.id,
+                title: succ.title,
+                url: nodeUrl(succ.id),
+                note: 'SUPERSEDED — prefer this successor; do not present the old copy as current.',
+              },
+            }
+          : {}),
       },
     };
+  },
+};
+
+const content_supersede: BuiltinToolDef = {
+  slug: 'content_supersede',
+  name: 'Mark content superseded',
+  description:
+    'Mark a node OUTDATED, optionally naming its replacement — the old copy is down-weighted in retrieval and every future hit on it carries a "superseded by" pointer to the successor. Returns the updated mark. ' +
+    'Use when the user says content is stale, wrong, or replaced ("this file is outdated — the page is the current version"). For deleting content outright use the type\'s delete tool instead; this is the reversible, history-preserving move. ' +
+    'Pass `clear: true` to un-mark (restores full weight); omit `superseded_by` for a bare outdated mark. ' +
+    '`page_from_file` / `page_from_note` stamp this automatically; use this for corrections and lineage the system could not see.',
+  preconditions: NODE_ID_PRE,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      node_id: {
+        type: 'string',
+        format: 'uuid',
+        description: 'the outdated node (any type — file, page, note, …)',
+      },
+      superseded_by: {
+        type: 'string',
+        format: 'uuid',
+        description:
+          'the node that replaces it, e.g. the corrected page built from a stale file; omit for a bare "outdated" mark',
+      },
+      reason: {
+        type: 'string',
+        enum: ['version', 'migrated', 'corrected'],
+        default: 'corrected',
+        description:
+          "why: 'migrated' (content moved to the successor), 'corrected' (the old content is wrong — demotes harder), 'version' (an older export of the same artifact)",
+      },
+      clear: {
+        type: 'boolean',
+        default: false,
+        description: 'un-mark instead: clear the supersession and restore full retrieval weight',
+      },
+    },
+    required: ['node_id'],
+  },
+  handler: async (input, ctx) => {
+    // Members must not re-weight the owner's brain: curation is an owner-side
+    // action (mirrors the other owner-only tools' team-surface refusal).
+    if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
+      return {
+        ok: false,
+        error:
+          'content_supersede is owner-side only — on the team surface, ask the owner (or file a request with team_request_create) instead of re-weighting content directly.',
+      };
+    }
+    const nodeId = str(input.node_id).trim();
+    if (!nodeId) return { ok: false, error: 'node_id required' };
+    try {
+      if (input.clear === true) {
+        const row = await unsupersedeNode(ctx.ownerId, nodeId);
+        ctx.step?.setOutput({ id: row.id, cleared: true });
+        return {
+          ok: true,
+          output: { id: row.id, title: row.title, cleared: true },
+        };
+      }
+      const successorId = str(input.superseded_by).trim() || null;
+      const reason = (strOpt(input.reason) ?? 'corrected') as 'version' | 'migrated' | 'corrected';
+      const row = await supersedeNode({
+        ownerId: ctx.ownerId,
+        id: nodeId,
+        supersededBy: successorId,
+        reason,
+      });
+      ctx.step?.setOutput({ id: row.id, superseded_by: successorId, reason });
+      return {
+        ok: true,
+        output: {
+          id: row.id,
+          title: row.title,
+          superseded_by: row.supersededBy,
+          reason: row.supersededReason,
+          note: 'Down-weighted in retrieval (reversible with clear: true) — not deleted.',
+        },
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('successor node not found')) {
+        return {
+          ok: false,
+          error: `superseded_by '${str(input.superseded_by)}' is not one of the user's nodes — find the replacement's id with search_nodes / page_list, then re-issue.`,
+        };
+      }
+      return { ok: false, error: msg };
+    }
   },
 };
 
@@ -1470,6 +1616,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   file_get,
   file_read,
   node_read,
+  content_supersede,
   secret_create,
   file_create,
   file_rename,

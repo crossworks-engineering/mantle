@@ -420,6 +420,16 @@ export {
 } from './forum';
 
 export {
+  supersedeNode,
+  unsupersedeNode,
+  salienceForSupersedeReason,
+  wouldCreateSupersedeCycle,
+  SUPERSEDE_CHAIN_CAP,
+  type SupersedeReason,
+  type SupersedeNodeInput,
+} from './supersede';
+
+export {
   recordTeamAccess,
   listTeamAccess,
   type TeamAccessKind,

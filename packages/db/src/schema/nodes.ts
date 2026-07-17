@@ -70,6 +70,17 @@ export const nodes = pgTable(
     // content at retrieval. A down-weight, never a filter. See migration 0073
     // + docs/recall-eval.md. Applied as ORDER BY (dist + λ·(1-salience)).
     salience: real('salience').notNull().default(1),
+    /** Lineage: the node that replaced this one (a corrected page built from a
+     *  stale file, the newest sibling of a versioned export, an explicit
+     *  correction). Mirrors facts.superseded_by one layer up. Setting it also
+     *  drops `salience` (materialized demotion — the existing ranking
+     *  expression picks it up with zero query changes); read paths annotate
+     *  hits with the successor so the model prefers it. See
+     *  packages/content/src/supersede.ts. */
+    supersededBy: uuid('superseded_by'),
+    /** Why: 'version' (filename-family sibling), 'migrated' (page built from
+     *  this source), 'corrected' (explicit mark — demotes harder). */
+    supersededReason: text('superseded_reason').$type<'version' | 'migrated' | 'corrected'>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -77,6 +88,11 @@ export const nodes = pgTable(
     index('nodes_owner_idx').on(t.ownerId),
     index('nodes_parent_idx').on(t.parentId),
     index('nodes_type_idx').on(t.type),
+    // Successor-chain walks + reverse "what supersedes X" lookups; partial so
+    // the (vast) non-superseded majority pays nothing.
+    index('nodes_superseded_by_idx')
+      .on(t.supersededBy)
+      .where(sql`${t.supersededBy} is not null`),
     // Slug uniqueness applies to NON-branch nodes only. Folders (branches)
     // rely on path-uniqueness below — two folders under different parents may
     // share a name (e.g. each upload surface's dated `…/YYYY-MM-DD`). See

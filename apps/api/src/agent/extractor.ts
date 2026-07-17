@@ -1818,9 +1818,13 @@ async function supersedeFileVersions(
   // titles differ only by a date/version token; retrieval then hits
   // whichever version is cosine-closest — often stale. Group siblings by
   // fileFamilyKey and down-weight every version but the newest (salience
-  // is a re-ranking nudge, λ·(1−salience), not a hide). Idempotent and
-  // self-healing: the newest is restored to 1.0 if a prior pass demoted
-  // it. Best-effort — a failure here must not fail the extraction.
+  // is a re-ranking nudge, λ·(1−salience), not a hide), stamping the
+  // superseded_by lineage edge (reason 'version') so retrieval annotates
+  // hits with the living successor. Idempotent and self-healing: the
+  // newest is restored (salience 1, edge cleared) if a prior pass demoted
+  // it — but ONLY when this heuristic owns the mark; manual 'corrected' /
+  // 'migrated' edges are never touched. Best-effort — a failure here must
+  // not fail the extraction.
   await step(
     { name: 'supersede_file_versions', kind: 'compute', input: { title: node.title } },
     async (h) => {
@@ -1835,6 +1839,8 @@ async function supersedeFileVersions(
           title: nodes.title,
           createdAt: nodes.createdAt,
           salience: nodes.salience,
+          supersededBy: nodes.supersededBy,
+          supersededReason: nodes.supersededReason,
         })
         .from(nodes)
         .where(
@@ -1848,11 +1854,31 @@ async function supersedeFileVersions(
         .filter((s) => fileFamilyKey(s.title) === familyKey)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       const [newest, ...older] = family;
-      const demote = older.filter((s) => s.salience > SUPERSEDED_FILE_SALIENCE);
-      if (demote.length > 0) {
+      // Manual marks outrank this heuristic: a sibling explicitly superseded
+      // ('corrected') or replaced by a page ('migrated') keeps that edge — the
+      // step manages only its own 'version' marks and unmarked rows.
+      const heuristicOwned = (s: (typeof family)[number]) =>
+        s.supersededBy === null || s.supersededReason === 'version';
+      // If the newest sibling was itself MANUALLY superseded (e.g. marked
+      // 'corrected' pointing at an older sibling because the new export was
+      // garbage), the heuristic stands down entirely — appointing it family
+      // head would write edges INTO a retired node and could close a cycle.
+      const headId = newest && heuristicOwned(newest) ? newest.id : null;
+      const demote = headId
+        ? older.filter(
+            (s) =>
+              heuristicOwned(s) &&
+              (s.salience > SUPERSEDED_FILE_SALIENCE || s.supersededBy !== headId),
+          )
+        : [];
+      if (demote.length > 0 && headId) {
         await db
           .update(nodes)
-          .set({ salience: SUPERSEDED_FILE_SALIENCE })
+          .set({
+            salience: SUPERSEDED_FILE_SALIENCE,
+            supersededBy: headId,
+            supersededReason: 'version',
+          })
           .where(
             inArray(
               nodes.id,
@@ -1860,8 +1886,11 @@ async function supersedeFileVersions(
             ),
           );
       }
-      if (newest && newest.salience < 1) {
-        await db.update(nodes).set({ salience: 1 }).where(eq(nodes.id, newest.id));
+      if (headId && newest && newest.salience < 1) {
+        await db
+          .update(nodes)
+          .set({ salience: 1, supersededBy: null, supersededReason: null })
+          .where(eq(nodes.id, headId));
       }
       h.setOutput({
         family: familyKey,

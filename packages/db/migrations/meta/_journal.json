@@ -876,6 +876,13 @@
       "when": 1785542400000,
       "tag": "0124_forum_post_workflow_id",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1785628800000,
+      "tag": "0125_node_supersede",
+      "breakpoints": true
     }
   ]
 }
