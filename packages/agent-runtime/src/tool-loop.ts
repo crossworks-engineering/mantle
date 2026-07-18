@@ -508,6 +508,19 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const sendTools = toolsForModel.length > 0;
 
   const messages: ChatMessage[] = [...args.initialMessages];
+  // The turn's latest USER message — threaded to handlers via ctx.agent so
+  // invoke_agent can attach the user's verbatim ask to a delegation (the
+  // child sees only the packed prompt; this closes the under-packing gap).
+  const lastUserTurn = [...args.initialMessages].reverse().find((m) => m.role === 'user');
+  const lastUserMessage =
+    typeof lastUserTurn?.content === 'string'
+      ? lastUserTurn.content
+      : Array.isArray(lastUserTurn?.content)
+        ? lastUserTurn.content
+            .filter((p): p is { type: 'text'; text: string } => p?.type === 'text')
+            .map((p) => p.text)
+            .join('\n')
+        : undefined;
   const toolCalls: ToolCallRecord[] = [];
   const pendingIds: string[] = [];
   // Sidecar artifacts (audio bytes, image bytes) collected across
@@ -1090,6 +1103,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
                     // Forward the parent's resolved (pre-clamp) budget so a
                     // delegated specialist inherits the per-user thinking pref.
                     ...(args.thinkingBudget ? { thinkingBudget: args.thinkingBudget } : {}),
+                    ...(lastUserMessage ? { lastUserMessage } : {}),
                   },
                 }
               : {}),

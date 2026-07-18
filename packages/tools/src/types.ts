@@ -40,6 +40,12 @@ export type ToolHandlerContext = {
      *  specialist inherits the operator's per-user thinking preference. The
      *  child re-clamps it against its OWN max_tokens. Unset/0 ⇒ no thinking. */
     thinkingBudget?: number;
+    /** The turn's latest USER message (text parts joined). invoke_agent
+     *  attaches it to the child prompt as ground-truth intent — the one-shot
+     *  hand-off's main miscommunication gap is a parent under-packing the
+     *  prompt, and the child never sees the conversation (2026-07-18
+     *  delegation review). Absent for background callers with no user turn. */
+    lastUserMessage?: string;
   };
   /** Which surface this turn is running on. Populated by the agent
    *  runtime so worker-delegation tools can target the right channel

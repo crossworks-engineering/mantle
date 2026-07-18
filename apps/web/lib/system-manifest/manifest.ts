@@ -164,6 +164,13 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['tool_grounding']!,
   },
   {
+    slug: 'specialist_routing',
+    name: 'Specialist routing',
+    description:
+      'When to do page/table work directly vs delegate to a specialist, and how to pack a delegation prompt the child can act on.',
+    instructions: SKILL_INSTRUCTIONS['specialist_routing']!,
+  },
+  {
     slug: 'voice_reply',
     name: 'Voice reply',
     description: 'How to write replies that will be spoken aloud (TTS).',
@@ -475,6 +482,45 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['table_from_file'],
   },
   {
+    slug: 'tables-read',
+    name: 'Tables (read)',
+    description:
+      "Read-only structured access to typed grids — list/schema/query/SQL/aggregate — so a responder can ANSWER from tables directly (the tool_grounding skill's table_sql ladder) instead of delegating a lookup that averages minutes. No writes; same read surface the team responder holds.",
+    toolSlugs: [
+      'table_list',
+      'table_get',
+      'table_schema',
+      'table_query',
+      'table_sql',
+      'table_rows_list',
+      'table_row_get',
+      'table_aggregate',
+    ],
+  },
+  {
+    slug: 'tables-rows',
+    name: 'Tables row writes',
+    description:
+      'Single-row inserts + updates ("log this expense") — the light write slice of the grid. Schema/column/tab work, imports, reorders, and multi-row transforms stay with the Ledger specialist; row deletes stay deliberate-only (table-admin).',
+    toolSlugs: ['table_row_add', 'table_row_update'],
+  },
+  {
+    slug: 'pages-draft',
+    name: 'Pages light edits',
+    description:
+      'The responder-facing slice of Pages: create a page, write/replace its DRAFT, and read/edit single blocks — enough for "save this as a page" and one-block fixes without the full authoring kit (multi-block surgery, imports, splits, moves stay with the Pages specialist). Every body write lands in the draft; the operator commits.',
+    toolSlugs: [
+      'page_create',
+      'page_update_draft',
+      'page_list',
+      'page_get',
+      'page_blocks_list',
+      'page_block_get',
+      'page_block_update',
+      'page_block_insert_after',
+    ],
+  },
+  {
     slug: 'export',
     name: 'Document export',
     description:
@@ -719,10 +765,18 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-sonnet-5',
     isPersona: true,
     // P6: grants are pure tool groups — the generalist's effective set is the
-    // union of these bundles. Page/table AUTHORING is delegated to the Pages /
-    // Ledger specialists (no `pages`/`tables`/`page-admin`); the persona keeps
-    // `page-share` so it can publish. NOT granted: the `*-admin` deletes
-    // (deliberate-only), `recall-search`/`research`/`terminal` (specialist).
+    // union of these bundles. Page/table work is HYBRID (2026-07-18 delegation
+    // review, page a7f3255d on dev): the persona holds the LIGHT slices
+    // directly — `tables-read` (answer from grids; tool_grounding's table_sql
+    // ladder assumed this all along), `tables-rows` (single-row writes), and
+    // `pages-draft` (create / draft-write / single-block fixes) — while HEAVY
+    // transforms (multi-block restyles, schema/column work, imports) stay
+    // delegated to the Pages / Ledger specialists (no `pages`/`tables`/
+    // `page-admin`; `page-share` kept so it can publish). The specialist_routing
+    // skill carries the light-vs-heavy policy. NOT granted: the `*-admin`
+    // deletes (deliberate-only), `recall-search`/`research`/`terminal`
+    // (specialist — research/reader stay delegated ON PURPOSE: web content is
+    // untrusted input, and the no-write-tools child is the injection firewall).
     // `federation` IS granted: peer reads are scoped by the answering side's
     // grants, and without the group the persona can't reach paired brains at
     // all (it invents workarounds instead). Versus the pre-P6 set this drops
@@ -751,6 +805,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'export',
       'curation',
       'tables-import',
+      'tables-read',
+      'tables-rows',
+      'pages-draft',
       'app-data',
       'team-admin',
       'federation',
@@ -762,6 +819,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'location_awareness',
       'navigation',
       'integrations',
+      'specialist_routing',
     ],
     params: { temperature: 0.7, max_tokens: 16000 },
     // Context budgets for the generalist responder. Onboarding seeds these
