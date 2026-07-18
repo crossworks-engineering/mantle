@@ -50,9 +50,13 @@ export type ConversationExternalRef = {
  * a shape across surfaces keeps the responder's prompt-building pipeline
  * reusable.
  *
- * `agent_id` is NOT NULL since migration 0049 — the legacy fold-in that
- * matched NULL rows under any assistant-role agent (the "different agents
- * show the same chat with content swapped" bug) is structurally extinct.
+ * `agent_id` is nullable again since migration 0127: the FK's ON DELETE SET
+ * NULL is how a deleted agent orphans-but-preserves its archive (recall +
+ * digests read it), and 0049's NOT NULL contradicted that — deleting any
+ * agent with chat history 500'd. The runtime always stamps agent_id on
+ * insert, so NULL only ever means "this agent was deleted"; the pre-0049
+ * fold-in bug (NULL rows matching every agent's thread) was wildcard-matching
+ * CODE, extinct — every reader filters by a concrete agent id.
  */
 export const assistantMessages = pgTable(
   'assistant_messages',
@@ -63,9 +67,9 @@ export const assistantMessages = pgTable(
     ownerId: uuid('owner_id').notNull(),
     direction: text('direction').notNull(), // 'inbound' | 'outbound' (CHECK enforced in SQL)
     text: text('text').notNull(),
-    agentId: uuid('agent_id')
-      .notNull()
-      .references(() => agents.id, { onDelete: 'set null' }),
+    // Nullable BY DESIGN (0127): NULL = the authoring agent was deleted; the
+    // runtime always stamps it on insert. Keep in step with the FK action.
+    agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
     model: text('model'),
     digestNodeId: uuid('digest_node_id').references(() => nodes.id, { onDelete: 'set null' }),
     /** Transport this turn arrived/left on. Defaults to 'web' so pre-unification
