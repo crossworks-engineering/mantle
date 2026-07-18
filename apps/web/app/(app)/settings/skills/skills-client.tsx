@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
@@ -78,7 +78,7 @@ export function SkillsClient() {
     queryFn: () =>
       apiFetch<{ backrefs: SkillBackrefs }>('/api/skills/backrefs').then((r) => r.backrefs),
   });
-  const skills = skillsQuery.data ?? [];
+  const skills = useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
   const heartbeatBackrefs = backrefsQuery.data ?? {};
 
   const [editing, setEditing] = useState<
@@ -139,7 +139,6 @@ export function SkillsClient() {
     deepLinkRef.current = null;
     const hit = skills.find((s) => s.id === want || s.slug === want);
     if (hit) openEdit(hit);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skills]);
 
   const submit = (e: React.FormEvent) => {

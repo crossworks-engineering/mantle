@@ -663,9 +663,6 @@ export function AgentsClient() {
     requestedAgentRef.current = null;
     const hit = agents.find((a) => a.id === want || a.slug === want);
     if (hit) openEdit(hit);
-    // openEdit is stable-enough (recreated per render but behavior-constant);
-    // the ref null-out makes this one-shot regardless.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agents]);
 
   const onNameChange = (v: string) => {

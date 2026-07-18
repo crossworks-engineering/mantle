@@ -198,7 +198,7 @@ export function HeartbeatsClient() {
     queryFn: () => apiFetch<{ skills: SkillDTO[] }>('/api/skills').then((r) => r.skills),
   });
 
-  const heartbeats = heartbeatsQuery.data ?? [];
+  const heartbeats = useMemo(() => heartbeatsQuery.data ?? [], [heartbeatsQuery.data]);
   const agents: AgentOpt[] = agentsQuery.data ?? [];
   const skills = useMemo<SkillOpt[]>(
     () =>
@@ -241,7 +241,6 @@ export function HeartbeatsClient() {
     deepLinkRef.current = null;
     const hit = heartbeats.find((h) => h.id === want || h.slug === want);
     if (hit) openEdit(hit);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [heartbeats]);
 
   const onName = (v: string) =>

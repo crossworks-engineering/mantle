@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
@@ -112,7 +112,7 @@ export function ToolsClient() {
     queryKey: ['tools', 'settings'],
     queryFn: () => apiFetch<ToolSettings>('/api/tools/settings'),
   });
-  const tools = toolsQuery.data ?? [];
+  const tools = useMemo(() => toolsQuery.data ?? [], [toolsQuery.data]);
   const settings = settingsQuery.data ?? DEFAULT_SETTINGS;
 
   const [editing, setEditing] = useState<
@@ -227,7 +227,6 @@ export function ToolsClient() {
     deepLinkRef.current = null;
     const hit = tools.find((t) => t.id === want || t.slug === want);
     if (hit) openEdit(hit);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tools]);
 
   const submit = (e: React.FormEvent) => {
