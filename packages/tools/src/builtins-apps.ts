@@ -20,6 +20,7 @@ import {
   publishApp,
   deleteApp,
   workingSource,
+  nodeUrl,
   CannotDeleteEntryError,
   AppSourceLimitError,
   NoGreenBuildError,
@@ -106,6 +107,7 @@ const app_create: BuiltinToolDef = {
         ok: true,
         output: {
           id: app.id,
+          url: nodeUrl(app.id),
           name: app.title,
           entry: app.source.entry,
           hint: `Write source with app_file_write, then app_build. Review at /apps/${app.id}.`,
@@ -141,6 +143,7 @@ const app_get: BuiltinToolDef = {
       ok: true,
       output: {
         id: app.id,
+        url: nodeUrl(app.id),
         name: app.title,
         description: app.description,
         manifest: app.manifest,
@@ -473,6 +476,7 @@ const app_list: BuiltinToolDef = {
       ok: true,
       output: rows.map((r) => ({
         id: r.id,
+        url: nodeUrl(r.id),
         name: r.title,
         description: r.description,
         toolCount: r.toolCount,
@@ -502,7 +506,7 @@ const app_publish: BuiltinToolDef = {
       const app = await publishApp(ctx.ownerId, id);
       if (!app) return { ok: false, error: `app ${id} not found` };
       ctx.step?.setOutput({ id, published: true });
-      return { ok: true, output: { id, name: app.title, published: true } };
+      return { ok: true, output: { id, url: nodeUrl(id), name: app.title, published: true } };
     } catch (err) {
       if (err instanceof NoGreenBuildError) return { ok: false, error: err.message };
       return { ok: false, error: err instanceof Error ? err.message : String(err) };

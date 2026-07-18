@@ -125,6 +125,7 @@ const page_create: BuiltinToolDef = {
         ok: true,
         output: {
           id: page.id,
+          url: nodeUrl(page.id),
           title: page.title,
           tags: page.tags,
           ...(parentId ? { parent_id: parentId } : {}),
@@ -287,7 +288,10 @@ const page_update: BuiltinToolDef = {
       const page = await updatePage(ctx.ownerId, id, patch);
       if (!page) return notFound('page', id, 'page_list / search_nodes');
       ctx.step?.setOutput({ id: page.id, title: page.title });
-      return { ok: true, output: { id: page.id, title: page.title, tags: page.tags } };
+      return {
+        ok: true,
+        output: { id: page.id, url: nodeUrl(page.id), title: page.title, tags: page.tags },
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -374,6 +378,7 @@ const page_update_draft: BuiltinToolDef = {
       ok: true,
       output: {
         id,
+        url: nodeUrl(id),
         ...(typeof metaPatch.title === 'string' ? { title: metaPatch.title } : {}),
         meta_updated: metaUpdated,
         draft_saved: draftSaved,
@@ -445,6 +450,7 @@ const page_list: BuiltinToolDef = {
         ok: true,
         output: rows.map((r) => ({
           id: r.id,
+          url: nodeUrl(r.id),
           title: r.title,
           tags: r.tags,
           summary: r.summary,
@@ -631,6 +637,7 @@ const page_from_file: BuiltinToolDef = {
         ok: true,
         output: {
           id: page.id,
+          url: nodeUrl(page.id),
           title: page.title,
           tags: page.tags,
           source_file_id: fileId,
@@ -751,6 +758,7 @@ const page_from_note: BuiltinToolDef = {
         ok: true,
         output: {
           id: page.id,
+          url: nodeUrl(page.id),
           title: page.title,
           tags: page.tags,
           source_note_id: noteId,
@@ -914,6 +922,7 @@ const page_from_notes: BuiltinToolDef = {
         ok: true,
         output: {
           id: page.id,
+          url: nodeUrl(page.id),
           title: page.title,
           tags: page.tags,
           source_note_ids: noteIds,
@@ -1053,6 +1062,7 @@ const page_from_journal: BuiltinToolDef = {
         ok: true,
         output: {
           id: page.id,
+          url: nodeUrl(page.id),
           title: page.title,
           tags: page.tags,
           source_journal_ids: journalIds,

@@ -20,6 +20,7 @@ import {
   deleteJournal,
   getJournal,
   listJournals,
+  nodeUrl,
   updateJournal,
   MOOD_KEYS,
   CATEGORY_KEYS,
@@ -46,6 +47,8 @@ function num(v: unknown, dflt: number): number {
 function compact(n: JournalRow) {
   return {
     id: n.id,
+    // Clickable permalink — /n/<id> opens the entry on /journal. Absolute.
+    url: nodeUrl(n.id),
     title: n.title,
     body: n.body,
     mood: n.mood,

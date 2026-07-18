@@ -1026,6 +1026,7 @@ const secret_create: BuiltinToolDef = {
       ok: true,
       output: {
         id: inserted.id,
+        url: nodeUrl(inserted.id),
         title: inserted.title,
         kind,
         message:
