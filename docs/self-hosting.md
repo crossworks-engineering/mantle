@@ -50,10 +50,17 @@ interface, not in files.
 
 > **Embeddings:** semantic search uses an online embedder by default
 > (`text-embedding-3-large`, chosen in the wizard's Memory step — it can
-> reuse the same OpenRouter key as chat). The fully-local embedder is an
-> opt-in profile for air-gapped setups:
-> `docker compose --profile local-embedder up -d`, then select provider
-> `local` in Settings → Embedding.
+> reuse the same OpenRouter key as chat). The fully-local embedder
+> (bundled Ollama + EmbeddingGemma, ~3.3GB of image + model) is opt-in for
+> air-gapped setups — nothing of it is pulled, started, or downloaded
+> otherwise. Enable it **persistently** with
+> `scripts/install.sh --local-embedder` (or `MANTLE_LOCAL_EMBEDDER=1` on the
+> one-line installer): that adds `local-embedder` to `COMPOSE_PROFILES` in
+> `.env`, so every later `docker compose pull/up` — including the built-in
+> updater — keeps it. Then select provider `local` in Settings → Embedding.
+> A one-off `docker compose --profile local-embedder up -d` also works but
+> does NOT survive updates; prefer the flag. Turn it back off with
+> `scripts/install.sh --no-local-embedder`.
 
 > **Back up two things:** the `data/` directory (it IS your brain — DB,
 > object store, files) and the `.env` file (`MANTLE_MASTER_KEY` decrypts

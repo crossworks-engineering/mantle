@@ -38,6 +38,9 @@ CHANNEL="${MANTLE_CHANNEL:-main}"
 HOME_DIR="${MANTLE_HOME:-./mantle}"
 DOMAIN="${MANTLE_DOMAIN:-}"
 SKIP_START="${MANTLE_SKIP_START:-}"
+# MANTLE_LOCAL_EMBEDDER=1 bundles the local embedder (Ollama + EmbeddingGemma,
+# ~3.3GB image + model) — off by default; online embedding is set up in onboarding.
+LOCAL_EMBEDDER="${MANTLE_LOCAL_EMBEDDER:-}"
 
 say()  { printf '\033[1;36m▶ %s\033[0m\n' "$*"; }
 ok()   { printf '\033[1;32m✔ %s\033[0m\n' "$*"; }
@@ -94,6 +97,7 @@ if [ -n "$DOMAIN" ]; then ARGS+=(--domain "$DOMAIN"); else ARGS+=(--no-domain); 
 # A release-tag channel pins the image to the same version as the bundle, so
 # compose + image can never drift apart.
 case "$CHANNEL" in v[0-9]*) ARGS+=(--image-tag "$CHANNEL") ;; esac
+case "$LOCAL_EMBEDDER" in 1|true|yes) ARGS+=(--local-embedder) ;; esac
 [ -n "$SKIP_START" ] && ARGS+=(--skip-up)
 
 bash scripts/install.sh "${ARGS[@]}"

@@ -55,11 +55,15 @@ name: mantle
 #   See docs/tailscale.md.
 #
 # Embedding is ONLINE by default — configured in onboarding (text-embedding-3-large,
-# 768-dim). The local embedder (bundled Ollama, EmbeddingGemma) is OPT-IN and does
-# NOT run unless you start it: `docker compose --profile local-embedder up -d`
-# (that pulls the ~300MB model into a named volume). No app service waits on it, so
-# a fresh box boots even on a locked-down network. Migrations run automatically —
-# the one-shot `migrate` service applies them before any app service starts.
+# 768-dim). The local embedder (bundled Ollama, EmbeddingGemma — ~3.3GB of image +
+# model) is OPT-IN behind the `local-embedder` profile: nothing of it is pulled,
+# started, or downloaded unless the profile is active. Enable it PERSISTENTLY with
+# `scripts/install.sh --local-embedder`, which sets COMPOSE_PROFILES=local-embedder
+# in .env so every later pull/up (the updater included) keeps it; a one-off
+# `docker compose --profile local-embedder up -d` works too but doesn't survive
+# updates. No app service waits on it, so a fresh box boots even on a locked-down
+# network. Migrations run automatically — the one-shot `migrate` service applies
+# them before any app service starts.
 
 volumes:
   # POLICY: ALL persistent data is bind-mounted to the local drive under
