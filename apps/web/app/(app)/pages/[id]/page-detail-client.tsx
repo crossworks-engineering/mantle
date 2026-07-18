@@ -85,6 +85,13 @@ export function PageDetailClient({ pageId }: { pageId: string }) {
   const pageQuery = useQuery({
     queryKey: ['pages', pageId],
     queryFn: () => apiFetch<{ page: PageDetail }>(`/api/pages/${pageId}`).then((r) => r.page),
+    // The editor seeds its draft etag (draftRev) from this data ONCE, but
+    // autosaves advance the server rev without touching this cache entry — so
+    // a cached entry is stale the moment a page has been edited. With the
+    // global staleTime (30s) a revisit within that window would serve the
+    // stale rev with NO refetch, and the first autosave would 409 ("changed
+    // elsewhere") + reload, wiping the keystrokes. Always revalidate…
+    refetchOnMount: 'always',
   });
   const backlinksQuery = useQuery({
     queryKey: ['pages', pageId, 'backlinks'],
@@ -94,7 +101,9 @@ export function PageDetailClient({ pageId }: { pageId: string }) {
       ),
   });
 
-  if (pageQuery.isPending) {
+  // …and gate the editor on the FRESH response (isFetchedAfterMount), never
+  // the cached entry — a brief spinner beats losing the first typed characters.
+  if (pageQuery.isPending || (!pageQuery.isFetchedAfterMount && !pageQuery.isError)) {
     return (
       <div className="flex h-dvh items-center justify-center">
         <Spinner />
@@ -172,6 +181,13 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
   // (the draft watcher below clears it). Without this, the user typing before
   // the remount re-fires autosave with the stale rev → repeat 409 → toast spam.
   const conflictRef = useRef(false);
+  // Serialize autosave PUTs: a second save fired while one is on the wire
+  // would carry the SAME if_rev (the new rev only arrives with the first
+  // response) — the loser 409s against OUR OWN write and toasts "changed
+  // elsewhere". The blur flush, the debounce timer, and the max-wait path can
+  // all fire together, so overlap is real. One in flight; at most one queued.
+  const saveInFlightRef = useRef(false);
+  const saveQueuedRef = useRef(false);
 
   // ── Autosave the draft body (no publish, no index). ─────────────────
   const saveDraft = useCallback(async () => {
@@ -180,11 +196,19 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
     // Adopting the server rev and continuing would let the next save CLOBBER the
     // other writer's edit — the exact thing this concurrency guard prevents.
     if (conflictRef.current) return;
+    if (saveInFlightRef.current || committingRef.current) {
+      // A PUT is on the wire, or a commit is (it holds the same if_rev — a
+      // concurrent draft PUT would 409 against our own publish). Queue one
+      // follow-up; the finally blocks drain it.
+      saveQueuedRef.current = true;
+      return;
+    }
     // ONE snapshot for the whole save — the user can keep typing during the
     // network await; marking the LIVE doc saved would drop those edits.
     const snapshot = docRef.current;
     const s = JSON.stringify(snapshot);
     if (s === draftSavedRef.current) return;
+    saveInFlightRef.current = true;
     setDraftSaving(true);
     try {
       let saved: { draft_rev?: number };
@@ -215,7 +239,14 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       draftSavedRef.current = s;
       lastDraftAtRef.current = Date.now();
     } finally {
+      saveInFlightRef.current = false;
       setDraftSaving(false);
+      if (saveQueuedRef.current) {
+        // Edits arrived while the PUT was on the wire — run one follow-up now
+        // that we hold the fresh rev (it no-ops if the doc hasn't moved).
+        saveQueuedRef.current = false;
+        void saveDraftRef.current();
+      }
     }
   }, [initial.id, queryClient, toast]);
 
@@ -245,11 +276,18 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
     setCommitting(true);
     try {
       await saveMeta(); // make sure title/tags reflect the screen too
+      // Wait out an in-flight autosave — it holds the same if_rev this commit
+      // would send, and racing it guarantees one of our own writes 409s.
+      while (saveInFlightRef.current) await new Promise((r) => setTimeout(r, 50));
+      // ONE snapshot, taken after the wait: publish exactly what we then mark
+      // committed (typing during the await must not slip between the two).
+      const snapshot = docRef.current;
+      const snapshotStr = JSON.stringify(snapshot);
       try {
         const { page } = await apiSend<{ page: { draftRev?: number } }>(
           `/api/pages/${initial.id}/commit`,
           'POST',
-          { doc: docRef.current, if_rev: draftRevRef.current },
+          { doc: snapshot, if_rev: draftRevRef.current },
         );
         if (typeof page?.draftRev === 'number') draftRevRef.current = page.draftRev;
       } catch (e) {
@@ -264,9 +302,9 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
         toast.error(e instanceof Error ? e.message : 'Commit failed');
         return;
       }
-      committedRef.current = docStr;
-      committedDocRef.current = docRef.current; // new diff baseline
-      draftSavedRef.current = docStr;
+      committedRef.current = snapshotStr;
+      committedDocRef.current = snapshot; // new diff baseline
+      draftSavedRef.current = snapshotStr;
       setDocDirty(false);
       setEditedIds([]); // changes are now committed — clear nav targets
       setReviewMode(false); // nothing left to review
@@ -275,6 +313,11 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
     } finally {
       committingRef.current = false;
       setCommitting(false);
+      if (saveQueuedRef.current) {
+        // Typing continued while we published — save it on the fresh rev.
+        saveQueuedRef.current = false;
+        void saveDraftRef.current();
+      }
     }
   }, [initial.id, queryClient, saveMeta, toast]);
 
@@ -606,20 +649,25 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
     [diffOverlay],
   );
 
-  // Watch the SERVER-PROVIDED draft prop. When router.refresh() (called
-  // from onAiChanged after the AI run completes) brings back a NEW draft
-  // identity, this effect fires and bumps editorKey — which is what
-  // remounts PageEditor with the new content. TipTap's useEditor({ content })
-  // only seeds on mount, so remount is the correct primitive here. We
-  // can't bump editorKey synchronously inside onAiChanged because
-  // router.refresh() is async: the remount would race the prop update
-  // and reseed the editor with the STALE draft (Phase 3a Pass 1 bug:
-  // 'panel says it changed the page but the editor doesn't update').
-  const lastDraftRef = useRef<string>(JSON.stringify(initial.draft ?? null));
+  // Watch the SERVER-PROVIDED draft prop. When a refetch (invalidation after
+  // an AI run or a 409, mount revalidation, …) brings back a draft REV ahead
+  // of everything this editor has seen, someone ELSE advanced the draft — the
+  // Pages agent or a second device. Adopt it: reseed the refs and bump
+  // editorKey, which remounts PageEditor with the new content (TipTap's
+  // useEditor({ content }) only seeds on mount, so remount is the correct
+  // primitive here — Phase 3a Pass 1 bug: 'panel says it changed the page but
+  // the editor doesn't update').
+  //
+  // The REV comparison (not a content diff) is what makes this safe against
+  // ECHOES of our own writes: refetches return the draft WE just autosaved,
+  // and its JSONB round-trip re-orders object keys, so a string compare reads
+  // it as foreign — adopting would reseat the editor on pre-typing content
+  // with a stale rev, and the next autosave 409s ("changed elsewhere" toast
+  // storm). Every server-side draft write bumps draft_rev, so rev-ahead ⇔
+  // foreign change, exactly; echoes and stale responses are ≤ and ignored.
   useEffect(() => {
-    const current = JSON.stringify(initial.draft ?? null);
-    if (current !== lastDraftRef.current) {
-      lastDraftRef.current = current;
+    const rev = initial.draftRev ?? 0;
+    if (rev > draftRevRef.current) {
       // The editor remounts with this content; sync docRef to it too. Without
       // this, `docRef.current` still held the pre-run doc after a Pages edit
       // (onChange only fires on user typing), so Commit saw "nothing to commit"
@@ -633,7 +681,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       draftSavedRef.current = nextStr;
       // Adopt the freshly-loaded etag — a reload after a 409 (or an agent run)
       // resyncs the base so the next autosave/commit isn't a guaranteed conflict.
-      draftRevRef.current = initial.draftRev ?? 0;
+      draftRevRef.current = rev;
       // Editor is reseeding on server truth — lift the post-409 autosave pause.
       conflictRef.current = false;
       setDocDirty(nextStr !== committedRef.current);

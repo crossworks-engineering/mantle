@@ -101,6 +101,14 @@ export function TablesShell() {
       apiFetch<{ table: TableDetail }>(`/api/tables/${selectedId}`).then((r) => r.table),
     enabled: !!selectedId,
     placeholderData: (prev) => prev,
+    // The editor seeds its draft etag (draftRev) from this data once, but
+    // autosaves advance the server rev without touching this cache entry — a
+    // cached table is stale the moment it has been edited. With the global
+    // 30s staleTime, reselecting a just-edited table would seed the stale rev
+    // with NO refetch and the first autosave would 409 ("changed elsewhere")
+    // + reload the draft over live edits. Always revalidate, and gate the
+    // editor mount on the fresh response (isFetchedAfterMount) below.
+    refetchOnMount: 'always',
   });
   const selectedTable: TableDetail | null =
     selectedTableQuery.data?.id === selectedId ? selectedTableQuery.data : null;
@@ -420,7 +428,7 @@ export function TablesShell() {
 
       {/* Right: the selected table's editor */}
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        {selectedTable ? (
+        {selectedTable && selectedTableQuery.isFetchedAfterMount ? (
           <TableDetailClient key={selectedTable.id} initial={selectedTable} embedded />
         ) : selectedId && selectedTableQuery.isError ? (
           <>

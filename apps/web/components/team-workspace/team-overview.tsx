@@ -31,7 +31,8 @@ export function TeamOverview() {
         </div>
 
         <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {WORKSPACE_NAV.map((item) => {
+          {/* Sections only — the Dashboard nav entry IS this screen. */}
+          {WORKSPACE_NAV.filter((item) => item.type !== 'dashboard').map((item) => {
             const count = data.counts[item.type] ?? 0;
             const Icon = item.icon;
             return (

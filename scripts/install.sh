@@ -39,6 +39,8 @@ banner() {
 DOMAIN="${MANTLE_DOMAIN:-}"; NO_DOMAIN=0; SITE_ADDRESS="${MANTLE_SITE_ADDRESS:-}"
 DATA_DIR="${MANTLE_DATA_DIR:-./data}"; STACK_DIR="${MANTLE_STACK_DIR:-$STACK_DIR_DEFAULT}"
 IMAGE_TAG="${MANTLE_IMAGE_TAG:-latest}"; ASSUME_YES=0; SKIP_UP=0; SANITY_ONLY=0
+# Local embedder (bundled Ollama): 1=enable, 0=disable, empty=keep .env as-is.
+LOCAL_EMBEDDER="${MANTLE_LOCAL_EMBEDDER:-}"
 usage() {
   cat <<EOF
 ${B}Mantle installer${RS}
@@ -52,6 +54,13 @@ ${B}Options${RS}
   --data-dir <path>      MANTLE_DATA_DIR (default: ./data) — all data binds here
   --stack-dir <path>     MANTLE_STACK_DIR (default: this dir) — used by the updater
   --image-tag <tag>      MANTLE_IMAGE_TAG (default: latest)
+  --local-embedder       Enable the bundled local embedder (Ollama + EmbeddingGemma,
+                         ~3.3GB image + model). Persists via COMPOSE_PROFILES in .env
+                         so every later pull/up — the updater included — keeps it.
+                         Needs a LARGE server (degrades a 16GB/8-core box under
+                         multi-file ingest) — see docs/self-hosting.md.
+  --no-local-embedder    Disable it again (stops the services; images stay until
+                         you 'docker image prune' or 'docker rmi ollama/ollama')
   -y, --yes              Non-interactive: accept defaults, never prompt
   --skip-up              Write .env only; don't bring the stack up
   --sanity, --check      Only run the post-install sanity check, then exit
@@ -71,6 +80,8 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --data-dir) DATA_DIR="${2:-}"; shift 2 ;;
   --stack-dir) STACK_DIR="${2:-}"; shift 2 ;;
   --image-tag) IMAGE_TAG="${2:-}"; shift 2 ;;
+  --local-embedder) LOCAL_EMBEDDER=1; shift ;;
+  --no-local-embedder) LOCAL_EMBEDDER=0; shift ;;
   -y|--yes|--non-interactive) ASSUME_YES=1; shift ;;
   --skip-up) SKIP_UP=1; shift ;;
   --sanity|--check) SANITY_ONLY=1; shift ;;
@@ -193,6 +204,30 @@ fi
 upsert MANTLE_DATA_DIR     "$DATA_DIR"
 upsert MANTLE_STACK_DIR    "$STACK_DIR"
 upsert MANTLE_IMAGE_TAG    "$IMAGE_TAG"
+# ── Local embedder (bundled Ollama + EmbeddingGemma, ~3.3GB image+model) ─────
+# OPT-IN via the `local-embedder` compose profile, persisted in
+# COMPOSE_PROFILES so every later `docker compose pull/up` — the updater
+# included — keeps honouring the choice. Off (the default) means the ollama
+# services are never pulled, never started, and no model is downloaded.
+# Flag not passed → keep whatever .env already has (re-runs never flip it).
+if [[ -n "$LOCAL_EMBEDDER" ]]; then
+  # Preserve any other profiles; add/remove just ours.
+  rest="$(getval COMPOSE_PROFILES | tr ',' '\n' | grep -vx 'local-embedder' | grep -v '^$' | paste -sd, -)" || rest=""
+  if [[ "$LOCAL_EMBEDDER" == 1 ]]; then
+    upsert COMPOSE_PROFILES "${rest:+$rest,}local-embedder"
+    ok "Local embedder ON — ollama will pull + start with the stack"
+  else
+    if [[ -n "$rest" ]]; then
+      upsert COMPOSE_PROFILES "$rest"
+    elif grep -qE '^COMPOSE_PROFILES=' "$ENV_FILE" 2>/dev/null; then
+      tmp="$(mktemp)"; grep -vE '^COMPOSE_PROFILES=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
+    fi
+    # Best-effort: stop + remove the containers (images/model cache stay).
+    docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
+      --profile local-embedder rm -sf ollama ollama_pull >/dev/null 2>&1 || true
+    ok "Local embedder OFF — ollama will not be pulled or started"
+  fi
+fi
 chmod 600 "$ENV_FILE" 2>/dev/null || true
 ok "Wrote ${B}$ENV_FILE${RS} ${DIM}(chmod 600)${RS}"
 

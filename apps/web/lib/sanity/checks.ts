@@ -244,6 +244,7 @@ async function checkEmbedder(userId: string): Promise<SanityCheck> {
         detail: `Local embedder at ${baseUrl} answered HTTP ${res.status}. Ingest can't embed → search/recall silently degrade.`,
         fix: {
           summary: `Check the bundled ollama service is up and MANTLE_LOCAL_EMBEDDING_URL points at it.`,
+          command: `docker logs mantle_ollama --tail 50`,
         },
       };
     }
@@ -269,9 +270,10 @@ async function checkEmbedder(userId: string): Promise<SanityCheck> {
     return {
       ...base,
       status: 'fail',
-      detail: `Local embedder at ${baseUrl} is unreachable — ingest can't embed.`,
+      detail: `Local embedder at ${baseUrl} is unreachable — ingest can't embed. The bundled ollama only runs when the local-embedder compose profile is enabled (it is OFF by default so boxes on the online embedder never pull its ~3.3GB).`,
       fix: {
-        summary: `Check the bundled ollama service is up and MANTLE_LOCAL_EMBEDDING_URL points at it.`,
+        summary: `Enable it persistently — scripts/install.sh --local-embedder (adds local-embedder to COMPOSE_PROFILES in .env so updates keep it), or by hand:`,
+        command: `echo 'COMPOSE_PROFILES=local-embedder' >> .env && docker compose up -d --wait ollama ollama_pull`,
       },
     };
   }
