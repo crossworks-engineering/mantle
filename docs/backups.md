@@ -54,6 +54,7 @@ Your offsite sync should include, from `${MANTLE_DATA_DIR}` (default
 | `backups/` | the rotated DB dumps (this feature's output) |
 | `files/` | your host-mirrored files (`/files` surface) |
 | `minio/` | attachment object bytes |
+| `forum-uploads/` | quarantined member forum uploads awaiting review — the ONLY copy of a pending upload until you file it |
 
 One `rsync -a` of the `data/` directory (minus `postgres/` — the live cluster
 files are useless mid-write; the dumps are the DB backup) covers everything.
@@ -75,8 +76,9 @@ bash scripts/db-restore.sh <path-to>/mantle-<ts>.dump
 docker compose up -d --wait
 ```
 
-Files and MinIO restore by putting the `files/` and `minio/` directories back
-under `${MANTLE_DATA_DIR}` while the stack is stopped.
+Files, MinIO, and pending forum uploads restore by putting the `files/`,
+`minio/`, and `forum-uploads/` directories back under `${MANTLE_DATA_DIR}`
+while the stack is stopped.
 
 Worth doing once deliberately: a full end-to-end restore rehearsal onto a
 scratch stack, so the first time isn't the bad day.

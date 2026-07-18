@@ -45,6 +45,7 @@ import {
   getForumPost,
   getForumTopic,
   recentForumPosts,
+  listForumUploadStatesForTopic,
   sweepStaleForumAgentPosts,
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
@@ -101,13 +102,15 @@ async function resolveTeamResponder(ownerId: string): Promise<Agent | null> {
 }
 
 /** A user-turn line for a human post: name-prefixed so the model can track
- *  who said what in a multi-author room. */
-function humanLine(post: ForumPost): string {
+ *  who said what in a multi-author room. `dismissed` holds fileIds the owner
+ *  rejected in review — their filenames are dropped so a dismissed upload's
+ *  name stops feeding the topic's prompt history forever. */
+function humanLine(post: ForumPost, dismissed?: ReadonlySet<string>): string {
   const who = post.authorKind === 'owner' ? `${post.authorName} (brain owner)` : post.authorName;
   // Uploads v1: the agent sees FILENAMES only — the bytes are quarantined
   // until the owner reviews them, so no vision/document reading here.
   const attached = (post.attachments ?? [])
-    .filter((a) => a.caption)
+    .filter((a) => a.caption && !(a.fileId && dismissed?.has(a.fileId)))
     .map((a) => a.caption)
     .join(', ');
   const attachedLine = attached ? `\n[attached: ${attached}]` : '';
@@ -118,9 +121,13 @@ function humanLine(post: ForumPost): string {
  * Map a topic transcript into prompt history. Pending/failed rows never reach
  * the prompt; human posts are name-prefixed user turns with CONSECUTIVE user
  * turns coalesced (strict-alternation providers reject back-to-back user
- * messages); agent posts are assistant turns. Exported for the isolation tests.
+ * messages); agent posts are assistant turns. `dismissed` filters out
+ * owner-rejected attachment filenames. Exported for the isolation tests.
  */
-export function forumPostsToHistory(posts: ForumPost[]): HistoryTurn[] {
+export function forumPostsToHistory(
+  posts: ForumPost[],
+  dismissed?: ReadonlySet<string>,
+): HistoryTurn[] {
   const out: HistoryTurn[] = [];
   for (const p of posts) {
     if (p.status !== 'complete' || p.body.trim().length === 0) continue;
@@ -128,7 +135,7 @@ export function forumPostsToHistory(posts: ForumPost[]): HistoryTurn[] {
       out.push({ role: 'assistant', text: p.body });
       continue;
     }
-    const line = humanLine(p);
+    const line = humanLine(p, dismissed);
     const prev = out[out.length - 1];
     if (prev && prev.role === 'user') prev.text = `${prev.text}\n\n${line}`;
     else out.push({ role: 'user', text: line });
@@ -192,8 +199,17 @@ export async function runForumTurn(
 
     const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
     const transcript = await recentForumPosts(ownerId, topicId, memoryConfig.history_limit ?? 30);
-    const history = forumPostsToHistory(transcript.filter((p) => p.id !== trigger.id));
-    const newUserText = humanLine(trigger);
+    // Drop owner-dismissed attachment filenames from the prompt (their bytes
+    // were rejected in review; the name shouldn't keep feeding the agent).
+    const uploadStates = await listForumUploadStatesForTopic(ownerId, topicId);
+    const dismissed = new Set(
+      uploadStates.filter((u) => u.status === 'dismissed').map((u) => u.id),
+    );
+    const history = forumPostsToHistory(
+      transcript.filter((p) => p.id !== trigger.id),
+      dismissed,
+    );
+    const newUserText = humanLine(trigger, dismissed);
 
     // Retrieval context (the team-responder's own history is structurally
     // empty; digests are off via its memoryConfig — see runTeamTurn).

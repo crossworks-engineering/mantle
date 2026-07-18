@@ -94,7 +94,7 @@ export function AttachmentChips({
             href={`/api/team/forum/attachments/${a.fileId}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-card-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             <KindIcon kind={a.kind} />
             <span className="max-w-48 truncate">
@@ -149,26 +149,38 @@ export function ComposerAttachments({
   const onFiles = async (list: FileList | null) => {
     if (!list || list.length === 0) return;
     setError(null);
-    const files = [...list];
+    const picked = [...list];
     // Reset so choosing the same file again re-fires onChange.
     if (inputRef.current) inputRef.current.value = '';
-    if (staged.length + files.length > MAX_FILES_PER_POST) {
-      setError(`At most ${MAX_FILES_PER_POST} files per post.`);
+
+    // Skip individually-bad files and name them, rather than rejecting the whole
+    // batch — a member picking one oversized file alongside good ones still gets
+    // the good ones staged.
+    const skipped: string[] = [];
+    let candidates = picked.filter((f) => {
+      if (f.size === 0) {
+        skipped.push(`'${f.name}' is empty`);
+        return false;
+      }
+      if (f.size > MAX_UPLOAD_MB * 1024 * 1024) {
+        skipped.push(`'${f.name}' is over ${MAX_UPLOAD_MB} MB`);
+        return false;
+      }
+      return true;
+    });
+    const room = MAX_FILES_PER_POST - staged.length;
+    if (candidates.length > room) {
+      skipped.push(`only ${room} more file${room === 1 ? '' : 's'} allowed per post`);
+      candidates = candidates.slice(0, Math.max(0, room));
+    }
+    if (candidates.length === 0) {
+      setError(skipped.length ? `Nothing added — ${skipped.join('; ')}.` : null);
       return;
     }
-    const tooBig = files.find((f) => f.size > MAX_UPLOAD_MB * 1024 * 1024);
-    if (tooBig) {
-      setError(`'${tooBig.name}' is too large (max ${MAX_UPLOAD_MB} MB).`);
-      return;
-    }
-    const empty = files.find((f) => f.size === 0);
-    if (empty) {
-      setError(`'${empty.name}' is empty.`);
-      return;
-    }
+
     const form = new FormData();
     if (topicId) form.set('topicId', topicId);
-    for (const f of files) form.append('file', f);
+    for (const f of candidates) form.append('file', f);
     setBusy(true);
     try {
       const r = await fetch('/api/team/forum/uploads', { method: 'POST', body: form });
@@ -181,6 +193,9 @@ export function ComposerAttachments({
         return;
       }
       onStagedChange([...staged, ...data.uploads]);
+      setError(
+        skipped.length ? `Added ${data.uploads.length}. Skipped: ${skipped.join('; ')}.` : null,
+      );
     } catch {
       setError('Could not reach the server — try again.');
     } finally {
@@ -189,10 +204,13 @@ export function ComposerAttachments({
   };
 
   const remove = (blobId: string) => {
-    // Local removal only — the staged blob server-side is reaped by the 24h
-    // sweep. The post simply won't reference it.
+    // Local removal only — the staged blob server-side is reclaimed by the
+    // quarantine reconcile pass. The post simply won't reference it.
     onStagedChange(staged.filter((s) => s.blobId !== blobId));
+    setError(null); // clear any "at most N files" notice now that there's room
   };
+
+  const atCap = staged.length >= MAX_FILES_PER_POST;
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
@@ -212,16 +230,20 @@ export function ComposerAttachments({
           size="icon"
           className="size-8 text-muted-foreground"
           onClick={pick}
-          disabled={disabled || uploading || staged.length >= MAX_FILES_PER_POST}
+          disabled={disabled || uploading || atCap}
           aria-label="Attach files"
-          title="Attach files (reviewed by the brain admin before they're filed)"
+          title={
+            atCap
+              ? `Maximum ${MAX_FILES_PER_POST} files per post — remove one to attach another`
+              : "Attach files (reviewed by the brain admin before they're filed)"
+          }
         >
           {uploading ? <Loader2 className="animate-spin" /> : <Paperclip />}
         </Button>
         {staged.map((s) => (
           <span
             key={s.blobId}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-foreground"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-card-foreground"
           >
             <KindIcon kind={s.kind} />
             <span className="max-w-48 truncate">

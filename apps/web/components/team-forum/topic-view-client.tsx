@@ -535,25 +535,43 @@ export function TopicViewClient({
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending || attachBusy || !topic) return;
+    // Allow an attachment-only post (parity with Team Chat) — a synthetic body
+    // stands in so the post isn't empty.
+    if ((!text && staged.length === 0) || sending || attachBusy || !topic) return;
     setSendError(null);
     setSending(true);
     pinnedRef.current = true;
     setShowJump(false);
 
-    const attachmentIds = staged.map((s) => s.blobId);
+    const stagedSnapshot = staged;
+    const attachmentIds = stagedSnapshot.map((s) => s.blobId);
+    const outgoing = text || stagedSnapshot.map((s) => `📎 ${s.filename}`).join('\n');
+    const optimisticId = `optimistic-${crypto.randomUUID()}`;
+    // Seed synthetic 'pending' review states so the optimistic chips show the
+    // "in review" badge + size during the streamed window (server truth arrives
+    // on the refetch that replaces them).
+    if (stagedSnapshot.length) {
+      setUploadStateRows((prev) => [
+        ...prev,
+        ...stagedSnapshot.map((s) => ({
+          id: s.blobId,
+          status: 'pending' as const,
+          sizeBytes: s.size,
+        })),
+      ]);
+    }
     // Optimistic own post (staged chips ride along; the refetch replaces them
-    // with the server truth, including the "in review" state).
+    // with the server truth).
     setPosts((p) => [
       ...p,
       {
-        id: `optimistic-${crypto.randomUUID()}`,
+        id: optimisticId,
         authorKind: 'member',
         authorName: 'You',
         mine: true,
-        body: text,
+        body: outgoing,
         status: 'complete',
-        attachments: staged.map((s) => ({
+        attachments: stagedSnapshot.map((s) => ({
           kind: s.kind,
           mime: s.mime,
           caption: s.filename,
@@ -565,12 +583,25 @@ export function TopicViewClient({
     setDraft('');
     if (!effectiveNoReply) setLive({ turnId: '', status: 'Thinking…', text: '' });
 
+    // On any failure: give the member their text back and drop the phantom
+    // optimistic post (a refetch may not run — or may itself fail on an
+    // outage — so we can't rely on it to clean up). `staged` is kept so the
+    // attachments can be re-posted.
+    const rollbackOptimistic = () => {
+      setDraft((d) => d || text);
+      setPosts((p) => p.filter((x) => x.id !== optimisticId));
+      if (stagedSnapshot.length) {
+        const ids = new Set(stagedSnapshot.map((s) => s.blobId));
+        setUploadStateRows((prev) => prev.filter((u) => !ids.has(u.id)));
+      }
+    };
+
     try {
       const r = await fetch(`/api/team/forum/topics/${topicId}/posts`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
         body: JSON.stringify({
-          text,
+          text: outgoing,
           noReply: effectiveNoReply,
           ...(attachmentIds.length ? { attachmentIds } : {}),
         }),
@@ -583,9 +614,9 @@ export function TopicViewClient({
         return;
       }
       if (!r.ok) {
-        // Keep `staged` — the member can retry the post with its attachments.
         const data = (await r.json().catch(() => ({}))) as { error?: string };
         setSendError(data.error ?? 'Posting failed — try again.');
+        rollbackOptimistic();
         finishTurn();
         return;
       }
@@ -593,6 +624,7 @@ export function TopicViewClient({
       finishTurn();
     } catch {
       setSendError('Could not reach the server — try again.');
+      rollbackOptimistic();
       finishTurn();
     }
   };
@@ -797,7 +829,7 @@ export function TopicViewClient({
                 <Button
                   className="h-auto"
                   onClick={() => void send()}
-                  disabled={sending || attachBusy || !draft.trim()}
+                  disabled={sending || attachBusy || (!draft.trim() && staged.length === 0)}
                   aria-label="Post"
                 >
                   <SendHorizontal />

@@ -429,7 +429,6 @@ export {
 } from './forum';
 
 export {
-  stageForumUpload,
   listStagedForumUploads,
   bindForumUploadsTx,
   getForumUpload,
@@ -438,10 +437,12 @@ export {
   countPendingForumUploads,
   markForumUploadFiled,
   markForumUploadDismissed,
-  sumForumUploadBytesSince,
-  listStaleStagedForumUploads,
-  deleteForumUploadRow,
+  stageForumUploadsWithinBudget,
+  deleteStaleStagedForumUploads,
+  deleteStagedForumUploadRow,
+  listForumUploadStatusesByIds,
   type StageForumUploadInput,
+  type StageForumUploadFile,
   type PendingForumUpload,
 } from './forum-uploads';
 

@@ -10,10 +10,20 @@
  * `attachments` jsonb references blobs by `fileId`; these rows carry the
  * mutable review state and the two join on that id.
  */
-import { and, count, desc, eq, gte, inArray, isNull, lt, or, sql as dsql } from 'drizzle-orm';
+import { and, asc, count, eq, gte, inArray, isNull, lt, or, sql as dsql } from 'drizzle-orm';
 import { db, forumTopics, forumUploads, nodes, type ForumUpload } from '@mantle/db';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Start of the current UTC day — the daily upload-budget window boundary. */
+function startOfUtcDay(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+/** One file's metadata for staging (bytes are written to quarantine by the
+ *  route, keyed by the returned row id). Filename already sanitized. */
+export type StageForumUploadFile = { filename: string; mime: string; sizeBytes: number };
 
 export type StageForumUploadInput = {
   ownerId: string;
@@ -21,30 +31,68 @@ export type StageForumUploadInput = {
   /** Known for the reply composer; absent for the new-topic dialog (its
    *  topic doesn't exist yet — binding sets it). */
   topicId?: string;
-  /** Already sanitized (sanitizeFilename) by the route. */
-  filename: string;
-  mime: string;
-  sizeBytes: number;
+  files: StageForumUploadFile[];
+  /** Per-member daily byte budget (env-derived by the route). */
+  dailyCapBytes: number;
 };
 
-/** Insert the blob row for a fresh upload (status 'staged'). The route writes
- *  the quarantine bytes keyed by the returned id — row first, so a crashed
- *  upload leaves a byteless row for the sweep, never orphan bytes. */
-export async function stageForumUpload(input: StageForumUploadInput): Promise<ForumUpload> {
-  const [row] = await db
-    .insert(forumUploads)
-    .values({
-      ownerId: input.ownerId,
-      contactId: input.contactId,
-      topicId: input.topicId ?? null,
-      filename: input.filename,
-      mime: input.mime,
-      sizeBytes: input.sizeBytes,
-      status: 'staged',
-    })
-    .returning();
-  if (!row) throw new Error('forum-uploads: stage insert returned no row');
-  return row;
+export type StageForumUploadResult =
+  | { ok: true; rows: ForumUpload[] }
+  | { ok: false; reason: 'daily_bytes'; spent: number };
+
+/**
+ * Stage a batch of uploads, enforcing the per-member daily byte budget
+ * ATOMICALLY. A transaction-scoped advisory lock keyed on (owner, contact)
+ * serializes concurrent staging for the same member, so the check-then-insert
+ * can't be raced: a second request blocks until the first commits, then sums
+ * the first's rows in. Rows are inserted `status='staged'`; the route writes
+ * their quarantine bytes after this returns (row-first — a crash leaves a
+ * byteless row the reconcile pass reclaims, never orphan bytes).
+ *
+ * Budget counts every row created in the UTC-day window regardless of later
+ * review outcome — a dismissal never refunds quota (the transfer happened).
+ */
+export async function stageForumUploadsWithinBudget(
+  input: StageForumUploadInput,
+): Promise<StageForumUploadResult> {
+  const incoming = input.files.reduce((sum, f) => sum + f.sizeBytes, 0);
+  const since = startOfUtcDay();
+  return db.transaction(async (tx) => {
+    // Serialize this member's staging so the sum below sees every committed
+    // peer. hashtextextended → bigint keyspace, namespaced by a literal prefix.
+    await tx.execute(
+      dsql`select pg_advisory_xact_lock(hashtextextended(${`forum-upload:${input.ownerId}:${input.contactId}`}, 0))`,
+    );
+    const [row] = await tx
+      .select({ total: dsql<number>`coalesce(sum(${forumUploads.sizeBytes}), 0)::bigint` })
+      .from(forumUploads)
+      .where(
+        and(
+          eq(forumUploads.ownerId, input.ownerId),
+          eq(forumUploads.contactId, input.contactId),
+          gte(forumUploads.createdAt, since),
+        ),
+      );
+    const spent = Number(row?.total ?? 0);
+    if (spent + incoming > input.dailyCapBytes) {
+      return { ok: false, reason: 'daily_bytes', spent };
+    }
+    const rows = await tx
+      .insert(forumUploads)
+      .values(
+        input.files.map((f) => ({
+          ownerId: input.ownerId,
+          contactId: input.contactId,
+          topicId: input.topicId ?? null,
+          filename: f.filename,
+          mime: f.mime,
+          sizeBytes: f.sizeBytes,
+          status: 'staged' as const,
+        })),
+      )
+      .returning();
+    return { ok: true, rows };
+  });
 }
 
 /** The caller's own staged blobs among `ids` — the pre-bind validation read
@@ -147,10 +195,17 @@ export type PendingForumUpload = {
   createdAt: string;
 };
 
-/** The owner's review queue: pending blobs newest-first, annotated with topic
- *  title (for grouping) and the uploader's live contact name (null when the
- *  contact was deleted — the upload survives, same rule as posts). */
-export async function listPendingForumUploads(ownerId: string): Promise<PendingForumUpload[]> {
+/** The owner's review queue: pending blobs OLDEST-first (FIFO — a review queue
+ *  drains front to back; the longest-waiting upload should be seen first), and
+ *  bounded so a flood of pending uploads can't render an unbounded page. Pair
+ *  with countPendingForumUploads to show "N of M". Annotated with topic title
+ *  (for grouping) and the uploader's live contact name (null when the contact
+ *  was deleted — the upload survives, same rule as posts). */
+export async function listPendingForumUploads(
+  ownerId: string,
+  opts: { limit?: number } = {},
+): Promise<PendingForumUpload[]> {
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
   const rows = await db
     .select({
       id: forumUploads.id,
@@ -168,7 +223,8 @@ export async function listPendingForumUploads(ownerId: string): Promise<PendingF
     .leftJoin(forumTopics, eq(forumUploads.topicId, forumTopics.id))
     .leftJoin(nodes, eq(forumUploads.contactId, nodes.id))
     .where(and(eq(forumUploads.ownerId, ownerId), eq(forumUploads.status, 'pending')))
-    .orderBy(desc(forumUploads.createdAt));
+    .orderBy(asc(forumUploads.createdAt))
+    .limit(limit);
   return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
 }
 
@@ -219,51 +275,67 @@ export async function markForumUploadDismissed(ownerId: string, id: string): Pro
   return rows.length > 0;
 }
 
-/** Bytes a member staged today (UTC) — the per-contact daily upload budget.
- *  Counts every row created in the window regardless of later review outcome:
- *  a dismissal must not refund quota (the transfer already happened). */
-export async function sumForumUploadBytesSince(
+/** Status of blob rows among `ids`, owner-scoped — the quarantine reconcile
+ *  pass maps on-disk byte files to their review state (missing id ⇒ absent
+ *  row ⇒ safe to unlink). */
+export async function listForumUploadStatusesByIds(
   ownerId: string,
-  contactId: string,
-  since: Date,
-): Promise<number> {
-  const [row] = await db
-    .select({ total: dsql<number>`coalesce(sum(${forumUploads.sizeBytes}), 0)::bigint` })
+  ids: string[],
+): Promise<Map<string, ForumUpload['status']>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ id: forumUploads.id, status: forumUploads.status })
     .from(forumUploads)
-    .where(
-      and(
-        eq(forumUploads.ownerId, ownerId),
-        eq(forumUploads.contactId, contactId),
-        gte(forumUploads.createdAt, since),
-      ),
-    );
-  return Number(row?.total ?? 0);
+    .where(and(eq(forumUploads.ownerId, ownerId), inArray(forumUploads.id, ids)));
+  return new Map(rows.map((r) => [r.id, r.status]));
 }
 
-/** Staged rows older than `olderThanHours` — abandoned composer uploads whose
- *  post never happened. The upload route sweeps opportunistically: bytes
- *  first, then the row via deleteForumUploadRow, so a crash mid-sweep leaves
- *  a re-sweepable row, never orphan bytes. */
-export async function listStaleStagedForumUploads(
+/**
+ * Atomically reap abandoned staged rows (composer opened, post never happened)
+ * older than `olderThanHours`, returning the ids deleted so the caller can
+ * unlink their quarantine bytes.
+ *
+ * The DELETE is the serialization point against a concurrent post-bind — its
+ * `status = 'staged'` predicate is re-evaluated under the row lock, so:
+ *   - a bind that flipped the row to 'pending' first ⇒ excluded here, row +
+ *     bytes survive for the committed post (no dangling attachment);
+ *   - a delete that commits first ⇒ the bind's `status = 'staged'` UPDATE
+ *     matches 0 rows, throws, and rolls its post back (the member re-attaches
+ *     the 24h-stale blob).
+ * Either way a committed post can never reference deleted bytes. Bytes are
+ * unlinked only AFTER this returns — a crash between leaves row-less bytes the
+ * quarantine reconcile pass reclaims, never the reverse. */
+export async function deleteStaleStagedForumUploads(
   ownerId: string,
   olderThanHours = 24,
-): Promise<ForumUpload[]> {
+): Promise<Array<{ id: string }>> {
   const cutoff = new Date(Date.now() - olderThanHours * 3_600_000);
   return db
-    .select()
-    .from(forumUploads)
+    .delete(forumUploads)
     .where(
       and(
         eq(forumUploads.ownerId, ownerId),
         eq(forumUploads.status, 'staged'),
         lt(forumUploads.createdAt, cutoff),
       ),
-    );
+    )
+    .returning({ id: forumUploads.id });
 }
 
-/** Remove one blob row (sweep endpoint — review outcomes keep their rows). */
-export async function deleteForumUploadRow(ownerId: string, id: string): Promise<void> {
-  await db
+/** Remove one STILL-STAGED blob row (the stage route's byte-write-failure
+ *  cleanup + the multi-file batch rollback). Status-guarded so it can never
+ *  race-delete a row a concurrent post-bind just flipped to `pending`. Returns
+ *  whether a row was removed. */
+export async function deleteStagedForumUploadRow(ownerId: string, id: string): Promise<boolean> {
+  const rows = await db
     .delete(forumUploads)
-    .where(and(eq(forumUploads.ownerId, ownerId), eq(forumUploads.id, id)));
+    .where(
+      and(
+        eq(forumUploads.ownerId, ownerId),
+        eq(forumUploads.id, id),
+        eq(forumUploads.status, 'staged'),
+      ),
+    )
+    .returning({ id: forumUploads.id });
+  return rows.length > 0;
 }

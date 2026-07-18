@@ -16,7 +16,7 @@
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 import { safeDownloadHeaders } from '@/lib/safe-download';
-import { getForumTopic, getForumUpload } from '@mantle/content';
+import { getForumTopic, getForumUpload, recordTeamAccess } from '@mantle/content';
 import { readFileById, readQuarantineBytes } from '@mantle/files';
 
 export const runtime = 'nodejs';
@@ -38,6 +38,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ blobId: string 
 
   const gate = rateLimit(`forum-asset:${contactId}`, { max: 240, windowMs: 60_000 });
   if (!gate.ok) {
+    // Log the denial for symmetry with the upload route (successful downloads
+    // stay unlogged — 240/min would flood the access log).
+    recordTeamAccess({
+      ownerId,
+      contactId,
+      kind: 'denied',
+      detail: { reason: 'rate_limit', surface: 'forum-attachment', blobId },
+    });
     return new Response('Too many requests', {
       status: 429,
       headers: { 'retry-after': String(gate.retryAfterSec), 'cache-control': 'no-store' },
@@ -78,8 +86,18 @@ export async function GET(req: Request, ctx: { params: Promise<{ blobId: string 
   const range = req.headers.get('range');
   const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range.trim()) : null;
   if (m) {
-    let start = m[1] ? parseInt(m[1], 10) : 0;
-    let end = m[2] ? parseInt(m[2], 10) : total - 1;
+    let start: number;
+    let end: number;
+    if (m[1] === '' && m[2] !== '') {
+      // Suffix form `bytes=-N`: the LAST N bytes (RFC 7233). Media players probe
+      // a trailing atom this way — serving the first N here breaks seeking.
+      const suffix = parseInt(m[2]!, 10);
+      start = Number.isNaN(suffix) ? 0 : Math.max(0, total - suffix);
+      end = total - 1;
+    } else {
+      start = m[1] ? parseInt(m[1], 10) : 0;
+      end = m[2] ? parseInt(m[2], 10) : total - 1;
+    }
     if (Number.isNaN(start)) start = 0;
     if (Number.isNaN(end) || end >= total) end = total - 1;
     if (start > end || start >= total) {

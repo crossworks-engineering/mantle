@@ -91,4 +91,53 @@ describe('forumPostsToHistory', () => {
     ]);
     expect(h.map((t) => t.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
   });
+
+  it('lists attachment filenames on the post that carries them', () => {
+    const h = forumPostsToHistory([
+      post({
+        authorName: 'Sam',
+        body: 'see attached',
+        attachments: [
+          { kind: 'document', caption: 'report.pdf', fileId: 'f1' },
+          { kind: 'image', caption: 'graph.png', fileId: 'f2' },
+        ],
+      }),
+    ]);
+    expect(h).toEqual([
+      { role: 'user', text: 'Sam: see attached\n[attached: report.pdf, graph.png]' },
+    ]);
+  });
+
+  it('drops owner-DISMISSED attachment filenames from the prompt', () => {
+    const dismissed = new Set(['f2']);
+    const h = forumPostsToHistory(
+      [
+        post({
+          authorName: 'Sam',
+          body: 'see attached',
+          attachments: [
+            { kind: 'document', caption: 'report.pdf', fileId: 'f1' },
+            { kind: 'image', caption: 'rejected.png', fileId: 'f2' },
+          ],
+        }),
+      ],
+      dismissed,
+    );
+    // f2 is gone; the surviving f1 still renders, and the post body is intact.
+    expect(h).toEqual([{ role: 'user', text: 'Sam: see attached\n[attached: report.pdf]' }]);
+  });
+
+  it('omits the attached line entirely when every attachment was dismissed', () => {
+    const h = forumPostsToHistory(
+      [
+        post({
+          authorName: 'Sam',
+          body: 'here',
+          attachments: [{ kind: 'document', caption: 'gone.pdf', fileId: 'f1' }],
+        }),
+      ],
+      new Set(['f1']),
+    );
+    expect(h).toEqual([{ role: 'user', text: 'Sam: here' }]);
+  });
 });

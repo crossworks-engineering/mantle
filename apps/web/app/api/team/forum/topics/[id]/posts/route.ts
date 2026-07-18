@@ -123,6 +123,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ postId: post.id, outbound: enq.result.outbound }, { status: 201 });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('attachment is missing or already used')) {
+      return NextResponse.json(
+        { error: 'those attachments were already posted — re-attach and try again' },
+        { status: 409 },
+      );
+    }
     console.error('[team/forum/posts]', msg);
     return NextResponse.json(
       { error: 'something went wrong posting that — the brain admin can see the details' },

@@ -20,7 +20,9 @@
 --
 -- contact_id goes SET NULL on contact deletion (same rule as forum_posts:
 -- content outlives its author). post_id/topic_id CASCADE — deleting a topic
--- reaps its upload rows (bytes are swept by row absence at serve/sweep time).
+-- reaps its upload rows; the now-row-less quarantine bytes are reclaimed by
+-- the reconcile pass's disk↔row scan (apps/web/lib/forum-quarantine.ts), NOT
+-- by the row-driven staged sweep (which never sees a byte file with no row).
 
 CREATE TABLE IF NOT EXISTS "forum_uploads" (
   "id"           uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
