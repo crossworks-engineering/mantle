@@ -890,6 +890,13 @@
       "when": 1785715200000,
       "tag": "0126_forum_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1785801600000,
+      "tag": "0127_agent_delete_preserves_history",
+      "breakpoints": true
     }
   ]
 }

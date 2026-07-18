@@ -1,0 +1,18 @@
+-- Deleting an agent must not 500 — and must not destroy its chat history.
+--
+-- assistant_messages.agent_id carries ON DELETE SET NULL (the original
+-- design: an agent's death orphans-but-preserves its archive), but migration
+-- 0049 later made the column NOT NULL without changing that action. The two
+-- are contradictory: deleting any agent that ever exchanged a web-chat
+-- message makes the FK write NULL into a NOT NULL column → constraint
+-- violation → the API's 500.
+--
+-- Resolution: the column goes back to nullable; the SET NULL action stands.
+-- The archive is memory — recall (find_window/recall_window) and digests
+-- read it — so cascade-deleting it with the agent would hole the brain's
+-- history. And NULL rows cannot resurrect the pre-0049 "folding" bug (NULL
+-- rows showing under every agent's thread): that was wildcard-matching CODE,
+-- long extinct — every current reader filters by a concrete agent id, which
+-- NULL never matches. Writes are unaffected: the runtime always stamps
+-- agent_id on insert; NULL now only ever means "this agent was deleted".
+ALTER TABLE assistant_messages ALTER COLUMN agent_id DROP NOT NULL;
