@@ -180,6 +180,15 @@ export async function POST(req: Request) {
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    // A lost attachment-bind race (a concurrent post consumed the same staged
+    // blobs) rolls this whole create back — surface it as a clean 409 the
+    // client can act on, not a generic 500.
+    if (msg.includes('attachment is missing or already used')) {
+      return NextResponse.json(
+        { error: 'those attachments were already posted — re-attach and try again' },
+        { status: 409 },
+      );
+    }
     console.error('[team/forum/topics]', msg);
     return NextResponse.json(
       { error: 'something went wrong creating that topic — the brain admin can see the details' },

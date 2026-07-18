@@ -5,26 +5,27 @@
  * reply composer knows its topic). Bytes go to the QUARANTINE (outside the
  * files ltree — nothing ingests), rows to forum_uploads as 'staged'. The
  * composer then references the returned blob ids in its post's
- * `attachmentIds`; binding happens in the post's own transaction. Staged
- * blobs whose post never came are swept here opportunistically after 24h.
+ * `attachmentIds`; binding happens in the post's own transaction. Abandoned
+ * uploads are reclaimed opportunistically here (reconcileForumQuarantine).
  *
  * Cost guards: its own burst limiter (uploads are heavier than posts, so
- * they don't share the forum-post bucket) + a per-member daily byte budget
- * (env TEAM_UPLOAD_DAILY_BYTES, default 100 MB) — same philosophy as the
- * turn caps: a leaked token must never fill the disk.
+ * they don't share the forum-post bucket), a hard Content-Length ceiling
+ * BEFORE the body is buffered, and a per-member daily byte budget enforced
+ * atomically in the DB (env TEAM_UPLOAD_DAILY_BYTES, default 100 MB) — same
+ * philosophy as the turn caps: a leaked token must never fill the disk.
  */
 import { NextResponse } from 'next/server';
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 import { UPLOAD_DAILY_BYTES } from '@/lib/forum-gate';
+import { reconcileForumQuarantine } from '@/lib/forum-quarantine';
 import {
   attachmentKindForMime,
-  deleteForumUploadRow,
+  deleteStagedForumUploadRow,
   getForumTopic,
-  listStaleStagedForumUploads,
   recordTeamAccess,
-  stageForumUpload,
-  sumForumUploadBytesSince,
+  stageForumUploadsWithinBudget,
+  type StageForumUploadFile,
 } from '@mantle/content';
 import {
   MAX_UPLOAD_BYTES,
@@ -39,26 +40,13 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MAX_FILES_PER_POST = 5;
-
-function startOfTodayUtc(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
+/** Hard body ceiling checked from Content-Length BEFORE `formData()` buffers
+ *  the request into memory — the per-file/per-day guards run too late to stop
+ *  a single oversized body from OOMing the process. A little slack over the
+ *  theoretical max for multipart boundaries/headers. */
+const MAX_BODY_BYTES = MAX_FILES_PER_POST * MAX_UPLOAD_BYTES + 1024 * 1024;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Reap staged rows whose post never came (>24h). Bytes first, then the row —
- *  a crash mid-sweep leaves a re-sweepable row, never orphan bytes. */
-async function sweepStaleStaged(ownerId: string): Promise<void> {
-  try {
-    for (const stale of await listStaleStagedForumUploads(ownerId)) {
-      await deleteQuarantineBytes(ownerId, stale.id);
-      await deleteForumUploadRow(ownerId, stale.id);
-    }
-  } catch (err) {
-    console.warn('[team/forum/uploads] stale sweep failed:', err);
-  }
-}
 
 export async function POST(req: Request) {
   const caller = await resolveTeamChatCaller(req);
@@ -77,6 +65,19 @@ export async function POST(req: Request) {
       { error: 'too many uploads — give it a moment' },
       { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
     );
+  }
+
+  // Reject an oversized body before `formData()` allocates it. A missing/
+  // unparseable Content-Length falls through to the post-parse per-file guard.
+  const declared = Number(req.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    recordTeamAccess({
+      ownerId,
+      contactId,
+      kind: 'denied',
+      detail: { reason: 'body_too_large', bytes: declared, surface: 'forum-uploads' },
+    });
+    return NextResponse.json({ error: 'upload too large' }, { status: 413 });
   }
 
   const form = await req.formData().catch(() => null);
@@ -117,9 +118,26 @@ export async function POST(req: Request) {
     }
   }
 
-  const incoming = files.reduce((sum, f) => sum + f.size, 0);
-  const spentToday = await sumForumUploadBytesSince(ownerId, contactId, startOfTodayUtc());
-  if (spentToday + incoming > UPLOAD_DAILY_BYTES) {
+  const meta = files.map((file) => {
+    const filename = sanitizeFilename(file.name) ?? `upload.${extOf(file.name) || 'bin'}`;
+    return {
+      filename,
+      mime: file.type?.trim() || mimeForExt(extOf(filename)),
+      sizeBytes: file.size,
+    };
+  });
+  const incoming = meta.reduce((sum, m) => sum + m.sizeBytes, 0);
+
+  // Atomic budget + row insert (advisory-locked per member so concurrent
+  // requests can't each pass a stale sum and blow past the cap).
+  const staged = await stageForumUploadsWithinBudget({
+    ownerId,
+    contactId,
+    ...(topicId ? { topicId } : {}),
+    files: meta as StageForumUploadFile[],
+    dailyCapBytes: UPLOAD_DAILY_BYTES,
+  });
+  if (!staged.ok) {
     recordTeamAccess({
       ownerId,
       contactId,
@@ -132,59 +150,58 @@ export async function POST(req: Request) {
     );
   }
 
+  // Write bytes for each staged row. On any failure, roll the WHOLE batch back
+  // (delete every staged row + its bytes) so a mid-batch failure never leaves
+  // orphan rows burning the daily budget with nothing to show.
+  const uploads: Array<{
+    blobId: string;
+    filename: string;
+    mime: string;
+    size: number;
+    kind: string;
+  }> = [];
   try {
-    const uploads = [];
-    for (const file of files) {
-      const filename = sanitizeFilename(file.name) ?? `upload.${extOf(file.name) || 'bin'}`;
-      const mime = file.type?.trim() || mimeForExt(extOf(filename));
-      // Row first, then bytes: a crash between the two leaves a byteless
-      // staged row for the 24h sweep — never unaccounted bytes on disk.
-      const row = await stageForumUpload({
-        ownerId,
-        contactId,
-        ...(topicId ? { topicId } : {}),
-        filename,
-        mime,
-        sizeBytes: file.size,
-      });
-      try {
-        await writeQuarantineBytes(ownerId, row.id, Buffer.from(await file.arrayBuffer()));
-      } catch (err) {
-        await deleteForumUploadRow(ownerId, row.id).catch(() => {});
-        throw err;
-      }
+    for (let i = 0; i < staged.rows.length; i++) {
+      const row = staged.rows[i]!;
+      const m = meta[i]!;
+      await writeQuarantineBytes(ownerId, row.id, Buffer.from(await files[i]!.arrayBuffer()));
       uploads.push({
         blobId: row.id,
-        filename,
-        mime,
-        size: file.size,
-        kind: attachmentKindForMime(mime),
+        filename: m.filename,
+        mime: m.mime,
+        size: m.sizeBytes,
+        kind: attachmentKindForMime(m.mime),
       });
     }
-
-    recordTeamAccess({
-      ownerId,
-      contactId,
-      kind: channel === 'api' ? 'api' : 'turn',
-      detail: {
-        surface: 'forum-uploads',
-        action: 'stage',
-        count: uploads.length,
-        bytes: incoming,
-        ...(topicId ? { topicId } : {}),
-      },
-    });
-
-    // Opportunistic reaping of abandoned staged blobs; never blocks the reply.
-    void sweepStaleStaged(ownerId);
-
-    return NextResponse.json({ uploads }, { status: 201 });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[team/forum/uploads]', msg);
+    for (const row of staged.rows) {
+      await deleteQuarantineBytes(ownerId, row.id).catch(() => {});
+      await deleteStagedForumUploadRow(ownerId, row.id).catch(() => {});
+    }
+    console.error('[team/forum/uploads]', err instanceof Error ? err.message : String(err));
     return NextResponse.json(
       { error: 'something went wrong staging that upload — the brain admin can see the details' },
       { status: 500 },
     );
   }
+
+  recordTeamAccess({
+    ownerId,
+    contactId,
+    kind: channel === 'api' ? 'api' : 'turn',
+    detail: {
+      surface: 'forum-uploads',
+      action: 'stage',
+      count: uploads.length,
+      bytes: incoming,
+      ...(topicId ? { topicId } : {}),
+    },
+  });
+
+  // Opportunistic quarantine GC (stale staged + orphaned bytes); never blocks.
+  void reconcileForumQuarantine(ownerId).catch((err) =>
+    console.warn('[team/forum/uploads] quarantine reconcile failed:', err),
+  );
+
+  return NextResponse.json({ uploads }, { status: 201 });
 }

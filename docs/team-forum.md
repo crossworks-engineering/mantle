@@ -79,24 +79,43 @@ both team surfaces.
 - **`forum_read_cursors`** — per-READER unread cursors (`reader_id` =
   contact id, or the owner's id); unread counts exclude the reader's own
   posts.
+- **`forum_uploads`** (migration 0126) — the file-upload review queue.
+  Lifecycle `staged` → `pending` (bound to a post in the post's own tx) →
+  `filed` (owner moved it into `files/review/<topic>/`, `node_id` set,
+  ingestion fired) | `dismissed`. Bytes live in the QUARANTINE
+  (`${MANTLE_DATA_DIR}/forum-uploads/<owner>/<blobId>`, a sibling of the
+  files root — outside the ltree, so nothing ingests until filed). The
+  post's `attachments` jsonb references blobs by `fileId`; this row is the
+  mutable review state. `contact_id` SET NULL, `topic_id`/`post_id` CASCADE.
+  A reconcile pass (`apps/web/lib/forum-quarantine.ts`, fired opportunistically
+  from the upload route and the owner review load) sweeps stale staged rows
+  and reclaims orphaned bytes.
 
 ## 6. Cost & access controls
 
 One shared daily budget covers the whole team surface: team-chat turns +
 forum posts count against `TEAM_CHAT_DAILY_TURNS` (default 100/contact/day)
 — moving the conversation from chat to forum must not double the budget.
-Posts are burst-limited per contact (6/min). Every action lands in
-`team_access_log` (kinds unchanged; `detail.surface = 'forum'`), and denials
-log as `denied`. Auth is the standard team gate: cookie or bearer token,
-liveness re-checked every request.
+Posts are burst-limited per contact (6/min). **Uploads** have their own burst
+limit (10/min), a hard body-size ceiling checked before the multipart body is
+buffered, and a per-member daily BYTE budget (`TEAM_UPLOAD_DAILY_BYTES`,
+default 100 MB) enforced atomically under an advisory lock. Every action lands
+in `team_access_log` (`detail.surface` = `forum` / `forum-uploads` /
+`forum-attachment`), and denials log as `denied`. Auth is the standard team
+gate: cookie or bearer token, liveness re-checked every request. Byte serving
+(member + owner) always goes through `safeDownloadHeaders` (stored-XSS
+defense) and supports Range.
 
 ## 7. Phases (plan §5)
 
-Phase 1 (this doc) ships the forum core. Still to come: **P2** review bridge
-(composer kind flags file the owner task; `notifyTeamRequester` delivers the
-owner's reply into the originating topic), **P3** brain ingestion (shadow
+Phase 1 (this doc) ships the forum core. **P4 attachments SHIPPED**
+(v0.143.0, migration 0126 — see §5 `forum_uploads`): member uploads stored in
+quarantine, NOT auto-ingested, owner promotes to the brain via the Requests
+tab's Uploads queue (Move to files → `files/review/<topic>/`) or dismisses.
+The agent sees filenames only. Still to come: **P2** review bridge (composer
+kind flags file the owner task; `notifyTeamRequester` delivers the owner's
+reply into the originating topic), **P3** brain ingestion (shadow
 `forum_topic` nodes, debounced reindex, facts from human posts only, private
 topics never ingested — see the scope note in
-[team-chat.md](team-chat.md) §7), **P4** attachments (stored, NOT
-auto-ingested, reviewer promote-to-brain), **P5** forum hierarchy inline in
-the Requests tab.
+[team-chat.md](team-chat.md) §7), **P5** forum hierarchy inline in the
+Requests tab.

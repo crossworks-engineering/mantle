@@ -36,7 +36,14 @@ import {
   writeFile as writeFileOnDisk,
   deleteFile as deleteFileOnDisk,
 } from './index';
-import { db, emailAttachments, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  db,
+  emailAttachments,
+  forumUploads,
+  nodes,
+  notifyNodeIngested,
+  type Node,
+} from '@mantle/db';
 
 export type FolderRow = {
   id: string;
@@ -517,7 +524,15 @@ export async function readFileById(args: {
     bytes = Buffer.from(data.content as string, 'utf8');
   } else {
     const { promises: fs } = await import('node:fs');
-    bytes = await fs.readFile(filePath);
+    try {
+      bytes = await fs.readFile(filePath);
+    } catch (err) {
+      // Node exists but its disk bytes are gone (host-mirrored tree edited
+      // out-of-band, or a half-completed delete): treat as not-found so
+      // callers 404 cleanly instead of a bare ENOENT bubbling to a 500.
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw err;
+    }
   }
   return { row: fileRowFromNode(node), bytes, path: filePath };
 }
@@ -546,6 +561,14 @@ export async function deleteFileById(args: {
   const filename = String(data.filename ?? '');
   await db.delete(nodes).where(eq(nodes.id, node.id));
   if (filename) await deleteFileOnDisk(node.path, filename);
+  // A filed forum upload points here by node_id (no FK — the node is a
+  // derived artifact). Clear the pointer so its member serve route 404s
+  // cleanly instead of chasing a deleted node. Cheap and almost always a
+  // no-op (only file nodes filed from the forum review ever match).
+  await db
+    .update(forumUploads)
+    .set({ nodeId: null })
+    .where(and(eq(forumUploads.ownerId, args.ownerId), eq(forumUploads.nodeId, node.id)));
   return { ok: true };
 }
 

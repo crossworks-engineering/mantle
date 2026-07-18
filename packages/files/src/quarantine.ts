@@ -61,3 +61,19 @@ export async function deleteQuarantineBytes(ownerId: string, uploadId: string): 
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
 }
+
+/** The blob ids (uuid filenames) currently on disk under one owner's quarantine
+ *  dir. Empty when the dir doesn't exist yet. Feeds the reconcile pass, which
+ *  cross-checks each against its forum_uploads row to unlink orphaned bytes.
+ *  Non-uuid entries are ignored (never written by us). */
+export async function listQuarantineBlobIds(ownerId: string): Promise<string[]> {
+  if (!UUID_RE.test(ownerId)) throw new Error('quarantine: owner must be a uuid');
+  const dir = path.join(quarantineRoot(), ownerId.toLowerCase());
+  try {
+    const entries = await fs.readdir(dir);
+    return entries.filter((e) => UUID_RE.test(e));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+}

@@ -14,7 +14,9 @@ import {
   listForumTopics,
   countForumTopics,
   listForumPosts,
+  getForumTopic,
   markForumTopicRead,
+  listForumUploadStatesForTopic,
   listPendingForumUploads,
   countPendingForumUploads,
   formatAttachmentSize,
@@ -23,6 +25,7 @@ import {
   type ForumTopicListItem,
   type PendingForumUpload,
 } from '@mantle/content';
+import { reconcileForumQuarantine } from '@/lib/forum-quarantine';
 import { SharedLinksPanel } from '@/components/share/shared-links-panel';
 import { HubAppPicker } from '@/components/team-chat/hub-app-picker';
 import { PrivateReadsToggle } from '@/components/team-chat/private-reads-toggle';
@@ -160,8 +163,16 @@ function TeamTabs({
 
 /** Pending forum uploads grouped by topic — the review queue's file half.
  *  Approving ("Move to files") is the ONLY path from quarantine into the
- *  brain; a topic title links to its thread for context. */
-function UploadsSection({ uploads }: { uploads: PendingForumUpload[] }) {
+ *  brain; a topic title links to its thread for context. Every pending upload
+ *  is bound to a topic (binding sets topic_id + status together), so there is
+ *  no untitled/staged branch here. */
+function UploadsSection({
+  uploads,
+  moreUploads,
+}: {
+  uploads: PendingForumUpload[];
+  moreUploads: number;
+}) {
   if (uploads.length === 0) return null;
   const groups = new Map<string, PendingForumUpload[]>();
   for (const u of uploads) {
@@ -179,19 +190,21 @@ function UploadsSection({ uploads }: { uploads: PendingForumUpload[] }) {
           — files stay out of the brain until you move them to files/review
         </span>
       </h2>
+      {moreUploads > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Showing the {uploads.length} longest-waiting — {moreUploads} more appear as you clear
+          these.
+        </p>
+      )}
       {[...groups.entries()].map(([topicId, blobs]) => (
         <div key={topicId} className="rounded-lg border border-border bg-card text-card-foreground">
           <div className="border-b border-border/60 px-4 py-2">
-            {topicId !== 'unbound' ? (
-              <Link
-                href={`/team-admin?view=topics&topic=${topicId}`}
-                className="text-sm font-medium underline-offset-2 hover:underline"
-              >
-                {blobs[0]?.topicTitle ?? 'Untitled topic'} →
-              </Link>
-            ) : (
-              <span className="text-sm font-medium text-muted-foreground">No topic (staged)</span>
-            )}
+            <Link
+              href={`/team-admin?view=topics&topic=${topicId}`}
+              className="text-sm font-medium underline-offset-2 hover:underline"
+            >
+              {blobs[0]?.topicTitle ?? 'Untitled topic'} →
+            </Link>
           </div>
           <ul className="divide-y divide-border/60">
             {blobs.map((u) => (
@@ -230,9 +243,11 @@ function UploadsSection({ uploads }: { uploads: PendingForumUpload[] }) {
 function RequestsPanel({
   requests,
   uploads,
+  moreUploads,
 }: {
   requests: TeamRequest[];
   uploads: PendingForumUpload[];
+  moreUploads: number;
 }) {
   if (requests.length === 0 && uploads.length === 0) {
     return (
@@ -248,7 +263,7 @@ function RequestsPanel({
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
       <div className="mx-auto w-full max-w-3xl space-y-4 p-4">
-        <UploadsSection uploads={uploads} />
+        <UploadsSection uploads={uploads} moreUploads={moreUploads} />
         {requests.map((r) => (
           <div
             key={r.taskId}
@@ -451,15 +466,37 @@ export default async function TeamAdminPage({
       ),
       countForumTopics(user.id, { kind: 'owner' }, { query }),
     ]);
-    const selectedTopicId =
-      topicParam && topics.some((t) => t.id === topicParam) ? topicParam : (topics[0]?.id ?? null);
-    const selectedTopic = topics.find((t) => t.id === selectedTopicId) ?? null;
-    const posts = selectedTopicId
-      ? await listForumPosts(user.id, selectedTopicId, { limit: 100 })
-      : [];
-    if (selectedTopicId && selectedTopic) {
+    // Header fields common to a list row and a directly-fetched topic row.
+    type SelectedTopic = {
+      id: string;
+      title: string;
+      kind: ForumTopicListItem['kind'];
+      visibility: ForumTopicListItem['visibility'];
+      pinned: boolean;
+      status: ForumTopicListItem['status'];
+      authorName: string;
+      createdAt: string;
+    };
+    let selectedTopic: SelectedTopic | null =
+      topics.find((t) => t.id === topicParam) ?? topics[0] ?? null;
+    // Deep link to a topic not on this page (e.g. from the Uploads queue, when
+    // the topic has scrolled past page 1) — load it directly instead of
+    // silently landing on an unrelated transcript.
+    if (topicParam && !topics.some((t) => t.id === topicParam)) {
+      const t = await getForumTopic(user.id, topicParam, { kind: 'owner' });
+      if (t) selectedTopic = { ...t, createdAt: t.createdAt.toISOString() };
+    }
+    const selectedTopicId = selectedTopic?.id ?? null;
+    const [posts, uploadStateRows] = selectedTopicId
+      ? await Promise.all([
+          listForumPosts(user.id, selectedTopicId, { limit: 100 }),
+          listForumUploadStatesForTopic(user.id, selectedTopicId),
+        ])
+      : [[], []];
+    // Blob review states so admin chips reflect dismissed/filed (join by fileId).
+    const uploadStates = new Map(uploadStateRows.map((u) => [u.id, u.status]));
+    if (selectedTopicId) {
       await markForumTopicRead(user.id, { kind: 'owner' }, selectedTopicId);
-      selectedTopic.unread = 0;
     }
     return (
       <div className="flex h-full flex-col">
@@ -546,20 +583,38 @@ export default async function TeamAdminPage({
                         )}
                         {p.attachments.length > 0 && (
                           <div className="mt-1.5 flex flex-wrap gap-1.5">
-                            {p.attachments.map((a) =>
-                              a.fileId ? (
+                            {p.attachments.map((a) => {
+                              if (!a.fileId) return null;
+                              const st = uploadStates.get(a.fileId);
+                              // Dismissed bytes are gone — render a dead chip, no
+                              // link (the download route 404s).
+                              if (st === 'dismissed') {
+                                return (
+                                  <span
+                                    key={a.fileId}
+                                    className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground line-through"
+                                    title="Dismissed — bytes deleted"
+                                  >
+                                    <Paperclip className="size-3" aria-hidden />
+                                    {a.caption ?? 'attachment'}
+                                  </span>
+                                );
+                              }
+                              return (
                                 <a
                                   key={a.fileId}
                                   href={`/api/team-admin/forum/uploads/${a.fileId}/download`}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                                  title={st === 'filed' ? 'Filed into files/review' : undefined}
                                 >
                                   <Paperclip className="size-3" aria-hidden />
                                   {a.caption ?? 'attachment'}
+                                  {st === 'filed' ? ' ✓' : ''}
                                 </a>
-                              ) : null,
-                            )}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -587,15 +642,26 @@ export default async function TeamAdminPage({
   }
 
   if (showRequests) {
+    // Opportunistic quarantine GC while the owner is here — covers brains whose
+    // members stopped uploading (the upload route's reconcile never fires then).
+    // Awaited (cheap: one guarded DELETE + a dir-scan) so it can't be dropped
+    // by the server component ending before a dangling promise resolves.
+    await reconcileForumQuarantine(user.id).catch((err) =>
+      console.warn('[team-admin] quarantine reconcile failed:', err),
+    );
+    const UPLOADS_SHOWN = 100;
     const [requests, uploads] = await Promise.all([
       listTeamRequests(user.id, { status: 'all', limit: 200 }),
-      listPendingForumUploads(user.id),
+      listPendingForumUploads(user.id, { limit: UPLOADS_SHOWN }),
     ]);
+    // pendingUploadCount (the badge total) may exceed what we render — tell the
+    // owner the rest appear as they drain the front of the queue.
+    const moreUploads = Math.max(0, pendingUploadCount - uploads.length);
     return (
       <div className="flex h-full flex-col">
         <SetPageTitle title="Team" />
         <TeamTabs active="requests" openRequestCount={openRequestCount} />
-        <RequestsPanel requests={requests} uploads={uploads} />
+        <RequestsPanel requests={requests} uploads={uploads} moreUploads={moreUploads} />
       </div>
     );
   }

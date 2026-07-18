@@ -38,6 +38,7 @@ export {
   writeQuarantineBytes,
   readQuarantineBytes,
   deleteQuarantineBytes,
+  listQuarantineBlobIds,
 } from './quarantine';
 
 export {
