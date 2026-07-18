@@ -58,7 +58,9 @@ export async function sendViaGraph(
   input: SendEmailInput,
 ): Promise<SendEmailResult> {
   if (!account.msAccountId) {
-    throw new Error(`email account ${account.address} (provider=microsoft) is missing ms_account_id`);
+    throw new Error(
+      `email account ${account.address} (provider=microsoft) is missing ms_account_id`,
+    );
   }
   if (!input.text && !input.html) {
     throw new Error('email must have a text or html body');

@@ -51,11 +51,7 @@ export async function enqueueBackfill(userId: string, target: string): Promise<v
   const b = await boss();
   for (const a of accounts) {
     const queue = a.provider === 'microsoft' ? MS_BACKFILL_QUEUE : BACKFILL_QUEUE;
-    await b.send(
-      queue,
-      { accountId: a.id, target: t },
-      { singletonKey: `backfill:${a.id}:${t}` },
-    );
+    await b.send(queue, { accountId: a.id, target: t }, { singletonKey: `backfill:${a.id}:${t}` });
   }
 }
 

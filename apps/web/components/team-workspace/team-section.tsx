@@ -181,10 +181,7 @@ export function TeamSection({
   const selected = items?.find((i) => i.token === selectedToken) ?? null;
 
   // Tree index over the loaded (shared) pages; sibling order = server sort.
-  const treeItems = useMemo(
-    () => (items ?? []).map((i) => ({ ...i, id: i.nodeId })),
-    [items],
-  );
+  const treeItems = useMemo(() => (items ?? []).map((i) => ({ ...i, id: i.nodeId })), [items]);
   const childrenByParent = useMemo(() => buildChildrenIndex(treeItems), [treeItems]);
   const hasChildren = useCallback(
     (id: string) => (childrenByParent.get(id) ?? []).length > 0,
@@ -285,10 +282,7 @@ export function TeamSection({
     <div className="grid min-h-0 flex-1 md:grid-cols-[340px_1fr]">
       {/* List pane — hidden on mobile while reading */}
       <div
-        className={cn(
-          'flex min-h-0 flex-col border-r border-border',
-          selected && 'hidden md:flex',
-        )}
+        className={cn('flex min-h-0 flex-col border-r border-border', selected && 'hidden md:flex')}
       >
         {/* Search + sort + tag header */}
         <div className="space-y-2 border-b border-border p-2">
