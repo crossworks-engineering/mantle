@@ -163,10 +163,7 @@ export function TeamSection({
     <div className="grid min-h-0 flex-1 md:grid-cols-[340px_1fr]">
       {/* List pane — hidden on mobile while reading */}
       <div
-        className={cn(
-          'flex min-h-0 flex-col border-r border-border',
-          selected && 'hidden md:flex',
-        )}
+        className={cn('flex min-h-0 flex-col border-r border-border', selected && 'hidden md:flex')}
       >
         {/* Search + sort header */}
         <div className="space-y-2 border-b border-border p-2">

@@ -12,7 +12,13 @@
 
 import { and, desc, eq, gte, or } from 'drizzle-orm';
 import { db, emailAccounts, emails, msAccounts, type EmailAccount } from '@mantle/db';
-import { accountCanSend, sendEmail, type SendEmailInput, type SendEmailResult, type EmailAttachment } from '@mantle/email';
+import {
+  accountCanSend,
+  sendEmail,
+  type SendEmailInput,
+  type SendEmailResult,
+  type EmailAttachment,
+} from '@mantle/email';
 import { msAccountCanSend, sendViaGraph } from '@mantle/microsoft';
 import {
   getPage,
@@ -138,7 +144,9 @@ async function canSendFrom(account: EmailAccount): Promise<boolean> {
 /** Route a send through the account's transport: Graph `sendMail` for
  *  Microsoft companions, SMTP submission for everything else. */
 function sendFromAccount(account: EmailAccount, input: SendEmailInput): Promise<SendEmailResult> {
-  return account.provider === 'microsoft' ? sendViaGraph(account, input) : sendEmail(account, input);
+  return account.provider === 'microsoft'
+    ? sendViaGraph(account, input)
+    : sendEmail(account, input);
 }
 
 const NO_SEND_ACCOUNT_ERROR =

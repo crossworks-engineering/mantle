@@ -20,12 +20,7 @@ export function clampTitle(text: string, max = TITLE_CLAMP): string {
 /** First line of the message, whitespace-collapsed, clamped. The no-model
  *  fallback — always returns something usable. */
 export function heuristicTitle(body: string): string {
-  const line =
-    body
-      .trim()
-      .split('\n')[0]
-      ?.replace(/\s+/g, ' ')
-      .trim() ?? '';
+  const line = body.trim().split('\n')[0]?.replace(/\s+/g, ' ').trim() ?? '';
   if (!line) return 'New topic';
   return clampTitle(line);
 }
