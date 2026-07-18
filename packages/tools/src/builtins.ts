@@ -1536,7 +1536,7 @@ const invoke_agent: BuiltinToolDef = {
       prompt: {
         type: 'string',
         description:
-          "Self-contained instructions for the child. Include any context it needs; the child does not see your conversation history. State the goal, the material (in full — never shortened), and the expected end state.",
+          'Self-contained instructions for the child. Include any context it needs; the child does not see your conversation history. State the goal, the material (in full — never shortened), and the expected end state.',
         maxLength: 32_000,
       },
       subject_node_ids: {

@@ -29,7 +29,7 @@ const node_share: BuiltinToolDef = {
     properties: {
       id: {
         type: 'string',
-        description: "node id of the item to share (from its listing tool or search_nodes)",
+        description: 'node id of the item to share (from its listing tool or search_nodes)',
       },
       mode: {
         type: 'string',

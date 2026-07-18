@@ -125,17 +125,19 @@ describe('system manifest integrity', () => {
     expect(grant.has('table_row_add'), 'persona logs single rows directly (tables-rows)').toBe(
       true,
     );
-    expect(grant.has('page_update'), 'live-overwrite stays with Pages (persona is draft-only)').toBe(
-      false,
-    );
+    expect(
+      grant.has('page_update'),
+      'live-overwrite stays with Pages (persona is draft-only)',
+    ).toBe(false);
     expect(grant.has('page_blocks_apply'), 'multi-block surgery stays with Pages').toBe(false);
     expect(grant.has('page_split'), 'structural splits stay with Pages').toBe(false);
     expect(grant.has('page_delete'), 'page delete is delegated to the Pages specialist').toBe(
       false,
     );
-    expect(grant.has('table_from_text'), 'grid building is delegated to the Ledger specialist').toBe(
-      false,
-    );
+    expect(
+      grant.has('table_from_text'),
+      'grid building is delegated to the Ledger specialist',
+    ).toBe(false);
     expect(grant.has('table_column_add'), 'schema work stays with Ledger').toBe(false);
     expect(grant.has('table_row_delete'), 'row deletes stay deliberate-only').toBe(false);
     expect(grant.has('contact_delete'), 'destructive contact delete is deliberate-only').toBe(
