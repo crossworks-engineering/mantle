@@ -197,7 +197,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
 
         {/* ── Body: left nav + main ──────────────────────────────── */}
         <div className="flex min-h-0 flex-1">
-          <aside className="hidden w-56 shrink-0 overflow-y-auto border-r border-border bg-sidebar md:block">
+          <aside className="hidden w-56 shrink-0 overflow-y-auto border-r border-border bg-sidebar scrollbar-thin md:block">
             <NavList data={data} />
           </aside>
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</main>
@@ -205,7 +205,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
 
         {/* ── Footer: shared folders + Assistant ─────────────────── */}
         <footer className="flex h-11 shrink-0 items-center gap-2 border-t border-border bg-sidebar px-3">
-          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-thin">
             {data.folders.map((f) => (
               <Link
                 key={f.token}

@@ -369,6 +369,7 @@ export {
   TEAM_SHARE_SORTS,
   listTeamVisibleShares,
   pageTeamVisibleShares,
+  listTeamShareTags,
   countTeamVisibleShares,
   type TeamHubSection,
   type TeamAppCard,
