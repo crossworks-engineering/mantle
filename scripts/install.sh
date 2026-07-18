@@ -57,6 +57,8 @@ ${B}Options${RS}
   --local-embedder       Enable the bundled local embedder (Ollama + EmbeddingGemma,
                          ~3.3GB image + model). Persists via COMPOSE_PROFILES in .env
                          so every later pull/up — the updater included — keeps it.
+                         Needs a LARGE server (degrades a 16GB/8-core box under
+                         multi-file ingest) — see docs/self-hosting.md.
   --no-local-embedder    Disable it again (stops the services; images stay until
                          you 'docker image prune' or 'docker rmi ollama/ollama')
   -y, --yes              Non-interactive: accept defaults, never prompt

@@ -61,7 +61,9 @@ name: mantle
 # `scripts/install.sh --local-embedder`, which sets COMPOSE_PROFILES=local-embedder
 # in .env so every later pull/up (the updater included) keeps it; a one-off
 # `docker compose --profile local-embedder up -d` works too but doesn't survive
-# updates. No app service waits on it, so a fresh box boots even on a locked-down
+# updates. CAUTION: the CPU embedder needs a BIG box — under multi-file ingest it
+# degrades the whole stack on a 16GB/8-core VPS (tested); see docs/self-hosting.md.
+# No app service waits on it, so a fresh box boots even on a locked-down
 # network. Migrations run automatically — the one-shot `migrate` service applies
 # them before any app service starts.
 
