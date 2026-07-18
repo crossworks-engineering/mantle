@@ -16,7 +16,7 @@ export function TeamOverview() {
   const firstName = data.memberName?.split(/\s+/)[0] ?? null;
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
       <div className="mx-auto w-full max-w-3xl px-6 py-10">
         <h1 className="text-2xl font-semibold tracking-tight">
           {firstName ? `Welcome, ${firstName}.` : 'Welcome.'}

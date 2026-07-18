@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: 'Team · Pages' };
 export default function TeamPagesPage() {
   return (
     <Suspense>
-      <TeamSection type="page" />
+      <TeamSection type="page" tree />
     </Suspense>
   );
 }

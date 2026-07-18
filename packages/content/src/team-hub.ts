@@ -242,6 +242,10 @@ export type TeamVisibleShare = {
   updatedAt: string;
   /** 'team' or 'public' — a member may open both, the badge tells them apart. */
   mode: 'team' | 'public';
+  /** Parent node id — lets the pages section rebuild the sub-page tree over
+   *  the SHARED subset (an unshared parent leaves its children as roots). */
+  parentId: string | null;
+  tags: string[];
 };
 
 /** Sort orders offered by the /team section list. `newest`/`oldest` rank by
@@ -274,6 +278,8 @@ const teamShareColumns = {
   data: nodes.data,
   updatedAt: nodes.updatedAt,
   settings: shares.settings,
+  parentId: nodes.parentId,
+  tags: nodes.tags,
 } as const;
 
 function mapTeamShareRow(r: {
@@ -283,6 +289,8 @@ function mapTeamShareRow(r: {
   data: Record<string, unknown> | null;
   updatedAt: Date;
   settings: unknown;
+  parentId: string | null;
+  tags: string[] | null;
 }): TeamVisibleShare {
   return {
     token: r.token,
@@ -292,6 +300,8 @@ function mapTeamShareRow(r: {
     summary: typeof r.data?.summary === 'string' ? (r.data.summary as string) : null,
     updatedAt: r.updatedAt.toISOString(),
     mode: (r.settings as Record<string, unknown>)?.mode === 'team' ? 'team' : 'public',
+    parentId: r.parentId,
+    tags: r.tags ?? [],
   };
 }
 
@@ -328,16 +338,17 @@ export async function listTeamVisibleShares(
 export async function pageTeamVisibleShares(
   ownerId: string,
   nodeType: TeamWorkspaceType,
-  opts: { query?: string; sort?: TeamShareSort; limit: number; offset: number },
+  opts: { query?: string; tag?: string; sort?: TeamShareSort; limit: number; offset: number },
 ): Promise<TeamVisibleSharePage> {
-  const { query, sort = 'newest', limit, offset } = opts;
+  const { query, tag, sort = 'newest', limit, offset } = opts;
   const search = query?.trim()
     ? or(
         ilike(nodes.title, `%${query.trim()}%`),
         sql`${nodes.data} ->> 'summary' ILIKE ${`%${query.trim()}%`}`,
       )
     : undefined;
-  const where = and(teamShareVisiblePredicate(ownerId, nodeType), search);
+  const tagCond = tag?.trim() ? sql`${tag.trim()} = ANY(${nodes.tags})` : undefined;
+  const where = and(teamShareVisiblePredicate(ownerId, nodeType), search, tagCond);
 
   const orderBy =
     sort === 'oldest'
@@ -365,6 +376,27 @@ export async function pageTeamVisibleShares(
   ]);
 
   return { items: rows.map(mapTeamShareRow), total: totals[0]?.count ?? 0 };
+}
+
+/** Distinct tags across one type's team-visible shares with usage counts —
+ *  drives the section's tag filter (the /pages listPageTags counterpart,
+ *  scoped to what the team may actually open). */
+export async function listTeamShareTags(
+  ownerId: string,
+  nodeType: TeamWorkspaceType,
+): Promise<{ tag: string; count: number }[]> {
+  const rows = await db
+    .select({ tags: nodes.tags })
+    .from(shares)
+    .innerJoin(nodes, eq(shares.nodeId, nodes.id))
+    .where(teamShareVisiblePredicate(ownerId, nodeType));
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    for (const t of r.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
 /** Per-type counts of team-visible (active) shares — the workspace nav badges

@@ -14,6 +14,7 @@ import {
   TEAM_WORKSPACE_TYPES,
   TEAM_SHARE_SORTS,
   pageTeamVisibleShares,
+  listTeamShareTags,
   type TeamShareSort,
   type TeamWorkspaceType,
 } from '@mantle/content';
@@ -23,6 +24,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 30;
+/** Tree mode returns everything at once (a hierarchy can't paginate). */
+const TREE_CAP = 500;
 
 export async function GET(req: Request) {
   const caller = await resolveTeamChatCaller(req);
@@ -36,17 +39,34 @@ export async function GET(req: Request) {
 
   const page = Math.max(1, Number.parseInt(sp.get('page') ?? '1', 10) || 1);
   const query = sp.get('q')?.trim() || undefined;
+  const tag = sp.get('tag')?.trim() || undefined;
   const sortParam = sp.get('sort');
   const sort: TeamShareSort = (TEAM_SHARE_SORTS as readonly string[]).includes(sortParam ?? '')
     ? (sortParam as TeamShareSort)
     : 'newest';
+  // `tree=1` (the pages section's hierarchy view) returns the WHOLE visible
+  // set in one response — a tree can't paginate, and collapsible sub-page
+  // rows need every ancestor present. Capped, and the cap self-announces via
+  // `truncated` so a huge share set degrades visibly, not silently.
+  const tree = sp.get('tree') === '1';
 
-  const { items, total } = await pageTeamVisibleShares(caller.ownerId, type as TeamWorkspaceType, {
-    query,
-    sort,
-    limit: PAGE_SIZE,
-    offset: (page - 1) * PAGE_SIZE,
+  const [{ items, total }, tags] = await Promise.all([
+    pageTeamVisibleShares(caller.ownerId, type as TeamWorkspaceType, {
+      query,
+      tag,
+      sort,
+      limit: tree ? TREE_CAP : PAGE_SIZE,
+      offset: tree ? 0 : (page - 1) * PAGE_SIZE,
+    }),
+    listTeamShareTags(caller.ownerId, type as TeamWorkspaceType),
+  ]);
+
+  return NextResponse.json({
+    items,
+    total,
+    page: tree ? 1 : page,
+    pageSize: tree ? TREE_CAP : PAGE_SIZE,
+    tags,
+    ...(tree && total > TREE_CAP ? { truncated: true } : {}),
   });
-
-  return NextResponse.json({ items, total, page, pageSize: PAGE_SIZE });
 }
