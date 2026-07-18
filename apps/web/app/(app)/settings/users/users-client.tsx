@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Anchor, KeyRound, Plus, Trash2, Users } from 'lucide-react';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
@@ -53,7 +54,10 @@ export function UsersClient() {
     queryFn: () => apiFetch<{ users: UserRow[]; currentActorId: string }>('/api/users'),
   });
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Deep link: /settings/users?selected=<id-or-email> preselects that user
+  // (initial state only — selection stays client-state after).
+  const searchParams = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('selected'));
   const [addOpen, setAddOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -79,7 +83,8 @@ export function UsersClient() {
   }
 
   const { users, currentActorId } = usersQuery.data;
-  const selected = users.find((u) => u.id === selectedId) ?? users[0] ?? null;
+  const selected =
+    users.find((u) => u.id === selectedId || u.email === selectedId) ?? users[0] ?? null;
 
   return (
     <div className="md:grid md:h-full md:grid-cols-[340px_1fr] md:overflow-hidden">

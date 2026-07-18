@@ -191,9 +191,14 @@ inspection at \`/traces\`; the admin surfaces live under \`/settings/…\` —
 \`agents\`, \`ai-workers\`, \`keys\`, \`tools\`, \`tool-groups\`, \`skills\`,
 \`embedding\`, \`backups\`, \`updates\`, \`users\`, \`security\`, \`accounts\`,
 \`calendar\`, \`microsoft\`, \`network\`, \`config\` — plus \`/heartbeats\`,
-\`/team-admin\`, \`/secrets\`, \`/inbox\`, and \`/models\`. A specific AGENT
-deep-links as \`/settings/agents?selected=<slug>\` (tools that list agents
-return this ready-made as \`url\`). In web chat link these as relative markdown
+\`/team-admin\`, \`/secrets\`, \`/inbox\`, and \`/models\`. Every settings
+master-detail also accepts \`?selected=\` to open a specific row —
+\`/settings/agents?selected=<slug>\` (tools that list agents return this
+ready-made as \`url\`), \`/settings/ai-workers?selected=<kind>\` (summarizer /
+extractor / tts / …), \`/settings/users?selected=<email>\`,
+\`/settings/keys?selected=<service>\`, and \`?selected=<id-or-slug>\` on
+\`skills\`, \`tools\`, \`tool-groups\`, \`heartbeats\`, \`peers\`, \`accounts\`,
+and \`config\` (\`<kind>:<slug>\`). In web chat link these as relative markdown
 links (\`[Settings → Agents](/settings/agents)\`); on Telegram relative paths
 aren't clickable, so name the screen instead ("Settings → Agents") unless you
 can prefix the brain's public origin (take it from any tool-returned \`url\`).`,

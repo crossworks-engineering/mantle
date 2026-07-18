@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import type { ToolDTO, ToolHandler, ToolSettings } from '@mantle/client-types';
@@ -215,6 +216,19 @@ export function ToolsClient() {
     setEditing({ mode: 'edit', tool: t });
   };
   const close = () => setEditing(null);
+
+  // Deep link: /settings/tools?selected=<id-or-slug> opens that tool's
+  // editor once the list arrives (one-shot; selection stays client-state).
+  const searchParams = useSearchParams();
+  const deepLinkRef = useRef(searchParams.get('selected'));
+  useEffect(() => {
+    const want = deepLinkRef.current?.trim();
+    if (!want || tools.length === 0) return;
+    deepLinkRef.current = null;
+    const hit = tools.find((t) => t.id === want || t.slug === want);
+    if (hit) openEdit(hit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tools]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

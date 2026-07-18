@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -68,16 +69,29 @@ export function KeysClient() {
   const [keys, setKeys] = useState<KeyRow[]>([]);
   const [pending, startTransition] = useTransition();
   const [sel, setSel] = useState<Selection>(null);
+  // Deep link: /settings/keys?selected=<id | service | label> preselects that
+  // key on first load (one-shot; selection stays client-state after).
+  const searchParams = useSearchParams();
+  const deepLinkRef = useRef(searchParams.get('selected'));
 
   // Seed the optimistic local list from the query (re-seeds on invalidate) and
-  // auto-select the first key once loaded.
+  // auto-select the deep-linked key (else the first) once loaded.
   useEffect(() => {
     if (!keysQuery.data) return;
     setKeys(keysQuery.data);
+    const want = deepLinkRef.current?.trim();
+    deepLinkRef.current = null;
+    const hit = want
+      ? keysQuery.data.find((k) => k.id === want || k.label === want || k.service === want)
+      : undefined;
     setSel(
       (prev) =>
         prev ??
-        (keysQuery.data[0] ? { mode: 'view', id: keysQuery.data[0].id } : { mode: 'create' }),
+        (hit
+          ? { mode: 'view', id: hit.id }
+          : keysQuery.data[0]
+            ? { mode: 'view', id: keysQuery.data[0].id }
+            : { mode: 'create' }),
     );
   }, [keysQuery.data]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['keys'] });

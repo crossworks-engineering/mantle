@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import type { ToolDTO, ToolGroupWithRefs } from '@mantle/client-types';
@@ -130,6 +131,19 @@ export function ToolGroupsClient() {
     setEditing({ mode: 'edit', group: g });
   };
   const close = () => setEditing(null);
+
+  // Deep link: /settings/tool-groups?selected=<id-or-slug> opens that group's
+  // editor once the list arrives (one-shot; selection stays client-state).
+  const searchParams = useSearchParams();
+  const deepLinkRef = useRef(searchParams.get('selected'));
+  useEffect(() => {
+    const want = deepLinkRef.current?.trim();
+    if (!want || groups.length === 0) return;
+    deepLinkRef.current = null;
+    const hit = groups.find((g) => g.id === want || g.slug === want);
+    if (hit) openEdit(hit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

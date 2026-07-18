@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Pause, Play, Plus, Trash2, Zap } from 'lucide-react';
@@ -228,6 +229,20 @@ export function HeartbeatsClient() {
     setEditing({ mode: 'edit', hb });
   };
   const close = () => setEditing(null);
+
+  // Deep link: /settings/heartbeats?selected=<id-or-slug> opens that
+  // heartbeat's editor once the list arrives (one-shot; selection stays
+  // client-state).
+  const searchParams = useSearchParams();
+  const deepLinkRef = useRef(searchParams.get('selected'));
+  useEffect(() => {
+    const want = deepLinkRef.current?.trim();
+    if (!want || heartbeats.length === 0) return;
+    deepLinkRef.current = null;
+    const hit = heartbeats.find((h) => h.id === want || h.slug === want);
+    if (hit) openEdit(hit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heartbeats]);
 
   const onName = (v: string) =>
     setForm((f) => ({
