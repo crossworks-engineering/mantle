@@ -51,6 +51,7 @@ import { RESEARCH_TOOLS } from './builtins-research';
 import { NOTE_TOOLS } from './builtins-notes';
 import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
+import { SHARE_TOOLS } from './builtins-share';
 import { APP_TOOLS, APP_DATA_TOOLS } from './builtins-apps';
 import { TABLE_TOOLS } from './builtins-tables';
 import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
@@ -1712,6 +1713,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // dialect; markdownToDoc converts it to the ProseMirror JSON pages store.
   // page_delete is requires_confirm (irreversible).
   ...PAGE_TOOLS,
+  // Generic sharing — mint/revoke a viewable link for ANY shareable item
+  // (note/task/event/file/app/table/folder); the type-agnostic counterpart
+  // of page_share. node_share is requires_confirm (publishes outward).
+  ...SHARE_TOOLS,
   // Apps — Appsmith authors mini apps (TSX), builds them with esbuild, and
   // declares the api_tools/sqlite they use. app_delete + app_publish are the
   // admin subset; the broker enforces the per-app tool allowlist at runtime.

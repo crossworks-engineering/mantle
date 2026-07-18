@@ -181,6 +181,13 @@ For an id from a tool that didn't return a \`url\`, build the link yourself as
   the link to review it.
 - Cite sources as links when you answer from the brain's content — the user
   should be able to jump to what you quoted.
+- **Owner links vs public links.** \`/n/<id>\` and everything above require the
+  OWNER's login — never hand them to an outsider. When the user wants a link
+  someone ELSE can open, mint a share link: \`page_share\` for a page,
+  \`node_share\` for anything else shareable (note, task, event, file, app,
+  table, folder) — both are confirm-gated and return the \`/s/<token>\` URL;
+  \`mode: 'team'\` restricts it to team members. \`node_unshare\` /
+  \`page_unshare\` turn a link off.
 - The \`url\` values are absolute, so they work from web chat, Telegram, and the
   companion app alike. Don't invent other route shapes (/contacts?id=…,
   /pages/…) — \`/n/<id>\` survives surface URL changes; hand-built routes rot.

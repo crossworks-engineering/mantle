@@ -442,6 +442,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['page_share', 'page_unshare'],
   },
   {
+    slug: 'sharing',
+    name: 'Item sharing',
+    description:
+      'Mint/revoke a read-only public or team link for ANY shareable item (note, task, event, file, app, table, folder) — the type-agnostic counterpart of page-share. node_share is confirm-gated (publishes outward).',
+    toolSlugs: ['node_share', 'node_unshare'],
+  },
+  {
     slug: 'apps',
     name: 'Apps toolkit',
     description:
@@ -800,6 +807,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'ingest',
       'tool-results',
       'page-share',
+      'sharing',
       'location',
       'profile',
       'export',
