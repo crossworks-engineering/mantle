@@ -20,7 +20,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db, agents, pendingToolCalls, toolGroups, tools, type ToolHandler } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
-import { loadProfilePreferences } from '@mantle/content';
+import { appUrl, loadProfilePreferences } from '@mantle/content';
 import { parseTikaBytes } from '@mantle/files';
 import { createTool, deleteTool, listToolsForOwner, updateTool } from './crud';
 import { dispatchTool } from './dispatch';
@@ -1071,6 +1071,8 @@ const agent_list: BuiltinToolDef = {
       output: {
         agents: rows.map((a) => ({
           slug: a.slug,
+          // Clickable settings deep link — opens this agent's editor.
+          url: appUrl(`/settings/agents?selected=${encodeURIComponent(a.slug)}`),
           name: a.name,
           role: a.role,
           enabled: a.enabled,

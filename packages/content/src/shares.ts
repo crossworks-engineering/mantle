@@ -124,6 +124,13 @@ export function shareUrlForToken(token: string): string {
   return `${publicBaseUrl()}/s/${token}`;
 }
 
+/** Absolute app URL for a NON-node screen (settings, /pending, /traces/<id>).
+ *  Node-backed items should use {@link nodeUrl} instead — /n/<id> survives a
+ *  surface's URL shape changing; this helper is for screens with no node id. */
+export function appUrl(path: string): string {
+  return `${publicBaseUrl()}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 /** Canonical in-app permalink for any node, by id alone — `<origin>/n/<id>`.
  *  The `/n/[id]` route resolves the node's type and redirects to the right
  *  surface (note → /notes?selected, page → /pages/<id>, …), so callers never

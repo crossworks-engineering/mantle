@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftRight, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -650,6 +651,22 @@ export function AgentsClient() {
   const closeDialog = () => {
     setEditing(undefined);
   };
+
+  // Deep link: /settings/agents?selected=<id-or-slug> opens that agent's
+  // editor once the list arrives (agent_list hands these URLs to the
+  // assistant). One-shot entry point — selection stays client-state after.
+  const searchParams = useSearchParams();
+  const requestedAgentRef = useRef(searchParams.get('selected'));
+  useEffect(() => {
+    const want = requestedAgentRef.current?.trim();
+    if (!want || agents.length === 0) return;
+    requestedAgentRef.current = null;
+    const hit = agents.find((a) => a.id === want || a.slug === want);
+    if (hit) openEdit(hit);
+    // openEdit is stable-enough (recreated per render but behavior-constant);
+    // the ref null-out makes this one-shot regardless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agents]);
 
   const onNameChange = (v: string) => {
     setForm((f) => ({

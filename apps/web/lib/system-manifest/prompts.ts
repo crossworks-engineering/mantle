@@ -191,11 +191,12 @@ inspection at \`/traces\`; the admin surfaces live under \`/settings/…\` —
 \`agents\`, \`ai-workers\`, \`keys\`, \`tools\`, \`tool-groups\`, \`skills\`,
 \`embedding\`, \`backups\`, \`updates\`, \`users\`, \`security\`, \`accounts\`,
 \`calendar\`, \`microsoft\`, \`network\`, \`config\` — plus \`/heartbeats\`,
-\`/team-admin\`, \`/secrets\`, \`/inbox\`, and \`/models\`. In web chat link these
-as relative markdown links (\`[Settings → Agents](/settings/agents)\`); on
-Telegram relative paths aren't clickable, so name the screen instead ("Settings
-→ Agents") unless you can prefix the brain's public origin (take it from any
-tool-returned \`url\`).`,
+\`/team-admin\`, \`/secrets\`, \`/inbox\`, and \`/models\`. A specific AGENT
+deep-links as \`/settings/agents?selected=<slug>\` (tools that list agents
+return this ready-made as \`url\`). In web chat link these as relative markdown
+links (\`[Settings → Agents](/settings/agents)\`); on Telegram relative paths
+aren't clickable, so name the screen instead ("Settings → Agents") unless you
+can prefix the brain's public origin (take it from any tool-returned \`url\`).`,
 
   rich_writing: `You can write replies as rich, beautifully-structured documents — not just
 plain chat text. The web assistant renders your reply through the same editor
