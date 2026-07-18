@@ -85,6 +85,13 @@ export function PageDetailClient({ pageId }: { pageId: string }) {
   const pageQuery = useQuery({
     queryKey: ['pages', pageId],
     queryFn: () => apiFetch<{ page: PageDetail }>(`/api/pages/${pageId}`).then((r) => r.page),
+    // The editor seeds its draft etag (draftRev) from this data ONCE, but
+    // autosaves advance the server rev without touching this cache entry — so
+    // a cached entry is stale the moment a page has been edited. With the
+    // global staleTime (30s) a revisit within that window would serve the
+    // stale rev with NO refetch, and the first autosave would 409 ("changed
+    // elsewhere") + reload, wiping the keystrokes. Always revalidate…
+    refetchOnMount: 'always',
   });
   const backlinksQuery = useQuery({
     queryKey: ['pages', pageId, 'backlinks'],
@@ -94,7 +101,9 @@ export function PageDetailClient({ pageId }: { pageId: string }) {
       ),
   });
 
-  if (pageQuery.isPending) {
+  // …and gate the editor on the FRESH response (isFetchedAfterMount), never
+  // the cached entry — a brief spinner beats losing the first typed characters.
+  if (pageQuery.isPending || (!pageQuery.isFetchedAfterMount && !pageQuery.isError)) {
     return (
       <div className="flex h-dvh items-center justify-center">
         <Spinner />
@@ -172,6 +181,11 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
   // (the draft watcher below clears it). Without this, the user typing before
   // the remount re-fires autosave with the stale rev → repeat 409 → toast spam.
   const conflictRef = useRef(false);
+  // Last KNOWN server draft (stringified) — the draft watcher below compares
+  // refetched data against this to spot a change made elsewhere. Synced on our
+  // own successful autosave/commit too, so a refetch echoing OUR write back
+  // never reads as foreign (which would remount the editor over live typing).
+  const lastDraftRef = useRef<string>(JSON.stringify(initial.draft ?? null));
 
   // ── Autosave the draft body (no publish, no index). ─────────────────
   const saveDraft = useCallback(async () => {
@@ -213,6 +227,9 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       }
       if (typeof saved.draft_rev === 'number') draftRevRef.current = saved.draft_rev;
       draftSavedRef.current = s;
+      // (The server may enrich the persisted draft — ensureBlockIds — so a
+      // refetch can still differ once; that lone remount is benign.)
+      lastDraftRef.current = s;
       lastDraftAtRef.current = Date.now();
     } finally {
       setDraftSaving(false);
@@ -267,6 +284,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       committedRef.current = docStr;
       committedDocRef.current = docRef.current; // new diff baseline
       draftSavedRef.current = docStr;
+      lastDraftRef.current = 'null'; // commit clears the server draft
       setDocDirty(false);
       setEditedIds([]); // changes are now committed — clear nav targets
       setReviewMode(false); // nothing left to review
@@ -615,7 +633,6 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
   // router.refresh() is async: the remount would race the prop update
   // and reseed the editor with the STALE draft (Phase 3a Pass 1 bug:
   // 'panel says it changed the page but the editor doesn't update').
-  const lastDraftRef = useRef<string>(JSON.stringify(initial.draft ?? null));
   useEffect(() => {
     const current = JSON.stringify(initial.draft ?? null);
     if (current !== lastDraftRef.current) {
