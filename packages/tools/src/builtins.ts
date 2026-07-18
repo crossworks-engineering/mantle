@@ -51,6 +51,7 @@ import { RESEARCH_TOOLS } from './builtins-research';
 import { NOTE_TOOLS } from './builtins-notes';
 import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
+import { SHARE_TOOLS } from './builtins-share';
 import { APP_TOOLS, APP_DATA_TOOLS } from './builtins-apps';
 import { TABLE_TOOLS } from './builtins-tables';
 import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
@@ -1026,6 +1027,7 @@ const secret_create: BuiltinToolDef = {
       ok: true,
       output: {
         id: inserted.id,
+        url: nodeUrl(inserted.id),
         title: inserted.title,
         kind,
         message:
@@ -1522,7 +1524,7 @@ const invoke_agent: BuiltinToolDef = {
   slug: 'invoke_agent',
   name: 'Delegate to another agent',
   description:
-    "Hand off a single, self-contained prompt to another agent (e.g. a researcher with a stronger model + retrieval tools). Use only when the work would clearly benefit from a different persona or model — not for routing every turn. The child runs once and returns its final text; its conversation history is NOT shared with the parent. The parent agent's `memory_config.delegate_to` must list the target slug, or this call is refused.",
+    "Hand off a single, self-contained prompt to another agent (e.g. a researcher with a stronger model + retrieval tools). Use only when the work would clearly benefit from a different persona or model — not for routing every turn. The child runs once and returns its final text; its conversation history is NOT shared with the parent. Pack the prompt to stand alone: the user's ask (their words, not a paraphrase), the exact node ids via `subject_node_ids`, any composed content IN FULL, and what 'done' looks like. The runtime also attaches the triggering user message automatically as a safety net. The parent agent's `memory_config.delegate_to` must list the target slug, or this call is refused.",
   inputSchema: {
     type: 'object',
     required: ['agent_slug', 'prompt'],
@@ -1534,8 +1536,14 @@ const invoke_agent: BuiltinToolDef = {
       prompt: {
         type: 'string',
         description:
-          'Self-contained instructions for the child. Include any context it needs; the child does not see your conversation history.',
+          'Self-contained instructions for the child. Include any context it needs; the child does not see your conversation history. State the goal, the material (in full — never shortened), and the expected end state.',
         maxLength: 32_000,
+      },
+      subject_node_ids: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Ids of the nodes (pages, tables, files) the child should operate on. Always pass these when the work targets existing content — a child that has to SEARCH for its subject can pick the wrong one.',
       },
     },
   },
@@ -1577,6 +1585,34 @@ const invoke_agent: BuiltinToolDef = {
       };
     }
 
+    // Auto-bundled delegation context (2026-07-18 delegation review): the
+    // child sees ONLY this prompt, and under-packed prompts are the hand-off's
+    // main miscommunication gap. Attach the explicit subject ids and the
+    // user's verbatim ask mechanically instead of trusting every parent to
+    // pack well. The verbatim ask is skipped when the parent already quoted
+    // it (no point doubling it).
+    const subjectIds = Array.isArray(input.subject_node_ids)
+      ? (input.subject_node_ids as unknown[])
+          .filter((s): s is string => typeof s === 'string' && s.length > 0)
+          .slice(0, 20)
+      : [];
+    const envelope: string[] = [];
+    if (subjectIds.length) {
+      envelope.push(
+        `Subject node ids (operate on exactly these; do not search for others): ${subjectIds.join(', ')}`,
+      );
+    }
+    const userAsk = ctx.agent.lastUserMessage?.trim();
+    if (userAsk && !prompt.includes(userAsk)) {
+      const clipped = userAsk.length > 4000 ? `${userAsk.slice(0, 4000)} …[truncated]` : userAsk;
+      envelope.push(
+        `The user's verbatim message that triggered this delegation (ground truth for intent):\n"""\n${clipped}\n"""`,
+      );
+    }
+    const childPrompt = envelope.length
+      ? `${prompt}\n\n--- delegation context (attached automatically by the runtime) ---\n${envelope.join('\n\n')}`
+      : prompt;
+
     // Guardrail 2: synchronous. Await the child's final result. The
     // child's cost is captured in the child's own trace; we surface
     // it in the parent step's meta for /traces visibility, but the
@@ -1585,7 +1621,7 @@ const invoke_agent: BuiltinToolDef = {
     const result = await invoker({
       ownerId: ctx.ownerId,
       agentSlug: targetSlug,
-      prompt,
+      prompt: childPrompt,
       depth: depth.childDepth,
       parentTraceId: ctx.agent.parentTraceId ?? null,
       // Inherit the parent turn's thinking budget; the child re-clamps it.
@@ -1677,6 +1713,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // dialect; markdownToDoc converts it to the ProseMirror JSON pages store.
   // page_delete is requires_confirm (irreversible).
   ...PAGE_TOOLS,
+  // Generic sharing — mint/revoke a viewable link for ANY shareable item
+  // (note/task/event/file/app/table/folder); the type-agnostic counterpart
+  // of page_share. node_share is requires_confirm (publishes outward).
+  ...SHARE_TOOLS,
   // Apps — Appsmith authors mini apps (TSX), builds them with esbuild, and
   // declares the api_tools/sqlite they use. app_delete + app_publish are the
   // admin subset; the broker enforces the per-app tool allowlist at runtime.

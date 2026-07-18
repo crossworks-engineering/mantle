@@ -85,7 +85,13 @@ const event_list: BuiltinToolDef = {
         tag: strOpt(input.tag),
       });
       ctx.step?.setMeta({ count: rows.length });
-      return { ok: true, output: { events: rows, count: rows.length } };
+      return {
+        ok: true,
+        output: {
+          events: rows.map((r) => ({ ...r, url: nodeUrl(r.id) })),
+          count: rows.length,
+        },
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -212,7 +218,7 @@ const event_create: BuiltinToolDef = {
         tags: strArrOpt(input.tags),
       });
       ctx.step?.setMeta({ eventId: row.id, title, startsAt, timezone });
-      return { ok: true, output: row };
+      return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -292,7 +298,7 @@ const event_update: BuiltinToolDef = {
       });
       if (!row) return notFound('event', id, 'event_list');
       ctx.step?.setMeta({ eventId: id });
-      return { ok: true, output: row };
+      return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

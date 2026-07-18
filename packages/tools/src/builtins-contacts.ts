@@ -24,6 +24,7 @@ import {
   deleteContact,
   getContact,
   listContacts,
+  nodeUrl,
   updateContact,
   type ContactRow,
   type CreateContactInput,
@@ -63,6 +64,9 @@ function strArr(v: unknown): string[] | undefined {
 function compact(c: ContactRow) {
   return {
     id: c.id,
+    // Clickable permalink — /n/<id> resolves to /contacts?id=<id> (the editor,
+    // ready to edit). Absolute (public base), so it survives Telegram too.
+    url: nodeUrl(c.id),
     title: c.title,
     first_name: c.firstName,
     last_name: c.lastName,

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import type { SkillDTO, SkillBackrefs } from '@mantle/client-types';
@@ -127,6 +128,19 @@ export function SkillsClient() {
     setEditing({ mode: 'edit', skill: s });
   };
   const close = () => setEditing(null);
+
+  // Deep link: /settings/skills?selected=<id-or-slug> opens that skill's
+  // editor once the list arrives (one-shot; selection stays client-state).
+  const searchParams = useSearchParams();
+  const deepLinkRef = useRef(searchParams.get('selected'));
+  useEffect(() => {
+    const want = deepLinkRef.current?.trim();
+    if (!want || skills.length === 0) return;
+    deepLinkRef.current = null;
+    const hit = skills.find((s) => s.id === want || s.slug === want);
+    if (hit) openEdit(hit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skills]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

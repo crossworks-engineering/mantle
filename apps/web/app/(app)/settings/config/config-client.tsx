@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { diffLines } from 'diff';
 import { cn } from '@/lib/utils';
@@ -239,11 +240,18 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
   const [submitting, setSubmitting] = useState(false);
 
   const sections = useMemo(() => sectionize(report.entities), [report.entities]);
-  // Auto-select the first entity that isn't OK, else the very first.
+  // Auto-select the deep-linked entity (?selected=<kind>:<slug>, or a bare
+  // slug), else the first entity that isn't OK, else the very first.
+  const searchParams = useSearchParams();
   const firstNonOk = report.entities.find((e) => e.status !== 'ok') ?? report.entities[0] ?? null;
-  const [selectedKey, setSelectedKey] = useState<string | null>(
-    firstNonOk ? `${firstNonOk.kind}:${firstNonOk.slug}` : null,
-  );
+  const [selectedKey, setSelectedKey] = useState<string | null>(() => {
+    const want = searchParams.get('selected')?.trim();
+    const hit = want
+      ? report.entities.find((e) => `${e.kind}:${e.slug}` === want || e.slug === want)
+      : undefined;
+    if (hit) return `${hit.kind}:${hit.slug}`;
+    return firstNonOk ? `${firstNonOk.kind}:${firstNonOk.slug}` : null;
+  });
   const selected = report.entities.find((e) => `${e.kind}:${e.slug}` === selectedKey) ?? firstNonOk;
 
   const { ok, modified, missing, extra } = report.counts;

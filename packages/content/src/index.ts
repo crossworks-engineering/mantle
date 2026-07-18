@@ -339,6 +339,7 @@ export {
   publicBaseUrl,
   shareUrlForToken,
   nodeUrl,
+  appUrl,
   shareModeOf,
   setShareMode,
   shareCascadeOf,

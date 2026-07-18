@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
@@ -173,10 +173,27 @@ export function AiWorkersClient() {
   const updateAction = (id: string, fd: FormData) =>
     updateMutation.mutateAsync({ id, body: buildWorkerBody(fd) });
 
-  // After a create (?selected=newId deep-link) preselect that worker.
+  // After a create (?selected=newId deep-link) preselect that worker. The
+  // param also accepts a worker KIND (?selected=summarizer / extractor / tts…)
+  // — what the assistant links, since no tool lists worker ids — resolving to
+  // the default worker of that kind (else the first) once the list arrives.
+  // One-shot: workers refetch after every save, and re-resolving then would
+  // stomp whatever the operator selected since.
+  const deepLinkDoneRef = useRef(false);
   useEffect(() => {
-    if (initialSelectedId) setSel({ mode: 'edit', id: initialSelectedId });
-  }, [initialSelectedId]);
+    if (!initialSelectedId || deepLinkDoneRef.current) return;
+    const byId = workers.find((w) => w.id === initialSelectedId);
+    if (byId) {
+      deepLinkDoneRef.current = true;
+      setSel({ mode: 'edit', id: byId.id });
+      return;
+    }
+    if (workers.length === 0) return; // list not in yet — try again when it is
+    const ofKind = workers.filter((w) => w.kind === initialSelectedId);
+    const hit = ofKind.find((w) => w.isDefault) ?? ofKind[0];
+    deepLinkDoneRef.current = true;
+    if (hit) setSel({ mode: 'edit', id: hit.id });
+  }, [initialSelectedId, workers]);
 
   // Re-derive the edited worker from fresh query data so saves reflect immediately.
   const editWorker = sel?.mode === 'edit' ? (workers.find((w) => w.id === sel.id) ?? null) : null;

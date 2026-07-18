@@ -51,8 +51,10 @@ export default async function NodePermalink({ params }: { params: Promise<{ id: 
       return redirect(`/contacts?id=${enc}`);
     case 'journal':
       return redirect(`/journal?selected=${enc}`);
+    case 'secret':
+      return redirect(`/secrets/${enc}`);
     default:
-      // email, secret, location, telegram_message, sermon, documentation,
+      // email, location, telegram_message, sermon, documentation,
       // mantle_peer, printer_project, branch — no dedicated editor; the
       // generic node biography works for every type.
       return redirect(`/nodes/${enc}/history`);

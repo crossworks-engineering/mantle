@@ -115,15 +115,31 @@ describe('system manifest integrity', () => {
     const persona = MANIFEST_AGENTS.find((a) => a.isPersona)!;
     const grant = effectiveTools(persona);
     expect(grant.has('run_terminal'), 'run_terminal stays out').toBe(false);
-    expect(grant.has('page_create'), 'page authoring is delegated to the Pages specialist').toBe(
-      false,
+    // Hybrid (2026-07-18 delegation review): the persona holds the LIGHT
+    // slices directly — create/draft/one-block page edits, table reads +
+    // single-row writes — while heavy authoring stays delegated.
+    expect(grant.has('page_create'), 'persona creates pages directly (pages-draft)').toBe(true);
+    expect(grant.has('page_update_draft'), 'persona writes page DRAFTS directly').toBe(true);
+    expect(grant.has('page_block_update'), 'persona does one-block fixes directly').toBe(true);
+    expect(grant.has('table_sql'), 'persona answers from tables (tables-read)').toBe(true);
+    expect(grant.has('table_row_add'), 'persona logs single rows directly (tables-rows)').toBe(
+      true,
     );
+    expect(
+      grant.has('page_update'),
+      'live-overwrite stays with Pages (persona is draft-only)',
+    ).toBe(false);
+    expect(grant.has('page_blocks_apply'), 'multi-block surgery stays with Pages').toBe(false);
+    expect(grant.has('page_split'), 'structural splits stay with Pages').toBe(false);
     expect(grant.has('page_delete'), 'page delete is delegated to the Pages specialist').toBe(
       false,
     );
-    expect(grant.has('table_from_text'), 'grid work is delegated to the Ledger specialist').toBe(
-      false,
-    );
+    expect(
+      grant.has('table_from_text'),
+      'grid building is delegated to the Ledger specialist',
+    ).toBe(false);
+    expect(grant.has('table_column_add'), 'schema work stays with Ledger').toBe(false);
+    expect(grant.has('table_row_delete'), 'row deletes stay deliberate-only').toBe(false);
     expect(grant.has('contact_delete'), 'destructive contact delete is deliberate-only').toBe(
       false,
     );

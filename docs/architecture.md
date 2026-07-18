@@ -852,8 +852,27 @@ in its tool list, only `page_update_draft` + the block tools; its
 persona carries a HARD RULE preserving every word verbatim with a
 pre-flight word-count check; the editor's existing draft/commit
 machinery is the off-ramp if the model misbehaves. Seed:
-`pnpm -C apps/web seed:pages`. Model: `anthropic/claude-sonnet-4.6`,
+`pnpm -C apps/web seed:pages`. Model: `anthropic/claude-sonnet-5`,
 `max_tokens: 32000`.
+
+**Hybrid routing (2026-07-18 delegation review).** Production traces
+showed the forced hop taxed light work: ~23% of Pages delegations were
+sub-30s edits, turns with a delegation averaged 428s vs 46s without,
+and for tables even READS were specialist-gated (the persona's own
+`tool_grounding` skill told it to use `table_sql` — a tool it didn't
+hold). The persona now carries the LIGHT slices directly via three
+groups — `pages-draft` (create / draft-write / one-block fixes, still
+draft-only), `tables-read` (the full structured read kit), and
+`tables-rows` (single-row writes) — while multi-block transforms,
+imports, splits, schema/column work, and all deletes stay with the
+specialists. The routing policy lives in the `specialist_routing`
+skill (persona-attached; it also names WHY researcher/reader stay
+delegated — the no-write-tools child is the prompt-injection
+firewall). `invoke_agent` gained `subject_node_ids` and now
+auto-attaches the user's verbatim triggering message to the child
+prompt, closing the under-packed-hand-off gap. Evidence + full
+reasoning: the "Pages delegation — is it worth it?" page on the dev
+brain (a7f3255d).
 
 ## 9c. Encrypted API key vault
 

@@ -232,9 +232,15 @@ the parent public↔team and the shared children follow.
 
 ---
 
-## 7a. Agent-side UX — Saskia can share pages
+## 7a. Agent-side UX — Saskia can share anything shareable
 
-The same token CRUD is exposed to the chat agent for **pages** via two tools
+The token CRUD is exposed to the chat agent for **every shareable type** since
+v0.145.0: `node_share { id, mode? }` / `node_unshare { id }`
+([`packages/tools/src/builtins-share.ts`](../packages/tools/src/builtins-share.ts))
+mint/revoke a link for a note, task, event, file, app, table, or folder —
+thin, confirm-gated wrappers over the same `createShare` path (its validation
+owns the rules). Pages keep their dedicated pair, which adds the sub-page
+cascade
 ([`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts)),
 so *"share that page and send me the link"* works end to end:
 

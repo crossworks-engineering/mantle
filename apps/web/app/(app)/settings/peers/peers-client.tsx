@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Check, Copy, KeyRound, Network, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
@@ -115,9 +116,17 @@ export function PeersClient() {
  *  then mutates locally as peers are added/edited/removed). */
 function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
   const [peers, setPeers] = useState<Peer[]>(initialPeers);
-  const [sel, setSel] = useState<Selection>(
-    initialPeers[0] ? { mode: 'view', id: initialPeers[0].id } : { mode: 'create' },
-  );
+  // Deep link: /settings/peers?selected=<id-or-display-name> preselects that
+  // peer (initial state only — selection stays client-state after).
+  const searchParams = useSearchParams();
+  const [sel, setSel] = useState<Selection>(() => {
+    const want = searchParams.get('selected')?.trim();
+    const hit = want
+      ? initialPeers.find((p) => p.id === want || p.displayName === want)
+      : undefined;
+    if (hit) return { mode: 'view', id: hit.id };
+    return initialPeers[0] ? { mode: 'view', id: initialPeers[0].id } : { mode: 'create' };
+  });
   const [reveal, setReveal] = useState<string | null>(null);
 
   const selected = sel.mode === 'view' ? (peers.find((p) => p.id === sel.id) ?? null) : null;
