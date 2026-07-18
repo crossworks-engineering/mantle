@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
@@ -129,7 +129,7 @@ export function AiWorkersClient() {
     queryKey: ['ai-workers', 'config'],
     queryFn: () => apiFetch<AiWorkerConfig>('/api/ai-workers/config'),
   });
-  const workers = workersQuery.data ?? [];
+  const workers = useMemo(() => workersQuery.data ?? [], [workersQuery.data]);
   const keys = keysQuery.data ?? [];
   const nativeDocProviders = configQuery.data?.nativeDocProviders ?? [];
   const tailnetPeers = configQuery.data?.tailnetPeers ?? [];

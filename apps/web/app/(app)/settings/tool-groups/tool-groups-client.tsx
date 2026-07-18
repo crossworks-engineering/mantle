@@ -71,7 +71,7 @@ export function ToolGroupsClient() {
     queryKey: ['tools'],
     queryFn: () => apiFetch<{ tools: ToolDTO[] }>('/api/tools').then((r) => r.tools),
   });
-  const groups = groupsQuery.data ?? [];
+  const groups = useMemo(() => groupsQuery.data ?? [], [groupsQuery.data]);
   const availableTools: ToolOption[] = useMemo(
     () =>
       (toolsQuery.data ?? []).map((t) => ({
@@ -142,7 +142,6 @@ export function ToolGroupsClient() {
     deepLinkRef.current = null;
     const hit = groups.find((g) => g.id === want || g.slug === want);
     if (hit) openEdit(hit);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups]);
 
   const submit = (e: React.FormEvent) => {
