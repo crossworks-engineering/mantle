@@ -190,3 +190,33 @@ For the app-side architecture see
      Changing `remindAt` computation or rolling behaviour for recurring
      events (server advances the row to the next occurrence) changes what
      rings on phones.
+
+## Companion v1.8 — `GET /api/search` (added v0.148.0, 2026-07)
+
+The one backend addition of the v1.7–v1.11 companion cycle: an owner-facing
+HTTP twin of the `search_nodes` / `search_chunks` MCP tools, so the app can
+offer a real search screen without routing queries through a chat turn.
+
+- **Route:** `apps/web/app/api/search/route.ts`, gated by `getOwnerOr401`
+  (mobile bearer works unchanged). Param parsing is pure and unit-tested in
+  `apps/web/lib/search-query.ts`.
+- **Params:** `q` (required, ≤500 chars) · `mode=nodes|chunks` (default
+  `nodes`) · `type` (node-type filter; same enum the `search_nodes` tool
+  advertises) · `branch` (ltree prefix, regex-validated so the `::ltree`
+  cast can't 500) · `tags` (comma-separated, ≤10) · `limit` (1–50,
+  default 20).
+- **`mode=nodes`** → `searchNodes` with the query embedded via
+  `@mantle/embeddings` (vector-led hybrid; **a failed embed silently
+  degrades to FTS**, same as the tool). Response:
+  `{mode, results: [{id, type, title, path, tags, summary, updatedAt, url,
+  supersededBy?}]}` — `summary` from `data.summary` when present, `url` via
+  `nodeUrl` (open-on-web), `supersededBy {id, title, url}` names the living
+  successor so clients can prefer it.
+- **`mode=chunks`** → `searchChunks` (passage-level). Vector-first, so a
+  failed embed is an explicit **503** here, not degraded results. Response
+  rows: `{nodeId, nodeTitle, nodeType, ordinal, heading, text, url}`.
+  `type`/`tags` are ignored in this mode.
+- **Client contract:** results are relevance-ranked, NOT date-sorted (use
+  the list endpoints for time-windowed queries); treat `supersededBy` as
+  "show the successor"; expect FTS-quality results when the embedding
+  worker is down rather than an error (nodes mode).
