@@ -122,7 +122,11 @@ async function qualifyingAgents(ownerId: string, since: Date): Promise<Agent[]> 
     )
     .groupBy(assistantMessages.agentId);
 
-  const activity = new Map(counts.map((c) => [c.agentId, c.n]));
+  // `agentId` is nullable in the schema, but the inArray filter above
+  // excludes null rows — drop them so the Map key type narrows to string.
+  const activity = new Map(
+    counts.flatMap((c) => (c.agentId == null ? [] : [[c.agentId, c.n] as const])),
+  );
   return rankActiveAgents(candidates, activity);
 }
 
