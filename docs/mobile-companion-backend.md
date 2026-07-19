@@ -1,6 +1,6 @@
 # Mobile Companion — backend additions
 
-_Last updated: 2026-06-13._
+_Last updated: 2026-07-19._
 
 API + schema added to Mantle to support the **Mantle Companion** mobile app
 (Flutter; repo `~/Projects/mantle-companion`). Single-user/self-hosted, so the
@@ -152,3 +152,41 @@ companion already renders. The companion keeps sending location exactly as befor
 Full contract + how it works server-side:
 **[`handover-navigation.md`](./handover-navigation.md)**. Dormant until a `mapbox`
 key is added; lands in the next release.
+
+## Companion v1.4–1.6 — streaming + knowledge surfaces (2026-07)
+
+Companion **1.4.0–1.6.0** (shipped 2026-07-19, verified against dev v0.147.0)
+consume **existing** owner-gated routes — no new backend was added this cycle.
+For the app-side architecture see
+`../../mantle-companion/docs/architecture.md`. What the app now relies on:
+
+- **Live turn streaming (1.3/1.4).** `GET /api/assistant/turn/:id/stream` (SSE
+  `TurnEvent`s; the turn id = the client idempotency-key) and `POST
+  /api/assistant/turn/:id/cancel`. The client pins
+  `TURN_EVENT_SCHEMA_VERSION` (= 1): it ends the stream on a higher `v`
+  rather than mis-parse — **bump `v` only on breaking shape changes** so old
+  clients degrade to refetch instead of breaking. The thought trail renders
+  `status` events (upsert by `stepId`) and, with trail-persistence on, the
+  persisted `thoughts`/`toolStats` on the outbound row.
+- **Pages (read-only, 1.5).** `GET /api/pages` (tree/list modes),
+  `GET /api/pages/:id`, `GET /api/pages/:id/backlinks`, and — key choice —
+  **`GET /api/export/:id?format=md`** for content, so the app renders markdown
+  and needs no ProseMirror. In-page images fetch through the authed files
+  route with the Bearer header.
+- **Tasks (1.5).** `GET/POST /api/tasks`, `PATCH /api/tasks/:id`
+  (`status: open|done`), `DELETE`. The app renders in server order (open →
+  done, due asc, recency).
+- **Journal (1.5).** `GET/POST /api/journal`; server derives the title.
+  Voice capture reuses `POST /api/assistant/transcribe`.
+- **Events (1.6).** `GET/POST /api/events` (`window=upcoming|past|all`),
+  `GET/PATCH/DELETE /api/events/:id`. **Contract quirks the app depends on:**
+  1. "Done" is the reserved **`done` tag**, persisted via `PATCH {tags: […]}`
+     (full replacement) — there is **no event status field**. A first-class
+     status column + worker skip would be a clean follow-up; until then the
+     tag is load-bearing for the app.
+  2. The app **mirrors `startsAt` + `remindAt` into on-device OS alarms**
+     (exact, offline, boot-persistent) and reconciles them after every
+     fetch/mutation — the same fields the events-reminders worker pings on.
+     Changing `remindAt` computation or rolling behaviour for recurring
+     events (server advances the row to the next occurrence) changes what
+     rings on phones.
