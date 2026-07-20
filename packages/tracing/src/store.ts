@@ -469,7 +469,15 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
       subjectKind: init.subjectKind ?? null,
       agentId: init.agentId ?? null,
       status: 'running',
-      data: truncateJson(init.data ?? {}) as Record<string, unknown>,
+      // `turn_id` rides in data (no schema change): it lets the Journey UI
+      // offer "Stop" on a running streamed turn (POST /turn/:id/cancel needs
+      // the id, which otherwise lives only in this process's abort registry).
+      // Inherited turnIds are stamped too, so a delegated child's journey can
+      // stop the ROOT turn.
+      data: truncateJson({
+        ...(init.data ?? {}),
+        ...(turnId ? { turn_id: turnId } : {}),
+      }) as Record<string, unknown>,
     });
   } catch (err) {
     logErr('open trace', err);
