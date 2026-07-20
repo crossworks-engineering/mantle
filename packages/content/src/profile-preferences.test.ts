@@ -5,7 +5,10 @@ import {
   isPersistThoughtsEnabled,
   projectSiteName,
   projectTeamHubAppId,
+  projectTeamHubTags,
   projectThinkingBudget,
+  TEAM_HUB_TAGS_MAX,
+  TEAM_HUB_TAG_MAX_LEN,
   resolveThinkingBudget,
   SITE_NAME_MAX,
   resolveThoughtTrailMode,
@@ -105,6 +108,36 @@ describe('projectTeamHubAppId', () => {
     expect(projectTeamHubAppId(42)).toBeUndefined();
     expect(projectTeamHubAppId(null)).toBeUndefined();
     expect(projectTeamHubAppId(undefined)).toBeUndefined();
+  });
+});
+
+// projectTeamHubTags follows the same shared-projection contract: read and
+// write both delegate here. The canonical form must match how page tags are
+// stored (dedupeTags in pages.ts: trimmed + lowercased) or the curated
+// Dashboard sections' `= ANY(nodes.tags)` match silently finds nothing.
+describe('projectTeamHubTags', () => {
+  it('canonicalises to the stored page-tag form: trimmed, lowercased, deduped, ordered', () => {
+    expect(projectTeamHubTags(['  Engineering ', 'features', 'ENGINEERING'])).toEqual([
+      'engineering',
+      'features',
+    ]);
+  });
+  it('drops blanks and non-strings, keeps the rest', () => {
+    expect(projectTeamHubTags(['', '  ', 42, null, 'ok'])).toEqual(['ok']);
+  });
+  it('caps entries at TEAM_HUB_TAGS_MAX and tag length at TEAM_HUB_TAG_MAX_LEN', () => {
+    const many = Array.from({ length: TEAM_HUB_TAGS_MAX + 5 }, (_, i) => `t${i}`);
+    expect(projectTeamHubTags(many)).toHaveLength(TEAM_HUB_TAGS_MAX);
+    expect(projectTeamHubTags(['x'.repeat(TEAM_HUB_TAG_MAX_LEN + 10)])).toEqual([
+      'x'.repeat(TEAM_HUB_TAG_MAX_LEN),
+    ]);
+  });
+  it("maps [] (the clear write), all-garbage arrays, and non-arrays to undefined", () => {
+    expect(projectTeamHubTags([])).toBeUndefined();
+    expect(projectTeamHubTags(['', 42])).toBeUndefined();
+    expect(projectTeamHubTags('engineering')).toBeUndefined();
+    expect(projectTeamHubTags(null)).toBeUndefined();
+    expect(projectTeamHubTags(undefined)).toBeUndefined();
   });
 });
 

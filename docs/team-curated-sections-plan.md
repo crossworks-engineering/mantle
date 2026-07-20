@@ -1,6 +1,8 @@
 # Team Hub — curated tag sections on the member Dashboard (plan)
 
-Status: planned, not yet implemented.
+Status: **implemented** (v0.151.0) — see docs/sharing.md §4 "Curated Dashboard
+sections" for the canonical description. This file remains as the design
+record.
 
 ## The feature
 

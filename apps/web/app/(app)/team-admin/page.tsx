@@ -11,6 +11,7 @@ import {
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
   listActiveShares,
+  listTeamShareTags,
   listForumTopics,
   countForumTopics,
   listForumPosts,
@@ -28,6 +29,7 @@ import {
 import { reconcileForumQuarantine } from '@/lib/forum-quarantine';
 import { SharedLinksPanel } from '@/components/share/shared-links-panel';
 import { HubAppPicker } from '@/components/team-chat/hub-app-picker';
+import { DashboardTagsPanel } from '@/components/team-chat/dashboard-tags-panel';
 import { PrivateReadsToggle } from '@/components/team-chat/private-reads-toggle';
 import { RequestReply } from '@/components/team-chat/request-reply';
 import { ThreadAccessSplit } from '@/components/team-chat/access-split';
@@ -401,13 +403,15 @@ export default async function TeamAdminPage({
   const { contact, view, topic: topicParam, q, page } = await searchParams;
   const showRequests = view === 'requests';
 
-  const [members, prefs, openRequests, apps, pendingUploadCount] = await Promise.all([
-    listTeamMemberActivity(user.id),
-    loadProfilePreferences(user.id),
-    listTeamRequests(user.id, { status: 'open' }).then((r) => r.length),
-    listApps(user.id, { limit: 200 }),
-    countPendingForumUploads(user.id),
-  ]);
+  const [members, prefs, openRequests, apps, pendingUploadCount, sharedPageTags] =
+    await Promise.all([
+      listTeamMemberActivity(user.id),
+      loadProfilePreferences(user.id),
+      listTeamRequests(user.id, { status: 'open' }).then((r) => r.length),
+      listApps(user.id, { limit: 200 }),
+      countPendingForumUploads(user.id),
+      listTeamShareTags(user.id, 'page'),
+    ]);
   // The Requests badge counts everything awaiting the specialist: open change
   // requests + forum uploads pending review.
   const openRequestCount = openRequests + pendingUploadCount;
@@ -708,6 +712,15 @@ export default async function TeamAdminPage({
               key={hubAppId ?? 'builtin'}
               currentAppId={hubAppId}
               apps={hubCandidates}
+            />
+          </div>
+          {/* Curated Dashboard tag sections on the /team overview. Keyed by the
+              stored list so a server-side change resyncs on refresh. */}
+          <div className="border-b border-border px-4 py-3">
+            <DashboardTagsPanel
+              key={(prefs.teamHubTags ?? []).join(',')}
+              initialTags={prefs.teamHubTags ?? []}
+              available={sharedPageTags}
             />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">

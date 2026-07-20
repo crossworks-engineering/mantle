@@ -11,7 +11,7 @@
  * stat tiles, never content. Callers are team-authenticated routes.
  */
 import { and, eq, gt, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
-import { apps, db, nodes, shares } from '@mantle/db';
+import { apps, db, nodes, pages, shares } from '@mantle/db';
 
 export type TeamHubSection = {
   /** Share token — the hub links to /s/<token>. */
@@ -280,7 +280,32 @@ const teamShareColumns = {
   settings: shares.settings,
   parentId: nodes.parentId,
   tags: nodes.tags,
+  // Fallback material for pages whose LLM summary is missing (never indexed,
+  // or in the commit→re-extract window where commitPage just cleared it): the
+  // head of the published plaintext rendering. 280 raw chars gives slack for
+  // the ~240-char word-boundary trim in excerptFromDocText. NULL for non-page
+  // types (left join misses) and for pages with no committed text.
+  docTextHead: sql<string | null>`LEFT(${pages.docText}, 280)`,
 } as const;
+
+/** Chars kept of a doc_text fallback excerpt (before the trailing ellipsis). */
+const EXCERPT_MAX = 240;
+
+/** Reduce the head of a page's doc_text to a one-liner excerpt: markdown
+ *  heading markers stripped, whitespace collapsed, cut at a word boundary with
+ *  a trailing ellipsis when the source ran longer. Null for blank/absent. */
+export function excerptFromDocText(head: string | null): string | null {
+  if (!head) return null;
+  const flat = head
+    .replace(/^#{1,6}\s+/gm, '') // doc_text renders headings as '# …'
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (flat.length === 0) return null;
+  if (flat.length <= EXCERPT_MAX) return flat;
+  const cut = flat.slice(0, EXCERPT_MAX);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${cut.slice(0, lastSpace > EXCERPT_MAX / 2 ? lastSpace : EXCERPT_MAX).trimEnd()}…`;
+}
 
 function mapTeamShareRow(r: {
   token: string;
@@ -291,13 +316,18 @@ function mapTeamShareRow(r: {
   settings: unknown;
   parentId: string | null;
   tags: string[] | null;
+  docTextHead: string | null;
 }): TeamVisibleShare {
+  const summary =
+    typeof r.data?.summary === 'string' && r.data.summary.trim() !== ''
+      ? (r.data.summary as string)
+      : excerptFromDocText(r.docTextHead);
   return {
     token: r.token,
     nodeId: r.nodeId,
     title: r.title,
     icon: typeof r.data?.icon === 'string' ? (r.data.icon as string) : null,
-    summary: typeof r.data?.summary === 'string' ? (r.data.summary as string) : null,
+    summary,
     updatedAt: r.updatedAt.toISOString(),
     mode: (r.settings as Record<string, unknown>)?.mode === 'team' ? 'team' : 'public',
     parentId: r.parentId,
@@ -324,6 +354,7 @@ export async function listTeamVisibleShares(
     .select(teamShareColumns)
     .from(shares)
     .innerJoin(nodes, eq(shares.nodeId, nodes.id))
+    .leftJoin(pages, eq(pages.nodeId, nodes.id))
     .where(teamShareVisiblePredicate(ownerId, nodeType))
     .orderBy(sql`${shares.createdAt} DESC`);
   return rows.map(mapTeamShareRow);
@@ -364,6 +395,7 @@ export async function pageTeamVisibleShares(
       .select(teamShareColumns)
       .from(shares)
       .innerJoin(nodes, eq(shares.nodeId, nodes.id))
+      .leftJoin(pages, eq(pages.nodeId, nodes.id))
       .where(where)
       .orderBy(orderBy)
       .limit(limit)
@@ -397,6 +429,49 @@ export async function listTeamShareTags(
   return [...counts.entries()]
     .map(([tag, count]) => ({ tag, count }))
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+}
+
+/** Items per curated Dashboard tag section. */
+export const TEAM_CURATED_SECTION_LIMIT = 5;
+
+export type CuratedTeamSection = {
+  /** The curated tag — the section heading (display-cased by the UI). */
+  tag: string;
+  /** Up to {@link TEAM_CURATED_SECTION_LIMIT} team-visible page shares carrying
+   *  the tag, newest node update first. */
+  items: TeamVisibleShare[];
+};
+
+/**
+ * The member Dashboard's curated sections: one per owner-picked tag
+ * (prefs.teamHubTags, in pref order), each listing up to
+ * {@link TEAM_CURATED_SECTION_LIMIT} team-visible PAGE shares carrying that
+ * tag, newest-updated first. Same visibility rule as every other team listing
+ * ({@link teamShareVisiblePredicate}) — team AND public mode shares qualify,
+ * so the pref can never surface anything the owner didn't already share.
+ * Tags whose visible set is empty are dropped (an unshared/untagged section
+ * silently disappears rather than rendering a hollow heading).
+ *
+ * Pages-only on purpose for now; tags + shares are node-generic, so widening
+ * to other types later is a per-section type option, not a redesign.
+ */
+export async function curatedTeamSections(
+  ownerId: string,
+  tags: string[],
+): Promise<CuratedTeamSection[]> {
+  const pagesPerTag = await Promise.all(
+    tags.map((tag) =>
+      pageTeamVisibleShares(ownerId, 'page', {
+        tag,
+        sort: 'updated',
+        limit: TEAM_CURATED_SECTION_LIMIT,
+        offset: 0,
+      }),
+    ),
+  );
+  return tags
+    .map((tag, i) => ({ tag, items: pagesPerTag[i]?.items ?? [] }))
+    .filter((s) => s.items.length > 0);
 }
 
 /** Per-type counts of team-visible (active) shares — the workspace nav badges

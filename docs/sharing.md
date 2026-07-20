@@ -142,6 +142,17 @@ them through without a session cookie.
   build) double as the hub's "Team apps" launcher cards — revoking the share,
   or the build going red, delists them (`@mantle/content/team-hub`). The
   designated hub app itself never appears on its own launcher.
+- **Curated Dashboard sections** (Team admin → "Dashboard sections", pref
+  `teamHubTags`): the owner picks page TAGS; each renders on the `/team`
+  overview as a section of up to 5 team-visible shared pages carrying that tag
+  (team **and** public mode — anything a member could already open), newest
+  node update first, title + summary + `/s/<token>` link. The pref only
+  groups — the share stays the single source of truth for what is visible, so
+  curation can never widen access. Tag + share a page to feature it; unshare
+  or untag to remove it. When a page's LLM summary is missing (just committed,
+  or never indexed), listings fall back to an excerpt of its published
+  plaintext (`excerptFromDocText`). Data: `curatedTeamSections` in
+  `@mantle/content/team-hub`, served by `GET /api/team/curated`.
 
 ---
 

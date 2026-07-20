@@ -2,12 +2,15 @@
 
 /**
  * The /team landing inside the workspace shell: a greeting plus one tile per
- * section with its share count. Everything here is DERIVED from the shares —
- * no curation, no hand-written hub content (that era lives on at /hub for
- * brains with a designated hub app).
+ * section with its share count, then the owner's curated tag sections (up to
+ * 5 shared pages per picked tag — Team admin → "Dashboard sections").
+ * Everything here is DERIVED from the shares — the curation pref only groups;
+ * no hand-written hub content (that era lives on at /hub for brains with a
+ * designated hub app).
  */
 import Link from 'next/link';
 import { StartTopicComposer } from '@/components/team-forum/start-topic-composer';
+import { CuratedSections } from './curated-sections';
 import { useWorkspace, WORKSPACE_NAV } from './team-workspace-shell';
 
 export function TeamOverview() {
@@ -50,6 +53,8 @@ export function TeamOverview() {
             );
           })}
         </div>
+
+        <CuratedSections />
       </div>
     </div>
   );

@@ -185,6 +185,13 @@ export type ProfilePreferences = {
    *  when the whole chain (pref → app → build → share) is intact. Read via
    *  projectTeamHubAppId, never raw. */
   teamHubAppId?: string;
+  /** Tags the owner curates as Dashboard sections on the /team overview: each
+   *  tag renders a section of up to 5 team-visible shared pages carrying it
+   *  (newest-updated first, title + summary + /s link). Order here = section
+   *  order. The share stays the single source of truth for WHAT is visible —
+   *  this pref only chooses which tag groupings get pinned. Unset/empty ⇒ no
+   *  curated sections. Read via projectTeamHubTags, never raw. */
+  teamHubTags?: string[];
 };
 
 /** Live thinking-trail display modes. */
@@ -324,6 +331,35 @@ export function projectTeamHubAppId(raw: unknown): string | undefined {
     : undefined;
 }
 
+/** Cap on curated Dashboard tag sections — enough for a rich overview, small
+ *  enough that the member Dashboard stays a dashboard and the section fan-out
+ *  stays a handful of cheap indexed queries. */
+export const TEAM_HUB_TAGS_MAX = 8;
+
+/** Per-tag length cap — matches the /api/pages tag schema (max 40 chars) so a
+ *  stored curation tag can always have been a real node tag. */
+export const TEAM_HUB_TAG_MAX_LEN = 40;
+
+/** Project a stored `teamHubTags` jsonb value — an ordered list of trimmed,
+ *  lowercased, deduped, non-empty tag strings capped at
+ *  {@link TEAM_HUB_TAGS_MAX} entries, or undefined for unset/empty/garbage
+ *  (⇒ no curated sections). Lowercased because node tags are matched with
+ *  `= ANY(nodes.tags)` — pages dedupe tags case-insensitively on save, so the
+ *  lowercase form is the canonical one. Shared by BOTH the read and write
+ *  projections so they can't drift (the projectThinkingBudget lesson). */
+export function projectTeamHubTags(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: string[] = [];
+  for (const v of raw) {
+    if (typeof v !== 'string') continue;
+    const t = v.trim().toLowerCase().slice(0, TEAM_HUB_TAG_MAX_LEN);
+    if (t.length === 0 || out.includes(t)) continue;
+    out.push(t);
+    if (out.length >= TEAM_HUB_TAGS_MAX) break;
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 export const DEFAULT_PREFERENCES: ProfilePreferences = {
   timezone: 'UTC',
   locale: 'en-GB',
@@ -432,6 +468,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     // explicitly opted in.
     teamPrivateReads: prefs.teamPrivateReads === true,
     teamHubAppId: projectTeamHubAppId(prefs.teamHubAppId),
+    teamHubTags: projectTeamHubTags(prefs.teamHubTags),
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
         ? prefs.lastReconciledVersion
@@ -542,6 +579,14 @@ export async function updateProfilePreferences(
   ) {
     throw new Error(`'${patch.teamHubAppId}' is not a valid app id (expected a UUID).`);
   }
+  if (patch.teamHubTags != null) {
+    if (!Array.isArray(patch.teamHubTags) || patch.teamHubTags.some((t) => typeof t !== 'string')) {
+      throw new Error(`teamHubTags must be an array of tag strings.`);
+    }
+    // Store the canonical form; [] is the deliberate "clear curation" write
+    // (projects to undefined on read).
+    patch = { ...patch, teamHubTags: projectTeamHubTags(patch.teamHubTags) ?? [] };
+  }
 
   const merge = JSON.stringify(patch);
   const [row] = await db
@@ -588,6 +633,7 @@ export async function updateProfilePreferences(
     remoteMcpEnabled: merged.remoteMcpEnabled === true,
     teamPrivateReads: merged.teamPrivateReads === true,
     teamHubAppId: projectTeamHubAppId(merged.teamHubAppId),
+    teamHubTags: projectTeamHubTags(merged.teamHubTags),
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };
 }
