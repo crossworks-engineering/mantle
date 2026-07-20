@@ -22,6 +22,7 @@ import { PickMode } from '@/components/assistant/pick-mode';
 import { FooterBar } from '@/components/layout/footer-bar';
 import { recordNavVisit } from '@/lib/nav-usage';
 import { matchNavItem } from '@/components/layout/nav-items';
+import { SearchPalette } from '@/components/search/search-palette';
 
 /**
  * App shell — three fixed regions (header, left sidebar, right live
@@ -98,6 +99,7 @@ function ShellFrame({
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [navCollapsed, setNavCollapsed] = useState(initialNavCollapsed);
   const [activityCollapsed, setActivityCollapsed] = useState(initialActivityCollapsed);
   const pathname = usePathname();
@@ -173,17 +175,29 @@ function ShellFrame({
       return !v;
     });
 
-  // Keyboard shortcuts: ⌘/Ctrl+B toggles the nav, ⌘/Ctrl+J toggles Activity.
-  // Skipped while typing / editing so ⌘B still bolds in the page editor and we
-  // don't steal keystrokes from inputs. (setState setters are stable, so the
-  // listener is registered once.)
+  // Keyboard shortcuts: ⌘/Ctrl+B toggles the nav, ⌘/Ctrl+J toggles Activity,
+  // ⌘/Ctrl+K opens the search palette. Skipped while typing / editing so ⌘B
+  // still bolds in the page editor and we don't steal keystrokes from inputs
+  // (⌘K can still CLOSE the open palette — its own input would otherwise
+  // swallow the toggle). (setState setters are stable, so the listener is
+  // registered once.)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
       const k = e.key.toLowerCase();
-      if (k !== 'b' && k !== 'j') return;
+      if (k !== 'b' && k !== 'j' && k !== 'k') return;
       const t = e.target as HTMLElement | null;
-      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      const typing =
+        t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
+      if (k === 'k') {
+        // Toggle from anywhere except a real editor/input — unless the input is
+        // the palette's own, where ⌘K should still close it.
+        if (typing && !t.closest('[data-slot=command-input-wrapper]')) return;
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+        return;
+      }
+      if (typing) return;
       e.preventDefault();
       if (k === 'b') {
         setNavCollapsed((v) => {
@@ -233,7 +247,12 @@ function ShellFrame({
         userAvatar={userAvatar}
         siteName={shellQuery.data?.siteName ?? null}
         onMenuClick={() => setMobileOpen(true)}
+        onSearchClick={() => setSearchOpen(true)}
       />
+
+      {/* Global search palette — one instance for the whole shell, summoned by
+            ⌘K or the header magnifier. */}
+      <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
 
       {/* Desktop sidebar — ends above the footer bar, which now owns the
             collapse toggle (see <FooterBar/>). */}

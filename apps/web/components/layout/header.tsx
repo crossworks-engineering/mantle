@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, Menu, User as UserIcon } from 'lucide-react';
+import { LogOut, Menu, Search, User as UserIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -24,12 +24,15 @@ export function Header({
   userAvatar,
   siteName,
   onMenuClick,
+  onSearchClick,
 }: {
   email: string | null;
   userAvatar?: { style: string; seed: string } | null;
   /** Custom wordmark from prefs; null/undefined ⇒ the "mantle" default. */
   siteName?: string | null;
   onMenuClick: () => void;
+  /** Opens the global search palette (the ⌘K twin for mouse/touch). */
+  onSearchClick: () => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -78,6 +81,9 @@ export function Header({
       )}
 
       <div className="ml-auto flex items-center gap-1">
+        <Button variant="ghost" size="icon" onClick={onSearchClick} aria-label="Search">
+          <Search className="size-5" />
+        </Button>
         <RandomThemeToggle />
         <ThemeToggle />
         <DropdownMenu>
