@@ -146,13 +146,16 @@ them through without a session cookie.
   `teamHubTags`): the owner picks page TAGS; each renders on the `/team`
   overview as a section of up to 5 team-visible shared pages carrying that tag
   (team **and** public mode — anything a member could already open), newest
-  node update first, title + summary + `/s/<token>` link. The pref only
+  node update first, title + summary; items open in the workspace reader
+  (`/team/pages?s=<token>`), not a bare `/s/` page. The pref only
   groups — the share stays the single source of truth for what is visible, so
   curation can never widen access. Tag + share a page to feature it; unshare
-  or untag to remove it. When a page's LLM summary is missing (just committed,
-  or never indexed), listings fall back to an excerpt of its published
-  plaintext (`excerptFromDocText`). Data: `curatedTeamSections` in
-  `@mantle/content/team-hub`, served by `GET /api/team/curated`.
+  or untag to remove it (the admin panel shows a live shared-page count per
+  pill and renders a dead tag — 0 visible pages — muted). When a page's LLM
+  summary is missing (just committed, or never indexed), listings fall back
+  to an excerpt of its published plaintext (`excerptFromDocText`). Data:
+  `curatedTeamSections` in `@mantle/content/team-hub`, served by
+  `GET /api/team/curated`.
 
 ---
 
