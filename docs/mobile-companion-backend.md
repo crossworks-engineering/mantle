@@ -214,7 +214,9 @@ offer a real search screen without routing queries through a chat turn.
   successor so clients can prefer it.
 - **`mode=chunks`** → `searchChunks` (passage-level). Vector-first, so a
   failed embed is an explicit **503** here, not degraded results. Response
-  rows: `{nodeId, nodeTitle, nodeType, ordinal, heading, text, url}`.
+  rows: `{nodeId, nodeTitle, nodeType, ordinal, heading, text, url,
+  supersededBy?}` (`heading` is nullable; `supersededBy {id, title, url}`
+  carries the living successor, same as nodes mode — v0.148.1).
   `type`/`tags` are ignored in this mode.
 - **Client contract:** results are relevance-ranked, NOT date-sorted (use
   the list endpoints for time-windowed queries); treat `supersededBy` as

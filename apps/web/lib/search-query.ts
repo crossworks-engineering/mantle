@@ -38,8 +38,11 @@ const MAX_TAGS = 10;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 // `branch` is cast to ::ltree server-side; reject anything that would make
-// the cast throw instead of surfacing a 500.
+// the cast throw instead of surfacing a 500 — including over-long labels
+// (Postgres caps ltree labels at 255 chars).
 const LTREE_RE = /^[a-z0-9_]+(\.[a-z0-9_]+)*$/i;
+const MAX_BRANCH = 500;
+const MAX_LTREE_LABEL = 255;
 
 export function parseSearchQuery(sp: URLSearchParams): SearchApiQuery | { error: string } {
   const q = (sp.get('q') ?? '').trim();
@@ -63,7 +66,13 @@ export function parseSearchQuery(sp: URLSearchParams): SearchApiQuery | { error:
   let branch: string | undefined;
   const branchRaw = sp.get('branch')?.trim();
   if (branchRaw) {
-    if (!LTREE_RE.test(branchRaw)) return { error: 'invalid branch' };
+    if (
+      branchRaw.length > MAX_BRANCH ||
+      !LTREE_RE.test(branchRaw) ||
+      branchRaw.split('.').some((label) => label.length > MAX_LTREE_LABEL)
+    ) {
+      return { error: 'invalid branch' };
+    }
     branch = branchRaw;
   }
 
@@ -81,8 +90,10 @@ export function parseSearchQuery(sp: URLSearchParams): SearchApiQuery | { error:
   let limit = DEFAULT_LIMIT;
   const limitRaw = sp.get('limit');
   if (limitRaw != null && limitRaw !== '') {
-    const n = Number.parseInt(limitRaw, 10);
-    if (!Number.isFinite(n) || n < 1) return { error: 'invalid limit' };
+    // Number(), not parseInt: '1e3' must clamp to 50, not truncate to 1;
+    // fractional/garbage input is a 400, not a silent guess.
+    const n = Number(limitRaw);
+    if (!Number.isInteger(n) || n < 1) return { error: 'invalid limit' };
     limit = Math.min(n, MAX_LIMIT);
   }
 

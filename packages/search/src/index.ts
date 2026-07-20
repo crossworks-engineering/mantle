@@ -115,7 +115,9 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
   if (opts.types?.length)
     filters.push(sql`${nodes.type}::text = any(${pgArrayLiteral(opts.types)}::text[])`);
   if (opts.branch) filters.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
-  if (opts.tags?.length) filters.push(sql`${nodes.tags} && ${opts.tags}::text[]`);
+  // Array param via pgArrayLiteral — a raw JS array binds as a plain string
+  // under postgres-js and the ::text[] cast throws (see pgArrayLiteral's doc).
+  if (opts.tags?.length) filters.push(sql`${nodes.tags} && ${pgArrayLiteral(opts.tags)}::text[]`);
   if (opts.since) filters.push(sql`${nodes.createdAt} >= ${opts.since}`);
   // One array-literal param (`= any`) rather than inArray's one-param-per-id —
   // the federation allowlist can be thousands of granted ids.
