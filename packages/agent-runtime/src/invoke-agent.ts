@@ -36,7 +36,7 @@ import {
 } from '@mantle/db';
 import { currentTrace, startTrace } from '@mantle/tracing';
 import type { AgentInvoker, InvokeAgentResult } from '@mantle/tools';
-import { MAX_AGENT_DEPTH } from '@mantle/tools';
+import { MAX_AGENT_DEPTH, MAX_TERMINAL_EDGE_DEPTH } from '@mantle/tools';
 import { getChatAdapter } from '@mantle/voice';
 import { resolveAgentTools, runToolLoop } from './tool-loop';
 import { resolveBackupAdapter, resolveChatKey } from './chat-failover';
@@ -56,13 +56,13 @@ export const invokeAgent: AgentInvoker = async ({
   parentTraceId,
   thinkingBudget,
 }): Promise<InvokeAgentResult> => {
-  if (depth > MAX_AGENT_DEPTH) {
+  if (depth > MAX_TERMINAL_EDGE_DEPTH) {
     // Defence in depth: the dispatcher already refused, but a caller
     // that constructs InvokeAgentInput by hand could route around
     // the check. Refuse here too rather than start the child.
     return {
       ok: false,
-      error: `child depth ${depth} exceeds MAX_AGENT_DEPTH ${MAX_AGENT_DEPTH}`,
+      error: `child depth ${depth} exceeds the delegation depth cap ${MAX_TERMINAL_EDGE_DEPTH}`,
     };
   }
 
@@ -78,6 +78,23 @@ export const invokeAgent: AgentInvoker = async ({
       ok: false,
       error: `agent '${agentSlug}' not found, not owned by this user, or disabled`,
     };
+  }
+
+  // Depths past the base cap are legal ONLY along a declared edge to a
+  // TERMINAL specialist (no delegates of its own) — mirrors the dispatch
+  // guard in @mantle/tools invoke-agent-guards. Re-checked here so a
+  // hand-constructed InvokeAgentInput can't mint a depth-3 child that could
+  // itself keep delegating.
+  if (depth > MAX_AGENT_DEPTH) {
+    const dt = ((target.memoryConfig as AgentMemoryConfig | null) ?? null)?.delegate_to;
+    if (Array.isArray(dt) && dt.length > 0) {
+      return {
+        ok: false,
+        error:
+          `child depth ${depth} exceeds MAX_AGENT_DEPTH ${MAX_AGENT_DEPTH} and ` +
+          `agent '${agentSlug}' is not a terminal specialist (it has delegates of its own)`,
+      };
+    }
   }
 
   // Shared key resolver: keyless `local` → 'local' sentinel; cloud → pinned/

@@ -9,7 +9,7 @@
  */
 
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { contentChunks, db, nodes, notifyNodeIngested, secrets, telegramChats } from '@mantle/db';
+import { agents, contentChunks, db, nodes, notifyNodeIngested, secrets, telegramChats } from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import {
   searchNodes,
@@ -1551,7 +1551,9 @@ const invoke_agent: BuiltinToolDef = {
     // Lazy imports keep the guard module + bridge out of the cold-
     // start path of every other builtin. They're tiny but the
     // separation lets us test them as pure helpers.
-    const { checkAgentDepth, checkDelegationAllowed } = await import('./invoke-agent-guards');
+    const { MAX_AGENT_DEPTH, checkAgentDepth, checkDelegationAllowed } = await import(
+      './invoke-agent-guards'
+    );
     const { getAgentInvoker } = await import('./agent-bridge');
 
     if (!ctx.agent) {
@@ -1571,9 +1573,25 @@ const invoke_agent: BuiltinToolDef = {
     const allowed = checkDelegationAllowed(ctx.agent.slug, targetSlug, ctx.agent.delegateTo);
     if (!allowed.ok) return { ok: false, error: allowed.reason };
 
-    // Guardrail 1: bounded depth. checkAgentDepth returns the depth
-    // the child would run at, or refuses outright.
-    const depth = checkAgentDepth(ctx.agent.depth);
+    // Guardrail 1: bounded depth. One sanctioned exception (see
+    // invoke-agent-guards.ts): a child may go a single level deeper along its
+    // declared edge to a TERMINAL specialist — no delegates of its own, so the
+    // chain provably ends there (the appsmith → toolsmith hop mid app build).
+    // The lookup only runs when the base cap would refuse; a missing/disabled
+    // target fails closed to non-terminal and the plain cap applies.
+    let targetIsTerminal = false;
+    if (ctx.agent.depth + 1 > MAX_AGENT_DEPTH) {
+      const [targetRow] = await db
+        .select({ memoryConfig: agents.memoryConfig })
+        .from(agents)
+        .where(
+          and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, targetSlug), eq(agents.enabled, true)),
+        )
+        .limit(1);
+      const dt = (targetRow?.memoryConfig as { delegate_to?: unknown } | null)?.delegate_to;
+      targetIsTerminal = !!targetRow && (!Array.isArray(dt) || dt.length === 0);
+    }
+    const depth = checkAgentDepth(ctx.agent.depth, { targetIsTerminal });
     if (!depth.ok) return { ok: false, error: depth.reason };
 
     const invoker = getAgentInvoker();

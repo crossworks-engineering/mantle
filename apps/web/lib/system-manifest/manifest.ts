@@ -1012,7 +1012,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     assistSurface: 'apps',
     params: { temperature: 0.2, max_tokens: 32000 },
     // Codegen → build → read-errors → fix loops chew iterations. delegate_to
-    // toolsmith: Appsmith doesn't author HTTP tools, it delegates that.
+    // toolsmith: Appsmith doesn't author HTTP tools, it delegates that. This
+    // edge works even when Appsmith itself runs as a delegate (responder →
+    // appsmith → toolsmith): toolsmith is a TERMINAL specialist, which is the
+    // one depth-3 shape the invoke_agent guards allow (MAX_TERMINAL_EDGE_DEPTH).
     memoryConfig: { max_iterations: 30, delegate_to: ['toolsmith'] },
     priority: 100,
   },

@@ -124,6 +124,7 @@ export {
 
 export {
   MAX_AGENT_DEPTH,
+  MAX_TERMINAL_EDGE_DEPTH,
   checkAgentDepth,
   checkDelegationAllowed,
   type DepthCheckResult,

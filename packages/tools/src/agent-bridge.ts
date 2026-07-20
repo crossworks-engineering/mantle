@@ -28,7 +28,9 @@ export type InvokeAgentInput = {
    *  a fresh one-shot request, not a continuation. */
   prompt: string;
   /** Depth this child will run at (parent's depth + 1). The dispatcher
-   *  has already enforced MAX_AGENT_DEPTH; the runtime trusts this. */
+   *  has already enforced the depth caps (MAX_AGENT_DEPTH, and the
+   *  terminal-edge exception up to MAX_TERMINAL_EDGE_DEPTH); the runtime
+   *  re-checks them as defence in depth. */
   depth: number;
   /** Parent trace id, so the child trace can store it in `data` for
    *  navigation. Null when the parent isn't traced (manual scripts). */

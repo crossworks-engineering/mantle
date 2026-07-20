@@ -5,7 +5,9 @@
  * lunch." Lock them down.
  *
  * Properties under test:
- *   1. Bounded depth — depth=2 chain max, no grandchildren.
+ *   1. Bounded depth — depth=2 chain max by default; the ONE exception is
+ *      one level deeper along a declared edge to a TERMINAL specialist
+ *      (no delegates of its own), and nothing goes past depth 3 ever.
  *   2. Allowlist — empty/missing list = no delegation (fail closed).
  *   3. No self-call — an agent cannot invoke itself even if its own
  *      slug is in its delegate_to list (the symptom that turns a
@@ -15,13 +17,22 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { MAX_AGENT_DEPTH, checkAgentDepth, checkDelegationAllowed } from './invoke-agent-guards';
+import {
+  MAX_AGENT_DEPTH,
+  MAX_TERMINAL_EDGE_DEPTH,
+  checkAgentDepth,
+  checkDelegationAllowed,
+} from './invoke-agent-guards';
 
-describe('MAX_AGENT_DEPTH constant', () => {
-  it('is 2 — parent + child, no grandchildren', () => {
+describe('depth constants', () => {
+  it('base cap is 2 — parent + child, no grandchildren by default', () => {
     // Locking this in so any future "raise to 3" decision has to
     // pass through a code review that updates this test.
     expect(MAX_AGENT_DEPTH).toBe(2);
+  });
+
+  it('terminal-edge exception is exactly one level deeper', () => {
+    expect(MAX_TERMINAL_EDGE_DEPTH).toBe(MAX_AGENT_DEPTH + 1);
   });
 });
 
@@ -56,6 +67,36 @@ describe('checkAgentDepth', () => {
   it('includes the limit number in the refusal message', () => {
     const r = checkAgentDepth(2);
     if (!r.ok) expect(r.reason).toContain(`${MAX_AGENT_DEPTH}`);
+  });
+});
+
+describe('checkAgentDepth — terminal-edge exception (appsmith → toolsmith shape)', () => {
+  it('allows a child (depth=2) to invoke a TERMINAL specialist at depth=3', () => {
+    const r = checkAgentDepth(2, { targetIsTerminal: true });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.childDepth).toBe(3);
+  });
+
+  it('still refuses a child (depth=2) when the target has delegates of its own', () => {
+    // A non-terminal target could keep chaining — the exception must
+    // not apply. Fail closed.
+    expect(checkAgentDepth(2, { targetIsTerminal: false }).ok).toBe(false);
+    expect(checkAgentDepth(2, {}).ok).toBe(false);
+    expect(checkAgentDepth(2).ok).toBe(false);
+  });
+
+  it('never allows depth 4 — even a terminal target cannot extend a depth-3 chain', () => {
+    expect(checkAgentDepth(3, { targetIsTerminal: true }).ok).toBe(false);
+    expect(checkAgentDepth(99, { targetIsTerminal: true }).ok).toBe(false);
+  });
+
+  it('teaches the recovery move in the refusal', () => {
+    const r = checkAgentDepth(2, { targetIsTerminal: false });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toMatch(/terminal specialist/i);
+      expect(r.reason).toMatch(/final answer/i);
+    }
   });
 });
 

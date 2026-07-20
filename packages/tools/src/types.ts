@@ -28,7 +28,8 @@ export type ToolHandlerContext = {
      *  refuse self-calls. */
     slug: string;
     /** 1 for the entry-point agent; 2 for an invoked child; etc.
-     *  Capped by MAX_AGENT_DEPTH in invoke-agent-guards.ts. */
+     *  Capped by MAX_AGENT_DEPTH in invoke-agent-guards.ts (3 only along a
+     *  declared edge to a terminal specialist — MAX_TERMINAL_EDGE_DEPTH). */
     depth: number;
     /** Slugs the parent agent is allowed to delegate to. Sourced
      *  from `agents.memory_config.delegate_to`. Empty/missing means

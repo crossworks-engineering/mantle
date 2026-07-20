@@ -16,27 +16,46 @@
  *  pipeline of pg_notify reactions instead of a delegation chain. */
 export const MAX_AGENT_DEPTH = 2;
 
+/** The ONE sanctioned exception to MAX_AGENT_DEPTH: a child agent may go a
+ *  single level deeper when its target is a TERMINAL specialist — an agent
+ *  with no delegates of its own, so the chain provably ends there (a depth-3
+ *  child could only ever reach depth 4 via a terminal target, which this cap
+ *  refuses). Motivating case: chat-initiated app builds — responder →
+ *  appsmith → toolsmith — which otherwise ping-pong the "needs a data tool"
+ *  requirement back through the responder (observed on a client brain,
+ *  2026-07-20). The edge still has to be DECLARED: `checkDelegationAllowed`
+ *  runs first, so only operator-authorised pairs ever reach this exception. */
+export const MAX_TERMINAL_EDGE_DEPTH = 3;
+
 export type DepthCheckResult = { ok: true; childDepth: number } | { ok: false; reason: string };
 
 /**
- * Returns the depth the child WOULD run at, or refuses if it'd exceed
- * MAX_AGENT_DEPTH. Caller passes the parent's current depth; entry-
- * point agents are depth 1.
+ * Returns the depth the child WOULD run at, or refuses if it'd exceed the
+ * cap. Caller passes the parent's current depth (entry-point agents are
+ * depth 1) and, when known, whether the TARGET is a terminal specialist
+ * (empty `delegate_to`) — that unlocks the one-level MAX_TERMINAL_EDGE_DEPTH
+ * exception. Omitting the flag fails closed to the plain MAX_AGENT_DEPTH cap.
  */
-export function checkAgentDepth(parentDepth: number): DepthCheckResult {
+export function checkAgentDepth(
+  parentDepth: number,
+  opts?: { targetIsTerminal?: boolean },
+): DepthCheckResult {
   if (!Number.isInteger(parentDepth) || parentDepth < 1) {
     return { ok: false, reason: `invalid parent depth ${parentDepth}` };
   }
   const childDepth = parentDepth + 1;
-  if (childDepth > MAX_AGENT_DEPTH) {
-    return {
-      ok: false,
-      reason:
-        `agent delegation depth limit (${MAX_AGENT_DEPTH}) exceeded — ` +
-        `a child agent cannot invoke another agent`,
-    };
+  if (childDepth <= MAX_AGENT_DEPTH) return { ok: true, childDepth };
+  if (childDepth === MAX_TERMINAL_EDGE_DEPTH && opts?.targetIsTerminal === true) {
+    return { ok: true, childDepth };
   }
-  return { ok: true, childDepth };
+  return {
+    ok: false,
+    reason:
+      `agent delegation depth limit (${MAX_AGENT_DEPTH}) exceeded — ` +
+      `a child agent may delegate one level deeper ONLY to a terminal specialist ` +
+      `(an agent with no delegates of its own); otherwise state what you need in ` +
+      `your final answer so your parent can arrange it`,
+  };
 }
 
 export type AllowlistCheckResult = { ok: true } | { ok: false; reason: string };
