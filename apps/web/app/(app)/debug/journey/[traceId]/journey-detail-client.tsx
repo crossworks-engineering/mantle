@@ -1,8 +1,11 @@
 'use client';
 
-import { BookOpen, Boxes, Network, ScrollText } from 'lucide-react';
+import { useState } from 'react';
+import { BookOpen, Boxes, Network, ScrollText, Square } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
 import { formatDateTime } from '@/lib/format-datetime';
 import { formatDuration, formatMicroUsd } from '@/lib/traces-format';
 import { deriveAction, sourceLabel } from '@/lib/journey-format';
@@ -29,10 +32,15 @@ function stepDot(status: string): string {
  * layers it produced, setting the page title once loaded.
  */
 export function JourneyDetailClient({ traceId }: { traceId: string }) {
+  const toast = useToast();
+  const [stopping, setStopping] = useState(false);
   const journeyQuery = useQuery({
     queryKey: ['debug', 'journey', traceId],
     queryFn: () => apiFetch<{ journey: JourneyDetail }>(`/api/debug/journey/${traceId}`),
     retry: false,
+    // A running journey keeps refreshing so the timeline grows live and the
+    // status (and the Stop button) resolve without a manual reload.
+    refetchInterval: (q) => (q.state.data?.journey.status === 'running' ? 3000 : false),
   });
 
   if (journeyQuery.isPending) {
@@ -62,6 +70,24 @@ export function JourneyDetailClient({ traceId }: { traceId: string }) {
     source,
   });
   const subtitle = j.landed?.node?.title ?? strOf(data.filename) ?? strOf(data.title);
+  // A running streamed turn carries its cancel handle in the trace data (see
+  // startTrace). Traces without one (background ingest, heartbeats, pre-stamp
+  // rows) simply don't get the button — there is nothing registered to abort.
+  const turnId = strOf(data.turn_id);
+
+  const stopTurn = async () => {
+    if (!turnId || stopping) return;
+    setStopping(true);
+    try {
+      await apiSend(`/api/assistant/turn/${turnId}/cancel`, 'POST');
+      toast.info('Stop requested — the turn finalizes with its partial reply.');
+      // The runner aborts asynchronously; the poll above picks up the flip.
+      void journeyQuery.refetch();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not request the stop');
+      setStopping(false);
+    }
+  };
 
   return (
     <>
@@ -71,7 +97,7 @@ export function JourneyDetailClient({ traceId }: { traceId: string }) {
         <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted">
           <ActionIcon iconKey={pres.iconKey} className="h-5 w-5 text-foreground" />
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           {subtitle && <p className="truncate text-sm text-muted-foreground">{subtitle}</p>}
           <p className="mt-1 text-xs text-muted-foreground">
             <code className="font-mono">{j.kind}</code> · via {sourceLabel(source)} ·{' '}
@@ -82,7 +108,9 @@ export function JourneyDetailClient({ traceId }: { traceId: string }) {
               className={
                 j.status === 'error'
                   ? 'font-medium text-destructive'
-                  : 'font-medium text-emerald-600 dark:text-emerald-400'
+                  : j.status === 'running'
+                    ? 'font-medium text-amber-600 dark:text-amber-400'
+                    : 'font-medium text-emerald-600 dark:text-emerald-400'
               }
             >
               {j.status}
@@ -102,6 +130,19 @@ export function JourneyDetailClient({ traceId }: { traceId: string }) {
             </p>
           )}
         </div>
+        {j.status === 'running' && turnId && (
+          <Button
+            size="sm"
+            variant="destructive"
+            className="shrink-0"
+            disabled={stopping}
+            onClick={stopTurn}
+            title="Stop this turn — generation and pending tool calls halt; the partial reply is kept"
+          >
+            <Square />
+            {stopping ? 'Stopping…' : 'Stop'}
+          </Button>
+        )}
       </header>
 
       {/* Step timeline */}
