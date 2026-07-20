@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.149.0",
+  "version": "0.150.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -53,7 +53,8 @@
     "backfill:email-salience": "tsx --env-file-if-exists=./.env.local scripts/backfill-email-salience.ts",
     "classify:backfill": "tsx --env-file-if-exists=./.env.local scripts/classify-backfill.ts",
     "purge:noncontact": "tsx --env-file-if-exists=./.env.local scripts/purge-noncontact-emails.ts",
-    "rotate:master-key": "tsx --env-file-if-exists=./.env.local scripts/rotate-master-key.ts"
+    "rotate:master-key": "tsx --env-file-if-exists=./.env.local scripts/rotate-master-key.ts",
+    "maintain": "tsx --env-file-if-exists=./.env.local scripts/maintain.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.726.0",

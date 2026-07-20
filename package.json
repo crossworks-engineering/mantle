@@ -1,6 +1,6 @@
 {
   "name": "mantle",
-  "version": "0.149.0",
+  "version": "0.150.0",
   "private": true,
   "description": "Mantle — an AI-queryable life tree.",
   "license": "SEE LICENSE IN LICENSE.md",
@@ -39,6 +39,7 @@
     "dedupe:edges": "pnpm -C apps/web dedupe:edges",
     "backfill:rfc-msg-id": "pnpm -C packages/email backfill:rfc-msg-id",
     "re-embed": "pnpm -C apps/web re-embed",
+    "maintain": "pnpm -C apps/web maintain",
     "start": "bash scripts/up.sh",
     "stop": "docker compose -f docker-compose.dev.yml down",
     "up": "bash scripts/up.sh",
