@@ -271,6 +271,13 @@ function teamShareVisiblePredicate(ownerId: string, nodeType: TeamWorkspaceType)
   )!;
 }
 
+/** Chars of doc_text the share queries pull as excerpt material — slack above
+ *  {@link EXCERPT_MAX} so the word-boundary trim has room to cut. */
+const DOC_TEXT_HEAD_CHARS = 280;
+
+/** Chars kept of a doc_text fallback excerpt (before the trailing ellipsis). */
+const EXCERPT_MAX = 240;
+
 const teamShareColumns = {
   token: shares.token,
   nodeId: nodes.id,
@@ -282,29 +289,36 @@ const teamShareColumns = {
   tags: nodes.tags,
   // Fallback material for pages whose LLM summary is missing (never indexed,
   // or in the commit→re-extract window where commitPage just cleared it): the
-  // head of the published plaintext rendering. 280 raw chars gives slack for
-  // the ~240-char word-boundary trim in excerptFromDocText. NULL for non-page
-  // types (left join misses) and for pages with no committed text.
-  docTextHead: sql<string | null>`LEFT(${pages.docText}, 280)`,
+  // head of the published plaintext rendering. NULL for non-page types (left
+  // join misses) and for pages with no committed text.
+  docTextHead: sql<string | null>`LEFT(${pages.docText}, ${DOC_TEXT_HEAD_CHARS})`,
 } as const;
-
-/** Chars kept of a doc_text fallback excerpt (before the trailing ellipsis). */
-const EXCERPT_MAX = 240;
 
 /** Reduce the head of a page's doc_text to a one-liner excerpt: markdown
  *  heading markers stripped, whitespace collapsed, cut at a word boundary with
- *  a trailing ellipsis when the source ran longer. Null for blank/absent. */
+ *  a trailing ellipsis whenever the source ran longer. Null for blank/absent. */
 export function excerptFromDocText(head: string | null): string | null {
   if (!head) return null;
+  // The SQL LEFT() counts Postgres chars, JS .length UTF-16 units (only ever
+  // ≥ that), so `>=` reliably detects "the head was cut from a longer doc" —
+  // an astral-heavy shorter head can misclassify, costing only an ellipsis.
+  const headCut = head.length >= DOC_TEXT_HEAD_CHARS;
   const flat = head
     .replace(/^#{1,6}\s+/gm, '') // doc_text renders headings as '# …'
     .replace(/\s+/g, ' ')
     .trim();
   if (flat.length === 0) return null;
-  if (flat.length <= EXCERPT_MAX) return flat;
+  if (flat.length <= EXCERPT_MAX && !headCut) return flat;
+  // Truncated — by the char cap here, or upstream by the SQL head cut (whose
+  // raw cut can land mid-word even when flattening shrank the text under the
+  // cap: heading markers and blank runs collapse). Either way, drop the
+  // possibly-partial last token and show the ellipsis.
   const cut = flat.slice(0, EXCERPT_MAX);
+  // Relative threshold (not EXCERPT_MAX-based): a short-but-SQL-cut text must
+  // still drop its final token, and a space-free blob keeps everything rather
+  // than chopping to nothing.
   const lastSpace = cut.lastIndexOf(' ');
-  return `${cut.slice(0, lastSpace > EXCERPT_MAX / 2 ? lastSpace : EXCERPT_MAX).trimEnd()}…`;
+  return `${cut.slice(0, lastSpace > cut.length / 2 ? lastSpace : cut.length).trimEnd()}…`;
 }
 
 function mapTeamShareRow(r: {
@@ -369,9 +383,19 @@ export async function listTeamVisibleShares(
 export async function pageTeamVisibleShares(
   ownerId: string,
   nodeType: TeamWorkspaceType,
-  opts: { query?: string; tag?: string; sort?: TeamShareSort; limit: number; offset: number },
+  opts: {
+    query?: string;
+    tag?: string;
+    sort?: TeamShareSort;
+    limit: number;
+    offset: number;
+    /** Skip the unpaged count(*) when the caller has no pager (curated
+     *  sections fan out per tag — `total` would just be thrown away). The
+     *  returned `total` is then the fetched row count. */
+    skipTotal?: boolean;
+  },
 ): Promise<TeamVisibleSharePage> {
-  const { query, tag, sort = 'newest', limit, offset } = opts;
+  const { query, tag, sort = 'newest', limit, offset, skipTotal = false } = opts;
   const search = query?.trim()
     ? or(
         ilike(nodes.title, `%${query.trim()}%`),
@@ -400,14 +424,16 @@ export async function pageTeamVisibleShares(
       .orderBy(orderBy)
       .limit(limit)
       .offset(offset),
-    db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(shares)
-      .innerJoin(nodes, eq(shares.nodeId, nodes.id))
-      .where(where),
+    skipTotal
+      ? Promise.resolve(null)
+      : db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(shares)
+          .innerJoin(nodes, eq(shares.nodeId, nodes.id))
+          .where(where),
   ]);
 
-  return { items: rows.map(mapTeamShareRow), total: totals[0]?.count ?? 0 };
+  return { items: rows.map(mapTeamShareRow), total: totals ? (totals[0]?.count ?? 0) : rows.length };
 }
 
 /** Distinct tags across one type's team-visible shares with usage counts —
@@ -466,6 +492,7 @@ export async function curatedTeamSections(
         sort: 'updated',
         limit: TEAM_CURATED_SECTION_LIMIT,
         offset: 0,
+        skipTotal: true, // no pager here — one query per tag, not two
       }),
     ),
   );

@@ -11,6 +11,7 @@
  * silent for the same reason — a broken extras block must not degrade the
  * overview (the tiles above are the primary navigation).
  */
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { CuratedTeamSection } from '@mantle/content';
 
@@ -62,7 +63,15 @@ export function CuratedSections() {
           <ul className="mt-3 flex flex-col divide-y divide-border rounded-xl border border-border bg-card">
             {section.items.map((item) => (
               <li key={item.token}>
-                <a href={`/s/${item.token}`} className="block px-4 py-3 hover:bg-muted/40">
+                {/* Into the workspace reader (/team/pages?s=), not a bare /s/
+                    navigation — the shell's own deep-link idiom (folder chips
+                    do the same), so reading a featured page keeps the nav.
+                    The pages section's tree view loads the whole visible set,
+                    so the ?s= selection resolves. */}
+                <Link
+                  href={`/team/pages?s=${item.token}`}
+                  className="block px-4 py-3 hover:bg-muted/40"
+                >
                   <div className="flex items-baseline justify-between gap-3">
                     <p className="truncate text-sm font-medium">
                       {item.icon ? <span className="mr-1.5">{item.icon}</span> : null}
@@ -77,7 +86,7 @@ export function CuratedSections() {
                       {item.summary}
                     </p>
                   ) : null}
-                </a>
+                </Link>
               </li>
             ))}
           </ul>

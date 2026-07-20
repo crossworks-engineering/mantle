@@ -13,6 +13,8 @@
  */
 import { useState } from 'react';
 import { X, Pin } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { tagColorClass } from '@/components/tag-pill';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -69,22 +71,42 @@ export function DashboardTagsPanel({
       </Label>
       {tags.length > 0 ? (
         <ul className="flex flex-wrap gap-1">
-          {tags.map((t) => (
-            <li key={t}>
-              <span className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs text-accent-foreground">
-                {t}
-                <button
-                  type="button"
-                  aria-label={`Remove ${t} from the Dashboard`}
-                  disabled={pending}
-                  onClick={() => void save(tags.filter((x) => x !== t))}
-                  className="rounded-sm opacity-70 transition-opacity hover:opacity-100 disabled:opacity-40"
+          {tags.map((t) => {
+            // Live shared-page count for the pill. 0 = the section currently
+            // renders nothing on the Dashboard (all its pages unshared or
+            // untagged since curation) — shown muted so a dead tag is visible
+            // HERE, not just silently absent for members.
+            const count = available.find((a) => a.tag === t)?.count ?? 0;
+            return (
+              <li key={t}>
+                <span
+                  title={
+                    count === 0
+                      ? 'No shared pages carry this tag right now — the section is hidden from members.'
+                      : undefined
+                  }
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium',
+                    count === 0 ? 'border-border bg-muted text-muted-foreground' : tagColorClass(t),
+                  )}
                 >
-                  <X className="size-3" aria-hidden />
-                </button>
-              </span>
-            </li>
-          ))}
+                  {t}
+                  <span className={count === 0 ? undefined : 'text-muted-foreground'}>
+                    · {count}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${t} from the Dashboard`}
+                    disabled={pending}
+                    onClick={() => void save(tags.filter((x) => x !== t))}
+                    className="rounded-sm opacity-70 transition-opacity hover:opacity-100 disabled:opacity-40"
+                  >
+                    <X className="size-3" aria-hidden />
+                  </button>
+                </span>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       {/* Value stays '' so the trigger always reads as the add affordance. */}

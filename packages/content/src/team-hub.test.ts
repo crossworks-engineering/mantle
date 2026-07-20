@@ -36,4 +36,16 @@ describe('excerptFromDocText', () => {
   it('strips only line-leading heading markers, not an inline #', () => {
     expect(excerptFromDocText('Ticket #42 is done')).toBe('Ticket #42 is done');
   });
+
+  it('still ellipsises a SQL-cut head whose flattened text shrank under the cap', () => {
+    // Heading-heavy head of exactly 280 raw chars (the SQL LEFT() cap, i.e.
+    // truncated from a longer doc, ending mid-word): flattening strips the
+    // '### ' markers and newlines, dropping it under 240 — it must NOT be
+    // presented as complete text ending in the torn word.
+    const head = '### abcdefghij\n'.repeat(18) + 'partialwor';
+    expect(head).toHaveLength(280);
+    const out = excerptFromDocText(head)!;
+    expect(out.endsWith('abcdefghij…')).toBe(true);
+    expect(out).not.toContain('partialwor');
+  });
 });
