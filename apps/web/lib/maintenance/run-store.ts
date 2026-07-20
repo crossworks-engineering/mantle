@@ -15,6 +15,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import type { MaintenanceTask } from './registry';
 import type { MaintenanceRunView, RunState } from './types';
+import { finishRun, recordRunStart } from './history';
 
 const MAX_LINES = 2000;
 const RUN_TIMEOUT_MS = 30 * 60 * 1000;
@@ -31,6 +32,8 @@ interface RunRecord {
   truncated: boolean;
   child?: ChildProcess;
   timeout?: NodeJS.Timeout;
+  /** maintenance_runs row id (best-effort history; null when the insert failed). */
+  historyId?: string | null;
 }
 
 const store = globalThis as unknown as { __mantleMaintenanceRun?: RunRecord };
@@ -52,6 +55,22 @@ function pushLine(run: RunRecord, line: string): void {
   if (run.lines.length > MAX_LINES) {
     run.lines.splice(0, run.lines.length - MAX_LINES);
     run.truncated = true;
+  }
+}
+
+/** Settle the maintenance_runs row for a finished run (best-effort, idempotent
+ *  — safe to call again when e.g. the exit code lands after a cancel). */
+async function writeHistoryFinish(run: RunRecord): Promise<void> {
+  if (!run.historyId || run.state === 'running') return;
+  const summary = [...run.lines].reverse().find((l) => l.trim().length > 0);
+  try {
+    await finishRun(run.historyId, {
+      state: run.state,
+      exitCode: run.exitCode ?? null,
+      summary,
+    });
+  } catch (err) {
+    console.error('[maintenance] history update failed:', err);
   }
 }
 
@@ -125,8 +144,18 @@ export function startRun(
   run.child = child;
   store.__mantleMaintenanceRun = run;
 
-  child.stdout?.on('data', lineSink(run));
-  child.stderr?.on('data', lineSink(run));
+  // Best-effort unified history (maintenance_runs) — a DB hiccup must never
+  // block the run itself.
+  recordRunStart({ slug: task.slug, source: 'ui', live })
+    .then((id) => {
+      run.historyId = id;
+      // The child can finish before the insert returns — settle the row now.
+      if (run.state !== 'running') void writeHistoryFinish(run);
+    })
+    .catch((err) => {
+      run.historyId = null;
+      console.error('[maintenance] history insert failed:', err);
+    });
 
   const finish = (state: RunState, exitCode: number | null) => {
     if (run.state !== 'running') return;
@@ -135,7 +164,11 @@ export function startRun(
     run.finishedAt = new Date();
     run.child = undefined;
     if (run.timeout) clearTimeout(run.timeout);
+    void writeHistoryFinish(run);
   };
+
+  child.stdout?.on('data', lineSink(run));
+  child.stderr?.on('data', lineSink(run));
 
   child.on('error', (err) => {
     pushLine(run, `spawn error: ${err.message}`);
@@ -143,8 +176,12 @@ export function startRun(
   });
   child.on('close', (code) => {
     // 'cancelled' set by cancelRun sticks; otherwise map the exit code.
-    if (run.state === 'running') finish(code === 0 ? 'done' : 'failed', code);
-    else run.exitCode = code;
+    if (run.state === 'running') {
+      finish(code === 0 ? 'done' : 'failed', code);
+    } else {
+      run.exitCode = code;
+      void writeHistoryFinish(run);
+    }
   });
 
   run.timeout = setTimeout(() => {
@@ -152,6 +189,7 @@ export function startRun(
       pushLine(run, `maintenance: run exceeded ${RUN_TIMEOUT_MS / 60000} min — killing`);
       run.state = 'failed';
       run.finishedAt = new Date();
+      void writeHistoryFinish(run);
       child.kill('SIGTERM');
     }
   }, RUN_TIMEOUT_MS);
@@ -168,6 +206,7 @@ export function cancelRun(): { ok: boolean; error?: string } {
   pushLine(run, 'maintenance: cancelled from the UI');
   run.state = 'cancelled';
   run.finishedAt = new Date();
+  void writeHistoryFinish(run);
   run.child.kill('SIGTERM');
   return { ok: true };
 }

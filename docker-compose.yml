@@ -806,6 +806,29 @@ services:
     environment:
       <<: *app-env
 
+  # Maintenance worker — nightly pg-boss cron ('30 3 * * *') running the
+  # schedulable registry sweeps (docs/maintenance-runner.md; today just
+  # entities-dedupe auto tier, pure SQL). Records into maintenance_runs, the
+  # same history the CLI and the /debug/integrity Maintenance tab write.
+  worker_maintenance:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/maintenance.ts"]
+    container_name: mantle_worker_maintenance
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1g
+    healthcheck: *worker-healthcheck
+    # Flag this container for the autoheal sidecar: when the heartbeat probe
+    # above flips it `unhealthy`, autoheal docker-restarts it (plain compose
+    # would leave a wedged worker unhealthy-but-running forever).
+    labels:
+      - autoheal=true
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+    environment:
+      <<: *app-env
+
   # Push-notify worker — LISTENs on conversation_changed and forwards sealed
   # teasers to Mantle Push (push.crossworks.network) for backgrounded devices.
   # No-op until a device Connects (push_instance/push_subscriptions empty).

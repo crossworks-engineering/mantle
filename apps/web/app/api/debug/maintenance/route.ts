@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server';
 
 import { getOwnerOr401 } from '@/lib/auth';
+import { listRecentRuns } from '@/lib/maintenance/history';
 import { MAINTENANCE_TASKS } from '@/lib/maintenance/registry';
 import { getRun } from '@/lib/maintenance/run-store';
-import type { MaintenanceOverview, MaintenanceTaskInfo } from '@/lib/maintenance/types';
+import type {
+  MaintenanceOverview,
+  MaintenanceTaskInfo,
+  RunHistoryEntry,
+  RunState,
+} from '@/lib/maintenance/types';
 
 // Registry overview + current/last run. Read-only; runs start via ./run.
 export const runtime = 'nodejs';
@@ -27,6 +33,25 @@ export async function GET() {
     notes: t.notes,
   }));
 
-  const body: MaintenanceOverview = { tasks, run: getRun() };
+  // History is best-effort: on a DB that hasn't run migration 0128 yet the
+  // task list should still render (the table is additive, not load-bearing).
+  let history: RunHistoryEntry[] = [];
+  try {
+    history = (await listRecentRuns(20)).map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      source: r.source as RunHistoryEntry['source'],
+      live: r.live,
+      state: r.state as RunState,
+      startedAt: r.startedAt.toISOString(),
+      finishedAt: r.finishedAt?.toISOString() ?? null,
+      exitCode: r.exitCode,
+      summary: r.summary,
+    }));
+  } catch (err) {
+    console.error('[maintenance] history read failed:', err);
+  }
+
+  const body: MaintenanceOverview = { tasks, run: getRun(), history };
   return NextResponse.json(body);
 }

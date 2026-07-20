@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.152.0",
+  "version": "0.153.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,6 +20,7 @@
     "worker:events:dev": "tsx --watch --env-file-if-exists=./.env.local workers/events-reminders.ts",
     "worker:calendar:dev": "tsx --watch --env-file-if-exists=./.env.local workers/calendar-sync.ts",
     "worker:push:dev": "tsx --watch --env-file-if-exists=./.env.local workers/push-notify.ts",
+    "worker:maintenance:dev": "tsx --watch --env-file-if-exists=./.env.local workers/maintenance.ts",
     "pgboss:init": "tsx --env-file-if-exists=./.env.local scripts/pgboss-init.ts",
     "apps:push": "tsx --env-file-if-exists=./.env.local scripts/apps-push.ts",
     "seed:telegram": "tsx --env-file-if-exists=./.env.local scripts/seed-telegram.ts",

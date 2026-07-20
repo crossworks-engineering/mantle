@@ -29,6 +29,7 @@ import type {
   MaintenanceOverview,
   MaintenanceRunView,
   MaintenanceTaskInfo,
+  RunHistoryEntry,
   StartRunRequest,
 } from '@/lib/maintenance/types';
 
@@ -209,6 +210,7 @@ function RetiredConfirm({
 export function MaintenanceView() {
   const toast = useToast();
   const [tasks, setTasks] = useState<MaintenanceTaskInfo[]>([]);
+  const [history, setHistory] = useState<RunHistoryEntry[]>([]);
   const [run, setRun] = useState<MaintenanceRunView | null>(null);
   const [loading, setLoading] = useState(true);
   const [showRetired, setShowRetired] = useState(false);
@@ -218,6 +220,7 @@ export function MaintenanceView() {
     try {
       const data = await apiFetch<MaintenanceOverview>('/api/debug/maintenance');
       setTasks(data.tasks);
+      setHistory(data.history);
       setRun(data.run);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Failed to load maintenance tasks');
@@ -240,12 +243,14 @@ export function MaintenanceView() {
           '/api/debug/maintenance/run',
         );
         setRun(data.run);
+        // Run just finished — refresh the history list (and env/task state).
+        if (data.run && data.run.state !== 'running') void load();
       } catch {
         // transient poll failure — next tick retries
       }
     }, 1200);
     return () => clearInterval(t);
-  }, [running]);
+  }, [running, load]);
 
   // Keep the console scrolled to the latest output.
   useEffect(() => {
@@ -359,6 +364,69 @@ export function MaintenanceView() {
           </pre>
         </section>
       ) : null}
+
+      {history.length > 0 ? (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-foreground">History</h2>
+          <div className="overflow-x-auto rounded-md border border-border bg-card">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border text-left text-muted-foreground">
+                  <th className="p-2 font-medium">Task</th>
+                  <th className="p-2 font-medium">Source</th>
+                  <th className="p-2 font-medium">Mode</th>
+                  <th className="p-2 font-medium">State</th>
+                  <th className="p-2 font-medium">Started</th>
+                  <th className="p-2 font-medium">Duration</th>
+                  <th className="p-2 font-medium">Summary</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {history.map((h) => (
+                  <tr key={h.id} className="text-foreground">
+                    <td className="p-2 font-mono">{h.slug}</td>
+                    <td className="p-2">{h.source}</td>
+                    <td className="p-2">{h.live ? 'live' : 'dry-run'}</td>
+                    <td
+                      className={
+                        'p-2 ' +
+                        (h.state === 'done'
+                          ? 'text-primary'
+                          : h.state === 'running'
+                            ? 'text-muted-foreground'
+                            : 'text-destructive')
+                      }
+                    >
+                      {h.state}
+                    </td>
+                    <td className="p-2 whitespace-nowrap text-muted-foreground">
+                      {new Date(h.startedAt).toLocaleString()}
+                    </td>
+                    <td className="p-2 whitespace-nowrap text-muted-foreground">
+                      {formatDuration(h.startedAt, h.finishedAt)}
+                    </td>
+                    <td
+                      className="max-w-96 truncate p-2 text-muted-foreground"
+                      title={h.summary ?? ''}
+                    >
+                      {h.summary ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
+}
+
+function formatDuration(startedAt: string, finishedAt: string | null): string {
+  if (!finishedAt) return '—';
+  const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
+  if (ms < 0) return '—';
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }

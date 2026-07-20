@@ -81,7 +81,7 @@ function unknownSlug(slug: string): void {
   process.exit(1);
 }
 
-function run(slug: string, rawArgs: string[]): void {
+async function run(slug: string, rawArgs: string[]): Promise<void> {
   const t = getTask(slug);
   if (!t) return unknownSlug(slug);
 
@@ -131,12 +131,42 @@ function run(slug: string, rawArgs: string[]): void {
   console.log(
     `maintain: ${slug} (${live ? 'LIVE' : 'dry-run'}) → tsx ${t.script}${args.length ? ' ' + args.join(' ') : ''}`,
   );
+
+  // Best-effort unified history (maintenance_runs, source 'cli') — degrades
+  // silently when DATABASE_URL is unset or the table doesn't exist yet.
+  // Known gap: Ctrl-C kills the whole group while spawnSync blocks, leaving
+  // the row 'running'; the history view shows those verbatim.
+  const h = await loadHistory();
+  const historyId = h
+    ? await h.recordRunStart({ slug: t.slug, source: 'cli', live }).catch(() => null)
+    : null;
+
   const res = spawnSync('pnpm', ['exec', 'tsx', t.script, ...args], {
     cwd,
     stdio: 'inherit',
     env: process.env,
   });
-  process.exit(res.status ?? 1);
+  const code = res.status ?? 1;
+  if (h && historyId) {
+    await h
+      .finishRun(historyId, {
+        state: code === 0 ? 'done' : 'failed',
+        exitCode: code,
+        summary: `exit ${code}`,
+      })
+      .catch(() => {});
+  }
+  process.exit(code);
+}
+
+/** Lazy so `list`/`info` never touch the DB and a DB-less env still works. */
+async function loadHistory(): Promise<typeof import('../lib/maintenance/history') | null> {
+  if (!process.env.DATABASE_URL) return null;
+  try {
+    return await import('../lib/maintenance/history');
+  } catch {
+    return null;
+  }
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -154,5 +184,5 @@ if (!cmd || cmd === 'list') {
       'Runner flags: --apply (generic live switch)  --yes (confirm model spend)  --force-retired',
   );
 } else {
-  run(cmd, rest);
+  await run(cmd, rest);
 }

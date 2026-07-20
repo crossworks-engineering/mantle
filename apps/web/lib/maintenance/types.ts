@@ -38,9 +38,23 @@ export interface MaintenanceRunView {
   truncated: boolean;
 }
 
+/** One maintenance_runs row on the wire — unified history across surfaces. */
+export interface RunHistoryEntry {
+  id: string;
+  slug: string;
+  source: 'cli' | 'ui' | 'cron';
+  live: boolean;
+  state: RunState;
+  startedAt: string;
+  finishedAt: string | null;
+  exitCode: number | null;
+  summary: string | null;
+}
+
 export interface MaintenanceOverview {
   tasks: MaintenanceTaskInfo[];
   run: MaintenanceRunView | null;
+  history: RunHistoryEntry[];
 }
 
 export interface StartRunRequest {

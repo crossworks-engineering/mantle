@@ -1,6 +1,6 @@
 {
   "name": "mantle",
-  "version": "0.152.0",
+  "version": "0.153.0",
   "private": true,
   "description": "Mantle — an AI-queryable life tree.",
   "license": "SEE LICENSE IN LICENSE.md",
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "predev": "bash scripts/preflight-dev.sh",
-    "dev": "concurrently -n web,api,mcp,worker,tg,files,docs,events -c blue,red,magenta,green,yellow,gray,blue,white \"pnpm -C apps/web dev\" \"pnpm -C apps/api dev\" \"pnpm -C apps/mcp dev\" \"pnpm -C apps/web worker:dev\" \"pnpm -C apps/web worker:telegram:dev\" \"pnpm -C apps/web worker:files:dev\" \"pnpm -C apps/web worker:docs:dev\" \"pnpm -C apps/web worker:events:dev\"",
+    "dev": "concurrently -n web,api,mcp,worker,tg,files,docs,events,maint -c blue,red,magenta,green,yellow,gray,blue,white,cyan \"pnpm -C apps/web dev\" \"pnpm -C apps/api dev\" \"pnpm -C apps/mcp dev\" \"pnpm -C apps/web worker:dev\" \"pnpm -C apps/web worker:telegram:dev\" \"pnpm -C apps/web worker:files:dev\" \"pnpm -C apps/web worker:docs:dev\" \"pnpm -C apps/web worker:events:dev\" \"pnpm -C apps/web worker:maintenance:dev\"",
     "predev:web": "bash scripts/preflight-dev.sh",
     "dev:web": "pnpm -C apps/web dev",
     "dev:fe": "bash scripts/dev-frontend.sh",

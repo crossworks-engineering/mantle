@@ -1,9 +1,9 @@
 # Maintenance runner — registry, CLI, scheduled sweeps
 
-Status: **Phase 1 shipped** (registry + `pnpm maintain` CLI, v0.150.0).
-**Phase 3 UI shipped** (Maintenance tab on `/debug/integrity`, v0.151.0) —
-brought forward so admins don't need a terminal. Phase 2 (cron sweeps +
-`maintenance_runs` history) remains planned.
+Status: **all three phases shipped.** Phase 1 (registry + `pnpm maintain`
+CLI, v0.150.0), Phase 3 (Maintenance tab on `/debug/integrity`, v0.151.0 —
+brought forward so admins don't need a terminal), Phase 2 (nightly cron
+worker + `maintenance_runs` unified history, v0.153.0).
 
 ## Why
 
@@ -105,20 +105,33 @@ This CLI is also the seam for a future in-app "CLI screen": the registry is
 data, so a web terminal page only needs an API route that lists tasks and
 streams a run.
 
-## Phase 2 — scheduled sweeps (planned)
+## Phase 2 — scheduled sweeps ✅
 
-- `apps/web/workers/maintenance.ts` following the worker idiom
-  (`tsx` entrypoint + `waitForOwner` + pg-boss), added to root `pnpm dev`
-  concurrently list and as `worker_maintenance` in `docker-compose.yml`
-  (depends on `migrate`).
-- `boss.schedule(MAINTENANCE_QUEUE, '30 3 * * *')` — nightly, off-peak. The
-  handler iterates `schedulable` registry tasks and runs them **in-process**
-  (Phase 2 lifts `entities-dedupe`'s auto-tier merge into a shared
-  `run()` function rather than spawning tsx).
-- A `maintenance_runs` table (migration) records: task slug, started/finished,
-  dry-run or live, rows affected, error. The CLI writes to it too, so history
-  is unified.
-- Initial schedule contains exactly one task: `entities-dedupe` (auto tier).
+- `apps/web/workers/maintenance.ts` — the worker idiom exactly (`tsx`
+  entrypoint + `waitForOwner` + pg-boss): queue `mantle.maintenance.sweep`,
+  `boss.schedule('30 3 * * *')` (nightly, off-peak, server-local). Wired into
+  root `pnpm dev` (`maint`) and as `worker_maintenance` in
+  `docker-compose.yml` (autoheal + worker healthcheck, depends on `migrate`).
+  A dedicated worker was chosen over piggybacking the events worker's tick
+  (the backups pattern) for consistency with the other cron workers and
+  pg-boss observability (`checkPgBoss`).
+- The handler runs `runScheduledSweeps` (`lib/maintenance/sweeps.ts`):
+  iterates `schedulable` registry tasks and runs them **in-process** via a
+  slug→sweep map — never by spawning scripts. `entities-dedupe`'s tier merge
+  is lifted into a shared `runEntitiesDedupe()` used by BOTH the CLI script
+  and the cron, so the hygiene job has one definition. Belt-and-braces: the
+  sweep re-checks `cost === 'sql'` on top of the registry assertion.
+- **`maintenance_runs`** (migration 0128): slug, source (`cli`/`ui`/`cron`),
+  live, state, started/finished, exit code, summary. All three surfaces
+  write it — the CLI best-effort (skipped without `DATABASE_URL`; a Ctrl-C
+  can leave a `running` row), the UI run-store on start/finish/cancel/timeout,
+  the cron per sweep. The Maintenance tab renders the last 20 as a History
+  table.
+- The table doubles as the cron's **double-fire guard**: a sweep is skipped
+  when a `cron`-sourced row (any state — failures arm the guard too, like the
+  backups scheduler) exists within ~20h. Protects restarts/duplicate slots on
+  top of pg-boss's once-per-slot semantics.
+- The schedule contains exactly one task: `entities-dedupe` (auto tier).
   Backups stay on the `db-dump.sh` path — they are already scheduled there.
 
 ## Phase 3 — UI ✅ (shipped ahead of Phase 2)
