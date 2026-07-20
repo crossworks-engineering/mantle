@@ -31,6 +31,7 @@ import {
   assertSafeScript,
   appDbReadQuery,
   appDbSchema,
+  appDbSeedRows,
   listAppDatabaseSummaries,
 } from '@mantle/content/app-broker';
 import { putContent } from '@mantle/storage';
@@ -306,7 +307,7 @@ const app_build: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Build a mini app',
   description:
-    "Compile the app's DRAFT source with esbuild and stage the bundle for preview. Returns `{ ok, errors[], warnings[], bytes }` — read the errors (each has file/line/column) and fix the offending file, then build again. A failed build does NOT replace the last good preview. This is your compile/feedback loop; iterate until ok=true, then tell the user to review at /apps/<id> and app_publish when they approve.",
+    "Compile the app's DRAFT source with esbuild and stage the bundle for preview. A failed compile fails the CALL — the error lists each problem with its file/line/column; fix the offending file and build again. A failed build does NOT replace the last good preview. This is your compile/feedback loop; iterate until it succeeds, then tell the user to review at /apps/<id> and app_publish when they approve. Note a green build only proves the code compiles — verify behaviour/logic yourself before calling it done.",
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string', description: "The app's id (UUID) — from `app_list`." } },
@@ -334,21 +335,31 @@ const app_build: BuiltinToolDef = {
           ...(res.warnings.length ? { warnings: res.warnings.map((w) => w.text) } : {}),
         });
       }
+      if (!res.ok) {
+        // A failed compile fails the CALL: an agent scanning only the top-level
+        // ok (the convention everywhere else) must not read a red build as
+        // success, sail on to app_publish, and hit NoGreenBuildError confused.
+        const lines = res.errors
+          .slice(0, 10)
+          .map(
+            (e) =>
+              `${e.location ? `${e.location.file}:${e.location.line}:${e.location.column} — ` : ''}${e.text}`,
+          );
+        const more = res.errors.length > 10 ? ` (+${res.errors.length - 10} more)` : '';
+        return {
+          ok: false,
+          error: `build failed with ${res.errors.length} error(s)${more}:\n${lines.join('\n')}\nFix the files at these locations, then run app_build again. The last good preview is untouched.`,
+        };
+      }
       return {
         ok: true,
         output: {
           id,
-          build_ok: res.ok,
+          build_ok: true,
           bytes: res.code ? Buffer.byteLength(res.code, 'utf8') : 0,
-          errors: res.errors,
+          errors: [],
           warnings: res.warnings,
-          ...(res.ok
-            ? {
-                hint: `Build succeeded. Review the live preview at /apps/${id}; app_publish when approved.`,
-              }
-            : {
-                hint: 'Build failed — fix the files at the reported locations and run app_build again.',
-              }),
+          hint: `Build succeeded. Review the live preview at /apps/${id}; app_publish when approved.`,
         },
       };
     } catch (err) {
@@ -443,6 +454,78 @@ const app_db_schema_set: BuiltinToolDef = {
         hint: 'The host applies this DDL when the app first opens its database. Use host.db.query/exec at runtime.',
       },
     };
+  },
+};
+
+const app_db_seed: BuiltinToolDef = {
+  slug: 'app_db_seed',
+  preconditions: APP_ID_PRE,
+  name: "Bulk-load rows into a mini app's database",
+  description:
+    "Bulk-insert rows into ONE table of the app's own SQLite database, atomically; returns inserted/deleted counts. The authoring-time path for reference data an app needs pre-loaded (lookup tables, imported datasets): read the source with `file_read`/`table_rows_list`/etc., then seed here — do NOT delegate a one-time data load to the toolsmith. The table must already exist (declare it with `app_db_schema_set` first); row keys are validated against its live columns and any bad row rolls the whole batch back. `replace: true` empties the table first — for multi-batch loads pass it on the FIRST batch only, then append. For the app's own runtime writes use `host.db.exec` in app code instead.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      table: {
+        type: 'string',
+        description: "Target table name from the declared schema, e.g. 'fluids'.",
+      },
+      rows: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+        maxItems: 2000,
+        description:
+          'Row objects mapping column name → value (string/number/boolean/null). Batch larger datasets across multiple calls.',
+      },
+      replace: {
+        type: 'boolean',
+        description: 'Empty the table before inserting (same transaction). Default false.',
+      },
+    },
+    required: ['id', 'table', 'rows'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    const table = str(input.table).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    if (!table) return { ok: false, error: 'table is required' };
+    if (!Array.isArray(input.rows) || !input.rows.length) {
+      return { ok: false, error: 'rows must be a non-empty array of row objects' };
+    }
+    const rows: Record<string, unknown>[] = [];
+    for (let i = 0; i < input.rows.length; i++) {
+      const r = (input.rows as unknown[])[i];
+      if (!r || typeof r !== 'object' || Array.isArray(r)) {
+        return { ok: false, error: `row ${i} must be an object mapping column → value` };
+      }
+      rows.push(r as Record<string, unknown>);
+    }
+    const app = await getApp(ctx.ownerId, id);
+    if (!app) return { ok: false, error: `app ${id} not found` };
+    try {
+      const res = await appDbSeedRows(
+        ctx.ownerId,
+        id,
+        table,
+        rows,
+        { replace: input.replace === true },
+        app.manifest.sqlite,
+      );
+      ctx.step?.setOutput({ id, table, inserted: res.inserted, deleted: res.deleted });
+      return {
+        ok: true,
+        output: {
+          id,
+          table: res.table,
+          inserted: res.inserted,
+          deleted: res.deleted,
+          hint: 'Verify with app_db_query (SELECT count(*) …) if the load matters.',
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   },
 };
 
@@ -627,6 +710,7 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_build,
   app_tools_set,
   app_db_schema_set,
+  app_db_seed,
   app_list,
   app_publish,
   app_delete,
