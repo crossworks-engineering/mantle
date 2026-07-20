@@ -1551,9 +1551,8 @@ const invoke_agent: BuiltinToolDef = {
     // Lazy imports keep the guard module + bridge out of the cold-
     // start path of every other builtin. They're tiny but the
     // separation lets us test them as pure helpers.
-    const { MAX_AGENT_DEPTH, checkAgentDepth, checkDelegationAllowed } = await import(
-      './invoke-agent-guards'
-    );
+    const { MAX_AGENT_DEPTH, checkAgentDepth, checkDelegationAllowed, isTerminalDelegateConfig } =
+      await import('./invoke-agent-guards');
     const { getAgentInvoker } = await import('./agent-bridge');
 
     if (!ctx.agent) {
@@ -1589,7 +1588,7 @@ const invoke_agent: BuiltinToolDef = {
         )
         .limit(1);
       const dt = (targetRow?.memoryConfig as { delegate_to?: unknown } | null)?.delegate_to;
-      targetIsTerminal = !!targetRow && (!Array.isArray(dt) || dt.length === 0);
+      targetIsTerminal = !!targetRow && isTerminalDelegateConfig(dt);
     }
     const depth = checkAgentDepth(ctx.agent.depth, { targetIsTerminal });
     if (!depth.ok) return { ok: false, error: depth.reason };

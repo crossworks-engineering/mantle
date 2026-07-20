@@ -30,6 +30,18 @@ export const MAX_TERMINAL_EDGE_DEPTH = 3;
 export type DepthCheckResult = { ok: true; childDepth: number } | { ok: false; reason: string };
 
 /**
+ * Terminality = "cannot successfully delegate". Missing, non-array, or empty
+ * `delegate_to` all qualify: `checkDelegationAllowed` fails closed on exactly
+ * the same shapes when the agent itself tries to delegate, so an agent this
+ * predicate calls terminal can never extend a chain. Shared by the dispatch
+ * guard (invoke_agent builtin) and the runtime invoker's re-check — ONE
+ * definition so the two gates cannot drift.
+ */
+export function isTerminalDelegateConfig(delegateTo: unknown): boolean {
+  return !Array.isArray(delegateTo) || delegateTo.length === 0;
+}
+
+/**
  * Returns the depth the child WOULD run at, or refuses if it'd exceed the
  * cap. Caller passes the parent's current depth (entry-point agents are
  * depth 1) and, when known, whether the TARGET is a terminal specialist

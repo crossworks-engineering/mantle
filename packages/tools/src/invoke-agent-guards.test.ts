@@ -22,6 +22,7 @@ import {
   MAX_TERMINAL_EDGE_DEPTH,
   checkAgentDepth,
   checkDelegationAllowed,
+  isTerminalDelegateConfig,
 } from './invoke-agent-guards';
 
 describe('depth constants', () => {
@@ -97,6 +98,29 @@ describe('checkAgentDepth — terminal-edge exception (appsmith → toolsmith sh
       expect(r.reason).toMatch(/terminal specialist/i);
       expect(r.reason).toMatch(/final answer/i);
     }
+  });
+});
+
+describe('isTerminalDelegateConfig', () => {
+  it('missing / empty delegate_to is terminal', () => {
+    expect(isTerminalDelegateConfig(undefined)).toBe(true);
+    expect(isTerminalDelegateConfig(null)).toBe(true);
+    expect(isTerminalDelegateConfig([])).toBe(true);
+  });
+
+  it('a populated delegate_to is NOT terminal', () => {
+    expect(isTerminalDelegateConfig(['coder'])).toBe(false);
+    expect(isTerminalDelegateConfig(['a', 'b'])).toBe(false);
+  });
+
+  it('malformed (non-array) configs count as terminal — matching the fail-closed allowlist', () => {
+    // checkDelegationAllowed refuses a non-array allowlist outright, so an
+    // agent with e.g. delegate_to: 'toolsmith' can never actually delegate.
+    // The predicate must agree, or the two gates would disagree about the
+    // same agent.
+    expect(isTerminalDelegateConfig('toolsmith')).toBe(true);
+    expect(isTerminalDelegateConfig({})).toBe(true);
+    expect(checkDelegationAllowed('a', 'b', 'toolsmith' as unknown as string[]).ok).toBe(false);
   });
 });
 

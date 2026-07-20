@@ -36,7 +36,7 @@ import {
 } from '@mantle/db';
 import { currentTrace, startTrace } from '@mantle/tracing';
 import type { AgentInvoker, InvokeAgentResult } from '@mantle/tools';
-import { MAX_AGENT_DEPTH, MAX_TERMINAL_EDGE_DEPTH } from '@mantle/tools';
+import { MAX_AGENT_DEPTH, MAX_TERMINAL_EDGE_DEPTH, isTerminalDelegateConfig } from '@mantle/tools';
 import { getChatAdapter } from '@mantle/voice';
 import { resolveAgentTools, runToolLoop } from './tool-loop';
 import { resolveBackupAdapter, resolveChatKey } from './chat-failover';
@@ -87,7 +87,7 @@ export const invokeAgent: AgentInvoker = async ({
   // itself keep delegating.
   if (depth > MAX_AGENT_DEPTH) {
     const dt = ((target.memoryConfig as AgentMemoryConfig | null) ?? null)?.delegate_to;
-    if (Array.isArray(dt) && dt.length > 0) {
+    if (!isTerminalDelegateConfig(dt)) {
       return {
         ok: false,
         error:

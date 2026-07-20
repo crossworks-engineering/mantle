@@ -127,6 +127,7 @@ export {
   MAX_TERMINAL_EDGE_DEPTH,
   checkAgentDepth,
   checkDelegationAllowed,
+  isTerminalDelegateConfig,
   type DepthCheckResult,
   type AllowlistCheckResult,
 } from './invoke-agent-guards';
