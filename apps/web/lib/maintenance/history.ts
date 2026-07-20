@@ -5,7 +5,7 @@
  * callers own error handling (the CLI and run-store record best-effort, the
  * cron guard treats a read failure as "not due").
  */
-import { desc, eq, and, gte } from 'drizzle-orm';
+import { desc, eq, and, gte, lt, sql } from 'drizzle-orm';
 import { db, maintenanceRuns, type MaintenanceRunRow } from '@mantle/db';
 
 import type { RunState } from './types';
@@ -45,6 +45,28 @@ export async function listRecentRuns(limit = 20): Promise<MaintenanceRunRow[]> {
     .from(maintenanceRuns)
     .orderBy(desc(maintenanceRuns.startedAt))
     .limit(Math.min(Math.max(limit, 1), 100));
+}
+
+/** Flip orphaned 'running' rows to 'failed'. A row can be orphaned by a
+ *  CLI Ctrl-C (spawnSync blocks, the whole group dies), a web-container
+ *  restart mid-UI-run, or the worker being killed mid-sweep — none of those
+ *  paths can settle their row. The threshold sits above every surface's
+ *  30-min timeout, so anything older is definitively dead. Called
+ *  best-effort before history reads and at worker boot. */
+const STALE_RUNNING_MS = 35 * 60 * 1000;
+
+export async function reapStaleRuns(): Promise<number> {
+  const cutoff = new Date(Date.now() - STALE_RUNNING_MS);
+  const rows = await db
+    .update(maintenanceRuns)
+    .set({
+      state: 'failed',
+      finishedAt: new Date(),
+      summary: sql`coalesce(${maintenanceRuns.summary}, 'stale — the owning process died without settling this run')`,
+    })
+    .where(and(eq(maintenanceRuns.state, 'running'), lt(maintenanceRuns.startedAt, cutoff)))
+    .returning({ id: maintenanceRuns.id });
+  return rows.length;
 }
 
 /** True when the slug has a cron-sourced run (any state — a failed attempt

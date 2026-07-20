@@ -20,10 +20,13 @@ import PgBoss from 'pg-boss';
 import { waitForOwner } from '@mantle/db';
 import { startProcessHeartbeat } from '@mantle/content';
 
+import { reapStaleRuns } from '../lib/maintenance/history';
 import { runScheduledSweeps } from '../lib/maintenance/sweeps';
 
 const SWEEP_QUEUE = 'mantle.maintenance.sweep';
-/** 03:30 server-local, daily — off-peak; nothing here is timing-sensitive. */
+/** 03:30 UTC daily (pg-boss cron defaults to UTC; we pass tz explicitly so
+ *  nobody has to know that) — off-peak everywhere we care about, and nothing
+ *  here is timing-sensitive. */
 const SWEEP_CRON = '30 3 * * *';
 
 async function main() {
@@ -36,18 +39,39 @@ async function main() {
   // Idles until the first account exists (fresh install), then resolves.
   const ownerId = await waitForOwner({ label: 'maintenance' });
 
+  // Settle any run rows orphaned by a previous kill of this (or any) process.
+  await reapStaleRuns().catch((err) =>
+    console.error('[maintenance] stale-run reap failed (continuing):', err),
+  );
+
   const boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
   boss.on('error', (err) => console.error('[pg-boss]', err));
   await boss.start();
 
   await boss.createQueue(SWEEP_QUEUE);
-  await boss.schedule(SWEEP_QUEUE, SWEEP_CRON);
+  await boss.schedule(SWEEP_QUEUE, SWEEP_CRON, undefined, { tz: 'UTC' });
   await boss.work(SWEEP_QUEUE, async () => {
     await runScheduledSweeps(ownerId);
   });
 
-  console.log(`[maintenance] worker up — cron '${SWEEP_CRON}' on ${SWEEP_QUEUE}`);
+  console.log(`[maintenance] worker up — cron '${SWEEP_CRON}' (UTC) on ${SWEEP_QUEUE}`);
+
+  const shutdown = async () => {
+    console.log('[maintenance] shutting down…');
+    await boss.stop({ graceful: true, timeout: 10_000 });
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
+
+// Backstop: sweep work is caught inside runScheduledSweeps and boss.on('error')
+// covers the queue's own connection, but a rejection that slips past either
+// should log and keep the worker alive rather than crash-loop on a transient
+// PostgresError. Docker would bounce us anyway; staying up is strictly better.
+process.on('unhandledRejection', (reason) => {
+  console.error('[maintenance] unhandledRejection (kept alive):', reason);
+});
 
 main().catch((err) => {
   console.error('[maintenance] fatal:', err);

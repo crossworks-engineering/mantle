@@ -53,18 +53,25 @@ async function main() {
   const applyAuto = has('go');
   const applyReview = has('include-review');
 
-  // Shared with the nightly cron sweep (lib/maintenance/sweeps.ts) — one
-  // definition of what this hygiene job does. Both tiers false = dry-run.
-  const res = await runEntitiesDedupe(ownerId, { applyAuto, applyReview });
-
   const print = (label: string, list: MergeCandidate[]) => {
     console.log(`\n── ${label} (${list.length}) ───────────────────────────────`);
     for (const c of list) {
       console.log(`  "${c.dupName}"  →  "${c.canonicalName}"  [${c.kind}]  — ${c.reason}`);
     }
   };
-  print('AUTO (high-confidence)', res.auto);
-  print('REVIEW (needs your eye)', res.review);
+
+  // Shared with the nightly cron sweep (lib/maintenance/sweeps.ts) — one
+  // definition of what this hygiene job does. Both tiers false = dry-run.
+  // onCandidates prints BEFORE merging so a mid-run failure still shows the
+  // detected list.
+  const res = await runEntitiesDedupe(ownerId, {
+    applyAuto,
+    applyReview,
+    onCandidates: (auto, review) => {
+      print('AUTO (high-confidence)', auto);
+      print('REVIEW (needs your eye)', review);
+    },
+  });
 
   if (!applyAuto && !applyReview) {
     console.log(

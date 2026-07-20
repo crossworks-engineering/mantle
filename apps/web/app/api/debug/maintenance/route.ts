@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { getOwnerOr401 } from '@/lib/auth';
-import { listRecentRuns } from '@/lib/maintenance/history';
+import { listRecentRuns, reapStaleRuns } from '@/lib/maintenance/history';
 import { MAINTENANCE_TASKS } from '@/lib/maintenance/registry';
 import { getRun } from '@/lib/maintenance/run-store';
 import type {
@@ -37,6 +37,7 @@ export async function GET() {
   // task list should still render (the table is additive, not load-bearing).
   let history: RunHistoryEntry[] = [];
   try {
+    await reapStaleRuns(); // settle rows orphaned by dead processes first
     history = (await listRecentRuns(20)).map((r) => ({
       id: r.id,
       slug: r.slug,

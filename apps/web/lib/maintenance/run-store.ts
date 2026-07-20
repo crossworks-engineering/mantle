@@ -19,6 +19,8 @@ import { finishRun, recordRunStart } from './history';
 
 const MAX_LINES = 2000;
 const RUN_TIMEOUT_MS = 30 * 60 * 1000;
+/** After a stop request, how long a SIGTERM-trapping child gets before SIGKILL. */
+const KILL_GRACE_MS = 10 * 1000;
 
 interface RunRecord {
   id: string;
@@ -32,6 +34,11 @@ interface RunRecord {
   truncated: boolean;
   child?: ChildProcess;
   timeout?: NodeJS.Timeout;
+  killTimer?: NodeJS.Timeout;
+  /** Set by a stop request (cancel/timeout); applied as the terminal state
+   *  when the child's 'close' finally fires. While set, the run still counts
+   *  as running so the single-flight lock stays held. */
+  pendingState?: 'cancelled' | 'failed';
   /** maintenance_runs row id (best-effort history; null when the insert failed). */
   historyId?: string | null;
 }
@@ -157,6 +164,11 @@ export function startRun(
       console.error('[maintenance] history insert failed:', err);
     });
 
+  // The ONLY place a run reaches a terminal state — always via the child's
+  // 'close'/'error' event, never before it. That keeps the single-flight
+  // lock (isRunning ⇐ state==='running') held until the old child is
+  // actually gone, so a stop request can't let a second run overlap a
+  // SIGTERM-trapping script.
   const finish = (state: RunState, exitCode: number | null) => {
     if (run.state !== 'running') return;
     run.state = state;
@@ -164,6 +176,7 @@ export function startRun(
     run.finishedAt = new Date();
     run.child = undefined;
     if (run.timeout) clearTimeout(run.timeout);
+    if (run.killTimer) clearTimeout(run.killTimer);
     void writeHistoryFinish(run);
   };
 
@@ -175,27 +188,35 @@ export function startRun(
     finish('failed', null);
   });
   child.on('close', (code) => {
-    // 'cancelled' set by cancelRun sticks; otherwise map the exit code.
-    if (run.state === 'running') {
-      finish(code === 0 ? 'done' : 'failed', code);
-    } else {
-      run.exitCode = code;
-      void writeHistoryFinish(run);
-    }
+    // A requested stop (cancel/timeout) fixes the terminal state; otherwise
+    // map the exit code.
+    finish(run.pendingState ?? (code === 0 ? 'done' : 'failed'), code);
   });
 
   run.timeout = setTimeout(() => {
-    if (run.state === 'running') {
-      pushLine(run, `maintenance: run exceeded ${RUN_TIMEOUT_MS / 60000} min — killing`);
-      run.state = 'failed';
-      run.finishedAt = new Date();
-      void writeHistoryFinish(run);
-      child.kill('SIGTERM');
-    }
+    requestStop(run, 'failed', `maintenance: run exceeded ${RUN_TIMEOUT_MS / 60000} min — killing`);
   }, RUN_TIMEOUT_MS);
   run.timeout.unref?.();
 
   return { ok: true, id: run.id };
+}
+
+/** Ask the child to stop: SIGTERM now, SIGKILL if it's still alive after a
+ *  grace period (a script may trap SIGTERM for cleanup — or wedge). The run
+ *  stays 'running' until 'close' fires; `state` records what to finish as. */
+function requestStop(run: RunRecord, state: 'cancelled' | 'failed', note: string): void {
+  if (run.state !== 'running' || !run.child || run.pendingState) return;
+  pushLine(run, note);
+  run.pendingState = state;
+  const child = run.child;
+  child.kill('SIGTERM');
+  run.killTimer = setTimeout(() => {
+    if (run.state === 'running') {
+      pushLine(run, 'maintenance: still alive after SIGTERM — sending SIGKILL');
+      child.kill('SIGKILL');
+    }
+  }, KILL_GRACE_MS);
+  run.killTimer.unref?.();
 }
 
 export function cancelRun(): { ok: boolean; error?: string } {
@@ -203,10 +224,9 @@ export function cancelRun(): { ok: boolean; error?: string } {
   if (!run || run.state !== 'running' || !run.child) {
     return { ok: false, error: 'no run in progress' };
   }
-  pushLine(run, 'maintenance: cancelled from the UI');
-  run.state = 'cancelled';
-  run.finishedAt = new Date();
-  void writeHistoryFinish(run);
-  run.child.kill('SIGTERM');
+  if (run.pendingState) {
+    return { ok: false, error: 'already stopping' };
+  }
+  requestStop(run, 'cancelled', 'maintenance: cancelled from the UI — stopping…');
   return { ok: true };
 }

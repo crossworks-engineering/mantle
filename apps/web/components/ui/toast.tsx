@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
 type Kind = 'success' | 'error' | 'info';
@@ -50,12 +50,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     [remove],
   );
 
-  const api: ToastApi = {
-    push,
-    success: (message) => push({ kind: 'success', message }),
-    error: (message) => push({ kind: 'error', message, durationMs: 8000 }),
-    info: (message) => push({ kind: 'info', message }),
-  };
+  // Stable identity: consumers hold `toast` in useCallback/useEffect deps, so
+  // a fresh object every render turns "toast on fetch error" into a re-fetch
+  // loop (each toast re-renders the provider → new api → new callback →
+  // effect re-runs). Memoized, the context value only changes with `push`.
+  const api: ToastApi = useMemo(
+    () => ({
+      push,
+      success: (message) => push({ kind: 'success', message }),
+      error: (message) => push({ kind: 'error', message, durationMs: 8000 }),
+      info: (message) => push({ kind: 'info', message }),
+    }),
+    [push],
+  );
 
   return (
     <ToastContext.Provider value={api}>

@@ -109,7 +109,7 @@ streams a run.
 
 - `apps/web/workers/maintenance.ts` — the worker idiom exactly (`tsx`
   entrypoint + `waitForOwner` + pg-boss): queue `mantle.maintenance.sweep`,
-  `boss.schedule('30 3 * * *')` (nightly, off-peak, server-local). Wired into
+  `boss.schedule('30 3 * * *', …, { tz: 'UTC' })` (nightly, off-peak). Wired into
   root `pnpm dev` (`maint`) and as `worker_maintenance` in
   `docker-compose.yml` (autoheal + worker healthcheck, depends on `migrate`).
   A dedicated worker was chosen over piggybacking the events worker's tick
@@ -123,16 +123,33 @@ streams a run.
   sweep re-checks `cost === 'sql'` on top of the registry assertion.
 - **`maintenance_runs`** (migration 0128): slug, source (`cli`/`ui`/`cron`),
   live, state, started/finished, exit code, summary. All three surfaces
-  write it — the CLI best-effort (skipped without `DATABASE_URL`; a Ctrl-C
-  can leave a `running` row), the UI run-store on start/finish/cancel/timeout,
-  the cron per sweep. The Maintenance tab renders the last 20 as a History
-  table.
+  write it — the CLI best-effort (skipped without `DATABASE_URL`), the UI
+  run-store on start/finish/cancel/timeout, the cron per sweep. The
+  Maintenance tab renders the last 20 as a History table. Rows orphaned in
+  `running` by a dead process (CLI Ctrl-C, container restart) are reaped to
+  `failed` after 35 min (`reapStaleRuns`, called before history reads and at
+  worker boot).
 - The table doubles as the cron's **double-fire guard**: a sweep is skipped
   when a `cron`-sourced row (any state — failures arm the guard too, like the
   backups scheduler) exists within ~20h. Protects restarts/duplicate slots on
-  top of pg-boss's once-per-slot semantics.
+  top of pg-boss's once-per-slot semantics. Each sweep also races a 30-min
+  deadline (parity with the UI timeout).
+- Cross-surface overlap is excluded at the database: applying
+  `runEntitiesDedupe` takes `pg_try_advisory_xact_lock` on a slug-derived
+  key, so CLI, UI, and cron (three different processes) can never merge
+  concurrently — a contender fails fast with a clear message. Dry-runs skip
+  the lock.
 - The schedule contains exactly one task: `entities-dedupe` (auto tier).
   Backups stay on the `db-dump.sh` path — they are already scheduled there.
+
+**Audited (2026-07-20):** two adversarial review passes (correctness/data +
+concurrency/lifecycle/ops) over the Phase-2 commit; no high-severity
+findings. The fixes from the audit: stop-request lifecycle in the run-store
+(single-flight lock held until the child actually exits, SIGKILL escalation
+after 10 s), the advisory lock above, stale-`running` reaping, cron-side
+sweep timeout, worker signal handlers + `unhandledRejection` backstop
+(email-sync parity), `{ tz: 'UTC' }` on the schedule, and a memoized toast
+context (a pre-existing app-wide fetch/toast loop on persistent 5xx).
 
 ## Phase 3 — UI ✅ (shipped ahead of Phase 2)
 

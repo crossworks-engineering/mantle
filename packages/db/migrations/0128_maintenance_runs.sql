@@ -2,7 +2,7 @@
 -- task (docs/maintenance-runner.md), whatever surface started it:
 --   source 'cli'  → pnpm maintain (best-effort: skipped when no DATABASE_URL)
 --   source 'ui'   → the /debug/integrity Maintenance tab
---   source 'cron' → the nightly sweep tick in the events worker
+--   source 'cron' → the nightly maintenance worker (workers/maintenance.ts)
 --
 -- The cron scheduler ALSO reads this table as its double-fire guard: a
 -- schedulable task is due only when it has no 'cron' row (any terminal state
