@@ -597,6 +597,30 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     });
   };
 
+  // True once the user hit Stop (the turn's AbortController fired). The signal
+  // is already threaded into every LLM call (dispatchChat) so generation
+  // halts; these loop-level checks are what stop the REST of the turn — tool
+  // execution and further rounds — which otherwise ran to completion after a
+  // Stop (the "stop doesn't stop it" bug). Delegated sub-agents run this same
+  // loop with the same turnId, so they inherit every check.
+  const turnAborted = () => currentTurnAbortSignal()?.aborted === true;
+
+  /** Finalize a stopped turn with whatever partial text this round produced.
+   *  The caller (runResponderLoop → run-turn) recognises the aborted signal
+   *  and keeps the partial / substitutes its stock fallback when empty. */
+  const stoppedResult = (text: string, iter: number): ToolLoopResult => {
+    messages.push({ role: 'assistant', content: text });
+    return {
+      reply: text,
+      messages,
+      iterations: iter + 1,
+      toolCalls,
+      pendingIds,
+      artifacts,
+      tokensOut,
+    };
+  };
+
   // Empty-reply backstop. Some models return literally zero output tokens on
   // a text-only call whose transcript ends in tool results — observed on
   // gemini-3.5-flash in the force-final pass (2026-06-11 web turn that 500'd
@@ -753,12 +777,18 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       },
     );
 
+    // User Stop landed during (or just before) this round: the adapter
+    // returned its partial reply instead of throwing. DISCARD any complete
+    // tool calls the partial carried and finalize with the partial text —
+    // executing them would keep the turn visibly running after the Stop.
+    if (turnAborted()) return stoppedResult(result.text, iter);
+
     const calls = result.toolCalls;
 
     if (!calls || calls.length === 0) {
       // Final text response. Done.
       let text = result.text;
-      if (!text.trim()) text = await retryEmptyReply('final_round_empty');
+      if (!text.trim() && !turnAborted()) text = await retryEmptyReply('final_round_empty');
       messages.push({ role: 'assistant', content: text });
       return {
         reply: text,
@@ -808,6 +838,17 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     // overshoot; MAX_TOOL_CALLS_PER_RESPONSE bounds the overshoot).
     const perToolCountsAtBatchStart = new Map(perToolCounts);
     for (const call of calls) {
+      // Stop mid-batch: nothing new starts. Each remaining call still gets a
+      // paired synthetic result (providers reject an unpaired tool_use on any
+      // later request); the post-batch check below finalizes the turn.
+      if (turnAborted()) {
+        await skipToolCall(
+          call,
+          'cancelled_by_user',
+          'The user stopped this turn before this call ran. It was not executed; do not retry it.',
+        );
+        continue;
+      }
       const startedAt = Date.now();
       const slug = call.function.name;
       const argsRaw = call.function.arguments ?? '{}';
@@ -1239,6 +1280,10 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         ...(outcome.ok ? {} : { isError: true as const }),
       });
     }
+    // Stop landed during the batch (possibly on its very last call, which the
+    // per-call guard can't catch): finalize now instead of running another
+    // round against an already-dead signal.
+    if (turnAborted()) return stoppedResult(result.text, iter);
     // Per-turn tool budget check at the BATCH boundary (never mid-batch —
     // see the snapshot above). Budget spent → stop looping; the force-final
     // pass below produces the answer. The explicit nudge tells the model the
@@ -1318,7 +1363,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     },
   );
   let text = finalResult.text;
-  if (!text.trim()) text = await retryEmptyReply('force_final_empty');
+  if (!text.trim() && !turnAborted()) text = await retryEmptyReply('force_final_empty');
   messages.push({ role: 'assistant', content: text });
   return {
     reply: text,
