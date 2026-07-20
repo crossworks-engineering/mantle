@@ -41,17 +41,29 @@ export async function GET(req: Request) {
       branch,
       limit,
     });
+    // Same content-currency annotation as nodes mode (and the MCP twin):
+    // a stale passage still surfaces, but carries its living successor.
+    const chunkSuccessors = await resolveSupersededTargets(
+      user.id,
+      hits.filter((h) => h.nodeSupersededBy).map((h) => h.nodeId),
+    );
     return NextResponse.json({
       mode,
-      results: hits.map((h) => ({
-        nodeId: h.nodeId,
-        nodeTitle: h.nodeTitle,
-        nodeType: h.nodeType,
-        ordinal: h.ordinal,
-        heading: h.headingPath,
-        text: h.text,
-        url: nodeUrl(h.nodeId),
-      })),
+      results: hits.map((h) => {
+        const succ = chunkSuccessors.get(h.nodeId);
+        return {
+          nodeId: h.nodeId,
+          nodeTitle: h.nodeTitle,
+          nodeType: h.nodeType,
+          ordinal: h.ordinal,
+          heading: h.headingPath,
+          text: h.text,
+          url: nodeUrl(h.nodeId),
+          ...(succ
+            ? { supersededBy: { id: succ.id, title: succ.title, url: nodeUrl(succ.id) } }
+            : {}),
+        };
+      }),
     });
   }
 

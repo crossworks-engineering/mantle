@@ -43,6 +43,17 @@ describe('parseSearchQuery', () => {
     expect(parseSearchQuery(sp('q=x&branch=.leading'))).toEqual({ error: 'invalid branch' });
   });
 
+  it('rejects over-long branches (Postgres ltree label cap is 255)', () => {
+    const longLabel = 'a'.repeat(256);
+    expect(parseSearchQuery(sp(`q=x&branch=files.${longLabel}`))).toEqual({
+      error: 'invalid branch',
+    });
+    const longTotal = Array.from({ length: 60 }, () => 'abcdefghij').join('.');
+    expect(parseSearchQuery(sp(`q=x&branch=${longTotal}`))).toEqual({
+      error: 'invalid branch',
+    });
+  });
+
   it('splits tags on commas, trims, drops empties, caps at 10', () => {
     expect(parseSearchQuery(sp('q=x&tags=work,%20home%20,,'))).toMatchObject({
       tags: ['work', 'home'],
@@ -58,6 +69,13 @@ describe('parseSearchQuery', () => {
     expect(parseSearchQuery(sp('q=x&limit=500'))).toMatchObject({ limit: 50 });
     expect(parseSearchQuery(sp('q=x&limit=0'))).toEqual({ error: 'invalid limit' });
     expect(parseSearchQuery(sp('q=x&limit=abc'))).toEqual({ error: 'invalid limit' });
+  });
+
+  it('limit parsing is strict-integer, not parseInt-prefix', () => {
+    expect(parseSearchQuery(sp('q=x&limit=1e3'))).toMatchObject({ limit: 50 }); // 1000 → clamp
+    expect(parseSearchQuery(sp('q=x&limit=2.9'))).toEqual({ error: 'invalid limit' });
+    expect(parseSearchQuery(sp('q=x&limit=5abc'))).toEqual({ error: 'invalid limit' });
+    expect(parseSearchQuery(sp('q=x&limit=-1'))).toEqual({ error: 'invalid limit' });
   });
 
   it('rejects an over-long q', () => {
