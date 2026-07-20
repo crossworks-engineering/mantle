@@ -228,6 +228,14 @@ against a dead signal; the empty-reply retry is also skipped post-abort). Delega
 loop with the inherited `turnId`, so they stop with the root turn. Tests:
 `packages/agent-runtime/src/tool-loop.abort.test.ts`.
 
+Audit hardening (v0.153.3): `cancelled_by_user` counts as **skipped**, never failed (no red "N failed"
+badge on a deliberate stop); a stopped turn finalizes with the **last non-empty round's text** so reconcile
+never blanks the streamed text the user was reading; cancelled skips emit no trace step (no "doing X" trail
+lines after the Stop) and are excluded from the persisted trail; and an abort surfacing as a thrown
+AbortError (the one-shot `chat()` path, `MANTLE_TURN_TOKENS` off) no longer burns retry backoff
+(`withChatRetry` short-circuits on `opts.signal.aborted`) or fails over to the backup route
+(`turnAborted()` rethrow before `isChatFailover`).
+
 ## 7. One turn, end to end (the walkthrough)
 
 1. **Client `submit()`** (`assistant-client.tsx`): mints `idempotencyKey = crypto.randomUUID()`; shows an

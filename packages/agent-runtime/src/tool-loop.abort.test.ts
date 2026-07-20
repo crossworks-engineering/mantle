@@ -75,11 +75,15 @@ vi.mock('@mantle/tools', async () => ({
   notifyPendingCreated: vi.fn(async () => {}),
 }));
 
+let pendingInsertCount = 0;
 vi.mock('@mantle/db', () => ({
   db: {
     insert: vi.fn(() => ({
       values: vi.fn(() => ({
-        returning: vi.fn(async () => [{ id: 'pending-1' }]),
+        returning: vi.fn(async () => {
+          pendingInsertCount += 1;
+          return [{ id: `pending-${pendingInsertCount}` }];
+        }),
       })),
     })),
   },
@@ -87,7 +91,7 @@ vi.mock('@mantle/db', () => ({
 }));
 
 // Import AFTER mocks so the loop picks up the mocked deps.
-import { runToolLoop } from './tool-loop';
+import { runToolLoop, summarizeToolOutcomes } from './tool-loop';
 import type { ChatDispatcher, ChatOptions, ChatResult, ChatToolCall } from '@mantle/voice';
 import type { Tool } from '@mantle/db';
 
@@ -163,6 +167,7 @@ const baseArgs = (adapter: ChatDispatcher) => ({
 
 beforeEach(() => {
   dispatchToolCalls.length = 0;
+  pendingInsertCount = 0;
   dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
   turnController = new AbortController();
 });
@@ -235,6 +240,82 @@ describe('runToolLoop — user Stop (turn abort)', () => {
     expect(toolRuns).toBe(1);
     expect(calls).toHaveLength(1); // round 2 never dispatched
     expect(result.reply).toBe('round one');
+  });
+
+  it('cancelled calls count as SKIPPED, never as failed (no red badge)', async () => {
+    const { adapter } = makeFakeAdapter([
+      { type: 'toolCalls', toolCalls: [call('c1'), call('c2'), call('c3')], text: 'working…' },
+    ]);
+    dispatchToolImpl = () => {
+      turnController.abort();
+      return { ok: true, output: { ok: 1 } };
+    };
+    const result = await runToolLoop(baseArgs(adapter));
+    const stats = summarizeToolOutcomes(result.toolCalls);
+    expect(stats.failed).toBe(0);
+    expect(stats.skipped).toBe(2);
+    expect(stats.succeeded).toBe(1);
+    expect(stats.failures).toEqual([]);
+  });
+
+  it('a Stop in a prose-less round finalizes with the LAST round’s visible text', async () => {
+    // Round 1 narrates then calls a tool; round 2 emits a bare tool call
+    // (models usually skip prose mid-plan). Stop lands during round 2's tool.
+    const { adapter } = makeFakeAdapter([
+      { type: 'toolCalls', toolCalls: [call('c1')], text: 'Digging through your notes…' },
+      { type: 'toolCalls', toolCalls: [call('c2')], text: '' },
+    ]);
+    let runs = 0;
+    dispatchToolImpl = () => {
+      runs += 1;
+      if (runs === 2) turnController.abort();
+      return { ok: true, output: { ok: 1 } };
+    };
+    const result = await runToolLoop(baseArgs(adapter));
+    // Without the lastRoundText fallback this would be '' and reconcile would
+    // blank the text the user was reading.
+    expect(result.reply).toBe('Digging through your notes…');
+  });
+
+  it('does NOT fail over to the backup when the primary throws because of a Stop', async () => {
+    turnController.abort();
+    const abortErr = Object.assign(new Error('This operation was aborted'), {
+      name: 'AbortError',
+    });
+    const primary: ChatDispatcher = {
+      providerId: 'anthropic',
+      adapterName: 'primary-chat',
+      chat: vi.fn(async () => {
+        throw abortErr;
+      }),
+    };
+    const backupChat = vi.fn(async (): Promise<ChatResult> => {
+      throw new Error('backup must never be dispatched on a user abort');
+    });
+    const backup: ChatDispatcher = {
+      providerId: 'openrouter',
+      adapterName: 'backup-chat',
+      chat: backupChat,
+    };
+    await expect(
+      runToolLoop({
+        ...baseArgs(primary),
+        backup: { adapter: backup, apiKey: 'k2', model: 'b-model' },
+      }),
+    ).rejects.toThrow(/aborted/);
+    expect(backupChat).not.toHaveBeenCalled();
+  });
+
+  it('does not queue a requires_confirm pending row for a cancelled call', async () => {
+    turnController.abort();
+    const confirmTool = { ...fakeTool(), requiresConfirm: true } as Tool;
+    const { adapter } = makeFakeAdapter([
+      { type: 'toolCalls', toolCalls: [call('c1')], text: 'partial' },
+    ]);
+    const result = await runToolLoop({ ...baseArgs(adapter), tools: [confirmTool] });
+    expect(result.reply).toBe('partial');
+    expect(pendingInsertCount).toBe(0);
+    expect(result.pendingIds).toEqual([]);
   });
 
   it('without a Stop the same script runs to completion (control)', async () => {

@@ -95,9 +95,12 @@ export function classifyChatError(err: unknown): {
   // Defensive: any error exposing a numeric HTTP status (e.g. an SDK error).
   const status = (err as { status?: unknown } | null)?.status;
   if (typeof status === 'number') return { retry: RETRYABLE_STATUS.has(status) };
-  // The adapters' own `AbortSignal.timeout(60_000)` fires a TimeoutError;
-  // a bare AbortError here is likewise the timeout (ChatOptions has no
-  // caller-supplied signal). Both are transient — retry.
+  // The adapters' own `AbortSignal.timeout(60_000)` fires a TimeoutError; a
+  // bare AbortError is USUALLY that timeout too — but since the Stop wiring,
+  // ChatOptions CAN carry a caller-supplied signal (a user Stop), and
+  // retrying against an aborted signal just burns backoff sleeps.
+  // `withChatRetry` short-circuits that case (it can see the signal; this
+  // classifier only sees the error). What reaches here is transient — retry.
   const name = (err as { name?: string } | null)?.name;
   if (name === 'TimeoutError' || name === 'AbortError') return { retry: true };
   // Raw fetch network failures surface as TypeError ("fetch failed", ECONNRESET,
@@ -145,6 +148,10 @@ export function withChatRetry(
       try {
         return await adapter.chat(opts);
       } catch (err) {
+        // A caller-aborted signal (user Stop) is not transient: every retry
+        // would abort identically after a pointless backoff sleep. Surface it
+        // immediately — the tool loop / run-turn recognise the stop.
+        if (opts.signal?.aborted) throw err;
         const { retry, retryAfterMs } = classifyChatError(err);
         if (!retry || attempt >= maxRetries) throw err;
         attempt += 1;

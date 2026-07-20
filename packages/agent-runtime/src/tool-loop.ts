@@ -230,6 +230,10 @@ const SKIP_REASONS = new Set([
   'tool_repeat_limit',
   'repeated_failure',
   'no_progress',
+  // A user Stop landed mid-batch — the call was never dispatched. Counted as
+  // skipped, NOT failed: the always-visible "N failed this turn" badge must
+  // not brand a deliberately-stopped turn as a failure.
+  'cancelled_by_user',
 ]);
 
 export type ToolOutcomeStats = {
@@ -582,13 +586,19 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   ): Promise<void> => {
     const slug = call.function.name;
     const argsRaw = call.function.arguments ?? '{}';
-    await step(
-      { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: '<capped, suppressed>' } },
-      async (handle) => {
-        handle.setSkipped(reason);
-        handle.setMeta({ [reason]: true, call_id: call.id, model: args.model });
-      },
-    );
+    // Guard skips get a trace step; a user-cancelled skip does NOT — the step
+    // observer publishes a "doing X" trail line on step START, so tracing a
+    // batch of cancelled calls would paint new activity AFTER the user hit
+    // Stop. The ledger entry + paired tool message below are record enough.
+    if (reason !== 'cancelled_by_user') {
+      await step(
+        { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: '<capped, suppressed>' } },
+        async (handle) => {
+          handle.setSkipped(reason);
+          handle.setMeta({ [reason]: true, call_id: call.id, model: args.model });
+        },
+      );
+    }
     toolCalls.push({ slug, argsJson: argsRaw, durationMs: 0, status: 'error', error: reason });
     messages.push({
       role: 'tool',
@@ -605,13 +615,28 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // loop with the same turnId, so they inherit every check.
   const turnAborted = () => currentTurnAbortSignal()?.aborted === true;
 
-  /** Finalize a stopped turn with whatever partial text this round produced.
-   *  The caller (runResponderLoop → run-turn) recognises the aborted signal
-   *  and keeps the partial / substitutes its stock fallback when empty. */
-  const stoppedResult = (text: string, iter: number): ToolLoopResult => {
-    messages.push({ role: 'assistant', content: text });
+  // The last round's non-empty commentary, kept so a Stop that lands in a
+  // round whose own text is empty (models usually emit tool calls without
+  // prose) still finalizes with the text the user was READING — otherwise
+  // reconcile replaces the visible streamed text with a blank durable reply.
+  let lastRoundText = '';
+
+  /** Finalize a stopped turn with the round's partial text (falling back to
+   *  the last non-empty round's text). The caller (runResponderLoop →
+   *  run-turn) sees the aborted signal and keeps this reply verbatim — it
+   *  deliberately does NOT substitute its empty-reply fallback for stops.
+   *  `pushAssistantMessage` is false when the round's text already sits in
+   *  the transcript (the tool_calls assistant message) — a second push would
+   *  duplicate it for any future consumer of `messages`. */
+  const stoppedResult = (
+    text: string,
+    iter: number,
+    opts: { pushAssistantMessage: boolean } = { pushAssistantMessage: true },
+  ): ToolLoopResult => {
+    const reply = text.trim() ? text : lastRoundText;
+    if (opts.pushAssistantMessage) messages.push({ role: 'assistant', content: reply });
     return {
-      reply: text,
+      reply,
       messages,
       iterations: iter + 1,
       toolCalls,
@@ -745,6 +770,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           // Fail over to the backup once per turn, only on a route-DOWN /
           // 429 / 5xx error. 4xx bad-input would fail identically on the
           // backup, so rethrow those.
+          // A user Stop on the one-shot chat() path surfaces as a thrown
+          // AbortError — that's the Stop, not a route failure. Rethrow before
+          // the failover check so we don't dispatch the backup (and burn its
+          // retries) against an already-dead signal; run-turn's catch
+          // recognises the aborted signal and finalizes as a stop.
+          if (turnAborted()) throw err;
           if (!args.backup || failedOver || !isChatFailover(err)) throw err;
           console.warn(
             `[tool-loop] primary '${active.adapter.adapterName}:${active.model}' failed ` +
@@ -776,6 +807,8 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         }
       },
     );
+
+    if (result.text.trim()) lastRoundText = result.text;
 
     // User Stop landed during (or just before) this round: the adapter
     // returned its partial reply instead of throwing. DISCARD any complete
@@ -1282,8 +1315,10 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     }
     // Stop landed during the batch (possibly on its very last call, which the
     // per-call guard can't catch): finalize now instead of running another
-    // round against an already-dead signal.
-    if (turnAborted()) return stoppedResult(result.text, iter);
+    // round against an already-dead signal. The round's text is already in
+    // the transcript (the tool_calls assistant message pushed above) — don't
+    // push it twice.
+    if (turnAborted()) return stoppedResult(result.text, iter, { pushAssistantMessage: false });
     // Per-turn tool budget check at the BATCH boundary (never mid-batch —
     // see the snapshot above). Budget spent → stop looping; the force-final
     // pass below produces the answer. The explicit nudge tells the model the

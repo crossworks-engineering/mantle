@@ -1204,7 +1204,7 @@ export function AssistantClient({
                                               ? ` · ${turn.response.toolStats.queued} awaiting approval`
                                               : '') +
                                             (turn.response.toolStats.skipped > 0
-                                              ? ` · ${turn.response.toolStats.skipped} blocked by guards`
+                                              ? ` · ${turn.response.toolStats.skipped} not run (guards or Stop)`
                                               : '')
                                           }
                                         >

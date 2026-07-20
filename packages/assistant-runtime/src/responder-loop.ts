@@ -43,10 +43,13 @@ import type { AssembledResponderTurn } from './assemble-turn';
  *  is exactly the "real actions" set the record displays. Returns [] when no
  *  call maps to a recognised stage. */
 export function buildPersistedTrail(
-  toolCalls: ReadonlyArray<{ slug: string; argsJson: string; durationMs: number }>,
+  toolCalls: ReadonlyArray<{ slug: string; argsJson: string; durationMs: number; error?: string }>,
 ): Array<{ kind: string; label: string; elapsedMs?: number }> {
   const out: Array<{ kind: string; label: string; elapsedMs?: number }> = [];
   toolCalls.forEach((tc, i) => {
+    // Calls cancelled by a user Stop never ran — recording them as performed
+    // actions would put fabricated work in the frozen trail.
+    if (tc.error === 'cancelled_by_user') return;
     let parsed: Record<string, unknown> = {};
     try {
       const p = JSON.parse(tc.argsJson) as unknown;

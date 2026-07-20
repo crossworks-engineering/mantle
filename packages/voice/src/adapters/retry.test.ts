@@ -134,6 +134,34 @@ describe('withChatRetry', () => {
     expect(chat).toHaveBeenCalledTimes(1);
   });
 
+  it('does not retry when the caller-supplied signal is aborted (user Stop)', async () => {
+    // A Stop aborts opts.signal; the adapter's fetch rejects with AbortError.
+    // Retrying would abort identically after a pointless backoff sleep — the
+    // wrapper must surface the error on the first attempt.
+    const controller = new AbortController();
+    controller.abort();
+    const chat = vi.fn(async () => {
+      throw Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+    });
+    await expect(wrap(chat).chat({ ...OPTS, signal: controller.signal })).rejects.toThrow(
+      /aborted/,
+    );
+    expect(chat).toHaveBeenCalledTimes(1);
+  });
+
+  it('still retries a bare AbortError with NO caller signal (the 60s timeout case)', async () => {
+    const chat = vi
+      .fn(async (): Promise<ChatResult> => {
+        throw Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+      })
+      .mockImplementationOnce(async () => {
+        throw Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+      })
+      .mockImplementationOnce(async () => RESULT);
+    await expect(wrap(chat).chat(OPTS)).resolves.toEqual(RESULT);
+    expect(chat).toHaveBeenCalledTimes(2);
+  });
+
   it('honors a per-call maxRetries override of 0', async () => {
     const chat = vi.fn(async () => {
       throw new ChatHttpError({ provider: 'anthropic', status: 503 });
