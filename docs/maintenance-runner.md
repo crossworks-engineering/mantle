@@ -1,6 +1,9 @@
 # Maintenance runner — registry, CLI, scheduled sweeps
 
-Status: **Phase 1 shipped** (registry + `pnpm maintain` CLI). Phases 2–3 planned.
+Status: **Phase 1 shipped** (registry + `pnpm maintain` CLI, v0.150.0).
+**Phase 3 UI shipped** (Maintenance tab on `/debug/integrity`, v0.151.0) —
+brought forward so admins don't need a terminal. Phase 2 (cron sweeps +
+`maintenance_runs` history) remains planned.
 
 ## Why
 
@@ -118,15 +121,29 @@ streams a run.
 - Initial schedule contains exactly one task: `entities-dedupe` (auto tier).
   Backups stay on the `db-dump.sh` path — they are already scheduled there.
 
-## Phase 3 — UI (planned)
+## Phase 3 — UI ✅ (shipped ahead of Phase 2)
 
-- A **Maintenance** tab on `/debug/integrity`, next to Corpus Audit (whose
-  read-only invariant checks are the natural verification companion).
-- Lists registry tasks with dry-run preview counts, an Apply button for
-  remedies (`dedupe-edges` becomes a button the Memory-index card can deep-link
-  to), and the `maintenance_runs` history.
-- Retired backfills get archived out of the script list (or shown collapsed
-  under "historical").
+The **Maintenance** tab on `/debug/integrity` — so admins can run tasks
+without a terminal:
+
+- `app/(app)/debug/integrity/maintenance-tab.tsx` lists registry tasks
+  grouped by kind (retired backfills collapsed), each with **Preview**
+  (dry-run) and **Apply/Run** actions; live runs of spend/retired/no-dry-run
+  tasks confirm via `AlertDialog` first.
+- Server: `lib/maintenance/run-store.ts` spawns the task's script exactly like
+  the CLI (single-flight, line-buffered output capped at 2000 lines, 30-min
+  kill timer, cancel via SIGTERM) and `lib/maintenance/run-args.ts` — a pure
+  `planRun()` shared with the routes — enforces the SAME rails as
+  `pnpm maintain` server-side, so the UI cannot bypass them (spend/retired
+  confirms, env checks, positional-arg tasks like the backups stay CLI-only).
+- Routes: `GET /api/debug/maintenance` (registry + env status + current run),
+  `POST/GET /api/debug/maintenance/run` (start / poll), `…/run/cancel`.
+  Owner-gated via `getOwnerOr401` like every debug route.
+- The console pane polls ~1.2 s while a run is in flight and shows the exit
+  state — including failures (e.g. DB unreachable) verbatim.
+
+Still open from the original Phase-3 list: `maintenance_runs` history (lands
+with Phase 2's table) and a Memory-index → `dedupe-edges` deep-link.
 
 ## Audit inventory (2026-07)
 

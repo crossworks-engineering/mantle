@@ -17,6 +17,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useRealtime } from '@/components/realtime/use-realtime';
+import { MaintenanceView } from './maintenance-tab';
 import { ListPager } from '@/components/layout/list-pager';
 import {
   Select,
@@ -715,13 +716,18 @@ function SystemView() {
 }
 
 export function IntegrityClient() {
-  const [mode, setMode] = useState<'live' | 'audit' | 'system'>('live');
-  const LABELS = { live: 'Live', audit: 'Corpus audit', system: 'System config' } as const;
+  const [mode, setMode] = useState<'live' | 'audit' | 'system' | 'maintenance'>('live');
+  const LABELS = {
+    live: 'Live',
+    audit: 'Corpus audit',
+    system: 'System config',
+    maintenance: 'Maintenance',
+  } as const;
 
   return (
     <div className="space-y-4">
       <div className="flex gap-1 border-b border-border">
-        {(['live', 'audit', 'system'] as const).map((m) => (
+        {(['live', 'audit', 'system', 'maintenance'] as const).map((m) => (
           <button
             key={m}
             type="button"
@@ -738,7 +744,15 @@ export function IntegrityClient() {
         ))}
       </div>
 
-      {mode === 'live' ? <LiveView /> : mode === 'audit' ? <AuditView /> : <SystemView />}
+      {mode === 'live' ? (
+        <LiveView />
+      ) : mode === 'audit' ? (
+        <AuditView />
+      ) : mode === 'system' ? (
+        <SystemView />
+      ) : (
+        <MaintenanceView />
+      )}
     </div>
   );
 }
