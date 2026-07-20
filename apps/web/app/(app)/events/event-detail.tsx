@@ -246,7 +246,7 @@ export function EventDetail({
           <div className="flex items-start justify-between gap-3">
             <h2 className="min-w-0 text-xl font-semibold">{meta.title}</h2>
             <div className="flex shrink-0 items-center gap-2">
-              <ShareControl nodeId={meta.id} iconOnly />
+              <ShareControl nodeId={meta.id} iconOnly teamMode />
               <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
                 <Pencil /> Edit
               </Button>

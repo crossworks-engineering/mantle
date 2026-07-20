@@ -100,7 +100,7 @@ export function TaskDetail({
               {task.title}
             </h2>
             <div className="flex shrink-0 items-center gap-2">
-              <ShareControl nodeId={task.id} iconOnly />
+              <ShareControl nodeId={task.id} iconOnly teamMode />
               <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
                 <Pencil /> Edit
               </Button>

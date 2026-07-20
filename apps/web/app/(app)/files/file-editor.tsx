@@ -198,7 +198,7 @@ export function FileEditor({
               </ToggleGroupItem>
             </ToggleGroup>
           )}
-          <ShareControl nodeId={file.id} />
+          <ShareControl nodeId={file.id} teamMode />
           {/* History link → /nodes/[id]/history: every trace that touched
               this file (ingest, extractor, summarizer, …). */}
           <Button asChild variant="outline" size="sm">

@@ -208,7 +208,12 @@ media presenters are net-new here.)*
 A reusable **`<ShareControl>`** (`components/share/share-control.tsx`) on every
 detail screen (pages, notes, tasks, events, files, apps, tables, folders): a *"Anyone with the link can
 view"* toggle → mint token → show URL + **Copy** → **Revoke** (and, P4, expiry +
-"allow search engines"). API (owner-scoped via `requireOwner`):
+"allow search engines"). **Every** shareable type also offers the
+public/team admission toggle (`teamMode`) — pages/apps/tables/folders carry
+kind-specific hints; notes/tasks/events/files use the default. The `/team`
+workspace lists shares of **both** modes per section (public ones marked with
+a `public` badge); the mode only controls who can open the `/s/` link.
+API (owner-scoped via `requireOwner`):
 
 - `POST /api/shares` `{ nodeId }` → `{ token, url }`
 - `DELETE /api/shares/[id]` → revoke (cascades to the subtree if the share does — §7b)

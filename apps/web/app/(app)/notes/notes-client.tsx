@@ -588,7 +588,7 @@ function NotePreview({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <ExportButton nodeId={note.id} label="Word" />
-          <ShareControl nodeId={note.id} />
+          <ShareControl nodeId={note.id} teamMode />
           <Button variant="outline" size="sm" onClick={onEdit}>
             <Pencil /> Edit
           </Button>

@@ -26,8 +26,9 @@ type ShareInfo = {
  * `teamMode` adds a second toggle switching the link between public admission
  * and team-members-only (visitors must enter their contact team token; the
  * /s/ surface enforces it). `teamHint` tailors the toggle's explanation —
- * apps pass their tools/data warning; content kinds use the default.
- * Team-shared PAGES also appear on the /team hub as briefing cards.
+ * apps/tables/folders pass kind-specific warnings; content kinds use the
+ * default. Every shared item (public or team) lists in the /team workspace;
+ * the mode only controls who can open it.
  *
  * `allowCascade` (pages) adds a "Share sub-pages" toggle when the page has
  * descendants: on shares the whole subtree at this page's mode; off (or
@@ -38,7 +39,7 @@ export function ShareControl({
   iconOnly = false,
   beforeEnable,
   teamMode = false,
-  teamHint = 'Visitors must enter their team token to open the link. Team-shared pages appear on the Team Hub.',
+  teamHint = 'Visitors must enter their team token to open the link. The item lists in the team workspace either way — this only controls who can open it.',
   allowCascade = false,
 }: {
   nodeId: string;
