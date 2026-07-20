@@ -3,6 +3,7 @@ import {
   assertSafe,
   assertSafeScript,
   appDbFiles,
+  seedRowsIntoHandle,
   vacuumIntoStatement,
   snapshotDestPath,
 } from './app-broker';
@@ -165,5 +166,95 @@ describe('snapshotDestPath', () => {
     expect(snapshotDestPath('/tmp/snap', 'owner-1', 'app-9')).toBe(
       '/tmp/snap/owner-1/app-9.sqlite',
     );
+  });
+});
+
+/**
+ * `seedRowsIntoHandle` is the core of the `app_db_seed` builtin — the
+ * authoring-time bulk load of reference data. It must validate the table and
+ * every row against the LIVE columns, insert all-or-nothing, and support the
+ * replace-then-append batching contract.
+ */
+describe('seedRowsIntoHandle', () => {
+  function memDb() {
+    const { DatabaseSync } = process.getBuiltinModule(
+      'node:sqlite',
+    ) as typeof import('node:sqlite');
+    const db = new DatabaseSync(':memory:');
+    db.exec(
+      'CREATE TABLE fluids (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, sg REAL, flammable INTEGER)',
+    );
+    return db;
+  }
+
+  it('inserts rows and reports counts', () => {
+    const db = memDb();
+    const res = seedRowsIntoHandle(db, 'fluids', [
+      { name: 'WATER', sg: 1 },
+      { name: 'BUTANE', sg: 0.58, flammable: true },
+      { name: 'UNKNOWN', sg: null },
+    ]);
+    expect(res).toMatchObject({ inserted: 3, deleted: 0, table: 'fluids' });
+    const rows = db.prepare('SELECT name, sg, flammable FROM fluids ORDER BY id').all() as {
+      name: string;
+      sg: number | null;
+      flammable: number | null;
+    }[];
+    expect(rows).toEqual([
+      { name: 'WATER', sg: 1, flammable: null },
+      { name: 'BUTANE', sg: 0.58, flammable: 1 }, // boolean stored as 1
+      { name: 'UNKNOWN', sg: null, flammable: null },
+    ]);
+    db.close();
+  });
+
+  it('replace empties the table first; append batches keep prior rows', () => {
+    const db = memDb();
+    seedRowsIntoHandle(db, 'fluids', [{ name: 'OLD' }]);
+    const res = seedRowsIntoHandle(db, 'fluids', [{ name: 'A' }, { name: 'B' }], {
+      replace: true,
+    });
+    expect(res).toMatchObject({ inserted: 2, deleted: 1 });
+    seedRowsIntoHandle(db, 'fluids', [{ name: 'C' }]); // second batch appends
+    const names = (db.prepare('SELECT name FROM fluids ORDER BY id').all() as { name: string }[])
+      .map((r) => r.name);
+    expect(names).toEqual(['A', 'B', 'C']);
+    db.close();
+  });
+
+  it('rolls the whole batch back when any row is bad (all-or-nothing)', () => {
+    const db = memDb();
+    expect(() =>
+      seedRowsIntoHandle(db, 'fluids', [{ name: 'GOOD' }, { nope: 'bad column' }]),
+    ).toThrow(/unknown column 'nope'.*columns are/i);
+    expect((db.prepare('SELECT count(*) c FROM fluids').get() as { c: number }).c).toBe(0);
+    db.close();
+  });
+
+  it('rejects nested values with a teaching error', () => {
+    const db = memDb();
+    expect(() => seedRowsIntoHandle(db, 'fluids', [{ name: { deep: true } }])).toThrow(
+      /must be string, number, boolean, or null/i,
+    );
+    db.close();
+  });
+
+  it('names the existing tables when the target table is missing', () => {
+    const db = memDb();
+    expect(() => seedRowsIntoHandle(db, 'fluidz', [{ name: 'X' }])).toThrow(
+      /does not exist.*app_db_schema_set.*fluids/is,
+    );
+    db.close();
+  });
+
+  it('refuses invalid and sqlite-internal table names', () => {
+    const db = memDb();
+    expect(() => seedRowsIntoHandle(db, 'fluids"; DROP TABLE fluids;--', [{ name: 'X' }])).toThrow(
+      /not a valid table name/i,
+    );
+    expect(() => seedRowsIntoHandle(db, 'sqlite_master', [{ name: 'X' }])).toThrow(
+      /not a valid table name/i,
+    );
+    db.close();
   });
 });

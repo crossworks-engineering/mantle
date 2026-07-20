@@ -298,6 +298,143 @@ export async function appDbExec(
   return res;
 }
 
+// ── Bulk seeding (authoring tools) ───────────────────────────────────────────
+
+export type AppDbSeedResult = {
+  inserted: number;
+  deleted: number;
+  table: string;
+  columns: string[];
+};
+
+/** SQLite identifier we accept for a seed target table (no quoting tricks). */
+const TABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * The seed core, against an already-open handle — separated from the registry
+ * and file plumbing so it is directly testable on an in-memory database.
+ * Validates the table name against the live schema and every row against the
+ * live columns, then inserts all-or-nothing in one transaction. `replace`
+ * empties the table first (same transaction). Values must be
+ * string/number/boolean/null (booleans stored as 1/0).
+ */
+export function seedRowsIntoHandle(
+  handle: SqliteDb,
+  table: string,
+  rows: Record<string, unknown>[],
+  opts: { replace?: boolean } = {},
+): AppDbSeedResult {
+  if (!TABLE_NAME.test(table) || table.toLowerCase().startsWith('sqlite_')) {
+    throw new Error(
+      `table '${table}' is not a valid table name — use the exact name from the declared schema (app_db_schema_set)`,
+    );
+  }
+  const cols = handle.prepare(`PRAGMA table_info("${table}")`).all() as { name: string }[];
+  if (!cols.length) {
+    const known = (
+      handle
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        .all() as { name: string }[]
+    ).map((t) => t.name);
+    throw new Error(
+      `table '${table}' does not exist in this app's database — declare it via app_db_schema_set first` +
+        (known.length ? ` (existing tables: ${known.join(', ')})` : ''),
+    );
+  }
+  const colSet = new Set(cols.map((c) => c.name));
+
+  handle.exec('BEGIN IMMEDIATE');
+  try {
+    let deleted = 0;
+    if (opts.replace) {
+      deleted = Number(handle.prepare(`DELETE FROM "${table}"`).run().changes);
+    }
+    // Rows may carry differing key subsets; cache one prepared INSERT per
+    // distinct key signature.
+    const stmts = new Map<string, ReturnType<SqliteDb['prepare']>>();
+    let inserted = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] ?? {};
+      const keys = Object.keys(row);
+      if (!keys.length) throw new Error(`row ${i} is empty — every row needs at least one column`);
+      const values: unknown[] = [];
+      for (const k of keys) {
+        if (!colSet.has(k)) {
+          throw new Error(
+            `row ${i} has unknown column '${k}' — this table's columns are: ${[...colSet].join(', ')}`,
+          );
+        }
+        const v = row[k];
+        if (v === null || v === undefined) values.push(null);
+        else if (typeof v === 'boolean') values.push(v ? 1 : 0);
+        else if (typeof v === 'string' || typeof v === 'number') values.push(v);
+        else {
+          throw new Error(
+            `row ${i} column '${k}' has a ${Array.isArray(v) ? 'array' : typeof v} value — seed values must be string, number, boolean, or null (JSON-encode nested data yourself if the column stores it)`,
+          );
+        }
+      }
+      const sig = keys.join(' ');
+      let stmt = stmts.get(sig);
+      if (!stmt) {
+        const colList = keys.map((k) => `"${k}"`).join(', ');
+        const placeholders = keys.map(() => '?').join(', ');
+        stmt = handle.prepare(`INSERT INTO "${table}" (${colList}) VALUES (${placeholders})`);
+        stmts.set(sig, stmt);
+      }
+      stmt.run(...values);
+      inserted++;
+    }
+    handle.exec('COMMIT');
+    return { inserted, deleted, table, columns: [...colSet] };
+  } catch (err) {
+    try {
+      handle.exec('ROLLBACK');
+    } catch {
+      /* already rolled back */
+    }
+    throw err;
+  }
+}
+
+/**
+ * Bulk-insert rows into ONE table of an app's own database, atomically — the
+ * authoring-time counterpart of the app's runtime `host.db.exec`, so an agent
+ * can load reference data without routing thousands of single-row execs through
+ * the iframe bridge. Provisions the DB (applying the declared DDL) when this is
+ * the first touch. All-or-nothing: any bad row rolls the whole batch back.
+ */
+export async function appDbSeedRows(
+  ownerId: string,
+  appNodeId: string,
+  table: string,
+  rows: Record<string, unknown>[],
+  opts: { replace?: boolean } = {},
+  schema?: AppDbSchema,
+): Promise<AppDbSeedResult> {
+  const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
+  const handle = await openSqlite(reg.storagePath);
+  let result: AppDbSeedResult;
+  try {
+    result = seedRowsIntoHandle(handle, table, rows, opts);
+  } finally {
+    handle.close();
+  }
+  // Same best-effort size tracking as appDbExec.
+  try {
+    const { size } = await stat(reg.storagePath);
+    await db
+      .update(appDatabases)
+      .set({ sizeBytes: size, updatedAt: new Date() })
+      .where(eq(appDatabases.id, reg.id));
+  } catch {
+    /* size tracking is best-effort */
+  }
+  return result;
+}
+
 // ── Read-only access (agent tools) ──────────────────────────────────────────
 
 export type AppDbSchemaTable = { name: string; sql: string };

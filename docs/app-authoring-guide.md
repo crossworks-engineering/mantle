@@ -29,9 +29,13 @@ explicitly grant it and an optional per-app SQLite database.
    - `app_tools_set(id, tool_slugs)` — the runtime allowlist of tool slugs the
      app may call. The host refuses any slug not declared here.
    - `app_db_schema_set(id, schema_sql)` — optional per-app SQLite DDL.
-4. **`app_build(id)`** → `{ build_ok, errors[], warnings[], bytes }`. Each error
-   carries file/line/column. Fix the offending file and rebuild until
-   `build_ok`. A failed build never replaces the last good preview.
+   - `app_db_seed(id, table, rows, replace?)` — optional one-time bulk load of
+     reference data into a declared table (atomic; ≤2000 rows/call, batch
+     bigger sets).
+4. **`app_build(id)`** — a failed compile **fails the call**, with every error's
+   file/line/column in the error text. Fix the offending file and rebuild until
+   it succeeds (success returns `{ build_ok: true, warnings[], bytes }`). A
+   failed build never replaces the last good preview.
 5. **Review** at `/apps/<id>` (the preview renders the draft build).
 6. **`app_publish(id)`** — promotes the draft + its green build to live. Refuses
    without a successful build.
@@ -104,6 +108,13 @@ so the iframe never sees secrets or credentials.
 
 ## Binding to data — the important part
 
+**First: many apps need no data binding at all.** A calculator, converter, or
+visualizer whose logic is pure code ships with zero tools and zero database.
+The tiers, simplest first: (1) pure code — nothing to wire; (2) fixed reference
+data — seed the per-app SQLite once with `app_db_seed` (below); (3) live
+external/owner data — a declared tool via `host.tools.call`. Don't reach for
+tier 3 when tier 1–2 suffices.
+
 A running app **cannot read your notes / tables / entities directly**. It can
 only reach owner data via:
 
@@ -135,6 +146,17 @@ For app-local state (caches, user-entered rows, preferences). Declare DDL via
 DB on first use. At runtime use `host.db.query/exec`. `ATTACH`, `DETACH`,
 `PRAGMA`, and `VACUUM INTO` are blocked. Treat schema as **append-only** — there
 are no destructive migrations; add columns/tables, use views for renames.
+
+**Seeding reference data** — when the app needs pre-loaded lookup data (a
+reference table, a rate matrix, rows imported from a spreadsheet), load it at
+authoring time with `app_db_seed(id, table, rows, replace?)`: an atomic bulk
+INSERT validated against the live table columns (values: string / number /
+boolean / null; ≤2000 rows per call — batch bigger sets, `replace: true` on
+the first batch only). Read the source data with your own read tools
+(`file_read`, `table_rows_list`, …), transform, seed, then verify with
+`app_db_query`. This is a one-time authoring step, **not** an integration —
+don't mint a tool or build an import UI for it, and don't ship an app that
+asks its user to paste in its own reference data.
 
 Each app gets **one durable SQLite file**, isolated per app — there's no path
 input, so an app can only ever reach its own database. Operationally it's a
