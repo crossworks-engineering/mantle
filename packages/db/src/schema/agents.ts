@@ -29,6 +29,11 @@ export const agentRole = pgEnum('agent_role', [
   'summarizer',
   'reflector',
   'custom',
+  // Runner-queue worker TEMPLATE (migration 0131, docs/runs.md): each
+  // `worker_invoke` run item instantiates one as a fresh agent turn.
+  // Propose-don't-mutate kit; never chattable; model 'inherit' = run on the
+  // responder's model/provider/key at execution time.
+  'worker',
 ]);
 
 /** Avatar selection for an agent: a style id + seed (boring-avatars).

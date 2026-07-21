@@ -2,11 +2,15 @@ export {
   appendChildren,
   cancelRun,
   claimItem,
+  claimWorkerItem,
   completeItem,
   createRun,
+  DEFAULT_AUDIT_TIMEOUT_SECONDS,
   DEFAULT_LEAF_TIMEOUT_SECONDS,
   requeueForRetry,
   SealedGroupError,
+  supersedeItem,
+  workerConcurrencyCap,
   type PlanGroup,
   type PlanLeaf,
   type PlanNode,
@@ -23,3 +27,18 @@ export {
   type CompiledRunItem,
 } from './state';
 export { claimResume, sweepRuns, type SweepResult } from './sweep';
+export {
+  DEFAULT_WORKER_SLUG,
+  ensureWorkerAgent,
+  listWorkerAgents,
+  WORKER_MODEL_INHERIT,
+  WORKER_SYSTEM_PROMPT,
+  WORKER_TOOL_GROUP_SLUGS,
+} from './worker';
+export {
+  applyAuditVerdict,
+  findAuditedWorkerItem,
+  mechanicalPreCheck,
+  type AuditFinding,
+  type AuditVerdictResult,
+} from './audit';

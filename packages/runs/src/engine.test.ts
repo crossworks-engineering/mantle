@@ -24,6 +24,7 @@ import {
   appendChildren,
   cancelRun,
   claimItem,
+  claimWorkerItem,
   completeItem,
   createRun,
   requeueForRetry,
@@ -32,6 +33,7 @@ import {
   type PostCommitAction,
 } from './engine';
 import { claimResume, sweepRuns } from './sweep';
+import { applyAuditVerdict, mechanicalPreCheck } from './audit';
 
 const ADMIN_URL = process.env.RUNS_TEST_DATABASE_URL;
 const SCRATCH_DB = 'mantle_runs_engine_test';
@@ -442,5 +444,206 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     const late = await completeItem(db, { itemId: kids[0]!.id, state: 'done' });
     expect(late.completed).toBe(false);
     expect(late.actions).toHaveLength(0);
+  });
+
+  // ── slice 2: workers + audits ──────────────────────────────────────────────
+
+  it('audit promotion emits a resume action, not a dispatch', SLOW, async () => {
+    const { runId, rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'audit promote',
+      plan: { kind: 'seq', children: [note('work'), { kind: 'audit', payload: {} }] },
+    });
+    const [work, audit] = await children(rootItemId);
+    const r = await completeItem(db, { itemId: work!.id, state: 'done' });
+    expect(dispatches(r)).toHaveLength(0);
+    expect(resumes(r)).toEqual([{ type: 'resume', runId, groupId: audit!.id }]);
+    const auditRow = await itemRow(audit!.id);
+    expect(auditRow.state).toBe('ready');
+    expect(auditRow.deadlineAt).not.toBeNull(); // verdict budget stamps at promote
+  });
+
+  it('applyAuditVerdict pass completes the audit and the run', SLOW, async () => {
+    const { runId, rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'audit pass',
+      plan: {
+        kind: 'seq',
+        children: [
+          { kind: 'worker_invoke', payload: { step: 'draft the thing' } },
+          { kind: 'audit', payload: {} },
+        ],
+      },
+    });
+    const [worker, audit] = await children(rootItemId);
+    await completeItem(db, {
+      itemId: worker!.id,
+      state: 'done',
+      result: { proposal: 'a draft', evidence: [{ tool: 'search_nodes', ok: true }] },
+    });
+    const res = await applyAuditVerdict(db, {
+      auditItemId: audit!.id,
+      verdict: 'pass',
+      findings: [{ severity: 'advisory', claim: 'could cite one more source' }],
+    });
+    expect(res.ok && res.outcome).toBe('pass');
+    if (!res.ok) throw new Error('unreachable');
+    expect(res.actions.filter((a) => a.type === 'resume' && a.runId === runId)).toHaveLength(1);
+    expect((await itemRow(audit!.id)).state).toBe('done');
+    expect((await runRow(runId)).status).toBe('done');
+  });
+
+  it('verdict coherence: redo needs blocking; pass refuses blocking', SLOW, async () => {
+    const { rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'audit coherence',
+      plan: {
+        kind: 'seq',
+        children: [
+          { kind: 'worker_invoke', payload: { step: 's' } },
+          { kind: 'audit', payload: {} },
+        ],
+      },
+    });
+    const [worker, audit] = await children(rootItemId);
+    await completeItem(db, { itemId: worker!.id, state: 'done', result: { proposal: 'p' } });
+    const redoNoBlocking = await applyAuditVerdict(db, {
+      auditItemId: audit!.id,
+      verdict: 'redo',
+      findings: [{ severity: 'advisory', claim: 'meh' }],
+    });
+    expect(redoNoBlocking.ok).toBe(false);
+    const passWithBlocking = await applyAuditVerdict(db, {
+      auditItemId: audit!.id,
+      verdict: 'pass',
+      findings: [{ severity: 'blocking', claim: 'wrong' }],
+    });
+    expect(passWithBlocking.ok).toBe(false);
+    // Audit still pending after both refusals.
+    expect((await itemRow(audit!.id)).state).toBe('ready');
+  });
+
+  it('redo cycle: supersede + append + promote; second blocking → needs_human', SLOW, async () => {
+    const { runId, rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'redo cycle',
+      plan: {
+        kind: 'seq',
+        children: [
+          { kind: 'worker_invoke', payload: { step: 'write the summary' } },
+          { kind: 'audit', payload: {} },
+        ],
+      },
+    });
+    const [worker1, audit1] = await children(rootItemId);
+    await completeItem(db, {
+      itemId: worker1!.id,
+      state: 'done',
+      result: { proposal: 'I verified everything.', evidence: [] },
+    });
+
+    // Redo: worker1 superseded, replacement + fresh audit appended, replacement dispatched.
+    const redo = await applyAuditVerdict(db, {
+      auditItemId: audit1!.id,
+      verdict: 'redo',
+      findings: [{ severity: 'blocking', claim: 'claims verification with an empty ledger' }],
+      directive: 'actually read the sources before summarizing',
+    });
+    expect(redo.ok && redo.outcome).toBe('redo');
+    if (!redo.ok || !redo.replacementItemId) throw new Error('unreachable');
+    const w1 = await itemRow(worker1!.id);
+    expect(w1.state).toBe('superseded');
+    expect(w1.supersededBy).toBe(redo.replacementItemId);
+    const root1 = await itemRow(rootItemId);
+    expect(root1.childrenTotal).toBe(4);
+    expect(root1.state).toBe('running'); // two appended children still pending
+    const replacement = await itemRow(redo.replacementItemId);
+    expect(replacement.state).toBe('ready'); // seq promoted it after the audit completed
+    const rp = replacement.payload as Record<string, unknown>;
+    expect(rp.redo_of).toBe(worker1!.id);
+    expect(Array.isArray(rp.audit_findings)).toBe(true);
+    expect(
+      redo.actions.filter((a) => a.type === 'dispatch' && a.itemId === redo.replacementItemId),
+    ).toHaveLength(1);
+
+    // Replacement completes → the fresh audit resumes.
+    const r2 = await completeItem(db, {
+      itemId: redo.replacementItemId,
+      state: 'done',
+      result: { proposal: 'better', evidence: [{ tool: 'search_nodes', ok: true }] },
+    });
+    const kidsNow = await children(rootItemId);
+    const audit2 = kidsNow[3]!;
+    expect(audit2.kind).toBe('audit');
+    expect(resumes(r2)).toEqual([{ type: 'resume', runId, groupId: audit2.id }]);
+
+    // Second blocking verdict → redo cap → needs_human; the run completes failed.
+    const second = await applyAuditVerdict(db, {
+      auditItemId: audit2.id,
+      verdict: 'redo',
+      findings: [{ severity: 'blocking', claim: 'still wrong' }],
+    });
+    expect(second.ok && second.outcome).toBe('needs_human');
+    if (!second.ok) throw new Error('unreachable');
+    expect((await itemRow(audit2.id)).state).toBe('failed');
+    expect((await itemRow(audit2.id)).result?.failure).toMatchObject({ type: 'needs_human' });
+    expect((await runRow(runId)).status).toBe('failed');
+    expect(second.actions.filter((a) => a.type === 'resume' && a.runId === runId)).toHaveLength(1);
+    // Counter integrity: 4 children, all terminal, counted exactly once each.
+    expect((await itemRow(rootItemId)).childrenDone).toBe(4);
+  });
+
+  it('mechanicalPreCheck flags verification claims with an empty ledger', () => {
+    expect(
+      mechanicalPreCheck({ proposal: 'I verified the totals against the ledger.', evidence: [] })
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      mechanicalPreCheck({
+        proposal: 'I verified the totals.',
+        evidence: [{ tool: 'table_query', ok: true }],
+      }),
+    ).toHaveLength(0);
+    expect(
+      mechanicalPreCheck({
+        proposal: 'summary attached',
+        evidence: [{ tool: 'search_nodes', ok: false }],
+      })[0],
+    ).toMatch(/FAILED/);
+  });
+
+  it('claimWorkerItem enforces the per-run cap; completion frees a slot', SLOW, async () => {
+    const { rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'worker cap',
+      plan: {
+        kind: 'par',
+        children: Array.from({ length: 4 }, (_, i) => ({
+          kind: 'worker_invoke' as const,
+          payload: { step: `s${i}` },
+        })),
+      },
+    });
+    const kids = await children(rootItemId);
+    const c1 = await claimWorkerItem(db, kids[0]!.id, 2);
+    const c2 = await claimWorkerItem(db, kids[1]!.id, 2);
+    expect(c1.item).not.toBeNull();
+    expect(c2.item).not.toBeNull();
+    const c3 = await claimWorkerItem(db, kids[2]!.id, 2);
+    expect(c3.item).toBeNull();
+    expect(c3.capped).toBe(true);
+    // Duplicate wake-up of a RUNNING item: stale, not capped.
+    const dup = await claimWorkerItem(db, kids[0]!.id, 2);
+    expect(dup.item).toBeNull();
+    expect(dup.capped).toBeUndefined();
+
+    // A completion frees a slot AND emits wake-ups for the waiting items.
+    const done = await completeItem(db, { itemId: kids[0]!.id, state: 'done' });
+    const releases = done.actions.filter(
+      (a) => a.type === 'dispatch' && a.queue === 'mantle.run.worker',
+    );
+    expect(releases.length).toBeGreaterThan(0);
+    const c3b = await claimWorkerItem(db, kids[2]!.id, 2);
+    expect(c3b.item).not.toBeNull();
   });
 });

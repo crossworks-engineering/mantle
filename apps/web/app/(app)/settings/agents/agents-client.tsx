@@ -79,6 +79,7 @@ const ROLES = [
   { value: 'extractor', label: 'Extractor — summary + facts + entities at ingest' },
   { value: 'summarizer', label: 'Summarizer — Tier-2 conversation rollups' },
   { value: 'reflector', label: 'Reflector — appends persona notes from dialog' },
+  { value: 'worker', label: 'Worker — runner-queue step executor (proposes, never chats)' },
   { value: 'custom', label: 'Custom' },
 ] as const;
 

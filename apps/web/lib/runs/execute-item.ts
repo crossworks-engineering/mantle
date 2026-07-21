@@ -12,10 +12,12 @@
  * no-op; `completeItem`'s CAS makes racing the sweep harmless.
  */
 import { eq } from 'drizzle-orm';
-import { db, runs as runsTable, type RunItemFailure, type RunItemRow } from '@mantle/db';
+import { db, runItems, runs as runsTable, type RunItemFailure, type RunItemRow } from '@mantle/db';
 import { claimItem, completeItem, requeueForRetry, type PostCommitAction } from '@mantle/runs';
 import { dispatchTool, resolveTool, validateToolArgs } from '@mantle/tools';
 import { currentTrace, startTrace, step } from '@mantle/tracing';
+
+import { executeWorkerInvoke } from './execute-worker';
 
 /** Tools that must never execute as queue items even if a plan sneaks one
  *  past the plan-time ban (defense in depth with builtins-runs.ts). */
@@ -41,6 +43,8 @@ function capOutput(output: unknown): { output: unknown; truncated?: boolean } {
 export type ExecuteItemOutcome = {
   /** false → the wake-up was stale/duplicate (item not ready) — just ack. */
   claimed: boolean;
+  /** Worker items only: the per-run concurrency cap deferred this wake-up. */
+  capped?: boolean;
   actions: PostCommitAction[];
 };
 
@@ -50,6 +54,22 @@ export type ExecuteItemOutcome = {
  * enqueue.
  */
 export async function executeRunItem(itemId: string): Promise<ExecuteItemOutcome> {
+  // Peek the kind BEFORE claiming: worker items claim under the per-run
+  // concurrency cap (claimWorkerItem), everything else claims directly.
+  const [peek] = await db
+    .select({ kind: runItems.kind })
+    .from(runItems)
+    .where(eq(runItems.id, itemId));
+  if (peek?.kind === 'worker_invoke') {
+    return executeWorkerInvoke(itemId);
+  }
+  if (peek?.kind === 'audit' || peek?.kind === 'ask_human') {
+    // Resume-driven (audit) / slice-3 (ask_human) — never claim these here; a
+    // stray dispatch job must not steal an audit that's waiting on its
+    // resume turn.
+    return { claimed: false, actions: [] };
+  }
+
   const item = await claimItem(db, itemId);
   if (!item) return { claimed: false, actions: [] };
 

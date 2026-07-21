@@ -28,6 +28,8 @@ export type CompiledRunItem = {
   /** Rolled-up cost of the subtree (groups) or own cost (leaves). */
   subtreeCostMicroUsd: number;
   evidenceRefs?: string[];
+  /** Executing agent (worker items) — soft ref to agents.id. */
+  agentId?: string | null;
   traceRef?: string | null;
   supersededBy?: string | null;
   startedAt?: string | null;
@@ -74,8 +76,10 @@ function labelFor(item: RunItemRow): string {
     }
     case 'note':
       return typeof p.text === 'string' ? `note: ${truncate(p.text, 80)}` : 'note';
-    case 'worker_invoke':
-      return typeof p.step === 'string' ? `worker: ${truncate(p.step, 80)}` : 'worker';
+    case 'worker_invoke': {
+      const who = typeof p.worker === 'string' ? p.worker : 'worker';
+      return typeof p.step === 'string' ? `${who}: ${truncate(p.step, 80)}` : who;
+    }
     case 'audit':
       return 'audit';
     case 'ask_human':
@@ -92,6 +96,11 @@ function outcomeFor(item: RunItemRow): string | undefined {
     const s = r.summary as Record<string, unknown>;
     return `done=${s.done ?? 0} failed=${s.failed ?? 0} cancelled=${s.cancelled ?? 0}`;
   }
+  if (typeof r.verdict === 'string') {
+    const findings = Array.isArray(r.findings) ? (r.findings as unknown[]).length : 0;
+    return `verdict: ${r.verdict}${findings ? ` (${findings} finding${findings === 1 ? '' : 's'})` : ''}`;
+  }
+  if (typeof r.proposal === 'string') return truncate(r.proposal);
   if (typeof r.output === 'string') return truncate(r.output);
   if (r.output !== undefined) return truncate(JSON.stringify(r.output));
   return undefined;
@@ -132,6 +141,7 @@ export async function compileRunState(db: Db, runId: string): Promise<CompiledRu
       costMicroUsd: own,
       subtreeCostMicroUsd: subtree,
       ...(item.evidenceRefs?.length ? { evidenceRefs: item.evidenceRefs } : {}),
+      ...(item.agentId ? { agentId: item.agentId } : {}),
       traceRef: item.traceRef,
       supersededBy: item.supersededBy,
       startedAt: item.startedAt?.toISOString() ?? null,

@@ -40,12 +40,20 @@ export type SweepResult = {
 export async function sweepRuns(db: Db): Promise<SweepResult> {
   const actions: PostCommitAction[] = [];
 
-  // 1. Deadline enforcement. completeItem's CAS makes racing the real
-  //    completion harmless — whoever loses no-ops.
+  // 1. Deadline enforcement. Deadlines mean EXECUTION budget: stamped at
+  //    claim for dispatched leaves (so cap-waiting/ready limbo burns
+  //    nothing), at promotion for audits (verdict budget — audits are never
+  //    claimed). completeItem's CAS makes racing the real completion
+  //    harmless — whoever loses no-ops.
   const overdue = await db
     .select({ id: runItems.id })
     .from(runItems)
-    .where(and(inArray(runItems.state, ['ready', 'running']), lt(runItems.deadlineAt, sql`now()`)))
+    .where(
+      and(
+        sql`(${runItems.state} = 'running' or (${runItems.state} = 'ready' and ${runItems.kind} = 'audit'))`,
+        lt(runItems.deadlineAt, sql`now()`),
+      ),
+    )
     .limit(200);
   let timedOut = 0;
   for (const { id } of overdue) {
@@ -62,12 +70,14 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
 
   // 2. Lost dispatch heal. updated_at moves on promote and on claim, so a
   //    ready row untouched for the grace window has no live job working it.
+  //    Audits are excluded — they're resume-driven, not dispatchable (2b).
   const staleReady = await db
     .select({ id: runItems.id, kind: runItems.kind, sideEffecting: runItems.sideEffecting })
     .from(runItems)
     .where(
       and(
         eq(runItems.state, 'ready'),
+        sql`${runItems.kind} <> 'audit'`,
         lt(runItems.updatedAt, sql`now() - make_interval(secs => ${READY_STALE_SECONDS})`),
       ),
     )
@@ -85,6 +95,30 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
       .update(runItems)
       .set({ updatedAt: sql`now()` })
       .where(and(eq(runItems.id, item.id), eq(runItems.state, 'ready')));
+  }
+
+  // 2b. Lost AUDIT resume heal: a ready audit no resume turn ever claimed
+  //     (resumed_at NULL) past the grace window → re-send its resume
+  //     (singletonKey = item id dedupes; claimResume keeps it at-most-once).
+  //     A CLAIMED-but-crashed audit is duty 1's territory via its deadline.
+  const staleAudits = await db
+    .select({ id: runItems.id, runId: runItems.runId })
+    .from(runItems)
+    .where(
+      and(
+        eq(runItems.state, 'ready'),
+        eq(runItems.kind, 'audit'),
+        isNull(runItems.resumedAt),
+        lt(runItems.updatedAt, sql`now() - make_interval(secs => ${RESUME_STALE_SECONDS})`),
+      ),
+    )
+    .limit(50);
+  for (const a of staleAudits) {
+    actions.push({ type: 'resume', runId: a.runId, groupId: a.id });
+    await db
+      .update(runItems)
+      .set({ updatedAt: sql`now()` })
+      .where(and(eq(runItems.id, a.id), eq(runItems.state, 'ready')));
   }
 
   // 3. Lost resume heal. Only for runs that finished properly (done|failed) —
@@ -107,7 +141,12 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
     actions.push({ type: 'resume', runId: row.runId, groupId: row.rootId });
   }
 
-  return { timedOut, redispatched: staleReady.length, resumesResent: unresumed.length, actions };
+  return {
+    timedOut,
+    redispatched: staleReady.length,
+    resumesResent: unresumed.length + staleAudits.length,
+    actions,
+  };
 }
 
 /**

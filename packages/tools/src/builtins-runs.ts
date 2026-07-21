@@ -18,14 +18,19 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { agents, db, runItems, runs } from '@mantle/db';
 import {
   appendChildren,
+  applyAuditVerdict,
   cancelRun,
   compileRunState,
   createRun,
+  ensureWorkerAgent,
   enqueueRunActionsSafe,
   isRunsEnabled,
+  listWorkerAgents,
   renderRunStateText,
   SealedGroupError,
+  type AuditFinding,
   type PlanGroup,
+  type PlanLeaf,
   type PlanNode,
 } from '@mantle/runs';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
@@ -64,19 +69,27 @@ function refuseIfDelegated(ctx: ToolHandlerContext): ToolHandlerResult | null {
   return null;
 }
 
-type ParsedPlan = { ok: true; plan: PlanGroup; toolSlugs: string[] } | { ok: false; error: string };
+type ParsedPlan =
+  | { ok: true; plan: PlanGroup; toolSlugs: string[]; workerSlugs: string[] }
+  | { ok: false; error: string };
 
 /** Validate + normalize the model-supplied plan tree into the engine shape.
  *  Every error names the offending path and the fix (error style guide). */
 function parsePlan(raw: unknown): ParsedPlan {
   const toolSlugs: string[] = [];
+  const workerSlugs: string[] = [];
   let nodes = 0;
 
   function fail(path: string, msg: string): { ok: false; error: string } {
     return { ok: false, error: `plan${path}: ${msg}` };
   }
 
-  function parseNode(v: unknown, path: string, depth: number): PlanNode | { error: string } {
+  function parseNode(
+    v: unknown,
+    path: string,
+    depth: number,
+    parentKind: 'seq' | 'par' | null,
+  ): PlanNode | { error: string } {
     if (depth > MAX_PLAN_DEPTH) {
       return { error: `plan${path}: nesting deeper than ${MAX_PLAN_DEPTH} — flatten the tree` };
     }
@@ -97,7 +110,7 @@ function parsePlan(raw: unknown): ParsedPlan {
         }
         const children: PlanNode[] = [];
         for (let i = 0; i < o.children.length; i++) {
-          const c = parseNode(o.children[i], `${path}.children[${i}]`, depth + 1);
+          const c = parseNode(o.children[i], `${path}.children[${i}]`, depth + 1, o.kind);
           if ('error' in c) return c;
           children.push(c);
         }
@@ -147,27 +160,67 @@ function parsePlan(raw: unknown): ParsedPlan {
         }
         return { kind: 'note', payload: { text: o.text.trim() } };
       }
-      case 'worker_invoke':
-      case 'audit':
+      case 'worker_invoke': {
+        if (typeof o.step !== 'string' || !o.step.trim()) {
+          return {
+            error: `plan${path}: worker_invoke needs 'step' — the delegated task, self-contained`,
+          };
+        }
+        if (o.worker !== undefined && typeof o.worker !== 'string') {
+          return { error: `plan${path}: 'worker' must be a worker agent slug string` };
+        }
+        if (o.worker) workerSlugs.push((o.worker as string).trim());
+        const timeout = o.timeout_seconds;
+        return {
+          kind: 'worker_invoke',
+          payload: {
+            step: o.step.trim(),
+            ...(typeof o.acceptance_criteria === 'string' && o.acceptance_criteria.trim()
+              ? { acceptance_criteria: o.acceptance_criteria.trim() }
+              : {}),
+            ...(typeof o.worker === 'string' && o.worker.trim() ? { worker: o.worker.trim() } : {}),
+            ...(Array.isArray(o.subject_node_ids)
+              ? { subject_node_ids: o.subject_node_ids.filter((x) => typeof x === 'string') }
+              : {}),
+            ...(typeof timeout === 'number' && timeout > 0 ? { timeout_seconds: timeout } : {}),
+          },
+        };
+      }
+      case 'audit': {
+        if (parentKind !== 'seq') {
+          return {
+            error:
+              `plan${path}: an audit belongs in a 'seq' group, directly after the ` +
+              `worker_invoke step it judges (par audits can't drive a redo cycle)`,
+          };
+        }
+        return {
+          kind: 'audit',
+          payload: {
+            ...(typeof o.scope === 'string' && o.scope.trim() ? { scope: o.scope.trim() } : {}),
+            ...(typeof o.timeout_seconds === 'number' && o.timeout_seconds > 0
+              ? { timeout_seconds: o.timeout_seconds }
+              : {}),
+          },
+        };
+      }
       case 'ask_human':
         return {
-          error:
-            `plan${path}: item kind '${String(o.kind)}' is not available yet ` +
-            `(slice 2/3) — use tool_call and note items for now`,
+          error: `plan${path}: item kind 'ask_human' is not available yet (slice 3)`,
         };
       default:
         return {
-          error: `plan${path}: unknown kind ${JSON.stringify(o.kind)} — use seq | par | tool_call | note`,
+          error: `plan${path}: unknown kind ${JSON.stringify(o.kind)} — use seq | par | tool_call | note | worker_invoke | audit`,
         };
     }
   }
 
-  const root = parseNode(raw, '', 1);
+  const root = parseNode(raw, '', 1, null);
   if ('error' in root) return { ok: false, error: root.error };
   if (root.kind !== 'seq' && root.kind !== 'par') {
     return fail('', `the root must be a 'seq' or 'par' group (got '${root.kind}')`);
   }
-  return { ok: true, plan: root as PlanGroup, toolSlugs };
+  return { ok: true, plan: root as PlanGroup, toolSlugs, workerSlugs };
 }
 
 /** Reject plan-time references to tools the owner doesn't have (missing,
@@ -185,6 +238,47 @@ async function checkPlanTools(ownerId: string, slugs: string[]): Promise<string 
   );
 }
 
+/** Resolve worker routing at plan time (§6b — the roster is a routing
+ *  table): explicit `worker` slugs must name enabled worker agents; steps
+ *  without one run on the default Worker (lazily created on first use).
+ *  Mutates the tree's worker_invoke leaves with the resolved agent id.
+ *  Returns a teaching error string, or null on success. */
+async function resolveWorkerRouting(ownerId: string, plan: PlanGroup): Promise<string | null> {
+  const leaves: PlanLeaf[] = [];
+  const walk = (node: PlanNode): void => {
+    if (node.kind === 'seq' || node.kind === 'par') {
+      for (const c of (node as PlanGroup).children) walk(c);
+    } else if (node.kind === 'worker_invoke') {
+      leaves.push(node as PlanLeaf);
+    }
+  };
+  walk(plan);
+  if (leaves.length === 0) return null;
+
+  const workers = await listWorkerAgents(db, ownerId);
+  const bySlug = new Map(workers.map((w) => [w.slug, w]));
+  let defaultWorker: Awaited<ReturnType<typeof ensureWorkerAgent>> = null;
+  for (const leaf of leaves) {
+    const slug = typeof leaf.payload.worker === 'string' ? leaf.payload.worker : undefined;
+    if (slug) {
+      const w = bySlug.get(slug);
+      if (!w) {
+        const available =
+          workers.map((x) => x.slug).join(', ') || '(none yet — omit `worker` to use the default)';
+        return `unknown worker '${slug}' — enabled worker agents: ${available}`;
+      }
+      leaf.agentId = w.id;
+    } else {
+      defaultWorker ??= await ensureWorkerAgent(db, ownerId);
+      if (!defaultWorker) {
+        return 'no worker agent available and the default could not be created — check /settings/agents';
+      }
+      leaf.agentId = defaultWorker.id;
+    }
+  }
+  return null;
+}
+
 async function loadOwnedRun(ownerId: string, runId: unknown) {
   if (typeof runId !== 'string' || !runId.trim()) return null;
   const [run] = await db
@@ -199,7 +293,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
     slug: 'run_plan',
     name: 'Plan a durable run',
     description:
-      'Create a durable run — a tree of seq/par groups of tool_call and note items executed in the background — and return its id plus the started tree. Use for delegated multi-step jobs worth tracking; for a quick answer or one or two calls, just call the tools inline. Items execute headless later; you are resumed with the compiled results when the run completes. Check progress with `run_state`, extend with `run_append`, stop with `run_cancel`.',
+      'Create a durable run — a tree of seq/par groups of tool_call, note, worker_invoke, and audit items executed in the background — and return its id plus the started tree. Use for delegated multi-step jobs worth tracking; for a quick answer or one or two calls, just call the tools inline. The default shape for real work: seq( note(plan) → worker_invoke(step) → audit → … ) — every worker step followed by an audit you will judge (via `run_audit`) when resumed. You are resumed with compiled results when the run completes. Check progress with `run_state`, extend with `run_append`, stop with `run_cancel`.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -207,7 +301,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
         plan: {
           type: 'object',
           description:
-            "The run tree. Node shapes: {kind:'seq'|'par', label?, join_policy?:'wait_all'|'fail_fast', children:[…]} | {kind:'tool_call', tool:'<slug>', args:{…}, side_effecting?:true, timeout_seconds?:600} | {kind:'note', text:'…'}. Root must be a group. Mark any state-changing call side_effecting (it then never auto-retries).",
+            "The run tree. Node shapes: {kind:'seq'|'par', label?, join_policy?:'wait_all'|'fail_fast', children:[…]} | {kind:'tool_call', tool:'<slug>', args:{…}, side_effecting?:true, timeout_seconds?:600} | {kind:'note', text:'…'} | {kind:'worker_invoke', step:'<self-contained task>', acceptance_criteria?:'…', worker?:'<worker slug — omit for the default>', subject_node_ids?:[…]} | {kind:'audit', scope?:'…'} (seq-only, right after the worker step it judges). Root must be a group. Mark any state-changing call side_effecting (it then never auto-retries).",
           additionalProperties: true,
         },
       },
@@ -224,6 +318,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       if (!parsed.ok) return { ok: false, error: parsed.error };
       const toolError = await checkPlanTools(ctx.ownerId, parsed.toolSlugs);
       if (toolError) return { ok: false, error: toolError };
+      const workerError = await resolveWorkerRouting(ctx.ownerId, parsed.plan);
+      if (workerError) return { ok: false, error: workerError };
 
       // Soft ref to the creating responder (conversation identity is
       // (owner, agent) — see runs schema). Best-effort by slug.
@@ -300,6 +396,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       if (!parsed.ok) return { ok: false, error: parsed.error };
       const toolError = await checkPlanTools(ctx.ownerId, parsed.toolSlugs);
       if (toolError) return { ok: false, error: toolError };
+      const workerError = await resolveWorkerRouting(ctx.ownerId, parsed.plan);
+      if (workerError) return { ok: false, error: workerError };
       // Ownership of the group: it must belong to this run.
       const [group] = await db
         .select({ id: runItems.id, runId: runItems.runId })
@@ -397,6 +495,114 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       if (!run) return notFound('run', String(input.run_id ?? ''), 'run_state');
       const { cancelled } = await cancelRun(db, run.id);
       return { ok: true, output: { run_id: run.id, cancelled } };
+    },
+  },
+  {
+    slug: 'run_audit',
+    name: 'Record an audit verdict',
+    description:
+      "Record your verdict on a pending audit item: 'pass' (advisory findings allowed) advances the run; 'redo' requires at least one blocking finding and supersedes the audited worker step with a fresh attempt carrying your findings (one redo max — a second blocking audit fails the step for human decision). Judge the worker's recorded tool ledger against its claims, not its confidence. Use during a resume turn that presents a pending audit; `run_state` shows which item is waiting.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        run_id: { type: 'string', description: 'The run the audit belongs to.' },
+        audit_item_id: {
+          type: 'string',
+          description: 'The pending audit item (from the resume prompt or run_state).',
+        },
+        verdict: {
+          type: 'string',
+          enum: ['pass', 'redo'],
+          description:
+            "'pass' advances the run; 'redo' reruns the audited step (blocking findings required).",
+        },
+        findings: {
+          type: 'array',
+          description:
+            'Your findings. Only blocking severity justifies a redo; advisory rides along into the record.',
+          items: {
+            type: 'object',
+            properties: {
+              severity: {
+                type: 'string',
+                enum: ['blocking', 'advisory'],
+                description:
+                  'blocking = must be fixed (drives redo); advisory = noted, rides along.',
+              },
+              claim: {
+                type: 'string',
+                description: 'The specific defect or observation, one sentence.',
+              },
+              suggested_fix: {
+                type: 'string',
+                description: 'What the redo should do differently.',
+              },
+            },
+            required: ['severity', 'claim'],
+            additionalProperties: false,
+          },
+        },
+        directive: {
+          type: 'string',
+          description:
+            'The authoritative instruction for the next step — downstream executes this, it does not re-derive.',
+        },
+      },
+      required: ['run_id', 'audit_item_id', 'verdict'],
+    },
+    handler: async (input, ctx) => {
+      const refused = refuseIfDelegated(ctx);
+      if (refused) return refused;
+      const run = await loadOwnedRun(ctx.ownerId, input.run_id);
+      if (!run) return notFound('run', String(input.run_id ?? ''), 'run_state');
+      const auditItemId = typeof input.audit_item_id === 'string' ? input.audit_item_id.trim() : '';
+      const [item] = await db
+        .select({ id: runItems.id, runId: runItems.runId })
+        .from(runItems)
+        .where(eq(runItems.id, auditItemId));
+      if (!item || item.runId !== run.id) return notFound('audit item', auditItemId, 'run_state');
+      const verdict = input.verdict === 'pass' || input.verdict === 'redo' ? input.verdict : null;
+      if (!verdict) return { ok: false, error: "verdict must be 'pass' or 'redo'" };
+      const findings: AuditFinding[] = Array.isArray(input.findings)
+        ? (input.findings as Array<Record<string, unknown>>)
+            .filter(
+              (f) =>
+                f &&
+                (f.severity === 'blocking' || f.severity === 'advisory') &&
+                typeof f.claim === 'string' &&
+                f.claim.trim(),
+            )
+            .map((f) => ({
+              severity: f.severity as 'blocking' | 'advisory',
+              claim: (f.claim as string).trim(),
+              ...(typeof f.suggested_fix === 'string' && f.suggested_fix.trim()
+                ? { suggested_fix: f.suggested_fix.trim() }
+                : {}),
+            }))
+        : [];
+      const res = await applyAuditVerdict(db, {
+        auditItemId,
+        verdict,
+        findings,
+        ...(typeof input.directive === 'string' && input.directive.trim()
+          ? { directive: input.directive.trim() }
+          : {}),
+      });
+      if (!res.ok) return { ok: false, error: res.error };
+      await enqueueRunActionsSafe(res.actions);
+      return {
+        ok: true,
+        output: {
+          outcome: res.outcome,
+          ...(res.replacementItemId ? { replacement_item_id: res.replacementItemId } : {}),
+          message:
+            res.outcome === 'redo'
+              ? 'Redo appended — the step will run again with your findings attached. End your turn; you will be resumed when it completes.'
+              : res.outcome === 'needs_human'
+                ? 'Redo cap reached — the step is marked for human decision. Report the situation to the user when the run resumes you.'
+                : 'Verdict recorded — the run advances.',
+        },
+      };
     },
   },
 ];

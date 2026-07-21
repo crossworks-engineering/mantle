@@ -177,7 +177,9 @@ export type AgentRole =
   | 'extractor'
   | 'summarizer'
   | 'reflector'
-  | 'custom';
+  | 'custom'
+  // Runner-queue worker template (docs/runs.md) — never conversational.
+  | 'worker';
 
 /** Per-agent generated avatar (style + seed → DiceBear). null = initials. */
 export interface AgentAvatarDTO {

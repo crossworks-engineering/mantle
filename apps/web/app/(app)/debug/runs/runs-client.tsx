@@ -10,6 +10,17 @@ import { apiFetch } from '@/lib/api-fetch';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 
+type WorkerStat = {
+  agentId: string | null;
+  slug: string;
+  name: string | null;
+  model: string | null;
+  accepted: number;
+  redone: number;
+  failed: number;
+  acceptanceRate: number | null;
+};
+
 type RunListEntry = {
   id: string;
   title: string;
@@ -153,16 +164,18 @@ function RunDetail({ runId }: { runId: string }) {
 
 export function RunsClient() {
   const [runs, setRuns] = useState<RunListEntry[] | null>(null);
+  const [workers, setWorkers] = useState<WorkerStat[]>([]);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    apiFetch<{ enabled: boolean; runs: RunListEntry[] }>('/api/debug/runs')
+    apiFetch<{ enabled: boolean; runs: RunListEntry[]; workers: WorkerStat[] }>('/api/debug/runs')
       .then((d) => {
         if (!alive) return;
         setRuns(d.runs);
+        setWorkers(d.workers ?? []);
         setEnabled(d.enabled);
         if (d.runs.length > 0) setSelected(d.runs[0]!.id);
       })
@@ -187,6 +200,25 @@ export function RunsClient() {
           Runner queues are disabled on this brain (set <code>MANTLE_RUNS=1</code> to enable).
           Existing runs remain inspectable below.
         </p>
+      )}
+      {workers.length > 0 && (
+        <div className="rounded-md border border-border bg-card p-3">
+          <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">
+            Worker first-pass acceptance
+          </p>
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            {workers.map((w) => (
+              <span key={w.agentId ?? w.slug}>
+                <span className="font-medium">{w.slug}</span>
+                {w.model && <span className="text-muted-foreground"> ({w.model})</span>}{' '}
+                {w.acceptanceRate != null ? `${Math.round(w.acceptanceRate * 100)}%` : '—'}{' '}
+                <span className="text-muted-foreground">
+                  ({w.accepted} accepted · {w.redone} redone · {w.failed} failed)
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
       )}
       {runs.length === 0 ? (
         <p className="text-sm text-muted-foreground">

@@ -194,18 +194,102 @@ async function insertNode(
 
 // ── dispatch handshake ───────────────────────────────────────────────────────
 
+/** Execution budget for a leaf, from its payload. Stamped as the deadline at
+ *  CLAIM time (running = the clock; a ready item waiting on the queue or the
+ *  worker cap burns nothing — the sweep's lost-job heal covers ready limbo). */
+function leafTimeoutSeconds(payload: unknown): number {
+  const raw = (payload as Record<string, unknown> | null)?.['timeout_seconds'];
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+    ? Math.min(raw, 6 * 3600)
+    : DEFAULT_LEAF_TIMEOUT_SECONDS;
+}
+
 /**
  * Dispatcher entry: claim a ready item before executing it. Returns the row,
  * or null when the wake-up was a duplicate / the item was cancelled or swept
  * meanwhile — ack the job and exit (the §5b idempotency discipline).
  */
 export async function claimItem(db: Db | Tx, itemId: string): Promise<RunItemRow | null> {
+  const [pre] = await db
+    .select({ payload: runItems.payload })
+    .from(runItems)
+    .where(eq(runItems.id, itemId));
+  const timeout = leafTimeoutSeconds(pre?.payload ?? null);
   const [row] = await db
     .update(runItems)
-    .set({ state: 'running', startedAt: sql`now()`, updatedAt: sql`now()` })
+    .set({
+      state: 'running',
+      startedAt: sql`now()`,
+      deadlineAt: sql`now() + make_interval(secs => ${timeout})`,
+      updatedAt: sql`now()`,
+    })
     .where(and(eq(runItems.id, itemId), eq(runItems.state, 'ready')))
     .returning();
   return row ?? null;
+}
+
+/** Per-run worker concurrency cap (plan §5): how many `worker_invoke` items
+ *  may be `running` at once. Protects small boxes from a wide par group. */
+export function workerConcurrencyCap(): number {
+  const raw = Number(process.env.MANTLE_RUNS_WORKER_CONCURRENCY ?? '');
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 3;
+}
+
+/**
+ * Claim a `worker_invoke` item under the per-run cap. The run row's lock
+ * serializes cap decisions, so two concurrent claims can't both squeeze into
+ * the last slot. Returns:
+ *   { item }          — claimed; execute it.
+ *   { capped: true }  — slots full; ack the job. A slot-release re-dispatch
+ *                       (on any worker completion) or the sweep re-wakes it.
+ *   { item: null }    — stale/duplicate wake-up; ack.
+ */
+export async function claimWorkerItem(
+  db: Db,
+  itemId: string,
+  cap: number = workerConcurrencyCap(),
+): Promise<{ item: RunItemRow | null; capped?: boolean }> {
+  return db.transaction(async (tx) => {
+    const [target] = await tx
+      .select({ id: runItems.id, runId: runItems.runId, state: runItems.state })
+      .from(runItems)
+      .where(and(eq(runItems.id, itemId), eq(runItems.kind, 'worker_invoke')));
+    if (!target || target.state !== 'ready') return { item: null };
+    // Serialize per-run cap decisions on the run row.
+    await tx.select({ id: runs.id }).from(runs).where(eq(runs.id, target.runId)).for('update');
+    const [{ n }] = (await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(runItems)
+      .where(
+        and(
+          eq(runItems.runId, target.runId),
+          eq(runItems.kind, 'worker_invoke'),
+          eq(runItems.state, 'running'),
+        ),
+      )) as [{ n: number }];
+    if (n >= cap) return { item: null, capped: true };
+    const claimed = await claimItem(tx, itemId);
+    return { item: claimed };
+  });
+}
+
+/**
+ * Relabel a TERMINAL item as superseded (the redo path: the replacement is
+ * already appended). Both states are terminal, so the parent counter is
+ * untouched — the item already drove it when it first completed. CAS-guarded;
+ * returns false if the item wasn't in a supersedable state.
+ */
+export async function supersedeItem(
+  db: Db | Tx,
+  itemId: string,
+  supersededBy: string,
+): Promise<boolean> {
+  const [row] = await db
+    .update(runItems)
+    .set({ state: 'superseded', supersededBy, updatedAt: sql`now()` })
+    .where(and(eq(runItems.id, itemId), inArray(runItems.state, ['done', 'failed'])))
+    .returning({ id: runItems.id });
+  return !!row;
 }
 
 /**
@@ -284,6 +368,31 @@ export async function completeItem(
 
     const actions: PostCommitAction[] = [];
     await onTerminal(tx, item, opts.state, actions);
+
+    // Slot release (plan §5): a worker finishing frees a cap slot — wake the
+    // cap-waiting `ready` worker items in this run. Duplicates are harmless
+    // (claimWorkerItem re-checks the cap); the sweep is the slow-path backup.
+    if (item.kind === 'worker_invoke') {
+      const waiting = await tx
+        .select({ id: runItems.id, sideEffecting: runItems.sideEffecting })
+        .from(runItems)
+        .where(
+          and(
+            eq(runItems.runId, item.runId),
+            eq(runItems.kind, 'worker_invoke'),
+            eq(runItems.state, 'ready'),
+          ),
+        )
+        .limit(3);
+      for (const w of waiting) {
+        actions.push({
+          type: 'dispatch',
+          queue: RUN_WORKER_QUEUE,
+          itemId: w.id,
+          sideEffecting: w.sideEffecting,
+        });
+      }
+    }
     return { completed: true, actions };
   });
 }
@@ -440,11 +549,23 @@ async function finalizeRun(
 
 // ── promote ──────────────────────────────────────────────────────────────────
 
+/** Audit items must reach a verdict within this window or the sweep fails
+ *  them (the run must never wedge on a lost/crashed audit turn). Overridable
+ *  per item via `payload.timeout_seconds`. */
+export const DEFAULT_AUDIT_TIMEOUT_SECONDS = 1800;
+
 /**
- * Make an item runnable. Leaves: `queued → ready` + a dispatch action (the
- * pg-boss wake-up). Groups: `queued → running`, then start their children —
- * seq promotes the first child, par promotes all. An empty group completes
- * on the spot and bubbles (degenerate plans keep the invariant).
+ * Make an item runnable.
+ * - Groups: `queued → running`, then start their children — seq promotes the
+ *   first child, par promotes all. An empty group completes on the spot and
+ *   bubbles (degenerate plans keep the invariant).
+ * - `audit` leaves: `queued → ready` + a RESUME action — audits are judged by
+ *   the responder in a resume turn (plan §7), never dispatched to a tool
+ *   queue. The deadline stamps NOW (verdict budget), since audits are never
+ *   claimed.
+ * - Other leaves: `queued → ready` + a dispatch action (the pg-boss wake-up).
+ *   Their deadline stamps at CLAIM (execution budget) — ready limbo is the
+ *   sweep's lost-job territory, not a timeout.
  */
 async function promote(tx: Tx, item: RunItemRow, actions: PostCommitAction[]): Promise<void> {
   if (item.kind === 'group_seq' || item.kind === 'group_par') {
@@ -468,18 +589,29 @@ async function promote(tx: Tx, item: RunItemRow, actions: PostCommitAction[]): P
     return;
   }
 
-  const rawTimeout = (item.payload as Record<string, unknown> | null)?.['timeout_seconds'];
-  const timeoutSeconds =
-    typeof rawTimeout === 'number' && Number.isFinite(rawTimeout) && rawTimeout > 0
-      ? Math.min(rawTimeout, 6 * 3600)
-      : DEFAULT_LEAF_TIMEOUT_SECONDS;
+  if (item.kind === 'audit') {
+    const raw = (item.payload as Record<string, unknown> | null)?.['timeout_seconds'];
+    const timeout =
+      typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+        ? Math.min(raw, 6 * 3600)
+        : DEFAULT_AUDIT_TIMEOUT_SECONDS;
+    const [ready] = await tx
+      .update(runItems)
+      .set({
+        state: 'ready',
+        deadlineAt: sql`now() + make_interval(secs => ${timeout})`,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(runItems.id, item.id), eq(runItems.state, 'queued')))
+      .returning({ id: runItems.id, runId: runItems.runId });
+    if (!ready) return;
+    actions.push({ type: 'resume', runId: ready.runId, groupId: ready.id });
+    return;
+  }
+
   const [ready] = await tx
     .update(runItems)
-    .set({
-      state: 'ready',
-      deadlineAt: sql`now() + make_interval(secs => ${timeoutSeconds})`,
-      updatedAt: sql`now()`,
-    })
+    .set({ state: 'ready', updatedAt: sql`now()` })
     .where(and(eq(runItems.id, item.id), eq(runItems.state, 'queued')))
     .returning({ id: runItems.id, kind: runItems.kind, sideEffecting: runItems.sideEffecting });
   if (!ready) return;

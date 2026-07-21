@@ -1,9 +1,12 @@
 # Runner queues — durable, inspectable execution plans
 
 Design: "Runner queues & worker agents — implementation plan v1" (dev brain).
-Status: **slice 1 (the spine)** — schema, engine, dispatcher, sweep, `run_*`
-tools, resume turn, read-only run view. Worker agents + audits are slice 2;
-`ask_human` gates, budgets, and worker groups are slice 3.
+Status: **slices 1 + 2** — the spine (schema, engine, dispatcher, sweep,
+`run_*` tools, resume turn, run view) plus worker agents + audits
+(`worker_invoke` execution with per-run concurrency cap, model inheritance,
+mechanical evidence, resume-driven audit verdicts with a one-redo cycle, the
+per-worker acceptance metric). `ask_human` gates, budgets, and worker groups
+are slice 3.
 
 ## Concept
 
@@ -68,6 +71,39 @@ cancellation.
   execution — no recursion).
 - **Run view**: `/debug/runs` — recent runs + collapsible item tree (states,
   one-line outcomes, per-subtree cost roll-up, trace links).
+
+## Workers + audits (slice 2)
+
+- **Workers are templates, not processes** (`agents.role = 'worker'`,
+  migration 0131): each `worker_invoke` item spawns a fresh agent turn from
+  the template — model, kit, instructions. The default "Worker agent" is
+  ensured lazily on first use (`ensureWorkerAgent`; deliberately not in the
+  manifest while dark). `model = 'inherit'` (the default) runs the step on
+  the RESPONDER's model/provider/key at execution time; pointing a duplicate
+  worker at a cheaper model is the opt-in cost knob, justified by its
+  acceptance rate. Routing is per step (`worker: '<slug>'` in the plan node);
+  adding a worker never changes behavior by itself (§6b).
+- **Execution** (`apps/web/lib/runs/execute-worker.ts`): claimed under the
+  per-run concurrency cap (`MANTLE_RUNS_WORKER_CONCURRENCY`, default 3 —
+  serialized on the run row; completions emit slot-release wake-ups); runs at
+  delegation depth 2 with an empty allowlist so `run_*`/`invoke_agent` refuse
+  structurally. Evidence is MECHANICAL: the tool-loop's own call ledger lands
+  on the item result; the full reply spills to a `tr_…` handle the responder
+  can `read_result`.
+- **Audits run in resume turns** (plan §7): `promote(audit)` emits a resume
+  (never a dispatch) and stamps a verdict deadline (default 30 min — a lost
+  audit turn times out and the run completes with the failure recorded). The
+  audit-mode resume prompt carries the audited proposal, the recorded ledger,
+  and `mechanicalPreCheck` auto-flags (verification claims with an empty
+  ledger cannot be talked past). The verdict records via `run_audit`:
+  `pass` (advisory findings ride along) or `redo` (blocking findings only —
+  the anti-nitpick rule). Redo supersedes the worker item (terminal→terminal,
+  counter untouched), appends a fresh attempt with findings + directive
+  attached and a fresh audit, and promotes it. **One redo max**: a second
+  blocking verdict fails the audit `needs_human` and the run surfaces it.
+- **Acceptance metric**: per-worker first-pass acceptance
+  (done-not-superseded / judged) on `/debug/runs` — the number that decides
+  when cheaper worker tiers are justified.
 
 ## Feature gate + dogfood
 

@@ -767,7 +767,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'Responder-only — never granted to workers or specialists (items must not ' +
       'create runs). Creation is additionally gated by MANTLE_RUNS; not attached ' +
       'to the persona by default while the feature dogfoods.',
-    toolSlugs: ['run_plan', 'run_append', 'run_state', 'run_cancel'],
+    toolSlugs: ['run_plan', 'run_append', 'run_state', 'run_cancel', 'run_audit'],
   },
 ];
 
