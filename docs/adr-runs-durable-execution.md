@@ -1,6 +1,10 @@
 # ADR: Durable-execution substrate for runner queues
 
-- **Status:** accepted (2026-07-21)
+- **Status:** accepted (2026-07-21); slice-3 re-evaluation WRITTEN — see
+  [runs-slice-3-plan.md](runs-slice-3-plan.md) (hybrid proposed as the
+  intended end state: spine stays on tables, turns move to DBOS; `ask_human`
+  and budget-pause assessed and kept on the table engine). Awaiting Jason's
+  plan audit + final implementation decision (plan §7).
 - **Context:** runner queues slices 1+2 ([docs/runs.md](runs.md)), pre-deploy
   audit ([docs/runs-audit-handover.md](runs-audit-handover.md) §8)
 - **Decision owners:** Jason (release gate), recorded by the audit session
