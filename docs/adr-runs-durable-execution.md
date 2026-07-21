@@ -1,10 +1,12 @@
 # ADR: Durable-execution substrate for runner queues
 
-- **Status:** accepted (2026-07-21); slice-3 re-evaluation WRITTEN — see
-  [runs-slice-3-plan.md](runs-slice-3-plan.md) (hybrid proposed as the
-  intended end state: spine stays on tables, turns move to DBOS; `ask_human`
-  and budget-pause assessed and kept on the table engine). Awaiting Jason's
-  plan audit + final implementation decision (plan §7).
+- **Status:** accepted (2026-07-21); slice-3 re-evaluation AUDITED same day
+  — hybrid CONFIRMED with amendments (verdicts inline in
+  [runs-slice-3-plan.md](runs-slice-3-plan.md) §3, amendments folded into
+  its §1/§4, outcome + deferred items in its §8). Jason's plan-§7 decision:
+  **implement with amendments**. Spine stays on tables as the intended end
+  state; turns move to DBOS; `ask_human` and budget-pause stay on the table
+  engine.
 - **Context:** runner queues slices 1+2 ([docs/runs.md](runs.md)), pre-deploy
   audit ([docs/runs-audit-handover.md](runs-audit-handover.md) §8)
 - **Decision owners:** Jason (release gate), recorded by the audit session
@@ -73,10 +75,19 @@ Why not rewrite now:
   running run) maps to `DBOS.send`/`recv` message-passing — supported, but
   the "structured concurrency is just `Promise.all`" simplification gets
   qualified once appends and verdicts arrive as messages.
-- Fleet deploys: DBOS pins workflows to code versions; the table-driven
-  state machine is version-agnostic — a mid-run deploy on a self-hosted box
-  picks up where the rows say. With four boxes rolling on cadence, that
-  matters.
+- Fleet deploys (CORRECTED by the slice-3 audit — the original wording
+  overstated it): this fleet pins a STABLE `applicationVersion`
+  (`'mantle-runner-1'`, apps/api/src/config.ts), so routine in-place
+  deploys do NOT strand in-flight DBOS workflows. The real hazard is a
+  dilemma that only bites LONG-LIVED workflows: keep the pin and risk
+  step-sequence divergence when replaying across code changes, or bump
+  `MANTLE_RUNNER_VERSION` and strand what's in flight. Minutes-long turns
+  barely feel either horn; a days-long run meets one near-certainly. The
+  table-driven state machine is version-agnostic — a mid-run deploy picks
+  up where the rows say. With four boxes rolling on cadence, that matters.
+  (Also recorded: `DBOSClient` enqueues carry `application_version = NULL`
+  and survive upgrades until claimed; DBOS `enablePatching` exists as a
+  code-evolution discipline — considered, not adopted.)
 
 Why the slice-3 gate, and the bias toward DBOS there:
 
@@ -104,3 +115,10 @@ Why the slice-3 gate, and the bias toward DBOS there:
   substrate.
 - The worker-turn migration to the DBOS runner is pre-approved in principle
   and can ship in any slice without revisiting this ADR.
+- WP2's resume-turn migration claims durability it must PROVE: the
+  `record_outbound` / claim boundaries are NEW instrumentation (the resume
+  path calls `recordTurn` bare today), and the extended crash-test — kill
+  between the journaled `record_outbound` and workflow completion, exactly
+  one outbound row after recovery — is the acceptance gate for declaring
+  the handover-§5 resume-loss gap closed. The claim step sits AFTER the
+  journaled preconditions (the v0.157.5 ordering), never at enqueue.
