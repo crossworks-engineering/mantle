@@ -1671,6 +1671,19 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
       // Cap the caller-held transcript before it reaches the model — an
       // unbounded resend would blow the context budget. Reject with a corrective
       // (say the limit + the fix) rather than silently truncating history.
+      if (message.length > SIM_MAX_CONTENT) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                `respond_as_agent: message is ${message.length} chars (max ${SIM_MAX_CONTENT}) — ` +
+                'shorten it, or put the bulk in a file/page and reference it.',
+            },
+          ],
+          isError: true,
+        };
+      }
       if (history && history.length > SIM_MAX_HISTORY) {
         return {
           content: [

@@ -69,6 +69,15 @@ describe('respond_as_agent MCP tool', () => {
     expect(handlerFor('respond_as_agent')).toBeTypeOf('function');
   });
 
+  it('rejects an over-long message without calling the engine', async () => {
+    const handler = handlerFor('respond_as_agent');
+    const res = await handler({ message: 'x'.repeat(8001) });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toMatch(/max 8000/);
+    const { runSimulatedResponderTurn } = await import('@mantle/assistant-runtime');
+    expect(runSimulatedResponderTurn).not.toHaveBeenCalled();
+  });
+
   it('rejects an over-cap history (too many turns) without calling the engine', async () => {
     const handler = handlerFor('respond_as_agent');
     const history = Array.from({ length: 41 }, (_, i) => ({
