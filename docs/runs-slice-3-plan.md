@@ -425,3 +425,15 @@ Deferred — recorded here so they aren't lost, to land with their WPs:
 - **Cosmetic, expected**: trace/step rows are written outside the DBOS
   journal, so a crash-replay re-creates them — duplicate traces after a
   recovery are not a bug.
+
+**BUILD RECORD (same day):** WP1–WP5 + the riding-alongs shipped as
+v0.157.8–0.157.12, every amendment implemented as specified. The WP2
+**acceptance gate PASSED** (2026-07-21, workstation stack, isolated scratch
+DBs): `crash-test.ts CRASH_TEST_SHAPE=resume` — journaled `claim_resume` +
+`record_outbound` steps, process killed between `record_outbound` and
+workflow completion; recovery replayed to completion with exactly one claim
+and exactly one outbound row. The handover-§5 resume-loss gap is claimed
+CLOSED on that basis. WP5's panel semantic, as decided at build: blocking
+panel verdicts escalate `needs_human` (panels never rerun automatically).
+Deferred WP1 items landed with WP1; queue starvation remains the recorded
+watch-item; WP6 stays deferred.

@@ -162,6 +162,9 @@ export async function createRun(
     plan: PlanGroup;
     budgetMicroUsd?: number;
     itemCap?: number;
+    /** Surface the run was created from — the root resume reports back
+     *  here (0134). Omit for web/background. */
+    originChannel?: { kind: 'telegram'; chat_id: string };
   },
 ): Promise<{ runId: string; rootItemId: string; actions: PostCommitAction[] }> {
   return db.transaction(async (tx) => {
@@ -174,6 +177,7 @@ export async function createRun(
         title: opts.title,
         budgetMicroUsd: opts.budgetMicroUsd,
         ...(opts.itemCap !== undefined ? { itemCap: opts.itemCap } : {}),
+        ...(opts.originChannel ? { originChannel: opts.originChannel } : {}),
       })
       .returning({ id: runs.id, itemCap: runs.itemCap });
     // WP4: the runaway backstop, enforced at birth — a plan bigger than the

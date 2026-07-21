@@ -15,7 +15,7 @@
  * `run_cancel` stay live so existing runs can always be inspected/stopped.
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { agents, db, runItems, runs } from '@mantle/db';
+import { agentGroups, agents, db, runItems, runs } from '@mantle/db';
 import {
   appendChildren,
   applyAuditVerdict,
@@ -177,6 +177,21 @@ function parsePlan(raw: unknown): ParsedPlan {
         if (o.worker !== undefined && typeof o.worker !== 'string') {
           return { error: `plan${path}: 'worker' must be a worker agent slug string` };
         }
+        if (o.group !== undefined && typeof o.group !== 'string') {
+          return { error: `plan${path}: 'group' must be a worker group slug string` };
+        }
+        if (o.worker && o.group) {
+          return {
+            error: `plan${path}: 'worker' and 'group' are mutually exclusive — a group expands into one attempt per member`,
+          };
+        }
+        if (o.group && parentKind !== 'seq') {
+          return {
+            error:
+              `plan${path}: a worker_invoke naming a 'group' must sit in a 'seq' group — ` +
+              `it expands into par(members) + a panel audit placed right after it`,
+          };
+        }
         if (o.worker) workerSlugs.push((o.worker as string).trim());
         const timeout = o.timeout_seconds;
         return {
@@ -187,6 +202,11 @@ function parsePlan(raw: unknown): ParsedPlan {
               ? { acceptance_criteria: o.acceptance_criteria.trim() }
               : {}),
             ...(typeof o.worker === 'string' && o.worker.trim() ? { worker: o.worker.trim() } : {}),
+            // Temp marker — expandWorkerGroups replaces this leaf before
+            // routing resolution; it never reaches the engine.
+            ...(typeof o.group === 'string' && o.group.trim()
+              ? { panel_group: o.group.trim() }
+              : {}),
             ...(Array.isArray(o.subject_node_ids)
               ? { subject_node_ids: o.subject_node_ids.filter((x) => typeof x === 'string') }
               : {}),
@@ -314,6 +334,75 @@ async function resolveWorkerRouting(ownerId: string, plan: PlanGroup): Promise<s
   return null;
 }
 
+/**
+ * WP5 macro-expansion — runs BEFORE routing resolution. A worker_invoke
+ * carrying `panel_group` (the parser's marker for `group:'<slug>'`) is
+ * replaced IN PLACE by `par(one worker_invoke per member)` followed by a
+ * PANEL audit — so the engine only ever sees shapes it already executes,
+ * and the par-audit redo refusal is never hit (the panel audit sits in the
+ * enclosing seq; a blocking panel verdict escalates needs_human).
+ * Returns a teaching error string, or null on success.
+ */
+async function expandWorkerGroups(ownerId: string, plan: PlanGroup): Promise<string | null> {
+  const slugs = new Set<string>();
+  const collect = (g: PlanGroup): void => {
+    for (const c of g.children) {
+      if (c.kind === 'seq' || c.kind === 'par') collect(c as PlanGroup);
+      else if (typeof (c as PlanLeaf).payload?.panel_group === 'string') {
+        slugs.add((c as PlanLeaf).payload.panel_group as string);
+      }
+    }
+  };
+  collect(plan);
+  if (slugs.size === 0) return null;
+
+  const rows = await db
+    .select()
+    .from(agentGroups)
+    .where(and(eq(agentGroups.ownerId, ownerId), eq(agentGroups.enabled, true)));
+  const bySlug = new Map(rows.map((r) => [r.slug, r]));
+
+  const expand = (g: PlanGroup): string | null => {
+    for (let i = 0; i < g.children.length; i++) {
+      const c = g.children[i]!;
+      if (c.kind === 'seq' || c.kind === 'par') {
+        const err = expand(c as PlanGroup);
+        if (err) return err;
+        continue;
+      }
+      const leaf = c as PlanLeaf;
+      const slug = typeof leaf.payload?.panel_group === 'string' ? leaf.payload.panel_group : null;
+      if (!slug) continue;
+      const grp = bySlug.get(slug);
+      if (!grp) {
+        const available =
+          rows.map((r) => r.slug).join(', ') || '(none — worker_group_ensure creates one)';
+        return `unknown or disabled worker group '${slug}' — available groups: ${available}`;
+      }
+      if (grp.memberSlugs.length === 0) {
+        return `worker group '${slug}' has no members — add worker slugs with worker_group_ensure`;
+      }
+      const { panel_group: _pg, ...base } = leaf.payload as Record<string, unknown>;
+      const members: PlanNode[] = grp.memberSlugs.map((m) => ({
+        kind: 'worker_invoke' as const,
+        payload: { ...base, worker: m },
+      }));
+      const par: PlanGroup = { kind: 'par', label: `panel: ${grp.slug}`, children: members };
+      const audit: PlanLeaf = {
+        kind: 'audit',
+        payload: {
+          panel: true,
+          scope: `panel '${grp.slug}': judge all ${grp.memberSlugs.length} independent attempts; choose or synthesize the best`,
+        },
+      };
+      g.children.splice(i, 1, par, audit);
+      i++; // skip the audit we just inserted
+    }
+    return null;
+  };
+  return expand(plan);
+}
+
 async function loadOwnedRun(ownerId: string, runId: unknown) {
   if (typeof runId !== 'string' || !runId.trim()) return null;
   const [run] = await db
@@ -342,7 +431,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
         plan: {
           type: 'object',
           description:
-            "The run tree. Node shapes: {kind:'seq'|'par', label?, join_policy?:'wait_all'|'fail_fast', children:[…]} | {kind:'tool_call', tool:'<slug>', args:{…}, side_effecting?:true, timeout_seconds?:600} | {kind:'note', text:'…'} | {kind:'worker_invoke', step:'<self-contained task>', acceptance_criteria?:'…', worker?:'<worker slug — omit for the default>', subject_node_ids?:[…]} | {kind:'audit', scope?:'…'} (seq-only, right after the worker step it judges) | {kind:'ask_human', question:'…', options?:['…'], timeout_seconds?} (seq-only; waits indefinitely unless timed — the operator answers via pending approvals and the answer flows to later steps). Root must be a group. Mark any state-changing call side_effecting (it then never auto-retries).",
+            "The run tree. Node shapes: {kind:'seq'|'par', label?, join_policy?:'wait_all'|'fail_fast', children:[…]} | {kind:'tool_call', tool:'<slug>', args:{…}, side_effecting?:true, timeout_seconds?:600} | {kind:'note', text:'…'} | {kind:'worker_invoke', step:'<self-contained task>', acceptance_criteria?:'…', worker?:'<worker slug — omit for the default>', group?:'<worker group slug — seq-only; expands into par(one attempt per member) + a panel audit; mutually exclusive with worker>', subject_node_ids?:[…]} | {kind:'audit', scope?:'…'} (seq-only, right after the worker step it judges) | {kind:'ask_human', question:'…', options?:['…'], timeout_seconds?} (seq-only; waits indefinitely unless timed — the operator answers via pending approvals and the answer flows to later steps). Root must be a group. Mark any state-changing call side_effecting (it then never auto-retries).",
           additionalProperties: true,
         },
       },
@@ -364,6 +453,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
         return { ok: false, error: "title is required — a short goal, e.g. 'Weekly inbox digest'" };
       const parsed = parsePlan(input.plan);
       if (!parsed.ok) return { ok: false, error: parsed.error };
+      const groupError = await expandWorkerGroups(ctx.ownerId, parsed.plan);
+      if (groupError) return { ok: false, error: groupError };
       const toolError = await checkPlanTools(ctx.ownerId, parsed.toolSlugs);
       if (toolError) return { ok: false, error: toolError };
       const workerError = await resolveWorkerRouting(ctx.ownerId, parsed.plan);
@@ -387,6 +478,11 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
           title,
           plan: parsed.plan,
           ...(budgetUsd !== undefined ? { budgetMicroUsd: Math.round(budgetUsd * 1e6) } : {}),
+          // Channel-routed resumes (0134): remember where the run came from
+          // so the final report is delivered back there.
+          ...(ctx.surface?.kind === 'telegram'
+            ? { originChannel: { kind: 'telegram' as const, chat_id: ctx.surface.telegramChatId } }
+            : {}),
         });
       } catch (err) {
         if (err instanceof ItemCapError) return { ok: false, error: err.message };
@@ -450,6 +546,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       // Wrap in a throwaway seq to reuse the same parser, then unwrap.
       const parsed = parsePlan({ kind: 'seq', children: input.children });
       if (!parsed.ok) return { ok: false, error: parsed.error };
+      const groupError = await expandWorkerGroups(ctx.ownerId, parsed.plan);
+      if (groupError) return { ok: false, error: groupError };
       const toolError = await checkPlanTools(ctx.ownerId, parsed.toolSlugs);
       if (toolError) return { ok: false, error: toolError };
       const workerError = await resolveWorkerRouting(ctx.ownerId, parsed.plan);

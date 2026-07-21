@@ -96,6 +96,7 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
       '0129_runs.sql',
       '0130_runs_resume_marker.sql',
       '0132_runs_budget_pause.sql',
+      '0134_runs_origin_channel.sql',
     ]) {
       const migration = readFileSync(
         join(dirname(fileURLToPath(import.meta.url)), '../../db/migrations/', file),
@@ -1024,6 +1025,76 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     // The unclaimed audit's resume is re-emitted inline.
     expect(raised.actions.filter((x) => x.type === 'resume')).toHaveLength(1);
   });
+
+  // ── panel audits (slice 3 WP5) ─────────────────────────────────────────────
+
+  it(
+    'panel audit: pass records the synthesis; blocking verdict escalates needs_human',
+    SLOW,
+    async () => {
+      const panelPlan: PlanGroup = {
+        kind: 'seq',
+        children: [
+          {
+            kind: 'par',
+            children: [
+              { kind: 'worker_invoke' as const, payload: { step: 's', worker: 'a' } },
+              { kind: 'worker_invoke' as const, payload: { step: 's', worker: 'b' } },
+            ],
+          },
+          { kind: 'audit' as const, payload: { panel: true } },
+        ],
+      };
+      const mk = async () => {
+        const { runId, rootItemId } = await createRun(db, {
+          ownerId: OWNER,
+          title: 'panel',
+          plan: panelPlan,
+        });
+        const [par, audit] = await children(rootItemId);
+        const workers = await children(par!.id);
+        for (const w of workers) {
+          expect(await claimItem(db, w.id)).not.toBeNull();
+          await completeItem(db, {
+            itemId: w.id,
+            state: 'done',
+            result: { proposal: `attempt by ${(w.payload as { worker?: string }).worker}` },
+          });
+        }
+        // The par completing promotes the panel audit with a resume.
+        expect((await itemRow(audit!.id)).state).toBe('ready');
+        return { runId, audit: audit! };
+      };
+
+      // pass — the directive is the synthesis; audited_items lists panelists.
+      const p = await mk();
+      const passed = await applyAuditVerdict(db, {
+        auditItemId: p.audit.id,
+        verdict: 'pass',
+        findings: [],
+        directive: 'use attempt 2',
+      });
+      expect(passed.ok && passed.outcome === 'pass').toBe(true);
+      const passedRow = await itemRow(p.audit.id);
+      expect(passedRow.state).toBe('done');
+      expect(passedRow.result?.panel).toBe(true);
+      expect((passedRow.result?.audited_items as string[]).length).toBe(2);
+
+      // blocking redo — panels never rerun automatically: needs_human.
+      const r = await mk();
+      const escalated = await applyAuditVerdict(db, {
+        auditItemId: r.audit.id,
+        verdict: 'redo',
+        findings: [{ severity: 'blocking', claim: 'every attempt is unusable' }],
+      });
+      expect(escalated.ok && escalated.outcome === 'needs_human').toBe(true);
+      const failedRow = await itemRow(r.audit.id);
+      expect(failedRow.state).toBe('failed');
+      expect(failedRow.result?.failure).toMatchObject({ type: 'needs_human' });
+      // The run completed (failed) — counter integrity across the panel shape.
+      expect((await runRow(r.runId)).status).toBe('failed');
+    },
+  );
 
   it('item_cap refuses oversized plans and oversized appends', SLOW, async () => {
     await expect(

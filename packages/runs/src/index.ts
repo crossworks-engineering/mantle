@@ -48,6 +48,8 @@ export {
 export {
   applyAuditVerdict,
   findAuditedWorkerItem,
+  findPanelWorkerItems,
+  isPanelAudit,
   mechanicalPreCheck,
   type AuditFinding,
   type AuditVerdictResult,

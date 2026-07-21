@@ -15,6 +15,13 @@
  *   → DBOS recovers the pending workflow; side_effect returns its JOURNALED
  *     result (no second INSERT); finish runs; workflow completes.
  * PASS = exactly 1 INSERT for the marker across both runs.
+ *
+ * CRASH_TEST_SHAPE=resume runs the WP2 acceptance-gate variant instead
+ * (slice-3 plan §8): journaled claim_resume + record_outbound steps, crash
+ * BETWEEN record_outbound and workflow completion; PASS = recovery completes
+ * with exactly one claim row and exactly one outbound row (no double-post).
+ * Point DATABASE_URL + DBOS_SYSTEM_DATABASE_URL at SCRATCH databases so a
+ * live runner's recovery never sees these workflows.
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
@@ -24,6 +31,11 @@ import { configureDBOS } from './config';
 
 const MARKER = process.env.CRASH_MARKER || 'crashtest';
 const CRASH = process.env.MANTLE_CRASH_TEST === '1';
+/** 'resume' runs the WP2-shaped variant (claim_resume + record_outbound
+ *  steps, crash BETWEEN record_outbound and workflow completion) — the
+ *  slice-3 plan §8 acceptance gate for the resume-loss claim. Default: the
+ *  original single-step shape. */
+const SHAPE = process.env.CRASH_TEST_SHAPE === 'resume' ? 'resume' : 'basic';
 
 async function crashTestImpl(marker: string): Promise<string> {
   // A real, countable side effect — journaled as a step. On recovery DBOS must
@@ -50,6 +62,43 @@ async function crashTestImpl(marker: string): Promise<string> {
 
 const crashTestWorkflow = DBOS.registerWorkflow(crashTestImpl, { name: 'crashTestWorkflow' });
 
+/** WP2 acceptance gate (runs-slice-3-plan.md §8 amendment 2): the resume
+ *  turn's exact step ordering — a journaled claim, a journaled outbound
+ *  record, then a crash BEFORE workflow completion. PASS = recovery replays
+ *  to completion with EXACTLY ONE outbound row (no double-post) and exactly
+ *  one claim. */
+async function crashResumeImpl(marker: string): Promise<string> {
+  await DBOS.runStep(
+    async () => {
+      await db.execute(
+        sql`insert into _crash_test (marker, at) values (${`${marker}:claim`}, now())`,
+      );
+      return true;
+    },
+    { name: 'claim_resume' },
+  );
+
+  await DBOS.runStep(
+    async () => {
+      await db.execute(
+        sql`insert into _crash_test (marker, at) values (${`${marker}:outbound`}, now())`,
+      );
+      return true;
+    },
+    { name: 'record_outbound' },
+  );
+
+  if (CRASH) {
+    DBOS.logger.warn('[crash-test] record_outbound committed — crashing before completion');
+    process.exit(137);
+  }
+  return 'ok';
+}
+
+const crashResumeWorkflow = DBOS.registerWorkflow(crashResumeImpl, {
+  name: 'crashResumeWorkflow',
+});
+
 async function main(): Promise<void> {
   await db.execute(
     sql`create table if not exists _crash_test (id bigserial primary key, marker text, at timestamptz)`,
@@ -59,10 +108,31 @@ async function main(): Promise<void> {
 
   // Same workflowID across both runs: run 2 resolves to run 1's (recovered)
   // workflow rather than starting a fresh one.
-  const handle = await DBOS.startWorkflow(crashTestWorkflow, { workflowID: MARKER })(MARKER);
+  const workflow = SHAPE === 'resume' ? crashResumeWorkflow : crashTestWorkflow;
+  const handle = await DBOS.startWorkflow(workflow, { workflowID: `${MARKER}:${SHAPE}` })(MARKER);
 
   if (!CRASH) {
     const result = await handle.getResult();
+    if (SHAPE === 'resume') {
+      const count = async (suffix: string) => {
+        const rows = (await db.execute(
+          sql`select count(*)::int as n from _crash_test where marker = ${`${MARKER}:${suffix}`}`,
+        )) as unknown as Array<{ n: number }>;
+        return rows[0]?.n ?? -1;
+      };
+      const claims = await count('claim');
+      const outbounds = await count('outbound');
+      console.log(`[crash-test] result=${result} claims=${claims} outbounds=${outbounds}`);
+      const pass = result === 'ok' && claims === 1 && outbounds === 1;
+      console.log(
+        pass
+          ? '[crash-test] PASS ✅ (resume shape: exactly one claim, exactly one outbound — no double-post)'
+          : `[crash-test] FAIL ❌ (expected 1/1, got claims=${claims} outbounds=${outbounds})`,
+      );
+      await db.execute(sql`delete from _crash_test where marker like ${`${MARKER}:%`}`);
+      await DBOS.shutdown();
+      process.exit(pass ? 0 : 1);
+    }
     const rows = (await db.execute(
       sql`select count(*)::int as n from _crash_test where marker = ${MARKER}`,
     )) as unknown as Array<{ n: number }>;

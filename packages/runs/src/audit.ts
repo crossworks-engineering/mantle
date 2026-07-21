@@ -63,6 +63,48 @@ export async function findAuditedWorkerItem(
   return rows.length > 0 ? rows[rows.length - 1]! : null;
 }
 
+/** True when this audit judges a PANEL — a preceding par group of worker
+ *  attempts (WP5 expansion) rather than a single worker item. Stamped on
+ *  the payload at expansion time. */
+export function isPanelAudit(audit: Pick<RunItemRow, 'payload'>): boolean {
+  return (audit.payload as Record<string, unknown> | null)?.['panel'] === true;
+}
+
+/** The panelists a PANEL audit judges: the terminal, non-superseded
+ *  `worker_invoke` children of the nearest preceding sibling `group_par`
+ *  (the shape the WP5 expansion guarantees), ordered by position. Empty
+ *  when the shape is unexpected — the resume prompt teaches the anomaly. */
+export async function findPanelWorkerItems(
+  db: Db,
+  audit: Pick<RunItemRow, 'id' | 'parentId' | 'position'>,
+): Promise<RunItemRow[]> {
+  if (!audit.parentId) return [];
+  const siblings = await db
+    .select()
+    .from(runItems)
+    .where(
+      and(
+        eq(runItems.parentId, audit.parentId),
+        eq(runItems.kind, 'group_par'),
+        lt(runItems.position, audit.position),
+      ),
+    )
+    .orderBy(asc(runItems.position));
+  const panel = siblings.length > 0 ? siblings[siblings.length - 1]! : null;
+  if (!panel) return [];
+  return db
+    .select()
+    .from(runItems)
+    .where(
+      and(
+        eq(runItems.parentId, panel.id),
+        eq(runItems.kind, 'worker_invoke'),
+        inArray(runItems.state, ['done', 'failed']),
+      ),
+    )
+    .orderBy(asc(runItems.position));
+}
+
 /**
  * Mechanical pre-check (plan §7): flags computed from the worker's RECORDED
  * tool ledger — not its prose — surfaced to the auditing model before it
@@ -127,6 +169,48 @@ export async function applyAuditVerdict(
       error:
         "verdict 'pass' with blocking findings is contradictory — downgrade them to advisory or verdict 'redo'",
     };
+  }
+
+  // PANEL audits (WP5): pass records the synthesis (the directive names the
+  // winning/combined result); a blocking 'redo' escalates needs_human —
+  // panels never redo (consistent with the par rule: a redo appended beside
+  // a completed par would race its own audit, and "run the whole panel
+  // again" is a human-priced decision, not an automatic loop).
+  if (isPanelAudit(audit)) {
+    const panel = await findPanelWorkerItems(db, audit);
+    const panelResult = {
+      verdict: opts.verdict,
+      findings: opts.findings,
+      ...(opts.directive ? { directive: opts.directive } : {}),
+      panel: true,
+      audited_items: panel.map((p) => p.id),
+    };
+    if (opts.verdict === 'pass') {
+      const { completed, actions } = await completeItem(db, {
+        itemId: audit.id,
+        state: 'done',
+        result: panelResult,
+      });
+      if (!completed) {
+        return {
+          ok: false,
+          error: `audit ${audit.id} was completed concurrently (likely swept as timed out) — verdict not recorded; run_state shows the outcome`,
+        };
+      }
+      return { ok: true, outcome: 'pass', actions };
+    }
+    const { actions } = await completeItem(db, {
+      itemId: audit.id,
+      state: 'failed',
+      result: panelResult,
+      failure: {
+        type: 'needs_human',
+        message:
+          'blocking verdict on a PANEL audit — panels do not redo automatically; human decision required',
+        itemId: audit.id,
+      },
+    });
+    return { ok: true, outcome: 'needs_human', actions };
   }
 
   const audited = await findAuditedWorkerItem(db, audit);

@@ -66,6 +66,9 @@ export const runs = pgTable(
     /** Runaway-append backstop — createRun/appendChildren refuse past it
      *  with a teaching error (slice 3 WP4). */
     itemCap: integer('item_cap').notNull().default(200),
+    /** The surface the run was created from (migration 0134) — the ROOT
+     *  resume delivers its report back here. NULL = web/background. */
+    originChannel: jsonb('origin_channel').$type<{ kind: 'telegram'; chat_id: string }>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp('completed_at', { withTimezone: true }),

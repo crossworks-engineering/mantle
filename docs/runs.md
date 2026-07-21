@@ -5,11 +5,12 @@ Status: **slices 1 + 2, plus slice 3 WP1** — the spine (schema, engine,
 dispatcher, sweep, `run_*` tools, resume turn, run view), worker agents +
 audits (per-run concurrency cap, model inheritance, mechanical evidence,
 resume-driven audit verdicts with a one-redo cycle, the per-worker acceptance
-metric), durable turns (worker turns AND resume turns execute as DBOS
-workflows in apps/api — slice-3 plan §4 WP1/WP2), `ask_human` gates (WP3 —
-human questions as run items, answered via pending approvals), and budget /
-item-cap auto-pause (WP4). Worker groups (WP5) close out slice 3
-([runs-slice-3-plan.md](runs-slice-3-plan.md)).
+metric), and **slice 3 complete** ([runs-slice-3-plan.md](runs-slice-3-plan.md)):
+durable turns (worker turns AND resume turns execute as DBOS workflows in
+apps/api — WP1/WP2, crash-test gate PASSED), `ask_human` gates (WP3), budget /
+item-cap auto-pause (WP4), worker groups / panels (WP5), channel-routed
+resume delivery, and the run-view Cancel actuator. WP6 (partitioned per-run
+cap) stays deferred.
 
 ## Concept
 
@@ -138,6 +139,28 @@ duty 4 expires any pending row whose item went terminal (run cancelled,
 branch fail_fast-cancelled, question timed out), and an answer landing on a
 dead item expires the row with a teaching error instead of pretending it
 took effect.
+
+## Worker groups / panels (slice 3 WP5)
+
+A worker group is a NAMED SET of worker agents (`agent_groups`, migration
+0133; manage with `worker_group_ensure` / `worker_group_list`). A
+`worker_invoke` with `group:'<slug>'` (seq-only, mutually exclusive with
+`worker`) macro-expands AT PLAN/APPEND TIME into `par(one attempt per
+member)` followed by a PANEL audit in the enclosing seq — the engine only
+ever sees shapes it already executes. The panel-audit resume prompt carries
+every attempt's fenced proposal + mechanical ledger; verdict `pass` means at
+least one attempt (or a synthesis) is usable and the `directive` IS the
+authoritative synthesis; a blocking verdict escalates `needs_human` — panels
+never rerun automatically (consistent with the seq-only redo rule).
+
+## Channel-routed resumes + Stop
+
+`run_plan` records the creating surface on `runs.origin_channel` (0134). A
+telegram-origin run's ROOT report is delivered back to the originating chat
+(journaled send — no double-post on crash-replay; falls back to web-only
+with a loud log if the chat is unpaired). The run view (`/debug/runs`) has a
+Cancel button — the operator Stop actuator, same `cancelRun` as the
+`run_cancel` tool, live even with the flag off.
 
 ## Budget + item-cap auto-pause (slice 3 WP4)
 

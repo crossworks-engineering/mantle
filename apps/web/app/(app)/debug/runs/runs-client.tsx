@@ -6,7 +6,20 @@
  * The tree IS the audit log; this view just renders `compileRunState`.
  */
 import { useEffect, useState } from 'react';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 
@@ -126,9 +139,55 @@ function ItemNode({ item, depth }: { item: CompiledItem; depth: number }) {
   );
 }
 
+/** The operator Stop actuator — cancelRun via the debug API (same semantics
+ *  as the run_cancel tool; live even with MANTLE_RUNS off). */
+function CancelRunButton({ runId, onCancelled }: { runId: string; onCancelled: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="text-destructive" disabled={busy}>
+          Cancel run
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Cancel this run?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Pending and running items are cancelled; in-flight work finishes but its result is
+            discarded. Open questions for this run expire. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep running</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={() => {
+              setBusy(true);
+              apiSend<{ cancelled: boolean }>(`/api/debug/runs/${runId}`, 'POST', {
+                action: 'cancel',
+              })
+                .then((r) => {
+                  toast.success(r.cancelled ? 'Run cancelled' : 'Run already finished');
+                  onCancelled();
+                })
+                .catch((e) => toast.error(e instanceof Error ? e.message : String(e)))
+                .finally(() => setBusy(false));
+            }}
+          >
+            Cancel run
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function RunDetail({ runId }: { runId: string }) {
   const [data, setData] = useState<CompiledRun | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
   useEffect(() => {
     let alive = true;
     setData(null);
@@ -139,7 +198,7 @@ function RunDetail({ runId }: { runId: string }) {
     return () => {
       alive = false;
     };
-  }, [runId]);
+  }, [runId, nonce]);
   if (error) return <p className="py-2 text-sm text-destructive">{error}</p>;
   if (!data)
     return (
@@ -147,13 +206,15 @@ function RunDetail({ runId }: { runId: string }) {
         <Spinner /> Loading run…
       </div>
     );
+  const active = data.run.status === 'running' || data.run.status === 'paused';
   return (
     <div className="space-y-2 rounded-md border border-border bg-card p-3">
-      <div className="flex flex-wrap items-baseline gap-x-3 text-sm">
+      <div className="flex flex-wrap items-center gap-x-3 text-sm">
         <span className="font-medium">{data.run.title}</span>
         <span className="text-xs text-muted-foreground">
           {data.totals.items} items · {usd(data.totals.costMicroUsd)}
         </span>
+        {active && <CancelRunButton runId={runId} onCancelled={() => setNonce((n) => n + 1)} />}
       </div>
       {data.tree ? (
         <ItemNode item={data.tree} depth={0} />

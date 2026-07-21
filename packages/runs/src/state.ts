@@ -52,6 +52,11 @@ export type CompiledRun = {
     createdAt: string;
     completedAt: string | null;
     budgetMicroUsd: number | null;
+    /** Micro-USD actually spent (WP4). */
+    spentMicroUsd: number;
+    /** Where the run was created from — the root resume reports back here
+     *  (0134). NULL = web/background. */
+    originChannel: RunRow['originChannel'];
   };
   tree: CompiledRunItem | null;
   totals: { items: number; byState: Record<string, number>; costMicroUsd: number };
@@ -171,6 +176,8 @@ export async function compileRunState(db: Db, runId: string): Promise<CompiledRu
       createdAt: run.createdAt.toISOString(),
       completedAt: run.completedAt?.toISOString() ?? null,
       budgetMicroUsd: run.budgetMicroUsd,
+      spentMicroUsd: run.spentMicroUsd,
+      originChannel: run.originChannel,
     },
     tree,
     totals: { items: items.length, byState, costMicroUsd: tree?.subtreeCostMicroUsd ?? 0 },

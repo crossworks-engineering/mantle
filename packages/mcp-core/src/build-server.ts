@@ -18,6 +18,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   db,
+  agentGroups,
   agents,
   channels,
   emails,
@@ -623,6 +624,70 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
       if (!row) {
         return { content: [{ type: 'text', text: 'not found or already decided' }], isError: true };
       }
+      return jsonReply(row);
+    },
+  );
+
+  server.tool(
+    'worker_group_list',
+    'List worker groups (panels) for runner queues. A run step with group:<slug> fans out into one attempt per member worker plus a panel audit.',
+    {},
+    async () => {
+      const rows = await db.select().from(agentGroups).where(eq(agentGroups.ownerId, ownerId));
+      return jsonReply(rows);
+    },
+  );
+
+  server.tool(
+    'worker_group_ensure',
+    "Create or update a worker group (panel) by slug. `members` are enabled worker-agent slugs — each must exist (agent_list shows agents; role 'worker'). Idempotent upsert.",
+    {
+      slug: z.string().min(1).max(64),
+      name: z.string().max(200).optional(),
+      members: z.array(z.string().min(1)).min(1).max(10),
+      enabled: z.boolean().optional(),
+    },
+    async ({ slug, name, members, enabled }) => {
+      const workers = await db
+        .select({ slug: agents.slug })
+        .from(agents)
+        .where(
+          and(eq(agents.ownerId, ownerId), eq(agents.role, 'worker'), eq(agents.enabled, true)),
+        );
+      const have = new Set(workers.map((w) => w.slug));
+      const missing = members.filter((m) => !have.has(m));
+      if (missing.length > 0) {
+        const available = workers.map((w) => w.slug).join(', ') || '(none yet)';
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `unknown worker(s): ${missing.join(', ')} — enabled worker agents: ${available}. Create workers first (settings → agents, role 'worker').`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const [existing] = await db
+        .select({ id: agentGroups.id })
+        .from(agentGroups)
+        .where(and(eq(agentGroups.ownerId, ownerId), eq(agentGroups.slug, slug)));
+      const values = {
+        name: name ?? slug,
+        memberSlugs: members,
+        ...(enabled !== undefined ? { enabled } : {}),
+        updatedAt: new Date(),
+      };
+      const [row] = existing
+        ? await db
+            .update(agentGroups)
+            .set(values)
+            .where(eq(agentGroups.id, existing.id))
+            .returning()
+        : await db
+            .insert(agentGroups)
+            .values({ ownerId, slug, ...values })
+            .returning();
       return jsonReply(row);
     },
   );
