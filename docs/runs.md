@@ -12,6 +12,14 @@ item-cap auto-pause (WP4), worker groups / panels (WP5), channel-routed
 resume delivery, and the run-view Cancel actuator. WP6 (partitioned per-run
 cap) stays deferred.
 
+**Slice 4 — operational readiness** (still dark): a dedicated
+`RUNS_TURN_QUEUE` so background turns never starve interactive ones (WP-F);
+the default worker agent moved into the system manifest (WP-E); slug-aware
+`ask_human` / `run_budget` answering on `/pending` (WP-C); the run view
+promoted from `/debug/runs` to a first-class master-detail `/runs` surface
+(WP-B); a `/settings/worker-groups` management screen (WP-D); and an
+active-runs strip on `/assistant` (WP-A).
+
 ## Concept
 
 When the responder delegates real work it creates a **run**: a tree of **run
@@ -94,9 +102,10 @@ cancellation.
 
 - **Workers are templates, not processes** (`agents.role = 'worker'`,
   migration 0131): each `worker_invoke` item spawns a fresh agent turn from
-  the template — model, kit, instructions. The default "Worker agent" is
-  ensured lazily on first use (`ensureWorkerAgent`; deliberately not in the
-  manifest while dark). `model = 'inherit'` (the default) runs the step on
+  the template — model, kit, instructions. The default "Worker agent" now
+  ships in the system manifest (slice 4 WP-E — seeded on every brain;
+  `ensureWorkerAgent` stays the lazy fallback that finds the seeded row).
+  `model = 'inherit'` (the default) runs the step on
   the RESPONDER's model/provider/key at execution time; pointing a duplicate
   worker at a cheaper model is the opt-in cost knob, justified by its
   acceptance rate. Routing is per step (`worker: '<slug>'` in the plan node);
@@ -138,7 +147,11 @@ The audit-item pattern with a human in the LLM's place. An
 the answer gates the steps after it) promotes `queued → ready`, is NEVER
 dispatched, and creates a `pending_tool_calls` row — the existing pending
 approvals UI, the `pending_*` tools, and the telegram approval flow are the
-answer surface; no new UI. `pending_approve` (with an optional free-text
+answer surface. Slice 4 WP-C made `/pending` slug-aware: an `ask_human` row
+shows the question as its headline with one-click `options` chips and a
+free-text "Answer & approve" field (PATCH `/api/pending/:id`
+`{decision:'approve', answer}`), and a `run_budget` pause labels its actions
+"Raise budget" / "Cancel run". `pending_approve` (with an optional free-text
 `answer`) completes the item `done` with the answer riding `result.answer`
 into the compiled state; `pending_reject` completes it
 `failed({type:'rejected'})` so join policies treat it like any failed step.
