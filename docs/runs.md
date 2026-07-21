@@ -102,7 +102,8 @@ cancellation.
   serialized on the run row; completions emit slot-release wake-ups;
   `apps/web/lib/runs/execute-worker.ts`), then hands the whole agent turn to
   the DBOS runner (`apps/api/src/workflows/runs-worker-turn.ts`, enqueued by
-  name on the shared RUNNER_QUEUE, `workflowID = itemId:attempt`). Every LLM
+  name on the dedicated `RUNS_TURN_QUEUE` (`'mantle.runs'`),
+  `workflowID = itemId:attempt`). Every LLM
   call + tool dispatch journals, so a crash mid-turn resumes from the last
   completed step; the deadline re-stamps when execution actually starts
   (queue wait is not execution budget); a failed enqueue completes the item
@@ -209,6 +210,23 @@ narrower. The `runs` tool group is
 deliberately **not** attached to the persona in the manifest while dogfooding —
 grant it manually on the dev brain (`/settings/tool-groups` or
 `agent_grant_tool_group`). Attach it in the manifest when the feature ships.
+
+## Queue isolation (slice 4 WP-F)
+
+Background runs turns get their OWN DBOS queue, `RUNS_TURN_QUEUE`
+(`'mantle.runs'`, `packages/runs/src/queues.ts`) — both the worker-turn and the
+resume-turn workflows enqueue onto it (`apps/web/lib/runs/dbos-enqueue.ts`).
+apps/api registers it with its own concurrency cap
+(`runsTurnConcurrency()`, env `MANTLE_RUNS_TURN_CONCURRENCY`, default 2). This
+closes the slice-3 starvation watch-item: worker + resume turns previously
+shared `RUNNER_QUEUE`'s FIFO with the owner's INTERACTIVE assistant/telegram
+turns, so a run fanning out N worker turns could queue ahead of a live chat
+message. Off the shared queue, background runs can never starve the foreground
+(the same isolation `FORUM_QUEUE` gives topic turns). Deploy-skew posture: a
+worker that enqueues to `'mantle.runs'` before apps/api restarts with the queue
+registered leaves jobs WAITING until the api rolls — an unregistered queue is
+never drained, not an error. Compose restarts web + api together, so the window
+is transient and the jobs run as soon as the api runner comes up.
 
 ## Failure semantics (slice 1)
 

@@ -1,7 +1,14 @@
 /**
  * Worker-side DBOS enqueue seam (slice 3 WP1). The runs WORKER process (a
- * plain tsx process, not Next.js) enqueues turn workflows onto the shared
- * RUNNER_QUEUE by name — registering and executing them is apps/api's job.
+ * plain tsx process, not Next.js) enqueues turn workflows onto the dedicated
+ * RUNS_TURN_QUEUE by name — registering and executing them is apps/api's job.
+ *
+ * Queue choice (the starvation isolation): worker + resume turns ride
+ * RUNS_TURN_QUEUE, NOT the shared RUNNER_QUEUE that carries the owner's
+ * interactive assistant/telegram turns. A run fanning out worker turns must
+ * never queue ahead of a live chat message; the dedicated queue with its own
+ * low concurrency cap keeps background runs off the foreground path (see
+ * RUNS_TURN_QUEUE in @mantle/runs).
  *
  * Deliberately NOT `@/lib/dbos-client`: that module is `server-only` (throws
  * outside a React server bundle). Same pattern underneath — one cached
@@ -17,9 +24,10 @@
  * derivable from the item row for observability.
  */
 import { DBOSClient, Error as DBOSErrors } from '@dbos-inc/dbos-sdk';
-import { resolveSystemDatabaseUrl, RUNNER_QUEUE } from '@mantle/assistant-runtime';
+import { resolveSystemDatabaseUrl } from '@mantle/assistant-runtime';
 import {
   RUNS_RESUME_TURN_WORKFLOW,
+  RUNS_TURN_QUEUE,
   RUNS_WORKER_TURN_WORKFLOW,
   type RunsResumeTurnInput,
   type RunsResumeTurnResult,
@@ -49,7 +57,7 @@ export async function enqueueRunsWorkerTurn(itemId: string, attempt: number): Pr
   await client.enqueue<(input: RunsWorkerTurnInput) => Promise<RunsWorkerTurnResult>>(
     {
       workflowName: RUNS_WORKER_TURN_WORKFLOW,
-      queueName: RUNNER_QUEUE,
+      queueName: RUNS_TURN_QUEUE,
       workflowID: `${itemId}:${attempt}`,
     },
     { itemId },
@@ -74,7 +82,7 @@ export async function enqueueRunsResumeTurn(
     await client.enqueue<(input: RunsResumeTurnInput) => Promise<RunsResumeTurnResult>>(
       {
         workflowName: RUNS_RESUME_TURN_WORKFLOW,
-        queueName: RUNNER_QUEUE,
+        queueName: RUNS_TURN_QUEUE,
         deduplicationID: groupId,
       },
       { runId, groupId },

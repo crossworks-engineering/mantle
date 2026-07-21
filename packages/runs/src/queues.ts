@@ -20,6 +20,30 @@ export const RUN_WORKER_QUEUE = 'mantle.run.worker';
 export const RUN_RESUME_QUEUE = 'mantle.run.resume';
 
 /**
+ * Dedicated DBOS queue for durable runs TURNS — both the worker-turn workflow
+ * (`worker_invoke` items) and the resume-turn workflow. Registered in apps/api
+ * (its concurrency = `runsTurnConcurrency()`, env MANTLE_RUNS_TURN_CONCURRENCY,
+ * default 2); enqueued from apps/web/lib/runs/dbos-enqueue.ts.
+ *
+ * WHY a separate queue (the starvation watch-item): worker + resume turns used
+ * to share RUNNER_QUEUE with the owner's INTERACTIVE assistant/telegram turns.
+ * A run that fans out N worker turns would then queue ahead of a live chat
+ * message and the owner waits behind their own background job. Background runs
+ * turns must NEVER starve foreground turns, so they get their own queue with
+ * its own (deliberately low) concurrency cap — the same isolation FORUM_QUEUE
+ * gives topic turns. This is a DBOS queue name (parallel to RUNNER_QUEUE /
+ * FORUM_QUEUE in @mantle/assistant-runtime), distinct from the pg-boss queues
+ * above.
+ *
+ * Deploy-skew posture: a runs worker that enqueues to 'mantle.runs' before
+ * apps/api has restarted with the queue registered leaves the job WAITING until
+ * the api process rolls (an unregistered queue is never drained, not an error).
+ * Compose restarts web + api together, so this window is transient; the job is
+ * picked up as soon as the api runner comes up registering the queue.
+ */
+export const RUNS_TURN_QUEUE = 'mantle.runs';
+
+/**
  * DBOS workflow names — the cross-runtime contract for slice 3's turn
  * execution (plan §4 WP1/WP2). The apps/api runner REGISTERS these; the runs
  * worker ENQUEUES them by name via DBOSClient after winning the claim CAS.

@@ -68,3 +68,14 @@ export function runnerConcurrency(): number {
   const raw = Number(process.env.MANTLE_RUNNER_CONCURRENCY);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 8;
 }
+
+/** Concurrency cap for the dedicated RUNS_TURN_QUEUE — bounds in-flight
+ *  background runs turns (worker + resume) so they never queue ahead of the
+ *  owner's interactive assistant/telegram turns on RUNNER_QUEUE (the
+ *  starvation isolation; see RUNS_TURN_QUEUE in @mantle/runs). Deliberately
+ *  low by default — background work should trickle, not flood the LLM route.
+ *  Override with MANTLE_RUNS_TURN_CONCURRENCY. */
+export function runsTurnConcurrency(): number {
+  const raw = Number(process.env.MANTLE_RUNS_TURN_CONCURRENCY);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2;
+}

@@ -3,7 +3,9 @@
  * `worker_invoke` item's whole agent turn as a durable DBOS workflow. The runs
  * worker CLAIMS the item under the per-run cap (`claimWorkerItem`, the engine's
  * correctness gate — unchanged), then enqueues this workflow by name on the
- * shared RUNNER_QUEUE and acks its pg-boss job; the turn itself executes here,
+ * dedicated RUNS_TURN_QUEUE (off the foreground RUNNER_QUEUE so background runs
+ * never starve interactive turns) and acks its pg-boss job; the turn itself
+ * executes here,
  * where every LLM call + tool dispatch is a journaled step (tracing `step()` →
  * `runDurableStep` under `withDurableSteps`), so a crash mid-turn resumes from
  * the last completed step instead of re-running the whole turn or eating the
@@ -213,7 +215,7 @@ async function runsWorkerTurnImpl(input: RunsWorkerTurnInput): Promise<RunsWorke
         DBOS.span?.setAttribute('mantle.owner_id', run.ownerId);
 
         // Deadline re-stamp: the claim's stamp started ticking when the runs
-        // worker won the CAS, but RUNNER_QUEUE wait time is not execution.
+        // worker won the CAS, but RUNS_TURN_QUEUE wait time is not execution.
         // Re-stamping here (state-guarded, plain UPDATE — no new transition)
         // keeps "deadline = execution budget" true under queue backpressure;
         // an enqueued-but-never-started workflow still times out on the

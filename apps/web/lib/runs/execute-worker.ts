@@ -9,8 +9,10 @@
  * resumes instead of re-running wholesale.
  *
  * Handshake (plan §4 WP1, C4 — engine contract unchanged):
- *   claim wins  → enqueue `runsWorkerTurnWorkflow` on RUNNER_QUEUE
- *                 (workflowID = itemId:attempt) and ack. Fire-and-forget —
+ *   claim wins  → enqueue `runsWorkerTurnWorkflow` on RUNS_TURN_QUEUE
+ *                 (the dedicated background-turn queue, off the foreground
+ *                 RUNNER_QUEUE; workflowID = itemId:attempt) and ack.
+ *                 Fire-and-forget —
  *                 no cross-process await; the workflow completes the item.
  *   enqueue throws → complete the item `failed(dispatch_failed)` IMMEDIATELY
  *                 (honest failure type; no 600 s deadline rot). The sweep's
