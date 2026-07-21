@@ -83,8 +83,12 @@ cancellation.
   manifest. Responder-only; a delegated child agent is refused, and `run_*` /
   `invoke_agent` are banned inside items (checked at plan time AND at
   execution — no recursion).
-- **Run view**: `/debug/runs` — recent runs + collapsible item tree (states,
-  one-line outcomes, per-subtree cost roll-up, trace links).
+- **Run view**: `/runs` — a first-class master-detail surface (slice 4
+  WP-B, promoted from `/debug/runs`): the run list (title, status incl.
+  `paused`, created, cost) beside the selected run's collapsible item tree
+  (states, one-line outcomes, per-subtree cost roll-up, trace links), the
+  operator Cancel actuator, and "needs you" banners linking to /pending on a
+  budget pause or an open question.
 
 ## Workers + audits (slice 2)
 
@@ -124,7 +128,7 @@ cancellation.
   attached and a fresh audit, and promotes it. **One redo max**: a second
   blocking verdict fails the audit `needs_human` and the run surfaces it.
 - **Acceptance metric**: per-worker first-pass acceptance
-  (done-not-superseded / judged) on `/debug/runs` — the number that decides
+  (done-not-superseded / judged) on `/runs` — the number that decides
   when cheaper worker tiers are justified.
 
 ## `ask_human` gates (slice 3 WP3)
@@ -164,7 +168,7 @@ never rerun automatically (consistent with the seq-only redo rule).
 `run_plan` records the creating surface on `runs.origin_channel` (0134). A
 telegram-origin run's ROOT report is delivered back to the originating chat
 (journaled send — no double-post on crash-replay; falls back to web-only
-with a loud log if the chat is unpaired). The run view (`/debug/runs`) has a
+with a loud log if the chat is unpaired). The run view (`/runs`) has a
 Cancel button — the operator Stop actuator, same `cancelRun` as the
 `run_cancel` tool, live even with the flag off.
 

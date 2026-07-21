@@ -1,18 +1,82 @@
 import { NextResponse } from 'next/server';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { agents, db, runItems, runs } from '@mantle/db';
 import { isRunsEnabled } from '@mantle/runs';
 import { getOwnerOr401 } from '@/lib/auth';
 
-/** GET /api/debug/runs — recent runs (newest first), the feature-gate state,
- *  and the per-worker first-pass acceptance rate (plan §9: accepted /
- *  (accepted + redone) over worker_invoke items — the metric that decides
- *  when cheaper worker tiers are justified). */
-const LIMIT = 50;
+/**
+ * GET /api/runs — the run surface's list payload (owner-scoped). Two shapes:
+ *
+ *  - default: a paginated page of recent runs (newest first) + the total count,
+ *    the feature-gate state, and the per-worker first-pass acceptance rate
+ *    (plan §9: accepted / (accepted + redone + needsHuman) over worker_invoke
+ *    items — the metric that decides when cheaper worker tiers are justified).
+ *  - `?active=1`: just the RUNNING/PAUSED runs with the compact card fields the
+ *    assistant-page active-runs strip needs (root leaf progress, spend vs
+ *    budget). No worker stats, no pagination — a small always-live payload.
+ *
+ * (Was /api/debug/runs; promoted to a first-class surface in slice 4 WP-B. The
+ * handlers stay owner-scoped exactly as before.)
+ */
+const PAGE_SIZE = 25;
+const ACTIVE_STATES = ['running', 'paused'] as const;
 
-export async function GET() {
+export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
+  const url = new URL(req.url);
+
+  // ── Active-runs strip (WP-A) ───────────────────────────────────────────────
+  if (url.searchParams.get('active') === '1') {
+    const activeRuns = await db
+      .select({
+        id: runs.id,
+        title: runs.title,
+        status: runs.status,
+        spentMicroUsd: runs.spentMicroUsd,
+        budgetMicroUsd: runs.budgetMicroUsd,
+      })
+      .from(runs)
+      .where(and(eq(runs.ownerId, user.id), inArray(runs.status, [...ACTIVE_STATES])))
+      .orderBy(desc(runs.createdAt))
+      .limit(50);
+    // Root item per run (parentId IS NULL) carries the top-level leaf progress.
+    const ids = activeRuns.map((r) => r.id);
+    const roots = ids.length
+      ? await db
+          .select({
+            runId: runItems.runId,
+            childrenDone: runItems.childrenDone,
+            childrenTotal: runItems.childrenTotal,
+          })
+          .from(runItems)
+          .where(and(inArray(runItems.runId, ids), isNull(runItems.parentId)))
+      : [];
+    const rootByRun = new Map(roots.map((r) => [r.runId, r]));
+    return NextResponse.json({
+      enabled: isRunsEnabled(),
+      active: activeRuns.map((r) => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        spentMicroUsd: r.spentMicroUsd,
+        budgetMicroUsd: r.budgetMicroUsd,
+        childrenDone: rootByRun.get(r.id)?.childrenDone ?? 0,
+        childrenTotal: rootByRun.get(r.id)?.childrenTotal ?? 0,
+      })),
+    });
+  }
+
+  // ── Full paginated list ────────────────────────────────────────────────────
+  const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
+  const offset = (page - 1) * PAGE_SIZE;
+
+  const [countRow] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(runs)
+    .where(eq(runs.ownerId, user.id));
+  const total = countRow?.total ?? 0;
+
   const rows = await db
     .select({
       id: runs.id,
@@ -26,7 +90,8 @@ export async function GET() {
     .from(runs)
     .where(eq(runs.ownerId, user.id))
     .orderBy(desc(runs.createdAt))
-    .limit(LIMIT);
+    .limit(PAGE_SIZE)
+    .offset(offset);
 
   // First-pass acceptance per worker agent, classified against actual audit
   // verdicts (audit result.audited_item points at the judged worker item):
@@ -100,6 +165,9 @@ export async function GET() {
 
   return NextResponse.json({
     enabled: isRunsEnabled(),
+    page,
+    pageSize: PAGE_SIZE,
+    total,
     runs: rows.map((r) => ({ ...r, costMicroUsd: Number(r.costMicroUsd) })),
     workers,
   });

@@ -23,6 +23,7 @@ import {
   HeartPulse,
   Inbox,
   LayoutDashboard,
+  ListTree,
   KeyRound,
   Key,
   Plug,
@@ -125,6 +126,12 @@ export const NAV_GROUPS: NavGroup[] = [
       { name: 'Studio', href: '/studio', icon: Waypoints },
       { name: 'API Console', href: '/dev-tools', icon: TerminalSquare },
       { name: 'Runners', href: '/runners', icon: ServerCog },
+      // Durable runs surface (docs/runs.md). Nav is a static list with no
+      // per-item conditional-visibility mechanism (only the pending badge is
+      // dynamic), so this ships always-visible — the System-group siblings
+      // (Studio/Runners/Traces/Debug) do the same. It sits next to Debug where
+      // the run view used to live as a tab.
+      { name: 'Runs', href: '/runs', icon: ListTree },
       { name: 'Traces', href: '/traces', icon: Workflow },
       { name: 'Debug', href: '/debug', icon: Activity },
     ],

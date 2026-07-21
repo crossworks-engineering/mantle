@@ -3,7 +3,7 @@ import { db } from '@mantle/db';
 import { cancelRun, compileRunState } from '@mantle/runs';
 import { getOwnerOr401 } from '@/lib/auth';
 
-/** GET /api/debug/runs/:id — one run's compiled tree (the run view payload). */
+/** GET /api/runs/:id — one run's compiled tree (the run view payload). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
@@ -15,11 +15,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json(compiled);
 }
 
-/** POST /api/debug/runs/:id — actions on a run. Body `{action:'cancel'}`:
- *  the operator Stop actuator (the same `cancelRun` the run_cancel tool
- *  uses — CAS from running|paused; in-flight work no-ops at the engine's
- *  CAS; the sweep janitor expires any orphaned pending questions). Stays
- *  live with MANTLE_RUNS off, matching run_cancel's always-on posture. */
+/** POST /api/runs/:id — actions on a run. Body `{action:'cancel'}`: the
+ *  operator Stop actuator (the same `cancelRun` the run_cancel tool uses — CAS
+ *  from running|paused; in-flight work no-ops at the engine's CAS; the sweep
+ *  janitor expires any orphaned pending questions). Stays live with MANTLE_RUNS
+ *  off, matching run_cancel's always-on posture. */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
