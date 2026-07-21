@@ -40,6 +40,12 @@ import {
   type HttpHandler,
 } from '@mantle/tools';
 import type { AiWorkerKind, AiWorkerParams, AgentMemoryConfig } from '@mantle/db';
+import {
+  DEFAULT_WORKER_SLUG,
+  WORKER_MODEL_INHERIT,
+  WORKER_SYSTEM_PROMPT,
+  WORKER_TOOL_GROUP_SLUGS,
+} from '@mantle/runs';
 import { SKILL_INSTRUCTIONS, AGENT_PROMPTS } from './prompts';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -82,7 +88,7 @@ export type ManifestAgent = {
   slug: string;
   name: string;
   description: string;
-  role: 'responder' | 'custom';
+  role: 'responder' | 'custom' | 'worker';
   model: string;
   /** Env var that overrides `model` at seed time (e.g. 'PAGES_MODEL'). */
   envModelVar?: string;
@@ -1058,6 +1064,35 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       delegate_to: [],
       max_iterations: 15,
     },
+    priority: 100,
+  },
+  {
+    // The default runner-queue WORKER agent (docs/runs.md "Workers + audits").
+    // A TEMPLATE, not a resident process: each `worker_invoke` run item spawns a
+    // fresh agent turn from this row (model, kit, instructions). It is never
+    // chattable, never a delegate, and holds no assist surface — the run engine
+    // instantiates it, nothing else. Its definition constants live in
+    // @mantle/runs (packages/runs/src/worker.ts) so the template stays
+    // single-sourced across the manifest and the engine's lazy
+    // `ensureWorkerAgent` fallback (which finds this seeded row on brains that
+    // have reconciled). role 'worker'; model = the 'inherit' sentinel (run on
+    // the responder's model/provider/key at execution time — the default,
+    // structural-not-cost-arbitrage win); tool GROUPS ('memory-core') carry the
+    // propose-don't-mutate read/search kit (no write groups, no run tools, no
+    // delegation — also enforced by executing at delegation depth 2).
+    slug: DEFAULT_WORKER_SLUG,
+    name: 'Worker agent',
+    description:
+      'Default runner-queue worker: executes delegated run steps and returns evidence-bearing proposals. Duplicate and set a cheaper model to opt into cost arbitrage.',
+    role: 'worker',
+    model: WORKER_MODEL_INHERIT,
+    systemPrompt: WORKER_SYSTEM_PROMPT,
+    toolGroupSlugs: [...WORKER_TOOL_GROUP_SLUGS],
+    skillSlugs: [],
+    // Focused evidence-gathering: low temperature. (Worker turns read
+    // agents.params for the LLM call; memoryConfig is not consulted for a
+    // worker turn, so it is left at the default {}.)
+    params: { temperature: 0.3 },
     priority: 100,
   },
 ];

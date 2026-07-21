@@ -5,11 +5,16 @@
  * instructions. Parallel capacity never requires more agents; adding one
  * never auto-fans-out (the roster is a routing table, not a broadcast list).
  *
- * Lives here (not in the system manifest) while the feature is DARK: the
- * manifest reconcile would provision it on every brain at next upgrade. The
- * engine ensures it lazily on first use instead; when runs ship, move this
- * template into MANIFEST_AGENTS and import these constants there so the
- * single source of truth stays single.
+ * The definition constants below (slug / prompt / tool groups / model
+ * sentinel) are the SINGLE SOURCE for this template. Slice 4 WP-E moved the
+ * template into the system manifest: `MANIFEST_AGENTS` now carries a `worker`
+ * entry that IMPORTS these constants (apps/web/lib/system-manifest/manifest.ts),
+ * so onboarding + the boot reconcile seed the row on every brain. The `runs`
+ * tool group is still NOT attached to the persona while the feature dogfoods,
+ * so seeding a dormant worker template changes nothing until a run invokes it.
+ * `ensureWorkerAgent` below stays the LAZY fallback: it finds the
+ * manifest-seeded row by slug (no duplicate), or creates it if a run fires on a
+ * brain that has not reconciled yet.
  *
  * Model inheritance: `model = 'inherit'` (the sentinel below) means "run on
  * the responder's model/provider/key at execution time" — the DEFAULT. The

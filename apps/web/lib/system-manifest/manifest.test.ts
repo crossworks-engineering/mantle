@@ -20,6 +20,12 @@ import {
   collectParamNames,
   collectSecretRefs,
 } from '@mantle/tools';
+import {
+  DEFAULT_WORKER_SLUG,
+  WORKER_MODEL_INHERIT,
+  WORKER_SYSTEM_PROMPT,
+  WORKER_TOOL_GROUP_SLUGS,
+} from '@mantle/runs';
 
 /**
  * Manifest drift guard (modeled on packages/voice/.../catalog-consistency.test.ts).
@@ -315,6 +321,29 @@ describe('system manifest integrity', () => {
         ).toBeGreaterThan(0);
       }
     }
+  });
+
+  it('ships the default runner-queue worker agent, single-sourced from @mantle/runs (WP-E)', () => {
+    const worker = MANIFEST_AGENTS.find((a) => a.slug === DEFAULT_WORKER_SLUG);
+    expect(worker, 'the worker template must live in the manifest').toBeDefined();
+    // role 'worker': never chattable, instantiated per run item.
+    expect(worker!.role).toBe('worker');
+    // model = the inherit sentinel (run on the responder's route at execution).
+    expect(worker!.model).toBe(WORKER_MODEL_INHERIT);
+    // Constants come from ONE source (the engine's worker.ts), not re-typed.
+    expect(worker!.systemPrompt).toBe(WORKER_SYSTEM_PROMPT);
+    expect(worker!.toolGroupSlugs).toEqual([...WORKER_TOOL_GROUP_SLUGS]);
+    // Its tool groups must be real manifest groups (memory-core).
+    for (const g of worker!.toolGroupSlugs ?? []) {
+      expect(KNOWN_TOOL_GROUP_SLUGS.has(g), `worker group '${g}' is a manifest group`).toBe(true);
+    }
+    // Propose-don't-mutate: never a delegate, no persona, no assist surface.
+    expect(worker!.isDelegate ?? false).toBe(false);
+    expect(worker!.isPersona ?? false).toBe(false);
+    expect(worker!.assistSurface).toBeUndefined();
+    // Not a delegation target (workers are invoked by the run engine, never via
+    // invoke_agent), so it must NOT appear in the persona's delegate set.
+    expect(DELEGATE_SLUGS).not.toContain(DEFAULT_WORKER_SLUG);
   });
 
   it('has the required always-on memory workers', () => {
