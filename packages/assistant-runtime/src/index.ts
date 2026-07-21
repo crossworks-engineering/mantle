@@ -33,6 +33,13 @@ export {
   type ResponderLoopResult,
   type RunResponderLoopOptions,
 } from './responder-loop';
+export {
+  runSimulatedResponderTurn,
+  type RunSimulatedResponderTurnOptions,
+  type RunSimulatedResponderTurnResult,
+  type SimHistoryTurn,
+  type SimToolCall,
+} from './run-sim-turn';
 export { pickWebDefaultAgent, ROLE_TIEBREAK, type WebDefaultCandidate } from './select';
 export {
   runTeamTurn,

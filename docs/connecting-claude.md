@@ -143,10 +143,35 @@ If instead you see `No account yet` — sign up in the web app first. If
 | Telegram | `telegram_pending`, `telegram_send` (allowlisted chats only), `telegram_react`, `telegram_edit`, `telegram_pair` |
 | Operator | `pending_list` / `pending_get` / `pending_approve` / `pending_reject` |
 | Federation | `peer_list`, `peer_query`, `peer_node_get` |
+| Responder | `respond_as_agent` (talk to a responder agent with its real persona + tools) |
 
 Things to try: *"search my Mantle for …"*, *"any unanswered Telegram
 messages? draft replies"*, *"what do I know about \<person\>?"*, *"log a
 memory: …"*, *"approve the pending tool calls if they look sane"*.
+
+### Talking to a responder agent (`respond_as_agent`)
+
+Everything above is *persona-less* raw data access. `respond_as_agent` is the
+exception: it lets Claude send a message **as if it were the user talking to
+one of your responder agents**, and runs ONE real turn of that agent's
+pipeline — its composed persona (identity + skills), real memory retrieval,
+and its real granted tools, which **execute** (delegation via `invoke_agent`
+included). It's the "Agent Studio sandbox, but with the real tool loop".
+
+The one thing it does *not* do is persist: **nothing is written to the
+agent's conversation history** — no inbound/outbound rows, no usage bump — so
+you can probe a responder repeatedly without polluting its memory of talking
+to you. Tool **side effects still happen** (a note gets created; a
+confirm-gated call lands on `/pending`, returned as `pending_ids`), and the
+turn is traced like any other (the reply carries a `trace_id` for `/traces`).
+
+Because nothing is stored, **multi-turn is caller-held**: keep the transcript
+yourself and resend it in `history` on each call. Omit `agent_slug` for the
+default responder; pass `exclude_tools` to narrow the tool set, `max_iterations`
+to cap the loop, or `include_tool_calls: false` to drop the per-call trail from
+the reply. Contrast with the in-app Agent Studio sandbox
+([`agent-studio.md`](./agent-studio.md)), which composes the same prompt but
+makes a plain model call with tools and memory OFF.
 
 ## Caveats
 

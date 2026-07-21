@@ -904,6 +904,9 @@ importers:
 
   packages/mcp-core:
     dependencies:
+      '@mantle/assistant-runtime':
+        specifier: workspace:*
+        version: link:../assistant-runtime
       '@mantle/content':
         specifier: workspace:*
         version: link:../content

@@ -38,6 +38,7 @@ import {
   readSection,
 } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
+import { runSimulatedResponderTurn } from '@mantle/assistant-runtime';
 import { accountForChat, editMessage, reactToMessage, sendMessage } from '@mantle/telegram';
 import {
   createFolder,
@@ -1639,6 +1640,105 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   registerBuiltinTools(WORKER_DELEGATION_TOOLS, {
     skip: (def) => def.slug === 'synthesize_speech',
   });
+
+  // ─── Responder simulation ─────────────────────────────────────────────────────
+  // Talk to a responder agent over MCP with the REAL pipeline (persona +
+  // retrieval + real tool execution) but NOTHING persisted to its conversation
+  // store. Input caps mirror the web Studio sandbox (40 turns, 8000 chars each).
+  const SIM_MAX_HISTORY = 40;
+  const SIM_MAX_CONTENT = 8000;
+  const SIM_ARGS_CLIP = 500;
+  server.tool(
+    'respond_as_agent',
+    "Talk to one of the user's responder agents as if you were the user, and get its reply. " +
+      "Runs ONE real turn of that agent's pipeline — composed persona (identity + skills), real " +
+      'memory retrieval, and its real granted tools, which EXECUTE: side effects happen and ' +
+      'confirm-gated calls land on /pending (returned as `pending_ids`). Writes NOTHING to the ' +
+      "agent's conversation history, so it's safe to probe repeatedly. Multi-turn is caller-held " +
+      '— keep the transcript yourself and resend it in `history` every call. Omit `agent_slug` ' +
+      'for the default responder; set `include_tool_calls` false to drop the per-call trail.',
+    {
+      message: z.string().min(1),
+      agent_slug: z.string().optional(),
+      history: z
+        .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() }))
+        .optional(),
+      exclude_tools: z.array(z.string()).optional(),
+      max_iterations: z.number().int().min(1).max(30).optional(),
+      include_tool_calls: z.boolean().optional(),
+    },
+    async ({ message, agent_slug, history, exclude_tools, max_iterations, include_tool_calls }) => {
+      // Cap the caller-held transcript before it reaches the model — an
+      // unbounded resend would blow the context budget. Reject with a corrective
+      // (say the limit + the fix) rather than silently truncating history.
+      if (history && history.length > SIM_MAX_HISTORY) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                `respond_as_agent: history has ${history.length} turns (max ${SIM_MAX_HISTORY}) — ` +
+                'drop the oldest turns and resend, or start a fresh transcript.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const tooLong = (history ?? []).findIndex((t) => t.content.length > SIM_MAX_CONTENT);
+      if (tooLong >= 0) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                `respond_as_agent: history entry ${tooLong} is ${history![tooLong]!.content.length} ` +
+                `chars (max ${SIM_MAX_CONTENT}) — shorten or summarise that turn and resend.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      try {
+        const res = await runSimulatedResponderTurn(ownerId, {
+          message,
+          ...(agent_slug ? { agentSlug: agent_slug } : {}),
+          ...(history ? { history } : {}),
+          ...(exclude_tools ? { excludeToolSlugs: exclude_tools } : {}),
+          ...(typeof max_iterations === 'number' ? { maxIterations: max_iterations } : {}),
+        });
+        const withCalls = include_tool_calls !== false;
+        return jsonReply({
+          reply: res.reply,
+          agent: res.agent,
+          ...(withCalls
+            ? {
+                tool_calls: res.toolCalls.map((tc) => ({
+                  slug: tc.slug,
+                  status: tc.status,
+                  duration_ms: tc.durationMs,
+                  // Clip args so a large payload doesn't blow the reply budget.
+                  args:
+                    tc.argsJson.length > SIM_ARGS_CLIP
+                      ? `${tc.argsJson.slice(0, SIM_ARGS_CLIP)}…`
+                      : tc.argsJson,
+                  ...(tc.error ? { error: tc.error } : {}),
+                })),
+              }
+            : {}),
+          tool_stats: res.toolStats,
+          pending_ids: res.pendingIds,
+          trace_id: res.traceId,
+          empty_reply_substituted: res.emptyReplySubstituted,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: 'text' as const, text: `respond_as_agent failed: ${msg}` }],
+          isError: true,
+        };
+      }
+    },
+  );
 
   // ─── Export (Word / Excel) ───────────────────────────────────────────────────
   // Renders a page/note → .docx or a table → .xlsx into /files/exports and returns
