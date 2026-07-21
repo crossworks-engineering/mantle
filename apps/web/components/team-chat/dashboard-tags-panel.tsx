@@ -137,8 +137,8 @@ export function DashboardTagsPanel({
         </SelectContent>
       </Select>
       <p className="text-[11px] leading-snug text-muted-foreground">
-        Each tag lists its 5 most recently updated shared pages on the members&rsquo; Dashboard.
-        Tag + share a page to feature it; unshare or untag to remove it.
+        Each tag lists its 5 most recently updated shared pages on the members&rsquo; Dashboard. Tag
+        + share a page to feature it; unshare or untag to remove it.
       </p>
     </div>
   );

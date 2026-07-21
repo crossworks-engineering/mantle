@@ -433,7 +433,10 @@ export async function pageTeamVisibleShares(
           .where(where),
   ]);
 
-  return { items: rows.map(mapTeamShareRow), total: totals ? (totals[0]?.count ?? 0) : rows.length };
+  return {
+    items: rows.map(mapTeamShareRow),
+    total: totals ? (totals[0]?.count ?? 0) : rows.length,
+  };
 }
 
 /** Distinct tags across one type's team-visible shares with usage counts —

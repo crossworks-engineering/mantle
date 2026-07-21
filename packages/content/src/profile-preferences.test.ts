@@ -132,7 +132,7 @@ describe('projectTeamHubTags', () => {
       'x'.repeat(TEAM_HUB_TAG_MAX_LEN),
     ]);
   });
-  it("maps [] (the clear write), all-garbage arrays, and non-arrays to undefined", () => {
+  it('maps [] (the clear write), all-garbage arrays, and non-arrays to undefined', () => {
     expect(projectTeamHubTags([])).toBeUndefined();
     expect(projectTeamHubTags(['', 42])).toBeUndefined();
     expect(projectTeamHubTags('engineering')).toBeUndefined();

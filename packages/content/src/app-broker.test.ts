@@ -216,8 +216,9 @@ describe('seedRowsIntoHandle', () => {
     });
     expect(res).toMatchObject({ inserted: 2, deleted: 1 });
     seedRowsIntoHandle(db, 'fluids', [{ name: 'C' }]); // second batch appends
-    const names = (db.prepare('SELECT name FROM fluids ORDER BY id').all() as { name: string }[])
-      .map((r) => r.name);
+    const names = (
+      db.prepare('SELECT name FROM fluids ORDER BY id').all() as { name: string }[]
+    ).map((r) => r.name);
     expect(names).toEqual(['A', 'B', 'C']);
     db.close();
   });
