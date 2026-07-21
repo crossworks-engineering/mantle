@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
+import { ActiveRunsStrip } from '@/components/runs/active-runs-strip';
 import { AssistantClient } from './assistant-client';
 import { AgentSelect } from './agent-select';
 import type { AssistantAgentOption, AssistantTimelineRow } from '@/lib/assistant';
@@ -157,6 +158,9 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
         </div>
       )}
 
+      {/* Background runs the owner has in flight — compact cards, self-hiding
+          when none are active (slice 4 WP-A). */}
+      <ActiveRunsStrip />
       <AssistantClient
         // Force a remount on agent change so the draft input, attachment,
         // recording state, and optimistic messages don't carry across agents.

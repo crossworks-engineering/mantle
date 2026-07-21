@@ -53,6 +53,21 @@ export async function GET(req: Request) {
           .where(and(inArray(runItems.runId, ids), isNull(runItems.parentId)))
       : [];
     const rootByRun = new Map(roots.map((r) => [r.runId, r]));
+    // Runs blocked on an open question (an ask_human leaf promoted to ready) —
+    // drives the "waiting on your answer" badge without compiling each tree.
+    const waitingRows = ids.length
+      ? await db
+          .selectDistinct({ runId: runItems.runId })
+          .from(runItems)
+          .where(
+            and(
+              inArray(runItems.runId, ids),
+              eq(runItems.kind, 'ask_human'),
+              eq(runItems.state, 'ready'),
+            ),
+          )
+      : [];
+    const waitingRuns = new Set(waitingRows.map((r) => r.runId));
     return NextResponse.json({
       enabled: isRunsEnabled(),
       active: activeRuns.map((r) => ({
@@ -63,6 +78,7 @@ export async function GET(req: Request) {
         budgetMicroUsd: r.budgetMicroUsd,
         childrenDone: rootByRun.get(r.id)?.childrenDone ?? 0,
         childrenTotal: rootByRun.get(r.id)?.childrenTotal ?? 0,
+        waiting: waitingRuns.has(r.id),
       })),
     });
   }
