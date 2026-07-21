@@ -759,6 +759,16 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       "Owner-side view over the Team Chat surface: list members + activity, read any member's thread, read the access log. Granted to the persona so the brain can answer 'what has <member> asked about?' — NEVER to the team responder itself.",
     toolSlugs: ['team_chat_list', 'team_chat_read', 'team_access_list'],
   },
+  {
+    slug: 'runs',
+    name: 'Runner queues',
+    description:
+      'Plan, inspect, extend, and cancel durable background runs (docs/runs.md). ' +
+      'Responder-only — never granted to workers or specialists (items must not ' +
+      'create runs). Creation is additionally gated by MANTLE_RUNS; not attached ' +
+      'to the persona by default while the feature dogfoods.',
+    toolSlugs: ['run_plan', 'run_append', 'run_state', 'run_cancel'],
+  },
 ];
 
 // ── Agents ───────────────────────────────────────────────────────────────────

@@ -160,6 +160,10 @@ export const runItems = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
+    /** Resume idempotency marker (migration 0130) — set once, by CAS, when a
+     *  resume-worthy group's responder wake-up is claimed (claimResume). NULL
+     *  on everything else. At-most-once: marked BEFORE the resume turn runs. */
+    resumedAt: timestamp('resumed_at', { withTimezone: true }),
   },
   (t) => [
     index('run_items_run_state_idx').on(t.runId, t.state),

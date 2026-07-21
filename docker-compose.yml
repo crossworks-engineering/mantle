@@ -829,6 +829,27 @@ services:
     environment:
       <<: *app-env
 
+  # Runs worker — the runner-queue engine (docs/runs.md): dispatches queued
+  # run items (tool/note now, worker agents in slice 2), runs responder resume
+  # turns, and sweeps every minute (deadline timeouts + lost-job healing).
+  # DARK unless MANTLE_RUNS=1 is set in the app env — the container idles
+  # healthy with the feature off.
+  worker_runs:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/runs.ts"]
+    container_name: mantle_worker_runs
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1g
+    healthcheck: *worker-healthcheck
+    labels:
+      - autoheal=true
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate:  { condition: service_completed_successfully }
+    environment:
+      <<: *app-env
+
   # Push-notify worker — LISTENs on conversation_changed and forwards sealed
   # teasers to Mantle Push (push.crossworks.network) for backgrounded devices.
   # No-op until a device Connects (push_instance/push_subscriptions empty).

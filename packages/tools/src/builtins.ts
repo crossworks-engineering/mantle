@@ -9,7 +9,15 @@
  */
 
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { agents, contentChunks, db, nodes, notifyNodeIngested, secrets, telegramChats } from '@mantle/db';
+import {
+  agents,
+  contentChunks,
+  db,
+  nodes,
+  notifyNodeIngested,
+  secrets,
+  telegramChats,
+} from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import {
   searchNodes,
@@ -59,6 +67,7 @@ import { CONTACT_TOOLS } from './builtins-contacts';
 import { JOURNAL_TOOLS } from './builtins-journal';
 import { PEER_TOOLS } from './builtins-peers';
 import { EVAL_TOOLS } from './builtins-eval';
+import { RUN_TOOLS } from './builtins-runs';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
@@ -1584,7 +1593,11 @@ const invoke_agent: BuiltinToolDef = {
         .select({ memoryConfig: agents.memoryConfig })
         .from(agents)
         .where(
-          and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, targetSlug), eq(agents.enabled, true)),
+          and(
+            eq(agents.ownerId, ctx.ownerId),
+            eq(agents.slug, targetSlug),
+            eq(agents.enabled, true),
+          ),
         )
         .limit(1);
       const dt = (targetRow?.memoryConfig as { delegate_to?: unknown } | null)?.delegate_to;
@@ -1777,6 +1790,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // save it under /files/exports. Shares @mantle/content's resolveExport with
   // the web download button, so the assistant and the UI emit identical files.
   ...EXPORT_TOOLS,
+  // Runner queues — durable, inspectable execution plans (docs/runs.md).
+  // Responder-only via the `runs` tool group; creation gated by MANTLE_RUNS.
+  ...RUN_TOOLS,
 ];
 
 // P6: there is no flat "default assistant grant" anymore. A generalist persona's

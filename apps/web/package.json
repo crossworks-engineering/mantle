@@ -1,6 +1,6 @@
 {
   "name": "@mantle/web",
-  "version": "0.157.2",
+  "version": "0.157.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -21,6 +21,7 @@
     "worker:calendar:dev": "tsx --watch --env-file-if-exists=./.env.local workers/calendar-sync.ts",
     "worker:push:dev": "tsx --watch --env-file-if-exists=./.env.local workers/push-notify.ts",
     "worker:maintenance:dev": "tsx --watch --env-file-if-exists=./.env.local workers/maintenance.ts",
+    "worker:runs:dev": "tsx --watch --env-file-if-exists=./.env.local workers/runs.ts",
     "pgboss:init": "tsx --env-file-if-exists=./.env.local scripts/pgboss-init.ts",
     "apps:push": "tsx --env-file-if-exists=./.env.local scripts/apps-push.ts",
     "seed:telegram": "tsx --env-file-if-exists=./.env.local scripts/seed-telegram.ts",
@@ -80,6 +81,7 @@
     "@mantle/mcp-core": "workspace:*",
     "@mantle/microsoft": "workspace:*",
     "@mantle/rules": "workspace:*",
+    "@mantle/runs": "workspace:*",
     "@mantle/search": "workspace:*",
     "@mantle/storage": "workspace:*",
     "@mantle/tabledb": "workspace:*",

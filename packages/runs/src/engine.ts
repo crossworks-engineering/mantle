@@ -45,9 +45,17 @@ import { RUN_TOOL_QUEUE, RUN_WORKER_QUEUE } from './queues';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
-/** pg-boss enqueues owed after the surrounding transaction commits. */
+/** pg-boss enqueues owed after the surrounding transaction commits.
+ *  `sideEffecting` rides on dispatch actions so the sender can set transport
+ *  `retryLimit: 0` for side-effecting items (§5b: exempt from BOTH retry
+ *  layers). */
 export type PostCommitAction =
-  | { type: 'dispatch'; queue: typeof RUN_TOOL_QUEUE | typeof RUN_WORKER_QUEUE; itemId: string }
+  | {
+      type: 'dispatch';
+      queue: typeof RUN_TOOL_QUEUE | typeof RUN_WORKER_QUEUE;
+      itemId: string;
+      sideEffecting: boolean;
+    }
   | { type: 'resume'; runId: string; groupId: string };
 
 /** Terminal states a caller may complete an item into. ('superseded' is set
@@ -57,14 +65,21 @@ export type TerminalState = 'done' | 'failed' | 'cancelled';
 const TERMINAL_STATES: RunItemState[] = ['done', 'failed', 'cancelled', 'superseded'];
 const NON_TERMINAL_STATES: RunItemState[] = ['queued', 'ready', 'running'];
 
+/** Leaves get a deadline stamped when PROMOTED (not created — a queued seq
+ *  step shouldn't burn its clock waiting on predecessors). Override per item
+ *  with `payload.timeout_seconds`. The sweep fails overdue items with a
+ *  structured timeout, which drives the completion counter like any other
+ *  terminal transition. */
+export const DEFAULT_LEAF_TIMEOUT_SECONDS = 600;
+
 // ── plan input ───────────────────────────────────────────────────────────────
 
 export type PlanLeaf = {
   kind: Exclude<RunItemKind, 'group_seq' | 'group_par'>;
+  /** `timeout_seconds` (number) is read at promotion to stamp the deadline. */
   payload: Record<string, unknown>;
   sideEffecting?: boolean;
   retryPolicy?: { maxAttempts?: number };
-  deadlineAt?: Date;
   /** Executing agent (worker_invoke) — soft ref. */
   agentId?: string;
 };
@@ -72,6 +87,8 @@ export type PlanLeaf = {
 export type PlanGroup = {
   kind: 'seq' | 'par';
   joinPolicy?: 'wait_all' | 'fail_fast';
+  /** Display label for the run view / compiled state (stored on payload). */
+  label?: string;
   deadlineAt?: Date;
   children: PlanNode[];
 };
@@ -151,6 +168,7 @@ async function insertNode(
         joinPolicy: node.joinPolicy ?? 'wait_all',
         childrenTotal: node.children.length,
         deadlineAt: node.deadlineAt,
+        ...(node.label ? { payload: { label: node.label } } : {}),
       })
       .returning({ id: runItems.id });
     for (let i = 0; i < node.children.length; i++) {
@@ -168,7 +186,6 @@ async function insertNode(
       payload: node.payload,
       sideEffecting: node.sideEffecting ?? false,
       retryPolicy: node.retryPolicy,
-      deadlineAt: node.deadlineAt,
       agentId: node.agentId,
     })
     .returning({ id: runItems.id });
@@ -189,6 +206,37 @@ export async function claimItem(db: Db | Tx, itemId: string): Promise<RunItemRow
     .where(and(eq(runItems.id, itemId), eq(runItems.state, 'ready')))
     .returning();
   return row ?? null;
+}
+
+/**
+ * Semantic retry (distinct from pg-boss transport retries): put a RUNNING
+ * item back to `ready` for another attempt, bumping `attempt` and re-stamping
+ * the deadline. Returns the dispatch action, or null when the item isn't
+ * running anymore (cancelled / swept — the retry loses). Callers enforce the
+ * policy (`retry_policy.maxAttempts`, never side-effecting) before calling.
+ */
+export async function requeueForRetry(
+  db: Db,
+  itemId: string,
+  timeoutSeconds: number = DEFAULT_LEAF_TIMEOUT_SECONDS,
+): Promise<PostCommitAction | null> {
+  const [row] = await db
+    .update(runItems)
+    .set({
+      state: 'ready',
+      attempt: sql`${runItems.attempt} + 1`,
+      deadlineAt: sql`now() + make_interval(secs => ${timeoutSeconds})`,
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(runItems.id, itemId), eq(runItems.state, 'running')))
+    .returning({ id: runItems.id, kind: runItems.kind, sideEffecting: runItems.sideEffecting });
+  if (!row) return null;
+  return {
+    type: 'dispatch',
+    queue: row.kind === 'worker_invoke' ? RUN_WORKER_QUEUE : RUN_TOOL_QUEUE,
+    itemId: row.id,
+    sideEffecting: row.sideEffecting,
+  };
 }
 
 // ── complete ─────────────────────────────────────────────────────────────────
@@ -420,16 +468,26 @@ async function promote(tx: Tx, item: RunItemRow, actions: PostCommitAction[]): P
     return;
   }
 
+  const rawTimeout = (item.payload as Record<string, unknown> | null)?.['timeout_seconds'];
+  const timeoutSeconds =
+    typeof rawTimeout === 'number' && Number.isFinite(rawTimeout) && rawTimeout > 0
+      ? Math.min(rawTimeout, 6 * 3600)
+      : DEFAULT_LEAF_TIMEOUT_SECONDS;
   const [ready] = await tx
     .update(runItems)
-    .set({ state: 'ready', updatedAt: sql`now()` })
+    .set({
+      state: 'ready',
+      deadlineAt: sql`now() + make_interval(secs => ${timeoutSeconds})`,
+      updatedAt: sql`now()`,
+    })
     .where(and(eq(runItems.id, item.id), eq(runItems.state, 'queued')))
-    .returning({ id: runItems.id, kind: runItems.kind });
+    .returning({ id: runItems.id, kind: runItems.kind, sideEffecting: runItems.sideEffecting });
   if (!ready) return;
   actions.push({
     type: 'dispatch',
     queue: ready.kind === 'worker_invoke' ? RUN_WORKER_QUEUE : RUN_TOOL_QUEUE,
     itemId: ready.id,
+    sideEffecting: ready.sideEffecting,
   });
 }
 

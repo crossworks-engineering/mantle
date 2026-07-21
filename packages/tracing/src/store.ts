@@ -25,6 +25,8 @@ export type TraceKind =
   | 'content_ingest'
   | 'heartbeat_fire'
   | 'federation_request'
+  // One per dispatched run-item execution (runner queues, migration 0130).
+  | 'run_item'
   | 'manual';
 
 export type TraceStepKind =

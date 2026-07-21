@@ -15,6 +15,7 @@ const TABS = [
   { href: '/debug/agents', label: 'Agents', exact: false },
   { href: '/debug/telegram', label: 'Telegram', exact: false },
   { href: '/debug/journey', label: 'Journey', exact: false },
+  { href: '/debug/runs', label: 'Runs', exact: false },
   { href: '/debug/integrity', label: 'Integrity', exact: false },
   { href: '/debug/tool-validation', label: 'Tool validation', exact: false },
   { href: '/debug/sanity', label: 'Sanity check', exact: false },

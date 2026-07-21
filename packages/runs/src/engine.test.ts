@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { runItems, runs, type Db } from '@mantle/db';
 
 import {
@@ -26,10 +26,12 @@ import {
   claimItem,
   completeItem,
   createRun,
+  requeueForRetry,
   SealedGroupError,
   type PlanGroup,
   type PostCommitAction,
 } from './engine';
+import { claimResume, sweepRuns } from './sweep';
 
 const ADMIN_URL = process.env.RUNS_TEST_DATABASE_URL;
 const SCRATCH_DB = 'mantle_runs_engine_test';
@@ -85,13 +87,17 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     await admin.unsafe(`CREATE DATABASE ${SCRATCH_DB}`);
 
     client = postgres(scratchUrl(ADMIN_URL!), { max: 10, prepare: false });
-    const migration = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), '../../db/migrations/0129_runs.sql'),
-      'utf8',
-    );
-    for (const stmt of migration.split('--> statement-breakpoint')) {
-      const s = stmt.trim();
-      if (s) await client.unsafe(s);
+    for (const file of ['0129_runs.sql', '0130_runs_resume_marker.sql']) {
+      const migration = readFileSync(
+        join(dirname(fileURLToPath(import.meta.url)), '../../db/migrations/', file),
+        'utf8',
+      );
+      for (const stmt of migration.split('--> statement-breakpoint')) {
+        const s = stmt.trim();
+        // The scratch db has no trace_kind enum (0130's ALTER TYPE belongs to
+        // the full schema) — the engine tables are what these tests exercise.
+        if (s && !s.startsWith('ALTER TYPE')) await client.unsafe(s);
+      }
     }
     db = drizzle(client) as unknown as Db;
   }, 60_000);
@@ -306,6 +312,114 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     expect(resumes({ actions })).toHaveLength(1);
     expect((await runRow(runId)).status).toBe('done');
   });
+
+  it('sweep: overdue running item fails(timeout) and drives the counter', SLOW, async () => {
+    const { runId, rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'sweep timeout',
+      plan: { kind: 'par', children: [note('slow'), note('fine')] },
+    });
+    const [slow, fine] = await children(rootItemId);
+    await claimItem(db, slow!.id);
+    // Force the deadline into the past (test scaffolding — promote stamped
+    // now()+600s).
+    await db
+      .update(runItems)
+      .set({ deadlineAt: sql`now() - interval '1 minute'` })
+      .where(eq(runItems.id, slow!.id));
+
+    const res = await sweepRuns(db);
+    expect(res.timedOut).toBeGreaterThanOrEqual(1);
+    const swept = await itemRow(slow!.id);
+    expect(swept.state).toBe('failed');
+    expect(swept.result?.failure).toMatchObject({ type: 'timeout' });
+    expect((await itemRow(rootItemId)).childrenDone).toBe(1);
+
+    // The sibling completes normally → group failed (wait_all), exactly one
+    // resume for THIS run across sweep + completion.
+    const r2 = await completeItem(db, { itemId: fine!.id, state: 'done' });
+    expect(
+      [...res.actions, ...r2.actions].filter((a) => a.type === 'resume' && a.runId === runId),
+    ).toHaveLength(1);
+    expect((await runRow(runId)).status).toBe('failed');
+  });
+
+  it('sweep: stale ready item is re-dispatched (lost-job heal)', SLOW, async () => {
+    const { rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'sweep redispatch',
+      plan: { kind: 'par', children: [note('lost')] },
+    });
+    const [lost] = await children(rootItemId);
+    await db
+      .update(runItems)
+      .set({ updatedAt: sql`now() - interval '5 minutes'` })
+      .where(eq(runItems.id, lost!.id));
+
+    const res = await sweepRuns(db);
+    const redispatch = res.actions.filter((a) => a.type === 'dispatch' && a.itemId === lost!.id);
+    expect(redispatch).toHaveLength(1);
+    // The re-emitted wake-up claims normally.
+    expect(await claimItem(db, lost!.id)).not.toBeNull();
+    // And the touch means an immediate second sweep does NOT re-emit.
+    const res2 = await sweepRuns(db);
+    expect(res2.actions.filter((a) => a.type === 'dispatch' && a.itemId === lost!.id)).toHaveLength(
+      0,
+    );
+  });
+
+  it('sweep: lost resume is re-sent; claimResume is exactly-once', SLOW, async () => {
+    const { runId, rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'sweep resume heal',
+      plan: { kind: 'par', children: [note('a')] },
+    });
+    const [a] = await children(rootItemId);
+    const done = await completeItem(db, { itemId: a!.id, state: 'done' });
+    expect(resumes(done)).toHaveLength(1); // the original resume — pretend it was lost
+
+    // Assertions scoped to THIS run — other tests' runs may be stale too.
+    const resumesForThisRun = (actions: PostCommitAction[]) =>
+      actions.filter((x) => x.type === 'resume' && x.runId === runId);
+
+    // Fresh completion: not yet stale → no re-send for this run.
+    expect(resumesForThisRun((await sweepRuns(db)).actions)).toHaveLength(0);
+    await db
+      .update(runItems)
+      .set({ finishedAt: sql`now() - interval '5 minutes'` })
+      .where(eq(runItems.id, rootItemId));
+    const res = await sweepRuns(db);
+    expect(resumesForThisRun(res.actions)).toEqual([
+      { type: 'resume', runId, groupId: rootItemId },
+    ]);
+
+    // The handler's gate: first claim wins, duplicates no-op forever after.
+    expect(await claimResume(db, rootItemId)).toBe(true);
+    expect(await claimResume(db, rootItemId)).toBe(false);
+    expect(resumesForThisRun((await sweepRuns(db)).actions)).toHaveLength(0);
+  });
+
+  it(
+    'requeueForRetry: running → ready with attempt bumped; no-op when not running',
+    SLOW,
+    async () => {
+      const { rootItemId } = await createRun(db, {
+        ownerId: OWNER,
+        title: 'retry',
+        plan: { kind: 'par', children: [note('flaky'), note('other')] },
+      });
+      const [flaky] = await children(rootItemId);
+      await claimItem(db, flaky!.id);
+      const action = await requeueForRetry(db, flaky!.id);
+      expect(action).toMatchObject({ type: 'dispatch', itemId: flaky!.id });
+      const row = await itemRow(flaky!.id);
+      expect(row.state).toBe('ready');
+      expect(row.attempt).toBe(1);
+      expect((await itemRow(rootItemId)).childrenDone).toBe(0); // retry is not a completion
+      // Not running anymore → retry loses.
+      expect(await requeueForRetry(db, flaky!.id)).toBeNull();
+    },
+  );
 
   it('cancelRun cancels the subtree; late completions no-op and never resume', SLOW, async () => {
     const { runId, rootItemId } = await createRun(db, {

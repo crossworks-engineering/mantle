@@ -31,6 +31,10 @@ export const traceKind = pgEnum('trace_kind', [
   // federation API. subject_kind = 'mantle_peer', subject_id = peer row id.
   // See docs/federation.md.
   'federation_request',
+  // One per dispatched run-item execution (runner queues, migration 0130).
+  // subject_kind = 'run_item', subject_id = the run_items row; the item's
+  // trace_ref points back at this trace.
+  'run_item',
   'manual',
 ]);
 
