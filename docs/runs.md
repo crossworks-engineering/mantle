@@ -64,15 +64,20 @@ cancellation.
   `retry_policy.maxAttempts`; **side-effecting items never auto-retry** (both
   retry layers off — failure surfaces for the resume turn to reason about).
 - **`apps/api/src/workflows/runs-resume-turn.ts`** — the resume turn, durable
-  since slice 3 WP2: an ordinary responder turn (`assembleResponderTurn` +
-  `runResponderLoop`) whose prompt is the compiled run state, run as a DBOS
-  workflow. `claimResume` is a JOURNALED step placed after the fallible
-  preconditions (the v0.157.5 ordering — a precondition failure leaves the
-  wake-up re-sendable) and the outbound `recordTurn` is journaled too, so a
-  crash mid-turn resumes without double-posting. Enqueued with
-  `deduplicationID = groupId` (one queued resume per group; no fixed
-  workflowID — a failed-without-claiming workflow must stay rescuable by the
-  sweep's re-send).
+  since slice 3 WP2 (replay-hardened in v0.157.14): an ordinary responder
+  turn (`assembleResponderTurn` + `runResponderLoop`) whose prompt is the
+  compiled run state, run as a DBOS workflow. Every pre-claim decision that
+  reads mutable state lives in ONE journaled `resume_preflight` step — DBOS
+  recovery re-runs the function from the top, and an unjournaled guard would
+  re-decide against state the workflow's own claim mutated (the final
+  audit's reproduced loss bug). `claimResume` is a JOURNALED step placed
+  after the preflight (the v0.157.5 ordering — a preflight failure leaves
+  the wake-up re-sendable) and the outbound `recordTurn` is journaled too.
+  The crash-test gate passes at BOTH kill points: post-claim (the loss
+  window — the report still arrives exactly once) and post-outbound (no
+  double-post). Enqueued with `deduplicationID = groupId` (one queued resume
+  per group; no fixed workflowID — a failed-without-claiming workflow must
+  stay rescuable by the sweep's re-send).
 - **Tools** (`packages/tools/src/builtins-runs.ts`): `run_plan`,
   `run_append`, `run_state`, `run_cancel` — the `runs` tool group in the
   manifest. Responder-only; a delegated child agent is refused, and `run_*` /

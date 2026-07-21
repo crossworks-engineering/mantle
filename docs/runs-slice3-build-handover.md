@@ -129,6 +129,17 @@ SHAPE, not the real `runsResumeTurnWorkflow` (which needs a live LLM). The
 claim's validity rests on the workflow's boundaries matching the harness
 shape — verify by reading `runs-resume-turn.ts` against `crashResumeImpl`.
 
+> **AUDIT CORRECTION (2026-07-21, v0.157.14).** The final audit REFUTED the
+> closure claim as built at `af61d42c`: the harness omitted the workflow's
+> non-journaled pre-claim duplicate check, and the kill point (post-outbound)
+> was the already-benign window. On DBOS recovery the glue re-read
+> `resumed_at` — set by the workflow's OWN claim — and exited 'duplicate',
+> losing every post-claim wake-up (reproduced empirically against scratch
+> DBs). FIXED in v0.157.14: all pre-claim decisions live in one journaled
+> `resume_preflight` step; the gate now runs at BOTH kill points
+> (`CRASH_POINT=post_claim` — the loss window — and post_outbound) and
+> passes both. The gap is closed as of v0.157.14, not v0.157.12.
+
 Reproduce (any Postgres you can create databases on):
 
 ```sh

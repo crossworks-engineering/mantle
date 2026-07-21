@@ -127,8 +127,30 @@ async function runsWorkerTurnImpl(input: RunsWorkerTurnInput): Promise<RunsWorke
       // per-run cap). Anything else here is a stale wake-up: swept, cancelled,
       // or already completed — ack by returning (the §5b idempotency
       // discipline, applied to DBOS deliveries).
-      const [item] = await db.select().from(runItems).where(eq(runItems.id, itemId));
-      if (!item || item.kind !== 'worker_invoke' || item.state !== 'running') {
+      //
+      // JOURNALED (final audit F4): this stale check reads state the workflow
+      // itself mutates (completeItem). As bare glue it re-decided on a
+      // crash-recovery replay — the item, completed by the journaled
+      // complete_item pre-crash, read as terminal and the replay exited
+      // 'stale' before re-reaching the journaled actions, so
+      // enqueueRunActionsSafe never re-ran and the recorded PostCommitActions
+      // were dropped (sweep-healed, but the "replays the recorded actions"
+      // contract was false). Journaling the load pins the decision: a replay
+      // walks the same path to complete_item and re-enqueues its recorded
+      // actions (duplicates no-op at the engine CAS).
+      const item = await runDurableStep('load_item', async () => {
+        const [row] = await db.select().from(runItems).where(eq(runItems.id, itemId));
+        if (!row || row.kind !== 'worker_invoke' || row.state !== 'running') return null;
+        return {
+          id: row.id,
+          runId: row.runId,
+          attempt: row.attempt,
+          payload: row.payload,
+          retryPolicy: row.retryPolicy,
+          agentId: row.agentId,
+        };
+      });
+      if (!item) {
         DBOS.logger.info(`[runs_worker_turn] stale wake-up for ${itemId} — skipping`);
         return { executed: false, outcome: 'stale' };
       }

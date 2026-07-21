@@ -38,6 +38,9 @@ export type SweepResult = {
   resumesResent: number;
   /** Pending ask_human rows expired because their item went terminal (4). */
   questionsExpired: number;
+  /** Decided-but-unsettled runner rows reverted to pending (4c — the
+   *  crash-mid-settle window; final audit F3). */
+  settlesReverted: number;
   actions: PostCommitAction[];
 };
 
@@ -203,11 +206,33 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
     RETURNING p.id
   `)) as unknown as Array<{ id: string }>;
 
+  // 4c. Decided-but-unsettled recovery (final audit F3). approve/reject
+  //     flips the row BEFORE the run-side settle applies; a crash in that
+  //     window strands an operator-visible decision that never took effect
+  //     — for run_budget the run would sit paused forever with nothing left
+  //     to approve. Revert such rows to 'pending' after a grace window so
+  //     the operator simply decides again. If the crashed settle actually
+  //     DID apply, re-deciding is safe: the engine CAS no-ops and the row
+  //     expires with the moved-on teaching error (or duty 4/4b reaps it
+  //     first). executed_at is the settle receipt — settled rows never
+  //     match.
+  const reverted = (await db.execute(sql`
+    UPDATE pending_tool_calls p
+    SET status = 'pending', decided_at = NULL, updated_at = now(),
+        error = 'the decision was interrupted before it applied — please decide again'
+    WHERE p.status IN ('approved', 'rejected')
+      AND p.executed_at IS NULL
+      AND p.tool_slug IN ('ask_human', 'run_budget')
+      AND p.decided_at < now() - interval '3 minutes'
+    RETURNING p.id
+  `)) as unknown as Array<{ id: string }>;
+
   return {
     timedOut,
     redispatched: staleReady.length,
     resumesResent: unresumed.length + staleAudits.length,
     questionsExpired: expired.length + expiredBudget.length,
+    settlesReverted: reverted.length,
     actions,
   };
 }

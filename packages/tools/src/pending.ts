@@ -97,6 +97,24 @@ function askHumanItemId(row: PendingToolCall): string | null {
   return typeof itemId === 'string' ? itemId : null;
 }
 
+/** The decided-but-unsettled recovery (final audit F3): the row flips
+ *  approved/rejected BEFORE its run-side effect applies, so a crash or db
+ *  error in between would strand an operator-visible "approved" that never
+ *  took effect — with no retry path (`pending_approve` refuses decided
+ *  rows). On a settle error the row REVERTS to 'pending' with the error
+ *  recorded, so the operator just decides again; the sweep's janitor (duty
+ *  4c) does the same for the crash window. Double-application is impossible
+ *  either way — the engine's completeItem/cancelRun CAS makes a re-settle
+ *  of an already-applied decision a no-op that expires the row. */
+async function revertToPending(rowId: string, error: string): Promise<PendingSummary | null> {
+  const [reverted] = await db
+    .update(pendingToolCalls)
+    .set({ status: 'pending', decidedAt: null, error, updatedAt: new Date() })
+    .where(eq(pendingToolCalls.id, rowId))
+    .returning();
+  return reverted ? toSummary(reverted) : null;
+}
+
 /** Complete the run item behind an ask_human row and record the outcome on
  *  the row. A `moved_on` answer (the item went terminal first — cancelled,
  *  timed out) flips the row to `expired` with a teaching error instead of
@@ -115,7 +133,18 @@ async function settleAskHuman(
       .returning();
     return errRow ? toSummary(errRow) : null;
   }
-  const res = await applyHumanAnswer(db, { itemId, decision, answer });
+  let res: Awaited<ReturnType<typeof applyHumanAnswer>>;
+  try {
+    // ownerId from the ROW (owner-scoped by the approve/reject CAS);
+    // applyHumanAnswer verifies the item's run belongs to that owner (F2).
+    res = await applyHumanAnswer(db, { itemId, ownerId: row.ownerId, decision, answer });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return revertToPending(
+      row.id,
+      `the decision did not apply (${msg}) — the question is pending again; please decide once more`,
+    );
+  }
   if (!res.ok) {
     const [expiredRow] = await db
       .update(pendingToolCalls)
@@ -158,7 +187,20 @@ async function settleBudget(
       .returning();
     return errRow ? toSummary(errRow) : null;
   }
-  const res = await applyBudgetDecision(db, { runId, decision });
+  let res: Awaited<ReturnType<typeof applyBudgetDecision>>;
+  try {
+    // ownerId from the ROW; applyBudgetDecision verifies run ownership (F2).
+    res = await applyBudgetDecision(db, { runId, ownerId: row.ownerId, decision });
+  } catch (err) {
+    // Same recovery as settleAskHuman: revert so the operator can retry —
+    // a stranded 'approved' on a run_budget row would leave the run paused
+    // forever with nothing left to approve.
+    const msg = err instanceof Error ? err.message : String(err);
+    return revertToPending(
+      row.id,
+      `the decision did not apply (${msg}) — the budget question is pending again; please decide once more`,
+    );
+  }
   if (!res.ok) {
     const [expiredRow] = await db
       .update(pendingToolCalls)

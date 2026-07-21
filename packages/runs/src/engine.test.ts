@@ -793,6 +793,7 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     const [ask, after] = await children(rootItemId);
     const res = await applyHumanAnswer(db, {
       itemId: ask!.id,
+      ownerId: OWNER,
       decision: 'answered',
       answer: 'dev',
     });
@@ -816,12 +817,20 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
       plan: { kind: 'seq', children: [askHuman('Delete everything?')] },
     });
     const [ask] = await children(rootItemId);
-    const res = await applyHumanAnswer(db, { itemId: ask!.id, decision: 'rejected' });
+    const res = await applyHumanAnswer(db, {
+      itemId: ask!.id,
+      ownerId: OWNER,
+      decision: 'rejected',
+    });
     if (!res.ok) throw new Error(res.error);
     expect(res.state).toBe('failed');
     expect((await itemRow(ask!.id)).result?.failure).toMatchObject({ type: 'rejected' });
     // A second decision finds the item terminal — moved_on, never re-counted.
-    const dup = await applyHumanAnswer(db, { itemId: ask!.id, decision: 'answered' });
+    const dup = await applyHumanAnswer(db, {
+      itemId: ask!.id,
+      ownerId: OWNER,
+      decision: 'answered',
+    });
     expect(dup.ok).toBe(false);
     if (dup.ok) throw new Error('unreachable');
     expect(dup.reason).toBe('moved_on');
@@ -856,7 +865,11 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     const rows = await pendingRowFor(ask!.id);
     expect(rows[0]!.status).toBe('expired');
     // And a late answer refuses cleanly.
-    const late = await applyHumanAnswer(db, { itemId: ask!.id, decision: 'answered' });
+    const late = await applyHumanAnswer(db, {
+      itemId: ask!.id,
+      ownerId: OWNER,
+      decision: 'answered',
+    });
     expect(late.ok).toBe(false);
   });
 
@@ -884,6 +897,60 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     expect((await itemRow(after!.id)).state).toBe('ready');
     expect(swept.questionsExpired).toBeGreaterThanOrEqual(1);
     expect((await pendingRowFor(ask!.id))[0]!.status).toBe('expired');
+  });
+
+  it('answer from another owner refuses (forbidden) and touches nothing', SLOW, async () => {
+    const { rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'ask cross-owner',
+      plan: { kind: 'seq', children: [askHuman('Proceed?'), note('after')] },
+    });
+    const [ask] = await children(rootItemId);
+    const stranger = '00000000-0000-4000-8000-000000000002';
+    const res = await applyHumanAnswer(db, {
+      itemId: ask!.id,
+      ownerId: stranger,
+      decision: 'answered',
+      answer: 'yes',
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error('unreachable');
+    expect(res.reason).toBe('forbidden');
+    expect((await itemRow(ask!.id)).state).toBe('ready');
+    // The rightful owner's decision still lands.
+    const ok = await applyHumanAnswer(db, {
+      itemId: ask!.id,
+      ownerId: OWNER,
+      decision: 'answered',
+    });
+    expect(ok.ok).toBe(true);
+  });
+
+  it('sweep 4c reverts a decided-but-unsettled row to pending', SLOW, async () => {
+    const { rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'ask stranded decision',
+      plan: { kind: 'seq', children: [askHuman('Stranded?')] },
+    });
+    const [ask] = await children(rootItemId);
+    // Simulate the F3 crash window: the row flipped 'approved' but the
+    // settle never ran (executed_at NULL) and the grace window has passed.
+    await db.execute(sql`
+      UPDATE pending_tool_calls SET status = 'approved', decided_at = now() - interval '10 minutes'
+      WHERE tool_slug = 'ask_human' AND args->>'item_id' = ${ask!.id}
+    `);
+    const swept = await sweepRuns(db);
+    expect(swept.settlesReverted).toBeGreaterThanOrEqual(1);
+    const [row] = await pendingRowFor(ask!.id);
+    expect(row!.status).toBe('pending');
+    // The item is untouched and the re-decision applies normally.
+    expect((await itemRow(ask!.id)).state).toBe('ready');
+    const ok = await applyHumanAnswer(db, {
+      itemId: ask!.id,
+      ownerId: OWNER,
+      decision: 'answered',
+    });
+    expect(ok.ok).toBe(true);
   });
 
   // ── budget / item-cap auto-pause (slice 3 WP4) ─────────────────────────────
@@ -924,7 +991,7 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
 
     // Raise: budget grows by one original budget, run resumes, ready work
     // re-emits, claims succeed again.
-    const raised = await applyBudgetDecision(db, { runId, decision: 'raise' });
+    const raised = await applyBudgetDecision(db, { runId, ownerId: OWNER, decision: 'raise' });
     if (!raised.ok || raised.outcome !== 'raised') throw new Error('raise failed');
     expect(raised.newBudgetMicroUsd).toBe(250_000);
     expect(raised.actions.filter((x) => x.type === 'dispatch')).toHaveLength(1);
@@ -987,11 +1054,22 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     await claimItem(db, a!.id);
     await completeItem(db, { itemId: a!.id, state: 'done', costMicroUsd: 5_000 });
     expect((await runRow(runId)).status).toBe('paused');
-    const res = await applyBudgetDecision(db, { runId, decision: 'cancel' });
+    // Cross-owner decisions refuse without touching the run (final audit F2).
+    const stranger = '00000000-0000-4000-8000-000000000002';
+    const forbidden = await applyBudgetDecision(db, {
+      runId,
+      ownerId: stranger,
+      decision: 'cancel',
+    });
+    expect(forbidden.ok).toBe(false);
+    if (forbidden.ok) throw new Error('unreachable');
+    expect(forbidden.reason).toBe('forbidden');
+    expect((await runRow(runId)).status).toBe('paused');
+    const res = await applyBudgetDecision(db, { runId, ownerId: OWNER, decision: 'cancel' });
     expect(res.ok && res.outcome === 'cancelled').toBe(true);
     expect((await runRow(runId)).status).toBe('cancelled');
     // A second decision refuses — the run is no longer paused.
-    const dup = await applyBudgetDecision(db, { runId, decision: 'raise' });
+    const dup = await applyBudgetDecision(db, { runId, ownerId: OWNER, decision: 'raise' });
     expect(dup.ok).toBe(false);
   });
 
@@ -1018,7 +1096,7 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
       .update(runs)
       .set({ pausedAt: sql`now() - interval '10 minutes'` })
       .where(eq(runs.id, runId));
-    const raised = await applyBudgetDecision(db, { runId, decision: 'raise' });
+    const raised = await applyBudgetDecision(db, { runId, ownerId: OWNER, decision: 'raise' });
     if (!raised.ok || raised.outcome !== 'raised') throw new Error('raise failed');
     const after = (await itemRow(audit!.id)).deadlineAt!;
     expect(after.getTime() - before.getTime()).toBeGreaterThan(5 * 60 * 1000);

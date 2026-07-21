@@ -10,12 +10,15 @@
  * The answer rides `result.answer` into the compiled run state, so later
  * steps and the resume prompt see it verbatim.
  *
- * Owner scoping is the CALLER's duty (the pending row is owner-scoped by
- * `approvePendingCall`/`rejectPendingCall`, the run_audit precedent) — this
- * module trusts `itemId` exactly as the engine trusts ids from pg-boss jobs.
+ * Owner scoping is enforced HERE against the run row (final audit F2): the
+ * pending row is owner-scoped by `approvePendingCall`/`rejectPendingCall`,
+ * but the row's ARGS are only trustworthy when the runs engine wrote them —
+ * a slug-squatted `ask_human` tool could mint a row whose `item_id` points
+ * at someone else's run. The item's run must belong to `ownerId` or the
+ * decision refuses.
  */
 import { eq } from 'drizzle-orm';
-import { runItems, type Db } from '@mantle/db';
+import { runItems, runs, type Db } from '@mantle/db';
 
 import { completeItem, type PostCommitAction } from './engine';
 
@@ -25,8 +28,9 @@ export type HumanAnswerResult =
       ok: false;
       /** 'moved_on': the item is already terminal (cancelled, timed out, or
        *  the run died) — the caller expires the pending row and tells the
-       *  operator the run moved on. 'not_ask_human': bad ref. */
-      reason: 'moved_on' | 'not_ask_human';
+       *  operator the run moved on. 'not_ask_human': bad ref. 'forbidden':
+       *  the item's run belongs to a different owner — never applied. */
+      reason: 'moved_on' | 'not_ask_human' | 'forbidden';
       error: string;
     };
 
@@ -43,7 +47,7 @@ export type HumanAnswerResult =
  */
 export async function applyHumanAnswer(
   db: Db,
-  opts: { itemId: string; decision: 'answered' | 'rejected'; answer?: string },
+  opts: { itemId: string; ownerId: string; decision: 'answered' | 'rejected'; answer?: string },
 ): Promise<HumanAnswerResult> {
   const [item] = await db.select().from(runItems).where(eq(runItems.id, opts.itemId));
   if (!item || item.kind !== 'ask_human') {
@@ -51,6 +55,17 @@ export async function applyHumanAnswer(
       ok: false,
       reason: 'not_ask_human',
       error: `item ${opts.itemId} is not an ask_human item`,
+    };
+  }
+  const [run] = await db
+    .select({ ownerId: runs.ownerId })
+    .from(runs)
+    .where(eq(runs.id, item.runId));
+  if (!run || run.ownerId !== opts.ownerId) {
+    return {
+      ok: false,
+      reason: 'forbidden',
+      error: `ask_human item ${opts.itemId} does not belong to a run of this owner — decision not applied`,
     };
   }
 

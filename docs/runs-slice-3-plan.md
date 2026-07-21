@@ -437,3 +437,19 @@ CLOSED on that basis. WP5's panel semantic, as decided at build: blocking
 panel verdicts escalate `needs_human` (panels never rerun automatically).
 Deferred WP1 items landed with WP1; queue starvation remains the recorded
 watch-item; WP6 stays deferred.
+
+**FINAL-AUDIT RECORD (2026-07-21, v0.157.14).** The independent final audit
+REFUTED the closure claim above: the gate's harness omitted the workflow's
+non-journaled pre-claim duplicate check, and its kill point (post-outbound)
+never exercised the loss window. On DBOS recovery the glue re-read
+`resumed_at` — set by the workflow's own claim — and exited 'duplicate';
+every post-claim crash still lost the wake-up (reproduced empirically). The
+gate as WORDED in amendment 2 was the root cause: "kill between
+record_outbound and completion" certifies no-double-post, not no-loss.
+Fixed in v0.157.14 (journaled `resume_preflight`; worker-turn `load_item`
+journaled for the same replay-determinism reason; gate tightened to both
+kill points, both PASS). Also from the audit: owner scoping enforced inside
+`applyHumanAnswer`/`applyBudgetDecision` + `ask_human`/`run_budget` slugs
+reserved at tool creation (F2); decided-but-unsettled pending rows revert
+to 'pending' on settle error and via sweep duty 4c (F3). Engine suite
+34 → 36 tests.

@@ -13,8 +13,12 @@
  *   cancel — `cancelRun` (accepts paused, amendment 2); the janitor expires
  *            whatever the cancellation orphans.
  *
- * Owner scoping is the caller's duty (the pending row is owner-scoped by
- * approve/reject — the run_audit precedent).
+ * Owner scoping is enforced HERE against the run row (final audit F2): the
+ * pending row is owner-scoped by approve/reject, but its ARGS are only
+ * trustworthy when the runs engine wrote them — a slug-squatted `run_budget`
+ * tool could mint a row whose `run_id` points at someone else's run, and
+ * "reject" would cancel it. The run must belong to `ownerId` or the
+ * decision refuses.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { runItems, runs, type Db } from '@mantle/db';
@@ -27,17 +31,29 @@ export type BudgetDecisionResult =
   | { ok: true; outcome: 'cancelled' }
   | {
       ok: false;
-      /** The run is no longer paused (finished, cancelled, or already
-       *  raised) — the caller expires the pending row. */
-      reason: 'not_paused';
+      /** 'not_paused': the run is no longer paused (finished, cancelled, or
+       *  already raised) — the caller expires the pending row. 'forbidden':
+       *  the run belongs to a different owner — never applied. */
+      reason: 'not_paused' | 'forbidden';
       error: string;
     };
 
 export async function applyBudgetDecision(
   db: Db,
-  opts: { runId: string; decision: 'raise' | 'cancel' },
+  opts: { runId: string; ownerId: string; decision: 'raise' | 'cancel' },
 ): Promise<BudgetDecisionResult> {
   if (opts.decision === 'cancel') {
+    const [owned] = await db
+      .select({ ownerId: runs.ownerId })
+      .from(runs)
+      .where(eq(runs.id, opts.runId));
+    if (!owned || owned.ownerId !== opts.ownerId) {
+      return {
+        ok: false,
+        reason: 'forbidden',
+        error: `run ${opts.runId} does not belong to this owner — decision not applied`,
+      };
+    }
     const { cancelled } = await cancelRun(db, opts.runId);
     if (!cancelled) {
       return {
@@ -54,6 +70,7 @@ export async function applyBudgetDecision(
     // run AND its items.
     const [run] = await tx
       .select({
+        ownerId: runs.ownerId,
         status: runs.status,
         budget: runs.budgetMicroUsd,
         spent: runs.spentMicroUsd,
@@ -62,6 +79,13 @@ export async function applyBudgetDecision(
       .from(runs)
       .where(eq(runs.id, opts.runId))
       .for('update');
+    if (run && run.ownerId !== opts.ownerId) {
+      return {
+        ok: false,
+        reason: 'forbidden' as const,
+        error: `run ${opts.runId} does not belong to this owner — decision not applied`,
+      };
+    }
     if (!run || run.status !== 'paused') {
       return {
         ok: false,

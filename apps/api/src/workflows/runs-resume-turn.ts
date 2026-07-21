@@ -10,23 +10,32 @@
  * AUDIT — a pending audit item (plan §7): same machinery, adversarial
  * framing; the turn records its verdict via `run_audit` and posts nothing.
  *
- * DURABILITY (the audited WP2 design — plan §4, bindings):
+ * DURABILITY (the audited WP2 design — plan §4, bindings; REVISED by the
+ * slice-3 final audit, v0.157.14):
  *   - The turn body runs under `withDurableSteps`, so every LLM call + tool
  *     dispatch (including the `run_audit` verdict) is a journaled step.
+ *   - REPLAY DETERMINISM (the final audit's F1 fix): DBOS recovery re-runs
+ *     this function from the top — journaled steps return their recorded
+ *     results, but plain glue re-executes against CURRENT db state. Any
+ *     early-return before the claim that reads mutable state therefore
+ *     re-decides on replay: the original build's non-journaled "cheap
+ *     duplicate check" read `resumed_at` — set by this workflow's OWN claim
+ *     — and exited 'duplicate' on every post-claim recovery, silently
+ *     losing the wake-up (the exact handover-§5 gap, reproduced 2026-07-21).
+ *     Every pre-claim decision now lives in ONE journaled `resume_preflight`
+ *     step, so a replay takes the identical path back to the claim.
  *   - `claimResume` is a journaled step placed AFTER the fallible
- *     preconditions (agent, key, adapter, assembly) and BEFORE the loop —
- *     the v0.157.5 ordering, preserved: a precondition failure returns
- *     WITHOUT claiming, so the sweep re-sends and a transient hiccup never
- *     swallows the report. Past the claim, a crash RESUMES the turn from its
- *     last journaled step instead of losing the wake-up.
+ *     preconditions and BEFORE the loop — the v0.157.5 ordering, preserved:
+ *     a preflight failure returns WITHOUT claiming, so the sweep re-sends
+ *     and a transient hiccup never swallows the report. Past the claim, a
+ *     crash RESUMES the turn from its last journaled step.
  *   - `record_outbound` (recordTurn) is a journaled step, so a crash between
- *     it and workflow completion replays WITHOUT double-posting. This is the
- *     boundary the audit found missing — the old resume path called
- *     recordTurn bare.
- *   ACCEPTANCE GATE (plan §8 amendment 2): the handover-§5 "resume-loss"
- *   gap is only claimed closed after the crash-test (kill between the
- *   journaled record_outbound and completion; exactly one outbound row after
- *   recovery) passes against this workflow on the dev box.
+ *     it and workflow completion replays WITHOUT double-posting.
+ *   ACCEPTANCE GATE (plan §8 amendment 2, tightened by the final audit):
+ *   the crash-test must pass at BOTH kill points — between the journaled
+ *   claim and record_outbound (the loss window: the report must still
+ *   arrive, exactly once), and between record_outbound and completion (the
+ *   double-post window) — against this workflow's step shape.
  *
  * Replay caveats, accepted: the decrypted api key is deliberately NOT
  *   journaled (no plaintext secrets in the system DB) — a replay re-resolves
@@ -42,6 +51,7 @@ import {
   bumpAgentUsage,
   db,
   runItems,
+  runs,
   telegramAccounts,
   telegramChats,
   type Agent,
@@ -221,41 +231,66 @@ async function runsResumeTurnImpl(input: RunsResumeTurnInput): Promise<RunsResum
         return { resumed: false, outcome: 'disabled' };
       }
 
-      // Mode: an audit item's resume is a judgment turn; the root's is the
-      // final report-to-the-user turn.
-      const [target] = await db.select().from(runItems).where(eq(runItems.id, groupId));
-      if (!target) {
-        DBOS.logger.error(`[runs_resume_turn] item ${groupId} not found`);
+      // PREFLIGHT — every pre-claim decision that reads mutable db state, as
+      // ONE journaled step (the final audit's F1 fix). On first execution
+      // this is the cheap duplicate/paused/agent gate, refusing WITHOUT
+      // claiming so the sweep can re-send; on a crash-recovery replay the
+      // journal returns the recorded decision, so the workflow walks the
+      // identical path back to its claim instead of re-deciding against
+      // state its own claim mutated. The paused check lives ONLY here (WP4
+      // amendment 4): a fresh turn on a paused run refuses pre-claim, but a
+      // recovery that already claimed must complete — refusing post-claim
+      // would strand the burned claim, and a replayed turn is mostly journal
+      // reads, not fresh spend.
+      type Preflight =
+        | { outcome: 'missing' | 'duplicate' | 'paused' | 'no_agent'; auditMode: boolean }
+        | { outcome: 'proceed'; auditMode: boolean; agentId: string };
+      const preflight = await runDurableStep('resume_preflight', async (): Promise<Preflight> => {
+        const [target] = await db
+          .select({ id: runItems.id, kind: runItems.kind, resumedAt: runItems.resumedAt })
+          .from(runItems)
+          .where(eq(runItems.id, groupId));
+        if (!target) return { outcome: 'missing', auditMode: false };
+        const auditMode = target.kind === 'audit';
+        if (target.resumedAt) return { outcome: 'duplicate', auditMode };
+        const [run] = await db
+          .select({ status: runs.status, ownerId: runs.ownerId, agentId: runs.agentId })
+          .from(runs)
+          .where(eq(runs.id, runId));
+        if (!run) return { outcome: 'missing', auditMode };
+        if (run.status === 'paused') return { outcome: 'paused', auditMode };
+        const agent = await resolveResumeAgent(run.ownerId, run.agentId);
+        if (!agent || !agent.apiKeyId || !getChatAdapter(agent.provider)) {
+          return { outcome: 'no_agent', auditMode };
+        }
+        return { outcome: 'proceed', auditMode, agentId: agent.id };
+      });
+      const auditMode = preflight.auditMode;
+      DBOS.span?.setAttribute('mantle.mode', auditMode ? 'audit' : 'root');
+      if (preflight.outcome === 'duplicate') return { resumed: false, outcome: 'duplicate' };
+      if (preflight.outcome !== 'proceed') {
+        DBOS.logger.info(
+          `[runs_resume_turn] preflight '${preflight.outcome}' for run ${runId} (item ${groupId}) — not resuming`,
+        );
         return { resumed: false, outcome: 'precondition' };
       }
-      const auditMode = target.kind === 'audit';
-      DBOS.span?.setAttribute('mantle.mode', auditMode ? 'audit' : 'root');
 
-      // Cheap duplicate check (unclaimed reads are free; the CAS below is
-      // the real gate) — most redeliveries exit here without loading much.
-      if (target.resumedAt) return { resumed: false, outcome: 'duplicate' };
-
-      const compiled = await compileRunState(db, runId);
-      if (!compiled) {
-        DBOS.logger.error(`[runs_resume_turn] run ${runId} not found`);
+      // Glue reloads — full rows the preflight decision pinned. Run items
+      // are immutable and runs rows aren't deleted, so these re-reads are
+      // replay-stable; an early return below (row vanished, key-decrypt
+      // outage mid-recovery) is the documented narrow accepted-loss window,
+      // NOT the deterministic self-inflicted divergence preflight removed.
+      const [target] = await db.select().from(runItems).where(eq(runItems.id, groupId));
+      const compiled = target ? await compileRunState(db, runId) : null;
+      if (!target || !compiled) {
+        DBOS.logger.error(`[runs_resume_turn] run ${runId} / item ${groupId} vanished — skipping`);
         return { resumed: false, outcome: 'precondition' };
       }
       const { run } = compiled;
       DBOS.span?.setAttribute('mantle.owner_id', run.ownerId);
-      // WP4 amendment 4: a budget-paused run gets NO LLM turns — refuse
-      // BEFORE claiming, so the wake-up stays re-sendable (the budget
-      // resume re-emits it, and duty 2b takes over once running again).
-      if (run.status === 'paused') {
-        DBOS.logger.info(`[runs_resume_turn] run ${runId} is paused (budget) — not resuming`);
-        return { resumed: false, outcome: 'precondition' };
-      }
-      const agent = await resolveResumeAgent(run.ownerId, run.agentId);
-      if (!agent) {
-        DBOS.logger.error(`[runs_resume_turn] no chat-capable agent for run ${runId}`);
-        return { resumed: false, outcome: 'precondition' };
-      }
-      if (!agent.apiKeyId) {
-        DBOS.logger.error(`[runs_resume_turn] agent '${agent.slug}' has no api key — skipping`);
+      const [agent] = await db.select().from(agents).where(eq(agents.id, preflight.agentId));
+      if (!agent || !agent.enabled || !agent.apiKeyId) {
+        DBOS.logger.error(`[runs_resume_turn] resolved agent vanished for run ${runId} — skipping`);
         return { resumed: false, outcome: 'precondition' };
       }
       // Deliberately NOT a journaled step: never write a decrypted key into

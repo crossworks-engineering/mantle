@@ -64,6 +64,26 @@ const SLUG_RE = /^[a-z0-9_-]{1,120}$/;
 const URL_RE = /^https?:\/\/\S+$/i;
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 
+/** Slugs no authored tool may take (final audit F2). `pending_approve` /
+ *  `pending_reject` branch on these BEFORE tool resolution — a
+ *  `requires_confirm` tool squatting one would let an agent mint pending
+ *  rows whose args (`item_id` / `run_id`) reach the runner's answer/budget
+ *  paths under an operator click that looks like an ordinary approval.
+ *  Neither is a registered tool (by design), so only this reservation
+ *  prevents the collision. Owner scoping inside applyHumanAnswer /
+ *  applyBudgetDecision is the second layer. */
+const RESERVED_PENDING_SLUGS: ReadonlySet<string> = new Set(['ask_human', 'run_budget']);
+
+function reservedSlugError(slug: string): ToolHandlerResult | null {
+  if (!RESERVED_PENDING_SLUGS.has(slug)) return null;
+  return {
+    ok: false,
+    error:
+      `slug '${slug}' is reserved for runner-queue approval rows (engine-created; ` +
+      `the pending approve/reject handlers branch on it) — pick another slug`,
+  };
+}
+
 async function toolRowBySlug(ownerId: string, slug: string) {
   const [row] = await db
     .select()
@@ -401,6 +421,8 @@ const api_tool_create: BuiltinToolDef = {
         error: 'slug must be lowercase letters/digits/dash/underscore (max 120)',
       };
     }
+    const reserved = reservedSlugError(slug);
+    if (reserved) return reserved;
     const name = str(input.name).trim();
     const description = str(input.description).trim();
     if (!name || !description) return { ok: false, error: 'name and description are required' };
@@ -799,6 +821,8 @@ const recipe_tool_create: BuiltinToolDef = {
     if (RECIPE_FORBIDDEN_SLUGS.has(slug)) {
       return { ok: false, error: `slug '${slug}' is reserved` };
     }
+    const reserved = reservedSlugError(slug);
+    if (reserved) return reserved;
     const name = str(input.name).trim();
     const description = str(input.description).trim();
     if (!name || !description) return { ok: false, error: 'name and description are required' };
