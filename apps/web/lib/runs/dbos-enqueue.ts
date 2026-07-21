@@ -16,10 +16,13 @@
  * by requeueForRetry) gets a fresh workflow — and deterministically
  * derivable from the item row for observability.
  */
-import { DBOSClient } from '@dbos-inc/dbos-sdk';
+import { DBOSClient, Error as DBOSErrors } from '@dbos-inc/dbos-sdk';
 import { resolveSystemDatabaseUrl, RUNNER_QUEUE } from '@mantle/assistant-runtime';
 import {
+  RUNS_RESUME_TURN_WORKFLOW,
   RUNS_WORKER_TURN_WORKFLOW,
+  type RunsResumeTurnInput,
+  type RunsResumeTurnResult,
   type RunsWorkerTurnInput,
   type RunsWorkerTurnResult,
 } from '@mantle/runs';
@@ -51,4 +54,34 @@ export async function enqueueRunsWorkerTurn(itemId: string, attempt: number): Pr
     },
     { itemId },
   );
+}
+
+/**
+ * Enqueue a resume turn (WP2). NO fixed workflowID (a failed-without-claiming
+ * workflow must stay rescuable by the sweep's re-send — a fixed id would
+ * dedupe the rescue into a no-op); instead `deduplicationID = groupId` keeps
+ * at most ONE resume for a group QUEUED at a time. A dedup collision means a
+ * live resume is already in flight — returns 'duplicate' so the caller acks;
+ * every other failure throws (the sweep re-sends, per the §5b containment
+ * story — there is no item to fail here).
+ */
+export async function enqueueRunsResumeTurn(
+  runId: string,
+  groupId: string,
+): Promise<'enqueued' | 'duplicate'> {
+  const client = await getClient();
+  try {
+    await client.enqueue<(input: RunsResumeTurnInput) => Promise<RunsResumeTurnResult>>(
+      {
+        workflowName: RUNS_RESUME_TURN_WORKFLOW,
+        queueName: RUNNER_QUEUE,
+        deduplicationID: groupId,
+      },
+      { runId, groupId },
+    );
+    return 'enqueued';
+  } catch (err) {
+    if (err instanceof DBOSErrors.DBOSQueueDuplicatedError) return 'duplicate';
+    throw err;
+  }
 }

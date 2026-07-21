@@ -21,7 +21,10 @@ export {
   RUN_RESUME_QUEUE,
   RUN_TOOL_QUEUE,
   RUN_WORKER_QUEUE,
+  RUNS_RESUME_TURN_WORKFLOW,
   RUNS_WORKER_TURN_WORKFLOW,
+  type RunsResumeTurnInput,
+  type RunsResumeTurnResult,
   type RunsWorkerTurnInput,
   type RunsWorkerTurnResult,
 } from './queues';

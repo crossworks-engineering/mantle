@@ -5,9 +5,9 @@ Status: **slices 1 + 2, plus slice 3 WP1** — the spine (schema, engine,
 dispatcher, sweep, `run_*` tools, resume turn, run view), worker agents +
 audits (per-run concurrency cap, model inheritance, mechanical evidence,
 resume-driven audit verdicts with a one-redo cycle, the per-worker acceptance
-metric), and durable worker turns (the turn executes as a DBOS workflow in
-apps/api — slice-3 plan §4 WP1). Resume-turn durability (WP2), `ask_human`
-gates (WP3), budgets (WP4), and worker groups (WP5) are the rest of slice 3
+metric), and durable turns (worker turns AND resume turns execute as DBOS
+workflows in apps/api — slice-3 plan §4 WP1/WP2). `ask_human` gates (WP3),
+budgets (WP4), and worker groups (WP5) are the rest of slice 3
 ([runs-slice-3-plan.md](runs-slice-3-plan.md)).
 
 ## Concept
@@ -47,12 +47,12 @@ cancellation.
   enqueue AFTER commit (`enqueueRunActionsSafe`) so pg-boss never observes
   uncommitted state. The table is the truth; jobs carry only ids.
 - **`apps/web/workers/runs.ts`** (`worker_runs` container) — pg-boss handlers
-  for `mantle.run.tool` (tool/note items), `mantle.run.worker` (slice 2),
-  `mantle.run.resume` (responder resume turns), plus the every-minute sweep
-  cron: overdue items → `failed(timeout)` (drives the counter — nothing
-  wedges); stale `ready` items → re-dispatch (heals a crash between commit and
-  enqueue — no outbox machinery); terminal-but-never-resumed roots → resume
-  re-send.
+  for `mantle.run.tool` (tool/note items), `mantle.run.worker` (claim under
+  the cap + hand off to DBOS), `mantle.run.resume` (relay the wake-up to
+  DBOS), plus the every-minute sweep cron: overdue items → `failed(timeout)`
+  (drives the counter — nothing wedges); stale `ready` items → re-dispatch
+  (heals a crash between commit and enqueue — no outbox machinery);
+  terminal-but-never-resumed roots → resume re-send.
 - **`apps/web/lib/runs/execute-item.ts`** — item execution through the SAME
   `dispatchTool` executor as the inline loop (one executor, two entry points —
   non-negotiable). Central arg coercion, a `run_item` trace per execution
@@ -61,11 +61,16 @@ cancellation.
   per-item usage + cost in micro-USD. Semantic retries follow
   `retry_policy.maxAttempts`; **side-effecting items never auto-retry** (both
   retry layers off — failure surfaces for the resume turn to reason about).
-- **`apps/web/lib/runs/resume.ts`** — the resume turn: claims
-  `resumed_at`, assembles an ordinary responder turn
-  (`assembleResponderTurn` + `runResponderLoop`) whose prompt is the compiled
-  run state, and records the reply as an outbound conversation turn (no
-  synthetic user bubble — the reminders pattern).
+- **`apps/api/src/workflows/runs-resume-turn.ts`** — the resume turn, durable
+  since slice 3 WP2: an ordinary responder turn (`assembleResponderTurn` +
+  `runResponderLoop`) whose prompt is the compiled run state, run as a DBOS
+  workflow. `claimResume` is a JOURNALED step placed after the fallible
+  preconditions (the v0.157.5 ordering — a precondition failure leaves the
+  wake-up re-sendable) and the outbound `recordTurn` is journaled too, so a
+  crash mid-turn resumes without double-posting. Enqueued with
+  `deduplicationID = groupId` (one queued resume per group; no fixed
+  workflowID — a failed-without-claiming workflow must stay rescuable by the
+  sweep's re-send).
 - **Tools** (`packages/tools/src/builtins-runs.ts`): `run_plan`,
   `run_append`, `run_state`, `run_cancel` — the `runs` tool group in the
   manifest. Responder-only; a delegated child agent is refused, and `run_*` /

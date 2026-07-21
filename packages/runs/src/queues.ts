@@ -45,3 +45,20 @@ export type RunsWorkerTurnResult = {
   /** Terminal state driven, 'retry' when requeued, or the skip reason. */
   outcome: 'done' | 'failed' | 'retry' | 'stale' | 'disabled';
 };
+
+/**
+ * Resume turns (WP2). No workflowID convention here — a resume workflow that
+ * errors WITHOUT claiming must be re-enqueueable by the sweep's re-send, and
+ * a fixed id would dedupe the rescue into a no-op (ON CONFLICT never resets
+ * a terminal row). Instead: `deduplicationID = groupId` (one QUEUED resume
+ * per group at a time; clears when it starts) + the `resumed_at` CAS as the
+ * at-most-once turn gate, exactly as before.
+ */
+export const RUNS_RESUME_TURN_WORKFLOW = 'runsResumeTurnWorkflow';
+
+export type RunsResumeTurnInput = { runId: string; groupId: string };
+
+export type RunsResumeTurnResult = {
+  resumed: boolean;
+  outcome: 'reported' | 'audited' | 'duplicate' | 'precondition' | 'disabled';
+};

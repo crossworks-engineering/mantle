@@ -10,7 +10,9 @@
  *                       then hand the whole agent turn to the durable DBOS
  *                       runner in apps/api (slice 3 WP1 — the workflow
  *                       completes the item; this process never runs the LLM)
- *   mantle.run.resume — responder resume turns (LLM; concurrency 1)
+ *   mantle.run.resume — resume wake-ups: relay to the durable DBOS runner
+ *                       (slice 3 WP2 — the LLM turn + claimResume live in
+ *                       apps/api; dedup keeps one queued resume per group)
  *   sweep cron        — every minute: deadline timeouts, lost-dispatch and
  *                       lost-resume healing (the engine's immune system)
  *
@@ -22,8 +24,8 @@
  * container brings the engine live.
  */
 import PgBoss from 'pg-boss';
-import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { eq, sql } from 'drizzle-orm';
+import { db, runItems } from '@mantle/db';
 import { startProcessHeartbeat } from '@mantle/content';
 import { registerHeartbeatTools } from '@mantle/heartbeats';
 import {
@@ -37,7 +39,7 @@ import {
 } from '@mantle/runs';
 
 import { executeRunItem } from '../lib/runs/execute-item';
-import { runResumeTurn } from '../lib/runs/resume';
+import { enqueueRunsResumeTurn } from '../lib/runs/dbos-enqueue';
 
 const SWEEP_QUEUE = 'mantle.run.sweep';
 const SWEEP_CRON = '* * * * *'; // every minute — the sweep is the immune system
@@ -107,11 +109,31 @@ async function main() {
     }
   });
 
-  // Resume turns: one at a time — each is an LLM turn; ordering between runs
-  // doesn't matter, memory pressure does.
+  // Resume lane (slice 3 WP2): claim-context only. The LLM turn runs as a
+  // durable DBOS workflow in apps/api (claimResume journaled AFTER its
+  // preconditions there); this handler just relays the wake-up. The old
+  // batchSize-1 serialization stops mattering — RUNNER_QUEUE's concurrency
+  // is the LLM backpressure cap now. An enqueue failure just acks: the row
+  // still has resumed_at NULL, so the sweep re-sends (the §5b containment
+  // story — unlike worker items there is nothing to fail here).
   await boss.work<ResumeJob>(RUN_RESUME_QUEUE, { batchSize: 1 }, async (jobs) => {
     for (const job of jobs) {
-      await runResumeTurn(job.data.runId, job.data.groupId);
+      const { runId, groupId } = job.data;
+      // Cheap duplicate check; the workflow's journaled claimResume CAS is
+      // the real gate.
+      const [target] = await db
+        .select({ resumedAt: runItems.resumedAt })
+        .from(runItems)
+        .where(eq(runItems.id, groupId));
+      if (!target || target.resumedAt) continue;
+      try {
+        await enqueueRunsResumeTurn(runId, groupId);
+      } catch (err) {
+        console.error(
+          `[runs] resume enqueue failed (run ${runId}, group ${groupId}) — sweep will re-send:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     }
   });
 
