@@ -18,3 +18,30 @@
 export const RUN_TOOL_QUEUE = 'mantle.run.tool';
 export const RUN_WORKER_QUEUE = 'mantle.run.worker';
 export const RUN_RESUME_QUEUE = 'mantle.run.resume';
+
+/**
+ * DBOS workflow names — the cross-runtime contract for slice 3's turn
+ * execution (plan §4 WP1/WP2). The apps/api runner REGISTERS these; the runs
+ * worker ENQUEUES them by name via DBOSClient after winning the claim CAS.
+ * DBOS is deliberately NOT imported here (the assistant-runtime contract.ts
+ * idiom) — callers pass the strings to the DBOS APIs themselves.
+ *
+ * workflowID convention: `<itemId>:<attempt>` — unique per SEMANTIC attempt
+ * (a retry must not dedupe against the previous attempt's workflow), still
+ * deterministic from the item row for observability (`getRun('<id>:<n>')`,
+ * no listWorkflows archaeology).
+ */
+export const RUNS_WORKER_TURN_WORKFLOW = 'runsWorkerTurnWorkflow';
+
+/** Serializable input the worker-turn workflow journals. Ids only — the
+ *  table is the truth, the workflow re-reads state (jobs-carry-only-ids,
+ *  §5b, applied to DBOS enqueues too). */
+export type RunsWorkerTurnInput = { itemId: string };
+
+/** Serializable result (journaled). Small on purpose — outcomes live on the
+ *  item row; this is for the run record / debugging only. */
+export type RunsWorkerTurnResult = {
+  executed: boolean;
+  /** Terminal state driven, 'retry' when requeued, or the skip reason. */
+  outcome: 'done' | 'failed' | 'retry' | 'stale' | 'disabled';
+};

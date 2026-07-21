@@ -1,12 +1,14 @@
 # Runner queues — durable, inspectable execution plans
 
 Design: "Runner queues & worker agents — implementation plan v1" (dev brain).
-Status: **slices 1 + 2** — the spine (schema, engine, dispatcher, sweep,
-`run_*` tools, resume turn, run view) plus worker agents + audits
-(`worker_invoke` execution with per-run concurrency cap, model inheritance,
-mechanical evidence, resume-driven audit verdicts with a one-redo cycle, the
-per-worker acceptance metric). `ask_human` gates, budgets, and worker groups
-are slice 3.
+Status: **slices 1 + 2, plus slice 3 WP1** — the spine (schema, engine,
+dispatcher, sweep, `run_*` tools, resume turn, run view), worker agents +
+audits (per-run concurrency cap, model inheritance, mechanical evidence,
+resume-driven audit verdicts with a one-redo cycle, the per-worker acceptance
+metric), and durable worker turns (the turn executes as a DBOS workflow in
+apps/api — slice-3 plan §4 WP1). Resume-turn durability (WP2), `ask_human`
+gates (WP3), budgets (WP4), and worker groups (WP5) are the rest of slice 3
+([runs-slice-3-plan.md](runs-slice-3-plan.md)).
 
 ## Concept
 
@@ -83,13 +85,20 @@ cancellation.
   worker at a cheaper model is the opt-in cost knob, justified by its
   acceptance rate. Routing is per step (`worker: '<slug>'` in the plan node);
   adding a worker never changes behavior by itself (§6b).
-- **Execution** (`apps/web/lib/runs/execute-worker.ts`): claimed under the
-  per-run concurrency cap (`MANTLE_RUNS_WORKER_CONCURRENCY`, default 3 —
-  serialized on the run row; completions emit slot-release wake-ups); runs at
-  delegation depth 2 with an empty allowlist so `run_*`/`invoke_agent` refuse
-  structurally. Evidence is MECHANICAL: the tool-loop's own call ledger lands
-  on the item result; the full reply spills to a `tr_…` handle the responder
-  can `read_result`.
+- **Execution — durable since slice 3 WP1**: the runs worker CLAIMS under
+  the per-run concurrency cap (`MANTLE_RUNS_WORKER_CONCURRENCY`, default 3 —
+  serialized on the run row; completions emit slot-release wake-ups;
+  `apps/web/lib/runs/execute-worker.ts`), then hands the whole agent turn to
+  the DBOS runner (`apps/api/src/workflows/runs-worker-turn.ts`, enqueued by
+  name on the shared RUNNER_QUEUE, `workflowID = itemId:attempt`). Every LLM
+  call + tool dispatch journals, so a crash mid-turn resumes from the last
+  completed step; the deadline re-stamps when execution actually starts
+  (queue wait is not execution budget); a failed enqueue completes the item
+  `failed(dispatch_failed)` immediately. The turn runs at delegation depth 2
+  with an empty allowlist so `run_*`/`invoke_agent` refuse structurally.
+  Evidence is MECHANICAL: the tool-loop's own call ledger lands on the item
+  result; the full reply spills to a `tr_…` handle the responder can
+  `read_result`.
 - **Audits run in resume turns** (plan §7): `promote(audit)` emits a resume
   (never a dispatch) and stamps a verdict deadline (default 30 min — a lost
   audit turn times out and the run completes with the failure recorded). The
@@ -108,7 +117,11 @@ cancellation.
 ## Feature gate + dogfood
 
 Dark by default. Enable per brain with `MANTLE_RUNS=1` in the app env (the
-`worker_runs` container idles healthy when off). The `runs` tool group is
+`worker_runs` container idles healthy when off). Since slice 3 WP1 the flag
+is read by THREE services — web (`run_*` tools), `worker_runs` (engine), and
+`api` (the DBOS turn workflows refuse with `failed(disabled)` when off) — the
+compose `app-env` anchor feeds all of them from the host `.env`; never set it
+narrower. The `runs` tool group is
 deliberately **not** attached to the persona in the manifest while dogfooding —
 grant it manually on the dev brain (`/settings/tool-groups` or
 `agent_grant_tool_group`). Attach it in the manifest when the feature ships.

@@ -71,6 +71,9 @@ importers:
       '@mantle/heartbeats':
         specifier: workspace:*
         version: link:../../packages/heartbeats
+      '@mantle/runs':
+        specifier: workspace:*
+        version: link:../../packages/runs
       '@mantle/storage':
         specifier: workspace:*
         version: link:../../packages/storage

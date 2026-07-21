@@ -21,6 +21,7 @@
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",
     "@mantle/heartbeats": "workspace:*",
+    "@mantle/runs": "workspace:*",
     "@mantle/storage": "workspace:*",
     "@mantle/tabledb": "workspace:*",
     "@mantle/telegram": "workspace:*",

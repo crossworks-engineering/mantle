@@ -17,7 +17,14 @@ export {
   type PostCommitAction,
   type TerminalState,
 } from './engine';
-export { RUN_RESUME_QUEUE, RUN_TOOL_QUEUE, RUN_WORKER_QUEUE } from './queues';
+export {
+  RUN_RESUME_QUEUE,
+  RUN_TOOL_QUEUE,
+  RUN_WORKER_QUEUE,
+  RUNS_WORKER_TURN_WORKFLOW,
+  type RunsWorkerTurnInput,
+  type RunsWorkerTurnResult,
+} from './queues';
 export { isRunsEnabled } from './flag';
 export { ensureRunQueues, enqueueRunActions, enqueueRunActionsSafe } from './boss';
 export {

@@ -139,6 +139,15 @@ x-app-env: &app-env
   # the box — no cloud key, no API calls, fast. The resolver already defaults
   # a fresh install to local/embeddinggemma:latest; this just supplies the host.
   MANTLE_LOCAL_EMBEDDING_URL: ${MANTLE_LOCAL_EMBEDDING_URL:-http://ollama:11434/v1}
+  # Runner queues (docs/runs.md) — DARK unless MANTLE_RUNS=1 in the host .env.
+  # Read by THREE services off this shared anchor: web (run_* tools),
+  # worker_runs (engine + sweep + claims), and api (the DBOS worker-turn
+  # workflows refuse with a structured failure when off — flag discipline
+  # must not fork across runtimes, slice-3 plan §4 WP1). Setting it anywhere
+  # narrower than this anchor is the deploy footgun the plan §8 checklist
+  # warns about.
+  MANTLE_RUNS: ${MANTLE_RUNS:-}
+  MANTLE_RUNS_WORKER_CONCURRENCY: ${MANTLE_RUNS_WORKER_CONCURRENCY:-}
   # Extractor worker concurrency (in-flight extraction jobs). Default 2 suits a
   # multi-core / GPU box. Drop to 1 on a CPU-only embedder: concurrent jobs
   # otherwise contend for the same cores and a big file's embed batch can blow

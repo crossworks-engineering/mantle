@@ -6,8 +6,10 @@
  *
  * Three queues + the sweep:
  *   mantle.run.tool   — tool_call / note items (fast, some concurrency)
- *   mantle.run.worker — worker_invoke items (slice 2 — items currently fail
- *                       with a structured unsupported_kind record)
+ *   mantle.run.worker — worker_invoke items: claim under the per-run cap,
+ *                       then hand the whole agent turn to the durable DBOS
+ *                       runner in apps/api (slice 3 WP1 — the workflow
+ *                       completes the item; this process never runs the LLM)
  *   mantle.run.resume — responder resume turns (LLM; concurrency 1)
  *   sweep cron        — every minute: deadline timeouts, lost-dispatch and
  *                       lost-resume healing (the engine's immune system)
@@ -94,8 +96,10 @@ async function main() {
     );
   });
 
-  // Slice 2 lane: whole agent turns. Handler already exists so a stray
-  // worker_invoke item fails structured instead of rotting queued.
+  // Worker lane (slice 3 WP1): claim-context only. executeRunItem →
+  // executeWorkerInvoke claims under the per-run cap and enqueues the turn
+  // onto the DBOS RUNNER_QUEUE — the job here is seconds, not a whole LLM
+  // turn; an enqueue failure fails the item `dispatch_failed` immediately.
   await boss.work<DispatchJob>(RUN_WORKER_QUEUE, { batchSize: 1 }, async (jobs) => {
     for (const job of jobs) {
       const { actions } = await executeRunItem(job.data.itemId);
