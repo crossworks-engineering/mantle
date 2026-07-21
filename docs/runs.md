@@ -6,9 +6,9 @@ dispatcher, sweep, `run_*` tools, resume turn, run view), worker agents +
 audits (per-run concurrency cap, model inheritance, mechanical evidence,
 resume-driven audit verdicts with a one-redo cycle, the per-worker acceptance
 metric), durable turns (worker turns AND resume turns execute as DBOS
-workflows in apps/api — slice-3 plan §4 WP1/WP2), and `ask_human` gates
-(WP3 — human questions as run items, answered via pending approvals).
-Budgets (WP4) and worker groups (WP5) are the rest of slice 3
+workflows in apps/api — slice-3 plan §4 WP1/WP2), `ask_human` gates (WP3 —
+human questions as run items, answered via pending approvals), and budget /
+item-cap auto-pause (WP4). Worker groups (WP5) close out slice 3
 ([runs-slice-3-plan.md](runs-slice-3-plan.md)).
 
 ## Concept
@@ -138,6 +138,37 @@ duty 4 expires any pending row whose item went terminal (run cancelled,
 branch fail_fast-cancelled, question timed out), and an answer landing on a
 dead item expires the row with a teaching error instead of pretending it
 took effect.
+
+## Budget + item-cap auto-pause (slice 3 WP4)
+
+`run_plan` takes `budget_usd`; every `completeItem` adds the item's cost to
+`runs.spent_micro_usd` UNDER THE RUN ROW LOCK (race-free by the lock-ordering
+rule; failed items count — cost honesty). Crossing the budget CASes the run
+`running → paused` and queues a `run_budget` "raise or cancel?" pending row
+(same approval surface as `ask_human`). The pause-state matrix, per the
+audited amendments:
+
+- **Pause gates NEW work only** — refusal lives in `claimItem` /
+  `claimWorkerItem`; promotion proceeds (a refused promotion would strand a
+  queued child nothing re-promotes). In-flight items run to completion and
+  their completions still drive counters and add spend.
+- **A finished run is never paused**: the pause CAS runs after completion
+  bubbling (crossing on the final completion just finishes the run), and
+  `finalizeRun` / `cancelRun` CAS from `('running','paused')` — in-flight
+  completions can finish a paused run, and a paused run stays cancellable.
+- **Deadlines**: running items keep their clocks (pause can't abort them; a
+  hung item stays killable by sweep duty 1). READY audit/question deadlines
+  freeze while paused and shift by the paused duration on resume. Resume
+  turns refuse on paused runs BEFORE `claimResume` (no LLM spend against a
+  budget pause).
+- **Approve** raises the budget by one more original budget on top of what
+  was spent, flips `paused → running`, shifts the frozen deadlines, and
+  re-emits the run's parked work inline (dispatches + unclaimed-audit
+  resumes). **Reject** cancels the run. The sweep janitor expires a
+  `run_budget` row whose run left `paused` some other way.
+- **`item_cap`** (default 200): `createRun`/`appendChildren` count nodes
+  under the run lock and refuse past the cap with a teaching error — the
+  runaway-append backstop.
 
 ## Feature gate + dogfood
 

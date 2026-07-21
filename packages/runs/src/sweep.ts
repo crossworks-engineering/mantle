@@ -53,12 +53,18 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
   //    (verdict budget) and ask_human items whose plan set timeout_seconds
   //    (WP3 amendment 3 — without this a dated question could never
   //    expire). Undated ask_human rows have NULL deadlines and never match.
+  //    Pause semantics (WP4 amendment 3): RUNNING items keep their clocks
+  //    even on a paused run (pause can't abort in-flight work; a hung item
+  //    must stay killable) — but READY audit/question deadlines freeze
+  //    while paused (nothing is executing; resume shifts them by the paused
+  //    duration).
   const overdue = await db
     .select({ id: runItems.id })
     .from(runItems)
+    .innerJoin(runs, eq(runs.id, runItems.runId))
     .where(
       and(
-        sql`(${runItems.state} = 'running' or (${runItems.state} = 'ready' and ${runItems.kind} in ('audit', 'ask_human')))`,
+        sql`(${runItems.state} = 'running' or (${runItems.state} = 'ready' and ${runItems.kind} in ('audit', 'ask_human') and ${runs.status} <> 'paused'))`,
         lt(runItems.deadlineAt, sql`now()`),
       ),
     )
@@ -81,12 +87,16 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
   //    Audits are excluded (resume-driven, not dispatchable — 2b), and so
   //    are ask_human items (HUMAN-driven, never dispatchable — WP3/C6; a
   //    re-dispatch would be 90-second noise forever on an undated question).
+  //    Paused runs are skipped (WP4): re-dispatching work whose claim will
+  //    refuse is churn for nothing — the budget resume re-emits inline.
   const staleReady = await db
     .select({ id: runItems.id, kind: runItems.kind, sideEffecting: runItems.sideEffecting })
     .from(runItems)
+    .innerJoin(runs, eq(runs.id, runItems.runId))
     .where(
       and(
         eq(runItems.state, 'ready'),
+        eq(runs.status, 'running'),
         sql`${runItems.kind} not in ('audit', 'ask_human')`,
         lt(runItems.updatedAt, sql`now() - make_interval(secs => ${READY_STALE_SECONDS})`),
       ),
@@ -114,10 +124,12 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
   const staleAudits = await db
     .select({ id: runItems.id, runId: runItems.runId })
     .from(runItems)
+    .innerJoin(runs, eq(runs.id, runItems.runId))
     .where(
       and(
         eq(runItems.state, 'ready'),
         eq(runItems.kind, 'audit'),
+        eq(runs.status, 'running'), // paused runs: the budget resume re-sends
         isNull(runItems.resumedAt),
         lt(runItems.updatedAt, sql`now() - make_interval(secs => ${RESUME_STALE_SECONDS})`),
       ),
@@ -174,11 +186,28 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
     RETURNING p.id
   `)) as unknown as Array<{ id: string }>;
 
+  // 4b. run_budget rows whose run is no longer paused (cancelled out-of-band,
+  //     or finished from in-flight completions while paused) expire the same
+  //     way — the "raise or cancel?" question is moot (WP4).
+  const expiredBudget = (await db.execute(sql`
+    UPDATE pending_tool_calls p
+    SET status = 'expired', decided_at = now(), updated_at = now(),
+        error = 'the run is no longer paused — the budget question is moot'
+    WHERE p.status = 'pending'
+      AND p.tool_slug = 'run_budget'
+      AND (p.args->>'run_id') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      AND EXISTS (
+        SELECT 1 FROM runs r
+        WHERE r.id = (p.args->>'run_id')::uuid AND r.status <> 'paused'
+      )
+    RETURNING p.id
+  `)) as unknown as Array<{ id: string }>;
+
   return {
     timedOut,
     redispatched: staleReady.length,
     resumesResent: unresumed.length + staleAudits.length,
-    questionsExpired: expired.length,
+    questionsExpired: expired.length + expiredBudget.length,
     actions,
   };
 }

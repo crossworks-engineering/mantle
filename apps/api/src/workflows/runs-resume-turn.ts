@@ -172,6 +172,13 @@ async function runsResumeTurnImpl(input: RunsResumeTurnInput): Promise<RunsResum
       }
       const { run } = compiled;
       DBOS.span?.setAttribute('mantle.owner_id', run.ownerId);
+      // WP4 amendment 4: a budget-paused run gets NO LLM turns — refuse
+      // BEFORE claiming, so the wake-up stays re-sendable (the budget
+      // resume re-emits it, and duty 2b takes over once running again).
+      if (run.status === 'paused') {
+        DBOS.logger.info(`[runs_resume_turn] run ${runId} is paused (budget) — not resuming`);
+        return { resumed: false, outcome: 'precondition' };
+      }
       const agent = await resolveResumeAgent(run.ownerId, run.agentId);
       if (!agent) {
         DBOS.logger.error(`[runs_resume_turn] no chat-capable agent for run ${runId}`);

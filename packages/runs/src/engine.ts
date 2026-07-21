@@ -126,6 +126,24 @@ export class SealedGroupError extends Error {
   }
 }
 
+/** WP4: the runaway-append backstop. Thrown by createRun/appendChildren when
+ *  a plan would push the run past `runs.item_cap`; tool handlers turn it
+ *  into a teaching error. */
+export class ItemCapError extends Error {
+  constructor(cap: number, wouldBe: number) {
+    super(
+      `this would put the run at ${wouldBe} items — over its cap of ${cap}. ` +
+        `Split the work into a separate run (run_plan), or plan fewer, larger steps.`,
+    );
+    this.name = 'ItemCapError';
+  }
+}
+
+/** Count every node (groups included) a plan subtree would insert. */
+function countPlanNodes(node: PlanNode): number {
+  return isGroup(node) ? 1 + node.children.reduce((n, c) => n + countPlanNodes(c), 0) : 1;
+}
+
 // ── create ───────────────────────────────────────────────────────────────────
 
 /**
@@ -157,7 +175,11 @@ export async function createRun(
         budgetMicroUsd: opts.budgetMicroUsd,
         ...(opts.itemCap !== undefined ? { itemCap: opts.itemCap } : {}),
       })
-      .returning({ id: runs.id });
+      .returning({ id: runs.id, itemCap: runs.itemCap });
+    // WP4: the runaway backstop, enforced at birth — a plan bigger than the
+    // cap refuses with a teaching error (transaction rolls back, no run).
+    const planSize = countPlanNodes(opts.plan);
+    if (planSize > run!.itemCap) throw new ItemCapError(run!.itemCap, planSize);
     const rootId = await insertNode(tx, run!.id, null, 0, opts.plan);
     await tx.update(runs).set({ rootItemId: rootId }).where(eq(runs.id, run!.id));
 
@@ -243,7 +265,17 @@ export async function claimItem(db: Db | Tx, itemId: string): Promise<RunItemRow
       deadlineAt: sql`now() + make_interval(secs => ${timeout})`,
       updatedAt: sql`now()`,
     })
-    .where(and(eq(runItems.id, itemId), eq(runItems.state, 'ready')))
+    .where(
+      and(
+        eq(runItems.id, itemId),
+        eq(runItems.state, 'ready'),
+        // WP4: pause gates NEW WORK at the claim, never at promote (a
+        // refused promotion would leave a queued child nothing re-promotes
+        // — the wedge the audit's amendment 1 exists to prevent). A paused
+        // run's ready items stay ready; resume re-dispatches them.
+        sql`exists (select 1 from ${runs} r where r.id = ${runItems.runId} and r.status = 'running')`,
+      ),
+    )
     .returning();
   return row ?? null;
 }
@@ -276,7 +308,14 @@ export async function claimWorkerItem(
       .where(and(eq(runItems.id, itemId), eq(runItems.kind, 'worker_invoke')));
     if (!target || target.state !== 'ready') return { item: null };
     // Serialize per-run cap decisions on the run row.
-    await tx.select({ id: runs.id }).from(runs).where(eq(runs.id, target.runId)).for('update');
+    const [run] = await tx
+      .select({ id: runs.id, status: runs.status })
+      .from(runs)
+      .where(eq(runs.id, target.runId))
+      .for('update');
+    // WP4: a paused run claims nothing (not `capped` — no re-wake wanted;
+    // resume re-dispatches its ready items).
+    if (!run || run.status !== 'running') return { item: null };
     const [{ n }] = (await tx
       .select({ n: sql<number>`count(*)::int` })
       .from(runItems)
@@ -395,6 +434,53 @@ export async function completeItem(
 
     const actions: PostCommitAction[] = [];
     await onTerminal(tx, item, opts.state, actions);
+
+    // WP4: cost honesty + budget enforcement, under the run lock already
+    // held (C5 — race-free; increment only because the item CAS above
+    // returned a row). Ordered AFTER onTerminal (amendment 2): if this very
+    // completion finished the root, the run left 'running' in this
+    // transaction and the pause CAS below no-ops — a finished run is never
+    // paused.
+    if (typeof opts.costMicroUsd === 'number' && opts.costMicroUsd > 0) {
+      const [r] = await tx
+        .update(runs)
+        .set({
+          spentMicroUsd: sql`${runs.spentMicroUsd} + ${opts.costMicroUsd}`,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(runs.id, pre.runId))
+        .returning({
+          status: runs.status,
+          budget: runs.budgetMicroUsd,
+          spent: runs.spentMicroUsd,
+          title: runs.title,
+          ownerId: runs.ownerId,
+        });
+      if (r && r.status === 'running' && r.budget !== null && r.spent > r.budget) {
+        const [paused] = await tx
+          .update(runs)
+          .set({ status: 'paused', pausedAt: sql`now()`, updatedAt: sql`now()` })
+          .where(and(eq(runs.id, pre.runId), eq(runs.status, 'running')))
+          .returning({ id: runs.id });
+        if (paused) {
+          // The "raise or cancel?" surface — same pending-approvals queue as
+          // ask_human. agent_id NULL for the same FK reason (see promote).
+          await tx.insert(pendingToolCalls).values({
+            ownerId: r.ownerId,
+            toolSlug: 'run_budget',
+            args: {
+              question:
+                `Run "${r.title}" has spent $${(r.spent / 1e6).toFixed(2)} of its ` +
+                `$${(r.budget / 1e6).toFixed(2)} budget and is PAUSED. Approve to raise ` +
+                `the budget by another $${(r.budget / 1e6).toFixed(2)} and resume; reject to cancel the run.`,
+              run_id: pre.runId,
+              budget_micro_usd: r.budget,
+              spent_micro_usd: r.spent,
+            },
+          });
+        }
+      }
+    }
 
     // Slot release (plan §5): a worker finishing frees a cap slot — wake the
     // cap-waiting `ready` worker items in this run. Duplicates are harmless
@@ -557,7 +643,10 @@ async function completeGroup(
 }
 
 /** The root reached a terminal state — close the run and wake the responder.
- *  CAS on status='running' so a cancelled run doesn't resume. */
+ *  CAS on status IN ('running','paused') so a cancelled run doesn't resume —
+ *  but a PAUSED run whose in-flight items drove the counter to completion
+ *  finalizes normally (WP4 amendment 2: a run must never sit paused with a
+ *  sealed root and no resume). */
 async function finalizeRun(
   tx: Tx,
   runId: string,
@@ -569,7 +658,7 @@ async function finalizeRun(
   const [run] = await tx
     .update(runs)
     .set({ status, completedAt: sql`now()`, updatedAt: sql`now()` })
-    .where(and(eq(runs.id, runId), eq(runs.status, 'running')))
+    .where(and(eq(runs.id, runId), inArray(runs.status, ['running', 'paused'])))
     .returning({ id: runs.id });
   if (run) actions.push({ type: 'resume', runId, groupId: rootItemId });
 }
@@ -736,6 +825,20 @@ export async function appendChildren(
       throw new SealedGroupError(group.id);
     }
 
+    // WP4: item-cap check under the run lock (append races serialize there).
+    const [{ existing }] = (await tx
+      .select({ existing: sql<number>`count(*)::int` })
+      .from(runItems)
+      .where(eq(runItems.runId, group.runId))) as [{ existing: number }];
+    const adding = opts.children.reduce((n, c) => n + countPlanNodes(c), 0);
+    const [capRow] = await tx
+      .select({ itemCap: runs.itemCap })
+      .from(runs)
+      .where(eq(runs.id, group.runId));
+    if (capRow && existing + adding > capRow.itemCap) {
+      throw new ItemCapError(capRow.itemCap, existing + adding);
+    }
+
     const itemIds: string[] = [];
     for (let i = 0; i < opts.children.length; i++) {
       itemIds.push(
@@ -765,15 +868,18 @@ export async function appendChildren(
 
 /**
  * Cancel a whole run (the responder Stop signal maps here). Marks the run
- * cancelled FIRST (CAS on 'running' — so the root's completion path won't
- * emit a resume), then cancels the root and its subtree. Idempotent.
+ * cancelled FIRST (CAS on 'running' OR 'paused' — a budget-paused run must
+ * stay cancellable, WP4 amendment 2; the root's completion path still won't
+ * emit a resume), then cancels the root and its subtree. Idempotent. The
+ * sweep's janitor expires any pending ask_human / run_budget rows the
+ * cancellation orphans.
  */
 export async function cancelRun(db: Db, runId: string): Promise<{ cancelled: boolean }> {
   return db.transaction(async (tx) => {
     const [run] = await tx
       .update(runs)
       .set({ status: 'cancelled', completedAt: sql`now()`, updatedAt: sql`now()` })
-      .where(and(eq(runs.id, runId), eq(runs.status, 'running')))
+      .where(and(eq(runs.id, runId), inArray(runs.status, ['running', 'paused'])))
       .returning({ rootItemId: runs.rootItemId });
     if (!run) return { cancelled: false };
     if (run.rootItemId) {

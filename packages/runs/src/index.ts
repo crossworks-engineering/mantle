@@ -53,3 +53,10 @@ export {
   type AuditVerdictResult,
 } from './audit';
 export { applyHumanAnswer, type HumanAnswerResult } from './human';
+export {
+  applyBudgetDecision,
+  budgetRunId,
+  RUN_BUDGET_TOOL_SLUG,
+  type BudgetDecisionResult,
+} from './budget';
+export { ItemCapError } from './engine';

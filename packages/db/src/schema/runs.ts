@@ -47,12 +47,24 @@ export const runs = pgTable(
     /** Root group item. Set right after the root insert (circular otherwise). */
     rootItemId: uuid('root_item_id'),
     title: text('title').notNull(),
-    /** 'running' | 'done' | 'failed' | 'cancelled' — CHECK in the migration. */
+    /** 'running' | 'paused' | 'done' | 'failed' | 'cancelled' — CHECK in the
+     *  migration (0132 added 'paused'). 'paused' is entered ONLY by the
+     *  budget CAS; finalize/cancel CAS from ('running','paused'). */
     status: text('status').notNull().default('running'),
     /** Auto-pause budget in micro-USD (1e6 per USD; integer math like
-     *  traces.cost_micro_usd). NULL = no budget. Enforced from slice 3. */
+     *  traces.cost_micro_usd). NULL = no budget. Enforced since slice 3 WP4:
+     *  crossing it pauses the run (status CAS under the run lock) and queues
+     *  a "raise or cancel?" pending row. */
     budgetMicroUsd: bigint('budget_micro_usd', { mode: 'number' }),
-    /** Runaway-append backstop (slice 3 enforcement). */
+    /** Micro-USD actually spent — accumulated by completeItem under the run
+     *  row lock (race-free by the lockRunRow rule; failed items count too —
+     *  cost honesty). */
+    spentMicroUsd: bigint('spent_micro_usd', { mode: 'number' }).notNull().default(0),
+    /** When the budget pause landed; resume shifts READY audit/ask_human
+     *  deadlines by the paused duration (running items keep their clocks). */
+    pausedAt: timestamp('paused_at', { withTimezone: true }),
+    /** Runaway-append backstop — createRun/appendChildren refuse past it
+     *  with a teaching error (slice 3 WP4). */
     itemCap: integer('item_cap').notNull().default(200),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

@@ -6,7 +6,13 @@
 
 import { and, desc, eq } from 'drizzle-orm';
 import { db, pendingToolCalls, type PendingToolCall, tools as toolsTable } from '@mantle/db';
-import { applyHumanAnswer, enqueueRunActionsSafe } from '@mantle/runs';
+import {
+  applyBudgetDecision,
+  applyHumanAnswer,
+  budgetRunId,
+  enqueueRunActionsSafe,
+  RUN_BUDGET_TOOL_SLUG,
+} from '@mantle/runs';
 import { dispatchTool } from './dispatch';
 import { notifyPendingChanged } from './pending-notify';
 import { startTrace, step } from '@mantle/tracing';
@@ -136,11 +142,54 @@ async function settleAskHuman(
   return updated ? toSummary(updated) : null;
 }
 
+/** A runner budget pause (WP4): approve raises the budget and resumes the
+ *  run; reject cancels it. The row expires with a teaching error when the
+ *  run left 'paused' first. */
+async function settleBudget(
+  row: PendingToolCall,
+  decision: 'raise' | 'cancel',
+): Promise<PendingSummary | null> {
+  const runId = budgetRunId((row.args ?? null) as Record<string, unknown> | null);
+  if (!runId) {
+    const [errRow] = await db
+      .update(pendingToolCalls)
+      .set({ error: 'run_budget row has no run_id ref — cannot apply', updatedAt: new Date() })
+      .where(eq(pendingToolCalls.id, row.id))
+      .returning();
+    return errRow ? toSummary(errRow) : null;
+  }
+  const res = await applyBudgetDecision(db, { runId, decision });
+  if (!res.ok) {
+    const [expiredRow] = await db
+      .update(pendingToolCalls)
+      .set({ status: 'expired', error: res.error, executedAt: new Date(), updatedAt: new Date() })
+      .where(eq(pendingToolCalls.id, row.id))
+      .returning();
+    return expiredRow ? toSummary(expiredRow) : null;
+  }
+  if (res.outcome === 'raised') await enqueueRunActionsSafe(res.actions);
+  const [updated] = await db
+    .update(pendingToolCalls)
+    .set({
+      result: {
+        run_id: runId,
+        outcome: res.outcome,
+        ...(res.outcome === 'raised' ? { new_budget_micro_usd: res.newBudgetMicroUsd } : {}),
+      },
+      executedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(pendingToolCalls.id, row.id))
+    .returning();
+  return updated ? toSummary(updated) : null;
+}
+
 /**
  * Mark a pending call rejected. For ordinary tool calls: no execution, just
  * a status flip. For runner `ask_human` questions: ALSO completes the run
  * item `failed({type:'rejected'})` so the run advances (a question left
- * dangling after a rejection would wedge its group forever).
+ * dangling after a rejection would wedge its group forever). For runner
+ * `run_budget` pauses: cancels the run (the "or cancel" arm).
  * Returns the updated summary or null if not found / already decided.
  */
 export async function rejectPendingCall(
@@ -166,6 +215,9 @@ export async function rejectPendingCall(
   if (row) void notifyPendingChanged(ownerId);
   if (row && row.toolSlug === 'ask_human') {
     return settleAskHuman(row, 'rejected');
+  }
+  if (row && row.toolSlug === RUN_BUDGET_TOOL_SLUG) {
+    return settleBudget(row, 'cancel');
   }
   return row ? toSummary(row) : null;
 }
@@ -211,6 +263,11 @@ export async function approvePendingCall(
   // (there is no registered 'ask_human' tool, by design).
   if (claimed.toolSlug === 'ask_human') {
     return settleAskHuman(claimed, 'answered', opts?.answer);
+  }
+  // Runner budget pause? Raise + resume (there is no 'run_budget' tool
+  // either — WP4's "raise or cancel?" surface).
+  if (claimed.toolSlug === RUN_BUDGET_TOOL_SLUG) {
+    return settleBudget(claimed, 'raise');
   }
 
   // Resolve the tool by slug (not the snapshot at queue time — the

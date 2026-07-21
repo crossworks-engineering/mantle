@@ -35,6 +35,8 @@ import {
 import { claimResume, sweepRuns } from './sweep';
 import { applyAuditVerdict, mechanicalPreCheck } from './audit';
 import { applyHumanAnswer } from './human';
+import { applyBudgetDecision } from './budget';
+import { ItemCapError } from './engine';
 
 const ADMIN_URL = process.env.RUNS_TEST_DATABASE_URL;
 const SCRATCH_DB = 'mantle_runs_engine_test';
@@ -90,7 +92,11 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     await admin.unsafe(`CREATE DATABASE ${SCRATCH_DB}`);
 
     client = postgres(scratchUrl(ADMIN_URL!), { max: 10, prepare: false });
-    for (const file of ['0129_runs.sql', '0130_runs_resume_marker.sql']) {
+    for (const file of [
+      '0129_runs.sql',
+      '0130_runs_resume_marker.sql',
+      '0132_runs_budget_pause.sql',
+    ]) {
       const migration = readFileSync(
         join(dirname(fileURLToPath(import.meta.url)), '../../db/migrations/', file),
         'utf8',
@@ -877,5 +883,169 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     expect((await itemRow(after!.id)).state).toBe('ready');
     expect(swept.questionsExpired).toBeGreaterThanOrEqual(1);
     expect((await pendingRowFor(ask!.id))[0]!.status).toBe('expired');
+  });
+
+  // ── budget / item-cap auto-pause (slice 3 WP4) ─────────────────────────────
+
+  async function budgetRowsFor(runId: string) {
+    const rows = (await db.execute(
+      sql`SELECT id, status, error FROM pending_tool_calls WHERE tool_slug = 'run_budget' AND args->>'run_id' = ${runId}`,
+    )) as unknown as Array<{ id: string; status: string; error: string | null }>;
+    return rows;
+  }
+
+  it('crossing the budget pauses the run and gates claims', SLOW, async () => {
+    const { runId, rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'budget pause',
+      budgetMicroUsd: 100_000, // $0.10
+      plan: { kind: 'seq', children: [note('a'), note('b')] },
+    });
+    const [a, b] = await children(rootItemId);
+    await claimItem(db, a!.id);
+    // Completing a crosses the budget; the same transaction promotes b (the
+    // amended rule: promotion PROCEEDS under pause) and then pauses the run.
+    const res = await completeItem(db, {
+      itemId: a!.id,
+      state: 'done',
+      costMicroUsd: 150_000,
+    });
+    expect(res.completed).toBe(true);
+    expect(dispatches(res)).toHaveLength(1); // b promoted ready
+    const run = await runRow(runId);
+    expect(run.status).toBe('paused');
+    expect(run.pausedAt).not.toBeNull();
+    expect(run.spentMicroUsd).toBe(150_000);
+    expect((await budgetRowsFor(runId))[0]!.status).toBe('pending');
+    // The gate is the CLAIM, not the promotion.
+    expect((await itemRow(b!.id)).state).toBe('ready');
+    expect(await claimItem(db, b!.id)).toBeNull();
+
+    // Raise: budget grows by one original budget, run resumes, ready work
+    // re-emits, claims succeed again.
+    const raised = await applyBudgetDecision(db, { runId, decision: 'raise' });
+    if (!raised.ok || raised.outcome !== 'raised') throw new Error('raise failed');
+    expect(raised.newBudgetMicroUsd).toBe(250_000);
+    expect(raised.actions.filter((x) => x.type === 'dispatch')).toHaveLength(1);
+    expect((await runRow(runId)).status).toBe('running');
+    expect(await claimItem(db, b!.id)).not.toBeNull();
+    const done = await completeItem(db, { itemId: b!.id, state: 'done', costMicroUsd: 10_000 });
+    expect(resumes(done)).toHaveLength(1);
+    expect((await runRow(runId)).status).toBe('done');
+    expect((await runRow(runId)).spentMicroUsd).toBe(160_000);
+  });
+
+  it('crossing on the FINAL completion finishes the run — never paused', SLOW, async () => {
+    const { runId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'budget final',
+      budgetMicroUsd: 10_000,
+      plan: { kind: 'seq', children: [note('only')] },
+    });
+    const [only] = await children((await runRow(runId)).rootItemId!);
+    await claimItem(db, only!.id);
+    const res = await completeItem(db, { itemId: only!.id, state: 'done', costMicroUsd: 50_000 });
+    expect(resumes(res)).toHaveLength(1);
+    expect((await runRow(runId)).status).toBe('done'); // amendment 2, first half
+    expect(await budgetRowsFor(runId)).toHaveLength(0);
+  });
+
+  it('in-flight completions finish a paused run (finalize from paused)', SLOW, async () => {
+    const { runId, rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'budget in-flight',
+      budgetMicroUsd: 10_000,
+      plan: { kind: 'par', children: [note('a'), note('b')] },
+    });
+    const [a, b] = await children(rootItemId);
+    await claimItem(db, a!.id);
+    await claimItem(db, b!.id); // both in flight BEFORE the pause
+    const first = await completeItem(db, { itemId: a!.id, state: 'done', costMicroUsd: 20_000 });
+    expect(first.completed).toBe(true);
+    expect((await runRow(runId)).status).toBe('paused');
+    // The in-flight sibling still completes (pause gates NEW work only) and
+    // its completion finalizes the run from 'paused' with the one resume.
+    const second = await completeItem(db, { itemId: b!.id, state: 'done', costMicroUsd: 5_000 });
+    expect(second.completed).toBe(true);
+    expect(resumes(second)).toHaveLength(1);
+    expect((await runRow(runId)).status).toBe('done');
+    // The moot budget question expires on the next sweep.
+    const swept = await sweepRuns(db);
+    expect(swept.questionsExpired).toBeGreaterThanOrEqual(1);
+    expect((await budgetRowsFor(runId))[0]!.status).toBe('expired');
+  });
+
+  it('reject cancels a paused run; decisions on non-paused runs refuse', SLOW, async () => {
+    const { runId, rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'budget cancel',
+      budgetMicroUsd: 1_000,
+      plan: { kind: 'seq', children: [note('a'), note('b')] },
+    });
+    const [a] = await children(rootItemId);
+    await claimItem(db, a!.id);
+    await completeItem(db, { itemId: a!.id, state: 'done', costMicroUsd: 5_000 });
+    expect((await runRow(runId)).status).toBe('paused');
+    const res = await applyBudgetDecision(db, { runId, decision: 'cancel' });
+    expect(res.ok && res.outcome === 'cancelled').toBe(true);
+    expect((await runRow(runId)).status).toBe('cancelled');
+    // A second decision refuses — the run is no longer paused.
+    const dup = await applyBudgetDecision(db, { runId, decision: 'raise' });
+    expect(dup.ok).toBe(false);
+  });
+
+  it('raise shifts READY audit deadlines by the paused duration', SLOW, async () => {
+    const { runId, rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'budget deadline shift',
+      budgetMicroUsd: 1_000,
+      plan: {
+        kind: 'seq',
+        children: [note('work'), { kind: 'audit' as const, payload: {} }],
+      },
+    });
+    const [work, audit] = await children(rootItemId);
+    await claimItem(db, work!.id);
+    // Completing work promotes the audit (deadline stamps, resume emitted)
+    // and THEN pauses — order inside the same transaction.
+    const res = await completeItem(db, { itemId: work!.id, state: 'done', costMicroUsd: 9_000 });
+    expect(resumes(res)).toHaveLength(1);
+    expect((await runRow(runId)).status).toBe('paused');
+    const before = (await itemRow(audit!.id)).deadlineAt!;
+    // Backdate the pause so the shift is unambiguous.
+    await db
+      .update(runs)
+      .set({ pausedAt: sql`now() - interval '10 minutes'` })
+      .where(eq(runs.id, runId));
+    const raised = await applyBudgetDecision(db, { runId, decision: 'raise' });
+    if (!raised.ok || raised.outcome !== 'raised') throw new Error('raise failed');
+    const after = (await itemRow(audit!.id)).deadlineAt!;
+    expect(after.getTime() - before.getTime()).toBeGreaterThan(5 * 60 * 1000);
+    // The unclaimed audit's resume is re-emitted inline.
+    expect(raised.actions.filter((x) => x.type === 'resume')).toHaveLength(1);
+  });
+
+  it('item_cap refuses oversized plans and oversized appends', SLOW, async () => {
+    await expect(
+      createRun(db, {
+        ownerId: OWNER,
+        title: 'over cap',
+        itemCap: 3,
+        plan: { kind: 'seq', children: [note('a'), note('b'), note('c')] }, // 4 nodes incl. root
+      }),
+    ).rejects.toBeInstanceOf(ItemCapError);
+
+    const { rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'append cap',
+      itemCap: 4,
+      plan: { kind: 'seq', children: [note('a'), note('b')] }, // 3 nodes
+    });
+    await expect(
+      appendChildren(db, { groupId: rootItemId, children: [note('c'), note('d')] }), // would be 5
+    ).rejects.toBeInstanceOf(ItemCapError);
+    // A fitting append still lands.
+    const okAppend = await appendChildren(db, { groupId: rootItemId, children: [note('c')] });
+    expect(okAppend.itemIds).toHaveLength(1);
   });
 });

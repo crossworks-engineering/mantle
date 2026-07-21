@@ -25,6 +25,7 @@ import {
   ensureWorkerAgent,
   enqueueRunActionsSafe,
   isRunsEnabled,
+  ItemCapError,
   listWorkerAgents,
   renderRunStateText,
   SealedGroupError,
@@ -332,6 +333,12 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       type: 'object',
       properties: {
         title: { type: 'string', description: 'Short human-readable goal, shown in the run view.' },
+        budget_usd: {
+          type: 'number',
+          minimum: 0.01,
+          description:
+            'Auto-pause budget in USD. Crossing it pauses the run mid-flight and asks the operator to raise or cancel (pending approvals). Omit for no budget.',
+        },
         plan: {
           type: 'object',
           description:
@@ -345,6 +352,13 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       const refused = refuseIfDelegated(ctx);
       if (refused) return refused;
       if (!isRunsEnabled()) return { ok: false, error: DISABLED_ERROR };
+      const budgetUsd =
+        typeof input.budget_usd === 'number' && Number.isFinite(input.budget_usd)
+          ? input.budget_usd
+          : undefined;
+      if (budgetUsd !== undefined && budgetUsd <= 0) {
+        return { ok: false, error: 'budget_usd must be a positive dollar amount (e.g. 0.50)' };
+      }
       const title = typeof input.title === 'string' ? input.title.trim() : '';
       if (!title)
         return { ok: false, error: "title is required — a short goal, e.g. 'Weekly inbox digest'" };
@@ -365,12 +379,20 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
           .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, ctx.agent.slug)));
         agentId = a?.id;
       }
-      const { runId, rootItemId, actions } = await createRun(db, {
-        ownerId: ctx.ownerId,
-        agentId,
-        title,
-        plan: parsed.plan,
-      });
+      let created: Awaited<ReturnType<typeof createRun>>;
+      try {
+        created = await createRun(db, {
+          ownerId: ctx.ownerId,
+          agentId,
+          title,
+          plan: parsed.plan,
+          ...(budgetUsd !== undefined ? { budgetMicroUsd: Math.round(budgetUsd * 1e6) } : {}),
+        });
+      } catch (err) {
+        if (err instanceof ItemCapError) return { ok: false, error: err.message };
+        throw err;
+      }
+      const { runId, rootItemId, actions } = created;
       await enqueueRunActionsSafe(actions);
       const compiled = await compileRunState(db, runId);
       ctx.step?.setMeta({ run_id: runId });
@@ -472,6 +494,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
               `run_state to find an open group, or run_plan for a new run`,
           };
         }
+        if (err instanceof ItemCapError) return { ok: false, error: err.message };
         throw err;
       }
     },
