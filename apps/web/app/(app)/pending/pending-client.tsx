@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, X, FlaskConical } from 'lucide-react';
+import { Check, X, FlaskConical, AlertTriangle } from 'lucide-react';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { SubmitButton } from '@/components/ui/submit-button';
 import { Spinner } from '@/components/ui/spinner';
 import { useRealtime } from '@/components/realtime/use-realtime';
 
@@ -21,6 +23,18 @@ type PendingRow = {
   decidedAt: string | null;
   executedAt: string | null;
 };
+
+/** A decision, optionally carrying a free-text answer (ask_human). */
+type Decide = (id: string, decision: 'approve' | 'reject', answer?: string) => Promise<void>;
+
+function str(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v : null;
+}
+function stringOptions(v: unknown): string[] {
+  return Array.isArray(v)
+    ? v.filter((o): o is string => typeof o === 'string' && o.length > 0)
+    : [];
+}
 
 export function PendingClient({ devMode = false }: { devMode?: boolean }) {
   const queryClient = useQueryClient();
@@ -52,11 +66,14 @@ export function PendingClient({ devMode = false }: { devMode?: boolean }) {
     }
   };
 
-  const decide = async (id: string, decision: 'approve' | 'reject') => {
+  const decide: Decide = async (id, decision, answer) => {
     setBusyId(id);
     setError(undefined);
     try {
-      await apiSend(`/api/pending/${id}`, 'PATCH', { decision });
+      await apiSend(`/api/pending/${id}`, 'PATCH', {
+        decision,
+        ...(answer ? { answer } : {}),
+      });
       await invalidate();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'decision failed');
@@ -123,53 +140,7 @@ export function PendingClient({ devMode = false }: { devMode?: boolean }) {
         ) : (
           <ul className="divide-y divide-border rounded-md border border-border">
             {pending.map((r) => (
-              <li key={r.id} className="space-y-2 px-3 py-3">
-                <div className="flex items-baseline gap-2">
-                  <code className="font-mono font-medium">{r.toolSlug}</code>
-                  <span className="text-xs text-muted-foreground">
-                    queued {fmtRelative(r.createdAt)}
-                  </span>
-                  {r.traceId && (
-                    <a
-                      href={`/traces/${r.traceId}`}
-                      className="ml-auto text-xs underline text-muted-foreground hover:text-foreground"
-                    >
-                      ↗ originating trace
-                    </a>
-                  )}
-                </div>
-                {/* Heavy JSON payloads (tool calls with nested
-                    objects) used to fill the page. Collapsed by
-                    default with `details`; expand inline without
-                    losing scroll position. */}
-                <details className="rounded-md bg-muted/40 px-2 py-1 text-xs">
-                  <summary className="cursor-pointer select-none font-mono text-muted-foreground hover:text-foreground">
-                    args ({Object.keys(r.args ?? {}).length} field
-                    {Object.keys(r.args ?? {}).length === 1 ? '' : 's'})
-                  </summary>
-                  <pre className="mt-1 max-h-64 overflow-auto font-mono">
-                    {JSON.stringify(r.args, null, 2)}
-                  </pre>
-                </details>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => decide(r.id, 'approve')}
-                    disabled={busyId === r.id}
-                    size="sm"
-                    className="bg-emerald-600 text-white hover:bg-emerald-700"
-                  >
-                    <Check /> Approve & run
-                  </Button>
-                  <Button
-                    onClick={() => decide(r.id, 'reject')}
-                    disabled={busyId === r.id}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <X /> Reject
-                  </Button>
-                </div>
-              </li>
+              <PendingCard key={r.id} row={r} decide={decide} busy={busyId === r.id} />
             ))}
           </ul>
         )}
@@ -218,6 +189,141 @@ export function PendingClient({ devMode = false }: { devMode?: boolean }) {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * One pending row. Slug-aware: runner `ask_human` questions render the question
+ * as the headline with one-click option chips + a free-text answer, and
+ * `run_budget` pauses render "Raise budget" / "Cancel run" so the operator
+ * knows the consequence. Everything else keeps the generic approve/reject +
+ * collapsed-args view. A row that is still pending BUT carries an error is a
+ * bounced decision (the v0.157.14 settle-revert path) — surface it loudly.
+ */
+function PendingCard({ row, decide, busy }: { row: PendingRow; decide: Decide; busy: boolean }) {
+  const [answer, setAnswer] = useState('');
+  const isAsk = row.toolSlug === 'ask_human';
+  const isBudget = row.toolSlug === 'run_budget';
+  const question = str(row.args?.['question']);
+  const options = isAsk ? stringOptions(row.args?.['options']) : [];
+  const runId = str(row.args?.['run_id']);
+
+  const approveLabel = isBudget ? 'Raise budget' : 'Approve & run';
+  const rejectLabel = isBudget ? 'Cancel run' : 'Reject';
+
+  return (
+    <li className="space-y-2 px-3 py-3">
+      {/* Bounced decision: the previous approve/reject reverted and must be
+          re-made (settle-revert). Loud + first so it can't be missed. */}
+      {row.error && (
+        <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+          <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
+          <span>
+            <strong className="font-semibold">Previous decision bounced — decide again.</strong>{' '}
+            {row.error}
+          </span>
+        </p>
+      )}
+
+      <div className="flex items-baseline gap-2">
+        <code className="font-mono font-medium">{row.toolSlug}</code>
+        <span className="text-xs text-muted-foreground">queued {fmtRelative(row.createdAt)}</span>
+        {runId && (
+          <a
+            href={`/runs?run=${runId}`}
+            className="text-xs underline text-muted-foreground hover:text-foreground"
+          >
+            ↗ run
+          </a>
+        )}
+        {row.traceId && (
+          <a
+            href={`/traces/${row.traceId}`}
+            className="ml-auto text-xs underline text-muted-foreground hover:text-foreground"
+          >
+            ↗ originating trace
+          </a>
+        )}
+      </div>
+
+      {/* The question is the headline for a human-answerable gate. */}
+      {(isAsk || isBudget) && question && <p className="text-sm text-foreground">{question}</p>}
+
+      {/* One-click option chips: each approves with that answer. */}
+      {isAsk && options.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {options.map((opt) => (
+            <Button
+              key={opt}
+              onClick={() => decide(row.id, 'approve', opt)}
+              disabled={busy}
+              size="sm"
+              variant="outline"
+            >
+              {opt}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {/* Free-text answer for ask_human — submit approves the run with it. */}
+      {isAsk && (
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const a = answer.trim();
+            if (!a) return;
+            void decide(row.id, 'approve', a);
+            setAnswer('');
+          }}
+        >
+          <Input
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            placeholder="Type an answer…"
+            maxLength={4000}
+            disabled={busy}
+            className="h-9"
+          />
+          <SubmitButton pending={busy} disabled={!answer.trim()} size="sm">
+            <Check /> Answer &amp; approve
+          </SubmitButton>
+        </form>
+      )}
+
+      {/* Generic tool payload: collapsed args (kept for non-question rows). */}
+      {!isAsk && !isBudget && (
+        <details className="rounded-md bg-muted/40 px-2 py-1 text-xs">
+          <summary className="cursor-pointer select-none font-mono text-muted-foreground hover:text-foreground">
+            args ({Object.keys(row.args ?? {}).length} field
+            {Object.keys(row.args ?? {}).length === 1 ? '' : 's'})
+          </summary>
+          <pre className="mt-1 max-h-64 overflow-auto font-mono">
+            {JSON.stringify(row.args, null, 2)}
+          </pre>
+        </details>
+      )}
+
+      <div className="flex gap-2">
+        <Button
+          onClick={() => decide(row.id, 'approve')}
+          disabled={busy}
+          size="sm"
+          className="bg-emerald-600 text-white hover:bg-emerald-700"
+        >
+          <Check /> {approveLabel}
+        </Button>
+        <Button
+          onClick={() => decide(row.id, 'reject')}
+          disabled={busy}
+          size="sm"
+          variant="outline"
+        >
+          <X /> {rejectLabel}
+        </Button>
+      </div>
+    </li>
   );
 }
 
