@@ -138,11 +138,19 @@ export async function applyAuditVerdict(
   };
 
   if (opts.verdict === 'pass') {
-    const { actions } = await completeItem(db, {
+    const { completed, actions } = await completeItem(db, {
       itemId: audit.id,
       state: 'done',
       result: baseResult,
     });
+    if (!completed) {
+      // The state check above raced a concurrent completion (most likely the
+      // sweep timing the audit out) — the verdict was NOT recorded.
+      return {
+        ok: false,
+        error: `audit ${audit.id} was completed concurrently (likely swept as timed out) — verdict not recorded; run_state shows the outcome`,
+      };
+    }
     return { ok: true, outcome: 'pass', actions };
   }
 
@@ -199,6 +207,17 @@ export async function applyAuditVerdict(
     state: 'done',
     result: { ...baseResult, superseded_item: audited.id, replacement_item: newWorkerId },
   });
+  if (!completed.completed) {
+    // Swept mid-verdict: the replacement + fresh audit are already appended
+    // (they will run either way), but this audit's row shows the sweep's
+    // timeout, not the verdict. Tell the caller the truth.
+    return {
+      ok: false,
+      error:
+        `audit ${audit.id} was completed concurrently (likely swept as timed out) — the redo ` +
+        `steps WERE appended and will run, but this verdict was not recorded on the audit item`,
+    };
+  }
   return {
     ok: true,
     outcome: 'redo',

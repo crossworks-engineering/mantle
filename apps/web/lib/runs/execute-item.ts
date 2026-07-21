@@ -14,20 +14,10 @@
 import { eq } from 'drizzle-orm';
 import { db, runItems, runs as runsTable, type RunItemFailure, type RunItemRow } from '@mantle/db';
 import { claimItem, completeItem, requeueForRetry, type PostCommitAction } from '@mantle/runs';
-import { dispatchTool, resolveTool, validateToolArgs } from '@mantle/tools';
+import { BANNED_ITEM_TOOLS, dispatchTool, resolveTool, validateToolArgs } from '@mantle/tools';
 import { currentTrace, startTrace, step } from '@mantle/tracing';
 
 import { executeWorkerInvoke } from './execute-worker';
-
-/** Tools that must never execute as queue items even if a plan sneaks one
- *  past the plan-time ban (defense in depth with builtins-runs.ts). */
-const BANNED_ITEM_TOOLS = new Set([
-  'run_plan',
-  'run_append',
-  'run_state',
-  'run_cancel',
-  'invoke_agent',
-]);
 
 /** Cap what lands in `run_items.result.output` — the compiled state wants
  *  one-liners; the full output lives on the item's trace step. */

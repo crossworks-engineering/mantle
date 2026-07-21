@@ -17,7 +17,9 @@ type WorkerStat = {
   model: string | null;
   accepted: number;
   redone: number;
+  needsHuman: number;
   failed: number;
+  unaudited: number;
   acceptanceRate: number | null;
 };
 
@@ -213,7 +215,9 @@ export function RunsClient() {
                 {w.model && <span className="text-muted-foreground"> ({w.model})</span>}{' '}
                 {w.acceptanceRate != null ? `${Math.round(w.acceptanceRate * 100)}%` : '—'}{' '}
                 <span className="text-muted-foreground">
-                  ({w.accepted} accepted · {w.redone} redone · {w.failed} failed)
+                  ({w.accepted} accepted · {w.redone} redone
+                  {w.needsHuman > 0 && ` · ${w.needsHuman} needs-human`} · {w.failed} failed
+                  {w.unaudited > 0 && ` · ${w.unaudited} unaudited`})
                 </span>
               </span>
             ))}

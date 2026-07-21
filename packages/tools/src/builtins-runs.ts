@@ -38,13 +38,20 @@ import { resolveTools } from './dispatch';
 import { notFound } from './errors';
 
 /** Tools that may never run as queue items: the run tools themselves (no
- *  recursion) and delegation (a headless item has no parent-agent context —
- *  fail at PLAN time with a clear error, not at execution). */
-const BANNED_ITEM_TOOLS = new Set([
+ *  recursion — `run_audit` especially, or a queue item could rubber-stamp the
+ *  audit gate headlessly) and delegation (a headless item has no parent-agent
+ *  context — fail at PLAN time with a clear error, not at execution).
+ *
+ *  SINGLE SOURCE: `execute-item.ts` imports this set for the execution-time
+ *  re-check (defense in depth), and `builtins-runs.test.ts` asserts every
+ *  RUN_TOOLS slug is in it — add a run_* tool and the test fails until it's
+ *  banned here too. */
+export const BANNED_ITEM_TOOLS: ReadonlySet<string> = new Set([
   'run_plan',
   'run_append',
   'run_state',
   'run_cancel',
+  'run_audit',
   'invoke_agent',
 ]);
 
@@ -400,11 +407,27 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       if (workerError) return { ok: false, error: workerError };
       // Ownership of the group: it must belong to this run.
       const [group] = await db
-        .select({ id: runItems.id, runId: runItems.runId })
+        .select({ id: runItems.id, runId: runItems.runId, kind: runItems.kind })
         .from(runItems)
         .where(eq(runItems.id, groupId));
       if (!group || group.runId !== run.id) {
         return notFound('run group', groupId, 'run_state');
+      }
+      // The parser saw a throwaway seq wrapper, so re-check the audit rule
+      // against the REAL target: an audit appended into a par group could
+      // never drive a redo (it would fail needs_human at verdict time) —
+      // teach that now instead.
+      if (
+        group.kind === 'group_par' &&
+        (parsed.plan as PlanGroup).children.some((c) => c.kind === 'audit')
+      ) {
+        return {
+          ok: false,
+          error:
+            `group ${groupId} is a par group — audits belong in a 'seq' group directly after ` +
+            `the worker_invoke step they judge (par audits can't drive a redo cycle). ` +
+            `Append a seq group containing worker_invoke + audit instead.`,
+        };
       }
       try {
         const { itemIds, actions } = await appendChildren(db, {
@@ -439,6 +462,8 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       },
     },
     handler: async (input, ctx) => {
+      const refused = refuseIfDelegated(ctx);
+      if (refused) return refused;
       if (typeof input.run_id === 'string' && input.run_id.trim()) {
         const run = await loadOwnedRun(ctx.ownerId, input.run_id);
         if (!run) return notFound('run', String(input.run_id), 'run_state');
@@ -491,6 +516,10 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
       required: ['run_id'],
     },
     handler: async (input, ctx) => {
+      // Depth guard on the read/stop tools too (§2.7 "every run_* tool"): a
+      // delegated worker must never cancel the run it is a step of.
+      const refused = refuseIfDelegated(ctx);
+      if (refused) return refused;
       const run = await loadOwnedRun(ctx.ownerId, input.run_id);
       if (!run) return notFound('run', String(input.run_id ?? ''), 'run_state');
       const { cancelled } = await cancelRun(db, run.id);

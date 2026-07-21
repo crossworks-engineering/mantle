@@ -45,6 +45,25 @@ import { RUN_TOOL_QUEUE, RUN_WORKER_QUEUE } from './queues';
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
+/**
+ * LOCK ORDERING RULE (audit 2026-07-21): every transaction that takes MORE
+ * THAN ONE run_items/runs row lock in a run must acquire the RUN row lock
+ * first. Without it, completion (child → parent, engine.ts) and bulk
+ * cancellation (parent → subtree, `cancelSubtreeItems` via fail_fast or
+ * cancelRun) lock in opposite orders and deadlock — e.g. a par child failing
+ * (fail_fast cancels its running sibling) while that sibling completes.
+ * Holders: `completeItem`, `appendChildren`, `claimWorkerItem` (cap check),
+ * `cancelRun` (its first statement UPDATEs the runs row — same lock).
+ * Single-statement CAS helpers (`claimItem`, `supersedeItem`,
+ * `requeueForRetry`) take one lock and are exempt. Cost: completions within
+ * one run serialize on the run row — they already serialized on the parent
+ * row for the counter, so the loss is only cross-group parallelism inside a
+ * single run, which is noise at run scale.
+ */
+async function lockRunRow(tx: Tx, runId: string): Promise<void> {
+  await tx.select({ id: runs.id }).from(runs).where(eq(runs.id, runId)).for('update');
+}
+
 /** pg-boss enqueues owed after the surrounding transaction commits.
  *  `sideEffecting` rides on dispatch actions so the sender can set transport
  *  `retryLimit: 0` for side-effecting items (§5b: exempt from BOTH retry
@@ -294,22 +313,20 @@ export async function supersedeItem(
 
 /**
  * Semantic retry (distinct from pg-boss transport retries): put a RUNNING
- * item back to `ready` for another attempt, bumping `attempt` and re-stamping
- * the deadline. Returns the dispatch action, or null when the item isn't
- * running anymore (cancelled / swept — the retry loses). Callers enforce the
- * policy (`retry_policy.maxAttempts`, never side-effecting) before calling.
+ * item back to `ready` for another attempt, bumping `attempt`. The deadline
+ * clears — ready items have NULL deadlines by contract (execution budget
+ * stamps at CLAIM; ready limbo is the sweep's lost-job territory). Returns
+ * the dispatch action, or null when the item isn't running anymore
+ * (cancelled / swept — the retry loses). Callers enforce the policy
+ * (`retry_policy.maxAttempts`, never side-effecting) before calling.
  */
-export async function requeueForRetry(
-  db: Db,
-  itemId: string,
-  timeoutSeconds: number = DEFAULT_LEAF_TIMEOUT_SECONDS,
-): Promise<PostCommitAction | null> {
+export async function requeueForRetry(db: Db, itemId: string): Promise<PostCommitAction | null> {
   const [row] = await db
     .update(runItems)
     .set({
       state: 'ready',
       attempt: sql`${runItems.attempt} + 1`,
-      deadlineAt: sql`now() + make_interval(secs => ${timeoutSeconds})`,
+      deadlineAt: null,
       updatedAt: sql`now()`,
     })
     .where(and(eq(runItems.id, itemId), eq(runItems.state, 'running')))
@@ -347,6 +364,15 @@ export async function completeItem(
   },
 ): Promise<{ completed: boolean; actions: PostCommitAction[] }> {
   return db.transaction(async (tx) => {
+    // Lock-ordering rule: run row FIRST (see lockRunRow). The pre-read is
+    // un-locked and may be stale; the CAS below stays the correctness gate.
+    const [pre] = await tx
+      .select({ runId: runItems.runId })
+      .from(runItems)
+      .where(eq(runItems.id, opts.itemId));
+    if (!pre) return { completed: false, actions: [] };
+    await lockRunRow(tx, pre.runId);
+
     const result =
       opts.result || opts.failure
         ? { ...(opts.result ?? {}), ...(opts.failure ? { failure: opts.failure } : {}) }
@@ -383,7 +409,7 @@ export async function completeItem(
             eq(runItems.state, 'ready'),
           ),
         )
-        .limit(3);
+        .limit(workerConcurrencyCap());
       for (const w of waiting) {
         actions.push({
           type: 'dispatch',
@@ -643,6 +669,13 @@ export async function appendChildren(
 ): Promise<{ itemIds: string[]; actions: PostCommitAction[] }> {
   if (opts.children.length === 0) return { itemIds: [], actions: [] };
   return db.transaction(async (tx) => {
+    // Lock-ordering rule: run row FIRST (see lockRunRow), then the group row.
+    const [ref] = await tx
+      .select({ runId: runItems.runId })
+      .from(runItems)
+      .where(eq(runItems.id, opts.groupId));
+    if (!ref) throw new Error(`run group ${opts.groupId} not found`);
+    await lockRunRow(tx, ref.runId);
     const [group] = await tx
       .select()
       .from(runItems)

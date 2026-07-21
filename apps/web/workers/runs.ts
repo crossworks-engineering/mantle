@@ -20,6 +20,7 @@
  * container brings the engine live.
  */
 import PgBoss from 'pg-boss';
+import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
 import { startProcessHeartbeat } from '@mantle/content';
 import { registerHeartbeatTools } from '@mantle/heartbeats';
@@ -55,6 +56,22 @@ async function main() {
 
   if (!isRunsEnabled()) {
     console.log('[runs] MANTLE_RUNS is not set — runner queues disabled; worker idling.');
+    // Flag flipped off with runs in flight? Nothing executes AND nothing
+    // times out (no sweep) — those runs sit 'running' forever. Cancel them
+    // (run_cancel stays live) or re-enable; warn loudly either way.
+    try {
+      const [{ n }] = (await db.execute(
+        sql`SELECT count(*)::int AS n FROM runs WHERE status = 'running'`,
+      )) as unknown as [{ n: number }];
+      if (n > 0) {
+        console.warn(
+          `[runs] WARNING: ${n} run(s) still 'running' while MANTLE_RUNS is off — they will ` +
+            `not execute, time out, or resume. Cancel them with run_cancel or re-enable the flag.`,
+        );
+      }
+    } catch (err) {
+      console.error('[runs] stranded-run check failed:', err);
+    }
     return; // heartbeat keeps ticking; compose stays green
   }
 
@@ -64,13 +81,17 @@ async function main() {
   await ensureRunQueues(boss);
   await boss.createQueue(SWEEP_QUEUE);
 
-  // Fast lane: tool_call / note items. Small batch — items are typically
-  // sub-second tool calls; wide par groups drain across polls.
+  // Fast lane: tool_call / note items. The batch executes CONCURRENTLY —
+  // items are typically sub-second tool calls, and the engine's run-row lock
+  // ordering makes concurrent completions safe by design (it's the tested
+  // invariant). Serial awaiting here would make the "fast lane" concurrency 1.
   await boss.work<DispatchJob>(RUN_TOOL_QUEUE, { batchSize: 5 }, async (jobs) => {
-    for (const job of jobs) {
-      const { actions } = await executeRunItem(job.data.itemId);
-      await enqueueRunActionsSafe(actions);
-    }
+    await Promise.all(
+      jobs.map(async (job) => {
+        const { actions } = await executeRunItem(job.data.itemId);
+        await enqueueRunActionsSafe(actions);
+      }),
+    );
   });
 
   // Slice 2 lane: whole agent turns. Handler already exists so a stray

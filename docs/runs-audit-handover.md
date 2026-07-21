@@ -214,3 +214,27 @@ lint, format, 2442 unit tests) is green as of `d4bfee1c`.
 
 Report findings against the invariant list in §2; anything in §4 is a
 decision to critique, not a defect to file.
+
+## 8. Audit outcome (2026-07-21)
+
+The audit ran; all confirmed findings are FIXED in v0.157.5
+([changelog](_changelog/0.157.5.md)). Headlines: `run_audit` was grantable
+but absent from both item ban lists (a queue item could rubber-stamp the
+audit gate — now a single exported `BANNED_ITEM_TOOLS` with guard tests);
+completion vs fail_fast/cancel locked rows in opposite orders and deadlocked
+under a forced race (reproduced against the pre-fix engine — now a run-row-
+first lock ordering rule, see `lockRunRow` in engine.ts, with two regression
+races in the suite, 20 → 22 tests); `claimResume` burned the at-most-once
+token before turn preconditions; `applyAuditVerdict` ignored the completion
+CAS; the acceptance metric counted unaudited and `needs_human` steps as
+accepted; `run_state`/`run_cancel` lacked the depth guard; the worker
+proposal was interpolated unfenced into the audit prompt.
+
+Invariants §2.1/§2.3/§2.4/§2.5/§2.8/§2.10 survived the audit unbroken. The
+§4 decisions all held; the one process critique — `run_audit` shipped
+granted-but-unbanned — is now structurally prevented by the guard tests.
+
+The audit also surfaced an unrecorded architecture decision: the engine
+hand-rolls durability beside the repo's existing DBOS runner. Recorded in
+[docs/adr-runs-durable-execution.md](adr-runs-durable-execution.md) — v1
+stays as built; slice 3 is the re-evaluation gate.

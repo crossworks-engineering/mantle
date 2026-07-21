@@ -423,6 +423,79 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     },
   );
 
+  it(
+    'lock ordering: fail_fast cancellation racing a sibling completion never deadlocks',
+    { timeout: 120_000 },
+    async () => {
+      // Audit 2026-07-21: completion locked child→parent while fail_fast
+      // cancellation locked parent→subtree — opposite orders, PG deadlock
+      // (40P01). The run-row-first ordering rule serializes them. Both
+      // children are RUNNING (a queued sibling reproduces nothing — it is
+      // locked by nobody).
+      for (let round = 0; round < 12; round++) {
+        const { runId, rootItemId } = await createRun(db, {
+          ownerId: OWNER,
+          title: `fail_fast race ${round}`,
+          plan: { kind: 'par', joinPolicy: 'fail_fast', children: [note('boom'), note('slow')] },
+        });
+        const [boom, slow] = await children(rootItemId);
+        await claimItem(db, boom!.id);
+        await claimItem(db, slow!.id);
+        // One child fails (fail_fast wants to cancel the running sibling)
+        // while that sibling completes — genuinely concurrent transactions.
+        const [rFail, rDone] = await Promise.all([
+          completeItem(db, {
+            itemId: boom!.id,
+            state: 'failed',
+            failure: { type: 'tool_error', message: 'synthetic' },
+          }),
+          completeItem(db, { itemId: slow!.id, state: 'done' }),
+        ]);
+        // Whichever serializes second must NOT deadlock. Two legal outcomes:
+        // the completion wins the run lock (both complete, summary counts a
+        // done), or the failure wins and its fail_fast cancel takes the
+        // sibling first (the completion no-ops at its CAS). Exactly one
+        // resume and a coherent failed group either way.
+        expect(rFail.completed).toBe(true);
+        expect(resumes(rFail, rDone)).toHaveLength(1);
+        const root = await itemRow(rootItemId);
+        expect(root.state).toBe('failed');
+        expect(root.childrenDone).toBe(2);
+        if (!rDone.completed) {
+          expect((await itemRow(slow!.id)).state).toBe('cancelled');
+        }
+        expect((await runRow(runId)).status).toBe('failed');
+      }
+    },
+  );
+
+  it(
+    'lock ordering: cancelRun racing an in-flight completion never deadlocks',
+    { timeout: 120_000 },
+    async () => {
+      for (let round = 0; round < 12; round++) {
+        const { runId, rootItemId } = await createRun(db, {
+          ownerId: OWNER,
+          title: `cancel race ${round}`,
+          plan: { kind: 'par', children: [note('a'), note('b')] },
+        });
+        const [a, b] = await children(rootItemId);
+        await claimItem(db, a!.id);
+        await claimItem(db, b!.id);
+        const [rCancel, rDone] = await Promise.all([
+          cancelRun(db, runId),
+          completeItem(db, { itemId: a!.id, state: 'done' }),
+        ]);
+        expect(rCancel.cancelled).toBe(true);
+        // The completion either won the race (completed) or lost to the
+        // cancel (no-op) — both legal; a deadlock throw is the failure mode.
+        expect((await runRow(runId)).status).toBe('cancelled');
+        expect(resumes(rDone)).toHaveLength(0);
+        expect((await itemRow(b!.id)).state).toBe('cancelled');
+      }
+    },
+  );
+
   it('cancelRun cancels the subtree; late completions no-op and never resume', SLOW, async () => {
     const { runId, rootItemId } = await createRun(db, {
       ownerId: OWNER,
