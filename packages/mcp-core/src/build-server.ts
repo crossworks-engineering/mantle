@@ -603,10 +603,10 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
 
   server.tool(
     'pending_approve',
-    'Approve a queued tool call by id. The handler runs immediately under a fresh `manual` trace; the result is stored on the pending row and returned.',
-    { id: z.string().uuid() },
-    async ({ id }) => {
-      const row = await approvePendingCall(ownerId, id);
+    'Approve a queued tool call by id. The handler runs immediately under a fresh `manual` trace; the result is stored on the pending row and returned. For a runner `ask_human` question, approval completes the run step and `answer` carries the free-text reply the run continues with (omit it for a plain yes / option-pick approval).',
+    { id: z.string().uuid(), answer: z.string().max(4000).optional() },
+    async ({ id, answer }) => {
+      const row = await approvePendingCall(ownerId, id, answer ? { answer } : undefined);
       if (!row) {
         return { content: [{ type: 'text', text: 'not found or already decided' }], isError: true };
       }
@@ -616,7 +616,7 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
 
   server.tool(
     'pending_reject',
-    "Reject a queued tool call by id. No execution; just flips status to 'rejected'.",
+    "Reject a queued tool call by id. No execution; just flips status to 'rejected'. A runner `ask_human` question completes its run step failed(rejected) so the run advances instead of waiting forever.",
     { id: z.string().uuid() },
     async ({ id }) => {
       const row = await rejectPendingCall(ownerId, id);

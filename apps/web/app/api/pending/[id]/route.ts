@@ -4,7 +4,12 @@ import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/t
 import { getOwnerOr401 } from '@/lib/auth';
 
 const IdParams = z.object({ id: z.string().uuid() });
-const PatchBody = z.object({ decision: z.enum(['approve', 'reject']) });
+const PatchBody = z.object({
+  decision: z.enum(['approve', 'reject']),
+  /** Runner ask_human questions: the free-text answer the run continues
+   *  with (approve only; optional — plain approval works for yes/no). */
+  answer: z.string().max(4000).optional(),
+});
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -29,7 +34,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   try {
     const row =
       parsed.data.decision === 'approve'
-        ? await approvePendingCall(user.id, idParsed.data.id)
+        ? await approvePendingCall(
+            user.id,
+            idParsed.data.id,
+            parsed.data.answer ? { answer: parsed.data.answer } : undefined,
+          )
         : await rejectPendingCall(user.id, idParsed.data.id);
     if (!row) {
       return NextResponse.json(

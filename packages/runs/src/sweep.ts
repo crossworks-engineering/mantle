@@ -13,9 +13,11 @@
  *   3. Terminal root groups never resumed (`resumed_at IS NULL`) → re-emit the
  *      resume action. Covers a lost resume job; the resume handler's CAS on
  *      `resumed_at` keeps it at-most-once.
+ *   4. ask_human row janitor (WP3): pending rows whose item went terminal
+ *      expire — the approval surface never outlives the question.
  *
  * Pure DB logic — returns actions for the caller to enqueue. (Budget /
- * item-cap pause lands with slice 3.)
+ * item-cap pause lands with WP4.)
  */
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { runItems, runs, type Db } from '@mantle/db';
@@ -34,6 +36,8 @@ export type SweepResult = {
   timedOut: number;
   redispatched: number;
   resumesResent: number;
+  /** Pending ask_human rows expired because their item went terminal (4). */
+  questionsExpired: number;
   actions: PostCommitAction[];
 };
 
@@ -45,12 +49,16 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
   //    nothing), at promotion for audits (verdict budget — audits are never
   //    claimed). completeItem's CAS makes racing the real completion
   //    harmless — whoever loses no-ops.
+  //    Ready-but-undispatchable kinds time out too when DATED: audits
+  //    (verdict budget) and ask_human items whose plan set timeout_seconds
+  //    (WP3 amendment 3 — without this a dated question could never
+  //    expire). Undated ask_human rows have NULL deadlines and never match.
   const overdue = await db
     .select({ id: runItems.id })
     .from(runItems)
     .where(
       and(
-        sql`(${runItems.state} = 'running' or (${runItems.state} = 'ready' and ${runItems.kind} = 'audit'))`,
+        sql`(${runItems.state} = 'running' or (${runItems.state} = 'ready' and ${runItems.kind} in ('audit', 'ask_human')))`,
         lt(runItems.deadlineAt, sql`now()`),
       ),
     )
@@ -70,14 +78,16 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
 
   // 2. Lost dispatch heal. updated_at moves on promote and on claim, so a
   //    ready row untouched for the grace window has no live job working it.
-  //    Audits are excluded — they're resume-driven, not dispatchable (2b).
+  //    Audits are excluded (resume-driven, not dispatchable — 2b), and so
+  //    are ask_human items (HUMAN-driven, never dispatchable — WP3/C6; a
+  //    re-dispatch would be 90-second noise forever on an undated question).
   const staleReady = await db
     .select({ id: runItems.id, kind: runItems.kind, sideEffecting: runItems.sideEffecting })
     .from(runItems)
     .where(
       and(
         eq(runItems.state, 'ready'),
-        sql`${runItems.kind} <> 'audit'`,
+        sql`${runItems.kind} not in ('audit', 'ask_human')`,
         lt(runItems.updatedAt, sql`now() - make_interval(secs => ${READY_STALE_SECONDS})`),
       ),
     )
@@ -141,10 +151,34 @@ export async function sweepRuns(db: Db): Promise<SweepResult> {
     actions.push({ type: 'resume', runId: row.runId, groupId: row.rootId });
   }
 
+  // 4. ask_human row janitor (WP3 amendment 2 — the pending row and the
+  //    item are separate stores; every item-killing path relies on THIS
+  //    duty to expire the surface). A pending 'ask_human' row whose item is
+  //    already terminal (run cancelled, fail_fast cancelled the branch,
+  //    duty 1 timed a dated question out) expires with a teaching message,
+  //    so zombie questions never accumulate in the pending UI / telegram
+  //    flow. The answer path handles the inverse race (approval landing on
+  //    a terminal item) itself; this is the janitor of last resort.
+  const expired = (await db.execute(sql`
+    UPDATE pending_tool_calls p
+    SET status = 'expired', decided_at = now(), updated_at = now(),
+        error = 'the run moved on (cancelled, timed out, or completed) before an answer'
+    WHERE p.status = 'pending'
+      AND p.tool_slug = 'ask_human'
+      AND (p.args->>'item_id') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      AND EXISTS (
+        SELECT 1 FROM run_items ri
+        WHERE ri.id = (p.args->>'item_id')::uuid
+          AND ri.state IN ('done', 'failed', 'cancelled', 'superseded')
+      )
+    RETURNING p.id
+  `)) as unknown as Array<{ id: string }>;
+
   return {
     timedOut,
     redispatched: staleReady.length,
     resumesResent: unresumed.length + staleAudits.length,
+    questionsExpired: expired.length,
     actions,
   };
 }

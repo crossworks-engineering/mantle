@@ -142,11 +142,14 @@ async function runResolved(
     });
   }
   if (tool.requiresConfirm) {
-    // ask_human items (slice 3) are the queue's approval mechanism; until
-    // then a confirm-gated tool cannot run headless.
+    // Confirm-gated tools never run headless — the queue's consent
+    // mechanism is an ask_human step (WP3): gate the phase on the human's
+    // answer and let the responder run the gated tool inline at resume.
     return fail({
       type: 'requires_confirm',
-      message: `tool '${slug}' requires operator approval and cannot run as a queue item yet`,
+      message:
+        `tool '${slug}' requires operator approval and cannot run as a queue item — ` +
+        `gate the phase with an ask_human step and run the tool inline after the answer`,
     });
   }
 

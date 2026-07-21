@@ -5,9 +5,10 @@ Status: **slices 1 + 2, plus slice 3 WP1** — the spine (schema, engine,
 dispatcher, sweep, `run_*` tools, resume turn, run view), worker agents +
 audits (per-run concurrency cap, model inheritance, mechanical evidence,
 resume-driven audit verdicts with a one-redo cycle, the per-worker acceptance
-metric), and durable turns (worker turns AND resume turns execute as DBOS
-workflows in apps/api — slice-3 plan §4 WP1/WP2). `ask_human` gates (WP3),
-budgets (WP4), and worker groups (WP5) are the rest of slice 3
+metric), durable turns (worker turns AND resume turns execute as DBOS
+workflows in apps/api — slice-3 plan §4 WP1/WP2), and `ask_human` gates
+(WP3 — human questions as run items, answered via pending approvals).
+Budgets (WP4) and worker groups (WP5) are the rest of slice 3
 ([runs-slice-3-plan.md](runs-slice-3-plan.md)).
 
 ## Concept
@@ -119,6 +120,25 @@ cancellation.
   (done-not-superseded / judged) on `/debug/runs` — the number that decides
   when cheaper worker tiers are justified.
 
+## `ask_human` gates (slice 3 WP3)
+
+The audit-item pattern with a human in the LLM's place. An
+`{kind:'ask_human', question, options?, timeout_seconds?}` leaf (seq-only —
+the answer gates the steps after it) promotes `queued → ready`, is NEVER
+dispatched, and creates a `pending_tool_calls` row — the existing pending
+approvals UI, the `pending_*` tools, and the telegram approval flow are the
+answer surface; no new UI. `pending_approve` (with an optional free-text
+`answer`) completes the item `done` with the answer riding `result.answer`
+into the compiled state; `pending_reject` completes it
+`failed({type:'rejected'})` so join policies treat it like any failed step.
+Undated questions wait indefinitely (that is the feature) and are exempt
+from every sweep duty; `timeout_seconds` makes an EXPIRING question (sweep
+duty 1 fails it `timeout` when the window closes). Lifecycle sync: sweep
+duty 4 expires any pending row whose item went terminal (run cancelled,
+branch fail_fast-cancelled, question timed out), and an answer landing on a
+dead item expires the row with a teaching error instead of pretending it
+took effect.
+
 ## Feature gate + dogfood
 
 Dark by default. Enable per brain with `MANTLE_RUNS=1` in the app env (the
@@ -139,8 +159,8 @@ grant it manually on the dev brain (`/settings/tool-groups` or
   a `{done, failed, cancelled}` summary and state `failed` if anything failed.
 - `fail_fast`: first failure cancels pending siblings (counter credited);
   running siblings' late completions no-op at the CAS.
-- Confirm-gated (`requires_confirm`) tools can't run headless yet — the item
-  fails structured; `ask_human` items (slice 3) become the queue's approval
-  path.
+- Confirm-gated (`requires_confirm`) tools never run headless — the item
+  fails structured with a pointer at the pattern that works: gate the phase
+  behind an `ask_human` step and run the gated tool inline at resume.
 - Cancel (`run_cancel`, or the responder Stop signal in a later wiring) marks
   the run first (so no resume), then the subtree.

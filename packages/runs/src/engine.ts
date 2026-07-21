@@ -32,6 +32,7 @@
  */
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
+  pendingToolCalls,
   runItems,
   runs,
   type Db,
@@ -633,6 +634,52 @@ async function promote(tx: Tx, item: RunItemRow, actions: PostCommitAction[]): P
     if (!ready) return;
     actions.push({ type: 'resume', runId: ready.runId, groupId: ready.id });
     return;
+  }
+
+  if (item.kind === 'ask_human') {
+    // The audit-item pattern with a human in the LLM's place (slice 3 WP3):
+    // `queued → ready`, NEVER dispatched — the item sits until the answer
+    // path (`applyHumanAnswer`) completes it. Deadline ONLY when the plan
+    // dated the question (`payload.timeout_seconds`, stamped NOW like an
+    // audit's verdict budget — the item is never claimed); an undated
+    // question waits indefinitely by design and is exempt from every sweep
+    // duty. The pending_tool_calls row is the approval surface (existing
+    // /pending UI + telegram flow + pending_* tools — no new UI).
+    const p = (item.payload ?? {}) as Record<string, unknown>;
+    const raw = p['timeout_seconds'];
+    const timeout =
+      typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+        ? Math.min(raw, 30 * 24 * 3600)
+        : null;
+    const [ready] = await tx
+      .update(runItems)
+      .set({
+        state: 'ready',
+        ...(timeout !== null ? { deadlineAt: sql`now() + make_interval(secs => ${timeout})` } : {}),
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(runItems.id, item.id), eq(runItems.state, 'queued')))
+      .returning({ id: runItems.id, runId: runItems.runId, deadlineAt: runItems.deadlineAt });
+    if (!ready) return;
+    const [run] = await tx
+      .select({ ownerId: runs.ownerId })
+      .from(runs)
+      .where(eq(runs.id, ready.runId));
+    // agent_id stays NULL: runs.agent_id is a SOFT ref (survives agent
+    // deletion) but pending_tool_calls.agent_id is a real FK — inserting a
+    // dangling id would violate it. The args carry the run ref instead.
+    await tx.insert(pendingToolCalls).values({
+      ownerId: run!.ownerId,
+      toolSlug: 'ask_human',
+      args: {
+        question: typeof p.question === 'string' ? p.question : '',
+        ...(Array.isArray(p.options) ? { options: p.options } : {}),
+        run_id: ready.runId,
+        item_id: ready.id,
+      },
+      ...(ready.deadlineAt ? { expiresAt: ready.deadlineAt } : {}),
+    });
+    return; // no action — the human is the dispatcher
   }
 
   const [ready] = await tx

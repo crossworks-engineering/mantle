@@ -211,13 +211,40 @@ function parsePlan(raw: unknown): ParsedPlan {
           },
         };
       }
-      case 'ask_human':
+      case 'ask_human': {
+        if (parentKind !== 'seq') {
+          return {
+            error:
+              `plan${path}: ask_human belongs in a 'seq' group — the answer gates the ` +
+              `steps after it; in a 'par' group nothing waits for it`,
+          };
+        }
+        const question = typeof o.question === 'string' ? o.question.trim() : '';
+        if (!question) {
+          return {
+            error: `plan${path}: ask_human requires a non-empty 'question' — what should the human decide?`,
+          };
+        }
+        const options = Array.isArray(o.options)
+          ? (o.options as unknown[]).filter((x): x is string => typeof x === 'string' && !!x.trim())
+          : [];
         return {
-          error: `plan${path}: item kind 'ask_human' is not available yet (slice 3)`,
+          kind: 'ask_human',
+          payload: {
+            question,
+            ...(options.length > 0 ? { options } : {}),
+            // Undated by default — a question waits indefinitely (that is
+            // the feature); timeout_seconds makes it an EXPIRING question
+            // (the sweep fails it `timeout` when the window closes).
+            ...(typeof o.timeout_seconds === 'number' && o.timeout_seconds > 0
+              ? { timeout_seconds: o.timeout_seconds }
+              : {}),
+          },
         };
+      }
       default:
         return {
-          error: `plan${path}: unknown kind ${JSON.stringify(o.kind)} — use seq | par | tool_call | note | worker_invoke | audit`,
+          error: `plan${path}: unknown kind ${JSON.stringify(o.kind)} — use seq | par | tool_call | note | worker_invoke | audit | ask_human`,
         };
     }
   }
@@ -300,7 +327,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
     slug: 'run_plan',
     name: 'Plan a durable run',
     description:
-      'Create a durable run — a tree of seq/par groups of tool_call, note, worker_invoke, and audit items executed in the background — and return its id plus the started tree. Use for delegated multi-step jobs worth tracking; for a quick answer or one or two calls, just call the tools inline. The default shape for real work: seq( note(plan) → worker_invoke(step) → audit → … ) — every worker step followed by an audit you will judge (via `run_audit`) when resumed. You are resumed with compiled results when the run completes. Check progress with `run_state`, extend with `run_append`, stop with `run_cancel`.',
+      'Create a durable run — a tree of seq/par groups of tool_call, note, worker_invoke, audit, and ask_human items executed in the background — and return its id plus the tree. Use for delegated multi-step jobs worth tracking; for a quick answer or one or two calls, call the tools inline. The default shape for real work: seq( note(plan) → worker_invoke(step) → audit → … ) — every worker step followed by an audit you will judge (via `run_audit`) when resumed. An ask_human step parks the run until the operator answers (pending approvals) — the consent gate for side-effecting phases. You are resumed with compiled results when the run completes. Check progress with `run_state`, extend with `run_append`, stop with `run_cancel`.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -308,7 +335,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
         plan: {
           type: 'object',
           description:
-            "The run tree. Node shapes: {kind:'seq'|'par', label?, join_policy?:'wait_all'|'fail_fast', children:[…]} | {kind:'tool_call', tool:'<slug>', args:{…}, side_effecting?:true, timeout_seconds?:600} | {kind:'note', text:'…'} | {kind:'worker_invoke', step:'<self-contained task>', acceptance_criteria?:'…', worker?:'<worker slug — omit for the default>', subject_node_ids?:[…]} | {kind:'audit', scope?:'…'} (seq-only, right after the worker step it judges). Root must be a group. Mark any state-changing call side_effecting (it then never auto-retries).",
+            "The run tree. Node shapes: {kind:'seq'|'par', label?, join_policy?:'wait_all'|'fail_fast', children:[…]} | {kind:'tool_call', tool:'<slug>', args:{…}, side_effecting?:true, timeout_seconds?:600} | {kind:'note', text:'…'} | {kind:'worker_invoke', step:'<self-contained task>', acceptance_criteria?:'…', worker?:'<worker slug — omit for the default>', subject_node_ids?:[…]} | {kind:'audit', scope?:'…'} (seq-only, right after the worker step it judges) | {kind:'ask_human', question:'…', options?:['…'], timeout_seconds?} (seq-only; waits indefinitely unless timed — the operator answers via pending approvals and the answer flows to later steps). Root must be a group. Mark any state-changing call side_effecting (it then never auto-retries).",
           additionalProperties: true,
         },
       },

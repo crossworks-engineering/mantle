@@ -34,6 +34,7 @@ import {
 } from './engine';
 import { claimResume, sweepRuns } from './sweep';
 import { applyAuditVerdict, mechanicalPreCheck } from './audit';
+import { applyHumanAnswer } from './human';
 
 const ADMIN_URL = process.env.RUNS_TEST_DATABASE_URL;
 const SCRATCH_DB = 'mantle_runs_engine_test';
@@ -101,6 +102,29 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
         if (s && !s.startsWith('ALTER TYPE')) await client.unsafe(s);
       }
     }
+    // Minimal pending_tool_calls stand-in for the ask_human paths (WP3).
+    // The real migration carries FKs to agents/traces, which live outside
+    // the engine's scratch schema — the engine only ever writes the columns
+    // below (agent_id/trace_id stay NULL by design).
+    await client.unsafe(
+      `CREATE TYPE pending_tool_status AS ENUM ('pending','approved','rejected','expired')`,
+    );
+    await client.unsafe(`CREATE TABLE pending_tool_calls (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      owner_id uuid NOT NULL,
+      agent_id uuid,
+      tool_slug text NOT NULL,
+      args jsonb NOT NULL DEFAULT '{}'::jsonb,
+      trace_id uuid,
+      status pending_tool_status NOT NULL DEFAULT 'pending',
+      result jsonb,
+      error text,
+      decided_at timestamptz,
+      executed_at timestamptz,
+      expires_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`);
     db = drizzle(client) as unknown as Db;
   }, 60_000);
 
@@ -718,5 +742,140 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     expect(releases.length).toBeGreaterThan(0);
     const c3b = await claimWorkerItem(db, kids[2]!.id, 2);
     expect(c3b.item).not.toBeNull();
+  });
+
+  // ── ask_human (slice 3 WP3) ────────────────────────────────────────────────
+
+  async function pendingRowFor(itemId: string) {
+    const rows = (await db.execute(
+      sql`SELECT id, status, error FROM pending_tool_calls WHERE args->>'item_id' = ${itemId}`,
+    )) as unknown as Array<{ id: string; status: string; error: string | null }>;
+    return rows;
+  }
+
+  function askHuman(question: string, extra?: Record<string, unknown>) {
+    return { kind: 'ask_human' as const, payload: { question, ...(extra ?? {}) } };
+  }
+
+  it('ask_human promotes ready, undated, no dispatch, with a pending row', SLOW, async () => {
+    const { rootItemId, actions } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'ask flow',
+      plan: { kind: 'seq', children: [askHuman('Proceed with the send?'), note('after')] },
+    });
+    expect(dispatches({ actions })).toHaveLength(0);
+    expect(resumes({ actions })).toHaveLength(0);
+    const [ask, after] = await children(rootItemId);
+    expect(ask!.state).toBe('ready');
+    expect(ask!.deadlineAt).toBeNull(); // undated by default — waits forever
+    expect(after!.state).toBe('queued');
+    const rows = await pendingRowFor(ask!.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe('pending');
+  });
+
+  it('answered: item done with the answer, seq advances', SLOW, async () => {
+    const { runId, rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'ask answered',
+      plan: {
+        kind: 'seq',
+        children: [askHuman('Which env?', { options: ['dev', 'prod'] }), note('after')],
+      },
+    });
+    const [ask, after] = await children(rootItemId);
+    const res = await applyHumanAnswer(db, {
+      itemId: ask!.id,
+      decision: 'answered',
+      answer: 'dev',
+    });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.state).toBe('done');
+    expect((await itemRow(ask!.id)).result?.answer).toBe('dev');
+    // The counter drove: the seq promoted the next child with a dispatch.
+    expect((await itemRow(after!.id)).state).toBe('ready');
+    expect(res.actions.filter((a) => a.type === 'dispatch')).toHaveLength(1);
+    // Finish the run — the answer path composes with normal completion.
+    await claimItem(db, after!.id);
+    const final = await completeItem(db, { itemId: after!.id, state: 'done' });
+    expect(resumes(final)).toHaveLength(1);
+    expect((await runRow(runId)).status).toBe('done');
+  });
+
+  it('rejected: item failed(rejected), duplicate answer refused', SLOW, async () => {
+    const { rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'ask rejected',
+      plan: { kind: 'seq', children: [askHuman('Delete everything?')] },
+    });
+    const [ask] = await children(rootItemId);
+    const res = await applyHumanAnswer(db, { itemId: ask!.id, decision: 'rejected' });
+    if (!res.ok) throw new Error(res.error);
+    expect(res.state).toBe('failed');
+    expect((await itemRow(ask!.id)).result?.failure).toMatchObject({ type: 'rejected' });
+    // A second decision finds the item terminal — moved_on, never re-counted.
+    const dup = await applyHumanAnswer(db, { itemId: ask!.id, decision: 'answered' });
+    expect(dup.ok).toBe(false);
+    if (dup.ok) throw new Error('unreachable');
+    expect(dup.reason).toBe('moved_on');
+  });
+
+  it('sweep leaves undated questions alone; janitor expires rows of dead items', SLOW, async () => {
+    const { runId, rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'ask sweep',
+      plan: { kind: 'seq', children: [askHuman('Still there?'), note('after')] },
+    });
+    const [ask] = await children(rootItemId);
+    // Age the ready row past every grace window — duty 2 must STILL skip it
+    // (human-driven, not dispatchable) and duty 1 must not time it out
+    // (no deadline).
+    await db
+      .update(runItems)
+      .set({ updatedAt: sql`now() - interval '1 hour'` })
+      .where(eq(runItems.id, ask!.id));
+    const sweep1 = await sweepRuns(db);
+    expect(
+      sweep1.actions.filter((a) => a.type === 'dispatch' && a.itemId === ask!.id),
+    ).toHaveLength(0);
+    expect((await itemRow(ask!.id)).state).toBe('ready');
+
+    // Run cancelled with the question open → the item dies with the subtree
+    // and the NEXT sweep expires the orphaned pending row (amendment F5).
+    await cancelRun(db, runId);
+    expect((await itemRow(ask!.id)).state).toBe('cancelled');
+    const sweep2 = await sweepRuns(db);
+    expect(sweep2.questionsExpired).toBeGreaterThanOrEqual(1);
+    const rows = await pendingRowFor(ask!.id);
+    expect(rows[0]!.status).toBe('expired');
+    // And a late answer refuses cleanly.
+    const late = await applyHumanAnswer(db, { itemId: ask!.id, decision: 'answered' });
+    expect(late.ok).toBe(false);
+  });
+
+  it('dated question: deadline stamps at promote and the sweep expires it', SLOW, async () => {
+    const { rootItemId } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'ask dated',
+      plan: {
+        kind: 'seq',
+        children: [askHuman('Quick check?', { timeout_seconds: 60 }), note('after')],
+      },
+    });
+    const [ask, after] = await children(rootItemId);
+    expect((await itemRow(ask!.id)).deadlineAt).not.toBeNull();
+    // Push the deadline into the past; duty 1 fails it, the counter drives
+    // the seq forward, and the janitor expires the pending row in the same
+    // pass (duty 1 commits before duty 4 runs).
+    await db
+      .update(runItems)
+      .set({ deadlineAt: sql`now() - interval '1 minute'` })
+      .where(eq(runItems.id, ask!.id));
+    const swept = await sweepRuns(db);
+    expect(swept.timedOut).toBeGreaterThanOrEqual(1);
+    expect((await itemRow(ask!.id)).result?.failure).toMatchObject({ type: 'timeout' });
+    expect((await itemRow(after!.id)).state).toBe('ready');
+    expect(swept.questionsExpired).toBeGreaterThanOrEqual(1);
+    expect((await pendingRowFor(ask!.id))[0]!.status).toBe('expired');
   });
 });

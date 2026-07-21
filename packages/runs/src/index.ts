@@ -52,3 +52,4 @@ export {
   type AuditFinding,
   type AuditVerdictResult,
 } from './audit';
+export { applyHumanAnswer, type HumanAnswerResult } from './human';
