@@ -117,7 +117,12 @@ function completeDurable(
   return runDurableStep('complete_item', () => completeItem(db, opts));
 }
 
-async function runsWorkerTurnImpl(input: RunsWorkerTurnInput): Promise<RunsWorkerTurnResult> {
+/** Exported for tests ONLY (the registered workflow below is what runs in
+ *  production) — see the note on `runsResumeTurnImpl`: tests replay this with
+ *  a journal-backed `DBOS.runStep` to guard the F4 action-replay contract. */
+export async function runsWorkerTurnImpl(
+  input: RunsWorkerTurnInput,
+): Promise<RunsWorkerTurnResult> {
   const { itemId } = input;
   DBOS.span?.setAttribute('mantle.runner', 'runs_worker_turn');
   DBOS.span?.setAttribute('mantle.item_id', itemId);

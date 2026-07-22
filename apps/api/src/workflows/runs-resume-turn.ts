@@ -210,7 +210,13 @@ async function buildPanelAuditSection(audit: RunItemRow): Promise<string> {
   return parts.join('\n\n');
 }
 
-async function runsResumeTurnImpl(input: RunsResumeTurnInput): Promise<RunsResumeTurnResult> {
+/** Exported for tests ONLY (the registered workflow below is what runs in
+ *  production). Tests drive this directly with a journal-backed `DBOS.runStep`
+ *  so a crash-recovery REPLAY can be simulated in-process — the regression
+ *  guard for the replay-determinism bug class (v0.157.14 F1/F4). */
+export async function runsResumeTurnImpl(
+  input: RunsResumeTurnInput,
+): Promise<RunsResumeTurnResult> {
   const { runId, groupId } = input;
   DBOS.span?.setAttribute('mantle.runner', 'runs_resume_turn');
   DBOS.span?.setAttribute('mantle.run_id', runId);
