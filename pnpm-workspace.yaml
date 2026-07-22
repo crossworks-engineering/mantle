@@ -18,3 +18,4 @@ allowBuilds:
 # pdf-to-png-converter pins its own (6.0.227); this pulls it onto ours.
 overrides:
   pdfjs-dist: 6.1.200
+  '@napi-rs/canvas': 1.0.2
