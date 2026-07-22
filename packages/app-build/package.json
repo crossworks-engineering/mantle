@@ -13,7 +13,7 @@
     "build:runtime": "node scripts/build-runtime.ts"
   },
   "dependencies": {
-    "esbuild": "^0.24.2",
+    "esbuild": "^0.28.1",
     "lucide-react": "^0.469.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

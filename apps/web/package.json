@@ -139,7 +139,7 @@
     "diff": "^9.0.0",
     "docx": "^9.5.1",
     "drizzle-orm": "^0.38.3",
-    "esbuild": "^0.24.2",
+    "esbuild": "^0.28.1",
     "exceljs": "^4.4.0",
     "hast-util-to-html": "^9.0.5",
     "heic-convert": "^2.1.0",
