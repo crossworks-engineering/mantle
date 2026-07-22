@@ -71,10 +71,15 @@ tables, math, mentions, task lists, drag handles, code blocks.
 1.2→1.3, select 2.2→2.3, slot 1.2→1.3). Gate: the master-detail settings screens,
 dialogs, and every `Switch`/`Select` surface.
 
-> **Cleanup while you're in here:** the tree declares *both* the `radix-ui`
-> umbrella package and ~15 individual `@radix-ui/react-*` packages. Confirm
-> whether that's deliberate; if not, collapsing to one form removes a whole class
-> of version-skew bugs.
+> **Checked, and it's fine:** the tree declares *both* the `radix-ui` umbrella
+> package and ~15 individual `@radix-ui/react-*` packages, and both import styles
+> are in real use (5 files from the umbrella, ~19 from individual packages). That
+> looks like it should produce two physical copies of each primitive and hence
+> two React contexts — but the lockfile resolves **exactly one version per
+> primitive**, so there is no skew and no double-context bug. (Duplicate
+> `@radix-ui+*` directories under `node_modules/.pnpm` are stale leftovers from
+> earlier installs, not live resolutions — don't be fooled by them, as I was.)
+> Collapsing to one import style is tidiness, not a correctness fix.
 
 ## Wave 2 — isolated majors (small blast radius, one commit each)
 
