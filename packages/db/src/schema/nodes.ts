@@ -37,6 +37,7 @@ export const nodeType = pgEnum('node_type', [
   'journal',
   'location',
   'app',
+  'formula',
 ]);
 
 export const nodes = pgTable(

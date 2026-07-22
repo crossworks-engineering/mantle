@@ -20,6 +20,7 @@ export const SEARCH_NODE_TYPES = [
   'telegram_message',
   'documentation',
   'journal',
+  'formula',
 ] as const;
 
 export type SearchNodeType = (typeof SEARCH_NODE_TYPES)[number];

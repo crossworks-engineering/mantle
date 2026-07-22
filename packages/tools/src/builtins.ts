@@ -153,6 +153,7 @@ const search_nodes: BuiltinToolDef = {
           'telegram_message',
           'documentation',
           'journal',
+          'formula',
         ],
       },
       tags: {
