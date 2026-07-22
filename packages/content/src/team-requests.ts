@@ -33,10 +33,12 @@ type TeamRequestData = {
   notifiedAt?: string | null;
 };
 
-/** Every team-request task for this owner, newest first. */
+/** Every team-request task for this owner, newest first. `contactId` narrows
+ *  to one requester — the Members tab's per-person view (filtered in SQL, not
+ *  by loading the whole queue and discarding most of it). */
 export async function listTeamRequests(
   ownerId: string,
-  opts: { status?: 'open' | 'done' | 'all'; limit?: number } = {},
+  opts: { status?: 'open' | 'done' | 'all'; limit?: number; contactId?: string } = {},
 ): Promise<TeamRequest[]> {
   const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
   const conds = [
@@ -47,6 +49,9 @@ export async function listTeamRequests(
   const status = opts.status ?? 'open';
   if (status !== 'all') {
     conds.push(sql`coalesce(${nodes.data}->>'status', 'open') = ${status}`);
+  }
+  if (opts.contactId) {
+    conds.push(sql`${nodes.data}->'teamRequest'->>'contactId' = ${opts.contactId}`);
   }
   const rows = await db
     .select({ id: nodes.id, title: nodes.title, data: nodes.data, createdAt: nodes.createdAt })

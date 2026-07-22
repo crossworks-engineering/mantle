@@ -23,12 +23,13 @@ read-anything / write-nothing except `team_request_create`.
 
 ## 2. Surfaces
 
-| Surface | Who | What |
-|---|---|---|
-| `/team/forum` | members | Topic list (pinned first, unread dots, kind badges) + "New topic" dialog. |
-| `/team/forum/[id]` | members | Linear multi-author transcript + composer; live turn streaming. |
-| `/team/assistant` | members | The old 1:1 thread, READ-ONLY (archive banner, no composer). |
-| `/team-admin?view=topics` | owner | All topics (incl. private), master-detail transcript with trace links, pin/unpin, owner reply (optionally marking the topic answered). |
+| Surface                   | Who     | What                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/team/forum`             | members | Topic list (pinned first, unread dots, kind badges) + "New topic" dialog.                                                                                                                                                                                                                                                                                                                                                              |
+| `/team/forum/[id]`        | members | Linear multi-author transcript + composer; live turn streaming.                                                                                                                                                                                                                                                                                                                                                                        |
+| `/team/assistant`         | members | The old 1:1 thread, READ-ONLY (archive banner, no composer).                                                                                                                                                                                                                                                                                                                                                                           |
+| `/team-admin?view=topics` | owner   | All topics (incl. private), master-detail transcript with trace links, pin/unpin, owner reply (optionally marking the topic answered).                                                                                                                                                                                                                                                                                                 |
+| `/team-admin` (Members)   | owner   | The same content read PERSON-first: one member's posts each paired with the answer it drew, the topics they started, the requests they filed. Backed by `listForumMemberActivity` / `listForumPostsByContact` / `listForumTopicsByAuthor` (`packages/content/src/forum.ts`) — owner-scoped queries with **no visibility filter**, since the owner sees private topics too. Do not reuse them member-facing without `visibleTopicCond`. |
 
 ## 3. Turn pipeline
 

@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * Resizable + collapsible split for the /team-admin thread preview: the
- * member's thread on top, the Recent-access inspector below, separated by a
- * drag handle. The access panel collapses to just its header bar (chevron
+ * Resizable + collapsible split for the /team-admin Members detail pane: the
+ * member's activity (forum posts + answers, requests, chat archive) on top,
+ * the Recent-access inspector below, separated by a drag handle. The access panel collapses to just its header bar (chevron
  * click, or dragging it below its minimum), and both the layout and the
  * collapsed state persist in localStorage — the page is URL-driven and
  * re-renders on every member switch, so an inspector you sized up must
