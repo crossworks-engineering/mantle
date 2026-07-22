@@ -315,7 +315,6 @@ class Parser {
     this.expect('rparen');
     return applyFn(name, args);
   }
-
 }
 
 /** Binds `{refs}` to columns of one row. */

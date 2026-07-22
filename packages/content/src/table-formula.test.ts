@@ -123,8 +123,7 @@ describe('evalFormula — engineering formulas', () => {
   const evv = (f: string) => evalFormula(f, vessel, r);
 
   it('liquid release rate (Eq 3.3) → lb/sec', () => {
-    const liquid =
-      '0.61 * 1 * {Density} * (0.11 / 12) * SQRT(2 * 32.2 * {Pgauge} / {Density})';
+    const liquid = '0.61 * 1 * {Density} * (0.11 / 12) * SQRT(2 * 32.2 * {Pgauge} / {Density})';
     expect(evv(`ROUND(${liquid}, 3)`)).toBe(3.173);
   });
 

@@ -113,7 +113,10 @@ export function calculate(expression: string, opts: CalcOptions = {}): CalcResul
       };
     }
   } catch (err) {
-    return { ok: false, error: `could not parse: ${err instanceof Error ? err.message : String(err)}` };
+    return {
+      ok: false,
+      error: `could not parse: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 
   let value: unknown;

@@ -142,9 +142,7 @@ export interface FormulaSpec {
   classifications: SpecClassification[];
 }
 
-export type ParseResult =
-  | { ok: true; spec: FormulaSpec }
-  | { ok: false; errors: string[] };
+export type ParseResult = { ok: true; spec: FormulaSpec } | { ok: false; errors: string[] };
 
 const ROLES: VariableRole[] = ['constant', 'input', 'derived', 'output'];
 
@@ -179,7 +177,6 @@ function syntaxError(src: string): string | null {
     return err instanceof Error ? err.message : String(err);
   }
 }
-
 
 /** Declared legal values per key. Rejects a non-array (a string has `.length`
  *  too, which used to reach `.map` and throw), non-scalar entries, and a key
@@ -424,7 +421,9 @@ export function parseFormulaSpec(input: unknown): ParseResult {
         } else if (!isScalar(rawRow[result])) {
           // Without this, `fact_di: {"value": 0.25}` validated clean and then
           // read as 0 in arithmetic — a silent zero adjustment.
-          errors.push(`${at}.rows[${j}] result '${result}' must be a number, string, boolean or null`);
+          errors.push(
+            `${at}.rows[${j}] result '${result}' must be a number, string, boolean or null`,
+          );
         }
       }
       rows.push(rawRow as Record<string, FormulaValue>);
@@ -454,7 +453,9 @@ export function parseFormulaSpec(input: unknown): ParseResult {
       continue;
     }
     const clId = claimId(str(raw.id), at);
-    const domain = asArray(raw.domain, `${at}.domain`).filter((d): d is string => typeof d === 'string');
+    const domain = asArray(raw.domain, `${at}.domain`).filter(
+      (d): d is string => typeof d === 'string',
+    );
     if (domain.length === 0) errors.push(`${at} '${clId}': domain is required`);
     const criteria = isObj(raw.criteria) ? (raw.criteria as Record<string, string>) : {};
     for (const value of domain) {
@@ -534,7 +535,9 @@ export function checkLookupCoverage(spec: FormulaSpec): CoverageGap[] {
   const gaps: CoverageGap[] = [];
   for (const lookup of spec.lookups ?? []) {
     if (!lookup.domains) continue;
-    const keys = lookup.keys.filter((k) => Array.isArray(lookup.domains?.[k]) && lookup.domains[k]!.length > 0);
+    const keys = lookup.keys.filter(
+      (k) => Array.isArray(lookup.domains?.[k]) && lookup.domains[k]!.length > 0,
+    );
     if (keys.length !== lookup.keys.length) continue; // partial domains: can't be exhaustive
 
     // Size the product BEFORE building it.

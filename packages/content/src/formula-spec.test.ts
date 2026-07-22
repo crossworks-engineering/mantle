@@ -146,7 +146,7 @@ describe('parseFormulaSpec', () => {
     expect(result.errors).toEqual(
       expect.arrayContaining([
         'spec.id is required',
-        expect.stringContaining("a constant needs a value"),
+        expect.stringContaining('a constant needs a value'),
         expect.stringContaining("duplicate symbol 'a'"),
         expect.stringContaining('a derived variable needs an expression'),
         expect.stringContaining('role must be one of'),

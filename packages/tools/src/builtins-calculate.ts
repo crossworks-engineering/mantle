@@ -30,7 +30,8 @@ const calculate_tool: BuiltinToolDef = {
       },
       to: {
         type: 'string',
-        description: 'Convert the result to this unit, e.g. "kPa". Errors if the dimensions differ.',
+        description:
+          'Convert the result to this unit, e.g. "kPa". Errors if the dimensions differ.',
       },
       precision: {
         type: 'integer',

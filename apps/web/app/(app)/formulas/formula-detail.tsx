@@ -389,9 +389,7 @@ export function FormulaDetail({
                     id={`in-${f.symbol}`}
                     value={inputs[f.symbol] ?? ''}
                     placeholder={f.label === f.symbol ? '' : f.label}
-                    onChange={(e) =>
-                      setInputs((prev) => ({ ...prev, [f.symbol]: e.target.value }))
-                    }
+                    onChange={(e) => setInputs((prev) => ({ ...prev, [f.symbol]: e.target.value }))}
                   />
                 </div>
               ))}

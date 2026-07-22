@@ -316,11 +316,7 @@ export { formulaToText } from './formula-to-text';
 
 export { calculate, type CalcResult, type CalcOptions } from './calculate';
 
-export {
-  checkDimensions,
-  normaliseUnit,
-  type DimensionIssue,
-} from './formula-dimensions';
+export { checkDimensions, normaliseUnit, type DimensionIssue } from './formula-dimensions';
 
 export {
   FORMULA_ROOT_LABEL,

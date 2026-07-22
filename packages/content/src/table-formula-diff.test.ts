@@ -129,8 +129,6 @@ describe('table formula engines — differential', () => {
  * checking while every other test stayed green.
  */
 describe('unit integrity — the reason for the migration', () => {
-  const unitDoc: TableDoc = { columns: [], rows: [], aggregates: {}, views: [] };
-  const unitRow: Row = { id: 'u', cells: {} };
   const raw = (expr: string): unknown => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { create, all } = require('mathjs');

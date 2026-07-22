@@ -22,7 +22,10 @@ import type { FormulaSpec, SpecVariable } from './formula-spec';
 
 const ALL_FACTORIES = all as FactoryFunctionMap;
 
-let instance: { math: MathJsInstance; compile: (e: string) => { evaluate: (s: Record<string, unknown>) => unknown } } | null = null;
+let instance: {
+  math: MathJsInstance;
+  compile: (e: string) => { evaluate: (s: Record<string, unknown>) => unknown };
+} | null = null;
 
 function engine() {
   if (!instance) {

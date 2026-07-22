@@ -166,10 +166,7 @@ export async function listFormulas(
   return rows.map(rowOf);
 }
 
-export async function countFormulas(
-  ownerId: string,
-  opts: ListFormulasOpts = {},
-): Promise<number> {
+export async function countFormulas(ownerId: string, opts: ListFormulasOpts = {}): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(nodes)
