@@ -470,6 +470,55 @@ Required sequence:
 
 Do not bundle this with any other change.
 
+### Wave 6 status: ⛔ BLOCKED (2026-07-22)
+
+**pg-boss stays at ^10.1.6.** Tested against a throwaway Postgres 17 (isolated
+container; the live brain was never touched and was verified unchanged at schema
+24 / 5598 jobs afterwards).
+
+Our brains run **pgboss schema version 24**. pg-boss 12 refuses to migrate from
+it:
+
+```
+AssertionError: Cannot migrate pg-boss schema from version 24: the oldest
+supported starting version is 25. Upgrade to a schema at or above that
+version using an older pg-boss release first.
+```
+
+**A naive bump means every worker fails to boot** — email-sync, extract,
+runs-dispatch, telegram-poll, calendar-sync, maintenance, heartbeats — on every
+box in the fleet. And no path to 25 was found:
+
+| release | against schema 24 |
+| --- | --- |
+| 10.4.2 (current) | migration store holds **22..24** — 24 is the end of the v10 line |
+| 11.0.0 | `AssertionError: Version 24 not found.` |
+| 11.1.2 | `error: relation "pgboss.job_common" does not exist` |
+| 12.26.1 library | refuses (above) |
+| 12.26.1 CLI `migrate` | **same refusal, even `--dry-run`** |
+
+Three things worth carrying:
+
+1. **The CLI's `version` command is misleading.** It reports `Current 24 / Latest
+   37 / Migrations pending: 13` — arithmetic, *not* a migratability check.
+   `migrate` then refuses. Don't read "13 pending" as "13 will run".
+2. **Failed attempts are safe.** After every failure the schema was still exactly
+   24 with all seeded jobs intact — they abort before mutating. The failure mode
+   is crash-on-boot, not corruption.
+3. **pg-boss 12 is ESM-only with named exports.** `import PgBoss from 'pg-boss'`
+   throws; all **10 import sites** would need `import { PgBoss }`. It also ships a
+   CLI (`migrate`/`create`/`version`/`doctor`/`rollback`/`plans`) — the right tool
+   for the eventual migration, just not from 24.
+
+Routes forward, none yet chosen: find the 11.0.x that does 24→25 (11.0.1–11.0.7
+untested individually); get upstream guidance; hand-write the 24→25 migration; or
+drain the queues and let 12 build the schema fresh at 37, accepting the loss of
+queued/scheduled state. Filed as its own task.
+
+> Worth noting for calibration: types and tests would have *passed*. `pnpm verify`
+> stays green through a pg-boss bump — the failure only exists where a real
+> pg-boss 12 meets a real schema-24 database.
+
 ## Deferred — TypeScript 5.9 → 7.0
 
 **Recommendation: do not attempt in this effort.** TypeScript 7 is the native
@@ -478,8 +527,26 @@ across all 29 workspace packages at once, and `typescript-eslint` 8.65 is very
 unlikely to support it yet, which would take the entire lint gate offline exactly
 when we need it most.
 
-Revisit as its own project once: `typescript-eslint` ships explicit TS 7 support,
-Next 16 supports it, and Waves 1–6 are merged. Until then hold at the latest 5.x.
+**Re-checked 2026-07-22, after eslint 10 and Next 16 landed — still deferred, and
+now on evidence rather than caution:**
+
+```
+typescript-eslint@8.65.0  peerDependencies:
+  eslint:     ^8.57.0 || ^9.0.0 || ^10.0.0     ← eslint 10 is fine
+  typescript: >=4.8.4 <6.1.0                   ← excludes 7.x, and even 6.1
+```
+
+TypeScript 7 is outside `typescript-eslint`'s supported range, and the only newer
+publishes are `8.65.1-alpha.*` prereleases. Next 16 is *not* a blocker — it
+declares no `typescript` peer at all.
+
+So adopting TS 7 today means running the lint gate unsupported or losing it. That
+gate is not decorative: the eslint 9→10 bump alone surfaced 14 real defects,
+including dead initializers that were suppressing TypeScript's own
+definite-assignment checking.
+
+**Revisit condition, concrete and checkable:** when
+`npm view typescript-eslint peerDependencies.typescript` includes 7.x.
 
 ## Sequencing summary
 
