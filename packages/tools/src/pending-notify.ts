@@ -27,6 +27,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, telegramChats } from '@mantle/db';
 import { accountById, sendApprovalCard } from '@mantle/telegram';
 import { loadProfilePreferences } from '@mantle/content';
+import { registerPendingCreatedNotifier } from '@mantle/runs';
 
 /** The Postgres channel the web realtime bridge LISTENs on for approval
  *  queue changes. Exported so notifier + listener share one string. */
@@ -137,3 +138,14 @@ export async function notifyPendingCreated(input: {
     );
   }
 }
+
+/**
+ * Wire the runner engine's approval rows into this fan-out. The engine
+ * creates `ask_human` questions and `run_budget` pauses inside its own
+ * transaction and cannot call us directly (it would close an import cycle —
+ * this package already imports @mantle/runs), so it emits a
+ * `pending_created` post-commit action and @mantle/runs calls whatever is
+ * registered here. Registering at module load means any process that touches
+ * @mantle/tools announces its questions; without it a parked run is silent.
+ */
+registerPendingCreatedNotifier(notifyPendingCreated);

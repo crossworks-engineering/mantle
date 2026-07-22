@@ -59,6 +59,132 @@ export const BANNED_ITEM_TOOLS: ReadonlySet<string> = new Set([
 const MAX_PLAN_DEPTH = 4;
 const MAX_PLAN_NODES = 50;
 
+// ── ask_human questionnaire form (WP1) ───────────────────────────────────────
+// A question can carry a structured `form` instead of one flat option list:
+// up to 4 sub-questions, each with labelled options + descriptions and an
+// "Other" free-text escape. The caps exist so a question stays ANSWERABLE at a
+// glance — a 20-field form is a document, not a gate, and it has to render in
+// the assistant panel column as well as on /pending.
+const MAX_FORM_QUESTIONS = 4;
+const MAX_FORM_OPTIONS = 8;
+const MAX_HEADER_CHARS = 24;
+const MAX_LABEL_CHARS = 80;
+const MAX_DESCRIPTION_CHARS = 200;
+/** Payload guard — the form rides in run_items.payload AND the pending row's
+ *  args, and both are read into prompts. */
+const MAX_FORM_JSON_BYTES = 8_000;
+
+export type AskHumanFormOption = { label: string; description?: string };
+export type AskHumanFormQuestion = {
+  id: string;
+  header?: string;
+  question: string;
+  options: AskHumanFormOption[];
+  multi_select?: boolean;
+  allow_other?: boolean;
+};
+export type AskHumanForm = { questions: AskHumanFormQuestion[] };
+
+/**
+ * Validate + normalise `form` on an ask_human leaf. Returns `{ form }` when
+ * present and valid, `{}` when absent, `{ error }` with a corrective
+ * otherwise. Every question gets a stable `id` (explicit, else slugified
+ * header, else `q1`…) — the answer payload references questions by it, so it
+ * must not depend on array order the operator can't see.
+ */
+function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; error?: string } {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return {
+      error: `plan${path}: 'form' must be an object like {questions:[{question, options:[{label}]}]} — use plain 'options' for a single yes/no or pick-one question`,
+    };
+  }
+  const questionsRaw = (raw as Record<string, unknown>).questions;
+  if (!Array.isArray(questionsRaw) || questionsRaw.length === 0) {
+    return { error: `plan${path}: form.questions must be a non-empty array` };
+  }
+  if (questionsRaw.length > MAX_FORM_QUESTIONS) {
+    return {
+      error: `plan${path}: form.questions has ${questionsRaw.length} entries — at most ${MAX_FORM_QUESTIONS}. Split the rest into a later ask_human step (the answers to this one may change what you still need to ask).`,
+    };
+  }
+  const questions: AskHumanFormQuestion[] = [];
+  const seenIds = new Set<string>();
+  for (let i = 0; i < questionsRaw.length; i += 1) {
+    const q = questionsRaw[i];
+    const at = `${path}.form.questions[${i}]`;
+    if (!q || typeof q !== 'object' || Array.isArray(q)) {
+      return { error: `plan${at}: each form question must be an object` };
+    }
+    const o = q as Record<string, unknown>;
+    const question = typeof o.question === 'string' ? o.question.trim() : '';
+    if (!question) return { error: `plan${at}: needs a non-empty 'question'` };
+    const header = typeof o.header === 'string' ? o.header.trim() : '';
+    if (header.length > MAX_HEADER_CHARS) {
+      return {
+        error: `plan${at}: 'header' is ${header.length} chars — at most ${MAX_HEADER_CHARS} (it renders as a chip, not a sentence; put the detail in 'question')`,
+      };
+    }
+    const optionsRaw = Array.isArray(o.options) ? o.options : [];
+    if (optionsRaw.length > MAX_FORM_OPTIONS) {
+      return {
+        error: `plan${at}: ${optionsRaw.length} options — at most ${MAX_FORM_OPTIONS}. Offer the common cases and let 'allow_other' cover the rest.`,
+      };
+    }
+    const options: AskHumanFormOption[] = [];
+    for (let j = 0; j < optionsRaw.length; j += 1) {
+      const optRaw = optionsRaw[j];
+      // A bare string is the obvious shorthand — accept it rather than
+      // teaching a shape the model already guessed wrong once.
+      const opt =
+        typeof optRaw === 'string'
+          ? { label: optRaw }
+          : optRaw && typeof optRaw === 'object' && !Array.isArray(optRaw)
+            ? (optRaw as Record<string, unknown>)
+            : null;
+      if (!opt) {
+        return {
+          error: `plan${at}.options[${j}]: each option is a string or {label, description?}`,
+        };
+      }
+      const label = typeof opt.label === 'string' ? opt.label.trim() : '';
+      if (!label) return { error: `plan${at}.options[${j}]: needs a non-empty 'label'` };
+      if (label.length > MAX_LABEL_CHARS) {
+        return {
+          error: `plan${at}.options[${j}]: 'label' is ${label.length} chars — at most ${MAX_LABEL_CHARS}; move the explanation into 'description'`,
+        };
+      }
+      const description =
+        typeof opt.description === 'string'
+          ? opt.description.trim().slice(0, MAX_DESCRIPTION_CHARS)
+          : '';
+      options.push({ label, ...(description ? { description } : {}) });
+    }
+    const fallbackId = header ? header.toLowerCase().replace(/[^a-z0-9]+/g, '-') : `q${i + 1}`;
+    let id = typeof o.id === 'string' && o.id.trim() ? o.id.trim() : fallbackId || `q${i + 1}`;
+    if (seenIds.has(id)) id = `${id}-${i + 1}`;
+    seenIds.add(id);
+    questions.push({
+      id,
+      ...(header ? { header } : {}),
+      question,
+      options,
+      ...(o.multi_select === true ? { multi_select: true } : {}),
+      // Default ON: a question with no escape hatch forces a wrong answer
+      // when none of the options fit. Opt out explicitly.
+      ...(o.allow_other === false ? { allow_other: false } : { allow_other: true }),
+    });
+  }
+  const form: AskHumanForm = { questions };
+  const bytes = JSON.stringify(form).length;
+  if (bytes > MAX_FORM_JSON_BYTES) {
+    return {
+      error: `plan${path}: the form is ${bytes} bytes — at most ${MAX_FORM_JSON_BYTES}. Shorten the descriptions or ask fewer things at once.`,
+    };
+  }
+  return { form };
+}
+
 const DISABLED_ERROR =
   'Runner queues are disabled on this brain (MANTLE_RUNS is not set). ' +
   'Do the work inline with ordinary tool calls instead.';
@@ -82,8 +208,10 @@ type ParsedPlan =
   | { ok: false; error: string };
 
 /** Validate + normalize the model-supplied plan tree into the engine shape.
- *  Every error names the offending path and the fix (error style guide). */
-function parsePlan(raw: unknown): ParsedPlan {
+ *  Every error names the offending path and the fix (error style guide).
+ *  Exported for tests — the ask_human questionnaire caps are a contract the
+ *  answer UIs render against, so they get direct coverage. */
+export function parsePlan(raw: unknown): ParsedPlan {
   const toolSlugs: string[] = [];
   const workerSlugs: string[] = [];
   let nodes = 0;
@@ -249,11 +377,16 @@ function parsePlan(raw: unknown): ParsedPlan {
         const options = Array.isArray(o.options)
           ? (o.options as unknown[]).filter((x): x is string => typeof x === 'string' && !!x.trim())
           : [];
+        const { form, error: formError } = parseAskHumanForm(o.form, path);
+        if (formError) return { error: formError };
         return {
           kind: 'ask_human',
           payload: {
             question,
             ...(options.length > 0 ? { options } : {}),
+            // A structured form supersedes flat options as the answer UI;
+            // `question` stays the headline either way.
+            ...(form ? { form } : {}),
             // Undated by default — a question waits indefinitely (that is
             // the feature); timeout_seconds makes it an EXPIRING question
             // (the sweep fails it `timeout` when the window closes).
@@ -431,7 +564,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
         plan: {
           type: 'object',
           description:
-            "The run tree. Node shapes: {kind:'seq'|'par', label?, join_policy?:'wait_all'|'fail_fast', children:[…]} | {kind:'tool_call', tool:'<slug>', args:{…}, side_effecting?:true, timeout_seconds?:600} | {kind:'note', text:'…'} | {kind:'worker_invoke', step:'<self-contained task>', acceptance_criteria?:'…', worker?:'<worker slug — omit for the default>', group?:'<worker group slug — seq-only; expands into par(one attempt per member) + a panel audit; mutually exclusive with worker>', subject_node_ids?:[…]} | {kind:'audit', scope?:'…'} (seq-only, right after the worker step it judges) | {kind:'ask_human', question:'…', options?:['…'], timeout_seconds?} (seq-only; waits indefinitely unless timed — the operator answers via pending approvals and the answer flows to later steps). Root must be a group. Mark any state-changing call side_effecting (it then never auto-retries).",
+            "The run tree. Node shapes: {kind:'seq'|'par', label?, join_policy?:'wait_all'|'fail_fast', children:[…]} | {kind:'tool_call', tool:'<slug>', args:{…}, side_effecting?:true, timeout_seconds?:600} | {kind:'note', text:'…'} | {kind:'worker_invoke', step:'<self-contained task>', acceptance_criteria?:'…', worker?:'<worker slug — omit for the default>', group?:'<worker group slug — seq-only; expands into par(one attempt per member) + a panel audit; mutually exclusive with worker>', subject_node_ids?:[…]} | {kind:'audit', scope?:'…'} (seq-only, right after the worker step it judges) | {kind:'ask_human', question:'…', options?:['…'], form?:{questions:[{header?:'<chip>', question:'…', options:[{label:'…', description?:'…'}], multi_select?:true, allow_other?:false}]}, timeout_seconds?} (seq-only; waits indefinitely unless timed — the operator answers via pending approvals and the answer flows to later steps; use `form` to ask up to 4 things at once as a questionnaire, plain `options` for one pick-one question). Root must be a group. Mark any state-changing call side_effecting (it then never auto-retries).",
           additionalProperties: true,
         },
       },

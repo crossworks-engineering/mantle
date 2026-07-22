@@ -9,6 +9,18 @@ const PatchBody = z.object({
   /** Runner ask_human questions: the free-text answer the run continues
    *  with (approve only; optional — plain approval works for yes/no). */
   answer: z.string().max(4000).optional(),
+  /** Structured questionnaire answers (WP1) — one entry per form question.
+   *  Caps mirror the plan-side form caps in @mantle/tools. */
+  answers: z
+    .array(
+      z.object({
+        question: z.string().min(1).max(200),
+        selected: z.array(z.string().max(200)).max(8),
+        other: z.string().max(2000).optional(),
+      }),
+    )
+    .max(4)
+    .optional(),
 });
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -32,12 +44,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json({ error: 'expected { decision: approve|reject }' }, { status: 400 });
   }
   try {
+    const { answer, answers } = parsed.data;
     const row =
       parsed.data.decision === 'approve'
         ? await approvePendingCall(
             user.id,
             idParsed.data.id,
-            parsed.data.answer ? { answer: parsed.data.answer } : undefined,
+            answer || answers?.length
+              ? { ...(answer ? { answer } : {}), ...(answers?.length ? { answers } : {}) }
+              : undefined,
           )
         : await rejectPendingCall(user.id, idParsed.data.id);
     if (!row) {

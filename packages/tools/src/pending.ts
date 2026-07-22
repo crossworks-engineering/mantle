@@ -12,6 +12,7 @@ import {
   budgetRunId,
   enqueueRunActionsSafe,
   RUN_BUDGET_TOOL_SLUG,
+  type HumanFormAnswer,
 } from '@mantle/runs';
 import { dispatchTool } from './dispatch';
 import { notifyPendingChanged } from './pending-notify';
@@ -123,6 +124,7 @@ async function settleAskHuman(
   row: PendingToolCall,
   decision: 'answered' | 'rejected',
   answer?: string,
+  answers?: readonly HumanFormAnswer[],
 ): Promise<PendingSummary | null> {
   const itemId = askHumanItemId(row);
   if (!itemId) {
@@ -137,7 +139,13 @@ async function settleAskHuman(
   try {
     // ownerId from the ROW (owner-scoped by the approve/reject CAS);
     // applyHumanAnswer verifies the item's run belongs to that owner (F2).
-    res = await applyHumanAnswer(db, { itemId, ownerId: row.ownerId, decision, answer });
+    res = await applyHumanAnswer(db, {
+      itemId,
+      ownerId: row.ownerId,
+      decision,
+      answer,
+      ...(answers?.length ? { answers } : {}),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return revertToPending(
@@ -162,7 +170,12 @@ async function settleAskHuman(
   const [updated] = await db
     .update(pendingToolCalls)
     .set({
-      result: { item_id: itemId, item_state: res.state, ...(answer?.trim() ? { answer } : {}) },
+      result: {
+        item_id: itemId,
+        item_state: res.state,
+        ...(answer?.trim() ? { answer } : {}),
+        ...(answers?.length ? { answers } : {}),
+      },
       executedAt: new Date(),
       updatedAt: new Date(),
     })
@@ -282,7 +295,7 @@ export async function rejectPendingCall(
 export async function approvePendingCall(
   ownerId: string,
   id: string,
-  opts?: { answer?: string },
+  opts?: { answer?: string; answers?: readonly HumanFormAnswer[] },
 ): Promise<PendingSummary | null> {
   // Atomic claim — only act if still pending.
   const [claimed] = await db
@@ -304,7 +317,7 @@ export async function approvePendingCall(
   // Runner question? Complete the run item instead of dispatching a tool
   // (there is no registered 'ask_human' tool, by design).
   if (claimed.toolSlug === 'ask_human') {
-    return settleAskHuman(claimed, 'answered', opts?.answer);
+    return settleAskHuman(claimed, 'answered', opts?.answer, opts?.answers);
   }
   // Runner budget pause? Raise + resume (there is no 'run_budget' tool
   // either — WP4's "raise or cancel?" surface).

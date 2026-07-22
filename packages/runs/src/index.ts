@@ -32,6 +32,11 @@ export {
 export { isRunsEnabled } from './flag';
 export { ensureRunQueues, enqueueRunActions, enqueueRunActionsSafe } from './boss';
 export {
+  registerPendingCreatedNotifier,
+  type PendingCreatedNotice,
+  type PendingCreatedNotifier,
+} from './notify';
+export {
   compileRunState,
   renderRunStateText,
   type CompiledRun,
@@ -61,7 +66,12 @@ export {
   renderAuditSection,
   renderPanelSection,
 } from './audit-prompt';
-export { applyHumanAnswer, type HumanAnswerResult } from './human';
+export {
+  applyHumanAnswer,
+  renderFormAnswers,
+  type HumanAnswerResult,
+  type HumanFormAnswer,
+} from './human';
 export {
   applyBudgetDecision,
   budgetRunId,

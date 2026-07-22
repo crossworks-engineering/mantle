@@ -11,6 +11,10 @@ type Toast = {
   message: string;
   /** ms to auto-dismiss; 0 = sticky. Default 5000. */
   durationMs: number;
+  /** Optional one-tap follow-through — "Answer" on a blocked-run question,
+   *  "Open" on a finished job. Clicking it also dismisses the toast: the
+   *  action IS the acknowledgement. */
+  action?: { label: string; onClick: () => void };
 };
 
 type ToastApi = {
@@ -110,6 +114,18 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
     >
       <Icon className="mt-0.5 size-4 shrink-0" />
       <span className="flex-1 break-words">{toast.message}</span>
+      {toast.action && (
+        <button
+          type="button"
+          onClick={() => {
+            toast.action?.onClick();
+            onClose();
+          }}
+          className="shrink-0 self-center rounded-sm px-1.5 py-0.5 font-medium underline underline-offset-2 hover:bg-foreground/10"
+        >
+          {toast.action.label}
+        </button>
+      )}
       <button
         type="button"
         onClick={onClose}

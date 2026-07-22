@@ -69,6 +69,15 @@ function dispatches(...results: Array<{ actions: PostCommitAction[] }>) {
   return results.flatMap((r) => r.actions).filter((a) => a.type === 'dispatch');
 }
 
+/** The approval fan-out actions (WP0) — what makes a parked run audible. */
+function notices(...results: Array<{ actions: PostCommitAction[] }>) {
+  return results
+    .flatMap((r) => r.actions)
+    .filter((a): a is Extract<PostCommitAction, { type: 'pending_created' }> => {
+      return a.type === 'pending_created';
+    });
+}
+
 async function itemRow(id: string) {
   const [row] = await db.select().from(runItems).where(eq(runItems.id, id));
   return row!;
@@ -779,6 +788,46 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     const rows = await pendingRowFor(ask!.id);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.status).toBe('pending');
+    // WP0: the question announces itself — without this action the run parks
+    // silently and the operator only finds it by visiting /pending.
+    const announced = notices({ actions });
+    expect(announced).toHaveLength(1);
+    expect(announced[0]).toMatchObject({
+      ownerId: OWNER,
+      pendingId: rows[0]!.id,
+      toolSlug: 'ask_human',
+    });
+    expect(announced[0]!.args).toMatchObject({
+      question: 'Proceed with the send?',
+      item_id: ask!.id,
+    });
+  });
+
+  it('ask_human carries a structured form into the pending row + notice', SLOW, async () => {
+    const form = {
+      questions: [
+        {
+          id: 'env',
+          header: 'Environment',
+          question: 'Which environment should the deploy target?',
+          options: [{ label: 'dev' }, { label: 'prod', description: 'live traffic' }],
+          allow_other: true,
+        },
+      ],
+    };
+    const { rootItemId, actions } = await createRun(db, {
+      ownerId: OWNER,
+      title: 'ask form',
+      plan: { kind: 'seq', children: [askHuman('Deploy settings', { form })] },
+    });
+    const [ask] = await children(rootItemId);
+    const [row] = (await db.execute(
+      sql`SELECT args FROM pending_tool_calls WHERE args->>'item_id' = ${ask!.id}`,
+    )) as unknown as Array<{ args: Record<string, unknown> }>;
+    // The row alone must render the questionnaire — every answer surface
+    // (/pending, the assistant card, pending_get) reads it from here.
+    expect(row!.args.form).toMatchObject(form);
+    expect(notices({ actions })[0]!.args.form).toMatchObject(form);
   });
 
   it('answered: item done with the answer, seq advances', SLOW, async () => {
@@ -984,7 +1033,16 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     expect(run.status).toBe('paused');
     expect(run.pausedAt).not.toBeNull();
     expect(run.spentMicroUsd).toBe(150_000);
-    expect((await budgetRowsFor(runId))[0]!.status).toBe('pending');
+    const budgetRows = await budgetRowsFor(runId);
+    expect(budgetRows[0]!.status).toBe('pending');
+    // WP0: a paused run the operator never hears about is a stalled run.
+    const paused = notices(res);
+    expect(paused).toHaveLength(1);
+    expect(paused[0]).toMatchObject({
+      ownerId: OWNER,
+      pendingId: budgetRows[0]!.id,
+      toolSlug: 'run_budget',
+    });
     // The gate is the CLAIM, not the promotion.
     expect((await itemRow(b!.id)).state).toBe('ready');
     expect(await claimItem(db, b!.id)).toBeNull();

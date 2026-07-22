@@ -22,6 +22,35 @@ import { runItems, runs, type Db } from '@mantle/db';
 
 import { completeItem, type PostCommitAction } from './engine';
 
+/** One answered sub-question of a structured questionnaire (WP1).
+ *  `question` is the form question's id (or its header/text — the answer
+ *  surface echoes whatever it rendered). */
+export type HumanFormAnswer = {
+  question: string;
+  selected: string[];
+  /** Free text from the "Other" escape, when the options didn't fit. */
+  other?: string;
+};
+
+const MAX_ANSWER_CHARS = 4_000;
+
+/**
+ * Flatten structured answers into the one-line-per-question prose that rides
+ * `result.answer`. EVERY existing consumer — the compiled state, the resume
+ * prompt, later steps reading the answer — keeps working unchanged; the
+ * structured array is additive.
+ */
+export function renderFormAnswers(answers: readonly HumanFormAnswer[]): string {
+  return answers
+    .map((a) => {
+      const picks = [...a.selected];
+      if (a.other?.trim()) picks.push(`Other: ${a.other.trim()}`);
+      return `${a.question}: ${picks.length > 0 ? picks.join(', ') : '(no answer)'}`;
+    })
+    .join('\n')
+    .slice(0, MAX_ANSWER_CHARS);
+}
+
 export type HumanAnswerResult =
   | { ok: true; state: 'done' | 'failed'; actions: PostCommitAction[] }
   | {
@@ -47,7 +76,15 @@ export type HumanAnswerResult =
  */
 export async function applyHumanAnswer(
   db: Db,
-  opts: { itemId: string; ownerId: string; decision: 'answered' | 'rejected'; answer?: string },
+  opts: {
+    itemId: string;
+    ownerId: string;
+    decision: 'answered' | 'rejected';
+    answer?: string;
+    /** Structured questionnaire answers (WP1). When present they also
+     *  render into `answer` if the caller didn't supply prose. */
+    answers?: readonly HumanFormAnswer[];
+  },
 ): Promise<HumanAnswerResult> {
   const [item] = await db.select().from(runItems).where(eq(runItems.id, opts.itemId));
   if (!item || item.kind !== 'ask_human') {
@@ -70,13 +107,20 @@ export async function applyHumanAnswer(
   }
 
   const state = opts.decision === 'answered' ? 'done' : 'failed';
+  // Prose answer, in order of preference: what the caller wrote, else the
+  // rendered questionnaire, else plain approval (yes/no questions — the
+  // approval IS the answer).
+  const structured = opts.answers?.length ? opts.answers : undefined;
+  const prose =
+    opts.answer?.trim() || (structured ? renderFormAnswers(structured) : '') || 'approved';
   const { completed, actions } = await completeItem(db, {
     itemId: item.id,
     state,
     ...(opts.decision === 'answered'
       ? {
           result: {
-            ...(opts.answer?.trim() ? { answer: opts.answer.trim() } : { answer: 'approved' }),
+            answer: prose.slice(0, MAX_ANSWER_CHARS),
+            ...(structured ? { answers: structured } : {}),
           },
         }
       : {

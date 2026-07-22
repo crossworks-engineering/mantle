@@ -193,6 +193,31 @@ describe('ask_human approvals', () => {
     });
   });
 
+  it('forwards structured questionnaire answers and records them on the row', async () => {
+    fake.queue('pending_tool_calls', [askRow()]);
+    const answers = [
+      { question: 'env', selected: ['prod'] },
+      { question: 'window', selected: [], other: 'after 22:00 UTC' },
+    ];
+    await approvePendingCall(OWNER, ROW_ID, { answers });
+    expect(h.applyHumanAnswer.mock.calls[0]![1]).toMatchObject({
+      itemId: 'item-9',
+      ownerId: OWNER,
+      decision: 'answered',
+      answers,
+    });
+    // The row keeps the structured record too — /pending shows what was
+    // actually chosen, not just the prose the run consumed.
+    const last = pendingWrites().at(-1)!;
+    expect((last.values.result as Record<string, unknown>).answers).toEqual(answers);
+  });
+
+  it('omits an empty answers array rather than passing a meaningless one', async () => {
+    fake.queue('pending_tool_calls', [askRow()]);
+    await approvePendingCall(OWNER, ROW_ID, { answers: [] });
+    expect(h.applyHumanAnswer.mock.calls[0]![1]).not.toHaveProperty('answers');
+  });
+
   it('rejection completes the step so the run advances', async () => {
     fake.queue('pending_tool_calls', [askRow({ status: 'rejected' })]);
     h.humanResult = { ok: true, state: 'failed', actions: [] };

@@ -105,6 +105,9 @@ function outcomeFor(item: RunItemRow): string | undefined {
     const findings = Array.isArray(r.findings) ? (r.findings as unknown[]).length : 0;
     return `verdict: ${r.verdict}${findings ? ` (${findings} finding${findings === 1 ? '' : 's'})` : ''}`;
   }
+  // An answered question: the operator's decision is the outcome, and it is
+  // the one thing later steps reason from — render it, never omit it.
+  if (typeof r.answer === 'string') return truncate(`answered: ${r.answer}`);
   if (typeof r.proposal === 'string') return truncate(r.proposal);
   if (typeof r.output === 'string') return truncate(r.output);
   if (r.output !== undefined) return truncate(JSON.stringify(r.output));

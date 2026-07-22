@@ -10,10 +10,18 @@ import {
   useState,
 } from 'react';
 import { usePathname } from 'next/navigation';
-import { Loader2, Maximize2, PanelRight, Sparkles, SquareDashedMousePointer } from 'lucide-react';
+import {
+  HelpCircle,
+  Loader2,
+  Maximize2,
+  PanelRight,
+  Sparkles,
+  SquareDashedMousePointer,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { apiEventStream, apiUrl, withAuth } from '@/lib/api-fetch';
+import { usePendingQuestions } from '@/components/pending/use-pending-questions';
 import type { TurnEvent } from '@mantle/client-types';
 
 /**
@@ -642,6 +650,9 @@ export function useAssistantDock(): AssistantDockApi {
 export function AssistantButton() {
   const { panel, busy, toggle, messages } = useAssistantDock();
   const [seenId, setSeenId] = useState<string | null>(null);
+  // Blocked runs waiting on an answer — the panel renders the questionnaire,
+  // so the button is what tells you to go there.
+  const { count: questionCount } = usePendingQuestions();
 
   // Latest settled assistant reply — what an "unread" dot keys off.
   const latestReplyId = useMemo(() => {
@@ -674,24 +685,51 @@ export function AssistantButton() {
 
   const open = panel === 'open';
   const unread = !busy && latestReplyId != null && latestReplyId !== seenId;
+  // "Needs you" outranks "unread": a parked run is blocked until answered.
+  // It stops the moment the panel is OPEN (the question is then on screen) —
+  // not when answered, so glancing at it is what clears the alarm.
+  const needsYou = questionCount > 0 && !open;
 
   return (
     <Button
       onClick={toggle}
       size="sm"
-      variant={open ? 'default' : 'ghost'}
-      className="relative"
+      variant={open ? 'default' : needsYou ? 'default' : 'ghost'}
+      className={cn(
+        'relative',
+        needsYou && 'animate-pulse ring-2 ring-primary ring-offset-1 ring-offset-sidebar',
+      )}
       aria-pressed={open}
-      aria-label="Toggle assistant (⌘I)"
-      title="Assistant (⌘I)"
+      aria-label={
+        needsYou
+          ? `Assistant — ${questionCount} question${questionCount === 1 ? '' : 's'} need${questionCount === 1 ? 's' : ''} your answer (⌘I)`
+          : 'Toggle assistant (⌘I)'
+      }
+      title={
+        needsYou
+          ? `${questionCount} question${questionCount === 1 ? '' : 's'} waiting on you — open the assistant to answer`
+          : 'Assistant (⌘I)'
+      }
     >
-      {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Sparkles aria-hidden />}
+      {busy ? (
+        <Loader2 className="animate-spin" aria-hidden />
+      ) : needsYou ? (
+        <HelpCircle aria-hidden />
+      ) : (
+        <Sparkles aria-hidden />
+      )}
       <span className="hidden sm:inline">Assistant</span>
-      {unread && (
-        <span
-          className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-destructive ring-2 ring-sidebar"
-          aria-hidden
-        />
+      {needsYou ? (
+        <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-background px-1 text-[10px] font-semibold tabular-nums text-foreground">
+          {questionCount}
+        </span>
+      ) : (
+        unread && (
+          <span
+            className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-destructive ring-2 ring-sidebar"
+            aria-hidden
+          />
+        )
       )}
     </Button>
   );

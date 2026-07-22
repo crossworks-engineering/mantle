@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { ActiveRunsStrip } from '@/components/runs/active-runs-strip';
+import { PendingQuestionsStrip } from '@/components/pending/pending-questions-strip';
 import { AssistantClient } from './assistant-client';
 import { AgentSelect } from './agent-select';
 import type { AssistantAgentOption, AssistantTimelineRow } from '@/lib/assistant';
@@ -158,6 +159,9 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
         </div>
       )}
 
+      {/* Blocked runs first: a question is the only thing here the operator
+          MUST act on — the run cannot advance without it. Self-hiding. */}
+      <PendingQuestionsStrip />
       {/* Background runs the owner has in flight — compact cards, self-hiding
           when none are active (slice 4 WP-A). */}
       <ActiveRunsStrip />

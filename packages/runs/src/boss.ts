@@ -17,6 +17,7 @@
 import PgBoss from 'pg-boss';
 
 import type { PostCommitAction } from './engine';
+import { notifyPendingCreated } from './notify';
 import { RUN_RESUME_QUEUE, RUN_TOOL_QUEUE, RUN_WORKER_QUEUE } from './queues';
 
 let bossPromise: Promise<PgBoss> | null = null;
@@ -56,8 +57,28 @@ async function getSendBoss(): Promise<PgBoss> {
  */
 export async function enqueueRunActions(actions: readonly PostCommitAction[]): Promise<void> {
   if (actions.length === 0) return;
+  // The approval fan-out is not a queue job — run it without (and before)
+  // touching pg-boss, so a question is still announced on a brain whose boss
+  // connection is sick. `notifyPendingCreated` soft-fails internally.
+  const notices = actions.filter(
+    (a): a is Extract<PostCommitAction, { type: 'pending_created' }> =>
+      a.type === 'pending_created',
+  );
+  for (const n of notices) {
+    await notifyPendingCreated({
+      ownerId: n.ownerId,
+      pendingId: n.pendingId,
+      toolSlug: n.toolSlug,
+      args: n.args,
+    });
+  }
+  const jobs = actions.filter(
+    (a): a is Exclude<PostCommitAction, { type: 'pending_created' }> =>
+      a.type !== 'pending_created',
+  );
+  if (jobs.length === 0) return;
   const boss = await getSendBoss();
-  for (const a of actions) {
+  for (const a of jobs) {
     if (a.type === 'dispatch') {
       await boss.send(
         a.queue,

@@ -5,36 +5,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, X, FlaskConical, AlertTriangle } from 'lucide-react';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { SubmitButton } from '@/components/ui/submit-button';
 import { Spinner } from '@/components/ui/spinner';
-import { useRealtime } from '@/components/realtime/use-realtime';
-
-type PendingRow = {
-  id: string;
-  toolSlug: string;
-  args: Record<string, unknown>;
-  status: 'pending' | 'approved' | 'rejected' | 'expired';
-  agentId: string | null;
-  traceId: string | null;
-  result: Record<string, unknown> | null;
-  error: string | null;
-  createdAt: string;
-  decidedAt: string | null;
-  executedAt: string | null;
-};
-
-/** A decision, optionally carrying a free-text answer (ask_human). */
-type Decide = (id: string, decision: 'approve' | 'reject', answer?: string) => Promise<void>;
-
-function str(v: unknown): string | null {
-  return typeof v === 'string' && v.trim() ? v : null;
-}
-function stringOptions(v: unknown): string[] {
-  return Array.isArray(v)
-    ? v.filter((o): o is string => typeof o === 'string' && o.length > 0)
-    : [];
-}
+import { QuestionnaireCard } from '@/components/pending/questionnaire-card';
+import { isQuestionRow, type Decide, type PendingRow } from '@/components/pending/types';
 
 export function PendingClient({ devMode = false }: { devMode?: boolean }) {
   const queryClient = useQueryClient();
@@ -48,10 +21,10 @@ export function PendingClient({ devMode = false }: { devMode?: boolean }) {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['pending'] });
 
-  // Keep this list live: a decision made elsewhere — a Telegram tap, another
-  // tab — repaints here without a manual refresh, same signal that drives the
-  // sidebar badge.
-  useRealtime(['pending_tool_call'], invalidate);
+  // This list stays live without its own SSE stream: the shell's
+  // <PendingQuestionWatcher/> holds the one app-wide `pending_tool_call`
+  // subscription and invalidates this very query key, so a decision made
+  // elsewhere — a Telegram tap, another tab — still repaints here.
 
   const queueTestApproval = async () => {
     setQueueing(true);
@@ -66,13 +39,14 @@ export function PendingClient({ devMode = false }: { devMode?: boolean }) {
     }
   };
 
-  const decide: Decide = async (id, decision, answer) => {
+  const decide: Decide = async (id, decision, payload) => {
     setBusyId(id);
     setError(undefined);
     try {
       await apiSend(`/api/pending/${id}`, 'PATCH', {
         decision,
-        ...(answer ? { answer } : {}),
+        ...(payload?.answer ? { answer: payload.answer } : {}),
+        ...(payload?.answers?.length ? { answers: payload.answers } : {}),
       });
       await invalidate();
     } catch (e) {
@@ -193,23 +167,20 @@ export function PendingClient({ devMode = false }: { devMode?: boolean }) {
 }
 
 /**
- * One pending row. Slug-aware: runner `ask_human` questions render the question
- * as the headline with one-click option chips + a free-text answer, and
- * `run_budget` pauses render "Raise budget" / "Cancel run" so the operator
- * knows the consequence. Everything else keeps the generic approve/reject +
- * collapsed-args view. A row that is still pending BUT carries an error is a
- * bounced decision (the v0.157.14 settle-revert path) — surface it loudly.
+ * One pending row. A human-answerable gate — a runner `ask_human` question or
+ * a `run_budget` pause — delegates to the SHARED <QuestionnaireCard/>, the
+ * same component the assistant panel renders, so the two surfaces can never
+ * drift apart. Everything else keeps the generic approve/reject +
+ * collapsed-args view for ordinary confirm-gated tool calls.
  */
 function PendingCard({ row, decide, busy }: { row: PendingRow; decide: Decide; busy: boolean }) {
-  const [answer, setAnswer] = useState('');
-  const isAsk = row.toolSlug === 'ask_human';
-  const isBudget = row.toolSlug === 'run_budget';
-  const question = str(row.args?.['question']);
-  const options = isAsk ? stringOptions(row.args?.['options']) : [];
-  const runId = str(row.args?.['run_id']);
-
-  const approveLabel = isBudget ? 'Raise budget' : 'Approve & run';
-  const rejectLabel = isBudget ? 'Cancel run' : 'Reject';
+  if (isQuestionRow(row)) {
+    return (
+      <li>
+        <QuestionnaireCard row={row} decide={decide} busy={busy} />
+      </li>
+    );
+  }
 
   return (
     <li className="space-y-2 px-3 py-3">
@@ -228,14 +199,6 @@ function PendingCard({ row, decide, busy }: { row: PendingRow; decide: Decide; b
       <div className="flex items-baseline gap-2">
         <code className="font-mono font-medium">{row.toolSlug}</code>
         <span className="text-xs text-muted-foreground">queued {fmtRelative(row.createdAt)}</span>
-        {runId && (
-          <a
-            href={`/runs?run=${runId}`}
-            className="text-xs underline text-muted-foreground hover:text-foreground"
-          >
-            ↗ run
-          </a>
-        )}
         {row.traceId && (
           <a
             href={`/traces/${row.traceId}`}
@@ -246,64 +209,15 @@ function PendingCard({ row, decide, busy }: { row: PendingRow; decide: Decide; b
         )}
       </div>
 
-      {/* The question is the headline for a human-answerable gate. */}
-      {(isAsk || isBudget) && question && <p className="text-sm text-foreground">{question}</p>}
-
-      {/* One-click option chips: each approves with that answer. */}
-      {isAsk && options.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {options.map((opt) => (
-            <Button
-              key={opt}
-              onClick={() => decide(row.id, 'approve', opt)}
-              disabled={busy}
-              size="sm"
-              variant="outline"
-            >
-              {opt}
-            </Button>
-          ))}
-        </div>
-      )}
-
-      {/* Free-text answer for ask_human — submit approves the run with it. */}
-      {isAsk && (
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const a = answer.trim();
-            if (!a) return;
-            void decide(row.id, 'approve', a);
-            setAnswer('');
-          }}
-        >
-          <Input
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            placeholder="Type an answer…"
-            maxLength={4000}
-            disabled={busy}
-            className="h-9"
-          />
-          <SubmitButton pending={busy} disabled={!answer.trim()} size="sm">
-            <Check /> Answer &amp; approve
-          </SubmitButton>
-        </form>
-      )}
-
-      {/* Generic tool payload: collapsed args (kept for non-question rows). */}
-      {!isAsk && !isBudget && (
-        <details className="rounded-md bg-muted/40 px-2 py-1 text-xs">
-          <summary className="cursor-pointer select-none font-mono text-muted-foreground hover:text-foreground">
-            args ({Object.keys(row.args ?? {}).length} field
-            {Object.keys(row.args ?? {}).length === 1 ? '' : 's'})
-          </summary>
-          <pre className="mt-1 max-h-64 overflow-auto font-mono">
-            {JSON.stringify(row.args, null, 2)}
-          </pre>
-        </details>
-      )}
+      <details className="rounded-md bg-muted/40 px-2 py-1 text-xs">
+        <summary className="cursor-pointer select-none font-mono text-muted-foreground hover:text-foreground">
+          args ({Object.keys(row.args ?? {}).length} field
+          {Object.keys(row.args ?? {}).length === 1 ? '' : 's'})
+        </summary>
+        <pre className="mt-1 max-h-64 overflow-auto font-mono">
+          {JSON.stringify(row.args, null, 2)}
+        </pre>
+      </details>
 
       <div className="flex gap-2">
         <Button
@@ -312,7 +226,7 @@ function PendingCard({ row, decide, busy }: { row: PendingRow; decide: Decide; b
           size="sm"
           className="bg-emerald-600 text-white hover:bg-emerald-700"
         >
-          <Check /> {approveLabel}
+          <Check /> Approve &amp; run
         </Button>
         <Button
           onClick={() => decide(row.id, 'reject')}
@@ -320,7 +234,7 @@ function PendingCard({ row, decide, busy }: { row: PendingRow; decide: Decide; b
           size="sm"
           variant="outline"
         >
-          <X /> {rejectLabel}
+          <X /> Reject
         </Button>
       </div>
     </li>

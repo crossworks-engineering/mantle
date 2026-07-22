@@ -605,10 +605,30 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
 
   server.tool(
     'pending_approve',
-    'Approve a queued tool call by id. The handler runs immediately under a fresh `manual` trace; the result is stored on the pending row and returned. For a runner `ask_human` question, approval completes the run step and `answer` carries the free-text reply the run continues with (omit it for a plain yes / option-pick approval).',
-    { id: z.string().uuid(), answer: z.string().max(4000).optional() },
-    async ({ id, answer }) => {
-      const row = await approvePendingCall(ownerId, id, answer ? { answer } : undefined);
+    'Approve a queued tool call by id. The handler runs immediately under a fresh `manual` trace; the result is stored on the pending row and returned. For a runner `ask_human` question, approval completes the run step and `answer` carries the free-text reply the run continues with (omit it for a plain yes / option-pick approval). When the row carries a `form` (see its args), answer per sub-question with `answers` instead.',
+    {
+      id: z.string().uuid(),
+      answer: z.string().max(4000).optional(),
+      answers: z
+        .array(
+          z.object({
+            question: z.string().max(200).describe("The form question's id, e.g. 'env'"),
+            selected: z.array(z.string().max(200)).max(8).describe('Chosen option labels'),
+            other: z.string().max(2000).optional().describe('Free text when no option fits'),
+          }),
+        )
+        .max(4)
+        .optional()
+        .describe("Structured answers, one entry per question in the row's `form`"),
+    },
+    async ({ id, answer, answers }) => {
+      const row = await approvePendingCall(
+        ownerId,
+        id,
+        answer || answers?.length
+          ? { ...(answer ? { answer } : {}), ...(answers?.length ? { answers } : {}) }
+          : undefined,
+      );
       if (!row) {
         return { content: [{ type: 'text', text: 'not found or already decided' }], isError: true };
       }

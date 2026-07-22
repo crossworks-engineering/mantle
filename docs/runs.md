@@ -143,13 +143,13 @@ cancellation.
 ## `ask_human` gates (slice 3 WP3)
 
 The audit-item pattern with a human in the LLM's place. An
-`{kind:'ask_human', question, options?, timeout_seconds?}` leaf (seq-only —
-the answer gates the steps after it) promotes `queued → ready`, is NEVER
-dispatched, and creates a `pending_tool_calls` row — the existing pending
-approvals UI, the `pending_*` tools, and the telegram approval flow are the
-answer surface. Slice 4 WP-C made `/pending` slug-aware: an `ask_human` row
-shows the question as its headline with one-click `options` chips and a
-free-text "Answer & approve" field (PATCH `/api/pending/:id`
+`{kind:'ask_human', question, options?, form?, timeout_seconds?}` leaf
+(seq-only — the answer gates the steps after it) promotes `queued → ready`,
+is NEVER dispatched, and creates a `pending_tool_calls` row — the existing
+pending approvals UI, the `pending_*` tools, and the telegram approval flow
+are the answer surface. Slice 4 WP-C made `/pending` slug-aware: an
+`ask_human` row shows the question as its headline with one-click `options`
+chips and a free-text "Answer & approve" field (PATCH `/api/pending/:id`
 `{decision:'approve', answer}`), and a `run_budget` pause labels its actions
 "Raise budget" / "Cancel run". `pending_approve` (with an optional free-text
 `answer`) completes the item `done` with the answer riding `result.answer`
@@ -162,6 +162,51 @@ duty 4 expires any pending row whose item went terminal (run cancelled,
 branch fail_fast-cancelled, question timed out), and an answer landing on a
 dead item expires the row with a teaching error instead of pretending it
 took effect.
+
+### Reaching the operator + the questionnaire
+
+A parked run used to be **silent**: the engine inserted the pending row
+inside its own transaction and nothing fired the approval fan-out, so a
+blocked run was discoverable only by visiting `/pending`. Two additions
+close that:
+
+- **The fan-out (`pending_created`).** Both silent creation sites — the
+  `ask_human` promote and the `run_budget` pause — now emit a
+  `pending_created` post-commit action carrying the row id + args.
+  `enqueueRunActions` hands it to whatever `@mantle/runs`'s
+  `registerPendingCreatedNotifier` seam holds (`notify.ts`); `@mantle/tools`
+  registers `notifyPendingCreated` at module load, so the question lights the
+  live sidebar badge, the companion device push, and the Telegram card like
+  any other approval. The seam exists because `@mantle/tools` already imports
+  `@mantle/runs` — the reverse edge would be a cycle. The action is
+  **advisory**: losing it loses a ping, never correctness, so it gets no
+  sweep re-send and a throwing notifier is swallowed.
+- **A structured questionnaire (`form`).** Beyond flat `options`, a question
+  can carry `form.questions[]` — up to 4 sub-questions, each with labelled
+  options (`{label, description?}`), `multi_select`, and an `allow_other`
+  free-text escape (default ON: a question with no escape hatch forces a
+  wrong answer). Caps are a contract the answer UIs render against — 4
+  questions, 8 options, 24-char headers, 80-char labels, 8 KB total — and
+  every rejection teaches the fix. The form rides verbatim into the pending
+  row's args, so `/pending`, the assistant panel and `pending_get` all render
+  it from the row alone. Answers come back as
+  `answers: [{question: '<id>', selected: [...], other?}]` (PATCH
+  `/api/pending/:id` or `pending_approve`), and land on the item as BOTH
+  `result.answers` (structured) and `result.answer` (rendered prose — every
+  pre-existing consumer keeps working unchanged).
+
+Surfacing, all driven by the ONE shared `['pending']` query
+(`components/pending/`): `<QuestionnaireCard/>` is a single renderer used by
+`/pending` AND the assistant thread's `<PendingQuestionsStrip/>`, so a
+blocked run is answerable where the operator already is; the footer
+`AssistantButton` pulses with a count while questions wait (it clears when
+the panel is opened — glancing at it is the acknowledgement); and a headless
+`<PendingQuestionWatcher/>` in the shell raises a sticky toast with an
+"Answer" action for questions that arrive **while you are looking** (never on
+first load — the initial fetch seeds the seen-set, so old questions don't
+toast-storm on refresh). `useRealtime` opens one SSE stream per call, so the
+watcher holds the single app-wide `pending_tool_call` subscription and every
+other consumer repaints off its invalidation.
 
 ## Worker groups / panels (slice 3 WP5)
 

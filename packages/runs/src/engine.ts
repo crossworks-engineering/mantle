@@ -68,7 +68,13 @@ async function lockRunRow(tx: Tx, runId: string): Promise<void> {
 /** pg-boss enqueues owed after the surrounding transaction commits.
  *  `sideEffecting` rides on dispatch actions so the sender can set transport
  *  `retryLimit: 0` for side-effecting items (§5b: exempt from BOTH retry
- *  layers). */
+ *  layers).
+ *
+ *  `pending_created` is the odd one out: not a queue job but the approval
+ *  fan-out (badge / companion push / Telegram card) for a row this
+ *  transaction inserted — see notify.ts for why it can't be called inline.
+ *  ADVISORY: losing it loses a notification, never correctness, so unlike
+ *  dispatch/resume it gets no sweep re-send. */
 export type PostCommitAction =
   | {
       type: 'dispatch';
@@ -76,7 +82,16 @@ export type PostCommitAction =
       itemId: string;
       sideEffecting: boolean;
     }
-  | { type: 'resume'; runId: string; groupId: string };
+  | { type: 'resume'; runId: string; groupId: string }
+  | {
+      type: 'pending_created';
+      ownerId: string;
+      pendingId: string;
+      // Literals, not budget.ts's RUN_BUDGET_TOOL_SLUG — budget.ts imports
+      // this module, and a value import back would close an ESM cycle.
+      toolSlug: 'ask_human' | 'run_budget';
+      args: Record<string, unknown>;
+    };
 
 /** Terminal states a caller may complete an item into. ('superseded' is set
  *  by the re-planning path, not by execution.) */
@@ -469,19 +484,30 @@ export async function completeItem(
         if (paused) {
           // The "raise or cancel?" surface — same pending-approvals queue as
           // ask_human. agent_id NULL for the same FK reason (see promote).
-          await tx.insert(pendingToolCalls).values({
-            ownerId: r.ownerId,
-            toolSlug: 'run_budget',
-            args: {
-              question:
-                `Run "${r.title}" has spent $${(r.spent / 1e6).toFixed(2)} of its ` +
-                `$${(r.budget / 1e6).toFixed(2)} budget and is PAUSED. Approve to raise ` +
-                `the budget by another $${(r.budget / 1e6).toFixed(2)} and resume; reject to cancel the run.`,
-              run_id: pre.runId,
-              budget_micro_usd: r.budget,
-              spent_micro_usd: r.spent,
-            },
-          });
+          const args = {
+            question:
+              `Run "${r.title}" has spent $${(r.spent / 1e6).toFixed(2)} of its ` +
+              `$${(r.budget / 1e6).toFixed(2)} budget and is PAUSED. Approve to raise ` +
+              `the budget by another $${(r.budget / 1e6).toFixed(2)} and resume; reject to cancel the run.`,
+            run_id: pre.runId,
+            budget_micro_usd: r.budget,
+            spent_micro_usd: r.spent,
+          };
+          const [row] = await tx
+            .insert(pendingToolCalls)
+            .values({ ownerId: r.ownerId, toolSlug: 'run_budget', args })
+            .returning({ id: pendingToolCalls.id });
+          // Announce it after commit — a paused run the operator never hears
+          // about is a stalled run (notify.ts).
+          if (row) {
+            actions.push({
+              type: 'pending_created',
+              ownerId: r.ownerId,
+              pendingId: row.id,
+              toolSlug: 'run_budget',
+              args,
+            });
+          }
         }
       }
     }
@@ -761,18 +787,38 @@ async function promote(tx: Tx, item: RunItemRow, actions: PostCommitAction[]): P
     // agent_id stays NULL: runs.agent_id is a SOFT ref (survives agent
     // deletion) but pending_tool_calls.agent_id is a real FK — inserting a
     // dangling id would violate it. The args carry the run ref instead.
-    await tx.insert(pendingToolCalls).values({
-      ownerId: run!.ownerId,
-      toolSlug: 'ask_human',
-      args: {
-        question: typeof p.question === 'string' ? p.question : '',
-        ...(Array.isArray(p.options) ? { options: p.options } : {}),
-        run_id: ready.runId,
-        item_id: ready.id,
-      },
-      ...(ready.deadlineAt ? { expiresAt: ready.deadlineAt } : {}),
-    });
-    return; // no action — the human is the dispatcher
+    // `form` (WP1) rides verbatim so every answer surface — /pending, the
+    // assistant questionnaire card, pending_get over MCP — renders the same
+    // structured shape from the row alone.
+    const args = {
+      question: typeof p.question === 'string' ? p.question : '',
+      ...(Array.isArray(p.options) ? { options: p.options } : {}),
+      ...(p.form && typeof p.form === 'object' ? { form: p.form } : {}),
+      run_id: ready.runId,
+      item_id: ready.id,
+    };
+    const [row] = await tx
+      .insert(pendingToolCalls)
+      .values({
+        ownerId: run!.ownerId,
+        toolSlug: 'ask_human',
+        args,
+        ...(ready.deadlineAt ? { expiresAt: ready.deadlineAt } : {}),
+      })
+      .returning({ id: pendingToolCalls.id });
+    // The human is the dispatcher — so the only "dispatch" owed is telling
+    // them a question is waiting (notify.ts). Advisory: a lost notification
+    // never wedges the run, the question just waits for /pending.
+    if (row) {
+      actions.push({
+        type: 'pending_created',
+        ownerId: run!.ownerId,
+        pendingId: row.id,
+        toolSlug: 'ask_human',
+        args,
+      });
+    }
+    return;
   }
 
   const [ready] = await tx
