@@ -85,10 +85,11 @@ vi.mock('@mantle/runs', () => ({
   claimResume: (...a: unknown[]) => h.claimResume(...a),
   compileRunState: async () => h.compiled,
   renderRunStateText: () => 'RUN STATE TEXT',
-  findAuditedWorkerItem: async () => null,
-  findPanelWorkerItems: async () => [],
+  // Prompt construction moved into @mantle/runs (audit-prompt.ts) and has its
+  // own pure tests; here it only needs to produce a string.
+  buildAuditSection: async () => 'AUDIT SECTION',
+  buildPanelAuditSection: async () => 'PANEL SECTION',
   isPanelAudit: () => false,
-  mechanicalPreCheck: () => [],
   RUNS_RESUME_TURN_WORKFLOW: 'runsResumeTurnWorkflow',
 }));
 

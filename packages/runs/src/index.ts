@@ -55,6 +55,12 @@ export {
   type AuditFinding,
   type AuditVerdictResult,
 } from './audit';
+export {
+  buildAuditSection,
+  buildPanelAuditSection,
+  renderAuditSection,
+  renderPanelSection,
+} from './audit-prompt';
 export { applyHumanAnswer, type HumanAnswerResult } from './human';
 export {
   applyBudgetDecision,
