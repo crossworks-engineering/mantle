@@ -81,6 +81,32 @@ dialogs, and every `Switch`/`Select` surface.
 > earlier installs, not live resolutions — don't be fooled by them, as I was.)
 > Collapsing to one import style is tidiness, not a correctness fix.
 
+### Wave 1 status: ✅ done (2026-07-22)
+
+`86 → 27 outdated.` 59 packages moved, no major crossed, nothing added or
+removed. Commits: `5bdfd251` (1a) · `0bbb83e1` (prettier churn) · `16313bd7`
+(1b) · `fe90c621` (1c).
+
+Gates at the end of the wave: `pnpm verify` green (2565 tests) **and** a full
+`pnpm -C apps/web build` green.
+
+Two things worth carrying forward:
+
+- **`pnpm update` rewrites the declared ranges, not just the lockfile.** The
+  caret baselines moved too (`react ^19.0.0` → `^19.2.7`). Harmless and arguably
+  good hygiene, but it means "in-range refresh" still produces a manifest diff —
+  check it for net-new/removed deps rather than assuming it's lockfile-only.
+- **`@types/heic-convert` 2.1.0→2.1.1 paid for itself.** It corrected
+  `ConversionOptions.buffer` from `ArrayBufferLike` to `Uint8Array`, which let us
+  delete a `as unknown as ArrayBufferLike` cast in `packages/files/src/transcode.ts`.
+  Typecheck caught it; the fix was to remove the workaround, not re-fudge it.
+
+Still outstanding (27), all needing an explicit range bump: the 19 originally
+identified, plus 8 that took their in-range bump but still have a major waiting
+(`eslint` 9.39.5→10, `next` 15.5.20→16, `@types/node` 22.20.1→26,
+`@openrouter/sdk` 0.12.79→1.0, `concurrently`, `eslint-config-next`,
+`@eslint/js`, `@types/nodemailer`).
+
 ## Wave 2 — isolated majors (small blast radius, one commit each)
 
 Each of these touches 0–3 files. Cheap, independent, high confidence.
