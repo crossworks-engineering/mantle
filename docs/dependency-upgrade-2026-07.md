@@ -237,17 +237,48 @@ keep padded text, new ones get clean text, both retrieve fine.
 > difference, not a pdf-parse-vs-pdfjs one. v1 emits none; v2 adds them. Raw
 > pdfjs (the consolidation route) emits clean text with no markers.
 
-**It also exposed a latent drizzle instance split.** Removing the obsolete
-`@types/pdf-parse` stub caused 96 errors in `packages/files/src/ops.ts` —
-`SQL<unknown> | undefined` "not assignable" to a superset of itself, which is
-the signature of two copies of drizzle's types. pnpm keys peer-dependents by
-their peer set, and `packages/files` was on the bare `drizzle-orm` instance
-while `@mantle/db` is on the peer-resolved one; the stub had been pinning the
-resolution by accident. Fixed by declaring `postgres` to match `@mantle/db`.
+**It also appeared to expose a drizzle instance split — it did not.** Worth
+recording because the false trail cost real time, twice.
 
-**Only 6 of 18 drizzle-using packages declare `postgres`, so 12 are still on
-the other instance — fix that before wave 4's drizzle 0.38 → 0.45**, or that
-upgrade will scatter this error class across the workspace. Filed separately.
+Removing the obsolete `@types/pdf-parse` stub produced 96 errors in
+`packages/files/src/ops.ts`: `SQL<unknown> | undefined` "not assignable" to a
+superset of itself, which genuinely is the signature of two copies of drizzle's
+types. Reading the symlink in `node_modules/.pnpm` showed `packages/files` on a
+bare `drizzle-orm` instance and `@mantle/db` on a peer-resolved one, so I
+declared `postgres` to align them and filed a high-priority task claiming 12
+packages were on the wrong instance.
+
+**All of that was wrong.** Measured properly — `rm -rf node_modules` then
+`pnpm install --frozen-lockfile`, i.e. what CI actually does:
+
+```
+21 packages → drizzle-orm@0.38.4_@types+react…postgres@3.4.9_react@19.2.7
+ 1 instance on disk
+```
+
+Every workspace package already shares one instance; pnpm's peer dedupe handles
+it. The `postgres` dep was a phantom and is reverted (`3c120b40`). **Wave 4's
+drizzle upgrade has no such blocker.**
+
+> ### The lesson that actually generalises
+> **`node_modules/.pnpm` accumulates stale `<pkg>@<ver>_<peers>` directories
+> across incremental installs.** They are indistinguishable by eye from live
+> duplicate resolutions, and a workspace package can be left symlinked to a dead
+> one — producing type errors that look completely real and reproducible, and
+> that vanish on a clean install.
+>
+> This caught me **twice** in this effort: first as "duplicate Radix copies" in
+> wave 1, then here. Both walked back.
+>
+> 1. Verify duplicate-version claims against **`pnpm-lock.yaml`**, never
+>    `ls node_modules/.pnpm`.
+> 2. Reproduce any resolution diagnosis after
+>    `rm -rf node_modules && pnpm install --frozen-lockfile` before believing it.
+> 3. Don't infer a workspace-wide property from two packages — enumerate.
+>
+> The `pdfjs-dist` and `@napi-rs/canvas` overrides are the real thing by
+> contrast: verified against the lockfile, and still one copy each after a clean
+> install.
 
 ## Wave 4 — deep, one release each
 
