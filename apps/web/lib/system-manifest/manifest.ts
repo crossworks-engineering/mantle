@@ -34,6 +34,7 @@ import {
   TABLE_TOOL_SLUGS,
   CONTACT_AUTO_GRANT_SLUGS,
   JOURNAL_AUTO_GRANT_SLUGS,
+  FORMULA_AUTO_GRANT_SLUGS,
   LOCATION_TOOL_SLUGS,
   PROFILE_TOOL_SLUGS,
   TOOLSMITH_TOOL_SLUGS,
@@ -578,6 +579,21 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Journal admin',
     description: 'Delete a journal entry — deliberate-only; not on the persona.',
     toolSlugs: ['journal_delete'],
+  },
+  {
+    slug: 'formulas',
+    name: 'Formulas',
+    description:
+      'Author, read and evaluate calculation models taken from standards. No delete (escape hatch).',
+    // No-delete subset (decision 3 pattern); formula_delete rides the
+    // `formulas-admin` group.
+    toolSlugs: [...FORMULA_AUTO_GRANT_SLUGS],
+  },
+  {
+    slug: 'formulas-admin',
+    name: 'Formulas admin',
+    description: 'Delete a formula — deliberate-only; not on the persona.',
+    toolSlugs: ['formula_delete'],
   },
   {
     slug: 'recall',
