@@ -66,3 +66,21 @@ export async function notifyPendingCreated(notice: PendingCreatedNotice): Promis
     );
   }
 }
+
+/**
+ * The Postgres channel the run views repaint on. Nothing in TypeScript raises
+ * it — migration 0135 puts triggers on `runs` and `run_items`, because the
+ * engine mutates runs from several processes and paths and a hand-placed
+ * notify is only correct until the next path forgets one.
+ *
+ * Named here anyway so the SQL producer and its only consumer — the web app's
+ * LISTEN bridge in `apps/web/lib/realtime.ts`, which turns it into the
+ * client-visible `run` change type — are joined by one symbol rather than two
+ * copies of a string literal. Payload is the owner id, per the
+ * `pending_changed` convention.
+ */
+export const RUNS_CHANGED_CHANNEL = 'runs_changed';
+
+/** The realtime change `type` the bridge broadcasts for {@link
+ *  RUNS_CHANGED_CHANNEL}. What a client passes to `useRealtime([...])`. */
+export const RUNS_CHANGED_TYPE = 'run';

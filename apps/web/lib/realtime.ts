@@ -2,6 +2,7 @@ import postgres from 'postgres';
 import { eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
+import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
 import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
 import type { TurnEvent } from '@mantle/client-types';
 
@@ -88,6 +89,14 @@ async function ensureListening(): Promise<void> {
     const subPending = await sql.listen(PENDING_CHANGED_CHANNEL, (ownerId) => {
       broadcast({ ownerId, type: 'pending_tool_call', id: '' });
     });
+    // Runner-queue changes (a run created / an item changing state / a run
+    // finishing). Same owner-id-as-payload shape as `pending_changed`; raised
+    // by the migration-0135 triggers rather than by application code, so no
+    // engine path can forget it. Drives the live /runs master-detail and the
+    // active-runs strip.
+    const subRuns = await sql.listen(RUNS_CHANGED_CHANNEL, (ownerId) => {
+      broadcast({ ownerId, type: RUNS_CHANGED_TYPE, id: '' });
+    });
     // Conversation turns (any channel) — payload is JSON {ownerId, agentId,
     // direction}, broadcast to the chat-stream subscribers. Drives live chat.
     const subConversation = await sql.listen(CONVERSATION_CHANGED_CHANNEL, (payload) => {
@@ -115,6 +124,7 @@ async function ensureListening(): Promise<void> {
         await subIngested.unlisten();
         await subIndexed.unlisten();
         await subPending.unlisten();
+        await subRuns.unlisten();
         await subConversation.unlisten();
         await subTurnStream.unlisten();
       } catch {

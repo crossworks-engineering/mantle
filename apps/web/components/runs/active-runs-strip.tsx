@@ -3,15 +3,17 @@
 /**
  * Active-runs strip (slice 4 WP-A) — a compact card per RUNNING/PAUSED run, so
  * the owner sees background work while chatting without leaving /assistant.
- * Self-contained: fetches `GET /api/runs?active=1` and polls every 5s while any
- * run is active (stops polling when the list empties). Renders NOTHING when
+ * Self-contained: fetches `GET /api/runs?active=1`, repaints on the
+ * `runs_changed` realtime channel, and keeps a poll behind it (5s while work
+ * is in flight, 60s idle) to cover an SSE reconnect gap. Renders NOTHING when
  * there are no active runs — zero visual cost on brains that don't use runs
- * (dark or not). No new realtime channel (runs have none); polling only.
+ * (dark or not).
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState } from 'react';
 import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { useRealtime } from '@/components/realtime/use-realtime';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -92,8 +94,22 @@ export function ActiveRunsStrip() {
   const query = useQuery({
     queryKey: ['runs', 'active'],
     queryFn: () => apiFetch<{ enabled: boolean; active: ActiveRun[] }>('/api/runs?active=1'),
-    // Poll only while there is active work; stop when the list empties.
-    refetchInterval: (q) => (q.state.data?.active.length ? 5000 : false),
+    // Fine-grained progress while work is in flight. When the list is empty
+    // this drops to a slow backstop rather than stopping: the strip's whole
+    // job is to APPEAR when a run starts, and a poll gated on the strip
+    // already having a run could never fire for the first one. The fast path
+    // out of empty is the `runs_changed` subscription below; this is what
+    // covers an SSE reconnect gap.
+    refetchInterval: (q) => (q.state.data?.active.length ? 5_000 : 60_000),
+  });
+
+  // Live repaint on any run change (created / advanced / finished), so the
+  // strip appears the moment a chat turn delegates work. `['runs']` is a
+  // prefix of this query's key. The literal type mirrors the bridge in
+  // apps/web/lib/realtime.ts — importing `@mantle/runs` here would drag the
+  // engine into the client bundle.
+  useRealtime(['run'], () => {
+    void queryClient.invalidateQueries({ queryKey: ['runs'] });
   });
 
   const active = query.data?.active ?? [];

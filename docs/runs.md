@@ -333,6 +333,33 @@ registered leaves jobs WAITING until the api rolls — an unregistered queue is
 never drained, not an error. Compose restarts web + api together, so the window
 is transient and the jobs run as soon as the api runner comes up.
 
+## Live repaint — the `runs_changed` channel (v0.158.1)
+
+The run surfaces (`/runs` list + detail, the active-runs strip on
+`/assistant`) repaint off a Postgres LISTEN/NOTIFY channel, not a poll.
+Migration `0135` puts triggers on `runs` and `run_items` that raise
+`pg_notify('runs_changed', <owner id>)`; the web app's LISTEN bridge
+(`apps/web/lib/realtime.ts`, the same one behind `pending_changed`) relays it
+to the browser as a `run` change type, which the clients consume with
+`useRealtime(['run'], …)`.
+
+**Why a trigger and not a notify call.** The engine mutates runs from the
+`run_*` tools (web + api), the three queue handlers, the sweep, and the DBOS
+turn workflows. A hand-placed notify is correct only until the next path
+forgets one — and "a state change that didn't announce itself" is the bug this
+replaced. A trigger cannot be bypassed. It is transactional too: nothing fires
+for a rolled-back engine transaction, and identical payloads inside one
+transaction collapse into a single delivery, so a batch promoting ten items
+wakes the browser once. The `UPDATE` triggers carry `WHEN` clauses so
+bookkeeping writes (`attempt`, `deadline_at`, `usage`, cost) don't fire.
+
+**Best-effort, so keep the backstop.** LISTEN/NOTIFY has no replayable
+backlog — a change raised during an SSE reconnect gap is lost. Each view keeps
+a slow `refetchInterval` behind the channel (15s while a run can still move,
+60s idle). The list's backstop is deliberately NOT gated on the list being
+non-empty: gating a poll on the state you are trying to leave is what kept the
+strip from ever appearing before v0.158.1.
+
 ## Failure semantics (slice 1)
 
 - Leaf deadlines stamp at **promotion** (`payload.timeout_seconds`, default

@@ -27,8 +27,21 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { Spinner } from '@/components/ui/spinner';
 import { ListPager } from '@/components/layout/list-pager';
+import { useRealtime } from '@/components/realtime/use-realtime';
 import { useListNav } from '@/lib/use-list-nav';
 import { cn } from '@/lib/utils';
+
+/** The realtime change type the migration-0135 `runs_changed` triggers reach
+ *  the browser as (see apps/web/lib/realtime.ts). A literal, like every other
+ *  `useRealtime` call site — importing the constant from `@mantle/runs` would
+ *  drag the engine, drizzle and pg-boss into the client bundle. */
+const RUN_CHANGE = 'run';
+
+/** A run still doing something — the only states whose views change on their
+ *  own, and so the only ones worth a safety-net poll. */
+function isActiveStatus(status: string): boolean {
+  return status === 'running' || status === 'paused';
+}
 
 type WorkerStat = {
   agentId: string | null;
@@ -212,6 +225,11 @@ function RunDetail({ runId }: { runId: string }) {
   const detailQuery = useQuery({
     queryKey: ['run', runId],
     queryFn: () => apiFetch<CompiledRun>(`/api/runs/${runId}`),
+    // Safety net only — `runs_changed` does the repainting. LISTEN/NOTIFY has
+    // no replayable backlog, so a change raised during a reconnect gap is
+    // simply lost; on a terminal run that would strand the tree mid-flight
+    // forever. Polls only while the run can still move.
+    refetchInterval: (q) => (isActiveStatus(q.state.data?.run.status ?? '') ? 15_000 : false),
   });
 
   if (detailQuery.isError) {
@@ -286,6 +304,7 @@ function RunDetail({ runId }: { runId: string }) {
 
 export function RunsClient() {
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const { pending: navPending, go } = useListNav();
   const runParam = searchParams.get('run');
   const page = Math.max(1, Number(searchParams.get('page')) || 1);
@@ -293,6 +312,22 @@ export function RunsClient() {
   const listQuery = useQuery({
     queryKey: ['runs', page],
     queryFn: () => apiFetch<RunsListPayload>(`/api/runs?page=${page}`),
+    // Safety net behind `runs_changed` — see RunDetail. Deliberately NOT
+    // conditional on the list being non-empty: the state this screen most
+    // needs to leave is the EMPTY one ("No runs yet" while a run is actually
+    // being created), and a poll gated on current data can never leave it.
+    refetchInterval: (q) =>
+      (q.state.data?.runs ?? []).some((r) => isActiveStatus(r.status)) ? 15_000 : 60_000,
+  });
+
+  // The live repaint. One subscription for the whole screen: the prefix keys
+  // cover the list (`['runs', page]`), every open detail (`['run', id]`) and
+  // the strip's `['runs','active']`, so a run created, advanced or finished
+  // anywhere — a chat turn, a queue worker, the sweep, another tab — lands
+  // here without a reload.
+  useRealtime([RUN_CHANGE], () => {
+    void queryClient.invalidateQueries({ queryKey: ['runs'] });
+    void queryClient.invalidateQueries({ queryKey: ['run'] });
   });
 
   if (listQuery.isError) {

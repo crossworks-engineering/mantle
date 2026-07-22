@@ -40,6 +40,8 @@ export {
 } from './boss';
 export {
   registerPendingCreatedNotifier,
+  RUNS_CHANGED_CHANNEL,
+  RUNS_CHANGED_TYPE,
   type PendingCreatedNotice,
   type PendingCreatedNotifier,
 } from './notify';
