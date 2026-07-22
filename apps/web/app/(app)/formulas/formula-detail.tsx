@@ -60,7 +60,15 @@ function Equation({ latex, expression }: { latex?: string; expression: string })
   const html = useMemo(() => {
     if (!latex) return null;
     try {
-      return katex.renderToString(latex, { displayMode: true, throwOnError: false });
+      // `trust: false` (KaTeX's default, pinned here because the output goes
+      // through dangerouslySetInnerHTML) disables \href, \url and
+      // \includegraphics — a spec authored by an agent from a pasted document
+      // must not be able to inject a link or fetch a remote asset.
+      return katex.renderToString(latex, {
+        displayMode: true,
+        throwOnError: false,
+        trust: false,
+      });
     } catch {
       return null;
     }

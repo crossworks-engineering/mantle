@@ -31,7 +31,17 @@ export function FormulasClient() {
 
   const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
   const query = searchParams.get('q')?.trim() ?? '';
-  const selectedId = searchParams.get('id')?.trim() || null;
+  const urlId = searchParams.get('id')?.trim() || null;
+
+  // Selection lives in client state, NOT read back off the URL. `select` mirrors
+  // it to the address bar with history.replaceState, which deliberately performs
+  // no navigation — so `useSearchParams` would never observe the change and the
+  // list would not respond to a click. The URL param is therefore an entry point
+  // (deep link, back/forward) rather than the source of truth.
+  const [selectedId, setSelectedId] = useState<string | null>(urlId);
+  useEffect(() => {
+    if (urlId) setSelectedId(urlId);
+  }, [urlId]);
 
   const [searchInput, setSearchInput] = useState(query);
   useEffect(() => setSearchInput(query), [query]);
@@ -66,6 +76,7 @@ export function FormulasClient() {
   });
 
   function select(id: string) {
+    setSelectedId(id);
     syncSelectionParam('id', id);
   }
 
@@ -162,6 +173,12 @@ export function FormulasClient() {
           </div>
         ) : detailQuery.data ? (
           <FormulaDetail
+            // Remount per formula: the detail pane holds evaluator state
+            // (chosen target, typed inputs, last result). Without this, switching
+            // formulas would keep the previous one's inputs and show its result
+            // under the new title — and the target id would name a target the
+            // new spec may not even have.
+            key={detailQuery.data.formula.id}
             formula={detailQuery.data.formula}
             coverageGaps={detailQuery.data.coverageGaps}
           />
