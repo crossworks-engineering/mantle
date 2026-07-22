@@ -124,6 +124,50 @@ Each of these touches 0–3 files. Cheap, independent, high confidence.
 | `@napi-rs/canvas` | 0.1 → 1.0 | 0 direct | Pinned `~0.1.100` deliberately. `next.config.ts` externalizes it *by name* (including per-platform `@napi-rs/canvas-<os>-<arch>`) for the webpack production build — **read that block before bumping**, and prove `pnpm -C apps/web build` still works, not just dev. |
 | `@types/libsodium-wrappers` | deprecated | — | No newer version exists. Check whether `libsodium-wrappers` now ships its own types; if so delete, else leave and document why. |
 
+### Wave 2 status: ✅ done, with two caveats (2026-07-22)
+
+Nine of ten items landed. One was deliberately **not** taken.
+
+| item | outcome |
+| --- | --- |
+| `@types/libsodium-wrappers` | removed — upstream ships real types |
+| `katex` 0.16→0.18 | ✅ |
+| `chokidar` 4→5 | ✅ proved at runtime |
+| `react-day-picker` 9→10 | ✅ `table` classNames key → `month_grid` |
+| `bcryptjs` 2→3 (+drop `@types/`) | ✅ v2 hashes proved to verify under v3 |
+| `@openrouter/sdk` 0.12→1.0 | ✅ `/models/errors` subpath survived |
+| `nodemailer` 6→9 (+types 6→8) | ✅ message building proved; real send still manual |
+| `pdf-parse` 1→2 | ❌ **held at 1.x** — see below |
+| `pdfjs-dist` 5→6 | ✅ + single-version pin |
+| `esbuild` 0.24→0.28 | ✅ |
+| `@napi-rs/canvas` 0.1→1.0 | ✅ (was a required repair, not a bump) |
+
+**The big lesson: wave 1 shipped two latent breakages that its gates could
+not see.** Both were in-range bumps whose transitive native deps moved:
+
+- `pdf-to-png-converter` 4.0.0→4.1.1 pulled a second `pdfjs-dist` (6.0.227
+  alongside 5.7.284). pdfjs compares API and Worker version strings *exactly*
+  and its worker config is process-global, so two copies in one process break
+  whichever loads second.
+- The same bump moved its `@napi-rs/canvas` to 1.0.2 while `apps/web` stayed
+  pinned at `~0.1.100`. That pin exists so next.config.ts's webpack
+  externalization *resolves* at runtime — so the mismatch would have handed a
+  0.1.x native binding to a library built for 1.0.x.
+
+Neither `pnpm verify` nor `next build` executes a PDF, so both passed clean.
+**Add a runtime smoke check to the gate for anything with a native binding
+or a process-global singleton** — types and a successful build are not
+evidence there.
+
+`pdf-parse` 2 is held back because it bundles its own pdfjs (5.4.296) where
+1.x had none, which is what surfaced the whole problem. Adopting it means
+consolidating onto one PDF engine — filed as its own task.
+
+Also worth carrying forward: **pnpm 11 reads `overrides` from
+`pnpm-workspace.yaml`, not `package.json`.** A `pnpm.overrides` block in
+package.json is silently ignored — `pnpm install` just reports "Already up to
+date" and changes nothing.
+
 ## Wave 3 — wide but mechanical
 
 **`lucide-react` 0.469 → 1.25** — 201 files. It's an icon library going 0.x→1.0;
