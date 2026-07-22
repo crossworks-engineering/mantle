@@ -90,3 +90,6 @@ apps/web/public/app-runtime/
 # Embedded agent-os repo (not part of this project)
 /agent-os/
 .table-dbs
+
+# Local agent scratch data — never commit (personal content)
+apps/agent/
