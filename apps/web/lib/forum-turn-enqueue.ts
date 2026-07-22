@@ -28,8 +28,7 @@ export type EnqueueForumTurnArgs = {
 };
 
 export type EnqueueForumTurnResult =
-  | { streaming: true; turnId: string }
-  | { streaming: false; result: ForumTurnRunResult };
+  { streaming: true; turnId: string } | { streaming: false; result: ForumTurnRunResult };
 
 /** Enqueue the durable forum turn. Streaming on ⇒ returns the turn id for the
  *  SSE stream (202 path); off ⇒ awaits the agent's answer (blocking path). */

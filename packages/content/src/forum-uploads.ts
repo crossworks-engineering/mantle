@@ -37,8 +37,7 @@ export type StageForumUploadInput = {
 };
 
 export type StageForumUploadResult =
-  | { ok: true; rows: ForumUpload[] }
-  | { ok: false; reason: 'daily_bytes'; spent: number };
+  { ok: true; rows: ForumUpload[] } | { ok: false; reason: 'daily_bytes'; spent: number };
 
 /**
  * Stage a batch of uploads, enforcing the per-member daily byte budget

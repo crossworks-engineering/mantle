@@ -83,25 +83,13 @@ export const runs = pgTable(
  *  vocabulary ships in the CHECK from day one; the slice-1 dispatcher only
  *  executes 'tool_call' and 'note'. */
 export type RunItemKind =
-  | 'group_seq'
-  | 'group_par'
-  | 'tool_call'
-  | 'worker_invoke'
-  | 'audit'
-  | 'ask_human'
-  | 'note';
+  'group_seq' | 'group_par' | 'tool_call' | 'worker_invoke' | 'audit' | 'ask_human' | 'note';
 
 /** queued → ready → running → done | failed | cancelled | superseded.
  *  The last four are terminal; every terminal transition of a child drives
  *  its parent group's completion counter exactly once. */
 export type RunItemState =
-  | 'queued'
-  | 'ready'
-  | 'running'
-  | 'done'
-  | 'failed'
-  | 'cancelled'
-  | 'superseded';
+  'queued' | 'ready' | 'running' | 'done' | 'failed' | 'cancelled' | 'superseded';
 
 /** Structured failure record — never raw error text into a prompt. */
 export type RunItemFailure = {

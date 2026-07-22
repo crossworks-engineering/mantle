@@ -52,6 +52,7 @@ COPY packages/heartbeats/package.json packages/heartbeats/package.json
 COPY packages/mcp-core/package.json packages/mcp-core/package.json
 COPY packages/microsoft/package.json packages/microsoft/package.json
 COPY packages/rules/package.json packages/rules/package.json
+COPY packages/runs/package.json packages/runs/package.json
 COPY packages/search/package.json packages/search/package.json
 COPY packages/storage/package.json packages/storage/package.json
 COPY packages/tabledb/package.json packages/tabledb/package.json

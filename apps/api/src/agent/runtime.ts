@@ -559,7 +559,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
               // compat with older setups that haven't migrated to
               // ai_workers yet (treats it as an OpenAI/Whisper call).
               const sttWorker = await getDefaultWorker(USER_ID!, 'stt');
-              let apiKey: string | null = null;
+              let apiKey: string | null;
               let providerId = 'openai';
               let model = 'whisper-1';
               let language: string | undefined;

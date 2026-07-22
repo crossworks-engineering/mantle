@@ -16,7 +16,7 @@
  * Env loading is handled by `--env-file-if-exists=.env.local` (dev) or the
  * container env (prod).
  */
-import PgBoss from 'pg-boss';
+import { PgBoss } from 'pg-boss';
 import { waitForOwner } from '@mantle/db';
 import { startProcessHeartbeat } from '@mantle/content';
 

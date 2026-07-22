@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deletePage, getPage, updatePage } from '@/lib/pages';
 
-const DocSchema = z.record(z.unknown());
+const DocSchema = z.record(z.string(), z.unknown());
 
 const PatchBody = z.object({
   title: z.string().min(1).max(200).optional(),

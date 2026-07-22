@@ -219,13 +219,13 @@ export function isBackupDirPersistent(dir: string): boolean {
   try {
     dockerEnv = existsSync('/.dockerenv');
   } catch {
-    dockerEnv = false;
+    // unreadable — treat as "not in Docker"
   }
   let mountsContent: string | null = null;
   try {
     mountsContent = readFileSync('/proc/self/mounts', 'utf8');
   } catch {
-    mountsContent = null;
+    // no procfs (macOS) — leave null; the caller treats that as "unknown"
   }
   return isResolvedBackupDirPersistent(realpathNearestExisting(dir), mountsContent, dockerEnv);
 }
@@ -280,8 +280,7 @@ export async function loadBackupStatus(userId: string): Promise<BackupStatus | n
     .where(eq(profiles.userId, userId))
     .limit(1);
   const raw = ((row?.preferences ?? {}) as Record<string, unknown>).backupStatus as
-    | BackupStatus
-    | undefined;
+    BackupStatus | undefined;
   return raw && typeof raw.lastRunAt === 'string' ? raw : null;
 }
 

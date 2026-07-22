@@ -8,8 +8,7 @@ import { isLiveRun, type MaintenanceTask } from './registry';
 import type { StartRunRequest } from './types';
 
 export type RunPlan =
-  | { ok: true; args: string[]; live: boolean }
-  | { ok: false; error: string; status: 400 | 403 };
+  { ok: true; args: string[]; live: boolean } | { ok: false; error: string; status: 400 | 403 };
 
 export function planRun(
   task: MaintenanceTask,

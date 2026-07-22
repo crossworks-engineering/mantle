@@ -46,7 +46,7 @@
  *     per node while keeping the N workers fully parallel across nodes.
  */
 
-import PgBoss from 'pg-boss';
+import { PgBoss } from 'pg-boss';
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { extractNode } from './extractor.js';
 
@@ -145,14 +145,16 @@ export async function startExtractQueue(databaseUrl: string, ownerId: string): P
   const queueOptions = { ...EXTRACT_QUEUE_OPTIONS, expireInSeconds: expireMin * 60 };
 
   // Dead-letter target first — the main queue references it by name.
-  await boss.createQueue(DEAD_LETTER_QUEUE, { name: DEAD_LETTER_QUEUE, policy: 'standard' });
+  // pg-boss 12 types the options as Omit<Queue,'name'>: the queue name is the
+  // first argument, so repeating it in the options object is now rejected.
+  await boss.createQueue(DEAD_LETTER_QUEUE, { policy: 'standard' });
 
-  await boss.createQueue(EXTRACT_QUEUE, { name: EXTRACT_QUEUE, ...queueOptions });
+  await boss.createQueue(EXTRACT_QUEUE, queueOptions);
   // createQueue is ON CONFLICT DO NOTHING — an existing install keeps whatever
   // policy the queue was first created with (it shipped as 'standard', where
   // singletonKey dedup is a no-op). updateQueue makes the 'short' policy + the
   // resolved expiry land on already-created queues too.
-  await boss.updateQueue(EXTRACT_QUEUE, { name: EXTRACT_QUEUE, ...queueOptions });
+  await boss.updateQueue(EXTRACT_QUEUE, queueOptions);
 
   const redriven = await redriveDeadLetters();
   if (redriven > 0) {

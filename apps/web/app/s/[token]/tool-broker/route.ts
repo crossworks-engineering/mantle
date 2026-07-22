@@ -30,7 +30,7 @@ export const runtime = 'nodejs';
 
 const Body = z.object({
   slug: z.string().min(1).max(120),
-  input: z.record(z.unknown()).optional().default({}),
+  input: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {

@@ -11,3 +11,17 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
+
+# Single pdfjs-dist across the tree. pdfjs compares API and Worker version
+# strings EXACTLY and fails the load on any mismatch, and its worker config is
+# process-global — so two copies in one process break whichever loads second.
+# pdf-to-png-converter pins its own (6.0.227); this pulls it onto ours.
+overrides:
+  pdfjs-dist: 6.1.200
+  '@napi-rs/canvas': 1.0.2
+
+  # Single `pg`. drizzle-orm peers on pg, so two pg versions make pnpm build two
+  # peer-resolved drizzle instances whose SQL<> types are nominally incompatible —
+  # 273 typecheck errors that look nothing like their cause. pg-boss 12 requires
+  # ^8.22.0 while the rest of the tree had settled on 8.20.0; this pins both to one.
+  pg: 8.22.0

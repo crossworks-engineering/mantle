@@ -8,7 +8,7 @@ const PAGE_SIZE = 50;
 const CreateBody = z.object({
   // A spec is always an object; `z.unknown()` would make the key optional in
   // the inferred type, which is exactly what it must not be here.
-  spec: z.record(z.unknown()),
+  spec: z.record(z.string(), z.unknown()),
   title: z.string().max(200).optional(),
   tags: z.array(z.string().max(40)).max(20).optional().default([]),
 });

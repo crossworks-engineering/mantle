@@ -14,7 +14,7 @@
  * idempotently on first use — pg-boss v10 requires a queue to exist before
  * `send`, and the web process may enqueue before the worker ever booted.
  */
-import PgBoss from 'pg-boss';
+import { PgBoss } from 'pg-boss';
 
 import type { PostCommitAction } from './engine';
 import { notifyPendingCreated } from './notify';

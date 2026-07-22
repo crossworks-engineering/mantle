@@ -5,7 +5,7 @@ import { saveTableDraft } from '@/lib/tables';
 import type { TableDoc } from '@mantle/content/table-model';
 
 const Body = z.object({
-  data: z.record(z.unknown()),
+  data: z.record(z.string(), z.unknown()),
   if_rev: z.number().int().nonnegative().optional(),
 });
 

@@ -1684,6 +1684,7 @@ async function writeContentIndex(
     // and surfaced by /debug/integrity.
     throw new Error(
       `extractor: embed failed for node ${node.id} — retrying instead of half-indexing: ${err instanceof Error ? err.message : err}`,
+      { cause: err },
     );
   }
 
@@ -2206,6 +2207,7 @@ async function processFacts(
     // never would be.
     throw new Error(
       `extractor: fact embed batch failed for node ${node.id}: ${err instanceof Error ? err.message : err}`,
+      { cause: err },
     );
   }
 

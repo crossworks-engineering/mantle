@@ -21,7 +21,7 @@ const TREE_LIMIT = 2000;
 
 /** A ProseMirror/TipTap document — an opaque object the editor owns. We only
  *  validate that it's an object here; `docToText` flattens it for the brain. */
-const DocSchema = z.record(z.unknown());
+const DocSchema = z.record(z.string(), z.unknown());
 
 const CreateBody = z.object({
   title: z.string().min(1).max(200),

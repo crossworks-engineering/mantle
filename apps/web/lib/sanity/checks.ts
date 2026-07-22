@@ -141,7 +141,7 @@ function checkSecrets(): SanityCheck {
   try {
     masterBytes = Buffer.from(masterKey, 'base64').length;
   } catch {
-    masterBytes = 0;
+    // not decodable — leave at 0, which fails the !== 32 check below
   }
   if (masterBytes !== 32) {
     return {

@@ -5,7 +5,7 @@ import { evaluateSpec, readFormulaSpec, type FormulaValue } from '@/lib/formulas
 
 const Body = z.object({
   target: z.string().min(1).max(200),
-  inputs: z.record(z.union([z.number(), z.string(), z.boolean(), z.null()])).optional().default({}),
+  inputs: z.record(z.string(), z.union([z.number(), z.string(), z.boolean(), z.null()])).optional().default({}),
 });
 
 /**

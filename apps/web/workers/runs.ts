@@ -23,7 +23,7 @@
  * green) but registers nothing — flipping the env var and restarting the
  * container brings the engine live.
  */
-import PgBoss from 'pg-boss';
+import { PgBoss } from 'pg-boss';
 import { eq, sql } from 'drizzle-orm';
 import { db, runItems } from '@mantle/db';
 import { startProcessHeartbeat } from '@mantle/content';

@@ -12,7 +12,7 @@ import {
 } from '@/lib/formulas';
 
 const PatchBody = z.object({
-  spec: z.record(z.unknown()).optional(),
+  spec: z.record(z.string(), z.unknown()).optional(),
   title: z.string().max(200).optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
 });

@@ -17,7 +17,7 @@
  * Usage:  pnpm -C apps/web pgboss:init   (reads DATABASE_URL from .env.local)
  */
 
-import PgBoss from 'pg-boss';
+import { PgBoss } from 'pg-boss';
 
 const url = process.env.DATABASE_URL;
 if (!url) {

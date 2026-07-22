@@ -782,7 +782,7 @@ export async function addPageMention(
 
   const ref: MentionRef = opts.ref === 'entity' ? 'entity' : 'node';
   let label = opts.label?.trim() ?? '';
-  let kind: string | null = null;
+  let kind: string | null;
 
   // Resolve the target + its display label from the owner's own data, so a
   // mention can never link to (or leak the title of) something they don't own.

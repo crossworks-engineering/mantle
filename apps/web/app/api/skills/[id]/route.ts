@@ -10,7 +10,7 @@ const PatchBody = z
     name: z.string().min(1).max(120),
     description: z.string().min(1).max(2000),
     instructions: z.string().max(40_000),
-    defaultState: z.record(z.unknown()),
+    defaultState: z.record(z.string(), z.unknown()),
     enabled: z.boolean(),
   })
   .partial();

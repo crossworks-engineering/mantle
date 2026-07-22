@@ -460,6 +460,10 @@ export {
   searchForumPosts,
   recentForumPosts,
   countForumMemberPostsSince,
+  listForumMemberActivity,
+  listForumPostsByContact,
+  countForumPostsByContact,
+  listForumTopicsByAuthor,
   sweepStaleForumAgentPosts,
   markForumTopicRead,
   setForumTopicPinned,
@@ -472,6 +476,9 @@ export {
   type ForumTopicListItem,
   type ForumTopicSort,
   type ForumPostMatch,
+  type ForumMemberActivity,
+  type ForumMemberPost,
+  type ForumAuthoredTopic,
 } from './forum';
 
 export {

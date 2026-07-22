@@ -23,15 +23,7 @@ export interface StageLabel {
    *  `calendar` (events), `message` (telegram/email sends), and `file` give the
    *  common write actions their own glyph instead of a generic tool wrench. */
   kind:
-    | 'thinking'
-    | 'web'
-    | 'brain'
-    | 'delegate'
-    | 'tool'
-    | 'write'
-    | 'calendar'
-    | 'message'
-    | 'file';
+    'thinking' | 'web' | 'brain' | 'delegate' | 'tool' | 'write' | 'calendar' | 'message' | 'file';
 }
 
 /**

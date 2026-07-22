@@ -31,16 +31,21 @@ let mockResult: unknown = {
 // mockResult. Receives the 1-based call count so a test can branch on attempt.
 let mockSendImpl: ((call: number) => Promise<unknown>) | null = null;
 
+// The adapter does `new OpenRouter(...)`, so this stand-in has to be
+// CONSTRUCTIBLE. It used to be `vi.fn().mockImplementation(() => ({...}))`,
+// which worked under vitest 2 but not 4: vitest 4 forwards `new` to the
+// implementation, and an arrow function can't be constructed
+// ("... is not a constructor"). A class says what it is and works either way.
 vi.mock('@openrouter/sdk', () => ({
-  OpenRouter: vi.fn().mockImplementation(() => ({
-    chat: {
+  OpenRouter: class {
+    chat = {
       send: vi.fn(async (req: { chatRequest: Record<string, unknown> }) => {
         sendCalls.push(req);
         if (mockSendImpl) return mockSendImpl(sendCalls.length);
         return mockResult;
       }),
-    },
-  })),
+    };
+  },
 }));
 
 // Import AFTER vi.mock so the adapter picks up the mocked SDK.

@@ -20,7 +20,7 @@ const Name = z.string().min(1).max(300);
 const CellScalar = z.union([z.string().max(20000), z.number(), z.boolean(), z.null()]);
 const Cell = z.union([CellScalar, z.array(z.string().max(2000)).max(200)]);
 const Cells = z
-  .record(Cell)
+  .record(z.string(), Cell)
   .refine((o) => Object.keys(o).length <= 500, { message: 'too many cells in one op' });
 const Ref = z.object({ tabId: Id, columnId: Id });
 const ColumnType = z.enum([

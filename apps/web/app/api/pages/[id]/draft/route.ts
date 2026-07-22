@@ -4,7 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { saveDraft } from '@/lib/pages';
 
 const Body = z.object({
-  doc: z.record(z.unknown()),
+  doc: z.record(z.string(), z.unknown()),
   if_rev: z.number().int().nonnegative().optional(),
 });
 

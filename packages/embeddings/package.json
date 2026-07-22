@@ -16,10 +16,10 @@
     "@mantle/db": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",
-    "drizzle-orm": "^0.38.3"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "@types/node": "^22.10.5",
+    "@types/node": "^22.20.1",
     "typescript": "^5.7.2"
   }
 }

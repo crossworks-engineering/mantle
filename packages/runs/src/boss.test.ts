@@ -18,8 +18,11 @@ const sent: Array<{ queue: string; data: unknown; opts: unknown }> = [];
 const notified: Array<Record<string, unknown>> = [];
 let sendImpl: (queue: string, data: unknown, opts: unknown) => Promise<void>;
 
+// pg-boss 12 is ESM-only and exports PgBoss as a NAMED export — there is no
+// default. The stand-in has to match that shape or the source's
+// `import { PgBoss }` resolves to undefined.
 vi.mock('pg-boss', () => ({
-  default: class {
+  PgBoss: class {
     on() {}
     async start() {}
     async createQueue() {}
