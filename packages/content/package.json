@@ -47,6 +47,7 @@
     "drizzle-orm": "^0.38.3",
     "exceljs": "^4.4.0",
     "marked": "^18.0.4",
+    "mathjs": "15.2.0",
     "tz-lookup": "^6.1.25"
   },
   "devDependencies": {

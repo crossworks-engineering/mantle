@@ -95,13 +95,29 @@ edge: …").
 ### Formulas — `table-formula.ts`
 
 Same-row scalar expressions, referencing columns by name in braces:
-`{Qty} * {Price}`, `ROUND({Total} * 0.15, 2)`, `IF({Paid}, 0, {Due})`. A small
-hand-written tokenizer + recursive-descent parser — **never `eval`** — over a
-fixed grammar. Broken/hostile input returns `null` (renders blank, never
-throws). Formula columns are read-only, recomputed on read via `resolveCell`,
-never stored in the file, and omitted from the SQL views. No cross-formula
-references (cycle guard), no cross-row math (that's aggregates), no cross-tab
-formulas.
+`{Qty} * {Price}`, `ROUND({Total} * 0.15, 2)`, `IF({Paid}, 0, {Due})`. Evaluated
+by **mathjs** (pinned at 15.2.0) through a thin compatibility layer —
+`table-formula-mathjs.ts`. Broken/hostile input returns `null` (renders blank,
+never throws). Formula columns are read-only, recomputed on read via
+`resolveCell`, never stored in the file, and omitted from the SQL views. No
+cross-formula references (cycle guard), no cross-row math (that's aggregates),
+no cross-tab formulas.
+
+**Joining text uses `CONCAT`, not `+`.** `+` is arithmetic only, as in Excel
+(which uses `&`) and Airtable (`CONCATENATE`). This is deliberate: making `+`
+loose enough to concatenate means loosening mathjs's type discipline, and that
+discipline is what makes unit arithmetic work — an early cut of the migration
+extended `+` for strings and silently broke `1 ft + 2 ft`.
+
+Blank and unknown references still read as `0`, applied when binding the scope
+rather than in the type system, so spreadsheet ergonomics cost nothing at the
+unit layer.
+
+`table-formula.ts` — the previous hand-written tokenizer + recursive-descent
+parser — is retained for one release as a revertible fallback and as the
+baseline in `table-formula-diff.test.ts`, which runs every expression through
+BOTH engines and fails if they disagree outside a declared list. Nothing else
+should import it.
 
 ---
 
