@@ -12,11 +12,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.726.0",
-    "@aws-sdk/s3-request-presigner": "^3.726.0"
+    "@aws-sdk/client-s3": "^3.1091.0",
+    "@aws-sdk/s3-request-presigner": "^3.1091.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.5",
+    "@types/node": "^22.20.1",
     "typescript": "^5.7.2"
   }
 }

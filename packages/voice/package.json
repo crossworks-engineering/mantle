@@ -14,11 +14,11 @@
   },
   "dependencies": {
     "@mantle/api-keys": "workspace:*",
-    "@openrouter/sdk": "^0.12.35",
-    "undici": "^8.3.0"
+    "@openrouter/sdk": "^0.12.79",
+    "undici": "^8.8.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.5",
+    "@types/node": "^22.20.1",
     "typescript": "^5.7.2",
     "vitest": "^2.1.9"
   }

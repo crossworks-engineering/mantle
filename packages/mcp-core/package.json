@@ -5,8 +5,12 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@mantle/assistant-runtime": "workspace:*",
     "@mantle/content": "workspace:*",
@@ -21,7 +25,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/node": "^22.10.5",
+    "@types/node": "^22.20.1",
     "typescript": "^5.7.2"
   }
 }

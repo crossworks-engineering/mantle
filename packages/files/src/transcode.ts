@@ -44,13 +44,7 @@ export async function transcodeImageForVision(
   if (!isHeic(mimeType, filename)) return { bytes, mimeType };
   try {
     const convert = (await import('heic-convert')).default;
-    // @types declares `buffer: ArrayBufferLike`, but heic-convert accepts a
-    // Node Buffer fine at runtime; cast rather than copy the bytes.
-    const out = await convert({
-      buffer: bytes as unknown as ArrayBufferLike,
-      format: 'JPEG',
-      quality: 0.9,
-    });
+    const out = await convert({ buffer: bytes, format: 'JPEG', quality: 0.9 });
     return { bytes: Buffer.from(out), mimeType: 'image/jpeg' };
   } catch (err) {
     console.warn(

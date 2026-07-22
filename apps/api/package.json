@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@dbos-inc/dbos-sdk": "^4.22.6",
+    "@dbos-inc/dbos-sdk": "^4.23.6",
     "@mantle/agent-runtime": "workspace:*",
     "@mantle/api-keys": "workspace:*",
     "@mantle/assistant-runtime": "workspace:*",
@@ -34,8 +34,8 @@
     "postgres": "^3.4.5"
   },
   "devDependencies": {
-    "@types/node": "^22.10.5",
-    "tsx": "^4.19.2",
+    "@types/node": "^22.20.1",
+    "tsx": "^4.23.1",
     "typescript": "^5.7.2"
   }
 }

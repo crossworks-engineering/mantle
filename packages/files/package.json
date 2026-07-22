@@ -23,13 +23,13 @@
     "heic-convert": "^2.1.0",
     "mammoth": "^1.12.0",
     "pdf-parse": "^1.1.1",
-    "pdf-to-png-converter": "^4.0.0",
+    "pdf-to-png-converter": "^4.1.1",
     "pdfjs-dist": "^5.7.284",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@types/heic-convert": "^2.1.0",
-    "@types/node": "^22.10.5",
+    "@types/heic-convert": "^2.1.1",
+    "@types/node": "^22.20.1",
     "@types/pdf-parse": "^1.1.4",
     "typescript": "^5.7.2"
   }
