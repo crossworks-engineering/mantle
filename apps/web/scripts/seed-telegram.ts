@@ -141,7 +141,7 @@ function readToken(dir: string): string {
   try {
     raw = readFileSync(join(dir, '.env'), 'utf8');
   } catch (err) {
-    throw new Error(`could not read ${dir}/.env: ${(err as Error).message}`);
+    throw new Error(`could not read ${dir}/.env: ${(err as Error).message}`, { cause: err });
   }
   for (const line of raw.split('\n')) {
     const m = line.match(/^TELEGRAM_BOT_TOKEN=(.+)$/);

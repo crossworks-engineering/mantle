@@ -219,13 +219,13 @@ export function isBackupDirPersistent(dir: string): boolean {
   try {
     dockerEnv = existsSync('/.dockerenv');
   } catch {
-    dockerEnv = false;
+    // unreadable — treat as "not in Docker"
   }
   let mountsContent: string | null = null;
   try {
     mountsContent = readFileSync('/proc/self/mounts', 'utf8');
   } catch {
-    mountsContent = null;
+    // no procfs (macOS) — leave null; the caller treats that as "unknown"
   }
   return isResolvedBackupDirPersistent(realpathNearestExisting(dir), mountsContent, dockerEnv);
 }

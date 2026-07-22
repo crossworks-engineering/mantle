@@ -97,7 +97,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const contentType = req.headers.get('content-type') ?? '';
-  let userText = '';
+  let userText: string;
   let llmText = '';
   const attachments: ConversationAttachment[] = [];
 

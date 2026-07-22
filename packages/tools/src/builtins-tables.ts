@@ -1335,7 +1335,7 @@ const table_query: BuiltinToolDef = {
 
     let totalMatches: number;
     let pageRows: { id: string; cells: Record<string, CellValue> }[];
-    let aggregates: { column: string; kind: AggregateKind; value: number | null }[] = [];
+    let aggregates: { column: string; kind: AggregateKind; value: number | null }[];
     const pushed = file
       ? queryRowsWindow(file, { filters, match, sort, offset, limit, ...(tabId ? { tabId } : {}) })
       : null;

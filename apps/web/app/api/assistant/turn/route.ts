@@ -246,7 +246,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
   const { user, source } = auth;
   const contentType = req.headers.get('content-type') ?? '';
 
-  let userText = '';
+  let userText: string;
   let agentSlug: string | undefined;
   let attachment: Attachment | null = null;
   let location: LocationPing | undefined;

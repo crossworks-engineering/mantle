@@ -56,7 +56,7 @@ function readCanonicalFile(id) {
   try {
     text = readFileSync(join(canonicalTextDir, `${id}.txt`), 'utf8').trim() || null;
   } catch {
-    text = null;
+    // no canonical text on disk for this licence id — leave null
   }
   canonicalCache.set(id, text);
   return text;
