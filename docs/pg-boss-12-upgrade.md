@@ -87,6 +87,36 @@ confirm the schedules came back:
 select name, cron from pgboss.schedule order by 1;
 ```
 
+## This is a one-time manual step. Future upgrades are automatic.
+
+Only the 10→12 hop needs hands, and only because upstream has no 24→25
+migration. Once a box is on schema 37, pg-boss self-migrates on `start()` like
+it always did. Verified by walking a database up the v12 line:
+
+| installed | result |
+| --- | --- |
+| 12.0.0 | creates schema **26** |
+| 12.10.0 | `start()` auto-migrates 26 → **28** |
+| 12.20.0 | `start()` auto-migrates 28 → **31** |
+| 12.26.1 | `start()` auto-migrates 31 → **37** |
+| 12.26.2 | no schema change, stays 37 |
+
+Nothing manual at any step. And we already have the right hook for it:
+[`apps/web/scripts/pgboss-init.ts`](../apps/web/scripts/pgboss-init.ts) runs
+exactly one `boss.start()` before any worker comes up (it exists to stop the
+workers racing to create the schema), and it's wired into `scripts/up.sh` and the
+production migrate gate. That single call is what will carry future schema
+versions across, per box, with no intervention.
+
+The refusal that forced this rebuild only applies below schema 25. At 37 we are
+far clear of it.
+
+> **`doctor` right after a migration may report indexes as "Building".** v12
+> builds some indexes asynchronously, so immediately post-migration you can see
+> `Building (async index build in progress — not yet drift)` on
+> `job_common.job_common_i7/i8`. That is expected and not drift — re-run
+> `doctor` once the build finishes before treating it as a problem.
+
 ## Rollout order
 
 Dev brain → run several days under real load (email sync, telegram, runs,
