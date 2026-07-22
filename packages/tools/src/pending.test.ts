@@ -18,7 +18,7 @@
  *     run paused with nothing left to approve.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 const h = vi.hoisted(() => ({
   db: null as unknown as Record<string, unknown>,
@@ -26,10 +26,13 @@ const h = vi.hoisted(() => ({
   humanThrows: null as Error | null,
   budgetResult: {} as Record<string, unknown>,
   budgetThrows: null as Error | null,
-  applyHumanAnswer: null as unknown as ReturnType<typeof vi.fn>,
-  applyBudgetDecision: null as unknown as ReturnType<typeof vi.fn>,
-  enqueueRunActionsSafe: null as unknown as ReturnType<typeof vi.fn>,
-  dispatchTool: null as unknown as ReturnType<typeof vi.fn>,
+  // Explicit call signatures rather than `ReturnType<typeof vi.fn>`: under
+  // vitest 4 the bare form widens to `Mock<Procedure | Constructable>`, a union
+  // that isn't callable (TS2348 at every `h.foo(...)` below).
+  applyHumanAnswer: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  applyBudgetDecision: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  enqueueRunActionsSafe: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  dispatchTool: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
 }));
 
 vi.mock('drizzle-orm', () => {
