@@ -280,8 +280,7 @@ export async function loadBackupStatus(userId: string): Promise<BackupStatus | n
     .where(eq(profiles.userId, userId))
     .limit(1);
   const raw = ((row?.preferences ?? {}) as Record<string, unknown>).backupStatus as
-    | BackupStatus
-    | undefined;
+    BackupStatus | undefined;
   return raw && typeof raw.lastRunAt === 'string' ? raw : null;
 }
 

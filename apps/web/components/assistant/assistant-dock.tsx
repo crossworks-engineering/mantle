@@ -77,15 +77,7 @@ export type AssistantPanelState = 'closed' | 'open' | 'min';
  *  one is a graph node addressed by `id`; `kind` only drives the chip icon +
  *  the wording of the reference preamble the agent reads. */
 export type ContextKind =
-  | 'file'
-  | 'folder'
-  | 'page'
-  | 'note'
-  | 'table'
-  | 'journal'
-  | 'task'
-  | 'event'
-  | 'app';
+  'file' | 'folder' | 'page' | 'note' | 'table' | 'journal' | 'task' | 'event' | 'app';
 
 /** A turn has settled (succeeded or failed). Surface hooks subscribe to refresh
  *  the open editor when a specialist edited the node they're showing. `nodeId`

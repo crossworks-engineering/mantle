@@ -29,8 +29,7 @@ const KEY_VERSION_V1 = 1;
 const KEY_VERSION_V2 = 2;
 /** What `seal()` writes today. Flipped from 1 → 2 during a rotation. */
 const CURRENT_VERSION = (process.env.MANTLE_MASTER_KEY_NEXT ? KEY_VERSION_V2 : KEY_VERSION_V1) as
-  | 1
-  | 2;
+  1 | 2;
 
 export interface SealedSecret {
   /** Single buffer suitable for a `bytea` column. */

@@ -60,15 +60,7 @@ export type Row = { id: string; cells: Record<string, CellValue> };
 export type SortSpec = { colId: string; dir: 'asc' | 'desc' };
 
 export type FilterOp =
-  | 'eq'
-  | 'neq'
-  | 'contains'
-  | 'gt'
-  | 'lt'
-  | 'gte'
-  | 'lte'
-  | 'empty'
-  | 'notEmpty';
+  'eq' | 'neq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte' | 'empty' | 'notEmpty';
 
 export type Filter = { colId: string; op: FilterOp; value?: CellValue };
 

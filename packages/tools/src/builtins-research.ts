@@ -99,8 +99,7 @@ export function extractCitations(resp: unknown): string[] {
   const choices = r?.['choices'];
   if (Array.isArray(choices)) {
     const msg = (choices[0] as Record<string, unknown> | undefined)?.['message'] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const ann = msg?.['annotations'];
     if (Array.isArray(ann)) {
       for (const a of ann) {

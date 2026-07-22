@@ -15,8 +15,7 @@
  */
 
 export type ToolArgsResult =
-  | { ok: true; input: Record<string, unknown> }
-  | { ok: false; error: string };
+  { ok: true; input: Record<string, unknown> } | { ok: false; error: string };
 
 export function parseToolArgs(raw: string | undefined | null): ToolArgsResult {
   if (raw == null || raw === '') {

@@ -96,8 +96,7 @@ import type { ChatDispatcher, ChatOptions, ChatResult, ChatToolCall } from '@man
 import type { Tool } from '@mantle/db';
 
 type ScriptStep =
-  | { type: 'text'; text: string }
-  | { type: 'toolCalls'; toolCalls: ChatToolCall[]; text?: string };
+  { type: 'text'; text: string } | { type: 'toolCalls'; toolCalls: ChatToolCall[]; text?: string };
 
 function makeFakeAdapter(script: ScriptStep[]): {
   adapter: ChatDispatcher;

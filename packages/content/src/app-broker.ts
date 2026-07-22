@@ -36,7 +36,7 @@ function appDbRoot(): string {
     dir = process.cwd();
   }
   let root = process.cwd();
-  for (let cur = dir; ; ) {
+  for (let cur = dir; ;) {
     if (fs.existsSync(path.join(cur, 'pnpm-workspace.yaml'))) {
       root = cur;
       break;

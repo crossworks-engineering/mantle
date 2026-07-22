@@ -8,9 +8,7 @@ import type { TelegramAttachment } from '@mantle/db';
  * - `drop`    → silently ignored (denied, expired pairing, group not allowlisted).
  */
 export type GateResult =
-  | { action: 'deliver' }
-  | { action: 'pair'; code: string; isResend: boolean }
-  | { action: 'drop' };
+  { action: 'deliver' } | { action: 'pair'; code: string; isResend: boolean } | { action: 'drop' };
 
 /**
  * A parsed inline-keyboard tap from an approval card (the buttons

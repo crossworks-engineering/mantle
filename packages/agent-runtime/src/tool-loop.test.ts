@@ -109,8 +109,7 @@ import type { Tool } from '@mantle/db';
 // ─── Fake adapter ──────────────────────────────────────────────────────────
 
 type ScriptStep =
-  | { type: 'text'; text: string }
-  | { type: 'toolCalls'; toolCalls: ChatToolCall[]; text?: string };
+  { type: 'text'; text: string } | { type: 'toolCalls'; toolCalls: ChatToolCall[]; text?: string };
 
 function makeFakeAdapter(script: ScriptStep[]): {
   adapter: ChatDispatcher;

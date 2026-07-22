@@ -30,14 +30,7 @@ export type TraceKind =
   | 'manual';
 
 export type TraceStepKind =
-  | 'db_read'
-  | 'db_write'
-  | 'llm_call'
-  | 'embed'
-  | 'http'
-  | 'notify'
-  | 'compute'
-  | 'send';
+  'db_read' | 'db_write' | 'llm_call' | 'embed' | 'http' | 'notify' | 'compute' | 'send';
 
 export type StepStatus = 'running' | 'success' | 'error' | 'skipped';
 

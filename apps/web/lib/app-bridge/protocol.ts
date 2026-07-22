@@ -44,8 +44,7 @@ export type BridgeEvt =
 
 /** Responses the host sends DOWN, correlated to a BridgeReq by `id`. */
 export type BridgeRes =
-  | { v: 1; id: string; ok: true; output: unknown }
-  | { v: 1; id: string; ok: false; error: string };
+  { v: 1; id: string; ok: true; output: unknown } | { v: 1; id: string; ok: false; error: string };
 
 /** Control messages the host pushes DOWN unprompted: agent region annotations,
  *  and inspect-mode control (toggle select mode; set/clear the locked selection
