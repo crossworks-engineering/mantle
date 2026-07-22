@@ -65,7 +65,7 @@ export async function syncCalendarAccount(account: CalendarAccount): Promise<Cal
 
   // Deletions: full-set providers (ICS) → stored uids absent from this pull;
   // delta providers → explicit cancellations.
-  let removed = 0;
+  let removed: number;
   if (pull.fullSet) {
     const stored = await listExternalEventUids(account.ownerId, account.id);
     const gone = stored.filter((u) => !freshUids.has(u));

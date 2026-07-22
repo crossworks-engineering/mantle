@@ -180,7 +180,7 @@ type Parsed = {
 };
 
 function parseVerdict(argsJson: string): Parsed {
-  let args: Record<string, unknown> = {};
+  let args: Record<string, unknown>;
   try {
     args = JSON.parse(argsJson) as Record<string, unknown>;
   } catch {

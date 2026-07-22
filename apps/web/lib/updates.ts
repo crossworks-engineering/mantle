@@ -148,13 +148,7 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
 // ── updater signalling ───────────────────────────────────────────────────────
 
 export type UpdaterPhase =
-  | 'idle'
-  | 'pulling'
-  | 'rolling'
-  | 'done'
-  | 'error'
-  | 'unconfigured'
-  | 'requested';
+  'idle' | 'pulling' | 'rolling' | 'done' | 'error' | 'unconfigured' | 'requested';
 
 export type UpdaterStatus = {
   phase: UpdaterPhase;

@@ -107,8 +107,7 @@ export async function runTableSql(
   const started = Date.now();
 
   type WorkerReply =
-    | { ok: true; columns: string[]; rows: unknown[][] }
-    | { ok: false; error: string };
+    { ok: true; columns: string[]; rows: unknown[][] } | { ok: false; error: string };
   const reply = await new Promise<WorkerReply>((resolve) => {
     const worker = new Worker(WORKER_SOURCE, {
       eval: true,

@@ -19,8 +19,7 @@ import {
 } from '@/lib/auth';
 
 export type ShareVisitor =
-  | { mode: 'public'; contactId: null }
-  | { mode: 'team'; contactId: string };
+  { mode: 'public'; contactId: null } | { mode: 'team'; contactId: string };
 
 /** Every value of `name` in a raw Cookie header. Path scoping means at most
  *  one normally arrives, but parse liberally. */

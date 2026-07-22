@@ -514,11 +514,10 @@ export function buildChatMessages(args: {
 
   // ─── Block 4: raw recent turns ────────────────────────────────────────
   messages.push(
-    ...history.map(
-      (t): ChatMessage =>
-        t.role === 'user'
-          ? { role: 'user', content: t.text }
-          : { role: 'assistant', content: t.text },
+    ...history.map((t): ChatMessage =>
+      t.role === 'user'
+        ? { role: 'user', content: t.text }
+        : { role: 'assistant', content: t.text },
     ),
   );
 

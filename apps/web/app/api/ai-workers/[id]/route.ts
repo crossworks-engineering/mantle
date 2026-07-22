@@ -15,7 +15,7 @@ const PatchBody = z
     model: z.string().min(1).optional(),
     apiKeyId: z.string().uuid().nullable().optional(),
     systemPrompt: z.string().nullable().optional(),
-    params: z.record(z.unknown()).optional(),
+    params: z.record(z.string(), z.unknown()).optional(),
     enabled: z.boolean().optional(),
     priority: z.number().int().optional(),
     backupProvider: z.string().nullable().optional(),

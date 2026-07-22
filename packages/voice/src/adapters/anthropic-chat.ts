@@ -93,10 +93,7 @@ type AnthropicImageBlock = {
 };
 
 type AnthropicContentBlock =
-  | AnthropicTextBlock
-  | AnthropicToolUseBlock
-  | AnthropicToolResultBlock
-  | AnthropicImageBlock;
+  AnthropicTextBlock | AnthropicToolUseBlock | AnthropicToolResultBlock | AnthropicImageBlock;
 
 type AnthropicMessage = {
   role: 'user' | 'assistant';

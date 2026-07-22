@@ -16,13 +16,13 @@
     "studio": "node --env-file-if-exists=../../apps/web/.env.local --import tsx node_modules/drizzle-kit/bin.cjs studio"
   },
   "dependencies": {
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.5"
   },
   "devDependencies": {
-    "@types/node": "^22.10.5",
-    "drizzle-kit": "^0.30.1",
-    "tsx": "^4.19.2",
+    "@types/node": "^22.20.1",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.23.1",
     "typescript": "^5.7.2"
   }
 }

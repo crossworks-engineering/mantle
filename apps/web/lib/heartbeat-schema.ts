@@ -44,7 +44,7 @@ const gates = {
   earliestAt: z.string().nullable().optional(), // ISO; converted to Date below
   cooldownMinutes: z.number().int().min(0).nullable().optional(),
   maxFires: z.number().int().min(1).nullable().optional(),
-  state: z.record(z.unknown()).optional(),
+  state: z.record(z.string(), z.unknown()).optional(),
 };
 
 export const CreateHeartbeatBody = z.object({

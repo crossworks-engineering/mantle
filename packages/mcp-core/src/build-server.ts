@@ -1592,7 +1592,9 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
       }
       case 'object': {
         const props = (def.properties ?? {}) as Record<string, Record<string, unknown>>;
-        if (Object.keys(props).length === 0) return z.record(z.unknown());
+        // zod 4 requires the key type explicitly (`z.record(z.string(), z.unknown())` was
+        // zod 3). JSON object keys are always strings, so this is the same shape.
+        if (Object.keys(props).length === 0) return z.record(z.string(), z.unknown());
         return z.object(buildZodShape(def));
       }
       default:

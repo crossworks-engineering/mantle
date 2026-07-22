@@ -332,11 +332,7 @@ export async function sendChatAction(
   account: TelegramAccount,
   chatId: string,
   action:
-    | 'typing'
-    | 'upload_photo'
-    | 'record_voice'
-    | 'upload_voice'
-    | 'upload_document' = 'typing',
+    'typing' | 'upload_photo' | 'record_voice' | 'upload_voice' | 'upload_document' = 'typing',
 ): Promise<void> {
   const bot = await botFor(account);
   await bot.api.sendChatAction(chatId, action);

@@ -5,7 +5,7 @@ import { commitPage, docToText } from '@/lib/pages';
 import { recordIngest } from '@mantle/tracing';
 
 const Body = z.object({
-  doc: z.record(z.unknown()),
+  doc: z.record(z.string(), z.unknown()),
   if_rev: z.number().int().nonnegative().optional(),
 });
 

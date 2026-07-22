@@ -32,13 +32,14 @@ function resolveGitSha(): string {
 const gitSha = resolveGitSha();
 const buildTime = process.env.MANTLE_BUILD_TIME || new Date().toISOString();
 
-// `next dev --turbo` (dev) runs Turbopack; `next build` (prod Docker) runs
-// webpack. Turbopack IGNORES any `webpack()` config and prints
-// "Webpack is configured while Turbopack is not" when one is present. The only
-// webpack config we have is the @napi-rs/canvas externalization below, which is
-// needed ONLY for the webpack build — so we attach it solely for that path and
-// keep dev (Turbopack) warning-free. Next sets `process.env.TURBOPACK` when
-// Turbopack is active; `next build` leaves it unset.
+// Turbopack runs BOTH `next dev` and `next build` as of Next 16 (it sets
+// TURBOPACK="auto" for each), so this is normally true and the webpack() hook
+// below is not attached. It still matters for the documented opt-out,
+// `next build --webpack`, which is the one path that needs the
+// @napi-rs/canvas externalization done by hand.
+//
+// Turbopack IGNORES any webpack() config and warns when one is present, so
+// gating it this way also keeps the normal build warning-free.
 const usingTurbopack = !!process.env.TURBOPACK;
 
 const nextConfig: NextConfig = {
@@ -63,6 +64,14 @@ const nextConfig: NextConfig = {
   ],
   experimental: {
     serverActions: { bodySizeLimit: '4mb' },
+  },
+  turbopack: {
+    // Pin the workspace root. Without this Next infers it by walking up for a
+    // lockfile, and from a git worktree under .claude/worktrees/ it walks past
+    // this tree and picks the INTEGRATOR checkout — resolving files from the
+    // wrong copy of the repo. Derived from this file's own location, so it is
+    // correct in the integrator and in every worktree.
+    root: join(configDir, '../..'),
   },
   // Build identity, inlined at compile time. Read via lib/version.ts (client +
   // server safe) — drives the version next to the wordmark and /api/version.

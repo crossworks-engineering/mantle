@@ -12,7 +12,7 @@
  *
  * Env loading is handled by Node's `--env-file-if-exists=.env.local` flag.
  */
-import PgBoss from 'pg-boss';
+import { PgBoss } from 'pg-boss';
 import { and, eq } from 'drizzle-orm';
 import { BACKFILL_QUEUE, backfillMatch, imap, syncAccount } from '@mantle/email';
 import { db, emailAccounts } from '@mantle/db';

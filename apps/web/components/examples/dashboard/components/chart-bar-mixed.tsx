@@ -79,7 +79,9 @@ export function ChartBarMixed() {
             />
             <XAxis dataKey="calls" type="number" hide />
             <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-            <Bar dataKey="calls" layout="vertical" radius={5} />
+            {/* recharts 3 dropped `layout` from <Bar>; the parent <BarChart
+                layout="vertical"> above is what actually drives it. */}
+            <Bar dataKey="calls" radius={5} />
           </BarChart>
         </ChartContainer>
       </CardContent>

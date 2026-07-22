@@ -579,8 +579,7 @@ function effectiveTabName(storagePath: string | null): string {
 }
 
 export type SaveTableDraftResult =
-  | { ok: true; draftRev: number }
-  | { ok: false; conflict: true; currentRev: number };
+  { ok: true; draftRev: number } | { ok: false; conflict: true; currentRev: number };
 
 /** Autosave the working grid to the DRAFT only — published `data`,
  *  `data_text`, summary, embedding, and the extractor are all untouched. Cheap

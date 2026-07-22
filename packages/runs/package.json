@@ -13,11 +13,11 @@
   },
   "dependencies": {
     "@mantle/db": "workspace:*",
-    "drizzle-orm": "^0.38.3",
-    "pg-boss": "^10.1.6"
+    "drizzle-orm": "^0.45.2",
+    "pg-boss": "^12.26.1"
   },
   "devDependencies": {
-    "@types/node": "^22.10.5",
+    "@types/node": "^22.20.1",
     "postgres": "^3.4.5",
     "typescript": "^5.7.2"
   }

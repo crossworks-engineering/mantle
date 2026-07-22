@@ -11,9 +11,14 @@
  * rest of the files surface stays free of native bindings.
  */
 
-import pdfParse from 'pdf-parse';
+import { PDFParse } from 'pdf-parse';
 
 export async function parsePdf(buf: Buffer): Promise<string> {
-  const result = await pdfParse(buf);
-  return (result.text ?? '').trim();
+  const parser = new PDFParse({ data: new Uint8Array(buf) });
+  try {
+    const result = await parser.getText();
+    return (result.text ?? '').trim();
+  } finally {
+    await parser.destroy().catch(() => {});
+  }
 }

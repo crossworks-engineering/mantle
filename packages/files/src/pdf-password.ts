@@ -35,23 +35,30 @@ export async function extractPdfTextWithPassword(
   } catch (err) {
     return { ok: false, reason: 'error', message: `pdfjs load failed: ${(err as Error).message}` };
   }
+  // pdfjs 6 moved destroy() off PDFDocumentProxy onto the loading task, so the
+  // task is what must be held and torn down — it owns the worker. Declared out
+  // here so the `finally` reaches it on the failure path too: the wrong-password
+  // case is this function's most common outcome, and it used to leak a worker
+  // every time (the old doc.destroy() only ran on success).
+  let loadingTask: ReturnType<typeof pdfjs.getDocument> | null = null;
   try {
-    const doc = await pdfjs.getDocument({
+    loadingTask = pdfjs.getDocument({
       data: new Uint8Array(bytes),
       password,
       useSystemFonts: true,
-    }).promise;
+    });
+    const doc = await loadingTask.promise;
+    const numPages = doc.numPages;
     const parts: string[] = [];
-    const n = Math.min(doc.numPages, maxPages);
+    const n = Math.min(numPages, maxPages);
     for (let i = 1; i <= n; i++) {
       const page = await doc.getPage(i);
       const tc = await page.getTextContent();
       parts.push(tc.items.map((it) => ('str' in it ? it.str : '')).join(' '));
     }
-    await doc.destroy().catch(() => {});
     const text = parts.join('\n').trim();
     if (!text) return { ok: false, reason: 'no_text' };
-    return { ok: true, text, numPages: doc.numPages };
+    return { ok: true, text, numPages };
   } catch (err) {
     // pdfjs throws a PasswordException (name) for wrong/missing passwords.
     const name = (err as { name?: string }).name ?? '';
@@ -60,5 +67,7 @@ export async function extractPdfTextWithPassword(
       return { ok: false, reason: 'password', message };
     }
     return { ok: false, reason: 'error', message };
+  } finally {
+    await loadingTask?.destroy().catch(() => {});
   }
 }

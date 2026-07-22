@@ -21,8 +21,7 @@ export type UnknownSender = {
 };
 
 export type RecentUnknownResult =
-  | { ok: true; senders: UnknownSender[] }
-  | { ok: false; error: string };
+  { ok: true; senders: UnknownSender[] } | { ok: false; error: string };
 
 /** Maps an account to the provider that can peek it, or null to skip it.
  *  Injectable so callers that know about non-IMAP providers (the web app,

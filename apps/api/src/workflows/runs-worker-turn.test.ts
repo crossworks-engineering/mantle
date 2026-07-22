@@ -17,7 +17,7 @@
  *     retry-then-fail policy.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { makeFakeDb, makeJournal, type FakeDb, type Journal } from './workflow-test-kit';
 
 const h = vi.hoisted(() => ({
@@ -40,11 +40,14 @@ const h = vi.hoisted(() => ({
     completed: boolean;
     actions: Array<Record<string, unknown>>;
   },
-  completeItem: null as unknown as ReturnType<typeof vi.fn>,
-  enqueueRunJobsSafe: null as unknown as ReturnType<typeof vi.fn>,
-  runPendingNotices: null as unknown as ReturnType<typeof vi.fn>,
-  requeueForRetry: null as unknown as ReturnType<typeof vi.fn>,
-  spillToolResult: null as unknown as ReturnType<typeof vi.fn>,
+  // Explicit call signatures rather than `ReturnType<typeof vi.fn>`: under
+  // vitest 4 the bare form widens to `Mock<Procedure | Constructable>`, a union
+  // that isn't callable (TS2348 at every call site below).
+  completeItem: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  enqueueRunJobsSafe: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  runPendingNotices: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  requeueForRetry: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  spillToolResult: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
   logs: [] as Array<{ level: string; message: string }>,
 }));
 

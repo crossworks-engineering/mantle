@@ -126,15 +126,7 @@ export type Row = {
 export type SortSpec = { colId: string; dir: 'asc' | 'desc' };
 
 export type FilterOp =
-  | 'eq'
-  | 'neq'
-  | 'contains'
-  | 'gt'
-  | 'lt'
-  | 'gte'
-  | 'lte'
-  | 'empty'
-  | 'notEmpty';
+  'eq' | 'neq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte' | 'empty' | 'notEmpty';
 
 export const FILTER_OPS: readonly FilterOp[] = [
   'eq',

@@ -18,7 +18,7 @@
  *      the channel-routed delivery with its web-only fallback.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
   CrashSignal,
   makeFakeDb,
@@ -41,10 +41,13 @@ const h = vi.hoisted(() => ({
   sendOk: true,
   /** Call order across collaborators — the ordering assertions read this. */
   seq: [] as string[],
-  recordTurn: null as unknown as ReturnType<typeof vi.fn>,
-  sendMessage: null as unknown as ReturnType<typeof vi.fn>,
-  claimResume: null as unknown as ReturnType<typeof vi.fn>,
-  runResponderLoop: null as unknown as ReturnType<typeof vi.fn>,
+  // Explicit call signatures rather than `ReturnType<typeof vi.fn>`: under
+  // vitest 4 the bare form widens to `Mock<Procedure | Constructable>`, a union
+  // that isn't callable (TS2348 at every call site below).
+  recordTurn: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  sendMessage: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  claimResume: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
+  runResponderLoop: null as unknown as Mock<(...a: unknown[]) => Promise<unknown>>,
   logs: [] as Array<{ level: string; message: string }>,
 }));
 

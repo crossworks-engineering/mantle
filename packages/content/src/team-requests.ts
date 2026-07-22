@@ -78,8 +78,7 @@ export async function listTeamRequests(
 }
 
 export type NotifyTeamRequesterResult =
-  | { ok: true; contactId: string }
-  | { ok: false; error: string };
+  { ok: true; contactId: string } | { ok: false; error: string };
 
 /**
  * Close the loop on a team request: post the owner's reply into the requesting
