@@ -16,7 +16,7 @@ const PAGE_SIZE = 50;
 
 const CreateBody = z.object({
   title: z.string().min(1).max(200),
-  data: z.record(z.unknown()).optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
   icon: z.string().max(16).optional(),
   tags: z.array(z.string().max(40)).max(20).optional().default([]),
 });

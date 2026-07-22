@@ -10,7 +10,7 @@ import { recordIngest } from '@mantle/tracing';
 // only commit shape that works past the materialize window, and the §4
 // truncation-guard fix (a windowed doc committed whole would BE published
 // truncation).
-const Body = z.object({ data: z.record(z.unknown()).optional() });
+const Body = z.object({ data: z.record(z.string(), z.unknown()).optional() });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
