@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@mantle/api-keys": "workspace:*",
-    "@openrouter/sdk": "^0.12.79",
+    "@openrouter/sdk": "^1.0.0",
     "undici": "^8.8.0"
   },
   "devDependencies": {
