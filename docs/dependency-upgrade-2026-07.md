@@ -306,6 +306,52 @@ so this is a query-API upgrade, not a migration-tooling upgrade. Still 0.x, wher
 minors are breaking by convention. Gate on the full suite plus a real
 `/debug/integrity` corpus audit.
 
+### Wave 4 status: eslint ✅, vitest ✅, zod ⏳, drizzle ⏳ (2026-07-22)
+
+`14 → 10 outdated.` The two tooling items are done; the two code-touching ones
+remain.
+
+**`eslint` 9 → 10** (`ec3a198f`, `e09419df`). The apparent blocker —
+`eslint-config-next@15` peering `eslint ^7 || ^8 || ^9`, which would have
+dragged Next 16 into this wave — turned out to be **dead weight**:
+`eslint.config.mjs` uses `@next/eslint-plugin-next` directly and never
+references it, there are no legacy `.eslintrc` files, and CI runs the root
+`eslint .`. Removed it, plus `apps/web`'s unused `lint: "next lint"` script
+(`next lint` is itself gone in Next 16) and its stray eslint 9 devDep.
+
+eslint 10 promotes two rules into `recommended`, and both found real things —
+14 errors, all fixed, none suppressed:
+
+- **`no-useless-assignment` ×11.** Two shapes: a `catch` re-assigning the same
+  default the initializer already had (redundant assignment removed, comment
+  explains why the default stands), and dead initializers where every branch
+  assigns before use (`let x: T;` instead). The latter is a strict tightening —
+  the initializer had been *suppressing* TypeScript's definite-assignment check.
+- **`preserve-caught-error` ×3.** Two extractor throws and a seed script were
+  interpolating a caught error's message but discarding the error itself, losing
+  the cause chain exactly on the DLQ path where debugging matters.
+
+**`vitest` 2 → 4** (`33f01a09`). Suite size identical to baseline — 226 files,
+2565 passed, 38 skipped. That's the check that matters: a runner major can
+quietly stop collecting files and still exit green. Three fixes:
+
+1. **vite had to be declared.** vitest 4 peers `vite ^6 || ^7 || ^8`, nothing
+   declared vite, so the tree kept vitest 2's transitive vite 5 and pnpm just
+   reported an unmet peer. Startup died on `ERR_PACKAGE_PATH_NOT_EXPORTED` for
+   `./module-runner`. vite is now explicit at ^8.
+2. **A mock had to become constructible.** `vi.fn().mockImplementation(() => …)`
+   worked under vitest 2; vitest 4 forwards `new` to the implementation and an
+   arrow can't construct, so `new OpenRouter(...)` threw and took out 21 tests.
+   Now a class.
+3. **`ReturnType<typeof vi.fn>` no longer describes a callable** — it widens to
+   `Mock<Procedure | Constructable>`. 13 declarations across 3 files now carry
+   explicit signatures.
+
+Still to do in this wave: **zod 3 → 4** (the sharp edge is
+`packages/mcp-core/src/build-server.ts`, where zod shapes become JSON Schema for
+MCP tools — diff the generated schemas before/after) and **drizzle 0.38 → 0.45**
+(238 files; no instance-split blocker, that was a false alarm).
+
 ## Wave 5 — framework
 
 **`next` 15 → 16** (+ `eslint-config-next` 16). React 19.2 is already in place, so
