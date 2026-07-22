@@ -177,6 +177,35 @@ one**. Big diff, low danger. Do it alone, let `tsc` drive the rename list.
 **`recharts` 2 → 3** — 11 files. Real API changes between majors. Charts live in
 the dashboard and `/debug/spend`; check each rendered chart visually.
 
+### Wave 3 status: ✅ done (2026-07-22)
+
+Both items landed. `16 → 14 outdated.`
+
+**`lucide-react` 0.469 → 1.25 needed zero code changes** across all 201 import
+sites — not one icon we use was renamed or removed. That clean pass was checked
+to be *meaningful* rather than vacuous: a canary importing a non-existent icon
+fails with TS2305, so lucide's types are strict and typecheck really is proof
+here. Bundle unchanged at 103 kB.
+
+**`recharts` 2 → 3 needed five fixes**, all in the typing of custom tooltip and
+legend content, all resolved using recharts' own exported types rather than
+hand-rolled shapes:
+
+| change | fix |
+| --- | --- |
+| `payload`/`label`/`active` off public Tooltip props (context-injected) | use exported `TooltipContentProps`, as `Partial<>` |
+| `LegendProps` Omits `payload`, keeps `verticalAlign` | split the `Pick<>`; declare `payload?: LegendPayload[]` |
+| `dataKey` widened to allow a function | no longer valid as a React key — reuse the stringified local |
+| `<Bar layout>` removed | parent `<BarChart layout>` already drove it; prop was redundant |
+| `labelFormatter` first arg now `ReactNode` | narrow with `String()` before parsing |
+
+> **Open verification gap.** There is no jsdom or testing-library in this repo —
+> `vitest.config.ts` says outright that "UI behaviour goes through `pnpm build`
+> + manual smoke". So verify + build being green says nothing about whether
+> charts actually *render*. Before merge, eyeball the dashboard
+> (`ingest-chart`, `spend-chart`, `brain-breakdown`) and `/debug/spend`.
+> Adding a render-test setup is worth considering, but not mid-upgrade.
+
 ## Wave 4 — deep, one release each
 
 **`eslint` 9 → 10** (+ `@eslint/js`, `typescript-eslint`, `eslint-config-next`).
