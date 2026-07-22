@@ -148,6 +148,12 @@ x-app-env: &app-env
   # warns about.
   MANTLE_RUNS: ${MANTLE_RUNS:-}
   MANTLE_RUNS_WORKER_CONCURRENCY: ${MANTLE_RUNS_WORKER_CONCURRENCY:-}
+  # Cap on the dedicated background-runs DBOS queue in apps/api (slice 4 WP-F,
+  # `RUNS_TURN_QUEUE`) — what keeps a run fanning out N worker turns from
+  # queueing ahead of a live chat message. Default 2. It shipped read-only:
+  # apps/api read it from day one but nothing passed it through, so no box
+  # could tune it.
+  MANTLE_RUNS_TURN_CONCURRENCY: ${MANTLE_RUNS_TURN_CONCURRENCY:-}
   # Extractor worker concurrency (in-flight extraction jobs). Default 2 suits a
   # multi-core / GPU box. Drop to 1 on a CPU-only embedder: concurrent jobs
   # otherwise contend for the same cores and a big file's embed batch can blow
@@ -170,6 +176,26 @@ x-app-env: &app-env
   # The /settings/network status tile + peer dropdown read `status` over it.
   # Absent socket → the reader reports "tailnet not running" (never throws).
   MANTLE_TAILSCALE_SOCK: ${MANTLE_TAILSCALE_SOCK:-/var/run/tailscale/tailscaled.sock}
+  # Microsoft / Outlook (docs/microsoft-graph-ingest.md). The Azure app
+  # registration's credentials — WITHOUT these the /settings/microsoft connect
+  # flow cannot work on a deployed box at all, which is why the feature has
+  # shipped unusable since v1: the code read them, nothing passed them.
+  # Add Mail.Send to the app's scopes BEFORE the first connect.
+  MS_CLIENT_ID: ${MS_CLIENT_ID:-}
+  MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
+  MS_TENANT: ${MS_TENANT:-}
+  MS_REDIRECT_URI: ${MS_REDIRECT_URI:-}
+  # Team Hub chat posting. OFF unless exactly "1" (`=== '1'` in code), so this
+  # is the only way to turn member chat on — it was unreachable on every box.
+  # The two limits are per-owner daily gates (forum-gate.ts).
+  TEAM_CHAT_POST_ENABLED: ${TEAM_CHAT_POST_ENABLED:-}
+  TEAM_CHAT_DAILY_TURNS: ${TEAM_CHAT_DAILY_TURNS:-}
+  TEAM_UPLOAD_DAILY_BYTES: ${TEAM_UPLOAD_DAILY_BYTES:-}
+  # How many proxy hops sit in front of the app, for client-IP extraction in
+  # the rate limiter (X-Forwarded-For, counted from the right). Default 1 =
+  # one Caddy. Wrong on a box behind Caddy + Cloudflare, where the limiter
+  # would key on a spoofable hop.
+  MANTLE_TRUSTED_PROXIES: ${MANTLE_TRUSTED_PROXIES:-}
   MANTLE_FILES_ROOT: /data/files
   # Per-app SQLite databases for the /apps mini-app builder. One file per app
   # (<root>/<owner>/<app>.sqlite, see packages/content/src/app-broker.ts). MUST be
