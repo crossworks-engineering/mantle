@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  pdfjs-dist: 6.1.200
+
 importers:
 
   .:
@@ -834,14 +837,14 @@ importers:
         specifier: ^1.12.0
         version: 1.12.0
       pdf-parse:
-        specifier: ^1.1.1
+        specifier: ^1.1.4
         version: 1.1.4
       pdf-to-png-converter:
         specifier: ^4.1.1
         version: 4.1.1
       pdfjs-dist:
-        specifier: ^5.7.284
-        version: 5.7.284
+        specifier: 6.1.200
+        version: 6.1.200
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5
@@ -6563,12 +6566,8 @@ packages:
     engines: {node: '>=22.13.0 || >=24'}
     hasBin: true
 
-  pdfjs-dist@5.7.284:
-    resolution: {integrity: sha512-h4EdYQczmGhbOlqc3PPZwxevn7ApdWPbovAuWXOB/DjIyigSnwfy2oze7c6mRcSr9XgLp3eN3EeL4DyySTPMFw==}
-    engines: {node: '>=22.13.0 || >=24'}
-
-  pdfjs-dist@6.0.227:
-    resolution: {integrity: sha512-/P6M4SXw+70waMVLUM7rdRtvo+dEzqE1t6W/zQNvBETo2MaRa5rrvCcAYdfWGiUzadTgM0lJmRApUrW0d9zgKg==}
+  pdfjs-dist@6.1.200:
+    resolution: {integrity: sha512-o8MolyzirkkLrcdsae/HEOiIcXWI7DS5zGpvqW8xTC2YUsW30rltFw2bDGvw/fskUdEMrQm2br68jzDS5BH2vw==}
     engines: {node: '>=22.13.0 || >=24'}
 
   peberminta@0.10.0:
@@ -13219,13 +13218,9 @@ snapshots:
   pdf-to-png-converter@4.1.1:
     dependencies:
       '@napi-rs/canvas': 1.0.2
-      pdfjs-dist: 6.0.227
+      pdfjs-dist: 6.1.200
 
-  pdfjs-dist@5.7.284:
-    optionalDependencies:
-      '@napi-rs/canvas': 0.1.100
-
-  pdfjs-dist@6.0.227:
+  pdfjs-dist@6.1.200:
     optionalDependencies:
       '@napi-rs/canvas': 1.0.2
 

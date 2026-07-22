@@ -11,3 +11,10 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
+
+# Single pdfjs-dist across the tree. pdfjs compares API and Worker version
+# strings EXACTLY and fails the load on any mismatch, and its worker config is
+# process-global — so two copies in one process break whichever loads second.
+# pdf-to-png-converter pins its own (6.0.227); this pulls it onto ours.
+overrides:
+  pdfjs-dist: 6.1.200
