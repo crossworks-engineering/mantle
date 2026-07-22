@@ -64,7 +64,7 @@ type Token =
   | { t: 'rparen' }
   | { t: 'comma' };
 
-type EvalValue = number | string | boolean | null;
+export type EvalValue = number | string | boolean | null;
 
 const MAX_FORMULA_LEN = 2000;
 
@@ -143,12 +143,19 @@ function tokenize(src: string): Token[] {
   return out;
 }
 
+/**
+ * How a `{braced}` reference resolves to a value. Table formulas bind refs to
+ * columns of the current row; the formula-spec evaluator binds them to named
+ * variables. Same grammar, same parser, two binding strategies — there is
+ * deliberately only one expression language in the codebase.
+ */
+export type RefResolver = (name: string) => EvalValue;
+
 class Parser {
   private pos = 0;
   constructor(
     private toks: Token[],
-    private doc: TableDoc,
-    private row: Row,
+    private resolve: RefResolver,
   ) {}
 
   private peek(): Token | undefined {
@@ -252,7 +259,7 @@ class Parser {
       case 'str':
         return tok.v;
       case 'ref':
-        return this.resolveRef(tok.v);
+        return this.resolve(tok.v);
       case 'lparen': {
         const v = this.parseComparison();
         this.expect('rparen');
@@ -290,15 +297,18 @@ class Parser {
     return applyFn(name, args);
   }
 
-  private resolveRef(name: string): EvalValue {
-    const col = this.doc.columns.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+}
+
+/** Binds `{refs}` to columns of one row. */
+function columnResolver(doc: TableDoc, row: Row): RefResolver {
+  return (name) => {
+    const col = doc.columns.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
     if (!col) return null;
     // Guard against formula → formula recursion: a formula may not reference
     // another formula column (avoids cycles without a full dependency graph).
     if (col.type === 'formula') return null;
-    const raw = this.row.cells[col.id] ?? null;
-    return cellToEval(raw);
-  }
+    return cellToEval(row.cells[col.id] ?? null);
+  };
 }
 
 function cellToEval(v: CellValue): EvalValue {
@@ -321,7 +331,8 @@ function toStr(v: EvalValue): string {
   return String(v);
 }
 
-function truthy(v: EvalValue): boolean {
+/** Exported so the formula-spec evaluator branches on exactly these rules. */
+export function truthy(v: EvalValue): boolean {
   if (typeof v === 'boolean') return v;
   if (typeof v === 'number') return v !== 0;
   if (typeof v === 'string') return v.trim() !== '' && v.trim().toLowerCase() !== 'false';
@@ -393,15 +404,27 @@ function applyFn(name: FnName, args: EvalValue[]): EvalValue {
 }
 
 /**
+ * Evaluate an expression against an arbitrary reference resolver, THROWING on
+ * a malformed expression. Callers that want a value or a diagnosis — the
+ * formula-spec evaluator, where a silently blank release rate would be worse
+ * than a loud failure — use this. Callers that want a cell to render want
+ * `evalFormula` below.
+ */
+export function evalExpression(src: string, resolve: RefResolver): EvalValue {
+  const text = (src ?? '').trim();
+  if (!text) throw new Error('empty expression');
+  if (text.length > MAX_FORMULA_LEN) throw new Error('expression too long');
+  return new Parser(tokenize(text), resolve).parse();
+}
+
+/**
  * Evaluate a formula expression in the context of one row. Returns a number,
  * string, or null. Any parse/eval error yields null (a broken formula renders
  * blank, never throws into the caller). NaN results collapse to null too.
  */
 export function evalFormula(formula: string, doc: TableDoc, row: Row): CellValue {
-  const src = (formula ?? '').trim();
-  if (!src || src.length > MAX_FORMULA_LEN) return null;
   try {
-    const result = new Parser(tokenize(src), doc, row).parse();
+    const result = evalExpression(formula, columnResolver(doc, row));
     if (typeof result === 'number') return Number.isFinite(result) ? result : null;
     if (typeof result === 'boolean') return result;
     return result ?? null;

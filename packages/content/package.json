@@ -29,7 +29,9 @@
     "./page-toc": "./src/page-toc.ts",
     "./page-split": "./src/page-split.ts",
     "./page-diff": "./src/page-diff.ts",
-    "./table-storage": "./src/table-storage.ts"
+    "./table-storage": "./src/table-storage.ts",
+    "./formula-spec": "./src/formula-spec.ts",
+    "./formula-eval": "./src/formula-eval.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
