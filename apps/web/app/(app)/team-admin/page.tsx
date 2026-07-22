@@ -20,11 +20,18 @@ import {
   listForumUploadStatesForTopic,
   listPendingForumUploads,
   countPendingForumUploads,
+  listForumMemberActivity,
+  listForumPostsByContact,
+  countForumPostsByContact,
+  listForumTopicsByAuthor,
   formatAttachmentSize,
   type TeamMemberActivity,
   type TeamRequest,
   type ForumTopicListItem,
   type PendingForumUpload,
+  type ForumMemberActivity,
+  type ForumMemberPost,
+  type ForumAuthoredTopic,
 } from '@mantle/content';
 import { reconcileForumQuarantine } from '@/lib/forum-quarantine';
 import { SharedLinksPanel } from '@/components/share/shared-links-panel';
@@ -42,27 +49,41 @@ import {
 import { UploadReviewActions } from '@/components/team-forum/admin-upload-controls';
 import { KindBadge, TopicFlags } from '@/components/team-forum/forum-meta';
 import {
-  MessageSquare,
+  Archive,
   MessagesSquare,
   ExternalLink,
   Inbox,
   CheckCircle2,
   Paperclip,
+  Users,
 } from 'lucide-react';
+import { MemberActivityPager } from '@/components/team-admin/member-activity-pager';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 /**
- * /team-admin — the owner's window into the external Team Chat surface
+ * /team-admin — the owner's window into the external team surface
  * (decision: a dedicated route, room to grow into the team-platform hub).
- * Master-detail: left = team members ordered by recent activity; right = the
- * selected member's thread (read-only) with per-turn trace deep-links, plus
- * their recent access-log entries. Token mint/rotate/revoke stays on the
- * contact's page (linked) — one lifecycle surface, not two.
+ *
+ * Tabs: Members · Topics · Requests · Shared links · Settings.
+ *
+ * **Members** is the person-first view. It used to be "Chats" — a preview of
+ * each member's 1:1 Team Chat thread — but the Forum replaced that surface
+ * (the write path now 410s; see app/api/team/turn/route.ts), so on any brain
+ * provisioned after the Forum shipped that pane was permanently empty. The
+ * detail pane now shows what a member ACTUALLY does: their forum posts with
+ * the agent answer each one drew, the topics they started, the requests they
+ * filed, and their access log. Members carrying a pre-Forum transcript keep it
+ * as a collapsed "Chat archive" — history is never hidden, just demoted.
+ *
+ * Token mint/rotate/revoke stays on the contact's page (linked) — one
+ * lifecycle surface, not two. Surface-wide switches (private reads, hub app,
+ * curated tags) live on Settings; they are not member-scoped and used to sit
+ * confusingly above the member list.
  *
  * Server-rendered + URL-driven (?contact=<id>), matching the list-screen
- * conventions; the thread itself is a preview, not a live chat.
+ * conventions; every pane is a read-only preview, not a live chat.
  */
 export const dynamic = 'force-dynamic';
 
@@ -76,13 +97,12 @@ function fmtWhen(iso: string | null): string {
   });
 }
 
-function MemberList({
-  members,
-  selectedId,
-}: {
-  members: TeamMemberActivity[];
-  selectedId: string | null;
-}) {
+/** A member row: roster + token facts from the team-token store, activity
+ *  numbers from the forum. `forum` is null for a member who has never posted —
+ *  the aggregate query only returns contacts with posts. */
+type MemberRow = TeamMemberActivity & { forum: ForumMemberActivity | null };
+
+function MemberList({ members, selectedId }: { members: MemberRow[]; selectedId: string | null }) {
   if (members.length === 0) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
@@ -110,16 +130,20 @@ function MemberList({
             <div className="flex items-baseline justify-between gap-2">
               <span className="truncate text-sm font-medium">{m.contactName}</span>
               <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                {m.unread > 0 ? (
+                {/* Unread = their forum posts the owner hasn't read in the
+                    topic. Clears by opening the TOPIC, not this row. */}
+                {(m.forum?.unread ?? 0) > 0 ? (
                   <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
-                    {m.unread}
+                    {m.forum?.unread}
                   </span>
                 ) : null}
-                {fmtWhen(m.lastMessageAt)}
+                {fmtWhen(m.forum?.lastPostAt ?? null)}
               </span>
             </div>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {m.lastMessageText ?? `member since ${fmtWhen(m.memberSince)} — no messages yet`}
+              {m.forum?.lastPostBody
+                ? `${m.forum.lastPostTopicTitle ? `${m.forum.lastPostTopicTitle} — ` : ''}${m.forum.lastPostBody}`
+                : `member since ${fmtWhen(m.memberSince)} — no posts yet`}
             </p>
           </Link>
         </li>
@@ -132,7 +156,7 @@ function TeamTabs({
   active,
   openRequestCount,
 }: {
-  active: 'chats' | 'topics' | 'requests' | 'shares';
+  active: 'members' | 'topics' | 'requests' | 'shares' | 'settings';
   openRequestCount: number;
 }) {
   const tab = (label: string, href: string, isActive: boolean, badge?: number) => (
@@ -155,10 +179,11 @@ function TeamTabs({
   );
   return (
     <div className="flex items-center gap-1 border-b border-border px-3">
-      {tab('Chats', '/team-admin', active === 'chats')}
+      {tab('Members', '/team-admin', active === 'members')}
       {tab('Topics', '/team-admin?view=topics', active === 'topics')}
       {tab('Requests', '/team-admin?view=requests', active === 'requests', openRequestCount)}
       {tab('Shared links', '/team-admin?view=shares', active === 'shares')}
+      {tab('Settings', '/team-admin?view=settings', active === 'settings')}
     </div>
   );
 }
@@ -388,6 +413,211 @@ function TopicList({
   );
 }
 
+/** One member post paired with the answer it drew — the atom of the activity
+ *  feed, and the direct successor to a chat question/answer pair. The topic
+ *  title is the link out: everything else about the thread (other authors,
+ *  pin, reply box) lives on the Topics tab, not here. */
+function ActivityPost({ post }: { post: ForumMemberPost }) {
+  return (
+    <li className="rounded-lg border border-border bg-card text-card-foreground">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2 text-xs">
+        <Link
+          href={`/team-admin?view=topics&topic=${post.topicId}`}
+          className="min-w-0 truncate font-medium underline-offset-2 hover:underline"
+        >
+          {post.topicTitle}
+        </Link>
+        <TopicFlags pinned={false} visibility={post.topicVisibility} status={post.topicStatus} />
+        {post.kind ? <KindBadge kind={post.kind} /> : null}
+        <span className="ml-auto shrink-0 text-muted-foreground">{fmtWhen(post.createdAt)}</span>
+      </div>
+      <div className="px-3 py-2">
+        <p className="whitespace-pre-wrap text-sm">{post.body}</p>
+        {post.attachments.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {post.attachments.map((a, i) => (
+              <span
+                key={a.fileId ?? `${post.id}-${i}`}
+                className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
+              >
+                <Paperclip className="size-3" aria-hidden />
+                {a.caption ?? 'attachment'}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* The answer. Absent when the poster waved the agent off ("no answer
+          needed", the default in discussion topics) or the turn is still owed
+          — say which, rather than rendering nothing and looking broken. */}
+      <div className="border-t border-border/60 bg-muted/30 px-3 py-2">
+        {post.reply === null ? (
+          <p className="text-xs italic text-muted-foreground">No assistant answer to this post.</p>
+        ) : post.reply.status === 'pending' ? (
+          <p className="text-xs italic text-muted-foreground">answering…</p>
+        ) : post.reply.status === 'failed' ? (
+          <p className="text-xs text-destructive">
+            Turn failed: {post.reply.error ?? 'unknown error'}
+          </p>
+        ) : (
+          <>
+            <div className="mb-1 flex items-baseline gap-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{post.reply.authorName}</span>
+              <span>{fmtWhen(post.reply.createdAt)}</span>
+              {post.reply.traceId ? (
+                <Link
+                  href={`/traces/${post.reply.traceId}`}
+                  className="ml-auto inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                >
+                  <ExternalLink className="size-3" /> trace
+                </Link>
+              ) : null}
+            </div>
+            <div className="prose prose-accent prose-sm max-w-none dark:prose-invert">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{post.reply.body}</ReactMarkdown>
+            </div>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** Topics this member started — the "what did they bring to the room" list,
+ *  distinct from the posts feed (they also post into others' topics). */
+function AuthoredTopics({ topics }: { topics: ForumAuthoredTopic[] }) {
+  return (
+    <section className="space-y-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Topics started
+      </h3>
+      <ul className="divide-y divide-border/60 rounded-lg border border-border bg-card text-card-foreground">
+        {topics.map((t) => (
+          <li key={t.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
+            <Link
+              href={`/team-admin?view=topics&topic=${t.id}`}
+              className="min-w-0 truncate text-sm underline-offset-2 hover:underline"
+            >
+              {t.title}
+            </Link>
+            <TopicFlags pinned={t.pinned} visibility={t.visibility} status={t.status} />
+            <KindBadge kind={t.kind} />
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+              {t.postCount} {t.postCount === 1 ? 'post' : 'posts'} · {fmtWhen(t.lastPostAt)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** The member's own change requests. The Requests tab is the work queue (with
+ *  reply + mark-done); this is the person-scoped mirror, read-only. */
+function MemberRequestList({ requests }: { requests: TeamRequest[] }) {
+  return (
+    <section className="space-y-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Requests filed
+      </h3>
+      <ul className="divide-y divide-border/60 rounded-lg border border-border bg-card text-card-foreground">
+        {requests.map((r) => (
+          <li key={r.taskId} className="flex flex-wrap items-center gap-2 px-3 py-2">
+            <Link
+              href={`/tasks?selected=${r.taskId}`}
+              className="min-w-0 truncate text-sm underline-offset-2 hover:underline"
+            >
+              {r.title}
+            </Link>
+            <span
+              className={cn(
+                'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs',
+                r.status === 'done'
+                  ? 'bg-muted text-muted-foreground'
+                  : 'bg-primary/10 text-primary',
+              )}
+            >
+              {r.status === 'done' ? <CheckCircle2 className="size-3" /> : null}
+              {r.status === 'done' ? 'done' : 'open'}
+            </span>
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+              {fmtWhen(r.createdAt)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * The pre-Forum 1:1 transcript, collapsed. Rendered ONLY when the member
+ * actually has one — a brain provisioned after the Forum shipped must never
+ * see a ghost of a surface it never had. `<details>` (not a Dialog/Collapsible)
+ * because this is a static disclosure inside a server component: no client
+ * bundle, and it stays open across the page's URL-driven re-renders.
+ */
+function ChatArchive({
+  thread,
+  count,
+}: {
+  thread: Awaited<ReturnType<typeof listTeamThread>>;
+  count: number;
+}) {
+  return (
+    <details className="rounded-lg border border-border bg-card text-card-foreground">
+      <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground">
+        <Archive className="size-3.5" aria-hidden />
+        Chat archive ({count} {count === 1 ? 'message' : 'messages'})
+        <span className="font-normal">— the 1:1 thread, before the Forum</span>
+      </summary>
+      <div className="flex flex-col gap-3 border-t border-border/60 px-3 py-3">
+        {thread.length < count && (
+          <p className="text-center text-xs text-muted-foreground">
+            Showing the latest {thread.length} of {count}.
+          </p>
+        )}
+        {thread.map((m) =>
+          m.direction === 'inbound' ? (
+            <div
+              key={m.id}
+              className="ml-auto max-w-[85%] rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
+            >
+              <p className="whitespace-pre-wrap">{m.text}</p>
+              <p className="mt-1 text-right text-xs text-primary-foreground/70">
+                {fmtWhen(m.createdAt.toISOString())}
+              </p>
+            </div>
+          ) : (
+            <div key={m.id} className="mr-auto w-full max-w-[85%] rounded-lg bg-muted/40 px-3 py-2">
+              {m.status === 'failed' ? (
+                <p className="text-sm text-destructive">
+                  Turn failed: {m.error ?? 'unknown error'}
+                </p>
+              ) : (
+                <div className="prose prose-accent prose-sm max-w-none dark:prose-invert">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
+                </div>
+              )}
+              <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                <span>{fmtWhen(m.createdAt.toISOString())}</span>
+                {m.traceId ? (
+                  <Link
+                    href={`/traces/${m.traceId}`}
+                    className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                  >
+                    <ExternalLink className="size-3" /> trace
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+          ),
+        )}
+      </div>
+    </details>
+  );
+}
+
 export default async function TeamAdminPage({
   searchParams,
 }: {
@@ -397,21 +627,41 @@ export default async function TeamAdminPage({
     topic?: string;
     q?: string;
     page?: string;
+    /** Activity-feed page on the Members tab — deliberately not `page`, so the
+     *  two tabs' pagers never read each other's cursor. */
+    apage?: string;
   }>;
 }) {
   const user = await requireOwner();
-  const { contact, view, topic: topicParam, q, page } = await searchParams;
+  const { contact, view, topic: topicParam, q, page, apage } = await searchParams;
   const showRequests = view === 'requests';
 
-  const [members, prefs, openRequests, apps, pendingUploadCount, sharedPageTags] =
+  const [roster, forumActivity, prefs, openRequests, apps, pendingUploadCount, sharedPageTags] =
     await Promise.all([
       listTeamMemberActivity(user.id),
+      listForumMemberActivity(user.id),
       loadProfilePreferences(user.id),
       listTeamRequests(user.id, { status: 'open' }).then((r) => r.length),
       listApps(user.id, { limit: 200 }),
       countPendingForumUploads(user.id),
       listTeamShareTags(user.id, 'page'),
     ]);
+  // Roster (every live token holder) LEFT-joined to forum activity in memory —
+  // the aggregate only returns contacts who have posted, so a freshly enabled
+  // member still shows, at the bottom. Order: most recent forum post first,
+  // then never-posted members by membership date (newest first) so a just-
+  // added member is visible without scrolling.
+  const forumByContact = new Map(forumActivity.map((f) => [f.contactId, f]));
+  const members: MemberRow[] = roster
+    .map((m) => ({ ...m, forum: forumByContact.get(m.contactId) ?? null }))
+    .sort((a, b) => {
+      const aAt = a.forum?.lastPostAt ?? null;
+      const bAt = b.forum?.lastPostAt ?? null;
+      if (aAt && bAt) return bAt.localeCompare(aAt);
+      if (aAt) return -1;
+      if (bAt) return 1;
+      return b.memberSince.localeCompare(a.memberSince);
+    });
   // The Requests badge counts everything awaiting the specialist: open change
   // requests + forum uploads pending review.
   const openRequestCount = openRequests + pendingUploadCount;
@@ -428,6 +678,58 @@ export default async function TeamAdminPage({
     }));
   const hubAppId =
     prefs.teamHubAppId && apps.some((a) => a.id === prefs.teamHubAppId) ? prefs.teamHubAppId : null;
+
+  if (view === 'settings') {
+    // Surface-wide switches. These used to sit in the member-list sidebar,
+    // where they read as per-member chat settings — none of them is: they
+    // govern the whole team surface (chat archive, forum, hub, workspace).
+    return (
+      <div className="flex h-full flex-col">
+        <SetPageTitle title="Team" />
+        <TeamTabs active="settings" openRequestCount={openRequestCount} />
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+          <div className="mx-auto w-full max-w-2xl space-y-4 p-4">
+            <div className="rounded-lg border border-border bg-card p-4 text-card-foreground">
+              <h2 className="text-sm font-semibold">Read posture</h2>
+              <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+                Members always get brain-knowledge reads. This gates your PRIVATE corpus (email and
+                journal) for every team surface — the Forum included. Default off.
+              </p>
+              <PrivateReadsToggle initial={privateReads} />
+            </div>
+
+            {/* Keyed by the current designation so a server-side change
+                (another tab, MCP) resyncs the Select on refresh. */}
+            <div className="rounded-lg border border-border bg-card p-4 text-card-foreground">
+              <h2 className="text-sm font-semibold">Hub app</h2>
+              <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+                Which published app renders full-bleed at <code>/hub</code> for members. The
+                built-in briefing hub is the fallback.
+              </p>
+              <HubAppPicker
+                key={hubAppId ?? 'builtin'}
+                currentAppId={hubAppId}
+                apps={hubCandidates}
+              />
+            </div>
+
+            <div className="rounded-lg border border-border bg-card p-4 text-card-foreground">
+              <h2 className="text-sm font-semibold">Dashboard sections</h2>
+              <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+                Curated tag sections on the <code>/team</code> overview, drawn from your shared
+                pages.
+              </p>
+              <DashboardTagsPanel
+                key={(prefs.teamHubTags ?? []).join(',')}
+                initialTags={prefs.teamHubTags ?? []}
+                available={sharedPageTags}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (view === 'shares') {
     const active = await listActiveShares(user.id);
@@ -670,65 +972,65 @@ export default async function TeamAdminPage({
     );
   }
 
+  const ACTIVITY_PAGE_SIZE = 25;
+  const ARCHIVE_SHOWN = 50;
   const selectedId =
     contact && members.some((m) => m.contactId === contact)
       ? contact
       : (members[0]?.contactId ?? null);
   const selected = members.find((m) => m.contactId === selectedId) ?? null;
-  const [thread, access] = selectedId
-    ? await Promise.all([
-        listTeamThread(user.id, selectedId, { limit: 50 }),
-        listTeamAccess(user.id, { contactId: selectedId, limit: 50 }),
-      ])
-    : [[], []];
-  // Viewing a member's thread marks it read up to now; reflect that in this
-  // render so the selected member's unread badge clears immediately (the DB
-  // cursor drives it on the next navigation).
+  const activityPage = Math.max(1, Number.parseInt(apage ?? '1', 10) || 1);
+
+  let posts: ForumMemberPost[] = [];
+  let postTotal = 0;
+  let authored: ForumAuthoredTopic[] = [];
+  let memberRequests: TeamRequest[] = [];
+  let thread: Awaited<ReturnType<typeof listTeamThread>> = [];
+  let access: Awaited<ReturnType<typeof listTeamAccess>> = [];
+
   if (selectedId && selected) {
-    await markTeamThreadRead(user.id, selectedId);
-    selected.unread = 0;
+    [posts, postTotal, authored, memberRequests, thread, access] = await Promise.all([
+      listForumPostsByContact(user.id, selectedId, {
+        limit: ACTIVITY_PAGE_SIZE,
+        offset: (activityPage - 1) * ACTIVITY_PAGE_SIZE,
+      }),
+      countForumPostsByContact(user.id, selectedId),
+      listForumTopicsByAuthor(user.id, selectedId, { limit: 20 }),
+      listTeamRequests(user.id, { status: 'all', limit: 50, contactId: selectedId }),
+      // Only touch the frozen chat store when this member actually has an
+      // archive — on a post-Forum brain that query would always return [].
+      selected.messageCount > 0
+        ? listTeamThread(user.id, selectedId, { limit: ARCHIVE_SHOWN })
+        : Promise.resolve([]),
+      listTeamAccess(user.id, { contactId: selectedId, limit: 50 }),
+    ]);
+    // Advance the CHAT cursor only for members carrying an archive: pre-Forum
+    // threads can still hold unread rows, and `team_chat_list` reports them to
+    // the assistant. A brain that never had chat never gets a write.
+    // The forum unread badge is deliberately NOT cleared here — that belongs
+    // to opening the topic, on the Topics tab.
+    if (selected.messageCount > 0) await markTeamThreadRead(user.id, selectedId);
   }
 
   return (
     <div className="flex h-full flex-col">
       <SetPageTitle title="Team" />
-      <TeamTabs active="chats" openRequestCount={openRequestCount} />
+      <TeamTabs active="members" openRequestCount={openRequestCount} />
       <div className="min-h-0 flex-1 md:grid md:grid-cols-[340px_1fr]">
         {/* Members */}
         <aside className="flex min-h-0 flex-col border-r border-border">
-          <div className="flex items-center border-b border-border px-4 py-3">
+          <div className="flex items-baseline gap-2 border-b border-border px-4 py-3">
             <h2 className="text-sm font-semibold">Team members</h2>
-          </div>
-          {/* Surface-wide read posture. Members always get brain-knowledge reads;
-              this gates the owner's PRIVATE corpus (email + journal). Default off. */}
-          <div className="flex items-center justify-between border-b border-border px-4 py-2">
-            <PrivateReadsToggle initial={privateReads} />
-          </div>
-          {/* Which app (if any) renders as the members' hub on /team. Keyed by
-              the current designation so a server-side change (another tab, MCP)
-              resyncs the Select on refresh instead of holding stale state. */}
-          <div className="border-b border-border px-4 py-3">
-            <HubAppPicker
-              key={hubAppId ?? 'builtin'}
-              currentAppId={hubAppId}
-              apps={hubCandidates}
-            />
-          </div>
-          {/* Curated Dashboard tag sections on the /team overview. Keyed by the
-              stored list so a server-side change resyncs on refresh. */}
-          <div className="border-b border-border px-4 py-3">
-            <DashboardTagsPanel
-              key={(prefs.teamHubTags ?? []).join(',')}
-              initialTags={prefs.teamHubTags ?? []}
-              available={sharedPageTags}
-            />
+            {members.length > 0 && (
+              <span className="text-xs text-muted-foreground">{members.length}</span>
+            )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
             <MemberList members={members} selectedId={selectedId} />
           </div>
         </aside>
 
-        {/* Thread preview */}
+        {/* Activity */}
         <section className="flex min-h-0 flex-col">
           {selected ? (
             <>
@@ -736,8 +1038,10 @@ export default async function TeamAdminPage({
                 <div>
                   <h2 className="text-sm font-semibold">{selected.contactName}</h2>
                   <p className="text-xs text-muted-foreground">
-                    {selected.messageCount} messages · member since {fmtWhen(selected.memberSince)}{' '}
-                    · token last used {fmtWhen(selected.tokenLastUsedAt)}
+                    {postTotal} {postTotal === 1 ? 'post' : 'posts'} ·{' '}
+                    {selected.forum?.topicsStarted ?? 0} started · member since{' '}
+                    {fmtWhen(selected.memberSince)} · token last used{' '}
+                    {fmtWhen(selected.tokenLastUsedAt)}
                   </p>
                 </div>
                 <Link
@@ -749,56 +1053,41 @@ export default async function TeamAdminPage({
               </div>
               <ThreadAccessSplit
                 thread={
-                  <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-4 py-4">
-                    {thread.length === 0 ? (
-                      <p className="py-8 text-center text-sm text-muted-foreground">
-                        No messages yet — they haven’t started chatting.
-                      </p>
-                    ) : (
-                      <div className="mx-auto flex max-w-3xl flex-col gap-3">
-                        {thread.map((m) =>
-                          m.direction === 'inbound' ? (
-                            <div
-                              key={m.id}
-                              className="ml-auto max-w-[85%] rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"
-                            >
-                              <p className="whitespace-pre-wrap">{m.text}</p>
-                              <p className="mt-1 text-right text-xs text-primary-foreground/70">
-                                {fmtWhen(m.createdAt.toISOString())}
-                              </p>
-                            </div>
-                          ) : (
-                            <div
-                              key={m.id}
-                              className="mr-auto w-full max-w-[85%] rounded-lg bg-card px-3 py-2 text-card-foreground"
-                            >
-                              {m.status === 'failed' ? (
-                                <p className="text-sm text-destructive">
-                                  Turn failed: {m.error ?? 'unknown error'}
-                                </p>
-                              ) : (
-                                <div className="prose prose-accent prose-sm max-w-none dark:prose-invert">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                    {m.text}
-                                  </ReactMarkdown>
-                                </div>
-                              )}
-                              <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                                <span>{fmtWhen(m.createdAt.toISOString())}</span>
-                                {m.traceId ? (
-                                  <Link
-                                    href={`/traces/${m.traceId}`}
-                                    className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
-                                  >
-                                    <ExternalLink className="size-3" /> trace
-                                  </Link>
-                                ) : null}
-                              </div>
-                            </div>
-                          ),
+                  <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+                    <div className="mx-auto w-full max-w-3xl space-y-5 p-4">
+                      {memberRequests.length > 0 && <MemberRequestList requests={memberRequests} />}
+                      {authored.length > 0 && <AuthoredTopics topics={authored} />}
+                      <section className="space-y-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Posts &amp; answers
+                        </h3>
+                        {posts.length === 0 ? (
+                          <p className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+                            {selected.messageCount > 0
+                              ? 'Nothing in the Forum yet — their conversation predates it. The archive is below.'
+                              : `${selected.contactName} hasn’t posted in the Forum yet.`}
+                          </p>
+                        ) : (
+                          <>
+                            <ul className="flex flex-col gap-3">
+                              {posts.map((p) => (
+                                <ActivityPost key={p.id} post={p} />
+                              ))}
+                            </ul>
+                            {postTotal > ACTIVITY_PAGE_SIZE && (
+                              <MemberActivityPager
+                                page={activityPage}
+                                total={postTotal}
+                                pageSize={ACTIVITY_PAGE_SIZE}
+                              />
+                            )}
+                          </>
                         )}
-                      </div>
-                    )}
+                      </section>
+                      {selected.messageCount > 0 && (
+                        <ChatArchive thread={thread} count={selected.messageCount} />
+                      )}
+                    </div>
                   </div>
                 }
                 access={
@@ -826,8 +1115,11 @@ export default async function TeamAdminPage({
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <div className="text-center text-sm text-muted-foreground">
-                <MessageSquare className="mx-auto mb-2 size-6" />
-                <p>Enable a contact as a team member to open this brain’s Team Chat.</p>
+                <Users className="mx-auto mb-2 size-6" />
+                <p>Enable a contact as a team member to see their activity here.</p>
+                <p className="mt-1 text-xs">
+                  Their token is what unlocks <code>/team</code>.
+                </p>
               </div>
             </div>
           )}
