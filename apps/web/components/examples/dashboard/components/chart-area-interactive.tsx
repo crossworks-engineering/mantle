@@ -228,8 +228,10 @@ export function ChartAreaInteractive() {
               cursor={false}
               content={
                 <ChartTooltipContent
+                  // recharts 3 types labelFormatter's first arg as ReactNode
+                  // (was the raw label value), so narrow before parsing.
                   labelFormatter={(value) => {
-                    return new Date(value).toLocaleDateString('en-US', {
+                    return new Date(String(value)).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
                     });
