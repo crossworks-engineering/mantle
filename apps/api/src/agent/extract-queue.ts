@@ -150,11 +150,20 @@ export async function startExtractQueue(databaseUrl: string, ownerId: string): P
   await boss.createQueue(DEAD_LETTER_QUEUE, { policy: 'standard' });
 
   await boss.createQueue(EXTRACT_QUEUE, queueOptions);
-  // createQueue is ON CONFLICT DO NOTHING — an existing install keeps whatever
-  // policy the queue was first created with (it shipped as 'standard', where
-  // singletonKey dedup is a no-op). updateQueue makes the 'short' policy + the
-  // resolved expiry land on already-created queues too.
-  await boss.updateQueue(EXTRACT_QUEUE, queueOptions);
+  // createQueue is ON CONFLICT DO NOTHING, so an existing queue keeps the
+  // settings it was first created with; updateQueue lands the resolved expiry
+  // (which the user can change in the UI) on an already-created queue.
+  //
+  // `policy` MUST NOT be in that payload. pg-boss 12 throws
+  // "queue policy cannot be changed after creation" whenever the key is
+  // present — unconditionally, even when the value matches what is stored — so
+  // passing queueOptions wholesale kills the API at boot on every box.
+  // Migrating a pre-existing 'standard' queue to 'short' (the original reason
+  // this call existed) is simply not possible in 12; it is also moot, because
+  // the 10 → 12 hop drops and rebuilds the pgboss schema, so every queue is
+  // created fresh from queueOptions with the right policy above.
+  const { policy: _policy, ...mutableQueueOptions } = queueOptions;
+  await boss.updateQueue(EXTRACT_QUEUE, mutableQueueOptions);
 
   const redriven = await redriveDeadLetters();
   if (redriven > 0) {
