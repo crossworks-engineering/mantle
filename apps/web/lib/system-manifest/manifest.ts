@@ -35,6 +35,7 @@ import {
   CONTACT_AUTO_GRANT_SLUGS,
   JOURNAL_AUTO_GRANT_SLUGS,
   FORMULA_AUTO_GRANT_SLUGS,
+  CALCULATE_TOOL_SLUGS,
   LOCATION_TOOL_SLUGS,
   PROFILE_TOOL_SLUGS,
   TOOLSMITH_TOOL_SLUGS,
@@ -590,6 +591,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: [...FORMULA_AUTO_GRANT_SLUGS],
   },
   {
+    slug: 'calculator',
+    name: 'Calculator',
+    description:
+      'Evaluate an expression exactly, with units. Every conversational agent should hold this — models compute unreliably and the failure is silent.',
+    toolSlugs: [...CALCULATE_TOOL_SLUGS],
+  },
+  {
     slug: 'formulas-admin',
     name: 'Formulas admin',
     description: 'Delete a formula — deliberate-only; not on the persona.',
@@ -848,6 +856,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'tables-read',
       'tables-rows',
       'formulas',
+      'calculator',
       'pages-draft',
       'app-data',
       'team-admin',

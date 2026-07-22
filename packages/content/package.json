@@ -33,7 +33,8 @@
     "./formula-spec": "./src/formula-spec.ts",
     "./formula-eval": "./src/formula-eval.ts",
     "./formula-to-text": "./src/formula-to-text.ts",
-    "./formulas": "./src/formulas.ts"
+    "./formulas": "./src/formulas.ts",
+    "./calculate": "./src/calculate.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

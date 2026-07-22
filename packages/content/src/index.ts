@@ -314,6 +314,8 @@ export { evaluateSpec, type EvalResult, type TraceStep } from './formula-eval';
 
 export { formulaToText } from './formula-to-text';
 
+export { calculate, type CalcResult, type CalcOptions } from './calculate';
+
 export {
   FORMULA_ROOT_LABEL,
   FormulaSpecError,

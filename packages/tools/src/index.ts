@@ -75,6 +75,7 @@ export {
   FORMULA_TOOL_SLUGS,
   FORMULA_AUTO_GRANT_SLUGS,
 } from './builtins-formulas';
+export { CALCULATE_TOOLS, CALCULATE_TOOL_SLUGS } from './builtins-calculate';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
 export { RUN_TOOLS, BANNED_ITEM_TOOLS, parsePlan } from './builtins-runs';
