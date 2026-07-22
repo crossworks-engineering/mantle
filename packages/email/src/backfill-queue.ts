@@ -9,7 +9,7 @@
  * (next to `backfillMatch`, with `@mantle/db` already available) means one
  * implementation and no duplicated pg-boss wiring.
  */
-import PgBoss from 'pg-boss';
+import { PgBoss } from 'pg-boss';
 import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts } from '@mantle/db';
 

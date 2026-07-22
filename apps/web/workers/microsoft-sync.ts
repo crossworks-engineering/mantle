@@ -14,7 +14,7 @@
  * `singletonKey: ms-drive:<id>` collapses concurrent ticks for one drive.
  * Discovery (listing drives) is user-triggered from the settings UI, not here.
  */
-import PgBoss from 'pg-boss';
+import { PgBoss } from 'pg-boss';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { db, emailAccounts, msAccounts, msDrives } from '@mantle/db';
 import { graphMailProvider, syncDrive } from '@mantle/microsoft';

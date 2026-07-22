@@ -151,7 +151,7 @@
     "next": "^16.2.10",
     "next-themes": "^0.4.6",
     "pdf-to-png-converter": "^4.1.1",
-    "pg-boss": "^10.1.6",
+    "pg-boss": "^12.26.1",
     "postgres": "^3.4.5",
     "prettier": "^3.9.6",
     "puppeteer-core": "^25.3.0",

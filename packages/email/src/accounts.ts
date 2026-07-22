@@ -7,7 +7,7 @@
  * scopes by it — a stolen account UUID can never touch another owner's row.
  */
 import { createHash } from 'node:crypto';
-import PgBoss from 'pg-boss';
+import { PgBoss } from 'pg-boss';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { db, emailAccounts, syncRuns, type EmailAccount, type SyncRun } from '@mantle/db';
 import { seal } from '@mantle/crypto';

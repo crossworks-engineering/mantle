@@ -7,7 +7,7 @@
  *
  * `singletonKey: calendar:<id>` collapses concurrent ticks for one calendar.
  */
-import PgBoss from 'pg-boss';
+import { PgBoss } from 'pg-boss';
 import { eq } from 'drizzle-orm';
 import { calendarAccounts, db } from '@mantle/db';
 import { syncCalendarAccount } from '@mantle/calendar';

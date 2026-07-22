@@ -14,7 +14,7 @@
   "dependencies": {
     "@mantle/db": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "pg-boss": "^10.1.6"
+    "pg-boss": "^12.26.1"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

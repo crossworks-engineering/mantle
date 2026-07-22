@@ -7,6 +7,7 @@ settings:
 overrides:
   pdfjs-dist: 6.1.200
   '@napi-rs/canvas': 1.0.2
+  pg: 8.22.0
 
 importers:
 
@@ -104,10 +105,10 @@ importers:
         version: link:../../packages/voice
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
       pg-boss:
-        specifier: ^10.1.6
-        version: 10.4.2
+        specifier: ^12.26.1
+        version: 12.26.1
       postgres:
         specifier: ^3.4.5
         version: 3.4.9
@@ -135,7 +136,7 @@ importers:
         version: 1.29.0(zod@4.4.3)
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -385,7 +386,7 @@ importers:
         version: 9.7.1
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
@@ -426,8 +427,8 @@ importers:
         specifier: ^4.1.1
         version: 4.1.1
       pg-boss:
-        specifier: ^10.1.6
-        version: 10.4.2
+        specifier: ^12.26.1
+        version: 12.26.1
       postgres:
         specifier: ^3.4.5
         version: 3.4.9
@@ -545,7 +546,7 @@ importers:
         version: link:../voice
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -564,7 +565,7 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -629,7 +630,7 @@ importers:
         version: link:../voice
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -651,7 +652,7 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
       ical.js:
         specifier: ^2.1.0
         version: 2.2.1
@@ -688,7 +689,7 @@ importers:
         version: 9.7.1
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
       exceljs:
         specifier: ^4.4.0
         version: 4.4.0
@@ -719,7 +720,7 @@ importers:
     dependencies:
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
       postgres:
         specifier: ^3.4.5
         version: 3.4.9
@@ -756,7 +757,7 @@ importers:
         version: link:../storage
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
       imapflow:
         specifier: ^1.4.8
         version: 1.4.8
@@ -767,8 +768,8 @@ importers:
         specifier: ^9.0.3
         version: 9.0.3
       pg-boss:
-        specifier: ^10.1.6
-        version: 10.4.2
+        specifier: ^12.26.1
+        version: 12.26.1
       sanitize-html:
         specifier: ^2.17.6
         version: 2.17.6
@@ -811,7 +812,7 @@ importers:
         version: link:../voice
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -827,7 +828,7 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
       heic-convert:
         specifier: ^2.1.0
         version: 2.1.0
@@ -885,7 +886,7 @@ importers:
         version: link:../voice
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -925,7 +926,7 @@ importers:
         version: 1.29.0(zod@4.4.3)
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -956,7 +957,7 @@ importers:
         version: link:../storage
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -985,10 +986,10 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
       pg-boss:
-        specifier: ^10.1.6
-        version: 10.4.2
+        specifier: ^12.26.1
+        version: 12.26.1
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -1007,7 +1008,7 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -1051,7 +1052,7 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
       grammy:
         specifier: ^1.45.1
         version: 1.45.1
@@ -1121,7 +1122,7 @@ importers:
         version: 1.0.0
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -1137,7 +1138,7 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -1156,7 +1157,7 @@ importers:
         version: link:../db
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(pg@8.20.0)(postgres@3.4.9)
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -4145,9 +4146,9 @@ packages:
     resolution: {integrity: sha512-NT7w2JVU7DFroFdYkeq8cywxrgjPHWkdX1wjpRQXPX5Asews3tA+Ght6lddQO5Mkumffp3X7GEqku3epj2toIw==}
     engines: {node: '>= 10'}
 
-  cron-parser@4.9.0:
-    resolution: {integrity: sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q==}
-    engines: {node: '>=12.0.0'}
+  cron-parser@5.6.2:
+    resolution: {integrity: sha512-yJ/G1LVir6CnlkLI40CsampPLKl1SprGGlUagWtGJxewytRVYezv5xVyzzbT+Pvzx+VIRvZVF7/a0eEMTxdnTA==}
+    engines: {node: '>=18'}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -4354,7 +4355,7 @@ packages:
       knex: '*'
       kysely: '*'
       mysql2: '>=2'
-      pg: '>=8'
+      pg: 8.22.0
       postgres: '>=3'
       prisma: '*'
       sql.js: '>=1'
@@ -5463,6 +5464,10 @@ packages:
     resolution: {integrity: sha512-n+YP+NKwR5zRWa60k3GiQ6Q3B4KXCoAw40dAKeCtYn020iNN74aWK2liXIC3ZEATeGql7we3tE3t8QwhY0eskw==}
     engines: {node: '>=6.0.0'}
 
+  non-error@0.1.0:
+    resolution: {integrity: sha512-TMB1uHiGsHRGv1uYclfhivcnf0/PdFp2pNqRxXjncaAsjYMoisaQJI+SSZCqRq+VliwRTC8tsMQfmrWjDMhkPQ==}
+    engines: {node: '>=20'}
+
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
     engines: {node: '>=0.10.0'}
@@ -5559,34 +5564,35 @@ packages:
   peberminta@0.10.0:
     resolution: {integrity: sha512-80B2AsU+I4Qdb0ZAPSfe9UwvGzwkM37IKIFEvdS3D/3Ndgv2bsuJ0bfG1+iEYO+l7Gfd4EUJmuRyq7efLgRMzQ==}
 
-  pg-boss@10.4.2:
-    resolution: {integrity: sha512-AttEWOtSzn53av8OnCMWEanwRBvjkZCE1y5nLrZnwvkkMnlZ5XpWDpZ7sKI/BYjvi2OVieMX37arD2ACgJ750w==}
-    engines: {node: '>=20'}
+  pg-boss@12.26.1:
+    resolution: {integrity: sha512-Naj3pwc0CFKZJ77v24m6oAYRf3w22pGdfIT3bjC0YZU4yszRGPJ+XyAssYA+EbyxmniJzCFLZWcL9OEqnJWmuQ==}
+    engines: {node: '>=22.12.0'}
+    hasBin: true
 
-  pg-cloudflare@1.3.0:
-    resolution: {integrity: sha512-6lswVVSztmHiRtD6I8hw4qP/nDm1EJbKMRhf3HCYaqud7frGysPv7FYJ5noZQdhQtN2xJnimfMtvQq21pdbzyQ==}
+  pg-cloudflare@1.4.0:
+    resolution: {integrity: sha512-Vo7z/6rrQYxpNRylp4Tlob2elzbh+N/MOQbxFVWCxS7oEx6jF53GTJFxK2WWpKuBRkmiin4Mt+xofFDjx09R0A==}
 
-  pg-connection-string@2.12.0:
-    resolution: {integrity: sha512-U7qg+bpswf3Cs5xLzRqbXbQl85ng0mfSV/J0nnA31MCLgvEaAo7CIhmeyrmJpOr7o+zm0rXK+hNnT5l9RHkCkQ==}
+  pg-connection-string@2.14.0:
+    resolution: {integrity: sha512-XwWDGcLRGCXAR8F/AM5bG7Q+A3Wm2s6QeEjlOKZLlH3UYcguiqCWKyWXVag5TLTIjR7oOJUY8kcADaZgWPyLeg==}
 
   pg-int8@1.0.1:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
     engines: {node: '>=4.0.0'}
 
-  pg-pool@3.13.0:
-    resolution: {integrity: sha512-gB+R+Xud1gLFuRD/QgOIgGOBE2KCQPaPwkzBBGC9oG69pHTkhQeIuejVIk3/cnDyX39av2AxomQiyPT13WKHQA==}
+  pg-pool@3.14.0:
+    resolution: {integrity: sha512-gKtPkFdQPU3DksooVLi9LsjZxrsBUZIpa+7aVx+LV5pNh0KzP4Zleud2po+ConrxbuXGBJ6Hfer6hdgpIBpBaw==}
     peerDependencies:
-      pg: '>=8.0'
+      pg: 8.22.0
 
-  pg-protocol@1.13.0:
-    resolution: {integrity: sha512-zzdvXfS6v89r6v7OcFCHfHlyG/wvry1ALxZo4LqgUoy7W9xhBDMaqOuMiF3qEV45VqsN6rdlcehHrfDtlCPc8w==}
+  pg-protocol@1.15.0:
+    resolution: {integrity: sha512-cq9sECI5s0+uPUXjbz8ioyPJni6RzsRib0US67i5IoTZKw8fNeYlVE7u8F4dG7vEJJtc5wdD1K189lCCUwqWTQ==}
 
   pg-types@2.2.0:
     resolution: {integrity: sha512-qTAAlrEsl8s4OiEQY69wDvcMIdQN6wdz5ojQiOy6YRMuynxenON0O5oCpJI6lshc6scgAY8qvJ2On/p+CXY0GA==}
     engines: {node: '>=4'}
 
-  pg@8.20.0:
-    resolution: {integrity: sha512-ldhMxz2r8fl/6QkXnBD3CR9/xg694oT6DZQ2s6c/RI28OjtSOpxnPrUCGOBJ46RCUxcWdx3p6kw/xnDHjKvaRA==}
+  pg@8.22.0:
+    resolution: {integrity: sha512-8wih1vVIBMxoUM2oB4soJsD9tDnDpLv4OXBJ+EJzFsvycD+lfyIreC2gGHq78f8jbLLt+bvlPTFdFZfJkOuzAA==}
     engines: {node: '>= 16.0.0'}
     peerDependencies:
       pg-native: '>=3.0.1'
@@ -5972,6 +5978,10 @@ packages:
     resolution: {integrity: sha512-1gnZf7DFcoIcajTjTwjwuDjzuz4PPcY2StKPlsGAQ1+YH20IRVrBaXSWmdjowTJ6u8Rc01PoYOGHXfP1mYcZNQ==}
     engines: {node: '>= 18'}
 
+  serialize-error@13.0.1:
+    resolution: {integrity: sha512-bBZaRwLH9PN5HbLCjPId4dP5bNGEtumcErgOX952IsvOhVPrm3/AeK1y0UHA/QaPG701eg0yEnOKsCOC6X/kaA==}
+    engines: {node: '>=20'}
+
   serialize-error@8.1.0:
     resolution: {integrity: sha512-3NnuWfM6vBYoy5gZFvHiYsVbafvI9vZv/+jlIigFn4oP4zjNPK3LhcY0xSCgeb1a5L8jO71Mit9LlNoi2UfDDQ==}
     engines: {node: '>=10'}
@@ -6132,6 +6142,10 @@ packages:
     os: [darwin, linux, win32, freebsd, openbsd, netbsd, sunos, android]
     hasBin: true
 
+  tagged-tag@1.0.0:
+    resolution: {integrity: sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==}
+    engines: {node: '>=20'}
+
   tailwind-merge@3.6.0:
     resolution: {integrity: sha512-uxL7qAVQriqRQPAyK3pj66VqskWqoZ37PW94jwOTwNfq/z9oyu1V+eqrZqtR2+fCiXdYOZe/Modt8GtvqNzu+w==}
 
@@ -6226,6 +6240,10 @@ packages:
   type-fest@0.20.2:
     resolution: {integrity: sha512-Ne+eE4r0/iWnpAxD852z3A+N0Bt5RN//NjJwRd2VFHEmrywxf5vsZlh4R6lixl6B+wz/8d+maTSAkN1FIkI3LQ==}
     engines: {node: '>=10'}
+
+  type-fest@5.8.0:
+    resolution: {integrity: sha512-YGYEVz3Fm5iy/AybuA0oyNFq7H4CgQNfRp/qfe8nurE1kuCeNm3/vfm9X4Mtl+qLyaKJUh5xrFZwogr41SMjYA==}
+    engines: {node: '>=20'}
 
   type-is@2.1.0:
     resolution: {integrity: sha512-faYHw0anBbc/kWF3zFTEnxSFOAGUX9GFbOBthvDdLsIlEoWOFOtS0zgCiQYwIskL9iGXZL3kAXD8OoZ4GmMATA==}
@@ -6900,7 +6918,7 @@ snapshots:
   '@dbos-inc/dbos-sdk@4.23.6':
     dependencies:
       commander: 12.1.0
-      pg: 8.20.0
+      pg: 8.22.0
       serialize-error: 8.1.0
       superjson: 1.13.3
       ws: 8.21.0
@@ -9438,7 +9456,7 @@ snapshots:
       crc-32: 1.2.2
       readable-stream: 3.6.2
 
-  cron-parser@4.9.0:
+  cron-parser@5.6.2:
     dependencies:
       luxon: 3.7.2
 
@@ -9611,9 +9629,9 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.23.1
 
-  drizzle-orm@0.45.2(pg@8.20.0)(postgres@3.4.9):
+  drizzle-orm@0.45.2(pg@8.22.0)(postgres@3.4.9):
     optionalDependencies:
-      pg: 8.20.0
+      pg: 8.22.0
       postgres: 3.4.9
 
   duck@0.1.12:
@@ -10926,6 +10944,8 @@ snapshots:
 
   nodemailer@9.0.3: {}
 
+  non-error@0.1.0: {}
+
   normalize-path@3.0.0: {}
 
   object-assign@4.1.1: {}
@@ -11012,26 +11032,26 @@ snapshots:
 
   peberminta@0.10.0: {}
 
-  pg-boss@10.4.2:
+  pg-boss@12.26.1:
     dependencies:
-      cron-parser: 4.9.0
-      pg: 8.20.0
-      serialize-error: 8.1.0
+      cron-parser: 5.6.2
+      pg: 8.22.0
+      serialize-error: 13.0.1
     transitivePeerDependencies:
       - pg-native
 
-  pg-cloudflare@1.3.0:
+  pg-cloudflare@1.4.0:
     optional: true
 
-  pg-connection-string@2.12.0: {}
+  pg-connection-string@2.14.0: {}
 
   pg-int8@1.0.1: {}
 
-  pg-pool@3.13.0(pg@8.20.0):
+  pg-pool@3.14.0(pg@8.22.0):
     dependencies:
-      pg: 8.20.0
+      pg: 8.22.0
 
-  pg-protocol@1.13.0: {}
+  pg-protocol@1.15.0: {}
 
   pg-types@2.2.0:
     dependencies:
@@ -11041,15 +11061,15 @@ snapshots:
       postgres-date: 1.0.7
       postgres-interval: 1.2.0
 
-  pg@8.20.0:
+  pg@8.22.0:
     dependencies:
-      pg-connection-string: 2.12.0
-      pg-pool: 3.13.0(pg@8.20.0)
-      pg-protocol: 1.13.0
+      pg-connection-string: 2.14.0
+      pg-pool: 3.14.0(pg@8.22.0)
+      pg-protocol: 1.15.0
       pg-types: 2.2.0
       pgpass: 1.0.5
     optionalDependencies:
-      pg-cloudflare: 1.3.0
+      pg-cloudflare: 1.4.0
 
   pgpass@1.0.5:
     dependencies:
@@ -11575,6 +11595,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  serialize-error@13.0.1:
+    dependencies:
+      non-error: 0.1.0
+      type-fest: 5.8.0
+
   serialize-error@8.1.0:
     dependencies:
       type-fest: 0.20.2
@@ -11761,6 +11786,8 @@ snapshots:
 
   systeminformation@5.33.0: {}
 
+  tagged-tag@1.0.0: {}
+
   tailwind-merge@3.6.0: {}
 
   tailwindcss-animate@1.0.7(tailwindcss@4.3.3):
@@ -11833,6 +11860,10 @@ snapshots:
       prelude-ls: 1.2.1
 
   type-fest@0.20.2: {}
+
+  type-fest@5.8.0:
+    dependencies:
+      tagged-tag: 1.0.0
 
   type-is@2.1.0:
     dependencies:
