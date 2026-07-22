@@ -178,7 +178,6 @@
     "@types/node": "^22.20.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.3",
-    "eslint": "^9.39.5",
     "postcss": "^8.5.21",
     "tailwindcss": "^4.3.3",
     "tailwindcss-animate": "^1.0.7",
