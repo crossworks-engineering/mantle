@@ -317,6 +317,7 @@ export { formulaToText } from './formula-to-text';
 export {
   FORMULA_ROOT_LABEL,
   FormulaSpecError,
+  isFormulaSpecError,
   createFormula,
   listFormulas,
   countFormulas,

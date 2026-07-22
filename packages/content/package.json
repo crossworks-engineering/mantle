@@ -31,7 +31,9 @@
     "./page-diff": "./src/page-diff.ts",
     "./table-storage": "./src/table-storage.ts",
     "./formula-spec": "./src/formula-spec.ts",
-    "./formula-eval": "./src/formula-eval.ts"
+    "./formula-eval": "./src/formula-eval.ts",
+    "./formula-to-text": "./src/formula-to-text.ts",
+    "./formulas": "./src/formulas.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

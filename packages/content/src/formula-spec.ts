@@ -56,6 +56,14 @@ export interface SpecExpression {
   /** Symbol this expression produces, enabling unambiguous chaining. */
   resultSymbol?: string;
   unit?: string;
+  /**
+   * DISPLAY ONLY, and never parsed. `expression` is the single source of truth
+   * for what is computed; this is a parallel rendering for human eyes, so that
+   * a spec can be shown the way it appears in the standard. Nothing verifies
+   * the two agree — treat a mismatch as a documentation bug, and never reach
+   * for this when you mean `expression`.
+   */
+  latex?: string;
   note?: string;
 }
 
@@ -221,6 +229,7 @@ export function parseFormulaSpec(input: unknown): ParseResult {
       equation: str(raw.equation),
       resultSymbol: str(raw.resultSymbol),
       unit: str(raw.unit),
+      latex: str(raw.latex),
       note: str(raw.note),
     });
   }

@@ -80,6 +80,20 @@ export class FormulaSpecError extends Error {
   }
 }
 
+/**
+ * Structural check rather than `instanceof`, because callers live in other
+ * packages. If the bundler ever resolves two copies of this module, an
+ * `instanceof` test fails silently and the caller reports a generic message
+ * instead of the list of spec problems — which is the whole value of the error.
+ */
+export function isFormulaSpecError(err: unknown): err is FormulaSpecError {
+  return (
+    err instanceof Error &&
+    err.name === 'FormulaSpecError' &&
+    Array.isArray((err as FormulaSpecError).errors)
+  );
+}
+
 function validate(input: unknown): FormulaSpec {
   const parsed = parseFormulaSpec(input);
   if (!parsed.ok) throw new FormulaSpecError(parsed.errors);
