@@ -26,9 +26,13 @@ export function PendingQuestionsStrip() {
   const hidden = questions.length - shown.length;
 
   return (
+    // Height-bounded + self-scrolling: three questionnaires are taller than the
+    // viewport, and an unbounded strip pushes the composer off-screen entirely
+    // (measured: 970px of a 972px panel). Questions are urgent, but never so
+    // urgent that you lose the ability to type.
     <section
       aria-label="Questions waiting on you"
-      className="border-b border-border bg-muted/30 px-4 py-3"
+      className="max-h-[45vh] shrink-0 overflow-y-auto scrollbar-thin border-b border-border bg-muted/30 px-4 py-3"
     >
       <h2 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         <HelpCircle className="size-3.5" aria-hidden />

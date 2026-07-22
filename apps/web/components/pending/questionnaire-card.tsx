@@ -262,7 +262,9 @@ export function QuestionnaireCard({
       {/* ── 3. Free text (ask_human without a form) ─────────────────────── */}
       {isAsk && !form && (
         <form
-          className="flex gap-2"
+          // Wraps on narrow screens: side by side the input collapsed to
+          // ~120px on mobile, too small to read what you typed.
+          className="flex flex-wrap gap-2"
           onSubmit={(e) => {
             e.preventDefault();
             const a = freeText.trim();
@@ -277,7 +279,7 @@ export function QuestionnaireCard({
             placeholder="Type an answer…"
             maxLength={4000}
             disabled={busy}
-            className="h-9"
+            className="h-9 min-w-48 flex-1"
           />
           <SubmitButton pending={busy} disabled={!freeText.trim()} size="sm">
             <Check /> Answer &amp; approve
