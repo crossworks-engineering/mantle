@@ -64,9 +64,11 @@ Standards get revised. A changed factor should be a one-line diff a reviewer can
 hold against the printed table, not a re-reading of a forty-term conditional.
 Rows are also what make `checkLookupCoverage` possible — it takes the declared
 key domains, enumerates every combination, and names the ones with no row.
-API RP 581 Table 5.6 specifies six of nine detection/isolation combinations; as
-an `IF()` chain that gap is invisible until it yields a silent zero on a live
-assessment. An incomplete table is a fact about the source, not a malformed
+The Table 5.6 reproduction in the source document behind this model specifies
+six of nine detection/isolation combinations; as an `IF()` chain that gap is
+invisible until it yields a silent zero on a live assessment. (Whether the gap
+is in API RP 581 itself or only in that derived document is exactly the kind of
+question coverage checking is meant to raise, not answer.) An incomplete table is a fact about the source, not a malformed
 spec, so coverage is reported separately from validation.
 
 **Classifications are inputs, not computations.** The criteria text is stored so
@@ -115,9 +117,11 @@ current row. Two binding strategies over one parser, via
 language in the codebase.
 
 The scientific set — `^`, `SQRT`, `POW`, `LN`, `LOG10`, `EXP`, and the bare
-constants `PI` and `E` — exists for this feature. `^` binds tighter than `*`,
-looser than unary minus (`-2^2` is `-4`, as in maths and Excel), and is
-right-associative with a unary-capable exponent (`2^3^2` = 512, `2^-1` = 0.5).
+constants `PI` and `E` — exists for this feature. `^` binds tighter than `*`
+and tighter than unary minus, so `-2^2` is `-(2^2)` = `-4`, per maths
+convention. (Excel disagrees — there `=-2^2` is `+4`. We do not follow Excel.)
+Right-associative with a unary-capable exponent: `2^3^2` = 512, `2^-1` = 0.5.
+Scientific notation and leading-dot decimals are accepted (`1.5E-6`, `.5`).
 
 ## 5. Authoring notes
 
@@ -125,6 +129,23 @@ Specs are usually written as YAML and parsed to an object before validation —
 YAML because criteria prose and transcription notes are multi-line English,
 which JSON turns into unreadable escaped strings. The same validator accepts
 either; nothing in `packages/content` depends on a YAML parser.
+
+**Cite what you actually read.** A worked example applying a standard is not
+the standard. If the values were transcribed from a derived document — a
+company calculation sheet, a vendor note — `source.standard` should say which
+standard it *applies*, and a `notes` entry should say the values came from a
+derived document. Two tells that you are not looking at the standard itself:
+parameters it never uses (API RP 581 has four discrete hole sizes, so a 3/8 in
+hole is somebody's spreadsheet), and tables that look abridged.
+
+Set `unverified` on any equation you did not read off the page — supplied from
+memory, inferred, or reconstructed. It renders as a warning everywhere the
+equation is shown or indexed. An equation number is part of the claim: citing
+"Eq 3.7" to a standard you did not open is a fabrication, however plausible the
+formula itself.
+
+Set `edition` too. Equation numbers move between editions, so a numbered
+citation to an editionless standard is not a citation.
 
 When transcribing from a standard, record what the source got wrong in `notes`
 rather than silently correcting it. Real examples found while encoding the

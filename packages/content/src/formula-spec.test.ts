@@ -17,8 +17,12 @@ const raw = {
     { symbol: 'Kvn', role: 'constant', value: 1, unit: null },
     { symbol: 'C1', role: 'constant', value: 12, unit: 'in/ft' },
     { symbol: 'C2', role: 'constant', value: 1, unit: null },
-    { symbol: 'gc', role: 'constant', value: 32.2, unit: 'ft/s2' },
-    { symbol: 'R', role: 'constant', value: 1545, unit: 'ft-lb/(mol·R)' },
+    // g_c is the gravitational CONVERSION constant, not g. Numerically
+    // identical in USC, which is exactly why the unit string must say so —
+    // read as an acceleration, an SI port substitutes 9.81 where the right
+    // value is 1.0 and every release rate is out by a factor of 3.13.
+    { symbol: 'gc', role: 'constant', value: 32.2, unit: 'lbm-ft/(lbf-s2)' },
+    { symbol: 'R', role: 'constant', value: 1545, unit: 'ft-lbf/(lb-mol·°R)' },
     { symbol: 'k', role: 'constant', value: 1.5, unit: null },
     { symbol: 'Patm', role: 'constant', value: 14.7, unit: 'lbf/in2 (abs)' },
     { symbol: 'd', role: 'input', value: 0.375, unit: 'in' },
@@ -26,7 +30,7 @@ const raw = {
     { symbol: 'rho_l', role: 'input', unit: 'lb/ft3' },
     { symbol: 'Pgauge', role: 'input', unit: 'lbf/in2 (g)' },
     { symbol: 'Ps', role: 'input', unit: 'lbf/in2 (abs)' },
-    { symbol: 'MW', role: 'input', unit: 'lb/mol' },
+    { symbol: 'MW', role: 'input', unit: 'lb/lb-mol' },
     { symbol: 'Ts', role: 'input', unit: 'R' },
     { symbol: 'ReleaseTime', role: 'input', value: 3600, unit: 'sec' },
     { symbol: 'Wn', role: 'output', unit: 'lb/sec' },
@@ -41,6 +45,8 @@ const raw = {
     {
       id: 'transition-pressure',
       equation: '3.7',
+      unverified:
+        'Supplied from memory: the source references a transition pressure but never defines it. Equation number is inferred. Confirm against the standard.',
       resultSymbol: 'Ptrans',
       expression: '{Patm} * (({k} + 1) / 2) ^ ({k} / ({k} - 1))',
     },
@@ -261,6 +267,133 @@ describe('evaluateSpec — lookups', () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error).toContain('does not specify this combination');
+  });
+});
+
+// Every case here is a defect an audit found in the first cut. They are the
+// difference between "fails loud" as a claim and as a property.
+describe('regressions — the boundary, not the maths', () => {
+  it('a null / undefined / empty input is missing, NOT zero', () => {
+    for (const blank of [null, undefined, '']) {
+      const r = evaluateSpec(spec, 'liquid-release-rate', {
+        rho_l: 50,
+        Pgauge: blank as never,
+      });
+      expect(r.ok, `blank=${JSON.stringify(blank)}`).toBe(false);
+      if (!r.ok) expect(r.error).toContain("missing required input 'Pgauge'");
+    }
+  });
+
+  it('comparison and arithmetic agree on a separated number, so the branch is right', () => {
+    // '1,000' once compared as a STRING ('1' < '2'), selecting subsonic for a
+    // pressure 35x above the transition and returning a plausible wrong number.
+    const r = evaluateSpec(spec, 'vapor-release-rate', { Ps: '1,000', MW: 30, Ts: 560 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.trace).toContainEqual(
+      expect.objectContaining({ kind: 'branch', chose: 'vapor-sonic' }),
+    );
+  });
+
+  it('caps coverage expansion instead of exhausting the heap', () => {
+    const huge = parseFormulaSpec({
+      id: 'h',
+      lookups: [
+        {
+          id: 'big',
+          keys: ['a', 'b', 'c', 'd', 'e', 'f'],
+          result: 'r',
+          domains: Object.fromEntries(
+            ['a', 'b', 'c', 'd', 'e', 'f'].map((k) => [k, Array.from({ length: 20 }, (_, i) => i)]),
+          ),
+          rows: [{ a: 0, b: 0, c: 0, d: 0, e: 0, f: 0, r: 1 }],
+        },
+      ],
+    });
+    expect(huge.ok).toBe(true);
+    if (!huge.ok) return;
+    const gaps = checkLookupCoverage(huge.spec);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.skipped).toContain('above the');
+  });
+
+  it('rejects an expression that does not parse, naming the id', () => {
+    const r = parseFormulaSpec({
+      id: 's',
+      expressions: [{ id: 'beta', expression: '@@@ not an expression(((' }],
+      piecewise: [{ id: 'p', cases: [{ when: ')(garbage', use: 'beta' }] }],
+      variables: [{ symbol: 'x', role: 'derived', expression: '{{{' }],
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.errors.join('\n')).toContain("'beta': expression does not parse");
+    expect(r.errors.join('\n')).toContain('when does not parse');
+    expect(r.errors.join('\n')).toContain("'x': expression does not parse");
+  });
+
+  it('rejects a non-scalar lookup value rather than reading it as zero', () => {
+    const r = parseFormulaSpec({
+      id: 's',
+      lookups: [{ id: 'l', keys: ['k'], result: 'v', rows: [{ k: 'a', v: { value: 0.25 } }] }],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join('\n')).toContain("result 'v' must be a number");
+  });
+
+  it('does not mistake an inherited property for a supplied field', () => {
+    const r = parseFormulaSpec({
+      id: 's',
+      lookups: [{ id: 'l', keys: ['k'], result: 'toString', rows: [{ k: 'a' }] }],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join('\n')).toContain("missing result 'toString'");
+  });
+
+  it('reports a non-array where a list belongs instead of silently emptying it', () => {
+    const r = parseFormulaSpec({ id: 's', variables: { a: 1 }, expressions: 'oops', lookups: 3 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.errors).toEqual(
+        expect.arrayContaining([
+          'variables must be an array',
+          'expressions must be an array',
+          'lookups must be an array',
+        ]),
+      );
+    }
+  });
+
+  it('rejects a source whose sections are not a list, which used to break ingest', () => {
+    const r = parseFormulaSpec({ id: 's', source: { standard: 'X', sections: '5.3' } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join('\n')).toContain('source.sections must be an array of strings');
+  });
+
+  it('rejects a domain naming a key the lookup does not have', () => {
+    const r = parseFormulaSpec({
+      id: 's',
+      lookups: [
+        { id: 'l', keys: ['a'], result: 'r', domains: { b: ['x'] }, rows: [{ a: 'x', r: 1 }] },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join('\n')).toContain("not one of the lookup's keys");
+  });
+
+  it('catches a target cycle with a useful error, not a stack overflow', () => {
+    const r = parseFormulaSpec({
+      id: 's',
+      expressions: [{ id: 'e', expression: '1' }],
+      piecewise: [{ id: 'p1', cases: [{ when: '1', use: 'p1' }] }],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const out = evaluateSpec(r.spec, 'p1', {});
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.error).toContain("circular reference resolving target 'p1'");
+      expect(out.trace.length).toBeLessThan(10); // not 3738 junk steps
+    }
   });
 });
 

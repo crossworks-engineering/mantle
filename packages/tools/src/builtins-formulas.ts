@@ -15,6 +15,7 @@
 
 import {
   checkLookupCoverage,
+  countFormulas,
   createFormula,
   deleteFormula,
   evaluateSpec,
@@ -93,7 +94,7 @@ const formula_list: BuiltinToolDef = {
   slug: 'formula_list',
   name: 'List formulas',
   description:
-    'List the stored calculation models — id, title, source standard and tags — newest filters first. Use to find a formula before `formula_get` or `formula_evaluate`. For a conceptual question about what a standard says, `search_nodes` / `search_chunks` search the indexed text instead; this returns the models themselves.',
+    'List the stored calculation models — id, title, source standard and tags — ordered by title. Returns `total` alongside `formulas`, so a clipped page is never mistaken for the whole set; page with `offset`. Use to find a formula before `formula_get` or `formula_evaluate`. For a conceptual question about what a standard says, `search_nodes` / `search_chunks` search the indexed text instead; this returns the models themselves.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -110,16 +111,35 @@ const formula_list: BuiltinToolDef = {
         default: 50,
         description: 'Max formulas to return.',
       },
+      offset: { type: 'integer', minimum: 0, default: 0, description: 'Rows to skip, for paging.' },
     },
   },
   handler: async (input, ctx) => {
-    const rows = await listFormulas(ctx.ownerId, {
+    // Clamp in the handler, not just the schema: arg validation defaults to
+    // 'warn', which RECORDS a range violation without repairing it, so
+    // `limit: -1` would otherwise reach Postgres as a raw LIMIT error.
+    const limit = Math.min(200, Math.max(1, Math.trunc(num(input.limit, 50))));
+    const offset = Math.max(0, Math.trunc(num(input.offset, 0)));
+    const opts = {
       query: strOpt(input.query),
       standard: strOpt(input.standard),
       tag: strOpt(input.tag),
-      limit: num(input.limit, 50),
-    });
-    return { ok: true, output: { formulas: rows.map(compact) } };
+    };
+    const [rows, total] = await Promise.all([
+      listFormulas(ctx.ownerId, { ...opts, limit, offset }),
+      countFormulas(ctx.ownerId, opts),
+    ]);
+    return {
+      ok: true,
+      output: {
+        formulas: rows.map(compact),
+        total,
+        // Self-announcing truncation: a clipped list must never read as complete.
+        ...(offset + rows.length < total
+          ? { next_offset: offset + rows.length, truncated: true }
+          : {}),
+      },
+    };
   },
 };
 
@@ -211,7 +231,15 @@ const formula_evaluate: BuiltinToolDef = {
       const hint = targets.includes(target)
         ? ''
         : ` — '${target}' is not a target of this formula; valid targets: ${targets.join(', ')}`;
-      return { ok: false, error: `${result.error}${hint}`, output: { trace: result.trace } };
+      // NOT `output: { trace }` — the tool loop serialises a failure as
+      // `{ error }` only, so anything in `output` is silently discarded. Fold
+      // the derivation into the message or the model never sees how far it got.
+      const got = result.trace
+        .filter((s) => s.kind === 'symbol')
+        .map((s) => `${s.symbol}=${String(s.value)}`)
+        .join(', ');
+      const resolved = got ? ` Resolved so far: ${got}.` : '';
+      return { ok: false, error: `${result.error}${hint}.${resolved}` };
     }
     return { ok: true, output: { value: result.value, target, trace: result.trace } };
   },

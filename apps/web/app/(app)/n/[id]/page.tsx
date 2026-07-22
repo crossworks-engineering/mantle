@@ -51,6 +51,8 @@ export default async function NodePermalink({ params }: { params: Promise<{ id: 
       return redirect(`/contacts?id=${enc}`);
     case 'journal':
       return redirect(`/journal?selected=${enc}`);
+    case 'formula':
+      return redirect(`/formulas?id=${enc}`);
     case 'secret':
       return redirect(`/secrets/${enc}`);
     default:

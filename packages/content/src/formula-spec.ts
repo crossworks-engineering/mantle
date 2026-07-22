@@ -31,6 +31,8 @@
  * already-parsed object; where that object came from is their problem.
  */
 
+import { evalExpression } from './table-formula';
+
 export type FormulaValue = number | string | boolean | null;
 
 export type VariableRole = 'constant' | 'input' | 'derived' | 'output';
@@ -64,6 +66,15 @@ export interface SpecExpression {
    * for this when you mean `expression`.
    */
   latex?: string;
+  /**
+   * Set when the equation was NOT read off the source — supplied from memory,
+   * inferred, or reconstructed. It renders as a warning wherever the equation
+   * is shown or indexed, so a from-memory citation can never be mistaken for a
+   * transcribed one. The first cut carried this as an ad-hoc `derivedNotInSource`
+   * key, which the parser silently dropped — so the caveat vanished while the
+   * fabricated equation number went into the embedding as fact.
+   */
+  unverified?: string;
   note?: string;
 }
 
@@ -141,12 +152,104 @@ function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function asArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
+/** A cell a lookup row may carry. Anything else (object, array, function,
+ *  NaN) is rejected: it would flow out of `evaluateSpec` as the result and
+ *  `toNum` would quietly turn it into 0. */
+function isScalar(v: unknown): v is FormulaValue {
+  if (v === null) return true;
+  if (typeof v === 'string' || typeof v === 'boolean') return true;
+  return typeof v === 'number' && Number.isFinite(v);
 }
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
+}
+
+/**
+ * Is this a syntactically valid expression? The validator used to check only
+ * that the string was non-empty, so a spec of pure punctuation validated
+ * clean and failed at evaluation time with no id context. Parsing here is
+ * what makes `parseFormulaSpec`'s "every problem found" claim true.
+ */
+function syntaxError(src: string): string | null {
+  try {
+    evalExpression(src, () => null);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+
+/** Declared legal values per key. Rejects a non-array (a string has `.length`
+ *  too, which used to reach `.map` and throw), non-scalar entries, and a key
+ *  the lookup does not actually have. */
+function parseDomains(
+  raw: unknown,
+  keys: string[],
+  at: string,
+  errors: string[],
+): Record<string, FormulaValue[]> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!isObj(raw)) {
+    errors.push(`${at}.domains must be an object`);
+    return undefined;
+  }
+  const out: Record<string, FormulaValue[]> = {};
+  for (const [key, values] of Object.entries(raw)) {
+    if (!keys.includes(key)) {
+      errors.push(`${at}.domains names '${key}', which is not one of the lookup's keys`);
+      continue;
+    }
+    if (!Array.isArray(values)) {
+      errors.push(`${at}.domains['${key}'] must be an array`);
+      continue;
+    }
+    if (!values.every(isScalar)) {
+      errors.push(`${at}.domains['${key}'] may only contain numbers, strings, booleans or null`);
+      continue;
+    }
+    out[key] = values as FormulaValue[];
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** `sections`/`tables` reached `.join` unvalidated, so `sections: '5.3'`
+ *  validated clean and then threw inside `formulaToText` — hard-failing the
+ *  extractor's ingest path for an otherwise-loadable spec. */
+function parseSource(raw: unknown, errors: string[]): SpecSource | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!isObj(raw)) {
+    errors.push('spec.source must be an object');
+    return undefined;
+  }
+  const strList = (v: unknown, field: string): string[] | undefined => {
+    if (v === undefined || v === null) return undefined;
+    if (!Array.isArray(v) || !v.every((x) => typeof x === 'string')) {
+      errors.push(`spec.source.${field} must be an array of strings`);
+      return undefined;
+    }
+    return v as string[];
+  };
+  return {
+    standard: str(raw.standard),
+    part: str(raw.part),
+    edition: str(raw.edition),
+    sections: strList(raw.sections, 'sections'),
+    tables: strList(raw.tables, 'tables'),
+  };
+}
+
+/** Notes are free prose keyed by topic; anything non-string is dropped rather
+ *  than rendered as `[object Object]` into the indexed text. */
+function parseNotes(raw: unknown): Record<string, string> | undefined {
+  if (!isObj(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const text = str(value);
+    if (text) out[key] = text;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /**
@@ -156,6 +259,16 @@ function str(v: unknown): string | undefined {
  */
 export function parseFormulaSpec(input: unknown): ParseResult {
   const errors: string[] = [];
+  /** A non-array where a list belongs used to be silently coerced to [], so a
+   *  spec with `expressions: 'oops'` validated clean AND EMPTY. Report it. */
+  const asArray = (v: unknown, at: string): unknown[] => {
+    if (v === undefined || v === null) return [];
+    if (!Array.isArray(v)) {
+      errors.push(`${at} must be an array`);
+      return [];
+    }
+    return v;
+  };
   if (!isObj(input)) return { ok: false, errors: ['spec must be an object'] };
 
   const id = str(input.id);
@@ -163,7 +276,7 @@ export function parseFormulaSpec(input: unknown): ParseResult {
 
   const variables: SpecVariable[] = [];
   const seenSymbols = new Set<string>();
-  for (const [i, raw] of asArray(input.variables).entries()) {
+  for (const [i, raw] of asArray(input.variables, 'variables').entries()) {
     const at = `variables[${i}]`;
     if (!isObj(raw)) {
       errors.push(`${at} must be an object`);
@@ -188,6 +301,10 @@ export function parseFormulaSpec(input: unknown): ParseResult {
     }
     if (role === 'derived' && !expression) {
       errors.push(`${at} '${symbol}': a derived variable needs an expression`);
+    }
+    if (expression) {
+      const bad = syntaxError(expression);
+      if (bad) errors.push(`${at} '${symbol}': expression does not parse — ${bad}`);
     }
     variables.push({
       symbol,
@@ -214,7 +331,7 @@ export function parseFormulaSpec(input: unknown): ParseResult {
   };
 
   const expressions: SpecExpression[] = [];
-  for (const [i, raw] of asArray(input.expressions).entries()) {
+  for (const [i, raw] of asArray(input.expressions, 'expressions').entries()) {
     const at = `expressions[${i}]`;
     if (!isObj(raw)) {
       errors.push(`${at} must be an object`);
@@ -223,6 +340,10 @@ export function parseFormulaSpec(input: unknown): ParseResult {
     const exprId = claimId(str(raw.id), at);
     const expression = str(raw.expression);
     if (!expression) errors.push(`${at} '${exprId}': expression is required`);
+    else {
+      const bad = syntaxError(expression);
+      if (bad) errors.push(`${at} '${exprId}': expression does not parse — ${bad}`);
+    }
     expressions.push({
       id: exprId,
       expression: expression ?? '',
@@ -230,12 +351,13 @@ export function parseFormulaSpec(input: unknown): ParseResult {
       resultSymbol: str(raw.resultSymbol),
       unit: str(raw.unit),
       latex: str(raw.latex),
+      unverified: str(raw.unverified),
       note: str(raw.note),
     });
   }
 
   const piecewise: SpecPiecewise[] = [];
-  for (const [i, raw] of asArray(input.piecewise).entries()) {
+  for (const [i, raw] of asArray(input.piecewise, 'piecewise').entries()) {
     const at = `piecewise[${i}]`;
     if (!isObj(raw)) {
       errors.push(`${at} must be an object`);
@@ -243,7 +365,7 @@ export function parseFormulaSpec(input: unknown): ParseResult {
     }
     const pwId = claimId(str(raw.id), at);
     const cases: SpecPiecewiseCase[] = [];
-    for (const [j, rawCase] of asArray(raw.cases).entries()) {
+    for (const [j, rawCase] of asArray(raw.cases, `${at}.cases`).entries()) {
       if (!isObj(rawCase)) {
         errors.push(`${at}.cases[${j}] must be an object`);
         continue;
@@ -251,6 +373,10 @@ export function parseFormulaSpec(input: unknown): ParseResult {
       const when = str(rawCase.when);
       const use = str(rawCase.use);
       if (!when) errors.push(`${at}.cases[${j}]: when is required`);
+      else {
+        const bad = syntaxError(when);
+        if (bad) errors.push(`${at}.cases[${j}]: when does not parse — ${bad}`);
+      }
       if (!use) errors.push(`${at}.cases[${j}]: use is required`);
       if (when && use) cases.push({ when, use, label: str(rawCase.label) });
     }
@@ -265,28 +391,41 @@ export function parseFormulaSpec(input: unknown): ParseResult {
   }
 
   const lookups: SpecLookup[] = [];
-  for (const [i, raw] of asArray(input.lookups).entries()) {
+  for (const [i, raw] of asArray(input.lookups, 'lookups').entries()) {
     const at = `lookups[${i}]`;
     if (!isObj(raw)) {
       errors.push(`${at} must be an object`);
       continue;
     }
     const lkId = claimId(str(raw.id), at);
-    const keys = asArray(raw.keys).filter((k): k is string => typeof k === 'string');
+    const keys = asArray(raw.keys, `${at}.keys`).filter((k): k is string => typeof k === 'string');
     const result = str(raw.result);
     if (keys.length === 0) errors.push(`${at} '${lkId}': needs at least one key`);
     if (!result) errors.push(`${at} '${lkId}': result field name is required`);
     const rows: Array<Record<string, FormulaValue>> = [];
-    for (const [j, rawRow] of asArray(raw.rows).entries()) {
+    for (const [j, rawRow] of asArray(raw.rows, `${at}.rows`).entries()) {
       if (!isObj(rawRow)) {
         errors.push(`${at}.rows[${j}] must be an object`);
         continue;
       }
+      // Object.hasOwn, not `!== undefined`: a field named `toString` or
+      // `constructor` inherits from the prototype, so the loose check passed
+      // and a FUNCTION flowed out as the looked-up value.
       for (const key of keys) {
-        if (rawRow[key] === undefined) errors.push(`${at}.rows[${j}] is missing key '${key}'`);
+        if (!Object.hasOwn(rawRow, key)) {
+          errors.push(`${at}.rows[${j}] is missing key '${key}'`);
+        } else if (!isScalar(rawRow[key])) {
+          errors.push(`${at}.rows[${j}] key '${key}' must be a number, string, boolean or null`);
+        }
       }
-      if (result && rawRow[result] === undefined) {
-        errors.push(`${at}.rows[${j}] is missing result '${result}'`);
+      if (result) {
+        if (!Object.hasOwn(rawRow, result)) {
+          errors.push(`${at}.rows[${j}] is missing result '${result}'`);
+        } else if (!isScalar(rawRow[result])) {
+          // Without this, `fact_di: {"value": 0.25}` validated clean and then
+          // read as 0 in arithmetic — a silent zero adjustment.
+          errors.push(`${at}.rows[${j}] result '${result}' must be a number, string, boolean or null`);
+        }
       }
       rows.push(rawRow as Record<string, FormulaValue>);
     }
@@ -301,25 +440,29 @@ export function parseFormulaSpec(input: unknown): ParseResult {
       keys,
       result: result ?? '',
       rows,
-      domains: isObj(raw.domains) ? (raw.domains as Record<string, FormulaValue[]>) : undefined,
+      domains: parseDomains(raw.domains, keys, at, errors),
       onMiss: onMiss === 'null' ? 'null' : 'error',
       resultSymbol: str(raw.resultSymbol),
     });
   }
 
   const classifications: SpecClassification[] = [];
-  for (const [i, raw] of asArray(input.classifications).entries()) {
+  for (const [i, raw] of asArray(input.classifications, 'classifications').entries()) {
     const at = `classifications[${i}]`;
     if (!isObj(raw)) {
       errors.push(`${at} must be an object`);
       continue;
     }
     const clId = claimId(str(raw.id), at);
-    const domain = asArray(raw.domain).filter((d): d is string => typeof d === 'string');
+    const domain = asArray(raw.domain, `${at}.domain`).filter((d): d is string => typeof d === 'string');
     if (domain.length === 0) errors.push(`${at} '${clId}': domain is required`);
     const criteria = isObj(raw.criteria) ? (raw.criteria as Record<string, string>) : {};
     for (const value of domain) {
-      if (!criteria[value]) errors.push(`${at} '${clId}': no criterion for '${value}'`);
+      // Own-property again: a domain entry of 'toString' would otherwise find
+      // an inherited function and render it into the indexed text.
+      if (!Object.hasOwn(criteria, value) || !str(criteria[value])) {
+        errors.push(`${at} '${clId}': no criterion for '${value}'`);
+      }
     }
     classifications.push({ id: clId, domain, criteria, note: str(raw.note) });
   }
@@ -334,15 +477,18 @@ export function parseFormulaSpec(input: unknown): ParseResult {
     }
   }
 
+  const source = parseSource(input.source, errors);
+  const notes = parseNotes(input.notes);
+
   if (errors.length > 0) return { ok: false, errors };
   return {
     ok: true,
     spec: {
       id: id!,
       name: str(input.name),
-      source: isObj(input.source) ? (input.source as SpecSource) : undefined,
+      source,
       unitSystem: str(input.unitSystem),
-      notes: isObj(input.notes) ? (input.notes as Record<string, string>) : undefined,
+      notes,
       variables,
       expressions,
       piecewise,
@@ -356,6 +502,9 @@ export interface CoverageGap {
   lookupId: string;
   /** A key combination in the declared domains with no matching row. */
   key: Record<string, FormulaValue>;
+  /** Set instead of `key` when the table was too large to check — a silent
+   *  "no gaps" on an unchecked table would be a lie. */
+  skipped?: string;
 }
 
 /**
@@ -370,12 +519,36 @@ export interface CoverageGap {
  * Not an error — an incomplete table is a fact about the source, not a
  * malformed spec — so this is reported separately from `parseFormulaSpec`.
  */
+/**
+ * Ceiling on the cartesian product a single lookup may expand to.
+ *
+ * Without it this function is a remote kill switch: `domains` of 6 keys × 20
+ * values is 64M combinations, each materialised as an object, and Node dies
+ * with an OOM that NO caller can catch. Coverage runs on every read of every
+ * formula, so one stored spec would brick the brain permanently. Real tables
+ * are tens of rows; anything past this is a malformed or hostile spec.
+ */
+const MAX_COVERAGE_COMBINATIONS = 10_000;
+
 export function checkLookupCoverage(spec: FormulaSpec): CoverageGap[] {
   const gaps: CoverageGap[] = [];
-  for (const lookup of spec.lookups) {
+  for (const lookup of spec.lookups ?? []) {
     if (!lookup.domains) continue;
-    const keys = lookup.keys.filter((k) => lookup.domains?.[k]?.length);
+    const keys = lookup.keys.filter((k) => Array.isArray(lookup.domains?.[k]) && lookup.domains[k]!.length > 0);
     if (keys.length !== lookup.keys.length) continue; // partial domains: can't be exhaustive
+
+    // Size the product BEFORE building it.
+    let total = 1;
+    for (const key of keys) total *= lookup.domains[key]!.length;
+    if (total > MAX_COVERAGE_COMBINATIONS) {
+      gaps.push({
+        lookupId: lookup.id,
+        key: {},
+        skipped: `declares ${total} key combinations, above the ${MAX_COVERAGE_COMBINATIONS} coverage limit — not checked`,
+      });
+      continue;
+    }
+
     let combos: Array<Record<string, FormulaValue>> = [{}];
     for (const key of keys) {
       const values = lookup.domains[key]!;

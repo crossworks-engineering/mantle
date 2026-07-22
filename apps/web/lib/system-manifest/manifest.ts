@@ -847,6 +847,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'tables-import',
       'tables-read',
       'tables-rows',
+      'formulas',
       'pages-draft',
       'app-data',
       'team-admin',

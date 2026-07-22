@@ -50,6 +50,7 @@ class SpecError extends Error {}
 class SpecEvaluator {
   private cache = new Map<string, EvalValue>();
   private resolving = new Set<string>();
+  private resolvingTargets = new Set<string>();
   readonly trace: TraceStep[] = [];
   /** resultSymbol → ids of targets declaring it, for chaining. */
   private producers = new Map<string, string[]>();
@@ -79,11 +80,21 @@ class SpecEvaluator {
 
     // A supplied input always wins, so a caller can override a constant or
     // short-circuit a chain by handing in a value computed elsewhere.
+    //
+    // But an EMPTY input is not a supplied one. `Object.hasOwn` alone would
+    // treat `{"Pgauge": null}` as provided, and `toNum(null)` is 0 — so a form
+    // with a blank field, or a JSON body carrying an explicit null, produced a
+    // release rate of exactly zero reported as success. That is precisely the
+    // silent-zero failure this module exists to prevent, so null / undefined /
+    // '' are treated as absent and fall through to the missing-input error.
     if (Object.hasOwn(this.inputs, symbol)) {
-      const value = this.inputs[symbol] ?? null;
-      this.cache.set(symbol, value);
-      this.trace.push({ kind: 'symbol', symbol, value, from: 'input' });
-      return value;
+      const supplied = this.inputs[symbol];
+      const blank = supplied === null || supplied === undefined || supplied === '';
+      if (!blank) {
+        this.cache.set(symbol, supplied);
+        this.trace.push({ kind: 'symbol', symbol, value: supplied, from: 'input' });
+        return supplied;
+      }
     }
 
     const variable = this.spec.variables.find((v) => v.symbol === symbol);
@@ -145,6 +156,24 @@ class SpecEvaluator {
   }
 
   evalTarget(id: string): FormulaValue {
+    // Targets recurse by id (a piecewise case names another target), but
+    // `resolving` only tracks SYMBOLS — so `p1 -> p1`, or a p1/p2 pair, blew
+    // the stack and returned thousands of junk trace steps with an error that
+    // said nothing useful. Guard the id edge with the same discipline.
+    if (this.resolvingTargets.has(id)) {
+      throw new SpecError(
+        `circular reference resolving target '${id}' (via ${[...this.resolvingTargets].join(' → ')})`,
+      );
+    }
+    this.resolvingTargets.add(id);
+    try {
+      return this.evalTargetInner(id);
+    } finally {
+      this.resolvingTargets.delete(id);
+    }
+  }
+
+  private evalTargetInner(id: string): FormulaValue {
     const expression = this.spec.expressions.find((e) => e.id === id);
     if (expression) {
       const value = evalExpression(expression.expression, this.resolver) as FormulaValue;

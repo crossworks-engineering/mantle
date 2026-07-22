@@ -75,7 +75,23 @@ describe('evalFormula — scientific', () => {
   it('^ binds tighter than * but looser than unary minus', () => {
     expect(ev('2 * 3 ^ 2')).toBe(18); // not 36
     expect(ev('0 - 2 ^ 2')).toBe(-4);
-    expect(ev('-2 ^ 2')).toBe(-4); // as in maths and Excel
+    expect(ev('-2 ^ 2')).toBe(-4); // -(2^2), per maths convention. Excel says +4.
+  });
+  it('accepts scientific notation and leading-dot decimals', () => {
+    expect(ev('1e5')).toBe(100000);
+    expect(ev('1.5E-6')).toBe(0.0000015);
+    expect(ev('6.02e+23')).toBe(6.02e23);
+    expect(ev('.5 * 4')).toBe(2);
+    // A bare E after a number is still the constant, and so fails loudly
+    // rather than being silently swallowed as a malformed exponent.
+    expect(ev('2E')).toBeNull();
+  });
+  it('compares numbers the same way it adds them', () => {
+    // Regression: `compare` once used bare Number() while toNum stripped
+    // separators, so '1,000' was 1000 to arithmetic and NaN to a comparison —
+    // and a NaN comparison fell through to STRING ordering.
+    expect(ev("'1,000' > 28.7")).toBe(true);
+    expect(ev("'1,000' * 1")).toBe(1000); // `+` would concatenate, by design
   });
   it('^ is right-associative and accepts a negative exponent', () => {
     expect(ev('2 ^ 3 ^ 2')).toBe(512); // 2^(3^2), not (2^3)^2 = 64

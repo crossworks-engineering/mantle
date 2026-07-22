@@ -217,7 +217,17 @@ export async function updateFormula(
 
   const data = { ...((node.data ?? {}) as Record<string, unknown>) };
   const specChanged = input.spec !== undefined;
-  if (specChanged) data.spec = validate(input.spec);
+  if (specChanged) {
+    data.spec = validate(input.spec);
+    // Drop the derived index alongside the embedding below. Keeping the old
+    // summary while nulling the embedding manufactures the exact `half_indexed`
+    // defect /debug/integrity hunts for, and until re-extraction lands
+    // formula_get would serve a summary describing the PREVIOUS spec.
+    delete data.summary;
+    delete data.summary_model;
+    delete data.summary_at;
+    delete data.entities;
+  }
 
   const nextTitle = input.title?.trim()
     ? input.title.trim().slice(0, 200)

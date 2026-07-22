@@ -56,6 +56,9 @@ export function formulaToText(spec: FormulaSpec): string {
       const label = e.equation ? `${e.id} (Eq ${e.equation})` : e.id;
       const produces = e.resultSymbol ? ` → ${e.resultSymbol}${e.unit ? ` [${e.unit}]` : ''}` : '';
       out.push(`- ${label}${produces}: ${e.expression}`);
+      // Loudly, and adjacent to the citation it qualifies — this is the one
+      // note that changes whether a reader may rely on the equation.
+      if (e.unverified) out.push(`  UNVERIFIED — ${e.unverified}`);
       if (e.note) out.push(`  ${e.note}`);
     }
   }

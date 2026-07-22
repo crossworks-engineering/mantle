@@ -7,6 +7,7 @@ import {
   getFormula,
   updateFormula,
   isFormulaSpecError,
+  parseFormulaSpec,
 } from '@/lib/formulas';
 
 const PatchBody = z.object({
@@ -21,9 +22,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const row = await getFormula(user.id, id);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  // Coverage is cheap and always worth showing — a gap in a source table is
-  // exactly the thing a reader needs to see before trusting a number.
-  return NextResponse.json({ formula: row, coverageGaps: checkLookupCoverage(row.spec) });
+  // `row.spec` is a cast, not a re-parse (see rowOf), so a node whose data.spec
+  // is absent or malformed — a restore, a hand-edit, a future writer — would
+  // throw inside coverage and surface as an unhandled 500. Re-validate and
+  // degrade to "no coverage information" instead.
+  const parsed = parseFormulaSpec(row.spec);
+  return NextResponse.json({
+    formula: row,
+    coverageGaps: parsed.ok ? checkLookupCoverage(parsed.spec) : [],
+    ...(parsed.ok ? {} : { specErrors: parsed.errors }),
+  });
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -41,6 +49,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   try {
     const row = await updateFormula(user.id, id, parsed.data);
     if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    // Safe unguarded: updateFormula validated the spec on the way in.
     return NextResponse.json({ formula: row, coverageGaps: checkLookupCoverage(row.spec) });
   } catch (err) {
     if (isFormulaSpecError(err)) {

@@ -68,6 +68,8 @@ export type EvalValue = number | string | boolean | null;
 
 const MAX_FORMULA_LEN = 2000;
 
+const isDigit = (ch: string | undefined): boolean => ch !== undefined && ch >= '0' && ch <= '9';
+
 function tokenize(src: string): Token[] {
   const out: Token[] = [];
   let i = 0;
@@ -92,9 +94,24 @@ function tokenize(src: string): Token[] {
       i = end + 1;
       continue;
     }
-    if (c >= '0' && c <= '9') {
+    // Numbers, including a leading-dot decimal (`.5`) and scientific notation
+    // (`1e5`, `1.5E-6`, `6.02e+23`) — which is simply how constants out of an
+    // engineering standard are written, and which previously tokenized as a
+    // number followed by the `E` constant and died as "trailing tokens",
+    // rendering a BLANK cell rather than an error.
+    if (isDigit(c) || (c === '.' && isDigit(src[i + 1]))) {
       let j = i + 1;
       while (j < n && /[0-9._]/.test(src[j]!)) j++;
+      // Only consume `e`/`E` as an exponent when real digits follow, so a bare
+      // `E` after a number stays the constant and fails loudly instead.
+      if (src[j] === 'e' || src[j] === 'E') {
+        let k = j + 1;
+        if (src[k] === '+' || src[k] === '-') k++;
+        if (isDigit(src[k])) {
+          while (k < n && isDigit(src[k])) k++;
+          j = k;
+        }
+      }
       out.push({ t: 'num', v: Number(src.slice(i, j).replace(/_/g, '')) });
       i = j;
       continue;
@@ -237,9 +254,11 @@ class Parser {
     return this.parsePow();
   }
 
-  // Exponentiation binds tighter than * and /, but looser than unary minus, so
-  // `-2^2` is -4 (as in maths and Excel). Right-associative — `2^3^2` is 2^9 —
-  // and the exponent re-enters parseUnary so `2^-1` is legal.
+  // Exponentiation binds tighter than * and /, AND tighter than unary minus —
+  // which is what makes `-2^2` parse as -(2^2) = -4, following normal
+  // mathematical convention. (Excel is the well-known counter-example: there
+  // `=-2^2` is +4. We deliberately do not copy Excel here.) Right-associative,
+  // so `2^3^2` is 2^9; the exponent re-enters parseUnary so `2^-1` is legal.
   private parsePow(): EvalValue {
     const base = this.parsePrimary();
     const tok = this.peek();
@@ -316,11 +335,26 @@ function cellToEval(v: CellValue): EvalValue {
   return v;
 }
 
+/**
+ * Parse a numeric string the ONE way the whole evaluator agrees on.
+ *
+ * This existing exactly once matters. `toNum` used to strip thousands
+ * separators while `compare` called bare `Number()`, so `'1,000'` was 1000 to
+ * arithmetic and NaN to a comparison — and a NaN comparison silently falls
+ * through to STRING ordering, where `'1,000' < '28.7'`. A piecewise branch
+ * guarded by `{Ps} > {Ptrans}` therefore selected the wrong equation and
+ * returned a plausible number from it. Any divergence here is a wrong-answer
+ * bug, not a formatting quirk.
+ */
+function parseNumericString(s: string): number {
+  return Number(s.replace(/[, ]/g, ''));
+}
+
 function toNum(v: EvalValue): number {
   if (typeof v === 'number') return v;
   if (typeof v === 'boolean') return v ? 1 : 0;
   if (typeof v === 'string' && v.trim() !== '') {
-    const n = Number(v.replace(/[, ]/g, ''));
+    const n = parseNumericString(v);
     return Number.isFinite(n) ? n : NaN;
   }
   return 0; // null / blank behaves as 0 in arithmetic
@@ -340,8 +374,10 @@ export function truthy(v: EvalValue): boolean {
 }
 
 function compare(op: string, a: EvalValue, b: EvalValue): boolean {
-  const na = typeof a === 'number' ? a : Number(a);
-  const nb = typeof b === 'number' ? b : Number(b);
+  const coerce = (v: EvalValue): number =>
+    typeof v === 'number' ? v : typeof v === 'string' ? parseNumericString(v) : Number(v);
+  const na = coerce(a);
+  const nb = coerce(b);
   const numeric = Number.isFinite(na) && Number.isFinite(nb);
   switch (op) {
     case '==':
