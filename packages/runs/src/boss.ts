@@ -57,19 +57,29 @@ async function getSendBoss(): Promise<PgBoss> {
  */
 export async function enqueueRunActions(actions: readonly PostCommitAction[]): Promise<void> {
   if (actions.length === 0) return;
-  // The approval fan-out is not a queue job — run it without (and before)
-  // touching pg-boss, so a question is still announced on a brain whose boss
-  // connection is sick. `notifyPendingCreated` soft-fails internally.
-  const notices = actions.filter(
-    (a): a is Extract<PostCommitAction, { type: 'pending_created' }> =>
-      a.type === 'pending_created',
-  );
-  for (const n of notices) {
-    await notifyPendingCreated({
-      ownerId: n.ownerId,
-      pendingId: n.pendingId,
-      toolSlug: n.toolSlug,
-      args: n.args,
+  // The approval fan-out is not a queue job — it runs without touching
+  // pg-boss, so a question is still announced on a brain whose boss
+  // connection is sick.
+  //
+  // DETACHED ON PURPOSE (`void`, the tool-loop's idiom — see
+  // notifyPendingCreated's caller in @mantle/agent-runtime). This function is
+  // awaited from `settleAskHuman` BEFORE it writes the settle receipt
+  // (`executed_at`), and the fan-out ends in a Telegram `sendMessage` whose
+  // client default timeout is 500 s. Awaited, one unreachable Telegram API
+  // call would hold an answered question in the decided-but-unsettled state
+  // past the sweep's 3-minute janitor, which reverts it with "the decision
+  // was interrupted before it applied" — about a decision that DID apply. It
+  // would also stall the run.tool worker lane and any interactive `run_plan`
+  // call. The notice is advisory; the row is the truth.
+  // `notifyPendingCreated` never rejects (it try/catches internally), so this
+  // floating promise cannot raise an unhandled rejection.
+  for (const a of actions) {
+    if (a.type !== 'pending_created') continue;
+    void notifyPendingCreated({
+      ownerId: a.ownerId,
+      pendingId: a.pendingId,
+      toolSlug: a.toolSlug,
+      args: a.args,
     });
   }
   const jobs = actions.filter(

@@ -160,6 +160,20 @@ function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; e
           : '';
       options.push({ label, ...(description ? { description } : {}) });
     }
+    // An UNANSWERABLE question: nothing to pick and no way to type. The card
+    // renders zero controls and its submit stays disabled — for the WHOLE
+    // form, so one such question strands its answerable siblings too, leaving
+    // the operator no exit but Reject (which fails the step). Catch it here,
+    // where the author can still fix it, rather than at the surface.
+    const allowOther = o.allow_other !== false;
+    if (options.length === 0 && !allowOther) {
+      return {
+        error:
+          `plan${at}: this question offers no options and sets allow_other:false — nothing ` +
+          `could be picked and nothing could be typed, so the operator could only reject the ` +
+          `whole form. Give it options, or leave allow_other on for a free-text answer.`,
+      };
+    }
     const fallbackId = header ? header.toLowerCase().replace(/[^a-z0-9]+/g, '-') : `q${i + 1}`;
     let id = typeof o.id === 'string' && o.id.trim() ? o.id.trim() : fallbackId || `q${i + 1}`;
     if (seenIds.has(id)) id = `${id}-${i + 1}`;
@@ -172,7 +186,7 @@ function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; e
       ...(o.multi_select === true ? { multi_select: true } : {}),
       // Default ON: a question with no escape hatch forces a wrong answer
       // when none of the options fit. Opt out explicitly.
-      ...(o.allow_other === false ? { allow_other: false } : { allow_other: true }),
+      allow_other: allowOther,
     });
   }
   const form: AskHumanForm = { questions };

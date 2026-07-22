@@ -218,6 +218,54 @@ describe('ask_human approvals', () => {
     expect(h.applyHumanAnswer.mock.calls[0]![1]).not.toHaveProperty('answers');
   });
 
+  it('refuses a BARE approval of a questionnaire and hands it back', async () => {
+    // The Telegram card (and pending_approve with no payload) can only say
+    // "yes" — which would complete a 2-part form with the string 'approved'
+    // and let the run continue having learned nothing.
+    const form = {
+      questions: [
+        { id: 'env', question: 'Which env?' },
+        { id: 'when', question: 'When?' },
+      ],
+    };
+    fake.queue('pending_tool_calls', [
+      askRow({ args: { question: 'Deploy?', item_id: 'item-9', form } }),
+    ]);
+    await approvePendingCall(OWNER, ROW_ID);
+    expect(h.applyHumanAnswer).not.toHaveBeenCalled();
+    const last = pendingWrites().at(-1)!;
+    expect(last.values.status).toBe('pending'); // handed back, still answerable
+    expect(last.values.decidedAt).toBeNull();
+    expect(String(last.values.error)).toMatch(/2-part questionnaire/);
+    expect(String(last.values.error)).toMatch(/\/pending/);
+  });
+
+  it('still lets a questionnaire through when answers ARE supplied', async () => {
+    const form = { questions: [{ id: 'env', question: 'Which env?' }] };
+    fake.queue('pending_tool_calls', [
+      askRow({ args: { question: 'Deploy?', item_id: 'item-9', form } }),
+    ]);
+    await approvePendingCall(OWNER, ROW_ID, { answers: [{ question: 'env', selected: ['prod'] }] });
+    expect(h.applyHumanAnswer).toHaveBeenCalledTimes(1);
+  });
+
+  it('still lets a bare approval through for a PLAIN question', async () => {
+    fake.queue('pending_tool_calls', [askRow()]); // no form
+    await approvePendingCall(OWNER, ROW_ID);
+    expect(h.applyHumanAnswer).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejection of a questionnaire is still allowed (declining IS an answer)', async () => {
+    const form = { questions: [{ id: 'env', question: 'Which env?' }] };
+    fake.queue('pending_tool_calls', [
+      askRow({ status: 'rejected', args: { question: 'Deploy?', item_id: 'item-9', form } }),
+    ]);
+    h.humanResult = { ok: true, state: 'failed', actions: [] };
+    await rejectPendingCall(OWNER, ROW_ID);
+    expect(h.applyHumanAnswer).toHaveBeenCalledTimes(1);
+    expect(h.applyHumanAnswer.mock.calls[0]![1]).toMatchObject({ decision: 'rejected' });
+  });
+
   it('rejection completes the step so the run advances', async () => {
     fake.queue('pending_tool_calls', [askRow({ status: 'rejected' })]);
     h.humanResult = { ok: true, state: 'failed', actions: [] };

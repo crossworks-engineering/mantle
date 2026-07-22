@@ -41,7 +41,17 @@ export function usePendingQuestions() {
   const rows = query.data?.pending ?? [];
   const questions = rows.filter((r) => r.status === 'pending' && isQuestionRow(r));
 
-  return { questions, count: questions.length, isPending: query.isPending, invalidate };
+  return {
+    questions,
+    count: questions.length,
+    /** True only once real data has arrived. NOT `!isPending`: react-query's
+     *  `isPending` is `status === 'pending'`, so a fetch that ERRORS with no
+     *  data reports `isPending === false` while `questions` is still `[]` —
+     *  a consumer treating that as "loaded, and there are none" would later
+     *  see every pre-existing question as brand new. */
+    hasLoaded: query.isSuccess,
+    invalidate,
+  };
 }
 
 /**

@@ -98,6 +98,16 @@ function askHumanItemId(row: PendingToolCall): string | null {
   return typeof itemId === 'string' ? itemId : null;
 }
 
+/** How many sub-questions a row's structured `form` asks (0 = a plain
+ *  question, answerable by approval alone). Defensive: the args are JSON from
+ *  a model-authored plan, so anything malformed counts as "no form". */
+function formQuestionCount(row: PendingToolCall): number {
+  const form = (row.args as Record<string, unknown> | null)?.['form'];
+  if (!form || typeof form !== 'object' || Array.isArray(form)) return 0;
+  const qs = (form as Record<string, unknown>)['questions'];
+  return Array.isArray(qs) ? qs.length : 0;
+}
+
 /** The decided-but-unsettled recovery (final audit F3): the row flips
  *  approved/rejected BEFORE its run-side effect applies, so a crash or db
  *  error in between would strand an operator-visible "approved" that never
@@ -134,6 +144,22 @@ async function settleAskHuman(
       .where(eq(pendingToolCalls.id, row.id))
       .returning();
     return errRow ? toSummary(errRow) : null;
+  }
+  // A QUESTIONNAIRE CANNOT BE ANSWERED BY A BARE "YES". Approve/reject-only
+  // surfaces (the Telegram card; `pending_approve` with no payload) would
+  // otherwise complete a four-question form with the string 'approved' and
+  // the run would continue having learned nothing — the exact failure the
+  // gate exists to prevent. Reject still works (declining to answer is a real
+  // answer, and fails the step by design). Revert rather than expire, so the
+  // question stays live and answerable on a surface that can render it.
+  const parts = formQuestionCount(row);
+  if (decision === 'answered' && parts > 0 && !answer?.trim() && !answers?.length) {
+    return revertToPending(
+      row.id,
+      `this question is a ${parts}-part questionnaire — a plain approval would record no ` +
+        `answers and the run would continue without them. Answer it on /pending (or pass ` +
+        `'answers' to pending_approve). Reject it if you don't want to answer.`,
+    );
   }
   let res: Awaited<ReturnType<typeof applyHumanAnswer>>;
   try {

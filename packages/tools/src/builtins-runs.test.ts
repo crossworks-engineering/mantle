@@ -58,7 +58,7 @@ describe('ask_human form parsing', () => {
               question: 'Which environment?',
               options: ['dev', { label: 'prod', description: 'live traffic' }],
             },
-            { question: 'Anything else?', options: [], allow_other: false },
+            { question: 'Anything else?', options: ['no'], allow_other: false },
           ],
         },
       }),
@@ -123,6 +123,21 @@ describe('ask_human form parsing', () => {
     });
     expect(longHeader.ok).toBe(false);
     if (!longHeader.ok) expect(longHeader.error).toMatch(/at most 24/);
+  });
+
+  it('refuses an UNANSWERABLE question (no options, no free-text escape)', () => {
+    // The trap: the card would render zero controls for this question and
+    // disable submit for the whole form, leaving Reject as the only exit.
+    const res = ask({
+      question: 'q',
+      form: { questions: [{ question: 'Why did it fail?', allow_other: false }] },
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error('expected refusal');
+    expect(res.error).toMatch(/no options/);
+    expect(res.error).toMatch(/allow_other/);
+    // The same question WITH the escape left on is fine.
+    expect(ask({ question: 'q', form: { questions: [{ question: 'Why?' }] } }).ok).toBe(true);
   });
 
   it('refuses a malformed form rather than silently dropping it', () => {

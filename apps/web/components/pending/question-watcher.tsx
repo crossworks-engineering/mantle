@@ -17,9 +17,14 @@ import { questionPreview, RUN_BUDGET_SLUG } from './types';
  * you find out immediately.
  *
  * Two deliberate quiet rules:
- *  - **Never toast on first load.** The initial fetch seeds the seen-set, so
- *    opening the app with three old questions waiting produces no toasts —
- *    only questions that ARRIVE while you're here.
+ *  - **Never toast on first load.** The first SUCCESSFUL fetch seeds the
+ *    seen-set, so opening the app with three old questions waiting produces
+ *    no toasts — only questions that ARRIVE while you're here. Seeding keys
+ *    off `hasLoaded` (`isSuccess`), never off `!isPending`: an initial fetch
+ *    that ERRORS reports `isPending === false` with no data, and seeding an
+ *    empty set from that would make every pre-existing question look new the
+ *    moment a retry succeeded — a screenful of sticky toasts, worst exactly
+ *    when the network is already flaky.
  *  - **One toast per row, ever.** Ids are remembered for the session, so a
  *    refetch (realtime repaint, tab focus) can't re-announce the same
  *    question.
@@ -28,15 +33,15 @@ export function PendingQuestionWatcher() {
   // The single app-wide live subscription for the shared pending query —
   // every other consumer (the button flash, the panel strip) reads its cache.
   usePendingQuestionsSync();
-  const { questions, isPending } = usePendingQuestions();
+  const { questions, hasLoaded } = usePendingQuestions();
   const toast = useToast();
   const { openAssistant } = useAssistantDock();
 
   const seen = useRef<Set<string> | null>(null);
 
   useEffect(() => {
-    if (isPending) return; // no data yet — nothing to compare against
-    // First settled load: adopt whatever is already waiting as "seen".
+    if (!hasLoaded) return; // no real data yet (still fetching, or errored)
+    // First successful load: adopt whatever is already waiting as "seen".
     if (seen.current === null) {
       seen.current = new Set(questions.map((q) => q.id));
       return;
@@ -58,7 +63,7 @@ export function PendingQuestionWatcher() {
         action: { label: 'Answer', onClick: () => openAssistant() },
       });
     }
-  }, [questions, isPending, toast, openAssistant]);
+  }, [questions, hasLoaded, toast, openAssistant]);
 
   return null;
 }

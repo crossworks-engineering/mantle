@@ -175,25 +175,44 @@ close that:
   `pending_created` post-commit action carrying the row id + args.
   `enqueueRunActions` hands it to whatever `@mantle/runs`'s
   `registerPendingCreatedNotifier` seam holds (`notify.ts`); `@mantle/tools`
-  registers `notifyPendingCreated` at module load, so the question lights the
-  live sidebar badge, the companion device push, and the Telegram card like
-  any other approval. The seam exists because `@mantle/tools` already imports
-  `@mantle/runs` — the reverse edge would be a cycle. The action is
-  **advisory**: losing it loses a ping, never correctness, so it gets no
-  sweep re-send and a throwing notifier is swallowed.
+  registers `notifyPendingCreated` at module load, so the question enters the
+  same fan-out as any other approval: the live sidebar badge **always**, plus
+  **either** the companion device push (`reminderChannel: 'mobile'`) **or**
+  the Telegram card (otherwise, and only if a paired chat exists) — the two
+  remote arms are mutually exclusive by routing, never both. The seam exists
+  because `@mantle/tools` already imports `@mantle/runs` — the reverse edge
+  would be a cycle. The action is **advisory**: losing it loses a ping, never
+  correctness, so it gets no sweep re-send and a throwing notifier is
+  swallowed. It is also fired **detached** (`void`), never awaited: the same
+  call is awaited by `settleAskHuman` before it writes `executed_at`, and a
+  Telegram request that hangs (client default: 500 s) would otherwise hold an
+  answered question in the decided-but-unsettled window until sweep duty 4c
+  reverted a decision that had already applied.
 - **A structured questionnaire (`form`).** Beyond flat `options`, a question
   can carry `form.questions[]` — up to 4 sub-questions, each with labelled
   options (`{label, description?}`), `multi_select`, and an `allow_other`
   free-text escape (default ON: a question with no escape hatch forces a
   wrong answer). Caps are a contract the answer UIs render against — 4
   questions, 8 options, 24-char headers, 80-char labels, 8 KB total — and
-  every rejection teaches the fix. The form rides verbatim into the pending
-  row's args, so `/pending`, the assistant panel and `pending_get` all render
-  it from the row alone. Answers come back as
+  every rejection teaches the fix. A question with **no options AND
+  `allow_other:false` is refused at plan time**: it would render zero
+  controls and disable the whole form's submit, stranding its answerable
+  siblings. The form rides verbatim into the pending row's args, so
+  `/pending`, the assistant panel and `pending_get` all render it from the
+  row alone. Answers come back as
   `answers: [{question: '<id>', selected: [...], other?}]` (PATCH
   `/api/pending/:id` or `pending_approve`), and land on the item as BOTH
-  `result.answers` (structured) and `result.answer` (rendered prose — every
-  pre-existing consumer keeps working unchanged).
+  `result.answers` (structured) and `result.answer` (rendered prose, capped
+  at 4 000 chars — every pre-existing consumer keeps reading `result.answer`
+  unchanged).
+- **A questionnaire cannot be answered by a bare "yes".** Approve/reject-only
+  surfaces — the Telegram card, `pending_approve` with no payload — would
+  otherwise complete a 4-question form with the string `'approved'` and let
+  the run proceed having learned nothing. When the row carries a `form` and
+  no `answer`/`answers` arrives, the decision is **handed back**
+  (`revertToPending`) with a teaching error pointing at `/pending`. Rejecting
+  still works: declining to answer is a real answer, and fails the step by
+  design.
 
 Surfacing, all driven by the ONE shared `['pending']` query
 (`components/pending/`): `<QuestionnaireCard/>` is a single renderer used by
@@ -203,10 +222,14 @@ blocked run is answerable where the operator already is; the footer
 the panel is opened — glancing at it is the acknowledgement); and a headless
 `<PendingQuestionWatcher/>` in the shell raises a sticky toast with an
 "Answer" action for questions that arrive **while you are looking** (never on
-first load — the initial fetch seeds the seen-set, so old questions don't
-toast-storm on refresh). `useRealtime` opens one SSE stream per call, so the
-watcher holds the single app-wide `pending_tool_call` subscription and every
-other consumer repaints off its invalidation.
+first load — the first SUCCESSFUL fetch seeds the seen-set; seeding must key
+off `isSuccess`, never `!isPending`, because a fetch that ERRORS reports
+`isPending === false` with no data and would make every pre-existing question
+look new on the next retry). `useRealtime` opens one SSE stream per call, so
+the watcher holds the single app-wide `pending_tool_call` subscription and
+every other consumer repaints off its invalidation — `/pending` dropped its
+own redundant one, though every OTHER route now carries this stream (and one
+shared `/api/pending` fetch) that it did not before.
 
 ## Worker groups / panels (slice 3 WP5)
 
