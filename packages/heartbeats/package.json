@@ -20,7 +20,7 @@
     "@mantle/tools": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",
-    "drizzle-orm": "^0.38.3"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

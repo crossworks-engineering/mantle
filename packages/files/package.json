@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@mantle/db": "workspace:*",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "heic-convert": "^2.1.0",
     "mammoth": "^1.12.0",
     "pdf-parse": "^2.4.5",

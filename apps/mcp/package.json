@@ -13,7 +13,7 @@
     "@mantle/db": "workspace:*",
     "@mantle/mcp-core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "drizzle-orm": "^0.38.3"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

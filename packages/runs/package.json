@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@mantle/db": "workspace:*",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "pg-boss": "^10.1.6"
   },
   "devDependencies": {

@@ -21,7 +21,7 @@
     "@mantle/telegram": "workspace:*",
     "@mantle/tools": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {

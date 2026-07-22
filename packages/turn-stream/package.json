@@ -14,7 +14,7 @@
   "dependencies": {
     "@mantle/client-types": "workspace:*",
     "@mantle/db": "workspace:*",
-    "drizzle-orm": "^0.38.3"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

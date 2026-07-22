@@ -14,7 +14,7 @@
   "dependencies": {
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "grammy": "^1.45.1"
   },
   "devDependencies": {

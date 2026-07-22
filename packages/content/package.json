@@ -40,7 +40,7 @@
     "@mantle/search": "workspace:*",
     "@mantle/tabledb": "workspace:*",
     "docx": "^9.5.1",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
     "marked": "^18.0.7",
     "tz-lookup": "^6.1.25"

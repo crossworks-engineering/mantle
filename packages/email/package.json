@@ -20,7 +20,7 @@
     "@mantle/db": "workspace:*",
     "@mantle/rules": "workspace:*",
     "@mantle/storage": "workspace:*",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "imapflow": "^1.4.8",
     "mailparser": "^3.9.14",
     "nodemailer": "^9.0.3",

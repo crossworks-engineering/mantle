@@ -15,7 +15,7 @@
     "@mantle/content": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "ical.js": "^2.1.0"
   },
   "devDependencies": {
