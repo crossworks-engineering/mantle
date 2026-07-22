@@ -128,7 +128,7 @@
     "@tiptap/starter-kit": "^3.28.0",
     "@tiptap/suggestion": "^3.28.0",
     "@xyflow/react": "^12.11.2",
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "boring-avatars": "^2.0.4",
     "chokidar": "^5.0.0",
     "class-variance-authority": "^0.7.1",
@@ -174,7 +174,6 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/typography": "^0.5.20",
-    "@types/bcryptjs": "^2.4.6",
     "@types/dagre": "^0.7.52",
     "@types/katex": "^0.16.8",
     "@types/node": "^22.20.1",
