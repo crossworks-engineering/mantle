@@ -396,6 +396,58 @@ constraint in `apps/web/CLAUDE.md`.
 
 Do this **after** Wave 4 so zod/drizzle churn isn't tangled with framework churn.
 
+### Wave 5 status: ✅ done (2026-07-22)
+
+`6 → 5 outdated.` `next` 15.5.20 → 16.2.10 (`45ef942c`), worked through the
+official upgrade guide against our real surface (94 pages, 7 layouts, 269 route
+handlers, 282 client components).
+
+**Most of Next 16's breaking changes don't reach us** — `params`/`searchParams`
+were already `Promise<>` and awaited from the Next 15 migration, and there are no
+parallel routes, no `revalidateTag`, no `unstable_` cache APIs, no server
+actions, no AMP, no `serverRuntimeConfig`/`publicRuntimeConfig`, no `images`
+config, and no global `scroll-behavior`. **Typecheck clean with zero code
+changes.**
+
+Three things needed attention:
+
+1. **Turbopack is the default for `next build`, and a custom webpack config makes
+   the build fail.** We have one (the `@napi-rs/canvas` + `esbuild`
+   externalization) and it *didn't* fire — because the hook is gated behind
+   `process.env.TURBOPACK` with a comment claiming "`next build` leaves it
+   unset". True under 15; **Next 16 sets `TURBOPACK="auto"` for `next build`
+   too** (probed it), so the gate now excludes the hook and Turbopack never sees
+   a webpack config. Accidentally correct. The comment is fixed; the hook stays
+   as the code path for the documented `next build --webpack` opt-out.
+
+   Turbopack was confirmed to externalize the native binding as well as webpack
+   did — no `.node` bundled, and the emitted server JS calls
+   `createRequire(...)("@napi-rs/canvas")` at runtime.
+
+2. **`turbopack.root` is now pinned** — and this one matters for this repo's
+   workflow. Next infers the workspace root by walking up for a lockfile, and
+   from a worktree under `.claude/worktrees/` it walks *past* this tree and picks
+   the **integrator checkout**, resolving files from a different copy of the
+   repo. Now derived from the config file's own location, correct everywhere.
+
+3. **`--turbo` dropped from the dev script** (default in 16; superseded alias).
+
+> **Deliberately not done: the `middleware` → `proxy` rename.** `proxy` is
+> nodejs-only, our middleware is edge (Web Crypto session-cookie check), and the
+> guide says to keep `middleware` if you need edge — with edge instructions for
+> `proxy` promised in a later minor. Still supported; the build prints one
+> deprecation warning.
+
+Two things to know for later:
+
+- **Pre-existing, not caused by the upgrade:** Turbopack's NFT tracer warns that
+  `next.config.ts` → `packages/content/src/backup.ts` does dynamic filesystem
+  work (the `/.dockerenv` and `/proc/self/mounts` probes) and traces broadly.
+  Harmless here — we don't use `output: 'standalone'`, so tracing prunes nothing;
+  the Dockerfile ships source + `node_modules` + `.next`.
+- **`next build` no longer prints `size` / `First Load JS`** (removed in 16 as
+  inaccurate under RSC). Any gate that greps for it needs updating.
+
 ## Wave 6 — pg-boss 10 → 12 (highest risk, own release, staged rollout)
 
 Two majors on the job queue. This is the only item on the list that can lose data.
