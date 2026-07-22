@@ -5,8 +5,13 @@
  *
  * Deliberately NOT JavaScript `eval`: a hand-written tokenizer + recursive
  * descent parser over a tiny grammar (numbers, strings, `{refs}`, the operators
- * + - * / %, comparisons, and a fixed function set). No identifiers reach a
+ * + - * / % ^, comparisons, and a fixed function set). No identifiers reach a
  * global scope, so a hostile formula can at worst return NaN.
+ *
+ * The scientific set (`^`, SQRT, POW, LN, LOG10, EXP, and the bare constants PI
+ * and E) exists for engineering formulas, which are rarely expressible with the
+ * four spreadsheet operations alone — a square root or an exponent term is the
+ * norm rather than the exception once a formula comes out of a standard.
  *
  * Cross-row math (sum/avg of a whole column) is NOT a formula — that's the
  * aggregates footer (table-model.ts `computeAggregate`). Formulas see only the
@@ -17,7 +22,21 @@
  */
 import type { CellValue, Row, TableDoc } from './table-model';
 
-type FnName = 'IF' | 'ROUND' | 'ABS' | 'MIN' | 'MAX' | 'SUM' | 'FLOOR' | 'CEIL' | 'CONCAT';
+type FnName =
+  | 'IF'
+  | 'ROUND'
+  | 'ABS'
+  | 'MIN'
+  | 'MAX'
+  | 'SUM'
+  | 'FLOOR'
+  | 'CEIL'
+  | 'CONCAT'
+  | 'SQRT'
+  | 'POW'
+  | 'LN'
+  | 'LOG10'
+  | 'EXP';
 const FUNCTIONS = new Set<FnName>([
   'IF',
   'ROUND',
@@ -28,6 +47,11 @@ const FUNCTIONS = new Set<FnName>([
   'FLOOR',
   'CEIL',
   'CONCAT',
+  'SQRT',
+  'POW',
+  'LN',
+  'LOG10',
+  'EXP',
 ]);
 
 type Token =
@@ -89,7 +113,7 @@ function tokenize(src: string): Token[] {
       i += 2;
       continue;
     }
-    if ('+-*/%<>'.includes(c)) {
+    if ('+-*/%<>^'.includes(c)) {
       out.push({ t: 'op', v: c });
       i++;
       continue;
@@ -203,7 +227,20 @@ class Parser {
       this.next();
       return this.parseUnary();
     }
-    return this.parsePrimary();
+    return this.parsePow();
+  }
+
+  // Exponentiation binds tighter than * and /, but looser than unary minus, so
+  // `-2^2` is -4 (as in maths and Excel). Right-associative — `2^3^2` is 2^9 —
+  // and the exponent re-enters parseUnary so `2^-1` is legal.
+  private parsePow(): EvalValue {
+    const base = this.parsePrimary();
+    const tok = this.peek();
+    if (tok?.t === 'op' && tok.v === '^') {
+      this.next();
+      return toNum(base) ** toNum(this.parseUnary());
+    }
+    return base;
   }
 
   private parsePrimary(): EvalValue {
@@ -225,6 +262,10 @@ class Parser {
         const upper = tok.v.toUpperCase();
         if (upper === 'TRUE') return true;
         if (upper === 'FALSE') return false;
+        // Bare mathematical constants. Safe as identifiers because column
+        // references are always braced — `PI` can never shadow a column.
+        if (upper === 'PI') return Math.PI;
+        if (upper === 'E') return Math.E;
         if (this.peek()?.t === 'lparen' && FUNCTIONS.has(upper as FnName)) {
           return this.parseCall(upper as FnName);
         }
@@ -333,6 +374,19 @@ function applyFn(name: FnName, args: EvalValue[]): EvalValue {
       return args.map(toNum).reduce((a, b) => a + b, 0);
     case 'CONCAT':
       return args.map(toStr).join('');
+    // Scientific set. Out-of-domain inputs (SQRT of a negative, LN of zero)
+    // yield NaN or -Infinity, which evalFormula collapses to null — a formula
+    // outside its valid range renders blank rather than showing a bogus number.
+    case 'SQRT':
+      return Math.sqrt(toNum(args[0] ?? null));
+    case 'POW':
+      return toNum(args[0] ?? null) ** toNum(args[1] ?? null);
+    case 'LN':
+      return Math.log(toNum(args[0] ?? null));
+    case 'LOG10':
+      return Math.log10(toNum(args[0] ?? null));
+    case 'EXP':
+      return Math.exp(toNum(args[0] ?? null));
     default:
       return null;
   }

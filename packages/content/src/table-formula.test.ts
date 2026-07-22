@@ -56,6 +56,77 @@ describe('evalFormula — functions', () => {
   });
 });
 
+describe('evalFormula — scientific', () => {
+  it('SQRT, LN, LOG10, EXP, POW', () => {
+    expect(ev('SQRT(16)')).toBe(4);
+    expect(ev('LN(1)')).toBe(0);
+    expect(ev('LOG10(1000)')).toBe(3);
+    expect(ev('ROUND(EXP(1), 4)')).toBe(2.7183);
+    expect(ev('POW(2, 10)')).toBe(1024);
+  });
+  it('out-of-domain inputs render blank rather than a bogus number', () => {
+    expect(ev('SQRT(0 - 1)')).toBeNull(); // NaN
+    expect(ev('LN(0)')).toBeNull(); // -Infinity
+  });
+  it('PI and E are constants, not column refs', () => {
+    expect(ev('ROUND(PI, 5)')).toBe(3.14159);
+    expect(ev('ROUND(PI / 4 * 0.375 ^ 2, 4)')).toBe(0.1104); // area of a 3/8" hole
+  });
+  it('^ binds tighter than * but looser than unary minus', () => {
+    expect(ev('2 * 3 ^ 2')).toBe(18); // not 36
+    expect(ev('0 - 2 ^ 2')).toBe(-4);
+    expect(ev('-2 ^ 2')).toBe(-4); // as in maths and Excel
+  });
+  it('^ is right-associative and accepts a negative exponent', () => {
+    expect(ev('2 ^ 3 ^ 2')).toBe(512); // 2^(3^2), not (2^3)^2 = 64
+    expect(ev('2 ^ -1')).toBe(0.5);
+  });
+});
+
+// Acceptance: the release-rate equations from a published engineering standard
+// (API RP 581 Part 3 §5.3.2/§5.3.3), which is why the scientific set exists.
+// None of these were expressible before. Expected values verified independently.
+describe('evalFormula — engineering formulas', () => {
+  const vessel: TableDoc = {
+    columns: [
+      { id: 'c_rho', name: 'Density', type: 'number' },
+      { id: 'c_pg', name: 'Pgauge', type: 'number' },
+      { id: 'c_ps', name: 'Ps', type: 'number' },
+      { id: 'c_mw', name: 'MW', type: 'number' },
+      { id: 'c_ts', name: 'Ts', type: 'number' },
+      { id: 'c_k', name: 'k', type: 'number' },
+    ],
+    rows: [],
+    aggregates: {},
+    views: [],
+  };
+  const r: Row = {
+    id: 'v1',
+    cells: { c_rho: 50, c_pg: 100, c_ps: 100, c_mw: 30, c_ts: 560, c_k: 1.5 },
+  };
+  const evv = (f: string) => evalFormula(f, vessel, r);
+
+  it('liquid release rate (Eq 3.3) → lb/sec', () => {
+    const liquid =
+      '0.61 * 1 * {Density} * (0.11 / 12) * SQRT(2 * 32.2 * {Pgauge} / {Density})';
+    expect(evv(`ROUND(${liquid}, 3)`)).toBe(3.173);
+  });
+
+  it('vapor release rate, sonic (Eq 3.6) → lb/sec', () => {
+    const sonic =
+      '(0.61 / 1) * 0.11 * {Ps} * SQRT( ({k} * {MW} * 32.2) / (1545 * {Ts})' +
+      ' * (2 / ({k} + 1)) ^ (({k} + 1) / ({k} - 1)) )';
+    expect(evv(`ROUND(${sonic}, 4)`)).toBe(0.1572);
+  });
+
+  it('transition pressure (Eq 3.7) selects sonic vs subsonic', () => {
+    const ptrans = '14.7 * (({k} + 1) / 2) ^ ({k} / ({k} - 1))';
+    expect(evv(`ROUND(${ptrans}, 2)`)).toBe(28.71);
+    // Ps = 100 psia is above the transition pressure, so the release is sonic.
+    expect(evv(`IF({Ps} > ${ptrans}, 'sonic', 'subsonic')`)).toBe('sonic');
+  });
+});
+
 describe('evalFormula — safety', () => {
   it('returns null for broken / hostile input rather than throwing', () => {
     expect(ev('{Qty} *')).toBeNull();
