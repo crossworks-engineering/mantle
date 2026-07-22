@@ -159,9 +159,10 @@ Neither `pnpm verify` nor `next build` executes a PDF, so both passed clean.
 or a process-global singleton** — types and a successful build are not
 evidence there.
 
-`pdf-parse` 2 is held back because it bundles its own pdfjs (5.4.296) where
-1.x had none, which is what surfaced the whole problem. Adopting it means
-consolidating onto one PDF engine — filed as its own task.
+~~`pdf-parse` 2 is held back~~ **— superseded, see below.** It was held back on
+the assumption that forcing it onto our pdfjs would degrade extraction. That
+assumption was tested afterwards and was wrong; pdf-parse 2 was adopted in
+`8201a03e`. See "pdf-parse 2, revisited".
 
 Also worth carrying forward: **pnpm 11 reads `overrides` from
 `pnpm-workspace.yaml`, not `package.json`.** A `pnpm.overrides` block in
@@ -205,6 +206,48 @@ hand-rolled shapes:
 > charts actually *render*. Before merge, eyeball the dashboard
 > (`ingest-chart`, `spend-chart`, `brain-breakdown`) and `/debug/spend`.
 > Adding a render-test setup is worth considering, but not mid-upgrade.
+
+### pdf-parse 2, revisited — adopted after testing (2026-07-22)
+
+Wave 2 held pdf-parse at 1.x on the *assumption* that forcing it onto pdfjs
+6.1.200 (a full major above its pinned 5.4.296) would risk silently degraded
+extraction. That was caution, not evidence. Tested afterwards; the assumption
+was wrong.
+
+**It works.** Two pins were needed rather than one — pdf-parse 2 also drags in
+its own `@napi-rs/canvas` (0.1.80) beside our 1.0.2. With both pinned in
+`pnpm-workspace.yaml`, the tree holds exactly one pdfjs and one canvas, and
+every path passes: `parsePdf` → `extractPdfTextWithPassword` (the order that
+previously failed), and rasterize either side of it.
+
+**Extraction output changes, for the better:**
+
+| | pdf-parse 1.x | pdf-parse 2 |
+| --- | ---: | ---: |
+| output | 11,045 chars | 2,038 chars |
+| tokens in v1 missing from v2 | — | **none** |
+| formatting | fixed-width, space-padded | clean |
+| page markers | none | `-- N of M --` |
+
+81% of v1's output was whitespace padding that every PDF chunk carried into its
+embedding. Decision: adopt, and **do not re-extract** existing PDFs — old ones
+keep padded text, new ones get clean text, both retrieve fine.
+
+> Correction to an earlier note in this doc: page markers are a **v1→v2**
+> difference, not a pdf-parse-vs-pdfjs one. v1 emits none; v2 adds them. Raw
+> pdfjs (the consolidation route) emits clean text with no markers.
+
+**It also exposed a latent drizzle instance split.** Removing the obsolete
+`@types/pdf-parse` stub caused 96 errors in `packages/files/src/ops.ts` —
+`SQL<unknown> | undefined` "not assignable" to a superset of itself, which is
+the signature of two copies of drizzle's types. pnpm keys peer-dependents by
+their peer set, and `packages/files` was on the bare `drizzle-orm` instance
+while `@mantle/db` is on the peer-resolved one; the stub had been pinning the
+resolution by accident. Fixed by declaring `postgres` to match `@mantle/db`.
+
+**Only 6 of 18 drizzle-using packages declare `postgres`, so 12 are still on
+the other instance — fix that before wave 4's drizzle 0.38 → 0.45**, or that
+upgrade will scatter this error class across the workspace. Filed separately.
 
 ## Wave 4 — deep, one release each
 
