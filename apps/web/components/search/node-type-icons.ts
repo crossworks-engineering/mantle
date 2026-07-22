@@ -12,6 +12,7 @@ import {
   NotebookPen,
   Printer,
   Send,
+  Sigma,
   StickyNote,
   type LucideIcon,
 } from 'lucide-react';
@@ -37,6 +38,7 @@ export const NODE_TYPE_ICONS: Record<SearchNodeType, LucideIcon> = {
   telegram_message: Send,
   documentation: BookOpen,
   journal: NotebookPen,
+  formula: Sigma,
 };
 
 /** Icon for a node type, tolerating types outside the search enum. */

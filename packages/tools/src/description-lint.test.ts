@@ -50,6 +50,8 @@ const NOT_A_TOOL_SLUG = new Set<string>([
   'next_offset', // table_query / rows-list paging cursor field
   'created_ids', // page_blocks_apply result field (batch-chaining id map)
   'deleted_ids', // page_blocks_apply result field (batch-chaining id map)
+  'coverage_gaps', // formula_get result field (unspecified lookup key combinations)
+  'dimension_issues', // formula_get result field (declared unit vs computed dimension)
 ]);
 
 /**

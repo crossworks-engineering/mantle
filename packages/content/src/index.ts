@@ -293,9 +293,50 @@ export {
   type FilterOp,
 } from './table-model';
 
-export { evalFormula } from './table-formula';
+export { evalFormula, evalExpression, type RefResolver, type EvalValue } from './table-formula';
 
 export { tableToText, tableToCsv, formatCellText } from './table-to-text';
+
+export {
+  parseFormulaSpec,
+  checkLookupCoverage,
+  type FormulaSpec,
+  type FormulaValue,
+  type SpecVariable,
+  type SpecExpression,
+  type SpecPiecewise,
+  type SpecLookup,
+  type SpecClassification,
+  type CoverageGap,
+} from './formula-spec';
+
+export { evaluateSpec, type EvalResult, type TraceStep } from './formula-eval';
+
+export { formulaToText } from './formula-to-text';
+
+export { calculate, type CalcResult, type CalcOptions } from './calculate';
+
+export {
+  checkDimensions,
+  normaliseUnit,
+  type DimensionIssue,
+} from './formula-dimensions';
+
+export {
+  FORMULA_ROOT_LABEL,
+  FormulaSpecError,
+  isFormulaSpecError,
+  createFormula,
+  listFormulas,
+  countFormulas,
+  getFormula,
+  readFormulaSpec,
+  updateFormula,
+  deleteFormula,
+  type FormulaRow,
+  type CreateFormulaInput,
+  type UpdateFormulaInput,
+} from './formulas';
 
 export {
   listRows,

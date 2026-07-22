@@ -93,6 +93,8 @@ import {
   normaliseOrgName,
   createTable,
   tableDocFromGrid,
+  parseFormulaSpec,
+  formulaToText,
 } from '@mantle/content';
 import { isLikelyDifferentPerson } from './person-names';
 
@@ -127,6 +129,7 @@ const DEFAULT_EXTRACT_TYPES = [
   'documentation',
   'journal',
   'location',
+  'formula',
 ];
 
 /** Max characters of body text we feed the summarizer in one shot.
@@ -477,6 +480,17 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
       Array.isArray(node.tags) && node.tags.length > 0 ? `\n\nTags: ${node.tags.join(', ')}` : '';
     const kindLine = kind ? `\n\nKind: ${kind}` : '';
     return `${node.title}${kindLine}\n\n${description}${tagLine}`.trim();
+  }
+  // ─── Formulas — the spec rendered to markdown ────────────────────────
+  // Indexing the raw spec JSON would bury the searchable content (the source
+  // citation, the variable descriptions, the rating criteria prose) under
+  // structural noise. `formulaToText` renders the parts a person would
+  // actually search for. A malformed spec falls back to the title rather than
+  // failing the whole extraction run.
+  if (node.type === 'formula') {
+    const d = (node.data ?? {}) as Record<string, unknown>;
+    const parsed = parseFormulaSpec(d.spec);
+    return parsed.ok ? formulaToText(parsed.spec) : node.title;
   }
   if (node.type === 'email' || node.type === 'email_thread') {
     const [row] = await db

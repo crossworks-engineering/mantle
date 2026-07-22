@@ -65,6 +65,8 @@ import { TABLE_TOOLS } from './builtins-tables';
 import { TOOL_RESULT_TOOLS } from './builtins-tool-results';
 import { CONTACT_TOOLS } from './builtins-contacts';
 import { JOURNAL_TOOLS } from './builtins-journal';
+import { FORMULA_TOOLS } from './builtins-formulas';
+import { CALCULATE_TOOLS } from './builtins-calculate';
 import { PEER_TOOLS } from './builtins-peers';
 import { EVAL_TOOLS } from './builtins-eval';
 import { RUN_TOOLS } from './builtins-runs';
@@ -153,6 +155,7 @@ const search_nodes: BuiltinToolDef = {
           'telegram_message',
           'documentation',
           'journal',
+          'formula',
         ],
       },
       tags: {
@@ -1769,6 +1772,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // family, feelings). Source of the always-on identity context. Saskia can
   // add/refine entries when the user shares something durable about themselves.
   ...JOURNAL_TOOLS,
+  ...FORMULA_TOOLS,
+  ...CALCULATE_TOOLS,
   // Federation — query other people's Mantles for data they've shared with
   // you. Outbound half of docs/federation.md; reads only what a peer granted.
   ...PEER_TOOLS,

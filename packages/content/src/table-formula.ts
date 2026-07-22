@@ -5,8 +5,13 @@
  *
  * Deliberately NOT JavaScript `eval`: a hand-written tokenizer + recursive
  * descent parser over a tiny grammar (numbers, strings, `{refs}`, the operators
- * + - * / %, comparisons, and a fixed function set). No identifiers reach a
+ * + - * / % ^, comparisons, and a fixed function set). No identifiers reach a
  * global scope, so a hostile formula can at worst return NaN.
+ *
+ * The scientific set (`^`, SQRT, POW, LN, LOG10, EXP, and the bare constants PI
+ * and E) exists for engineering formulas, which are rarely expressible with the
+ * four spreadsheet operations alone — a square root or an exponent term is the
+ * norm rather than the exception once a formula comes out of a standard.
  *
  * Cross-row math (sum/avg of a whole column) is NOT a formula — that's the
  * aggregates footer (table-model.ts `computeAggregate`). Formulas see only the
@@ -17,7 +22,21 @@
  */
 import type { CellValue, Row, TableDoc } from './table-model';
 
-type FnName = 'IF' | 'ROUND' | 'ABS' | 'MIN' | 'MAX' | 'SUM' | 'FLOOR' | 'CEIL' | 'CONCAT';
+type FnName =
+  | 'IF'
+  | 'ROUND'
+  | 'ABS'
+  | 'MIN'
+  | 'MAX'
+  | 'SUM'
+  | 'FLOOR'
+  | 'CEIL'
+  | 'CONCAT'
+  | 'SQRT'
+  | 'POW'
+  | 'LN'
+  | 'LOG10'
+  | 'EXP';
 const FUNCTIONS = new Set<FnName>([
   'IF',
   'ROUND',
@@ -28,6 +47,11 @@ const FUNCTIONS = new Set<FnName>([
   'FLOOR',
   'CEIL',
   'CONCAT',
+  'SQRT',
+  'POW',
+  'LN',
+  'LOG10',
+  'EXP',
 ]);
 
 type Token =
@@ -40,9 +64,11 @@ type Token =
   | { t: 'rparen' }
   | { t: 'comma' };
 
-type EvalValue = number | string | boolean | null;
+export type EvalValue = number | string | boolean | null;
 
 const MAX_FORMULA_LEN = 2000;
+
+const isDigit = (ch: string | undefined): boolean => ch !== undefined && ch >= '0' && ch <= '9';
 
 function tokenize(src: string): Token[] {
   const out: Token[] = [];
@@ -68,9 +94,24 @@ function tokenize(src: string): Token[] {
       i = end + 1;
       continue;
     }
-    if (c >= '0' && c <= '9') {
+    // Numbers, including a leading-dot decimal (`.5`) and scientific notation
+    // (`1e5`, `1.5E-6`, `6.02e+23`) — which is simply how constants out of an
+    // engineering standard are written, and which previously tokenized as a
+    // number followed by the `E` constant and died as "trailing tokens",
+    // rendering a BLANK cell rather than an error.
+    if (isDigit(c) || (c === '.' && isDigit(src[i + 1]))) {
       let j = i + 1;
       while (j < n && /[0-9._]/.test(src[j]!)) j++;
+      // Only consume `e`/`E` as an exponent when real digits follow, so a bare
+      // `E` after a number stays the constant and fails loudly instead.
+      if (src[j] === 'e' || src[j] === 'E') {
+        let k = j + 1;
+        if (src[k] === '+' || src[k] === '-') k++;
+        if (isDigit(src[k])) {
+          while (k < n && isDigit(src[k])) k++;
+          j = k;
+        }
+      }
       out.push({ t: 'num', v: Number(src.slice(i, j).replace(/_/g, '')) });
       i = j;
       continue;
@@ -89,7 +130,7 @@ function tokenize(src: string): Token[] {
       i += 2;
       continue;
     }
-    if ('+-*/%<>'.includes(c)) {
+    if ('+-*/%<>^'.includes(c)) {
       out.push({ t: 'op', v: c });
       i++;
       continue;
@@ -119,12 +160,19 @@ function tokenize(src: string): Token[] {
   return out;
 }
 
+/**
+ * How a `{braced}` reference resolves to a value. Table formulas bind refs to
+ * columns of the current row; the formula-spec evaluator binds them to named
+ * variables. Same grammar, same parser, two binding strategies — there is
+ * deliberately only one expression language in the codebase.
+ */
+export type RefResolver = (name: string) => EvalValue;
+
 class Parser {
   private pos = 0;
   constructor(
     private toks: Token[],
-    private doc: TableDoc,
-    private row: Row,
+    private resolve: RefResolver,
   ) {}
 
   private peek(): Token | undefined {
@@ -203,7 +251,22 @@ class Parser {
       this.next();
       return this.parseUnary();
     }
-    return this.parsePrimary();
+    return this.parsePow();
+  }
+
+  // Exponentiation binds tighter than * and /, AND tighter than unary minus —
+  // which is what makes `-2^2` parse as -(2^2) = -4, following normal
+  // mathematical convention. (Excel is the well-known counter-example: there
+  // `=-2^2` is +4. We deliberately do not copy Excel here.) Right-associative,
+  // so `2^3^2` is 2^9; the exponent re-enters parseUnary so `2^-1` is legal.
+  private parsePow(): EvalValue {
+    const base = this.parsePrimary();
+    const tok = this.peek();
+    if (tok?.t === 'op' && tok.v === '^') {
+      this.next();
+      return toNum(base) ** toNum(this.parseUnary());
+    }
+    return base;
   }
 
   private parsePrimary(): EvalValue {
@@ -215,7 +278,7 @@ class Parser {
       case 'str':
         return tok.v;
       case 'ref':
-        return this.resolveRef(tok.v);
+        return this.resolve(tok.v);
       case 'lparen': {
         const v = this.parseComparison();
         this.expect('rparen');
@@ -225,6 +288,10 @@ class Parser {
         const upper = tok.v.toUpperCase();
         if (upper === 'TRUE') return true;
         if (upper === 'FALSE') return false;
+        // Bare mathematical constants. Safe as identifiers because column
+        // references are always braced — `PI` can never shadow a column.
+        if (upper === 'PI') return Math.PI;
+        if (upper === 'E') return Math.E;
         if (this.peek()?.t === 'lparen' && FUNCTIONS.has(upper as FnName)) {
           return this.parseCall(upper as FnName);
         }
@@ -249,15 +316,18 @@ class Parser {
     return applyFn(name, args);
   }
 
-  private resolveRef(name: string): EvalValue {
-    const col = this.doc.columns.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+}
+
+/** Binds `{refs}` to columns of one row. */
+function columnResolver(doc: TableDoc, row: Row): RefResolver {
+  return (name) => {
+    const col = doc.columns.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
     if (!col) return null;
     // Guard against formula → formula recursion: a formula may not reference
     // another formula column (avoids cycles without a full dependency graph).
     if (col.type === 'formula') return null;
-    const raw = this.row.cells[col.id] ?? null;
-    return cellToEval(raw);
-  }
+    return cellToEval(row.cells[col.id] ?? null);
+  };
 }
 
 function cellToEval(v: CellValue): EvalValue {
@@ -265,11 +335,26 @@ function cellToEval(v: CellValue): EvalValue {
   return v;
 }
 
+/**
+ * Parse a numeric string the ONE way the whole evaluator agrees on.
+ *
+ * This existing exactly once matters. `toNum` used to strip thousands
+ * separators while `compare` called bare `Number()`, so `'1,000'` was 1000 to
+ * arithmetic and NaN to a comparison — and a NaN comparison silently falls
+ * through to STRING ordering, where `'1,000' < '28.7'`. A piecewise branch
+ * guarded by `{Ps} > {Ptrans}` therefore selected the wrong equation and
+ * returned a plausible number from it. Any divergence here is a wrong-answer
+ * bug, not a formatting quirk.
+ */
+function parseNumericString(s: string): number {
+  return Number(s.replace(/[, ]/g, ''));
+}
+
 function toNum(v: EvalValue): number {
   if (typeof v === 'number') return v;
   if (typeof v === 'boolean') return v ? 1 : 0;
   if (typeof v === 'string' && v.trim() !== '') {
-    const n = Number(v.replace(/[, ]/g, ''));
+    const n = parseNumericString(v);
     return Number.isFinite(n) ? n : NaN;
   }
   return 0; // null / blank behaves as 0 in arithmetic
@@ -280,7 +365,8 @@ function toStr(v: EvalValue): string {
   return String(v);
 }
 
-function truthy(v: EvalValue): boolean {
+/** Exported so the formula-spec evaluator branches on exactly these rules. */
+export function truthy(v: EvalValue): boolean {
   if (typeof v === 'boolean') return v;
   if (typeof v === 'number') return v !== 0;
   if (typeof v === 'string') return v.trim() !== '' && v.trim().toLowerCase() !== 'false';
@@ -288,8 +374,10 @@ function truthy(v: EvalValue): boolean {
 }
 
 function compare(op: string, a: EvalValue, b: EvalValue): boolean {
-  const na = typeof a === 'number' ? a : Number(a);
-  const nb = typeof b === 'number' ? b : Number(b);
+  const coerce = (v: EvalValue): number =>
+    typeof v === 'number' ? v : typeof v === 'string' ? parseNumericString(v) : Number(v);
+  const na = coerce(a);
+  const nb = coerce(b);
   const numeric = Number.isFinite(na) && Number.isFinite(nb);
   switch (op) {
     case '==':
@@ -333,9 +421,36 @@ function applyFn(name: FnName, args: EvalValue[]): EvalValue {
       return args.map(toNum).reduce((a, b) => a + b, 0);
     case 'CONCAT':
       return args.map(toStr).join('');
+    // Scientific set. Out-of-domain inputs (SQRT of a negative, LN of zero)
+    // yield NaN or -Infinity, which evalFormula collapses to null — a formula
+    // outside its valid range renders blank rather than showing a bogus number.
+    case 'SQRT':
+      return Math.sqrt(toNum(args[0] ?? null));
+    case 'POW':
+      return toNum(args[0] ?? null) ** toNum(args[1] ?? null);
+    case 'LN':
+      return Math.log(toNum(args[0] ?? null));
+    case 'LOG10':
+      return Math.log10(toNum(args[0] ?? null));
+    case 'EXP':
+      return Math.exp(toNum(args[0] ?? null));
     default:
       return null;
   }
+}
+
+/**
+ * Evaluate an expression against an arbitrary reference resolver, THROWING on
+ * a malformed expression. Callers that want a value or a diagnosis — the
+ * formula-spec evaluator, where a silently blank release rate would be worse
+ * than a loud failure — use this. Callers that want a cell to render want
+ * `evalFormula` below.
+ */
+export function evalExpression(src: string, resolve: RefResolver): EvalValue {
+  const text = (src ?? '').trim();
+  if (!text) throw new Error('empty expression');
+  if (text.length > MAX_FORMULA_LEN) throw new Error('expression too long');
+  return new Parser(tokenize(text), resolve).parse();
 }
 
 /**
@@ -344,10 +459,8 @@ function applyFn(name: FnName, args: EvalValue[]): EvalValue {
  * blank, never throws into the caller). NaN results collapse to null too.
  */
 export function evalFormula(formula: string, doc: TableDoc, row: Row): CellValue {
-  const src = (formula ?? '').trim();
-  if (!src || src.length > MAX_FORMULA_LEN) return null;
   try {
-    const result = new Parser(tokenize(src), doc, row).parse();
+    const result = evalExpression(formula, columnResolver(doc, row));
     if (typeof result === 'number') return Number.isFinite(result) ? result : null;
     if (typeof result === 'boolean') return result;
     return result ?? null;

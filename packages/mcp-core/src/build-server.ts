@@ -224,6 +224,7 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
           'printer_project',
           'telegram_message',
           'documentation',
+          'formula',
         ])
         .optional(),
       tags: z.array(z.string()).optional(),

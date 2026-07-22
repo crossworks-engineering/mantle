@@ -17,7 +17,10 @@
  * Formula evaluation lives in table-formula.ts; this module calls into it via
  * `resolveCell` so callers always see computed values for formula columns.
  */
-import { evalFormula } from './table-formula';
+// The mathjs-backed engine (see table-formula-mathjs.ts). `table-formula.ts`
+// remains for one release as a revertible fallback and as the differential
+// baseline in table-formula-diff.test.ts; nothing else should import it.
+import { evalFormulaMath as evalFormula } from './table-formula-mathjs';
 
 /** Isomorphic UUID — no `node:crypto`, no DB, so this module stays a
  *  browser-safe leaf the client grid can import directly. `randomUUID`
