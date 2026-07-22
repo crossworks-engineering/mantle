@@ -8,6 +8,7 @@ import {
   updateFormula,
   isFormulaSpecError,
   parseFormulaSpec,
+  checkDimensions,
 } from '@/lib/formulas';
 
 const PatchBody = z.object({
@@ -30,6 +31,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   return NextResponse.json({
     formula: row,
     coverageGaps: parsed.ok ? checkLookupCoverage(parsed.spec) : [],
+    dimensionIssues: parsed.ok ? checkDimensions(parsed.spec) : [],
     ...(parsed.ok ? {} : { specErrors: parsed.errors }),
   });
 }
@@ -50,7 +52,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const row = await updateFormula(user.id, id, parsed.data);
     if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
     // Safe unguarded: updateFormula validated the spec on the way in.
-    return NextResponse.json({ formula: row, coverageGaps: checkLookupCoverage(row.spec) });
+    return NextResponse.json({
+      formula: row,
+      coverageGaps: checkLookupCoverage(row.spec),
+      dimensionIssues: checkDimensions(row.spec),
+    });
   } catch (err) {
     if (isFormulaSpecError(err)) {
       return NextResponse.json({ error: err.message, errors: err.errors }, { status: 400 });

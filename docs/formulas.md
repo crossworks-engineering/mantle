@@ -123,7 +123,32 @@ convention. (Excel disagrees — there `=-2^2` is `+4`. We do not follow Excel.)
 Right-associative with a unary-capable exponent: `2^3^2` = 512, `2^-1` = 0.5.
 Scientific notation and leading-dot decimals are accepted (`1.5E-6`, `.5`).
 
-## 5. Authoring notes
+## 5. Dimensional checking — `formula-dimensions.ts`
+
+`checkDimensions(spec)` evaluates each expression with unit-bearing quantities
+and compares the result's dimension against the declared `unit`. This is what
+`unit` is FOR — it stopped being display text the moment mathjs arrived.
+
+It catches the errors proofreading does not: a term dropped inside a `SQRT`, a
+constant labelled with the wrong dimension, a declared result unit that the
+arithmetic cannot produce. The motivating case is real — `g_c` was recorded as
+`ft/s2` when it is the gravitational conversion constant `lbm ft/(lbf s^2)`.
+Numerically identical in USC, so every value was right and every test passed;
+only the dimensions expose it, and an SI port would have been silently out by
+a factor of 3.13.
+
+Units are written the way printed tables write them — `lbm-ft/(lbf-s2)`,
+`lb/ft3`, `lbf/in2 (abs)` — and `normaliseUnit` translates the conventions
+(hyphen-as-multiply, implicit exponents, `R` → `degR`). A trailing `(abs)` /
+`(g)` is stripped: a pressure BASIS is not a dimension, which is exactly why
+gauge and absolute must be two separate symbols rather than one annotated one.
+
+Reported separately from `parseFormulaSpec`, like `checkLookupCoverage`: units
+are optional and an unlabelled spec is incomplete rather than invalid. Surfaced
+on `formula_get` / `formula_create` / `formula_update` as `dimension_issues`,
+and on the API as `dimensionIssues`.
+
+## 6. Authoring notes
 
 Specs are usually written as YAML and parsed to an object before validation —
 YAML because criteria prose and transcription notes are multi-line English,

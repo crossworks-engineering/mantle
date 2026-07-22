@@ -14,6 +14,7 @@
  */
 
 import {
+  checkDimensions,
   checkLookupCoverage,
   countFormulas,
   createFormula,
@@ -147,7 +148,7 @@ const formula_get: BuiltinToolDef = {
   slug: 'formula_get',
   name: 'Read a formula',
   description:
-    'Return one formula in full: the spec (variables, equations, branches, lookup tables, rating criteria), the list of evaluable `targets` to pass to `formula_evaluate`, and `coverage_gaps` — key combinations a lookup declares as legal but has no row for. **A non-empty `coverage_gaps` means the source table is incomplete, not that the spec is wrong**; say so rather than inventing a value for the missing case.',
+    'Return one formula in full: the spec (variables, equations, branches, lookup tables, rating criteria), the list of evaluable `targets` to pass to `formula_evaluate`, `coverage_gaps` — key combinations a lookup declares as legal but has no row for — and `dimension_issues`, where a declared unit disagrees with the arithmetic that produces it (a dropped term, or a mislabelled constant). **A non-empty `coverage_gaps` means the source table is incomplete, not that the spec is wrong**; say so rather than inventing a value for the missing case.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -171,6 +172,7 @@ const formula_get: BuiltinToolDef = {
         spec: row.spec,
         targets: targetsOf(row),
         coverage_gaps: checkLookupCoverage(row.spec),
+        dimension_issues: checkDimensions(row.spec),
       },
     };
   },
@@ -278,7 +280,11 @@ const formula_create: BuiltinToolDef = {
       ctx.step?.setOutput({ id: row.id, title: row.title });
       return {
         ok: true,
-        output: { ...compact(row), coverage_gaps: checkLookupCoverage(row.spec) },
+        output: {
+          ...compact(row),
+          coverage_gaps: checkLookupCoverage(row.spec),
+          dimension_issues: checkDimensions(row.spec),
+        },
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -317,7 +323,11 @@ const formula_update: BuiltinToolDef = {
       if (!row) return notFound('formula', id, 'formula_list');
       return {
         ok: true,
-        output: { ...compact(row), coverage_gaps: checkLookupCoverage(row.spec) },
+        output: {
+          ...compact(row),
+          coverage_gaps: checkLookupCoverage(row.spec),
+          dimension_issues: checkDimensions(row.spec),
+        },
       };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
