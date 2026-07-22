@@ -22,7 +22,7 @@
 import { eq } from 'drizzle-orm';
 import { channels, db, telegramAccounts, type Channel, type TelegramAccount } from '@mantle/db';
 import { pollOnce, evictBot, type PollHandlers } from '@mantle/telegram';
-import { approvePendingCall, rejectPendingCall } from '@mantle/tools';
+import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
 import { startProcessHeartbeat } from '@mantle/content';
 
 const CHANNEL_REFRESH_MS = 60_000;
@@ -59,6 +59,18 @@ const loops = new Map<string, { stop: () => void }>();
 const approvalHandlers: PollHandlers = {
   onApproval: async ({ ownerId, decision, pendingId }) => {
     try {
+      // Telegram announces runner questions; it never answers them. Current
+      // question notices ship with no buttons at all, so this only catches a
+      // card sent by an older build that is still sitting in a chat — but
+      // tapping it must not record a yes/no as the operator's answer to a
+      // question that asked something else entirely.
+      const existing = await getPendingCall(ownerId, pendingId);
+      if (existing?.toolSlug === 'ask_human') {
+        return {
+          ok: false,
+          text: 'This is a question, not a yes/no approval — answer it in Mantle (Pending approvals).',
+        };
+      }
       const row =
         decision === 'approve'
           ? await approvePendingCall(ownerId, pendingId)

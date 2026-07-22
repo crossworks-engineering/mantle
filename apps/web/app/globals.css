@@ -3932,3 +3932,17 @@ body[data-picking='true'] [data-mark-id]:hover {
   outline-color: var(--ring);
   background-color: color-mix(in oklch, var(--primary) 12%, transparent);
 }
+
+/* Attention pulse on the assistant button when a run is blocked on a question.
+   Tailwind's `animate-pulse` is unguarded, and this one persists until the
+   panel is opened — WCAG 2.2.2 covers motion that runs past 5s, so honour the
+   OS setting and fall back to a static ring (the count badge still carries
+   the signal). */
+.mantle-attention-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mantle-attention-pulse {
+    animation: none;
+  }
+}

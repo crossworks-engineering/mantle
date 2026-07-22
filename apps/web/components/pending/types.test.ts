@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isQuestionRow, parseForm, questionPreview, type PendingRow } from './types';
+import {
+  ASK_HUMAN_FORM_LIMITS,
+  isQuestionRow,
+  parseForm,
+  questionPreview,
+  type PendingRow,
+} from './types';
 
 /**
  * `args.form` arrives from a MODEL-AUTHORED plan by way of the engine. The
@@ -53,6 +59,29 @@ describe('parseForm', () => {
     // An absent flag must not strand the operator with no way to answer.
     expect(form?.questions[0]?.allow_other).toBe(true);
     expect(form?.questions[0]?.id).toBe('q1');
+  });
+
+  it('derives the id EXACTLY as the server does (answers are keyed by it)', () => {
+    // The server's fallback is explicit id → slugified header → positional.
+    // A client that derived it differently would submit answers under an id
+    // the engine cannot match, and validation would reject a correct answer.
+    const form = parseForm({
+      questions: [
+        { header: 'Target env', question: 'Which?', options: ['a'] },
+        { id: 'explicit', header: 'Ignored', question: 'Which?', options: ['a'] },
+        { question: 'No header', options: ['a'] },
+      ],
+    });
+    expect(form?.questions.map((q) => q.id)).toEqual(['target-env', 'explicit', 'q3']);
+  });
+
+  it('renders no more questions than the API will accept', () => {
+    // Showing a 5-question form the route 400s on submit gives the operator
+    // no way to succeed.
+    const form = parseForm({
+      questions: Array.from({ length: 6 }, (_, i) => ({ question: `q${i}`, options: ['a'] })),
+    });
+    expect(form?.questions).toHaveLength(ASK_HUMAN_FORM_LIMITS.maxQuestions);
   });
 
   it('returns null for shapes that are not a form', () => {

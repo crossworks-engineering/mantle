@@ -6,6 +6,13 @@
  * `args`, so /pending, the assistant panel and the toast watcher all render
  * from the SAME row without asking the run engine anything.
  */
+import {
+  ASK_HUMAN_FORM_LIMITS,
+  type AskHumanForm,
+  type AskHumanFormAnswer,
+  type AskHumanFormOption,
+  type AskHumanFormQuestion,
+} from '@mantle/client-types';
 
 export type PendingRow = {
   id: string;
@@ -21,23 +28,16 @@ export type PendingRow = {
   executedAt: string | null;
 };
 
-/** Structured questionnaire, as authored in the run plan and copied verbatim
- *  onto the pending row (`args.form`). Mirrors `AskHumanForm` in
- *  @mantle/tools — duplicated rather than imported because this is client
- *  code and the server package pulls in the database. */
-export type FormOption = { label: string; description?: string };
-export type FormQuestion = {
-  id: string;
-  header?: string;
-  question: string;
-  options: FormOption[];
-  multi_select?: boolean;
-  allow_other?: boolean;
-};
-export type AskForm = { questions: FormQuestion[] };
-
-/** One answered sub-question, as sent to PATCH /api/pending/:id. */
-export type FormAnswer = { question: string; selected: string[]; other?: string };
+/** The questionnaire contract — types AND caps — comes from
+ *  @mantle/client-types, the dependency-free package the SERVER parser and
+ *  answer path validate against too. Re-exported under the local names this
+ *  UI already uses. Single-sourcing it is what stops the renderer and the
+ *  parser disagreeing about what a valid form is. */
+export type FormOption = AskHumanFormOption;
+export type FormQuestion = AskHumanFormQuestion;
+export type AskForm = AskHumanForm;
+export type FormAnswer = AskHumanFormAnswer;
+export { ASK_HUMAN_FORM_LIMITS };
 
 /** A decision, optionally carrying a free-text answer and/or structured
  *  questionnaire answers (`ask_human`). */
@@ -76,7 +76,10 @@ export function parseForm(v: unknown): AskForm | null {
   const rawQuestions = (v as Record<string, unknown>).questions;
   if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) return null;
   const questions: FormQuestion[] = [];
-  for (let i = 0; i < rawQuestions.length; i += 1) {
+  // Honour the SAME cap the API enforces on submission: rendering a
+  // 5-question form the route will reject with a 400 wastes the operator's
+  // time and gives them no way to succeed.
+  for (let i = 0; i < Math.min(rawQuestions.length, ASK_HUMAN_FORM_LIMITS.maxQuestions); i += 1) {
     const q = rawQuestions[i];
     if (!q || typeof q !== 'object' || Array.isArray(q)) continue;
     const o = q as Record<string, unknown>;
@@ -94,9 +97,14 @@ export function parseForm(v: unknown): AskForm | null {
           })
           .filter((x): x is FormOption => x !== null)
       : [];
+    const header = str(o.header);
     questions.push({
-      id: str(o.id) ?? `q${i + 1}`,
-      ...(str(o.header) ? { header: str(o.header)! } : {}),
+      // Mirror the SERVER's fallback exactly (explicit id → slugified header
+      // → positional). The answer is submitted under this id, so a client
+      // that derived it differently would answer a question the engine
+      // cannot match.
+      id: str(o.id) ?? (header ? header.toLowerCase().replace(/[^a-z0-9]+/g, '-') : `q${i + 1}`),
+      ...(header ? { header } : {}),
       question,
       options,
       ...(o.multi_select === true ? { multi_select: true } : {}),
@@ -117,4 +125,21 @@ export function questionPreview(row: PendingRow, max = 90): string {
       : 'A run needs an answer.');
   const oneLine = q.replace(/\s+/g, ' ').trim();
   return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max - 1)}…`;
+}
+
+/**
+ * "3m ago" for a queued-at timestamp. Shared by every pending surface: it was
+ * duplicated in the card and on /pending with *different* behaviour past 24h,
+ * so the same row read differently depending on where you looked.
+ * Deliberately coarse — it does not tick, and nothing here needs it to.
+ */
+export function fmtRelative(iso: string): string {
+  const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days < 7 ? `${days}d ago` : new Date(iso).toLocaleDateString('en-GB');
 }

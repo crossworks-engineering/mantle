@@ -26,6 +26,9 @@ type ToastApi = {
 
 const ToastContext = createContext<ToastApi | null>(null);
 
+/** Most toasts the stack will show at once (oldest are dropped past this). */
+const MAX_VISIBLE = 4;
+
 /**
  * Lightweight toast queue. No deps; bottom-right stack; auto-dismiss
  * with manual close. Drops into the app shell once and is used via
@@ -46,7 +49,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     (t) => {
       const id = Date.now() + Math.random();
       const durationMs = t.durationMs ?? 5000;
-      setToasts((prev) => [...prev, { ...t, id, durationMs }]);
+      // Cap the stack. Sticky toasts (durationMs: 0) never self-dismiss, so a
+      // burst — a run fanning out several questions at once — would otherwise
+      // paper over the lower-right corner permanently, each one swallowing
+      // clicks. Oldest drop off; the surfaces they point at still hold them.
+      setToasts((prev) => [...prev, { ...t, id, durationMs }].slice(-MAX_VISIBLE));
       if (durationMs > 0) {
         setTimeout(() => remove(id), durationMs);
       }

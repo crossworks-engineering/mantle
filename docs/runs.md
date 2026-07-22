@@ -183,7 +183,11 @@ close that:
   because `@mantle/tools` already imports `@mantle/runs` — the reverse edge
   would be a cycle. The action is **advisory**: losing it loses a ping, never
   correctness, so it gets no sweep re-send and a throwing notifier is
-  swallowed. It is also fired **detached** (`void`), never awaited: the same
+  swallowed. **Telegram announces a question, it never answers one**: a
+  question arrives as a plain notice with NO buttons (the card can only say
+  yes/no, and a tap would be recorded as the operator's answer to a question
+  that asked something else). Ordinary confirm-gated tool approvals keep their
+  two-button card. The fan-out is also fired **detached** (`void`), never awaited: the same
   call is awaited by `settleAskHuman` before it writes `executed_at`, and a
   Telegram request that hangs (client default: 500 s) would otherwise hold an
   answered question in the decided-but-unsettled window until sweep duty 4c

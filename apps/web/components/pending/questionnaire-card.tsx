@@ -7,8 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { cn } from '@/lib/utils';
+import Link from 'next/link';
 import {
   ASK_HUMAN_SLUG,
+  fmtRelative,
   parseForm,
   RUN_BUDGET_SLUG,
   str,
@@ -18,8 +20,6 @@ import {
   type FormQuestion,
   type PendingRow,
 } from './types';
-
-const OTHER = '__other__';
 
 /**
  * The answer surface for a question the system is blocked on — a runner
@@ -42,6 +42,8 @@ const OTHER = '__other__';
 export type CardDraft = {
   picked: Record<string, string[]>;
   other: Record<string, string>;
+  /** Which questions have the free-text escape open. */
+  otherOpen: Record<string, boolean>;
   freeText: string;
 };
 
@@ -78,12 +80,33 @@ export function QuestionnaireCard({
   // visible slice — does not silently throw away half a filled-in form.
   const [picked, setPicked] = useState<Record<string, string[]>>(() => draft?.picked ?? {});
   const [other, setOther] = useState<Record<string, string>>(() => draft?.other ?? {});
+  // Which questions have the "Other…" escape OPEN. Its own map on purpose: an
+  // in-band sentinel stored among the picked labels collides with a real
+  // option that happens to carry the sentinel's text.
+  const [otherOpen, setOtherOpen] = useState<Record<string, boolean>>(() => draft?.otherOpen ?? {});
   const [freeText, setFreeText] = useState(() => draft?.freeText ?? '');
 
   // Mirror on every change rather than on unmount: React does not guarantee a
   // cleanup runs before the parent discards the subtree in every path.
   const remember = (next: Partial<CardDraft>) =>
-    onDraftChange?.({ picked, other, freeText, ...next });
+    onDraftChange?.({ picked, other, otherOpen, freeText, ...next });
+
+  const toggleOther = (q: FormQuestion) => {
+    setOtherOpen((prev) => {
+      const next = { ...prev, [q.id]: !prev[q.id] };
+      remember({ otherOpen: next });
+      return next;
+    });
+    // Single-select: opening "Other" IS the answer, so clear any chip pick
+    // (and vice versa in `toggle`) — otherwise both read as chosen.
+    if (!q.multi_select && !otherOpen[q.id]) {
+      setPicked((prev) => {
+        const next = { ...prev, [q.id]: [] };
+        remember({ picked: next });
+        return next;
+      });
+    }
+  };
 
   const toggle = (q: FormQuestion, label: string) => {
     setPicked((prev) => {
@@ -101,17 +124,25 @@ export function QuestionnaireCard({
       remember({ picked: next });
       return next;
     });
+    // Picking a chip closes a single-select question's "Other" escape.
+    if (!q.multi_select && otherOpen[q.id]) {
+      setOtherOpen((prev) => {
+        const next = { ...prev, [q.id]: false };
+        remember({ otherOpen: next });
+        return next;
+      });
+    }
   };
 
   // Answerable when every question has a selection, or "Other" text.
   const answers: FormAnswer[] = useMemo(() => {
     if (!form) return [];
     return form.questions.map((q) => {
-      const sel = (picked[q.id] ?? []).filter((l) => l !== OTHER);
-      const otherText = (picked[q.id] ?? []).includes(OTHER) ? (other[q.id] ?? '').trim() : '';
+      const sel = picked[q.id] ?? [];
+      const otherText = otherOpen[q.id] ? (other[q.id] ?? '').trim() : '';
       return { question: q.id, selected: sel, ...(otherText ? { other: otherText } : {}) };
     });
-  }, [form, picked, other]);
+  }, [form, picked, other, otherOpen]);
 
   const formComplete =
     !!form && answers.every((a) => a.selected.length > 0 || (a.other ?? '').length > 0);
@@ -143,18 +174,22 @@ export function QuestionnaireCard({
           <p className="text-sm font-medium leading-snug text-foreground">
             {question ?? (isBudget ? 'A run is paused on its budget.' : 'A run needs an answer.')}
           </p>
-          {!compact && (
-            <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span>{isBudget ? 'Budget decision' : 'Question'}</span>
-              <span aria-hidden>·</span>
-              <span>queued {fmtRelative(row.createdAt)}</span>
-              {runId && (
-                <a href={`/runs?run=${runId}`} className="underline hover:text-foreground">
-                  ↗ run
-                </a>
-              )}
-            </p>
-          )}
+          {/* Even compact keeps the run link: three questions from three
+              different runs are otherwise indistinguishable in the strip. */}
+          <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {!compact && (
+              <>
+                <span>{isBudget ? 'Budget decision' : 'Question'}</span>
+                <span aria-hidden>·</span>
+              </>
+            )}
+            <span>queued {fmtRelative(row.createdAt)}</span>
+            {runId && (
+              <Link href={`/runs?run=${runId}`} className="underline hover:text-foreground">
+                ↗ run
+              </Link>
+            )}
+          </p>
         </div>
       </div>
 
@@ -163,7 +198,7 @@ export function QuestionnaireCard({
         <div className="space-y-3">
           {form.questions.map((q) => {
             const sel = picked[q.id] ?? [];
-            const otherOn = sel.includes(OTHER);
+            const otherOn = !!otherOpen[q.id];
             return (
               <fieldset key={q.id} className="space-y-1.5">
                 <legend className="flex flex-wrap items-baseline gap-2">
@@ -179,7 +214,15 @@ export function QuestionnaireCard({
                     </span>
                   )}
                 </legend>
-                <div className="grid gap-1.5 sm:grid-cols-2">
+                {/* An exclusive choice is a RADIO GROUP, not a bank of
+                    independent toggles: aria-pressed on N buttons tells a
+                    screen-reader user nothing about them being mutually
+                    exclusive. */}
+                <div
+                  className="grid gap-1.5 sm:grid-cols-2"
+                  role={q.multi_select ? 'group' : 'radiogroup'}
+                  aria-label={q.question}
+                >
                   {q.options.map((opt) => {
                     const on = sel.includes(opt.label);
                     return (
@@ -188,7 +231,8 @@ export function QuestionnaireCard({
                         type="button"
                         onClick={() => toggle(q, opt.label)}
                         disabled={busy}
-                        aria-pressed={on}
+                        role={q.multi_select ? 'checkbox' : 'radio'}
+                        aria-checked={on}
                         className={cn(
                           'flex flex-col items-start gap-0.5 rounded-md border px-2.5 py-2 text-left text-sm transition-colors disabled:opacity-60',
                           on
@@ -216,9 +260,10 @@ export function QuestionnaireCard({
                   {q.allow_other !== false && (
                     <button
                       type="button"
-                      onClick={() => toggle(q, OTHER)}
+                      onClick={() => toggleOther(q)}
                       disabled={busy}
-                      aria-pressed={otherOn}
+                      role={q.multi_select ? 'checkbox' : 'radio'}
+                      aria-checked={otherOn}
                       className={cn(
                         'rounded-md border border-dashed px-2.5 py-2 text-left text-sm transition-colors disabled:opacity-60',
                         otherOn
@@ -324,19 +369,17 @@ export function QuestionnaireCard({
           they'd be a second, ambiguous way to answer — omit them there. */}
       {!form && (
         <div className="flex gap-2">
-          <Button
-            onClick={() => decide(row.id, 'approve')}
-            disabled={busy}
-            size="sm"
-            className="bg-emerald-600 text-white hover:bg-emerald-700"
-          >
+          {/* Semantic action colours come from TOKENS (style guide §2):
+              affirmative = primary, the destructive arm = destructive.
+              A literal emerald/red ignores the ~40 themes. */}
+          <Button onClick={() => decide(row.id, 'approve')} disabled={busy} size="sm">
             <Check /> {isBudget ? 'Raise budget' : 'Approve'}
           </Button>
           <Button
             onClick={() => decide(row.id, 'reject')}
             disabled={busy}
             size="sm"
-            variant="outline"
+            variant={isBudget ? 'destructive' : 'outline'}
           >
             <X /> {isBudget ? 'Cancel run' : 'Reject'}
           </Button>
@@ -344,15 +387,4 @@ export function QuestionnaireCard({
       )}
     </div>
   );
-}
-
-function fmtRelative(iso: string): string {
-  const then = new Date(iso).getTime();
-  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (secs < 60) return `${secs}s ago`;
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
 }

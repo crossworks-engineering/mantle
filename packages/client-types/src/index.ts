@@ -554,3 +554,65 @@ export type TurnEvent =
   | (TurnEventBase & { type: 'text-delta'; data: TurnTextDeltaData })
   | (TurnEventBase & { type: 'done'; data: TurnDoneData })
   | (TurnEventBase & { type: 'error'; data: TurnErrorData });
+
+// ── ask_human questionnaire (runner queues) ───────────────────────────────────
+// THE single source of truth for the questionnaire contract. The plan parser
+// (@mantle/tools) validates against these caps, the answer path (@mantle/runs)
+// re-checks submissions against them, and the client renders whatever they
+// admit. They lived in three places once and immediately disagreed — the
+// client's id fallback diverged from the server's, and the client had no
+// question cap while the API capped answers at 4, so a 5-question form
+// rendered fine and then 400'd on submit.
+
+/** One selectable answer. `description` is the muted subtext on the chip. */
+export interface AskHumanFormOption {
+  label: string;
+  description?: string;
+}
+
+/** One sub-question of a questionnaire. `id` is the routing key answers are
+ *  submitted under; `header` is the short chip shown beside the question. */
+export interface AskHumanFormQuestion {
+  id: string;
+  header?: string;
+  question: string;
+  options: AskHumanFormOption[];
+  multi_select?: boolean;
+  /** Free-text escape. Defaults ON — a question whose options don't fit and
+   *  offers no way to say so forces a wrong answer. */
+  allow_other?: boolean;
+}
+
+export interface AskHumanForm {
+  questions: AskHumanFormQuestion[];
+}
+
+/** One answered sub-question, as submitted to `PATCH /api/pending/:id` and
+ *  `pending_approve`. `question` is the form question's `id`. */
+export interface AskHumanFormAnswer {
+  question: string;
+  selected: string[];
+  other?: string;
+}
+
+/**
+ * Caps on a questionnaire. These are a CONTRACT, not advice: every answer
+ * surface renders whatever the parser admits, so an unbounded form is an
+ * unanswerable screen — and a cap enforced on only one side is a 400 the
+ * operator can't act on.
+ */
+export const ASK_HUMAN_FORM_LIMITS = {
+  /** Ask more than this and the answers to the first few probably change what
+   *  you still need to ask — use a later `ask_human` step. */
+  maxQuestions: 4,
+  maxOptions: 8,
+  /** A header renders as a chip, not a sentence. */
+  maxHeaderChars: 24,
+  maxQuestionChars: 300,
+  maxLabelChars: 80,
+  maxDescriptionChars: 200,
+  maxOtherChars: 2_000,
+  /** The form rides in `run_items.payload` AND the pending row's args, and
+   *  both are read into prompts. */
+  maxFormJsonBytes: 8_000,
+} as const;

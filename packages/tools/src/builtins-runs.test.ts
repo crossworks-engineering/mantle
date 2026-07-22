@@ -140,6 +140,70 @@ describe('ask_human form parsing', () => {
     expect(ask({ question: 'q', form: { questions: [{ question: 'Why?' }] } }).ok).toBe(true);
   });
 
+  it('refuses an over-long label, an over-long question, and an oversized form', () => {
+    const longLabel = ask({
+      question: 'q',
+      form: { questions: [{ question: 'pick', options: ['x'.repeat(81)] }] },
+    });
+    expect(longLabel.ok).toBe(false);
+    if (!longLabel.ok) expect(longLabel.error).toMatch(/at most 80/);
+
+    // A single huge question satisfies the byte budget while making a mockery
+    // of "answerable at a glance".
+    const longQuestion = ask({
+      question: 'q',
+      form: { questions: [{ question: 'x'.repeat(301), options: ['a'] }] },
+    });
+    expect(longQuestion.ok).toBe(false);
+    if (!longQuestion.ok) expect(longQuestion.error).toMatch(/at most 300/);
+
+    // ...and the whole-form byte cap still backstops the sum of the parts.
+    const huge = ask({
+      question: 'q',
+      form: {
+        questions: Array.from({ length: 4 }, (_, i) => ({
+          question: `q${i} ${'y'.repeat(280)}`,
+          options: Array.from({ length: 8 }, (_, j) => ({
+            label: `opt${j}`,
+            description: 'z'.repeat(200),
+          })),
+        })),
+      },
+    });
+    expect(huge.ok).toBe(false);
+    if (!huge.ok) expect(huge.error).toMatch(/at most 8000/);
+  });
+
+  it('refuses duplicate option labels — labels ARE the recorded answer', () => {
+    const res = ask({
+      question: 'q',
+      form: {
+        questions: [
+          {
+            question: 'pick',
+            options: [
+              { label: 'same', description: 'first' },
+              { label: 'same', description: 'second' },
+            ],
+          },
+        ],
+      },
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/duplicate option label/);
+  });
+
+  it('refuses a stringy boolean instead of silently defaulting', () => {
+    for (const flag of ['allow_other', 'multi_select']) {
+      const res = ask({
+        question: 'q',
+        form: { questions: [{ question: 'pick', options: ['a'], [flag]: 'false' }] },
+      });
+      expect(res.ok, `${flag} accepted a string`).toBe(false);
+      if (!res.ok) expect(res.error).toMatch(new RegExp(`'${flag}' must be true or false`));
+    }
+  });
+
   it('refuses a malformed form rather than silently dropping it', () => {
     expect(ask({ question: 'q', form: { questions: [] } }).ok).toBe(false);
     expect(ask({ question: 'q', form: [] }).ok).toBe(false);

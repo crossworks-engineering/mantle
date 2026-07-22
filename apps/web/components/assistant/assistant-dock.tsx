@@ -697,7 +697,7 @@ export function AssistantButton() {
       variant={open ? 'default' : needsYou ? 'default' : 'ghost'}
       className={cn(
         'relative',
-        needsYou && 'animate-pulse ring-2 ring-primary ring-offset-1 ring-offset-sidebar',
+        needsYou && 'mantle-attention-pulse ring-2 ring-primary ring-offset-1 ring-offset-sidebar',
       )}
       aria-pressed={open}
       aria-label={

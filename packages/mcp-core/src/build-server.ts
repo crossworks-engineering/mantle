@@ -58,6 +58,7 @@ import {
   MAX_UPLOAD_BYTES,
 } from '@mantle/files';
 import {
+  ASK_HUMAN_FORM_LIMITS as FORM_LIMITS,
   approvePendingCall,
   getPendingCall,
   listPendingCalls,
@@ -613,11 +614,18 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
         .array(
           z.object({
             question: z.string().max(200).describe("The form question's id, e.g. 'env'"),
-            selected: z.array(z.string().max(200)).max(8).describe('Chosen option labels'),
-            other: z.string().max(2000).optional().describe('Free text when no option fits'),
+            selected: z
+              .array(z.string().max(FORM_LIMITS.maxLabelChars))
+              .max(FORM_LIMITS.maxOptions)
+              .describe('Chosen option labels'),
+            other: z
+              .string()
+              .max(FORM_LIMITS.maxOtherChars)
+              .optional()
+              .describe('Free text when no option fits'),
           }),
         )
-        .max(4)
+        .max(FORM_LIMITS.maxQuestions)
         .optional()
         .describe("Structured answers, one entry per question in the row's `form`"),
     },

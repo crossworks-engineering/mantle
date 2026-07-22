@@ -8,7 +8,12 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { QuestionnaireCard } from '@/components/pending/questionnaire-card';
 import { invalidatePending } from '@/components/pending/use-pending-questions';
-import { isQuestionRow, type Decide, type PendingRow } from '@/components/pending/types';
+import {
+  fmtRelative,
+  isQuestionRow,
+  type Decide,
+  type PendingRow,
+} from '@/components/pending/types';
 
 export function PendingClient({ devMode = false }: { devMode?: boolean }) {
   const queryClient = useQueryClient();
@@ -242,14 +247,4 @@ function PendingCard({ row, decide, busy }: { row: PendingRow; decide: Decide; b
       </div>
     </li>
   );
-}
-
-function fmtRelative(iso: string): string {
-  const d = new Date(iso).getTime();
-  const diff = Date.now() - d;
-  const s = Math.round(diff / 1000);
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return new Date(iso).toLocaleDateString('en-GB');
 }

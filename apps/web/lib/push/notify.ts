@@ -7,7 +7,7 @@
 
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, assistantMessages } from '@mantle/db';
-import { countPending } from '@mantle/tools';
+import { countPending, listPendingCalls } from '@mantle/tools';
 import { loadProfilePreferences } from '@mantle/content';
 import { sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
@@ -134,13 +134,19 @@ export async function pushOutbound(ownerId: string, agentSlug: string): Promise<
   return { attempted: devices.length, delivered, dropped };
 }
 
+/** One-line clip for a lock-screen body: collapse whitespace, cap, ellipsis. */
+function clip(s: string, max: number): string {
+  const one = s.replace(/\s+/g, ' ').trim();
+  return one.length <= max ? one : `${one.slice(0, max - 1)}…`;
+}
+
 /**
  * Push a pending-approval nudge to the owner's devices — unless the approvals
  * trigger is off, or the operator's last communication channel isn't the
  * companion app. Approvals follow `reminderChannel` (the sticky last-channel
  * signal, see docs/reminder-delivery-routing.md): a `telegram`/unset operator
- * gets the one-tap Telegram card instead (pending-notify.ts), so pushing here
- * too would double-notify. Only the `mobile` channel routes to a device push.
+ * gets the Telegram notice instead (pending-notify.ts), so pushing here too
+ * would double-notify. Only the `mobile` channel routes to a device push.
  * Collapses on "approvals" so repeated nudges supersede.
  */
 export async function pushApproval(ownerId: string): Promise<PushResult> {
@@ -162,10 +168,27 @@ export async function pushApproval(ownerId: string): Promise<PushResult> {
   const count = await countPending(ownerId);
   if (count === 0) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_message' };
 
+  // A runner QUESTION gets its text on the lock screen. "An action needs your
+  // approval" is fine for a confirm-gated tool — the operator taps through and
+  // sees what it was — but a parked run is blocking until answered, and
+  // knowing WHICH decision is waiting is what makes it worth stopping for.
+  const newest = (await listPendingCalls(ownerId, { status: 'pending', limit: 1 }))[0];
+  const question =
+    newest?.toolSlug === 'ask_human'
+      ? ((newest.args?.['question'] as string | undefined)?.trim() ?? '')
+      : '';
+  const body = question
+    ? count === 1
+      ? `A run needs your answer: ${clip(question, 120)}`
+      : `${clip(question, 100)} (+${count - 1} more waiting)`
+    : count === 1
+      ? 'An action needs your approval.'
+      : `${count} actions need your approval.`;
+
   const payload: PushPayload = {
     v: 1,
     t: 'Mantle',
-    b: count === 1 ? 'An action needs your approval.' : `${count} actions need your approval.`,
+    b: body,
     deepLink: '/pending',
     ts: Date.now(),
   };

@@ -125,11 +125,21 @@ export async function notifyPendingCreated(input: {
     if (!chat) return;
     const account = await accountById(chat.accountId);
     if (!account) return;
+    // A runner question is delivered as a heads-up, never as an approval
+    // card: Telegram can only say yes/no, and a yes would be recorded as the
+    // operator's ANSWER. `previewArgs` also can't show a questionnaire (it
+    // renders `form={…}`), so the sub-questions would be invisible anyway.
+    const question =
+      input.toolSlug === 'ask_human'
+        ? ((input.args?.['question'] as string | undefined)?.trim() ??
+          'A run is waiting on a decision.')
+        : undefined;
     await sendApprovalCard(account, chat.telegramChatId, {
       pendingId: input.pendingId,
       toolSlug: input.toolSlug,
       argsPreview: previewArgs(input.args),
       via: input.via,
+      ...(question ? { question } : {}),
     });
   } catch (err) {
     console.error(

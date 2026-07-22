@@ -72,14 +72,10 @@ export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './builtins-journal';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
-export {
-  RUN_TOOLS,
-  BANNED_ITEM_TOOLS,
-  parsePlan,
-  type AskHumanForm,
-  type AskHumanFormOption,
-  type AskHumanFormQuestion,
-} from './builtins-runs';
+export { RUN_TOOLS, BANNED_ITEM_TOOLS, parsePlan } from './builtins-runs';
+// Re-exported so MCP/route layers can pin their input caps to the SAME
+// contract the plan parser validates against (they already depend on us).
+export { ASK_HUMAN_FORM_LIMITS } from '@mantle/client-types';
 export { seedBuiltinTools, closeToolInputSchema } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
 export { isPublicToolAllowed } from './readonly-tools';

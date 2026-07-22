@@ -34,6 +34,12 @@ import {
   type PlanLeaf,
   type PlanNode,
 } from '@mantle/runs';
+import {
+  ASK_HUMAN_FORM_LIMITS,
+  type AskHumanForm,
+  type AskHumanFormOption,
+  type AskHumanFormQuestion,
+} from '@mantle/client-types';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { resolveTools } from './dispatch';
 import { notFound } from './errors';
@@ -60,30 +66,22 @@ const MAX_PLAN_DEPTH = 4;
 const MAX_PLAN_NODES = 50;
 
 // ── ask_human questionnaire form (WP1) ───────────────────────────────────────
-// A question can carry a structured `form` instead of one flat option list:
-// up to 4 sub-questions, each with labelled options + descriptions and an
-// "Other" free-text escape. The caps exist so a question stays ANSWERABLE at a
-// glance — a 20-field form is a document, not a gate, and it has to render in
-// the assistant panel column as well as on /pending.
-const MAX_FORM_QUESTIONS = 4;
-const MAX_FORM_OPTIONS = 8;
-const MAX_HEADER_CHARS = 24;
-const MAX_LABEL_CHARS = 80;
-const MAX_DESCRIPTION_CHARS = 200;
-/** Payload guard — the form rides in run_items.payload AND the pending row's
- *  args, and both are read into prompts. */
-const MAX_FORM_JSON_BYTES = 8_000;
+// A question can carry a structured `form` instead of one flat option list.
+// The shape and its caps are single-sourced in @mantle/client-types so the
+// parser, the answer path and the renderer cannot drift.
+const L = ASK_HUMAN_FORM_LIMITS;
 
-export type AskHumanFormOption = { label: string; description?: string };
-export type AskHumanFormQuestion = {
-  id: string;
-  header?: string;
-  question: string;
-  options: AskHumanFormOption[];
-  multi_select?: boolean;
-  allow_other?: boolean;
-};
-export type AskHumanForm = { questions: AskHumanFormQuestion[] };
+/** A boolean flag that must be an ACTUAL boolean. `allow_other: "false"` (a
+ *  plausible model slip) silently fell through to the default before, which
+ *  meant the operator got an escape hatch the plan thought it had removed —
+ *  or vice versa. Refuse instead of guessing. */
+function boolFlag(v: unknown, name: string, at: string): { value?: boolean; error?: string } {
+  if (v === undefined || v === null) return {};
+  if (typeof v === 'boolean') return { value: v };
+  return {
+    error: `plan${at}: '${name}' must be true or false, not ${JSON.stringify(v)}`,
+  };
+}
 
 /**
  * Validate + normalise `form` on an ask_human leaf. Returns `{ form }` when
@@ -103,9 +101,9 @@ function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; e
   if (!Array.isArray(questionsRaw) || questionsRaw.length === 0) {
     return { error: `plan${path}: form.questions must be a non-empty array` };
   }
-  if (questionsRaw.length > MAX_FORM_QUESTIONS) {
+  if (questionsRaw.length > L.maxQuestions) {
     return {
-      error: `plan${path}: form.questions has ${questionsRaw.length} entries — at most ${MAX_FORM_QUESTIONS}. Split the rest into a later ask_human step (the answers to this one may change what you still need to ask).`,
+      error: `plan${path}: form.questions has ${questionsRaw.length} entries — at most ${L.maxQuestions}. Split the rest into a later ask_human step (the answers to this one may change what you still need to ask).`,
     };
   }
   const questions: AskHumanFormQuestion[] = [];
@@ -119,19 +117,33 @@ function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; e
     const o = q as Record<string, unknown>;
     const question = typeof o.question === 'string' ? o.question.trim() : '';
     if (!question) return { error: `plan${at}: needs a non-empty 'question'` };
-    const header = typeof o.header === 'string' ? o.header.trim() : '';
-    if (header.length > MAX_HEADER_CHARS) {
+    // The 8 KB whole-form cap alone let ONE 7.5 KB question through, which
+    // satisfies the byte budget while making a mockery of the "answerable at
+    // a glance" contract the caps exist to enforce.
+    if (question.length > L.maxQuestionChars) {
       return {
-        error: `plan${at}: 'header' is ${header.length} chars — at most ${MAX_HEADER_CHARS} (it renders as a chip, not a sentence; put the detail in 'question')`,
+        error: `plan${at}: 'question' is ${question.length} chars — at most ${L.maxQuestionChars}. It is a prompt for a decision, not a briefing; put the background in the step's note.`,
       };
     }
-    const optionsRaw = Array.isArray(o.options) ? o.options : [];
-    if (optionsRaw.length > MAX_FORM_OPTIONS) {
+    const header = typeof o.header === 'string' ? o.header.trim() : '';
+    if (header.length > L.maxHeaderChars) {
       return {
-        error: `plan${at}: ${optionsRaw.length} options — at most ${MAX_FORM_OPTIONS}. Offer the common cases and let 'allow_other' cover the rest.`,
+        error: `plan${at}: 'header' is ${header.length} chars — at most ${L.maxHeaderChars} (it renders as a chip, not a sentence; put the detail in 'question')`,
+      };
+    }
+    const multi = boolFlag(o.multi_select, 'multi_select', at);
+    if (multi.error) return { error: multi.error };
+    const allow = boolFlag(o.allow_other, 'allow_other', at);
+    if (allow.error) return { error: allow.error };
+
+    const optionsRaw = Array.isArray(o.options) ? o.options : [];
+    if (optionsRaw.length > L.maxOptions) {
+      return {
+        error: `plan${at}: ${optionsRaw.length} options — at most ${L.maxOptions}. Offer the common cases and let 'allow_other' cover the rest.`,
       };
     }
     const options: AskHumanFormOption[] = [];
+    const seenLabels = new Set<string>();
     for (let j = 0; j < optionsRaw.length; j += 1) {
       const optRaw = optionsRaw[j];
       // A bare string is the obvious shorthand — accept it rather than
@@ -149,14 +161,23 @@ function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; e
       }
       const label = typeof opt.label === 'string' ? opt.label.trim() : '';
       if (!label) return { error: `plan${at}.options[${j}]: needs a non-empty 'label'` };
-      if (label.length > MAX_LABEL_CHARS) {
+      if (label.length > L.maxLabelChars) {
         return {
-          error: `plan${at}.options[${j}]: 'label' is ${label.length} chars — at most ${MAX_LABEL_CHARS}; move the explanation into 'description'`,
+          error: `plan${at}.options[${j}]: 'label' is ${label.length} chars — at most ${L.maxLabelChars}; move the explanation into 'description'`,
         };
       }
+      // Labels are the ANSWER VALUES (`selected` carries labels, and the card
+      // keys its selection state by them), so two identical labels would be
+      // indistinguishable in the answer and would highlight together.
+      if (seenLabels.has(label)) {
+        return {
+          error: `plan${at}.options[${j}]: duplicate option label '${label}' — labels are what the answer records, so each must be distinct`,
+        };
+      }
+      seenLabels.add(label);
       const description =
         typeof opt.description === 'string'
-          ? opt.description.trim().slice(0, MAX_DESCRIPTION_CHARS)
+          ? opt.description.trim().slice(0, L.maxDescriptionChars)
           : '';
       options.push({ label, ...(description ? { description } : {}) });
     }
@@ -165,7 +186,7 @@ function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; e
     // form, so one such question strands its answerable siblings too, leaving
     // the operator no exit but Reject (which fails the step). Catch it here,
     // where the author can still fix it, rather than at the surface.
-    const allowOther = o.allow_other !== false;
+    const allowOther = allow.value !== false;
     if (options.length === 0 && !allowOther) {
       return {
         error:
@@ -183,7 +204,7 @@ function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; e
       ...(header ? { header } : {}),
       question,
       options,
-      ...(o.multi_select === true ? { multi_select: true } : {}),
+      ...(multi.value === true ? { multi_select: true } : {}),
       // Default ON: a question with no escape hatch forces a wrong answer
       // when none of the options fit. Opt out explicitly.
       allow_other: allowOther,
@@ -191,9 +212,9 @@ function parseAskHumanForm(raw: unknown, path: string): { form?: AskHumanForm; e
   }
   const form: AskHumanForm = { questions };
   const bytes = JSON.stringify(form).length;
-  if (bytes > MAX_FORM_JSON_BYTES) {
+  if (bytes > L.maxFormJsonBytes) {
     return {
-      error: `plan${path}: the form is ${bytes} bytes — at most ${MAX_FORM_JSON_BYTES}. Shorten the descriptions or ask fewer things at once.`,
+      error: `plan${path}: the form is ${bytes} bytes — at most ${L.maxFormJsonBytes}. Shorten the descriptions or ask fewer things at once.`,
     };
   }
   return { form };

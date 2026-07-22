@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef } from 'react';
+import Link from 'next/link';
 import { HelpCircle } from 'lucide-react';
 import { QuestionnaireCard, type CardDraft } from './questionnaire-card';
 import { usePendingQuestions, useDecidePending } from './use-pending-questions';
@@ -37,13 +38,16 @@ export function PendingQuestionsStrip() {
   const hidden = ordered.length - shown.length;
 
   return (
-    // Height-bounded + self-scrolling: three questionnaires are taller than the
-    // viewport, and an unbounded strip pushes the composer off-screen entirely
-    // (measured: 970px of a 972px panel). Questions are urgent, but never so
-    // urgent that you lose the ability to type.
+    // Height-bounded + self-scrolling: three questionnaires are taller than
+    // the panel, and an unbounded strip pushes the composer off-screen
+    // entirely (measured: 970px of a 972px panel). Questions are urgent, but
+    // never so urgent that you lose the ability to type. The cap is a % of
+    // the FLEX PARENT, not of the viewport: the panel is shorter than the
+    // viewport (header + footer), so a vh cap loosened exactly where space
+    // was scarcest.
     <section
       aria-label="Questions waiting on you"
-      className="max-h-[45vh] shrink-0 overflow-y-auto scrollbar-thin border-b border-border bg-muted/30 px-4 py-3"
+      className="max-h-[45%] shrink-0 overflow-y-auto scrollbar-thin border-b border-border bg-muted/30 px-4 py-3"
     >
       <h2 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         <HelpCircle className="size-3.5" aria-hidden />
@@ -72,12 +76,12 @@ export function PendingQuestionsStrip() {
       </ul>
 
       {hidden > 0 && (
-        <a
+        <Link
           href="/pending"
           className="mt-2 inline-block text-xs underline text-muted-foreground hover:text-foreground"
         >
           {hidden} more waiting → /pending
-        </a>
+        </Link>
       )}
     </section>
   );

@@ -45,6 +45,22 @@ describe('pending-created notifier seam', () => {
     expect(console.error).toHaveBeenCalled();
   });
 
+  it('warns ONCE and drops when nothing is registered', async () => {
+    // Module state means this can only be observed on a FRESH module — once
+    // any test registers a notifier the slot never empties again. A process
+    // that creates questions but cannot announce them is a wiring bug worth
+    // seeing, but not worth a log line per question.
+    vi.resetModules();
+    const fresh = await import('./notify');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(
+      fresh.notifyPendingCreated({ ...NOTICE, args: { ...NOTICE.args } }),
+    ).resolves.toBeUndefined();
+    await fresh.notifyPendingCreated({ ...NOTICE, args: { ...NOTICE.args } });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(/no pending-created notifier registered/);
+  });
+
   it('last registration wins (module-load idempotence)', async () => {
     const first = vi.fn(async () => {});
     const second = vi.fn(async () => {});

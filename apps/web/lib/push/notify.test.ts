@@ -46,7 +46,7 @@ vi.mock('@mantle/db', () => {
   };
 });
 
-vi.mock('@mantle/tools', () => ({ countPending: vi.fn() }));
+vi.mock('@mantle/tools', () => ({ countPending: vi.fn(), listPendingCalls: vi.fn() }));
 vi.mock('@mantle/content', () => ({ loadProfilePreferences: vi.fn() }));
 vi.mock('./seal', () => ({ sealToDevice: vi.fn() }));
 vi.mock('./relay-client', () => ({ relayNotify: vi.fn() }));
@@ -59,7 +59,7 @@ vi.mock('./store', () => ({
 }));
 
 import { pushOutbound, pushApproval } from './notify';
-import { countPending } from '@mantle/tools';
+import { countPending, listPendingCalls } from '@mantle/tools';
 import { loadProfilePreferences } from '@mantle/content';
 import { sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
@@ -96,6 +96,8 @@ beforeEach(() => {
   vi.mocked(sealToDevice).mockResolvedValue('ciphertext');
   vi.mocked(relayNotify).mockResolvedValue({ ok: true, status: 200 });
   vi.mocked(countPending).mockResolvedValue(1);
+  // Default: an ordinary confirm-gated tool, not a runner question.
+  vi.mocked(listPendingCalls).mockResolvedValue([]);
   // Approvals only push when the operator's last channel is the companion app.
   // Default to that here; the wrong-channel case overrides.
   vi.mocked(loadProfilePreferences).mockResolvedValue({
@@ -242,6 +244,8 @@ describe('pushApproval', () => {
 
   it('delivers a singular nudge collapsed on "approvals"', async () => {
     vi.mocked(countPending).mockResolvedValue(1);
+    // Default: an ordinary confirm-gated tool, not a runner question.
+    vi.mocked(listPendingCalls).mockResolvedValue([]);
     const res = await pushApproval('owner');
     expect(res).toEqual({ attempted: 1, delivered: 1, dropped: 0 });
 
@@ -259,5 +263,27 @@ describe('pushApproval', () => {
     await pushApproval('owner');
     const body = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]).b as string;
     expect(body).toBe('3 actions need your approval.');
+  });
+
+  it('puts a runner QUESTION on the lock screen instead of the generic nudge', async () => {
+    // A parked run is blocking until answered — knowing WHICH decision is
+    // waiting is what makes it worth stopping for. "An action needs your
+    // approval" is fine for a tool you'll see when you tap through.
+    vi.mocked(listPendingCalls).mockResolvedValue([
+      { toolSlug: 'ask_human', args: { question: 'Deploy to production?' } },
+    ] as never);
+    await pushApproval('owner');
+    const body = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]).b as string;
+    expect(body).toBe('A run needs your answer: Deploy to production?');
+  });
+
+  it('mentions the others when more than one is waiting', async () => {
+    vi.mocked(countPending).mockResolvedValue(3);
+    vi.mocked(listPendingCalls).mockResolvedValue([
+      { toolSlug: 'ask_human', args: { question: 'Deploy to production?' } },
+    ] as never);
+    await pushApproval('owner');
+    const body = JSON.parse(vi.mocked(sealToDevice).mock.calls[0]![1]).b as string;
+    expect(body).toBe('Deploy to production? (+2 more waiting)');
   });
 });

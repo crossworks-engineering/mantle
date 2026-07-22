@@ -63,9 +63,37 @@ export function parseApprovalCallback(
 export async function sendApprovalCard(
   account: TelegramAccount,
   chatId: string,
-  card: { pendingId: string; toolSlug: string; argsPreview?: string; via?: string },
+  card: {
+    pendingId: string;
+    toolSlug: string;
+    argsPreview?: string;
+    via?: string;
+    /** A runner question (`ask_human`): NOTIFY ONLY — see below. */
+    question?: string;
+  },
 ): Promise<number> {
   const bot = await botFor(account);
+
+  // A QUESTION IS NOT AN APPROVAL. Telegram's card can only say yes or no,
+  // but a run's question asks *what* to do — sometimes across several
+  // sub-questions whose options don't even fit in a chat message. A yes here
+  // would be recorded as the operator's answer, and the run would carry on
+  // having learned nothing. So a question gets a heads-up with NO buttons:
+  // it tells you a run is waiting, and the app is where you answer it.
+  if (card.question) {
+    const sentNotice = await bot.api.sendMessage(
+      chatId,
+      [
+        '❓ A run needs your answer',
+        '',
+        card.question,
+        '',
+        'Answer it in Mantle (Pending approvals) — this question needs more than a yes/no.',
+      ].join('\n'),
+    );
+    return sentNotice.message_id;
+  }
+
   const lines = [
     '🔐 *Approval needed*',
     `Tool: \`${card.toolSlug}\``,
