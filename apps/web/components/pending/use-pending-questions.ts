@@ -1,10 +1,24 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { isQuestionRow, type Decide, type PendingRow } from './types';
+
+/** The app-wide open-questions slice. Distinct from `['pending']`, which
+ *  /pending owns for its full list + history. */
+export const PENDING_QUESTIONS_KEY = ['pending-questions'] as const;
+
+/** Refresh BOTH pending views. Any decision — here, on /pending, from
+ *  Telegram, in another tab — changes both, and a surface that missed the
+ *  invalidation would show a question that is already answered. */
+export function invalidatePending(queryClient: QueryClient): Promise<void> {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: PENDING_QUESTIONS_KEY }),
+    queryClient.invalidateQueries({ queryKey: ['pending'] }),
+  ]).then(() => undefined);
+}
 
 /**
  * The operator's open questions — runner `ask_human` gates and `run_budget`
@@ -29,14 +43,20 @@ import { isQuestionRow, type Decide, type PendingRow } from './types';
 export function usePendingQuestions() {
   const queryClient = useQueryClient();
   const query = useQuery({
-    queryKey: ['pending'],
-    queryFn: () => apiFetch<{ pending: PendingRow[] }>('/api/pending?limit=200'),
+    // Its OWN key, deliberately not `['pending']`. This hook is mounted
+    // app-wide (the footer button, the watcher, the panel strip) and wants a
+    // narrow slice; /pending wants every row including history. Sharing one
+    // key with two different queryFns would make the payload depend on which
+    // observer happened to fetch first.
+    queryKey: PENDING_QUESTIONS_KEY,
+    // Narrow on the SERVER: only open rows, and only as many as could
+    // plausibly be shown. The old `?limit=200` with no status filter shipped
+    // every decided row's full args+result JSON to every page, just to
+    // compute a count.
+    queryFn: () => apiFetch<{ pending: PendingRow[] }>('/api/pending?status=pending&limit=50'),
   });
 
-  const invalidate = useCallback(
-    () => queryClient.invalidateQueries({ queryKey: ['pending'] }),
-    [queryClient],
-  );
+  const invalidate = useCallback(() => invalidatePending(queryClient), [queryClient]);
 
   const rows = query.data?.pending ?? [];
   const questions = rows.filter((r) => r.status === 'pending' && isQuestionRow(r));
@@ -61,10 +81,7 @@ export function usePendingQuestions() {
  */
 export function usePendingQuestionsSync(): void {
   const queryClient = useQueryClient();
-  const invalidate = useCallback(
-    () => void queryClient.invalidateQueries({ queryKey: ['pending'] }),
-    [queryClient],
-  );
+  const invalidate = useCallback(() => void invalidatePending(queryClient), [queryClient]);
   useRealtime(['pending_tool_call'], invalidate);
 }
 

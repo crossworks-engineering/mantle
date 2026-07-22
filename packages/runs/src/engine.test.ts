@@ -859,6 +859,88 @@ describe.skipIf(!ADMIN_URL)('runs engine (DB-backed)', () => {
     expect((await runRow(runId)).status).toBe('done');
   });
 
+  it('validates structured answers against the item form, and labels the prose', SLOW, async () => {
+    const form = {
+      questions: [
+        {
+          id: 'env',
+          header: 'Target',
+          question: 'Which environment?',
+          options: [{ label: 'staging' }, { label: 'production' }],
+          allow_other: true,
+        },
+        {
+          id: 'checks',
+          question: 'Which checks?',
+          options: [{ label: 'full' }],
+          allow_other: false,
+        },
+      ],
+    };
+    const mk = async () => {
+      const { rootItemId } = await createRun(db, {
+        ownerId: OWNER,
+        title: 'form answers',
+        plan: { kind: 'seq', children: [askHuman('Deploy?', { form })] },
+      });
+      return (await children(rootItemId))[0]!;
+    };
+
+    // Unknown question id — refused, item untouched, and the error TEACHES.
+    const a = await mk();
+    const unknown = await applyHumanAnswer(db, {
+      itemId: a.id,
+      ownerId: OWNER,
+      decision: 'answered',
+      answers: [{ question: 'nope', selected: [] }],
+    });
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) {
+      expect(unknown.reason).toBe('invalid_answers');
+      expect(unknown.error).toMatch(/not a question on this form/);
+    }
+    expect((await itemRow(a.id)).state).toBe('ready'); // still answerable
+
+    // A pick that is not one of the question's options.
+    const b = await mk();
+    const badPick = await applyHumanAnswer(db, {
+      itemId: b.id,
+      ownerId: OWNER,
+      decision: 'answered',
+      answers: [{ question: 'env', selected: ['prod'] }],
+    });
+    expect(badPick.ok).toBe(false);
+    if (!badPick.ok) expect(badPick.error).toMatch(/not an option/);
+
+    // Free text on a question that switched the escape off.
+    const c = await mk();
+    const badOther = await applyHumanAnswer(db, {
+      itemId: c.id,
+      ownerId: OWNER,
+      decision: 'answered',
+      answers: [{ question: 'checks', selected: ['full'], other: 'something else' }],
+    });
+    expect(badOther.ok).toBe(false);
+    if (!badOther.ok) expect(badOther.error).toMatch(/does not accept free text/);
+
+    // The happy path: accepted, and the prose is labelled by header/text —
+    // never the raw id, which tells a resumed responder nothing.
+    const d = await mk();
+    const ok = await applyHumanAnswer(db, {
+      itemId: d.id,
+      ownerId: OWNER,
+      decision: 'answered',
+      answers: [
+        { question: 'env', selected: ['production'] },
+        { question: 'checks', selected: ['full'] },
+      ],
+    });
+    expect(ok.ok).toBe(true);
+    const result = (await itemRow(d.id)).result as Record<string, unknown>;
+    expect(result.answer).toBe('Target: production\nWhich checks?: full');
+    expect(result.answers).toHaveLength(2);
+  });
+
   it('rejected: item failed(rejected), duplicate answer refused', SLOW, async () => {
     const { rootItemId } = await createRun(db, {
       ownerId: OWNER,

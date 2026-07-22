@@ -13,8 +13,10 @@
  *
  * ENGINE CONTRACT UNCHANGED (plan C4): the item arrives `running` with a
  * claim-stamped deadline; this workflow's terminal act is `completeItem` +
- * `enqueueRunActionsSafe` (journaled, so a post-completion crash replays the
- * recorded actions rather than losing them — duplicates no-op at the CAS); a
+ * `emitDurable` (the completion is journaled, so a post-completion crash
+ * replays the recorded actions rather than losing them — queue duplicates
+ * no-op at the CAS, and the approval fan-out is journaled separately because
+ * a notice has no CAS to no-op against); a
  * workflow that dies permanently looks to the engine exactly like a crashed
  * in-process handler and the sweep's deadline duty fails it. Late completion
  * no-ops at the CAS.
@@ -41,7 +43,8 @@ import {
 } from '@mantle/db';
 import {
   completeItem,
-  enqueueRunActionsSafe,
+  enqueueRunJobsSafe,
+  runPendingNotices,
   ensureWorkerAgent,
   isRunsEnabled,
   requeueForRetry,
@@ -117,6 +120,29 @@ function completeDurable(
   return runDurableStep('complete_item', () => completeItem(db, opts));
 }
 
+/**
+ * Emit a batch's post-commit actions from INSIDE a durable workflow, where a
+ * crash-recovery replay re-runs everything that isn't journaled.
+ *
+ * The two halves need opposite treatment:
+ *  - **queue jobs** stay bare glue — re-enqueuing is the design (duplicates
+ *    no-op at the engine's CAS) and the F4 contract depends on the replay
+ *    re-emitting them.
+ *  - **the approval fan-out is JOURNALED** — a notice has no CAS to no-op
+ *    against, so an un-journaled replay would send the operator a second
+ *    Telegram card / device push for a question they have already seen. The
+ *    step records that it happened; the replay serves the record.
+ */
+async function emitDurable(actions: PostCommitAction[]): Promise<void> {
+  if (actions.some((a) => a.type === 'pending_created')) {
+    await runDurableStep('notify_pending', async () => {
+      await runPendingNotices(actions);
+      return null;
+    });
+  }
+  await enqueueRunJobsSafe(actions);
+}
+
 /** Exported for tests ONLY (the registered workflow below is what runs in
  *  production) — see the note on `runsResumeTurnImpl`: tests replay this with
  *  a journal-backed `DBOS.runStep` to guard the F4 action-replay contract. */
@@ -178,7 +204,7 @@ export async function runsWorkerTurnImpl(
             itemId: item.id,
           },
         });
-        await enqueueRunActionsSafe(actions);
+        await emitDurable(actions);
         return { executed: false, outcome: 'disabled' };
       }
 
@@ -192,7 +218,7 @@ export async function runsWorkerTurnImpl(
           failure,
           ...(extra ? { result: extra } : {}),
         });
-        await enqueueRunActionsSafe(actions);
+        await emitDurable(actions);
         return { executed: true, outcome: 'failed' };
       };
 
@@ -206,7 +232,7 @@ export async function runsWorkerTurnImpl(
             requeueForRetry(db, item.id),
           );
           if (retry) {
-            await enqueueRunActionsSafe([retry]);
+            await emitDurable([retry]);
             return { executed: true, outcome: 'retry' };
           }
         }
@@ -398,7 +424,7 @@ export async function runsWorkerTurnImpl(
           },
           ...accounting,
         });
-        await enqueueRunActionsSafe(actions);
+        await emitDurable(actions);
         DBOS.logger.info(
           `[runs_worker_turn] done (item=${item.id}, run=${run.id}, cost=${costMicroUsd}µ$)`,
         );

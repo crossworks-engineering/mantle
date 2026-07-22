@@ -180,6 +180,10 @@ async function settleAskHuman(
     );
   }
   if (!res.ok) {
+    // Bad answers are a CORRECTABLE mistake, not a dead question: the item
+    // was never touched, so hand the decision back with the teaching error
+    // instead of expiring a row the operator can still answer properly.
+    if (res.reason === 'invalid_answers') return revertToPending(row.id, res.error);
     const [expiredRow] = await db
       .update(pendingToolCalls)
       .set({

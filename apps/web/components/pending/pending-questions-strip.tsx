@@ -1,7 +1,8 @@
 'use client';
 
+import { useMemo, useRef } from 'react';
 import { HelpCircle } from 'lucide-react';
-import { QuestionnaireCard } from './questionnaire-card';
+import { QuestionnaireCard, type CardDraft } from './questionnaire-card';
 import { usePendingQuestions, useDecidePending } from './use-pending-questions';
 
 /** Show at most this many inline; the rest are one click away on /pending.
@@ -20,10 +21,20 @@ const MAX_INLINE = 3;
 export function PendingQuestionsStrip() {
   const { questions, invalidate } = usePendingQuestions();
   const { decide, busyId, error } = useDecidePending(invalidate);
+  // In-progress answers, keyed by row id. Lives HERE because the strip stays
+  // mounted while individual cards come and go — a card pushed out of the
+  // visible slice by a newer question would otherwise take a half-filled
+  // form down with it.
+  const drafts = useRef<Map<string, CardDraft>>(new Map());
 
-  if (questions.length === 0) return null;
-  const shown = questions.slice(0, MAX_INLINE);
-  const hidden = questions.length - shown.length;
+  // OLDEST FIRST (the API returns newest first). Existing cards then keep
+  // their position as questions arrive, instead of every card shifting down
+  // — you can't misclick a form that doesn't move under the cursor.
+  const ordered = useMemo(() => [...questions].reverse(), [questions]);
+
+  if (ordered.length === 0) return null;
+  const shown = ordered.slice(0, MAX_INLINE);
+  const hidden = ordered.length - shown.length;
 
   return (
     // Height-bounded + self-scrolling: three questionnaires are taller than the
@@ -36,7 +47,7 @@ export function PendingQuestionsStrip() {
     >
       <h2 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         <HelpCircle className="size-3.5" aria-hidden />
-        {questions.length === 1 ? 'A run needs your answer' : `${questions.length} runs need you`}
+        {ordered.length === 1 ? 'A run needs your answer' : `${ordered.length} runs need you`}
       </h2>
 
       {error && (
@@ -48,7 +59,14 @@ export function PendingQuestionsStrip() {
       <ul className="space-y-2">
         {shown.map((row) => (
           <li key={row.id} className="rounded-md border border-border bg-card">
-            <QuestionnaireCard row={row} decide={decide} busy={busyId === row.id} compact />
+            <QuestionnaireCard
+              row={row}
+              decide={decide}
+              busy={busyId === row.id}
+              compact
+              draft={drafts.current.get(row.id)}
+              onDraftChange={(d) => drafts.current.set(row.id, d)}
+            />
           </li>
         ))}
       </ul>

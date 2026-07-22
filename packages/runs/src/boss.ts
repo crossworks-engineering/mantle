@@ -55,6 +55,68 @@ async function getSendBoss(): Promise<PgBoss> {
  * double-fire backstop); side-effecting dispatches get transport
  * `retryLimit: 0` (§5b — exempt from both retry layers).
  */
+/**
+ * The approval fan-out half of a batch, AWAITED. For callers that need to
+ * know it happened — specifically a DBOS workflow, which wraps this in a
+ * journaled step so a crash-recovery replay serves the recorded result
+ * instead of re-sending the Telegram card / device push. Unlike `dispatch`
+ * and `resume`, a notice has no CAS to no-op against, so replay-safety has to
+ * come from the journal.
+ *
+ * Everywhere else, use `enqueueRunActions` — it fires the same notices
+ * DETACHED, which is what keeps a hung Telegram request off the settle path.
+ */
+export async function runPendingNotices(actions: readonly PostCommitAction[]): Promise<void> {
+  for (const a of actions) {
+    if (a.type !== 'pending_created') continue;
+    await notifyPendingCreated({
+      ownerId: a.ownerId,
+      pendingId: a.pendingId,
+      toolSlug: a.toolSlug,
+      args: a.args,
+    });
+  }
+}
+
+/** The queue-job half of a batch. Pairs with {@link runPendingNotices} for
+ *  callers that handle the two halves separately. */
+export async function enqueueRunJobs(actions: readonly PostCommitAction[]): Promise<void> {
+  const jobs = actions.filter(
+    (a): a is Exclude<PostCommitAction, { type: 'pending_created' }> =>
+      a.type !== 'pending_created',
+  );
+  if (jobs.length === 0) return;
+  const boss = await getSendBoss();
+  for (const a of jobs) {
+    if (a.type === 'dispatch') {
+      await boss.send(
+        a.queue,
+        { itemId: a.itemId },
+        a.sideEffecting ? { retryLimit: 0 } : { retryLimit: 2, retryDelay: 5, retryBackoff: true },
+      );
+    } else {
+      await boss.send(
+        RUN_RESUME_QUEUE,
+        { runId: a.runId, groupId: a.groupId },
+        { singletonKey: a.groupId, retryLimit: 2, retryDelay: 10, retryBackoff: true },
+      );
+    }
+  }
+}
+
+/** Best-effort {@link enqueueRunJobs} — same swallow-and-log contract as
+ *  {@link enqueueRunActionsSafe}; the sweep is the backstop. */
+export async function enqueueRunJobsSafe(actions: readonly PostCommitAction[]): Promise<void> {
+  try {
+    await enqueueRunJobs(actions);
+  } catch (err) {
+    console.error(
+      '[runs] enqueue failed (sweep will heal):',
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
 export async function enqueueRunActions(actions: readonly PostCommitAction[]): Promise<void> {
   if (actions.length === 0) return;
   // The approval fan-out is not a queue job — it runs without touching
@@ -82,27 +144,7 @@ export async function enqueueRunActions(actions: readonly PostCommitAction[]): P
       args: a.args,
     });
   }
-  const jobs = actions.filter(
-    (a): a is Exclude<PostCommitAction, { type: 'pending_created' }> =>
-      a.type !== 'pending_created',
-  );
-  if (jobs.length === 0) return;
-  const boss = await getSendBoss();
-  for (const a of jobs) {
-    if (a.type === 'dispatch') {
-      await boss.send(
-        a.queue,
-        { itemId: a.itemId },
-        a.sideEffecting ? { retryLimit: 0 } : { retryLimit: 2, retryDelay: 5, retryBackoff: true },
-      );
-    } else {
-      await boss.send(
-        RUN_RESUME_QUEUE,
-        { runId: a.runId, groupId: a.groupId },
-        { singletonKey: a.groupId, retryLimit: 2, retryDelay: 10, retryBackoff: true },
-      );
-    }
-  }
+  await enqueueRunJobs(actions);
 }
 
 /** Best-effort variant for paths where the row state is already committed and

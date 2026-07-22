@@ -34,18 +34,111 @@ export type HumanFormAnswer = {
 
 const MAX_ANSWER_CHARS = 4_000;
 
+/** The questionnaire as the PLAN authored it, read off the item's own payload
+ *  — the authoritative copy. (The pending row's args carry a duplicate for
+ *  the UI; it is not trusted for validation.) */
+type ItemForm = {
+  questions: Array<{
+    id?: unknown;
+    header?: unknown;
+    question?: unknown;
+    options?: unknown;
+    allow_other?: unknown;
+  }>;
+};
+
+function readForm(payload: unknown): ItemForm | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const form = (payload as Record<string, unknown>)['form'];
+  if (!form || typeof form !== 'object' || Array.isArray(form)) return null;
+  const questions = (form as Record<string, unknown>)['questions'];
+  return Array.isArray(questions) ? ({ questions } as ItemForm) : null;
+}
+
+const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/** The label a question should carry into the prompt: its header, else its
+ *  full text. NEVER the bare id — a resumed responder reading
+ *  "q1: production" cannot tell which decision that was. */
+function questionLabel(q: ItemForm['questions'][number], fallbackId: string): string {
+  return str(q.header).trim() || str(q.question).trim() || fallbackId;
+}
+
+/**
+ * Check submitted answers against the questionnaire the plan authored.
+ * Returns a teaching error, or null when the answers are usable.
+ *
+ * WHY this exists: the answers land in `result.answer`, which is read into
+ * the RESUME PROMPT. Without a check, any caller of `pending_approve` could
+ * put arbitrary text in front of the responder under the guise of an
+ * operator decision, and a genuine typo (a stale question id after a
+ * re-plan) would be silently accepted as an answer to a question nobody
+ * asked.
+ */
+function validateAnswers(form: ItemForm, answers: readonly HumanFormAnswer[]): string | null {
+  const byId = new Map<string, ItemForm['questions'][number]>();
+  form.questions.forEach((q, i) => byId.set(str(q.id).trim() || `q${i + 1}`, q));
+  const known = [...byId.keys()];
+  const seen = new Set<string>();
+  for (const a of answers) {
+    const id = a.question?.trim();
+    if (!id)
+      return `each answer needs a 'question' — the id of the form question it answers (${known.join(', ')})`;
+    const q = byId.get(id);
+    if (!q) {
+      return (
+        `'${id}' is not a question on this form — it asks: ${known.join(', ')}. ` +
+        `Answer by question id, one entry each.`
+      );
+    }
+    if (seen.has(id)) return `'${id}' was answered twice — send one entry per question`;
+    seen.add(id);
+    const labels = new Set(
+      (Array.isArray(q.options) ? q.options : []).map((o) =>
+        typeof o === 'string' ? o : str((o as Record<string, unknown>)?.label),
+      ),
+    );
+    for (const pick of a.selected) {
+      if (!labels.has(pick)) {
+        return (
+          `'${pick}' is not an option for '${id}'` +
+          (labels.size > 0 ? ` — choose from: ${[...labels].join(', ')}` : '') +
+          (q.allow_other === false ? '' : `, or put free text in 'other'`)
+        );
+      }
+    }
+    if (a.other?.trim() && q.allow_other === false) {
+      return `'${id}' does not accept free text (allow_other is off) — choose one of its options`;
+    }
+  }
+  return null;
+}
+
 /**
  * Flatten structured answers into the one-line-per-question prose that rides
  * `result.answer`. EVERY existing consumer — the compiled state, the resume
  * prompt, later steps reading the answer — keeps working unchanged; the
  * structured array is additive.
+ *
+ * Pass the item's `form` so each line is headed by the question's HEADER or
+ * TEXT rather than its id: the id is a routing key the operator never sees,
+ * and "q1: production" tells a resumed responder nothing.
  */
-export function renderFormAnswers(answers: readonly HumanFormAnswer[]): string {
+export function renderFormAnswers(
+  answers: readonly HumanFormAnswer[],
+  form?: { questions: Array<Record<string, unknown>> } | null,
+): string {
+  const labels = new Map<string, string>();
+  (form?.questions ?? []).forEach((q, i) => {
+    const id = str(q.id).trim() || `q${i + 1}`;
+    labels.set(id, questionLabel(q as ItemForm['questions'][number], id));
+  });
   return answers
     .map((a) => {
       const picks = [...a.selected];
       if (a.other?.trim()) picks.push(`Other: ${a.other.trim()}`);
-      return `${a.question}: ${picks.length > 0 ? picks.join(', ') : '(no answer)'}`;
+      const label = labels.get(a.question) ?? a.question;
+      return `${label}: ${picks.length > 0 ? picks.join(', ') : '(no answer)'}`;
     })
     .join('\n')
     .slice(0, MAX_ANSWER_CHARS);
@@ -58,8 +151,11 @@ export type HumanAnswerResult =
       /** 'moved_on': the item is already terminal (cancelled, timed out, or
        *  the run died) — the caller expires the pending row and tells the
        *  operator the run moved on. 'not_ask_human': bad ref. 'forbidden':
-       *  the item's run belongs to a different owner — never applied. */
-      reason: 'moved_on' | 'not_ask_human' | 'forbidden';
+       *  the item's run belongs to a different owner — never applied.
+       *  'invalid_answers': the answers don't match the questionnaire — the
+       *  caller hands the decision BACK so it can be corrected (nothing was
+       *  applied; the question is still open). */
+      reason: 'moved_on' | 'not_ask_human' | 'forbidden' | 'invalid_answers';
       error: string;
     };
 
@@ -107,12 +203,27 @@ export async function applyHumanAnswer(
   }
 
   const state = opts.decision === 'answered' ? 'done' : 'failed';
+  const structured = opts.answers?.length ? opts.answers : undefined;
+  // Validate against the ITEM's form — the copy the plan authored, not the
+  // pending row's (which a slug-squatted tool could have written). Only for
+  // an actual answer: a rejection discards the payload anyway.
+  const form = readForm(item.payload);
+  if (opts.decision === 'answered' && structured) {
+    if (!form) {
+      return {
+        ok: false,
+        reason: 'invalid_answers',
+        error: `this question has no questionnaire — send a plain 'answer' string instead of 'answers'`,
+      };
+    }
+    const invalid = validateAnswers(form, structured);
+    if (invalid) return { ok: false, reason: 'invalid_answers', error: invalid };
+  }
   // Prose answer, in order of preference: what the caller wrote, else the
   // rendered questionnaire, else plain approval (yes/no questions — the
   // approval IS the answer).
-  const structured = opts.answers?.length ? opts.answers : undefined;
   const prose =
-    opts.answer?.trim() || (structured ? renderFormAnswers(structured) : '') || 'approved';
+    opts.answer?.trim() || (structured ? renderFormAnswers(structured, form) : '') || 'approved';
   const { completed, actions } = await completeItem(db, {
     itemId: item.id,
     state,

@@ -7,6 +7,7 @@ import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { QuestionnaireCard } from '@/components/pending/questionnaire-card';
+import { invalidatePending } from '@/components/pending/use-pending-questions';
 import { isQuestionRow, type Decide, type PendingRow } from '@/components/pending/types';
 
 export function PendingClient({ devMode = false }: { devMode?: boolean }) {
@@ -19,7 +20,9 @@ export function PendingClient({ devMode = false }: { devMode?: boolean }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [queueing, setQueueing] = useState(false);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['pending'] });
+  // Both views: this screen's full list AND the app-wide open-questions slice
+  // the assistant strip / button count read from.
+  const invalidate = () => invalidatePending(queryClient);
 
   // This list stays live without its own SSE stream: the shell's
   // <PendingQuestionWatcher/> holds the one app-wide `pending_tool_call`

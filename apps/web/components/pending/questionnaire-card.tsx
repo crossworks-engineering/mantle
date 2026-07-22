@@ -38,17 +38,32 @@ const OTHER = '__other__';
  * ("Raise budget" / "Cancel run") — the operator must never have to infer
  * what Approve means when money is involved.
  */
+/** In-progress answers, held by the CALLER so they outlive the card. */
+export type CardDraft = {
+  picked: Record<string, string[]>;
+  other: Record<string, string>;
+  freeText: string;
+};
+
 export function QuestionnaireCard({
   row,
   decide,
   busy,
   compact = false,
+  draft,
+  onDraftChange,
 }: {
   row: PendingRow;
   decide: Decide;
   busy: boolean;
   /** Tighter spacing + no meta line — for the assistant panel column. */
   compact?: boolean;
+  /** Previously-entered answers to restore (see `onDraftChange`). */
+  draft?: CardDraft;
+  /** Report every keystroke/pick so the caller can restore it if this card
+   *  unmounts before it is submitted. Omit on surfaces where the card never
+   *  disappears out from under the operator. */
+  onDraftChange?: (draft: CardDraft) => void;
 }) {
   const isBudget = row.toolSlug === RUN_BUDGET_SLUG;
   const isAsk = row.toolSlug === ASK_HUMAN_SLUG;
@@ -58,24 +73,33 @@ export function QuestionnaireCard({
   const flatOptions = isAsk && !form ? stringOptions(row.args?.['options']) : [];
 
   // Per-question selections. Single-select keeps one entry; multi toggles.
-  const [picked, setPicked] = useState<Record<string, string[]>>({});
-  const [other, setOther] = useState<Record<string, string>>({});
-  const [freeText, setFreeText] = useState('');
+  // SEEDED FROM (and mirrored back to) the caller's draft store, so a card
+  // that unmounts — because a newer question pushed it out of the strip's
+  // visible slice — does not silently throw away half a filled-in form.
+  const [picked, setPicked] = useState<Record<string, string[]>>(() => draft?.picked ?? {});
+  const [other, setOther] = useState<Record<string, string>>(() => draft?.other ?? {});
+  const [freeText, setFreeText] = useState(() => draft?.freeText ?? '');
+
+  // Mirror on every change rather than on unmount: React does not guarantee a
+  // cleanup runs before the parent discards the subtree in every path.
+  const remember = (next: Partial<CardDraft>) =>
+    onDraftChange?.({ picked, other, freeText, ...next });
 
   const toggle = (q: FormQuestion, label: string) => {
     setPicked((prev) => {
       const current = prev[q.id] ?? [];
-      if (q.multi_select) {
-        return {
-          ...prev,
-          [q.id]: current.includes(label)
-            ? current.filter((l) => l !== label)
-            : [...current, label],
-        };
-      }
-      // Single-select: clicking the chosen option again clears it, so a
-      // mis-click is recoverable without a reset button.
-      return { ...prev, [q.id]: current[0] === label ? [] : [label] };
+      const next = q.multi_select
+        ? {
+            ...prev,
+            [q.id]: current.includes(label)
+              ? current.filter((l) => l !== label)
+              : [...current, label],
+          }
+        : // Single-select: clicking the chosen option again clears it, so a
+          // mis-click is recoverable without a reset button.
+          { ...prev, [q.id]: current[0] === label ? [] : [label] };
+      remember({ picked: next });
+      return next;
     });
   };
 
@@ -209,7 +233,13 @@ export function QuestionnaireCard({
                 {otherOn && (
                   <Textarea
                     value={other[q.id] ?? ''}
-                    onChange={(e) => setOther((p) => ({ ...p, [q.id]: e.target.value }))}
+                    onChange={(e) =>
+                      setOther((p) => {
+                        const next = { ...p, [q.id]: e.target.value };
+                        remember({ other: next });
+                        return next;
+                      })
+                    }
                     placeholder="Your answer…"
                     maxLength={2000}
                     rows={2}
@@ -275,7 +305,10 @@ export function QuestionnaireCard({
         >
           <Input
             value={freeText}
-            onChange={(e) => setFreeText(e.target.value)}
+            onChange={(e) => {
+              setFreeText(e.target.value);
+              remember({ freeText: e.target.value });
+            }}
             placeholder="Type an answer…"
             maxLength={4000}
             disabled={busy}

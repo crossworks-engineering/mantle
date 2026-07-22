@@ -13,6 +13,15 @@ import { runItems, runs, type Db, type RunItemRow, type RunRow } from '@mantle/d
 
 const OUTCOME_MAX_CHARS = 240;
 
+/** An answered question gets a far larger budget than an ordinary outcome.
+ *  240 chars is right for "here is roughly what this step did" — it is wrong
+ *  for the operator's DECISION, which is the one thing on the line that later
+ *  steps and the resume turn must act on. A 4-question form with free text
+ *  runs past 600 chars, and a silently clipped answer is worse than no
+ *  answer: the responder proceeds confidently on half of it. Matches the
+ *  4 000-char cap `applyHumanAnswer` already puts on the prose. */
+const ANSWER_MAX_CHARS = 4_000;
+
 export type CompiledRunItem = {
   id: string;
   kind: RunItemRow['kind'];
@@ -107,7 +116,18 @@ function outcomeFor(item: RunItemRow): string | undefined {
   }
   // An answered question: the operator's decision is the outcome, and it is
   // the one thing later steps reason from — render it, never omit it.
-  if (typeof r.answer === 'string') return truncate(`answered: ${r.answer}`);
+  // The per-question lines are joined with ' · ' BEFORE truncation, because
+  // the state renderer is line-based and `truncate` collapses newlines to
+  // bare spaces — which would run "Target: production" and "Timing: tonight"
+  // together into one ambiguous phrase.
+  if (typeof r.answer === 'string') {
+    const oneLine = r.answer
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .join(' · ');
+    return truncate(`answered: ${oneLine}`, ANSWER_MAX_CHARS);
+  }
   if (typeof r.proposal === 'string') return truncate(r.proposal);
   if (typeof r.output === 'string') return truncate(r.output);
   if (r.output !== undefined) return truncate(JSON.stringify(r.output));

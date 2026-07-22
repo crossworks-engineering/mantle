@@ -187,7 +187,12 @@ close that:
   call is awaited by `settleAskHuman` before it writes `executed_at`, and a
   Telegram request that hangs (client default: 500 s) would otherwise hold an
   answered question in the decided-but-unsettled window until sweep duty 4c
-  reverted a decision that had already applied.
+  reverted a decision that had already applied. Inside a DBOS workflow the
+  split is the other way round (`emitDurable` in `runs-worker-turn.ts`): the
+  fan-out is a JOURNALED step and the queue jobs stay bare glue. Queue
+  duplicates no-op at the engine's CAS, but a notice has no CAS — an
+  un-journaled replay after a crash would buzz the operator a second time
+  about a question they have already seen.
 - **A structured questionnaire (`form`).** Beyond flat `options`, a question
   can carry `form.questions[]` — up to 4 sub-questions, each with labelled
   options (`{label, description?}`), `multi_select`, and an `allow_other`
@@ -204,7 +209,13 @@ close that:
   `/api/pending/:id` or `pending_approve`), and land on the item as BOTH
   `result.answers` (structured) and `result.answer` (rendered prose, capped
   at 4 000 chars — every pre-existing consumer keeps reading `result.answer`
-  unchanged).
+  unchanged). Answers are **validated against the item's own form** (the copy
+  the plan authored, not the pending row's): an unknown question id, a
+  duplicate entry, a pick that isn't one of that question's options, or free
+  text on an `allow_other:false` question is refused with a teaching error and
+  the decision is handed BACK — nothing is applied and the question stays
+  open. The rendered prose is headed by each question's **header or text**,
+  never its id, because `q1: production` tells a resumed responder nothing.
 - **A questionnaire cannot be answered by a bare "yes".** Approve/reject-only
   surfaces — the Telegram card, `pending_approve` with no payload — would
   otherwise complete a 4-question form with the string `'approved'` and let
@@ -229,7 +240,12 @@ look new on the next retry). `useRealtime` opens one SSE stream per call, so
 the watcher holds the single app-wide `pending_tool_call` subscription and
 every other consumer repaints off its invalidation — `/pending` dropped its
 own redundant one, though every OTHER route now carries this stream (and one
-shared `/api/pending` fetch) that it did not before.
+shared `/api/pending?status=pending&limit=50` fetch) that it did not before.
+That query is keyed `['pending-questions']`, deliberately NOT `['pending']`:
+`/pending` wants every row including history, this wants a narrow slice, and
+one key serving two different `queryFn`s would make the payload depend on
+whichever observer fetched first. Both are invalidated together
+(`invalidatePending`).
 
 ## Worker groups / panels (slice 3 WP5)
 

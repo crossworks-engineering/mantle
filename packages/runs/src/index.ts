@@ -30,7 +30,14 @@ export {
   type RunsWorkerTurnResult,
 } from './queues';
 export { isRunsEnabled } from './flag';
-export { ensureRunQueues, enqueueRunActions, enqueueRunActionsSafe } from './boss';
+export {
+  ensureRunQueues,
+  enqueueRunActions,
+  enqueueRunActionsSafe,
+  enqueueRunJobs,
+  enqueueRunJobsSafe,
+  runPendingNotices,
+} from './boss';
 export {
   registerPendingCreatedNotifier,
   type PendingCreatedNotice,

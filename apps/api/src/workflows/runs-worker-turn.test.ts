@@ -31,9 +31,18 @@ const h = vi.hoisted(() => ({
   adapter: { providerId: 'openrouter' } as unknown,
   loopResult: null as unknown,
   loopThrows: null as Error | null,
-  completeResult: { completed: true, actions: [{ type: 'resume', runId: 'run-1', groupId: 'g1' }] },
+  // Widened: individual tests swap in other action shapes (e.g. a
+  // `pending_created` notice) to exercise the emit split.
+  completeResult: {
+    completed: true,
+    actions: [{ type: 'resume', runId: 'run-1', groupId: 'g1' }],
+  } as {
+    completed: boolean;
+    actions: Array<Record<string, unknown>>;
+  },
   completeItem: null as unknown as ReturnType<typeof vi.fn>,
-  enqueueRunActionsSafe: null as unknown as ReturnType<typeof vi.fn>,
+  enqueueRunJobsSafe: null as unknown as ReturnType<typeof vi.fn>,
+  runPendingNotices: null as unknown as ReturnType<typeof vi.fn>,
   requeueForRetry: null as unknown as ReturnType<typeof vi.fn>,
   spillToolResult: null as unknown as ReturnType<typeof vi.fn>,
   logs: [] as Array<{ level: string; message: string }>,
@@ -68,7 +77,8 @@ vi.mock('@mantle/db', () => ({
 vi.mock('@mantle/runs', () => ({
   isRunsEnabled: () => h.runsEnabled,
   completeItem: (...a: unknown[]) => h.completeItem(...a),
-  enqueueRunActionsSafe: (...a: unknown[]) => h.enqueueRunActionsSafe(...a),
+  enqueueRunJobsSafe: (...a: unknown[]) => h.enqueueRunJobsSafe(...a),
+  runPendingNotices: (...a: unknown[]) => h.runPendingNotices(...a),
   requeueForRetry: (...a: unknown[]) => h.requeueForRetry(...a),
   ensureWorkerAgent: async () => h.worker,
   WORKER_MODEL_INHERIT: 'inherit',
@@ -154,7 +164,8 @@ beforeEach(() => {
   };
   h.logs = [];
   h.completeItem = vi.fn(async () => h.completeResult);
-  h.enqueueRunActionsSafe = vi.fn(async () => {});
+  h.enqueueRunJobsSafe = vi.fn(async () => {});
+  h.runPendingNotices = vi.fn(async () => {});
   h.requeueForRetry = vi.fn(async () => ({ type: 'dispatch', itemId: ITEM_ID }));
   h.spillToolResult = vi.fn(async () => ({ handle: 'tr_abc' }));
 });
@@ -185,7 +196,7 @@ describe('runs worker turn — wake-up handling', () => {
       failure: { type: 'disabled' },
     });
     // Counter-driving: the actions still reach the queue so the run advances.
-    expect(h.enqueueRunActionsSafe).toHaveBeenCalledWith(h.completeResult.actions);
+    expect(h.enqueueRunJobsSafe).toHaveBeenCalledWith(h.completeResult.actions);
   });
 });
 
@@ -207,7 +218,7 @@ describe('runs worker turn — execution', () => {
       output_handle: 'tr_abc',
       evidence: [{ tool: 'search', ok: true }],
     });
-    expect(h.enqueueRunActionsSafe).toHaveBeenCalledWith(h.completeResult.actions);
+    expect(h.enqueueRunJobsSafe).toHaveBeenCalledWith(h.completeResult.actions);
   });
 
   it('re-stamps the deadline when execution actually starts', async () => {
@@ -302,7 +313,7 @@ describe('runs worker turn — crash replay (final-audit F4 regression)', () => 
     seed();
     const first = await runsWorkerTurnImpl({ itemId: ITEM_ID });
     expect(first).toEqual({ executed: true, outcome: 'done' });
-    expect(h.enqueueRunActionsSafe).toHaveBeenCalledTimes(1);
+    expect(h.enqueueRunJobsSafe).toHaveBeenCalledTimes(1);
 
     // ── Pass 2: recovery re-runs the function. The world moved on — the item
     // reads 'done' now. Unjournaled glue would exit 'stale' here and the
@@ -319,9 +330,49 @@ describe('runs worker turn — crash replay (final-audit F4 regression)', () => 
     expect(journal.replayed).toContain('load_item');
     expect(journal.replayed).toContain('complete_item');
     // The engine's choreography is re-driven; duplicates no-op at the CAS.
-    expect(h.enqueueRunActionsSafe).toHaveBeenCalledTimes(2);
-    expect(h.enqueueRunActionsSafe.mock.calls[1]![0]).toEqual(h.completeResult.actions);
+    expect(h.enqueueRunJobsSafe).toHaveBeenCalledTimes(2);
+    expect(h.enqueueRunJobsSafe.mock.calls[1]![0]).toEqual(h.completeResult.actions);
     // completeItem's BODY did not run twice — the journal served it.
     expect(h.completeItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT re-announce a question on replay, while still re-emitting jobs', async () => {
+    // A `worker_invoke` completing can promote the next seq step — and if that
+    // step is an `ask_human`, the engine hands back a `pending_created` notice
+    // alongside the queue jobs. Jobs are idempotent at the engine CAS so a
+    // replay may re-send them freely; a notice is a Telegram card / device
+    // push with no CAS behind it, so replaying it would buzz the operator a
+    // second time about a question they have already seen.
+    h.completeResult = {
+      completed: true,
+      actions: [
+        { type: 'resume', runId: 'run-1', groupId: 'g1' },
+        {
+          type: 'pending_created',
+          ownerId: 'owner-1',
+          pendingId: 'row-1',
+          toolSlug: 'ask_human',
+          args: { question: 'Ship it?' },
+        },
+      ],
+    };
+    seed();
+    await runsWorkerTurnImpl({ itemId: ITEM_ID });
+    expect(h.runPendingNotices).toHaveBeenCalledTimes(1);
+    expect(h.enqueueRunJobsSafe).toHaveBeenCalledTimes(1);
+
+    const recovery = makeFakeDb();
+    recovery.queue('run_items', [{ ...RUNNING_ITEM, state: 'done' }]);
+    recovery.queue('runs', [{ id: 'run-1', ownerId: 'owner-1', agentId: 'responder-1' }]);
+    h.db = recovery.db as Record<string, unknown>;
+    journal.beginPass();
+
+    await runsWorkerTurnImpl({ itemId: ITEM_ID });
+
+    // The step was replayed from the journal — its BODY never re-ran.
+    expect(journal.replayed).toContain('notify_pending');
+    expect(h.runPendingNotices).toHaveBeenCalledTimes(1);
+    // ...but the queue jobs were re-emitted, exactly as the F4 contract wants.
+    expect(h.enqueueRunJobsSafe).toHaveBeenCalledTimes(2);
   });
 });
