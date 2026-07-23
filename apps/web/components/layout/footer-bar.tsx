@@ -85,6 +85,19 @@ export function FooterBar({
         )}
       </ToggleButton>
 
+      {/* Persistent Mantle brand — Bukhari wordmark tucked into the bottom-left,
+          in the sidebar's column, just right of the collapse (minimize) toggle.
+          Uses --font-logo (the base Bukhari face) directly — NOT --font-wordmark —
+          so it always reads "mantle" in Bukhari regardless of the owner's chosen
+          wordmark font or site name. Shown with the sidebar (md+). */}
+      <div className="mx-1 hidden h-5 w-px bg-border md:block" aria-hidden />
+      <span
+        className="hidden select-none px-0.5 text-xl leading-none text-primary md:inline-block"
+        style={{ fontFamily: 'var(--font-logo)' }}
+      >
+        mantle
+      </span>
+
       {/* Centre: top-used menus, absolutely centred so the flanking clusters
           never shift them off-centre. Hidden on narrow screens. */}
       <nav
@@ -135,19 +148,6 @@ export function FooterBar({
             <PanelLeftClose className="size-4 -scale-x-100" aria-hidden />
           )}
         </ToggleButton>
-
-        {/* Persistent Mantle brand, pinned to the corner. Deliberately uses
-            --font-logo (the base Bukhari face) directly — NOT --font-wordmark —
-            so it always reads "mantle" in Bukhari even when the owner picks a
-            different wordmark font or renames the site (the header wordmark is
-            theirs; this stays ours). Hidden on the tightest screens. */}
-        <div className="mx-1 hidden h-5 w-px bg-border sm:block" aria-hidden />
-        <span
-          className="hidden select-none pr-1 pl-0.5 text-xl leading-none text-primary sm:inline-block"
-          style={{ fontFamily: 'var(--font-logo)' }}
-        >
-          mantle
-        </span>
       </div>
     </footer>
   );
