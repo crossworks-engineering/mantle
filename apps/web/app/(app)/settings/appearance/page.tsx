@@ -1,14 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useTheme } from 'next-themes';
 import { Check, Moon, Sun, Monitor, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { apiFetch } from '@/lib/api-fetch';
 import { useColorTheme } from '@/components/color-theme-provider';
-import { useFonts } from '@/components/font-provider';
-import { FontPicker } from '@/components/appearance/font-picker';
 import { COLOR_THEMES } from '@/lib/themes';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PreviewTabs } from '@/components/theme-preview/preview-tabs';
@@ -22,17 +18,8 @@ const MODES: Array<{ id: string; label: string; icon: LucideIcon }> = [
 function Controls() {
   const { theme, setTheme } = useTheme();
   const { colorTheme, setColorTheme } = useColorTheme();
-  const { logoFont, titleFont, setLogoFont, setTitleFont } = useFonts();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-
-  // The wordmark preview renders the actual site name (cache hit — AppShell
-  // already loaded ['shell']); falls back to "mantle" until it lands.
-  const shell = useQuery({
-    queryKey: ['shell'],
-    queryFn: () => apiFetch<{ siteName: string | null }>('/api/shell'),
-  });
-  const wordmark = shell.data?.siteName || 'mantle';
 
   return (
     <div className="space-y-6">
@@ -104,19 +91,6 @@ function Controls() {
             );
           })}
         </div>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Fonts
-        </h2>
-        <FontPicker
-          title="Wordmark"
-          sample={wordmark}
-          value={logoFont}
-          onChange={setLogoFont}
-        />
-        <FontPicker title="Page title" sample="Page title" value={titleFont} onChange={setTitleFont} />
       </section>
     </div>
   );
