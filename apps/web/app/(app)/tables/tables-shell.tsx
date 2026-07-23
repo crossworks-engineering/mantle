@@ -108,6 +108,13 @@ export function TablesShell() {
     // with NO refetch and the first autosave would 409 ("changed elsewhere")
     // + reload the draft over live edits. Always revalidate, and gate the
     // editor mount on the fresh response (isFetchedAfterMount) below.
+    //
+    // refetchOnMount:'always' only covers observer SUBSCRIBE; switching
+    // selectedId is a key change on a mounted observer, where TanStack fetches
+    // only if stale (shouldFetchOptionally) — with the global 30s staleTime a
+    // re-selected table issued NO fetch and isFetchedAfterMount never flipped,
+    // wedging the spinner forever. staleTime:0 makes every selection revalidate.
+    staleTime: 0,
     refetchOnMount: 'always',
   });
   const selectedTable: TableDetail | null =
