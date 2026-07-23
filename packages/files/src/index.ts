@@ -69,6 +69,7 @@ export {
   reconcileEnabledCollections,
   purgeCollection,
   ensureDefaultCollections,
+  builtinDocCollections,
   listDocCollections,
   setCollectionEnabled,
   createDocCollection,

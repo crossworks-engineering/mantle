@@ -510,6 +510,32 @@ export async function ensureDefaultCollections(ownerId: string): Promise<void> {
   }
 }
 
+/**
+ * The built-in collections as fully-shaped rows, materialised WITHOUT the DB.
+ *
+ * For the detached dev frontend (`pnpm dev:fe`, docs/db-less-dev.md): it browses
+ * the repo's on-disk docs but has no local Postgres to hold collection metadata,
+ * so the disk-backed `/docs` reader falls back to these instead of a DB read.
+ * Always `enabled:false` (indexing state lives only in the DB); the ids and
+ * timestamps are synthetic sentinels — the reader consumes only
+ * key/label/origin/rootPath.
+ */
+export function builtinDocCollections(ownerId: string): DocCollection[] {
+  return BUILTIN_COLLECTIONS.map((c) => ({
+    id: `detached-${c.key}`,
+    ownerId,
+    key: c.key,
+    label: c.label,
+    origin: c.origin,
+    rootPath: c.rootPath,
+    brainDepth: c.brainDepth,
+    enabled: false,
+    lastReconciledAt: null,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  }));
+}
+
 /** List all collections for the owner (ensuring defaults exist first). */
 export async function listDocCollections(ownerId: string): Promise<DocCollection[]> {
   await ensureDefaultCollections(ownerId);

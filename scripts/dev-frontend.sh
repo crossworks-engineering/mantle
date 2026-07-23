@@ -86,6 +86,13 @@ export MANTLE_DETACHED_DEV=1
 export NEXT_PUBLIC_MANTLE_API_BASE="$MANTLE_REMOTE"
 export NEXT_PUBLIC_MANTLE_API_TOKEN
 export MANTLE_DEV_EMAIL="${MANTLE_REMOTE_EMAIL:-}"
+# The `/docs` reader reads markdown off disk; Next runs with cwd=apps/web (via
+# `pnpm -C apps/web`), so its default docs root (apps/web/docs) is wrong. Point it
+# at the repo's own docs/ (we cd'd to the repo root above) — but only as a
+# fallback, so an explicit MANTLE_DOCS_ROOT in apps/web/.env.local still wins.
+if [[ -z ${MANTLE_DOCS_ROOT:-} ]] && ! grep -q '^MANTLE_DOCS_ROOT=' apps/web/.env.local 2>/dev/null; then
+  export MANTLE_DOCS_ROOT="$PWD/docs"
+fi
 
 echo "→ Frontend-only dev against $MANTLE_REMOTE (detached — no local DB)." >&2
 exec pnpm -C apps/web dev "$@"

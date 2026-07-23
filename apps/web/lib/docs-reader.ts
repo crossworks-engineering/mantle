@@ -3,6 +3,7 @@ import 'server-only';
 import path from 'node:path';
 import {
   CHANGELOG_COLLECTION_KEY,
+  builtinDocCollections,
   collectionRoot,
   isHiddenDocRelPath,
   listDocCollections,
@@ -11,6 +12,16 @@ import {
 } from '@mantle/files';
 import type { DocCollection } from '@mantle/db';
 import { docLabelFromRelPath } from '@/lib/docs-labels';
+import { isDetachedDev } from '@/lib/auth-constants';
+
+/** Collections for the disk reader. Detached dev (`pnpm dev:fe`) has no local
+ *  Postgres, so it reads the built-ins straight off disk (the User Guide +
+ *  system docs live in the repo) instead of the DB — a direct DB read here 500s
+ *  the whole `/docs` route in detached mode (docs/db-less-dev.md). */
+async function readerCollections(ownerId: string): Promise<DocCollection[]> {
+  if (isDetachedDev()) return builtinDocCollections(ownerId);
+  return listDocCollections(ownerId);
+}
 
 /**
  * Disk-backed read layer for the `/docs` reader. Reads markdown straight from each
@@ -77,7 +88,7 @@ async function filesForCollection(
 
 /** All collections (incl. system + disabled), each with its disk files. */
 export async function getReaderNav(ownerId: string): Promise<ReaderNav> {
-  const cols = await listDocCollections(ownerId);
+  const cols = await readerCollections(ownerId);
   const roots = new Map<string, string>();
   for (const c of cols) roots.set(c.key, collectionRoot(c));
 
@@ -108,7 +119,7 @@ export async function getReaderDoc(
 ): Promise<ReaderDoc | null> {
   if (isHiddenDocRelPath(relPath)) return null; // hidden (_archive/…) — not browsable
 
-  const cols = await listDocCollections(ownerId);
+  const cols = await readerCollections(ownerId);
   const col = cols.find((c) => c.key === collectionKey);
   if (!col) return null;
 
