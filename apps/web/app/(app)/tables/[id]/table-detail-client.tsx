@@ -456,15 +456,17 @@ export function TableDetailClient({
           e.target.value = '';
         }}
       />
-      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
         {!embedded && (
           <div className="shrink-0 whitespace-nowrap">
             <BackLink href="/tables">All tables</BackLink>
           </div>
         )}
-        {/* Icon + name, left-aligned; the name grows to fill and scrolls within
-            the input for long titles rather than being centre-clipped. */}
-        <div className="flex min-w-0 flex-1 items-center gap-1">
+        {/* Icon + name, left-aligned and readable: the group keeps a sensible
+            min-width and grows to fill. The action cluster is wide, so on a
+            narrow master-detail pane it WRAPS to a second row (flex-wrap) rather
+            than squeezing the name to a couple of characters. */}
+        <div className="flex min-w-[12rem] flex-1 items-center gap-1">
           <input
             value={icon}
             onChange={(e) => setIcon(e.target.value.slice(0, 8))}
@@ -480,7 +482,7 @@ export function TableDetailClient({
             aria-label="Table title"
           />
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={dirty} />
           <Button
             size="sm"
