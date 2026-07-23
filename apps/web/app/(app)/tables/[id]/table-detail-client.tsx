@@ -456,15 +456,15 @@ export function TableDetailClient({
           e.target.value = '';
         }}
       />
-      <div className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
-        {embedded ? (
-          <div className="justify-self-start" aria-hidden />
-        ) : (
-          <div className="justify-self-start whitespace-nowrap">
+      <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background/80 px-4 py-2 backdrop-blur">
+        {!embedded && (
+          <div className="shrink-0 whitespace-nowrap">
             <BackLink href="/tables">All tables</BackLink>
           </div>
         )}
-        <div className="flex items-center gap-1 justify-self-center">
+        {/* Icon + name, left-aligned; the name grows to fill and scrolls within
+            the input for long titles rather than being centre-clipped. */}
+        <div className="flex min-w-0 flex-1 items-center gap-1">
           <input
             value={icon}
             onChange={(e) => setIcon(e.target.value.slice(0, 8))}
@@ -476,11 +476,11 @@ export function TableDetailClient({
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="h-8 w-52 max-w-full border-0 bg-transparent px-1 text-center text-base font-semibold shadow-none focus-visible:ring-0"
+            className="h-8 min-w-0 flex-1 border-0 bg-transparent px-1 text-left text-base font-semibold shadow-none focus-visible:ring-0"
             aria-label="Table title"
           />
         </div>
-        <div className="flex items-center gap-2 justify-self-end">
+        <div className="flex shrink-0 items-center gap-2">
           <StatusIndicator committing={committing} draftSaving={draftSaving} dirty={dirty} />
           <Button
             size="sm"
