@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.160.2 — 2026-07-23
+
+**Postgres 18 is the default; Tika and Chromium bumped.** The bundled database moves
+to PostgreSQL 18 (pgvector `pg18` = PG 18.4 + pgvector 0.8.5) — fresh installs come
+up on 18 directly. Postgres 17 → 18 is a *major* upgrade for an existing box (it
+needs a dump/restore, not a tag swap), so the image is env-gated via
+`POSTGRES_IMAGE_TAG` (default `pg18`; pin `pg17` to defer), and the service now sets
+`PGDATA=/var/lib/postgresql/data` — the pg18 images moved the default data path and
+otherwise refuse the existing bind mount. Full per-box migration runbook and rollback
+in [`docs/postgres-18-upgrade.md`](docs/postgres-18-upgrade.md). Also bumped: Apache
+Tika `3.3.0.0 → 3.3.1.0`, browserless/chromium `v2.54.2 → v2.55.0`, and the Ollama
+(`0.32.2`) and Tailscale (`v1.98.9`) default image pins.
+
 ## v0.137.0 — 2026-07-16
 
 **Tables v2.2: export formats + linked reference columns.** Export any table
