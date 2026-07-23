@@ -120,14 +120,24 @@ export function FontProvider({ children }: { children: React.ReactNode }) {
     [persist],
   );
 
+  // Adopt the DB copy (cross-browser source of truth) — but ONLY for a field the
+  // server actually has. A null means "never saved": keep this browser's choice
+  // (the pre-paint script already applied it from localStorage) rather than
+  // forcing the default and clobbering it. Mirrors the colour theme's guard
+  // (`if (!stored) return`). Without this, a brain whose backend predates this
+  // feature — or a user who's only ever set fonts on ONE browser — would have
+  // their local choice wiped on every shell load.
   const adoptServerFonts = React.useCallback((logo: string | null, title: string | null) => {
-    const l = logo && fontByKey(logo) ? logo : DEFAULT_LOGO_FONT;
-    const t = title && fontByKey(title) ? title : DEFAULT_TITLE_FONT;
-    setLogoState(l);
-    setTitleState(t);
-    apply(l, t);
-    cache(LOGO_KEY, l);
-    cache(TITLE_KEY, t);
+    if (logo && fontByKey(logo)) {
+      setLogoState(logo);
+      applyVar('--font-wordmark', logo, DEFAULT_LOGO_FONT);
+      cache(LOGO_KEY, logo);
+    }
+    if (title && fontByKey(title)) {
+      setTitleState(title);
+      applyVar('--font-page-title', title, DEFAULT_TITLE_FONT);
+      cache(TITLE_KEY, title);
+    }
   }, []);
 
   const value = React.useMemo(
