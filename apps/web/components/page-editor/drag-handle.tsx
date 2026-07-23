@@ -219,10 +219,12 @@ export function EditorDragHandle({ editor }: { editor: Editor }) {
           role="button"
           aria-label="Drag to move · click for actions"
           onClick={openMenu}
-          // mr-1.5 keeps a small gap from the text; the grip still lands inside
-          // the editor's left padding (see globals.css) so reaching for it never
+          // -translate-x-[30px] pushes the grip to the FAR LEFT of the widened
+          // page-gutter (see globals.css), leaving the content-side of the lane
+          // free for per-block tools (e.g. table row/column trash). It still
+          // lands inside the editor's left padding so reaching for it never
           // leaves the editor and triggers the library's hide-on-mouseleave.
-          className="mr-1.5 flex h-9 w-7 cursor-grab items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-accent hover:text-accent-foreground active:cursor-grabbing"
+          className="-translate-x-[30px] mr-1.5 flex h-9 w-7 cursor-grab items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-accent hover:text-accent-foreground active:cursor-grabbing"
         >
           <GripVertical className="size-6" aria-hidden />
         </div>

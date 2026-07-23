@@ -3143,7 +3143,11 @@
    to 'false', which used to collapse the padding and slide text under the
    gutter). The page title + tags are padded to match in page-detail-client. */
 .ProseMirror.page-gutter {
-  padding-left: 2.5rem;
+  /* Widened to a two-tool lane: the block drag handle sits at the far left,
+     leaving room next to the content for per-block tools (e.g. the table
+     row/column trash). Keep focus-gutter's strip width + the pl-* on any
+     gutter-aligned helper text in sync with this value. */
+  padding-left: 4rem;
 }
 
 /* TipTap empty-canvas placeholder (pages editor). Shows the hint text on the

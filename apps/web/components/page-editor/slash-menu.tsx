@@ -263,7 +263,7 @@ const ITEMS: SlashItem[] = [
   {
     group: 'Blocks',
     title: 'Table',
-    description: 'A simple table (add rows/columns with +).',
+    description: 'A simple table (+ to add, trash handles to delete rows/columns).',
     icon: TableIcon,
     keywords: ['grid', 'cells', 'spreadsheet', 'rows'],
     command: ({ editor, range }) =>
