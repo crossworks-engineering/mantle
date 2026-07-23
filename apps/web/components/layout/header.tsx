@@ -64,13 +64,15 @@ export function Header({
         className="flex min-w-0 items-baseline"
         aria-label={`${siteName || 'Mantle'} home`}
       >
-        {/* Bukhari's swashes overshoot the em box; the truncate overflow box needs
-            padding (clip happens at the padding edge) or the ink gets shaved. The
-            negative x-margin cancels the layout shift so the wordmark stays aligned.
+        {/* Script/display faces overshoot the em box (swashes, tall ascenders,
+            deep descenders). Clip only the WIDTH (overflow-x-clip, bounded by
+            max-w) and let the height overflow freely (overflow-y-visible) so the
+            64px header's spare vertical room is used instead of shaving the ink —
+            plain `truncate` clips both axes. -mx-2/px-2 give the sides room too.
             Font: the user-selectable wordmark var (Settings → Appearance → Fonts),
             defaulting to the next/font Bukhari when unset. */}
         <span
-          className="-mx-2 max-w-[45vw] truncate px-2 py-1 text-2xl text-primary"
+          className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary"
           style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
         >
           {siteName || 'mantle'}
@@ -79,11 +81,12 @@ export function Header({
 
       {peerName && (
         <span
-          className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 truncate px-2 py-[2px] text-center text-lg font-bold leading-normal text-chart-2 md:block"
+          className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-[2px] text-center text-lg font-bold leading-normal text-chart-2 md:block"
           // Peer name in the user-selectable header-centre font (Settings →
-          // Appearance → Fonts; unset ⇒ inherits the UI sans). py-[2px] + normal
-          // leading give tall display glyphs room so `truncate`'s clip box
-          // (overflow-hidden) doesn't shave their ascenders/descenders.
+          // Appearance → Fonts; unset ⇒ inherits the UI sans). Width is clipped
+          // (overflow-x-clip, bounded by max-w) but the height overflows freely
+          // (overflow-y-visible), so tall script/display glyphs use the header's
+          // spare vertical room instead of being shaved — `truncate` clips both.
           style={{ fontFamily: 'var(--font-page-title)' }}
         >
           {peerName}
