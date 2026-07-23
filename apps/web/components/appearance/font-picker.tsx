@@ -80,13 +80,18 @@ export function FontPicker({
               )}
             >
               <span className="min-w-0 flex-1">
+                {/* Clip WIDTH only (overflow-x-clip, bounded by the row) and let
+                    the glyph HEIGHT overflow (overflow-y-visible) + a taller line
+                    box (leading-normal) + py so swashy script/display faces show
+                    their ascenders/descenders instead of being shaved — plain
+                    `truncate` (overflow:hidden) clipped them. */}
                 <span
-                  className="block truncate text-xl leading-tight text-foreground"
+                  className="block overflow-x-clip overflow-y-visible whitespace-nowrap py-1 text-xl leading-normal text-foreground"
                   style={{ fontFamily: fontFamilyValue(f.key) ?? undefined }}
                 >
                   {sample}
                 </span>
-                <span className="mt-0.5 block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+                <span className="mt-1 block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
                   {f.label}
                 </span>
               </span>
