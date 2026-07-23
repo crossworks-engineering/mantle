@@ -269,6 +269,12 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: postgres
+      # REQUIRED for pg18+. The 18+ official/pgvector images moved the default
+      # PGDATA to a versioned subdir and REFUSE to init into a mount at the classic
+      # /var/lib/postgresql/data ("unused mount/volume" error → crash loop). Pinning
+      # PGDATA back keeps the existing bind mount working; harmless on pg17 (that is
+      # already its default). Without this, POSTGRES_IMAGE_TAG=pg18 will not boot.
+      PGDATA: /var/lib/postgresql/data
     volumes:
       # Bind-mounted on the host so the DB lives at a path you control.
       # NOTE: to MOVE the DB to another machine, use pg_dump (scripts/db-dump.sh)

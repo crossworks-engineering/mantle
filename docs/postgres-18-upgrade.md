@@ -28,6 +28,18 @@ pg18 only by completing the migration below and **then** setting
 `POSTGRES_IMAGE_TAG=pg18` in its environment. Flipping the committed *default* to
 `pg18` is a separate, later step, taken only once every box has been migrated.
 
+### `PGDATA` must be pinned (pg18 image change)
+
+The compose also sets `PGDATA=/var/lib/postgresql/data` on the postgres service.
+This is **mandatory** for pg18+: the official images (which pgvector is built on)
+moved the default `PGDATA` to a version-specific subdir and **refuse to initialize**
+into a mount at the classic `/var/lib/postgresql/data`, failing with *"there appears
+to be PostgreSQL data in /var/lib/postgresql/data (unused mount/volume)"* and
+crash-looping. Pinning `PGDATA` back keeps the existing bind mount
+(`${MANTLE_DATA_DIR}/postgres`) working; it is a no-op on pg17 (already its default).
+Without it, `POSTGRES_IMAGE_TAG=pg18` will not boot — the tag change alone is not
+enough.
+
 > `pgvector/pgvector` bundles Postgres **and** the vector extension in one image, so
 > "upgrade Postgres" and "upgrade pgvector" are the same image. `pg18` currently
 > ships **PostgreSQL 18.4 + pgvector 0.8.5** (same pgvector as the `pg17` image, so
@@ -86,14 +98,31 @@ docker run --rm -v "$(pwd)/data:/d" alpine sh -c \
 Keeping `postgres.pg17.bak` is the instant rollback: if anything goes wrong, put it
 back and unset `POSTGRES_IMAGE_TAG`.
 
-### 3. Bring up pg18 on the fresh dir and restore
+### 3. Bring up pg18 on the fresh dir, then restore into PRISTINE databases
+
+Set `POSTGRES_IMAGE_TAG=pg18` in the box env (with `PGDATA` already pinned in the
+compose, per above), then bring Postgres up on the empty dir:
 
 ```bash
-export POSTGRES_IMAGE_TAG=pg18
-docker compose up -d postgres --wait        # fresh initdb; init scripts create auth + extensions
-scripts/db-restore.sh "$BK/postgres.dump"   # restores the main brain (see note below)
+docker compose up -d postgres --wait        # fresh initdb; init scripts run
+```
 
-# Restore any OTHER databases into fresh copies:
+> ⚠️ **Do NOT restore straight over the freshly-initialized `postgres` database.**
+> The init scripts (`infra/postgres/init/*.sql`) pre-create `auth`, `auth.users`,
+> and the extensions. If a box's on-disk init script is **older than the dumped
+> schema** (e.g. it predates a column added by a later migration), `pg_restore`
+> silently skips `CREATE TABLE auth.users` ("already exists") and then its data
+> `COPY` fails on the column mismatch — leaving `auth.users` **empty and
+> wrong-shaped**, which breaks auth. This actually happened on a live box. The fix
+> is to restore into a **pristine** database with no init objects:
+
+```bash
+# Replace the init-populated postgres DB with an empty one, then restore clean:
+docker exec <pg> psql -U postgres -d template1 -c "DROP DATABASE postgres WITH (FORCE);"
+docker exec <pg> psql -U postgres -d template1 -c "CREATE DATABASE postgres;"
+docker exec -i <pg> pg_restore -U postgres -d postgres --no-owner < "$BK/postgres.dump"
+
+# Every OTHER database is created fresh (init never touched them) and restored:
 for db in $(ls "$BK"/*.dump | xargs -n1 basename | sed 's/\.dump$//' | grep -vx postgres); do
   docker exec <pg> psql -U postgres -c "CREATE DATABASE \"$db\""
   docker exec -i <pg> pg_restore -U postgres -d "$db" --no-owner < "$BK/$db.dump"
@@ -102,10 +131,11 @@ done
 docker compose up -d --wait                 # migrate is a no-op; app starts
 ```
 
-> The init scripts pre-create `auth`, `auth.users`, and the extensions, so
-> `pg_restore` prints a few harmless "already exists" notices for those objects —
-> expected (they are identical to the dump). `pgcrypto` upgrades 1.3 → 1.4 on pg18;
-> that is a normal bundled-extension bump, not an error.
+A pristine restore should report **0 errors**. `pgcrypto` upgrades 1.3 → 1.4 on
+pg18 — a normal bundled-extension bump, not an error. (`scripts/db-restore.sh`
+restores *over* the init objects instead, which is fine only when the box's init
+script exactly matches the dumped schema — the drop/recreate above is unconditional
+and safe, so prefer it for major upgrades.)
 
 ### 4. Verify
 
@@ -115,8 +145,14 @@ docker exec <pg> psql -U postgres -d postgres -tAc "select extversion from pg_ex
 docker exec <pg> psql -U postgres -d postgres -tAc "select count(*) from nodes"             # matches pre-upgrade
 docker exec <pg> psql -U postgres -d postgres -tAc \
   "select count(*) from pg_index i join pg_class c on c.oid=i.indexrelid join pg_am am on am.oid=c.relam where am.amname='hnsw'"  # matches
+# Identity intact — MUST be non-zero with the owner present (this is the check that
+# catches the auth.users init-collision from step 3):
+docker exec <pg> psql -U postgres -d postgres -tAc "select count(*) filter (where is_owner) from auth.users"  # → ≥1
 docker exec <pg> psql -U postgres -tAc "select datname from pg_database where not datistemplate"  # all DBs present
 ```
+
+Start the app **only after** these pass. Gate the app behind DB verification — if
+`auth.users` is empty/short, roll back (step 5) rather than starting the app.
 
 Then persist the flag so it survives a reboot/redeploy — add `POSTGRES_IMAGE_TAG=pg18`
 to the box's env file (the same place `MANTLE_IMAGE_TAG` etc. live).
@@ -150,10 +186,17 @@ Once pg18 is confirmed healthy and you no longer need the rollback, delete
 
 ## Validation status
 
-The dump → pg18 → restore path was proven end-to-end against a real brain (throwaway
-pg18 container, live stack untouched): PostgreSQL **18.4**, `pg_restore` exit 0 with
-**zero errors/warnings**, node count preserved exactly, **all HNSW indexes rebuilt**,
-pgvector **0.8.5**, and a live KNN vector query returned rows. Tika **3.3.1.0** and
-browserless/chromium **v2.55.0** pull and start as drop-in replacements. Ollama
-(**0.32.2**), Tailscale (**v1.98.9**), MinIO, Caddy, and MinIO `mc` are prod-compose
-services validated on a full-compose box; MinIO/`mc`/Caddy were already current.
+Proven end-to-end on a **live full-stack production box** (12-container stack, real
+brain): migrated 17.10 → **18.4** in place with ~4 min downtime, then verified —
+node count preserved exactly (936), 2228 chunks, all **4 HNSW indexes rebuilt**,
+pgvector 0.8.2 → **0.8.5**, owner identity intact, and the full stack (web + api +
+10 workers + tika **3.3.1.0** + chromium **v2.55.0**) came back healthy and served
+live traffic. Both failure modes in this doc were **hit and fixed on that box**: the
+`PGDATA` crash-loop (§ safety gate) and the `auth.users` init-collision (§ step 3) —
+the drop/recreate restore then reported 0 errors. A prior dry run (throwaway pg18
+container, live stack untouched) had also validated the dump/restore.
+
+Ollama (**0.32.2**) and Tailscale (**v1.98.9**) defaults are bumped in compose but
+were **not** exercised on the production run (Tailscale left pinned there because it
+was live; Ollama not running on that box). Validate those two on a box where they
+run before relying on them. MinIO, Caddy and MinIO `mc` were already current.

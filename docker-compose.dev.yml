@@ -22,6 +22,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
+      # Required for pg18+ (image moved the default PGDATA); harmless on pg17.
+      # See the PGDATA note in docker-compose.yml + docs/postgres-18-upgrade.md.
+      PGDATA: /var/lib/postgresql/data
     ports:
       # 54323 on the host. The .env.local DATABASE_URL must point here.
       - "127.0.0.1:54323:5432"
