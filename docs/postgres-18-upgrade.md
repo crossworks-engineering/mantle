@@ -13,20 +13,26 @@ So the upgrade is a **dump → fresh data dir → restore**, done deliberately p
 The stateless services in the stack (Tika, browserless/chromium, MinIO, Caddy,
 Ollama, Tailscale) genuinely *are* pull-and-go; Postgres is the only one that is not.
 
-## The safety gate
+## The default and the escape hatch
 
-The compose files pin the pgvector image behind `POSTGRES_IMAGE_TAG` (default
-`pg17`) in both `docker-compose.yml` and `docker-compose.dev.yml`:
+The compose files gate the pgvector image behind `POSTGRES_IMAGE_TAG` (default
+`pg18`) in both `docker-compose.yml` and `docker-compose.dev.yml`:
 
 ```yaml
-image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg17}
+image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
 ```
 
-The default stays on the **current** major on purpose: a plain `docker compose pull
-&& up` can then never boot pg18 on a pg17 data dir and wedge a box. A box moves to
-pg18 only by completing the migration below and **then** setting
-`POSTGRES_IMAGE_TAG=pg18` in its environment. Flipping the committed *default* to
-`pg18` is a separate, later step, taken only once every box has been migrated.
+**Fresh installs come up on pg18 directly** — a new box has no data dir, so it just
+initialises on 18. This is the shipping default going forward; new deployments need
+no migration and no flags.
+
+The gate exists for **existing pg17 boxes**. A new major will not start on an old
+major's data dir, so a box already on pg17 must EITHER complete the migration below,
+OR set `POSTGRES_IMAGE_TAG=pg17` in its env to hold on 17 until it does. **Deploy
+ordering matters**: never let an un-migrated pg17 box pull this compose and `up`
+without one of those — it will crash-loop pg18 on a pg17 dir. Practically, before
+rolling this to the fleet, either migrate each existing box or pin it to `pg17`
+first, then unpin as each is migrated.
 
 ### `PGDATA` must be pinned (pg18 image change)
 

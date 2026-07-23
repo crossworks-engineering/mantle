@@ -31,14 +31,15 @@ name: mantle
 #   AUTOHEAL_IMAGE_TAG      (optional — pin the willfarrell/autoheal sidecar that
 #                            docker-restarts a worker once its heartbeat probe
 #                            flips it unhealthy. Same pin-not-`:latest` rationale.)
-#   POSTGRES_IMAGE_TAG      (default: pg17 — the pgvector/pgvector tag. This is the
-#                            Postgres MAJOR version and is NOT a drop-in bump: a new
-#                            major refuses to start on an old major's data dir. The
-#                            default stays on the current major on purpose so a plain
-#                            `compose pull && up` can never brick a box. To move a
-#                            major (e.g. pg17 → pg18): dump every DB, start a FRESH
-#                            data dir, restore, THEN set POSTGRES_IMAGE_TAG=pg18.
-#                            Runbook: docs/postgres-18-upgrade.md.)
+#   POSTGRES_IMAGE_TAG      (default: pg18 — the pgvector/pgvector tag = the Postgres
+#                            MAJOR version. FRESH installs come up on pg18 directly (a
+#                            new box has no data dir, so it just initialises). A major
+#                            is NOT a drop-in for an EXISTING box: a new major refuses
+#                            to start on an old major's data dir. A box already on pg17
+#                            must EITHER migrate first (dump every DB → fresh data dir →
+#                            restore; runbook docs/postgres-18-upgrade.md) OR pin
+#                            POSTGRES_IMAGE_TAG=pg17 to hold on 17 until it does. NB: the
+#                            postgres service also needs PGDATA pinned for pg18 — set.)
 #
 # Persistent data — bind-mounted on the host so you can see/back up/move it:
 #   MANTLE_DATA_DIR         (default: ./data) — EVERYTHING lives under here:
@@ -251,10 +252,10 @@ x-app-env: &app-env
 services:
   postgres:
     # pgvector/pgvector bundles Postgres + the vector extension in one image; the
-    # tag IS the Postgres major (pg17/pg18). Env-gated (default pg17) because a
-    # major bump is a dump/restore migration, not a pull — see the POSTGRES_IMAGE_TAG
-    # note in the header and docs/postgres-18-upgrade.md.
-    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg17}
+    # tag IS the Postgres major. Default pg18 — fresh installs come up on 18. An
+    # EXISTING pg17 box must migrate first or pin POSTGRES_IMAGE_TAG=pg17 (a major
+    # won't start on an old major's data dir). See the header note + docs/postgres-18-upgrade.md.
+    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
     container_name: mantle_pg
     restart: unless-stopped
     logging: *default-logging

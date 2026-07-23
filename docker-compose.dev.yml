@@ -12,10 +12,10 @@ name: mantle-dev
 
 services:
   postgres:
-    # Tag = Postgres major. Env-gated (default pg17) so a major bump stays a
-    # deliberate dump/restore, not a pull. To exercise pg18 locally: dump, wipe the
-    # data dir, `POSTGRES_IMAGE_TAG=pg18 pnpm up`, restore. See docs/postgres-18-upgrade.md.
-    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg17}
+    # Tag = Postgres major. Default pg18 — fresh dev setups start on 18. An existing
+    # pg17 data dir won't boot pg18: migrate (dump → wipe data dir → restore) or pin
+    # POSTGRES_IMAGE_TAG=pg17 until you do. See docs/postgres-18-upgrade.md.
+    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
     container_name: mantle_dev_pg
     restart: unless-stopped
     environment:
