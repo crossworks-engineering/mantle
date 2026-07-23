@@ -66,6 +66,10 @@ export type ProfilePreferences = {
    *  a glance which one they're on. Cosmetic only; unset ⇒ the Mantle wordmark.
    *  Read via projectSiteName, never raw. */
   siteName?: string;
+  /** This brain's peer name — shown in the header CENTRE (replacing the old page
+   *  title) as this node's federation-facing identity label. Cosmetic; unset ⇒
+   *  the header centre is empty. Read via projectPeerName, never raw. */
+  peerName?: string;
   /** The UI colour-theme id (the header theme toggler / random shuffle). The
    *  DB copy is the source of truth so the choice follows the owner across
    *  browsers and brands member-facing surfaces (/s, /team) — localStorage
@@ -275,6 +279,16 @@ export function projectSiteName(raw: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+export const PEER_NAME_MAX = 40;
+
+/** Project a stored `peerName` — the header-centre federation label. Same
+ *  contract as projectSiteName: trimmed, capped, empty ⇒ undefined (unset). */
+export function projectPeerName(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim().slice(0, PEER_NAME_MAX);
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /** Project a stored `colorTheme` jsonb value — a slug-shaped theme id, or
  *  undefined for unset/garbage (⇒ the default theme). The theme LIST lives in
  *  the web app (apps/web/lib/themes.ts); the server stores any well-formed id
@@ -439,6 +453,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
         ? prefs.displayName
         : undefined,
     siteName: projectSiteName(prefs.siteName),
+    peerName: projectPeerName(prefs.peerName),
     colorTheme: projectColorTheme(prefs.colorTheme),
     fontLogo: projectFontKey(prefs.fontLogo),
     fontTitle: projectFontKey(prefs.fontTitle),
@@ -635,6 +650,7 @@ export async function updateProfilePreferences(
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
     displayName: merged.displayName || undefined,
     siteName: projectSiteName(merged.siteName),
+    peerName: projectPeerName(merged.peerName),
     colorTheme: projectColorTheme(merged.colorTheme),
     fontLogo: projectFontKey(merged.fontLogo),
     fontTitle: projectFontKey(merged.fontTitle),

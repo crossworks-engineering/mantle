@@ -35,6 +35,7 @@ export async function GET() {
     pendingApprovals,
     assetToken,
     siteName: prefs.siteName ?? null,
+    peerName: prefs.peerName ?? null,
     colorTheme: prefs.colorTheme ?? null,
     fontLogo: prefs.fontLogo ?? null,
     fontTitle: prefs.fontTitle ?? null,

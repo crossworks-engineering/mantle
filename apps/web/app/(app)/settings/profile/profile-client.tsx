@@ -117,6 +117,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
   );
   const [purpose, setPurpose] = useState(defaults.purpose ?? '');
   const [siteName, setSiteName] = useState(defaults.siteName ?? '');
+  const [peerName, setPeerName] = useState(defaults.peerName ?? '');
   const [archetype, setArchetype] = useState(
     defaults.purposeArchetype ?? PURPOSE_ARCHETYPES[0]!.key,
   );
@@ -186,6 +187,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
       purpose,
       purposeArchetype: archetype,
       siteName,
+      peerName,
       streamThoughts,
       thoughtTrailMode: replaceTrail ? 'replace' : 'list',
       persistThoughts,
@@ -226,6 +228,22 @@ function ProfileForm({ data }: { data: ProfileData }) {
             Replaces the &ldquo;mantle&rdquo; wordmark in the top-left header — e.g. the site or
             team name (&ldquo;Refinery&rdquo;) — so it&apos;s obvious at a glance which brain
             you&apos;re on. Leave blank for the default.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="peerName">Peer name</Label>
+          <Input
+            id="peerName"
+            name="peerName"
+            value={peerName}
+            maxLength={40}
+            onChange={(e) => setPeerName(e.target.value)}
+            placeholder="e.g. Refinery North"
+          />
+          <p className="text-xs text-muted-foreground">
+            Shown centred in the header as this brain&apos;s peer identity (replaces the old page
+            title). Styled with the header-centre font (Settings → Appearance → Fonts). Leave blank
+            for an empty centre.
           </p>
         </div>
         <div className="space-y-1.5">

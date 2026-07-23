@@ -567,6 +567,8 @@ export {
   resolveThinkingBudget,
   projectThinkingBudget,
   projectSiteName,
+  projectPeerName,
+  PEER_NAME_MAX,
   projectFontKey,
   projectTeamHubAppId,
   projectTeamHubTags,

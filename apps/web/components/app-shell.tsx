@@ -56,6 +56,8 @@ type ShellData = {
   pendingApprovals: number;
   /** Custom header wordmark (Settings → Profile → Site name); null ⇒ "mantle". */
   siteName: string | null;
+  /** Header-centre peer name (Settings → Profile → Peer name); null ⇒ empty centre. */
+  peerName: string | null;
   /** The DB-stored colour theme (the cross-browser source of truth); null ⇒
    *  never saved. Adopted once per shell load. */
   colorTheme: string | null;
@@ -265,6 +267,7 @@ function ShellFrame({
         email={email}
         userAvatar={userAvatar}
         siteName={shellQuery.data?.siteName ?? null}
+        peerName={shellQuery.data?.peerName ?? null}
         onMenuClick={() => setMobileOpen(true)}
         onSearchClick={() => setSearchOpen(true)}
       />

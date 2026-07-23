@@ -15,14 +15,15 @@ export function TypographyFontControls() {
   const { logoFont, titleFont, setLogoFont, setTitleFont } = useFonts();
   const shell = useQuery({
     queryKey: ['shell'],
-    queryFn: () => apiFetch<{ siteName: string | null }>('/api/shell'),
+    queryFn: () => apiFetch<{ siteName: string | null; peerName: string | null }>('/api/shell'),
   });
   const wordmark = shell.data?.siteName || 'mantle';
+  const peer = shell.data?.peerName || 'Peer name';
 
   return (
     <div className="space-y-3">
       <FontPicker title="Wordmark" sample={wordmark} value={logoFont} onChange={setLogoFont} />
-      <FontPicker title="Page title" sample="Page title" value={titleFont} onChange={setTitleFont} />
+      <FontPicker title="Peer name" sample={peer} value={titleFont} onChange={setTitleFont} />
     </div>
   );
 }

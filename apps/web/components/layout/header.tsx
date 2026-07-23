@@ -17,12 +17,12 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { RandomThemeToggle } from '@/components/random-theme-toggle';
-import { usePageTitle } from '@/components/layout/page-title';
 
 export function Header({
   email,
   userAvatar,
   siteName,
+  peerName,
   onMenuClick,
   onSearchClick,
 }: {
@@ -30,6 +30,8 @@ export function Header({
   userAvatar?: { style: string; seed: string } | null;
   /** Custom wordmark from prefs; null/undefined ⇒ the "mantle" default. */
   siteName?: string | null;
+  /** This brain's peer name, shown centred; null/undefined ⇒ empty centre. */
+  peerName?: string | null;
   onMenuClick: () => void;
   /** Opens the global search palette (the ⌘K twin for mouse/touch). */
   onSearchClick: () => void;
@@ -37,7 +39,6 @@ export function Header({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const initials = (email ?? 'M').slice(0, 2).toUpperCase();
-  const pageTitle = usePageTitle();
 
   async function signOut() {
     setBusy(true);
@@ -47,7 +48,7 @@ export function Header({
   }
 
   return (
-    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-6">
+    <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b bg-background bg-gradient-to-b from-primary/10 to-background px-4 md:px-6">
       <Button
         variant="ghost"
         size="icon"
@@ -76,15 +77,16 @@ export function Header({
         </span>
       </Link>
 
-      {pageTitle && (
+      {peerName && (
         <span
-          className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 truncate px-2 text-center text-lg font-bold text-chart-2 md:block"
-          // User-selectable title font (Settings → Appearance → Fonts); unset ⇒
-          // the declaration is invalid and the title inherits the UI sans.
+          className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 truncate px-2 py-[2px] text-center text-lg font-bold leading-normal text-chart-2 md:block"
+          // Peer name in the user-selectable header-centre font (Settings →
+          // Appearance → Fonts; unset ⇒ inherits the UI sans). py-[2px] + normal
+          // leading give tall display glyphs room so `truncate`'s clip box
+          // (overflow-hidden) doesn't shave their ascenders/descenders.
           style={{ fontFamily: 'var(--font-page-title)' }}
-          aria-hidden
         >
-          {pageTitle}
+          {peerName}
         </span>
       )}
 
