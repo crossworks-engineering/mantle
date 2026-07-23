@@ -85,36 +85,39 @@ export function FontProvider({ children }: { children: React.ReactNode }) {
     apply(logo, title);
   }, []);
 
-  const persist = React.useCallback((logo: string, title: string) => {
+  const persist = React.useCallback((body: { fontLogo?: string; fontTitle?: string }) => {
     // The DB copy is the cross-browser source of truth; localStorage above is
     // the pre-paint cache. Fire-and-forget — a failed write costs only the sync.
     void fetch('/api/profile/fonts', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ fontLogo: logo, fontTitle: title }),
+      body: JSON.stringify(body),
     }).catch(() => {});
   }, []);
 
+  // Each setter touches ONLY its own var + persists ONLY its own field — no
+  // dependence on the other font's state. (A combined apply() reading the other
+  // choice from a closure could revert it when both change before a re-render.)
   const setLogoFont = React.useCallback(
     (key: string) => {
       if (!fontByKey(key)) return;
       setLogoState(key);
-      apply(key, titleFont);
+      applyVar('--font-wordmark', key, DEFAULT_LOGO_FONT);
       cache(LOGO_KEY, key);
-      persist(key, titleFont);
+      persist({ fontLogo: key });
     },
-    [titleFont, persist],
+    [persist],
   );
 
   const setTitleFont = React.useCallback(
     (key: string) => {
       if (!fontByKey(key)) return;
       setTitleState(key);
-      apply(logoFont, key);
+      applyVar('--font-page-title', key, DEFAULT_TITLE_FONT);
       cache(TITLE_KEY, key);
-      persist(logoFont, key);
+      persist({ fontTitle: key });
     },
-    [logoFont, persist],
+    [persist],
   );
 
   const adoptServerFonts = React.useCallback((logo: string | null, title: string | null) => {
