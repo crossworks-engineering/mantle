@@ -39,8 +39,12 @@ Non-negotiables (full detail in the guide):
   must scroll itself (`h-dvh overflow-y-auto`) because globals.css pins `html/body` to
   `overflow:hidden` for the shell. Pages render via the server `renderPageDoc` (sanitized
   HTML), not the client editor.
-- **Fonts**: Inter everywhere (auto); `font-logo` (Bukhari) only for the wordmark.
-  Don't add fonts.
+- **Fonts**: Inter everywhere (auto) is the UI body font — don't change that.
+  The **wordmark + header page-title** are user-selectable from a display-font
+  library (Settings → Appearance → Fonts); to add one, drop a face in
+  `public/fonts/library/<key>.ttf` and add a row to `lib/display-fonts.ts` (the
+  single registry — it drives the `@font-face` block, both pickers, and the
+  runtime CSS-var override). Defaults: Bukhari wordmark, sans title.
 - **Tailwind v4**: no dynamically built class names (use literal-string arrays).
 - **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
   with the `Co-Authored-By` trailer; don't push unless asked. To see changes in a

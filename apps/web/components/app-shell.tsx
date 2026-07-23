@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-fetch';
 import { useColorTheme } from '@/components/color-theme-provider';
+import { useFonts } from '@/components/font-provider';
 import { COLOR_THEMES } from '@/lib/themes';
 import { setAssetToken } from '@/lib/asset-url';
 import { Header } from '@/components/layout/header';
@@ -58,6 +59,10 @@ type ShellData = {
   /** The DB-stored colour theme (the cross-browser source of truth); null ⇒
    *  never saved. Adopted once per shell load. */
   colorTheme: string | null;
+  /** DB-stored wordmark + page-title font keys (Settings → Appearance → Fonts);
+   *  null ⇒ the defaults. Adopted once per shell load, like the colour theme. */
+  fontLogo: string | null;
+  fontTitle: string | null;
   /** Short-lived asset-access token for browser-native srcs in detached mode
    *  (see lib/asset-url). Absent/ignored same-origin. */
   assetToken?: string;
@@ -145,6 +150,19 @@ function ShellFrame({
     if (!COLOR_THEMES.some((t) => t.id === stored)) return;
     adoptServerTheme(stored);
   }, [shellQuery.data, activeColorTheme, adoptServerTheme]);
+
+  // Font sync — same shape as the colour theme: adopt the DB choices once per
+  // shell load (the pre-paint script already applied this browser's cache; this
+  // reconciles to the cross-browser source of truth). Unknown keys fall back to
+  // the defaults inside adoptServerFonts.
+  const { adoptServerFonts } = useFonts();
+  const adoptedFonts = useRef(false);
+  useEffect(() => {
+    if (adoptedFonts.current) return;
+    if (shellQuery.data === undefined) return;
+    adoptedFonts.current = true;
+    adoptServerFonts(shellQuery.data.fontLogo ?? null, shellQuery.data.fontTitle ?? null);
+  }, [shellQuery.data, adoptServerFonts]);
 
   // Publish the asset-access token so `assetUrl()` can sign browser-native srcs
   // (<img>/<iframe>/download) for a detached client. No-op same-origin.

@@ -39,7 +39,8 @@ Same framework family as Mantle itself:
 | Asset | Where | Notes |
 |---|---|---|
 | **Wordmark font** | `apps/web/public/fonts/BukhariScript-Regular.ttf` | The logo is the word **`mantle`** (lowercase) set in Bukhari Script — the "plain font" logo, no icon. Loaded via `next/font` `localFont` in `apps/web/lib/fonts.ts` as `--font-logo` → `font-logo` utility. **Bukhari is used ONLY for the wordmark** (and the app's centered page title); everything else is Inter. |
-| **Body font** | `apps/web/public/Inter/` (variable TTFs) | Inter everywhere, loaded in `lib/fonts.ts`. Don't add fonts. |
+| **Body font** | `apps/web/public/Inter/` (variable TTFs) | Inter everywhere for the UI, loaded in `lib/fonts.ts`. Don't change the body font. |
+| **Display fonts** | `apps/web/lib/display-fonts.ts` + `public/fonts/library/` | User-selectable **wordmark + page-title** fonts (Settings → Appearance → Fonts). One registry drives the lazy `@font-face` block, both pickers, and the runtime CSS-var override (`--font-wordmark` / `--font-page-title`). Persisted like the colour theme (`profiles.preferences.fontLogo`/`fontTitle`). Add one: face → `public/fonts/library/<key>.ttf` + a registry row. |
 | **Theme registry** | `apps/web/lib/themes.ts` | 42 themes with `{id, label, swatches}` — swatches drive picker previews. Default `clean-slate`. |
 | **Theme CSS** | `apps/web/app/globals.css` | Baseline tokens in `:root`/`.dark`; every other theme is a `[data-color-theme]` block (83 blocks incl. dark variants). Portable — copy wholesale. |
 | **Theme plumbing** | `apps/web/components/theme-provider.tsx`, `color-theme-provider.tsx`, `theme-toggle.tsx`, `random-theme-toggle.tsx` | next-themes for light/dark + a data-attribute setter for color themes. |

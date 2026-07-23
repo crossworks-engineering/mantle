@@ -9,8 +9,10 @@ import { getSessionUser } from '@/lib/auth';
 import { isDetachedDev } from '@/lib/auth-constants';
 import { ThemeProvider } from '@/components/theme-provider';
 import { ColorThemeProvider } from '@/components/color-theme-provider';
+import { FontProvider } from '@/components/font-provider';
 import { QueryProvider } from '@/components/query-provider';
 import { COLOR_THEME_STORAGE_KEY, DEFAULT_COLOR_THEME } from '@/lib/themes';
+import { displayFontFaceCss, fontPrepaintScript } from '@/lib/display-fonts';
 
 const DEFAULT_METADATA: Metadata = {
   title: 'Mantle',
@@ -44,6 +46,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="h-full" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: colorThemeScript }} />
+        {/* Selectable wordmark/title fonts: @font-face declarations (lazy — a
+            file downloads only when a face is actually painted) + the before-paint
+            var restore, mirroring the colour-theme script above. */}
+        <style dangerouslySetInnerHTML={{ __html: displayFontFaceCss() }} />
+        <script dangerouslySetInnerHTML={{ __html: fontPrepaintScript() }} />
       </head>
       <body className={`${fontSans.variable} ${fontLogo.variable} h-full font-sans antialiased`}>
         <ThemeProvider
@@ -53,7 +60,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           disableTransitionOnChange
         >
           <ColorThemeProvider>
-            <QueryProvider>{children}</QueryProvider>
+            <FontProvider>
+              <QueryProvider>{children}</QueryProvider>
+            </FontProvider>
           </ColorThemeProvider>
         </ThemeProvider>
       </body>

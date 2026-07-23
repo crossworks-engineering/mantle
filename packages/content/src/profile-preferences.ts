@@ -72,6 +72,15 @@ export type ProfilePreferences = {
    *  stays only as the before-paint fast path. Unset ⇒ the default theme.
    *  Read via projectColorTheme, never raw. */
   colorTheme?: string;
+  /** Selectable header WORDMARK font key (Settings → Appearance → Fonts). The
+   *  font LIST lives in the web app (apps/web/lib/display-fonts.ts); the server
+   *  stores any well-formed slug and the client falls back to the default for
+   *  keys it doesn't know, so trimming the library never strands the preference.
+   *  Unset ⇒ the default Bukhari wordmark. Read via projectFontKey, never raw. */
+  fontLogo?: string;
+  /** Selectable header page-TITLE font key — same contract as `fontLogo`.
+   *  Unset ⇒ the default UI sans. Read via projectFontKey, never raw. */
+  fontTitle?: string;
   /** Free-text "what this brain is for" — captured at onboarding, editable in
    *  Settings → Profile. Injected as the "# Purpose of this brain" section of the
    *  always-on identity block (identity-context.ts), so every agent knows the
@@ -277,6 +286,16 @@ export function projectColorTheme(raw: unknown): string | undefined {
   return /^[a-z0-9][a-z0-9-]{0,63}$/.test(t) ? t : undefined;
 }
 
+/** Project a stored font key (`fontLogo` / `fontTitle`) — a slug-shaped display
+ *  font id, or undefined for unset/garbage. Same lenient contract as
+ *  projectColorTheme: the font LIST lives in the web app, so the server only
+ *  shape-checks and the client resolves unknown keys to the default. */
+export function projectFontKey(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9-]{0,63}$/.test(t) ? t : undefined;
+}
+
 /** Effective per-turn thinking budget in tokens — gated by BOTH the live-thinking
  *  switch (`streamThoughts`) AND a positive `thinkingBudget`. Returns 0 when
  *  either is missing, so real reasoning is requested only when the user has
@@ -421,6 +440,8 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
         : undefined,
     siteName: projectSiteName(prefs.siteName),
     colorTheme: projectColorTheme(prefs.colorTheme),
+    fontLogo: projectFontKey(prefs.fontLogo),
+    fontTitle: projectFontKey(prefs.fontTitle),
     purpose:
       typeof prefs.purpose === 'string' && prefs.purpose.length > 0 ? prefs.purpose : undefined,
     purposeArchetype:
@@ -615,6 +636,8 @@ export async function updateProfilePreferences(
     displayName: merged.displayName || undefined,
     siteName: projectSiteName(merged.siteName),
     colorTheme: projectColorTheme(merged.colorTheme),
+    fontLogo: projectFontKey(merged.fontLogo),
+    fontTitle: projectFontKey(merged.fontTitle),
     purpose: merged.purpose || undefined,
     purposeArchetype: merged.purposeArchetype || undefined,
     onboardedAt: merged.onboardedAt || undefined,

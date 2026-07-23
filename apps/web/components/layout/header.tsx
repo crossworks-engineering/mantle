@@ -65,8 +65,13 @@ export function Header({
       >
         {/* Bukhari's swashes overshoot the em box; the truncate overflow box needs
             padding (clip happens at the padding edge) or the ink gets shaved. The
-            negative x-margin cancels the layout shift so the wordmark stays aligned. */}
-        <span className="-mx-2 max-w-[45vw] truncate px-2 py-1 font-logo text-2xl text-primary">
+            negative x-margin cancels the layout shift so the wordmark stays aligned.
+            Font: the user-selectable wordmark var (Settings → Appearance → Fonts),
+            defaulting to the next/font Bukhari when unset. */}
+        <span
+          className="-mx-2 max-w-[45vw] truncate px-2 py-1 text-2xl text-primary"
+          style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
+        >
           {siteName || 'mantle'}
         </span>
       </Link>
@@ -74,6 +79,9 @@ export function Header({
       {pageTitle && (
         <span
           className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 truncate px-2 text-center text-lg font-bold text-chart-2 md:block"
+          // User-selectable title font (Settings → Appearance → Fonts); unset ⇒
+          // the declaration is invalid and the title inherits the UI sans.
+          style={{ fontFamily: 'var(--font-page-title)' }}
           aria-hidden
         >
           {pageTitle}

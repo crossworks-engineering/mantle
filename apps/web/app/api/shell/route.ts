@@ -36,5 +36,7 @@ export async function GET() {
     assetToken,
     siteName: prefs.siteName ?? null,
     colorTheme: prefs.colorTheme ?? null,
+    fontLogo: prefs.fontLogo ?? null,
+    fontTitle: prefs.fontTitle ?? null,
   });
 }
