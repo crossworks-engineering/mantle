@@ -12,13 +12,19 @@ name: mantle-dev
 
 services:
   postgres:
-    image: pgvector/pgvector:pg17
+    # Tag = Postgres major. Default pg18 — fresh dev setups start on 18. An existing
+    # pg17 data dir won't boot pg18: migrate (dump → wipe data dir → restore) or pin
+    # POSTGRES_IMAGE_TAG=pg17 until you do. See docs/postgres-18-upgrade.md.
+    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
     container_name: mantle_dev_pg
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
+      # Required for pg18+ (image moved the default PGDATA); harmless on pg17.
+      # See the PGDATA note in docker-compose.yml + docs/postgres-18-upgrade.md.
+      PGDATA: /var/lib/postgresql/data
     ports:
       # 54323 on the host. The .env.local DATABASE_URL must point here.
       - "127.0.0.1:54323:5432"
@@ -57,7 +63,7 @@ services:
   # .rtf, .epub, plus the long-tail Tika supports. Self-hosted, stateless
   # — bytes never leave the VPS. See docs/file-ingestion.md.
   tika:
-    image: apache/tika:3.3.0.0
+    image: apache/tika:3.3.1.0
     container_name: mantle_dev_tika
     restart: unless-stopped
     environment:
@@ -99,7 +105,7 @@ services:
   # puppeteer-core over websocket and drives it to print the owner-authed
   # /print/pages/<id> surface. See apps/web/lib/render-pdf.ts.
   browser:
-    image: ghcr.io/browserless/chromium:v2.54.2
+    image: ghcr.io/browserless/chromium:v2.55.0
     container_name: mantle_dev_browser
     restart: unless-stopped
     environment:

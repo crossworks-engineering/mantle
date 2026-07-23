@@ -31,6 +31,15 @@ name: mantle
 #   AUTOHEAL_IMAGE_TAG      (optional — pin the willfarrell/autoheal sidecar that
 #                            docker-restarts a worker once its heartbeat probe
 #                            flips it unhealthy. Same pin-not-`:latest` rationale.)
+#   POSTGRES_IMAGE_TAG      (default: pg18 — the pgvector/pgvector tag = the Postgres
+#                            MAJOR version. FRESH installs come up on pg18 directly (a
+#                            new box has no data dir, so it just initialises). A major
+#                            is NOT a drop-in for an EXISTING box: a new major refuses
+#                            to start on an old major's data dir. A box already on pg17
+#                            must EITHER migrate first (dump every DB → fresh data dir →
+#                            restore; runbook docs/postgres-18-upgrade.md) OR pin
+#                            POSTGRES_IMAGE_TAG=pg17 to hold on 17 until it does. NB: the
+#                            postgres service also needs PGDATA pinned for pg18 — set.)
 #
 # Persistent data — bind-mounted on the host so you can see/back up/move it:
 #   MANTLE_DATA_DIR         (default: ./data) — EVERYTHING lives under here:
@@ -242,7 +251,11 @@ x-app-env: &app-env
 
 services:
   postgres:
-    image: pgvector/pgvector:pg17
+    # pgvector/pgvector bundles Postgres + the vector extension in one image; the
+    # tag IS the Postgres major. Default pg18 — fresh installs come up on 18. An
+    # EXISTING pg17 box must migrate first or pin POSTGRES_IMAGE_TAG=pg17 (a major
+    # won't start on an old major's data dir). See the header note + docs/postgres-18-upgrade.md.
+    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
     container_name: mantle_pg
     restart: unless-stopped
     logging: *default-logging
@@ -257,6 +270,12 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: postgres
+      # REQUIRED for pg18+. The 18+ official/pgvector images moved the default
+      # PGDATA to a versioned subdir and REFUSE to init into a mount at the classic
+      # /var/lib/postgresql/data ("unused mount/volume" error → crash loop). Pinning
+      # PGDATA back keeps the existing bind mount working; harmless on pg17 (that is
+      # already its default). Without this, POSTGRES_IMAGE_TAG=pg18 will not boot.
+      PGDATA: /var/lib/postgresql/data
     volumes:
       # Bind-mounted on the host so the DB lives at a path you control.
       # NOTE: to MOVE the DB to another machine, use pg_dump (scripts/db-dump.sh)
@@ -325,7 +344,7 @@ services:
   # don't cover (.odt / .ods / .odp / .pptx / .ppt / .doc / .rtf / .epub / …).
   # Self-hosted; bytes stay on the VPS. Stateless — no volume.
   tika:
-    image: apache/tika:3.3.0.0
+    image: apache/tika:3.3.1.0
     container_name: mantle_tika
     restart: unless-stopped
     logging: *default-logging
@@ -365,7 +384,7 @@ services:
   # reach it, and a crashed/pathological render dies here, never in web.
   # See apps/web/lib/render-pdf.ts.
   browser:
-    image: ghcr.io/browserless/chromium:v2.54.2
+    image: ghcr.io/browserless/chromium:v2.55.0
     container_name: mantle_browser
     restart: unless-stopped
     logging: *default-logging
@@ -392,7 +411,7 @@ services:
   ollama:
     # Pinned (was :latest) — the update path re-pulls; override via env. Same var
     # for both ollama services so they never drift to different builds.
-    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.1}
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.2}
     container_name: mantle_ollama
     restart: unless-stopped
     logging: *default-logging
@@ -417,7 +436,7 @@ services:
   # One-shot: pull the shipped embedder into the model volume, then exit.
   # Idempotent — a no-op once the model is already in the volume.
   ollama_pull:
-    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.1}
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.2}
     container_name: mantle_ollama_pull
     restart: "no"
     profiles: ["local-embedder"]
@@ -445,7 +464,7 @@ services:
   # outbound HTTP proxy on :1055). Image PINNED (tailscale/tailscale#16108);
   # override via TS_IMAGE_TAG.
   tailscale:
-    image: tailscale/tailscale:${TS_IMAGE_TAG:-v1.98.4}
+    image: tailscale/tailscale:${TS_IMAGE_TAG:-v1.98.9}
     container_name: mantle_tailscale
     restart: unless-stopped
     logging: *default-logging
