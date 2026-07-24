@@ -4,7 +4,6 @@
  */
 import { handleTeamSso } from '@/lib/team-sso';
 
-export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
   return handleTeamSso(req);

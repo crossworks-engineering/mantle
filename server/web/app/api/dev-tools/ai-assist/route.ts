@@ -10,7 +10,7 @@
  * and the panel refreshes the registry view from the reply.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { invokeAgent } from '@mantle/agent-runtime';

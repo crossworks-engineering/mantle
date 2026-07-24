@@ -1,4 +1,3 @@
-import 'server-only';
 import puppeteer from 'puppeteer-core';
 
 /**

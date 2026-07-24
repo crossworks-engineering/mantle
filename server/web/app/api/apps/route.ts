@@ -1,13 +1,12 @@
 /**
  * /api/apps — list (GET) + create (POST) mini apps. Mirrors /api/pages.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createApp, listApps, countApps, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
 
-export const runtime = 'nodejs';
 
 const PAGE_SIZE = 50;
 

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { db } from '@mantle/db';
 import { cancelRun, compileRunState } from '@mantle/runs';
 import { getOwnerOr401 } from '@/lib/auth';

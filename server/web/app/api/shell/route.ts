@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { countPending } from '@mantle/tools';
 import { loadProfilePreferences } from '@mantle/content';
 import { buildAssetToken, getOwnerOr401 } from '@/lib/auth';

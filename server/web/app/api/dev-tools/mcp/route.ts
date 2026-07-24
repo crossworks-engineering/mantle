@@ -4,12 +4,11 @@
  * the same data surface the MCP server already exposes over stdio.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { callMcpTool, listMcpTools } from '@/lib/dev-tools/mcp-bridge';
 
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const gate = await getOwnerOr401();

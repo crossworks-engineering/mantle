@@ -1,10 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 
 import { getOwnerOr401 } from '@/lib/auth';
 import { applyManifest, MANIFEST_AGENTS } from '@/lib/system-manifest';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 // POST /api/studio/reset  { slug }
 // Resets a manifest agent to its canonical default (overwrite mode) — system

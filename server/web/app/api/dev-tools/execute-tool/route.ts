@@ -10,12 +10,11 @@
  * process" error from the dispatcher rather than failing silently.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { dispatchTool, resolveTool } from '@mantle/tools';
 import { getOwnerOr401 } from '@/lib/auth';
 
-export const dynamic = 'force-dynamic';
 
 const Body = z.object({
   slug: z

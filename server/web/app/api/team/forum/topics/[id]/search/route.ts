@@ -5,13 +5,11 @@
  * asking about another member's private topic gets the same 404 as a bogus id),
  * so a leaked link can never search a thread it couldn't already read.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getForumTopic, searchForumPosts } from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const IdParams = z.object({ id: z.string().uuid() });
 

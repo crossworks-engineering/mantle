@@ -14,7 +14,7 @@
  * atomically in the DB (env TEAM_UPLOAD_DAILY_BYTES, default 100 MB) — same
  * philosophy as the turn caps: a leaked token must never fill the disk.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 import { UPLOAD_DAILY_BYTES } from '@/lib/forum-gate';
@@ -36,8 +36,6 @@ import {
   writeQuarantineBytes,
 } from '@mantle/files';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const MAX_FILES_PER_POST = 5;
 /** Hard body ceiling checked from Content-Length BEFORE `formData()` buffers

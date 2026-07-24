@@ -5,12 +5,10 @@
  * thread read even if the owner never looked); now the client fires it after
  * the archive is actually on screen. Idempotent.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { markTeamThreadRead } from '@mantle/content';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ contactId: string }> }) {
   const user = await getOwnerOr401();

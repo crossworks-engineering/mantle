@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401, getOwnerForAsset } from '@/lib/auth';
 import { deleteFileById, fileById, readFileById, renameFileById, upsertFile } from '@/lib/files';

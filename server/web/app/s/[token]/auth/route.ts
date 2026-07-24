@@ -14,7 +14,7 @@
  * all return the same response, so nothing about which case applies can be
  * enumerated.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { resolveActiveShareByToken } from '@/lib/shares';
 import {
@@ -28,7 +28,6 @@ import { buildTeamVisitorCookie, TEAM_VISITOR_COOKIE } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
-export const runtime = 'nodejs';
 
 const Body = z.object({ token: z.string().min(1).max(64) });
 

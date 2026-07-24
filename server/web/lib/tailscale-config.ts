@@ -4,7 +4,6 @@
  * than a shared package. Mirrors @mantle/api-keys: seal with the row id as AAD,
  * never surface plaintext to the UI (only `masked`).
  */
-import 'server-only';
 
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';

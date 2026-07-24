@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { subscribeConversations, type ConversationChange } from '@/lib/realtime';
 
@@ -17,7 +17,6 @@ import { subscribeConversations, type ConversationChange } from '@/lib/realtime'
  * Owner-gated with getOwnerOr401 so a revoked/expired bearer gets a clean 401
  * (not an HTML redirect) before the stream opens.
  */
-export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request): Promise<Response> {
   const owner = await getOwnerOr401();

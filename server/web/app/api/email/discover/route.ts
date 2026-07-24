@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { recentUnknownSenders, imap, type PeekProviderResolver } from '@mantle/email';
 import { graphMailProvider } from '@mantle/microsoft';

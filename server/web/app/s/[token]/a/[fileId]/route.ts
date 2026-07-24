@@ -11,7 +11,6 @@ import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
  * under the folder's subtree — re-derived per request — for a folder share).
  * Everything else 404s. Supports Range requests so shared video/audio can seek.
  */
-export const dynamic = 'force-dynamic';
 
 function notFound() {
   return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });

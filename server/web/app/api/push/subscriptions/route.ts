@@ -3,7 +3,7 @@
 //          public key). Called after the app's /enroll round-trip.
 //   GET  — list this owner's enrolled devices (metadata only; for settings).
 
-import { type NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { insertSubscription, listSubscriptions } from '@/lib/push/store';
 

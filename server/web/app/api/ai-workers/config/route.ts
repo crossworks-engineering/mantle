@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { nativeDocumentProviders } from '@mantle/voice';
 import type { AiWorkerConfig } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';

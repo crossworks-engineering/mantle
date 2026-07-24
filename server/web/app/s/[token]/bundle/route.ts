@@ -4,7 +4,7 @@
  * 'app' share, and we serve only the app's PUBLISHED build (never a draft).
  * Mirrors /api/apps/[id]/bundle but owner comes from the share row, not a session.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { resolveActiveShareByToken } from '@/lib/shares';
@@ -12,7 +12,6 @@ import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 
-export const runtime = 'nodejs';
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;

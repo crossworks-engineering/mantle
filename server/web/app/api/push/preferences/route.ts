@@ -2,7 +2,7 @@
 // a partial patch; unknown/invalid fields are ignored. (Quiet hours removed —
 // docs/reminder-delivery-routing.md §C.)
 
-import { type NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getPushPrefs, updatePushPrefs } from '@/lib/push/store';
 import { sanitizePushPrefs } from '@/lib/push/preferences-sanitize';

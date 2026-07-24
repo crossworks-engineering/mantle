@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { TASK_PRIORITIES, TASK_STATUSES, deleteTask, getTask, updateTask } from '@/lib/tasks';

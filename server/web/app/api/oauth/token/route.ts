@@ -4,12 +4,10 @@
  * (token_endpoint_auth_method=none) — PKCE is the client proof. Standard
  * application/x-www-form-urlencoded request. Public endpoint; rate-limited later.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { exchangeAuthCode, refreshAccessToken, type TokenResponse } from '@/lib/mcp-oauth';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 function oauthError(error: string, description?: string, status = 400) {
   return NextResponse.json(

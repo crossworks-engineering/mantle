@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 
 import { getOwnerOr401 } from '@/lib/auth';
@@ -6,8 +6,6 @@ import { deleteLandedNode } from '@/lib/integrity/landed';
 
 // Delete one real node + its brain footprint via the canonical cascade/reaper
 // path. Owner-scoped; the destructive confirm lives in the client.
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const Body = z.object({ nodeId: z.string().uuid() });
 

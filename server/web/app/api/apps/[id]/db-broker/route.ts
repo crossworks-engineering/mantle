@@ -5,13 +5,12 @@
  * so an app structurally cannot reach another app's data). The app's declared
  * schema (manifest.sqlite) is applied lazily on first use.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getApp } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
 
-export const runtime = 'nodejs';
 
 const Body = z.object({
   op: z.enum(['query', 'exec']),

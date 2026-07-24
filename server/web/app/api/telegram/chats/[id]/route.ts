@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, agents, telegramChats } from '@mantle/db';
 import { getOwnerOr401 } from '@/lib/auth';

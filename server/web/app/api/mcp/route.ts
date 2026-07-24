@@ -21,8 +21,6 @@ import { registerMantleTools } from '@mantle/mcp-core';
 import { isRemoteMcpEnabled, ownerFromBearer, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 // Generous — the MCP client makes one HTTP request per tool call, so this must
 // clear normal bursty tool traffic while still capping a flood.

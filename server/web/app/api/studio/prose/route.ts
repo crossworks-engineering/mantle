@@ -1,10 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 
 import { getOwnerOr401 } from '@/lib/auth';
 import { listProseVersions, saveProse, revertProse } from '@/lib/studio/prompt-versions';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 // GET /api/studio/prose?entityType=&entityId=&field= → { versions }
 export async function GET(req: Request) {

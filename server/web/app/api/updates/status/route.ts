@@ -4,12 +4,11 @@
  * the version flipping (after the web container is recreated mid-update) as
  * the "we're on the new build" signal to reload.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getSessionUser } from '@/lib/auth';
 import { readUpdaterLog, readUpdaterStatus, updaterAvailable } from '@/lib/updates';
 import { APP_VERSION } from '@mantle/web-ui/version';
 
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const user = await getSessionUser();

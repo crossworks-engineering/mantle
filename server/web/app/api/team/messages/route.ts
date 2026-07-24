@@ -5,12 +5,10 @@
  * only ever read their own thread — the contact id comes from the credential,
  * never from a parameter.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { listTeamThread } from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   const caller = await resolveTeamChatCaller(req);

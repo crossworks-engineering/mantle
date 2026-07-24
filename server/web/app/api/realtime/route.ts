@@ -9,7 +9,6 @@ import { subscribeRealtime, type RealtimeChange } from '@/lib/realtime';
  * `?types=event,note` filters to those node types; omit for all. Owner
  * isolation is enforced here — a change for another owner is never emitted.
  */
-export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request): Promise<Response> {
   const user = await getOwnerOr401();

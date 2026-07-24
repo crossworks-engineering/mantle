@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { getOwnerOr401 } from '@/lib/auth';
 import { subscribeTurnStream } from '@/lib/realtime';
@@ -30,7 +30,6 @@ import { loadProfilePreferences, isStreamThoughtsEnabled } from '@mantle/content
  * backlog) before live-tailing — gap-free and duplicate-free via the merger. The
  * durable message row stays the source of truth for the final answer regardless.
  */
-export const dynamic = 'force-dynamic';
 
 export async function GET(
   req: Request,

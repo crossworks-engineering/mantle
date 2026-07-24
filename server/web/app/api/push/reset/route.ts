@@ -3,7 +3,7 @@
 // invalidates every existing subscription; devices must re-Connect. Old relay
 // device rows become unreachable (no one holds the old instance token).
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { generateInstanceToken } from '@/lib/push/tokens';
 import { registerInstance } from '@/lib/push/relay-client';

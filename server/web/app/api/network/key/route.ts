@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { setTailscaleConfig, clearTailscaleConfig } from '@/lib/tailscale-config';
 import { getOwnerOr401 } from '@/lib/auth';

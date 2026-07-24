@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import {
   checkForUpdate,
   readComposeStatus,
@@ -8,7 +8,6 @@ import {
 import { APP_VERSION, GIT_SHA, BUILD_TIME } from '@mantle/web-ui/version';
 import { getOwnerOr401 } from '@/lib/auth';
 
-export const dynamic = 'force-dynamic';
 
 /** Initial-load bundle for /settings/updates — the release check, whether the
  *  updater sidecar is present, the last updater status, and this build's

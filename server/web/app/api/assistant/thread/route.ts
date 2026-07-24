@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
   listAssistantAgents,
@@ -12,7 +12,6 @@ import {
  * hint → priority default), and that agent's most-recent thread (100 msgs).
  * Owner-scoped. Scroll-up paging stays on /api/assistant/messages.
  */
-export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   const user = await getOwnerOr401();

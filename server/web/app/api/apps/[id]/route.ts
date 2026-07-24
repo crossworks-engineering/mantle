@@ -1,12 +1,11 @@
 /**
  * /api/apps/[id] — get (GET), update metadata (PATCH), delete (DELETE).
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getApp, updateAppMeta, deleteApp } from '@mantle/content';
 
-export const runtime = 'nodejs';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();

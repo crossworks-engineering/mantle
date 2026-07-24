@@ -3,7 +3,7 @@
  * Owner-scoped. Surfaces the app_access_log the /s/ brokers write: who (a team
  * member, or anonymous for public), what (auth/tool/db), and when.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listAppAccess } from '@mantle/content';
 

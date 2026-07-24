@@ -9,14 +9,12 @@
  * fires). Splitting it into a client-fired POST would reintroduce the
  * stale-first-render race the SSR page never had.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listTeamRequests, listPendingForumUploads } from '@mantle/content';
 import { reconcileForumQuarantine } from '@/lib/forum-quarantine';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const UPLOADS_SHOWN = 100;
 

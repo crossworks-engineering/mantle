@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, requestCookie, type NextRequest } from '@/server/http-compat';
 import {
   exchangeCode,
   fetchMe,
@@ -16,7 +16,6 @@ import { requestOrigin } from '@/lib/auth-constants';
  * page with a `connected` or `error` query param. The PKCE/state cookies are
  * cleared on the way out so they can't be replayed.
  */
-export const dynamic = 'force-dynamic';
 
 /** Stable ltree root for a connected Microsoft account's ingested content.
  *  Distinct `microsoft.` namespace so it never collides with email's `inbox.`.
@@ -56,8 +55,8 @@ export async function GET(req: NextRequest) {
     return settingsRedirect(req, { error: desc.slice(0, 200) });
   }
 
-  const expectedState = req.cookies.get('ms_oauth_state')?.value;
-  const verifier = req.cookies.get('ms_oauth_verifier')?.value;
+  const expectedState = requestCookie(req, 'ms_oauth_state')?.value;
+  const verifier = requestCookie(req, 'ms_oauth_verifier')?.value;
   if (!code || !state || !expectedState || state !== expectedState || !verifier) {
     return settingsRedirect(req, {
       error: 'Invalid or expired sign-in attempt. Please try again.',

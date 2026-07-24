@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from '@/server/http-compat';
 import { buildAuthorizeUrl, createPkce, createState, resolveOAuthConfig } from '@mantle/microsoft';
 import { getOwnerOr401 } from '@/lib/auth';
 import { requestOrigin, secureCookies } from '@/lib/auth-constants';
@@ -11,7 +11,6 @@ import { requestOrigin, secureCookies } from '@/lib/auth-constants';
  *
  * Owner-gated — only the brain's owner can connect a Microsoft account.
  */
-export const dynamic = 'force-dynamic';
 
 const cookieOpts = (req: NextRequest) => ({
   httpOnly: true,

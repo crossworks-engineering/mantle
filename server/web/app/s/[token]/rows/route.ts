@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
@@ -14,7 +14,6 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * = an active table share + (for team mode) a live team session; everything
  * else 404s uniformly so a URL never reveals that a token exists.
  */
-export const dynamic = 'force-dynamic';
 
 function notFound() {
   return NextResponse.json(

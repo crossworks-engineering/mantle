@@ -7,14 +7,13 @@
  * Serves the DRAFT build when present (preview of unpublished work), else the
  * published build. 404 if the app has never built green.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
 
-export const runtime = 'nodejs';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();

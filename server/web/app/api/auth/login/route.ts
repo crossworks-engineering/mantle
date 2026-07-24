@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq, sql } from '@mantle/db';
 import { buildSessionCookie, loginWithPassword, SESSION_COOKIE_NAME } from '@/lib/auth';

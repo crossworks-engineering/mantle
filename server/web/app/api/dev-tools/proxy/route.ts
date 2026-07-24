@@ -16,7 +16,7 @@
  * The route sits behind getOwnerOr401 like every other /api route.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getApiKey } from '@mantle/api-keys';
 import {
@@ -29,7 +29,6 @@ import {
 } from '@mantle/tools';
 import { getOwnerOr401 } from '@/lib/auth';
 
-export const dynamic = 'force-dynamic';
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 

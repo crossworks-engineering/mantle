@@ -4,13 +4,11 @@
  * Visibility is enforced in getForumTopic: a member asking for another
  * member's private topic gets the same 404 as a bogus id.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getForumTopic, listForumPosts, listForumUploadStatesForTopic } from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const IdParams = z.object({ id: z.string().uuid() });
 

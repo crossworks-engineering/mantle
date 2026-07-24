@@ -1,12 +1,11 @@
 import path from 'node:path';
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { collectionRoot, createDocCollection, listDocCollections } from '@mantle/files';
 import { formatInProfile, loadProfilePreferences } from '@mantle/content';
 import { getReaderNav } from '@/lib/docs-reader';
 import { getOwnerOr401 } from '@/lib/auth';
 
-export const dynamic = 'force-dynamic';
 
 /** Doc collections + their server-formatted "last synced" strings (tz/locale
  *  stable) + a first-doc link per collection, for the /docs management pane. */

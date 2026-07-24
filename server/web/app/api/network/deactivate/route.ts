@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { tailnetDown } from '@/lib/tailscale';
 import { getOwnerOr401 } from '@/lib/auth';
 

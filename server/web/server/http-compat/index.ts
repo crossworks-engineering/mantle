@@ -4,6 +4,7 @@
  * mechanical swap of the import specifier — see ./response.ts for scope.
  */
 export { NextResponse, ResponseCookies, serializeCookie } from './response';
+export { requestCookie } from './headers';
 export type { CookieSetOptions } from './response';
 
 /**

@@ -1,4 +1,3 @@
-import 'server-only';
 
 import path from 'node:path';
 import { promises as fs } from 'node:fs';

@@ -3,13 +3,11 @@
  * topics float to the top of every member's list). Session-gated (under
  * /api/team-admin, not in PUBLIC_PATHS).
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { setForumTopicPinned } from '@mantle/content';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const Body = z.object({ topicId: z.string().uuid(), pinned: z.boolean() });
 

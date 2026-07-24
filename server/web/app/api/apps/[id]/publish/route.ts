@@ -2,11 +2,10 @@
  * /api/apps/[id]/publish — promote the draft (source + build) to the live app.
  * Refuses (409) if the draft has no successful build.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { publishApp, NoGreenBuildError } from '@mantle/content';
 
-export const runtime = 'nodejs';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();

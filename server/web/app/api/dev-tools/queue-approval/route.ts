@@ -11,13 +11,12 @@
  * is a real chat turn / heartbeat fire against the live bot.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, pendingToolCalls } from '@mantle/db';
 import { notifyPendingCreated } from '@mantle/tools';
 import { getOwnerOr401 } from '@/lib/auth';
 
-export const dynamic = 'force-dynamic';
 
 const Body = z.object({
   // A real, enabled tool so the approve path can actually dispatch it.

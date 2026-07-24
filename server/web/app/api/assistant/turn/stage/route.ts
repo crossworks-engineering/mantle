@@ -6,11 +6,10 @@
  * the typing dots. Reads the live trace (currentTurnStageLabel); it does NOT
  * touch the turn request/response path. Returns `{ label: null }` when idle.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { currentTurnStageLabel } from '@/lib/assistant/turn-stage';
 
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const user = await getOwnerOr401();

@@ -13,7 +13,7 @@
  * folder is ADOPTED rather than filed again — no duplicate corpus entry.
  */
 import { createHash } from 'node:crypto';
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { withKeyedLock } from '@/lib/keyed-mutex';
 import {
@@ -33,8 +33,6 @@ import {
 import { dashToLtree, deleteQuarantineBytes, readQuarantineBytes } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

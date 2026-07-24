@@ -10,14 +10,13 @@
  *
  * Runs against the app's own SQLite under the share owner's scope.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { resolveActiveShareByToken } from '@/lib/shares';
 import { getApp, recordAppAccess } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 
-export const runtime = 'nodejs';
 
 const Body = z.object({
   op: z.enum(['query', 'exec']),

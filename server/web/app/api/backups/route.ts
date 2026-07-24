@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import {
   ephemeralBackupDirMessage,
@@ -13,7 +13,6 @@ import {
 } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 
-export const dynamic = 'force-dynamic';
 
 /** Backup settings + last-run status + dumps on disk for /settings/backups. */
 export async function GET() {

@@ -1,9 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { listApiKeys } from '@/lib/api-keys';
 import { EMBEDDING_DIMS, getEmbeddingConfig, upsertEmbeddingConfig } from '@/lib/embedding-config';
 import { getOwnerOr401 } from '@/lib/auth';
 
-export const dynamic = 'force-dynamic';
 
 /** The single embedder config + the vector-column dim + the owner's API keys
  *  (for the route key pickers), for /settings/embedding. */

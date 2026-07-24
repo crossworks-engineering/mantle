@@ -1,9 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getTailnetStatus } from '@/lib/tailscale';
 import { getTailscaleConfig } from '@/lib/tailscale-config';
 import { getOwnerOr401 } from '@/lib/auth';
 
-export const dynamic = 'force-dynamic';
 
 /** Tailnet connection state + the stored auth-key summary for /settings/network. */
 export async function GET() {

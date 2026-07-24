@@ -11,7 +11,7 @@
  * POST /api/team-admin/members/[contactId]/thread-read, fired by the client
  * after the pane is actually on screen.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
   listTeamMemberActivity,
@@ -25,8 +25,6 @@ import {
 } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const ACTIVITY_PAGE_SIZE = 25;
 const ARCHIVE_SHOWN = 50;

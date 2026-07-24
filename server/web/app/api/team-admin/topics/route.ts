@@ -8,7 +8,7 @@
  * Read-only — the mark-as-read render side effect moved to an explicit
  * POST /api/team-admin/forum/topics/[id]/read.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
   listForumTopics,
@@ -20,8 +20,6 @@ import {
 } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const TOPICS_PAGE_SIZE = 30;
 

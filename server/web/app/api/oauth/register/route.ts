@@ -4,12 +4,10 @@
  * Public clients only (PKCE, no secret issued). Public endpoint; rate-limited in
  * the route layer (Phase 4).
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { isAllowedRedirectUri, isRemoteMcpEnabled, registerClient } from '@/lib/mcp-oauth';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 function error(status: number, error: string, description?: string) {
   return NextResponse.json(

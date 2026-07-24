@@ -12,13 +12,12 @@
  * uuids, so a member can never tail one), and the per-(owner, turn) filter in
  * subscribeTurnStream scopes events to this brain.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { subscribeTurnStream } from '@/lib/realtime';
 import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
 import { resolveTeamChatCaller, contactOfTeamTurnId } from '@/lib/team-chat-gate';
 
-export const dynamic = 'force-dynamic';
 
 export async function GET(
   req: Request,

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { parseSearchQuery } from '@mantle/web-ui/search-query';
 import { resolveSupersededTargets, searchChunks, searchNodes } from '@mantle/search';

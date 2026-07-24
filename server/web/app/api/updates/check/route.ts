@@ -3,11 +3,10 @@
  * cached (6h TTL in lib/updates.ts), so the banner polling every sidebar
  * mount never hammers the GitHub API.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getSessionUser } from '@/lib/auth';
 import { checkForUpdate } from '@/lib/updates';
 
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const user = await getSessionUser();

@@ -9,7 +9,7 @@
  * Same trust model as the rest of /api/team: self-authenticated via
  * resolveTeamChatCaller, membership liveness re-checked on every call.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import {
   TEAM_WORKSPACE_TYPES,
   TEAM_SHARE_SORTS,
@@ -20,8 +20,6 @@ import {
 } from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 30;
 /** Tree mode returns everything at once (a hierarchy can't paginate). */

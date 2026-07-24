@@ -1,4 +1,3 @@
-import 'server-only';
 import { DBOSClient } from '@dbos-inc/dbos-sdk';
 import { resolveSystemDatabaseUrl } from '@mantle/assistant-runtime';
 
