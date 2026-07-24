@@ -320,3 +320,65 @@ authenticated with cookies, and cookies don't cross origins. The member carve
 
 The regression net is `e2e/` (`team.spec`, `team-bearer.spec`,
 `team-admin.spec` + the rest) across both topology projects.
+
+## 11. The Hono server (v0.202.0) — Next.js removed from `server/web`
+
+Once the member carve (§10) finished, `server/web` was **render surfaces plus
+the `/api/**` plane** — an API-first tier with barely any React left. Carrying
+the full Next.js runtime (App Router, RSC, the Edge middleware sandbox, `next
+build`) to serve JSON and a couple of static pages was pure weight. So `server/web`
+now runs a **Hono app under `@hono/node-server`, executed by `tsx`** — the same
+runtime `server/api` and the workers have always used. Next.js is **gone** from
+`server/web`. `client/web` stays a Next.js app, untouched.
+
+**Architecture (all under `server/web/server/`):**
+
+- **`main.ts`** — the entrypoint. Loads env (`.env.local`, explicit-env-wins),
+  runs the boot manifest-reconcile, resolves build identity (root
+  `package.json` version + `MANTLE_GIT_SHA`/`MANTLE_BUILD_TIME`), and starts
+  `@hono/node-server` on `PORT`. Sub-second boot; no compile step.
+- **`middleware/gate.ts`** — a faithful port of the old Edge `middleware.ts`:
+  session-HMAC verify, the `k:'m'` mobile bearer, `?at=` asset tokens,
+  `PUBLIC_PATHS`, and CORS **including the wildcard refusal on
+  credential-minting paths** (`/api/auth/**`), preflight-before-auth.
+- **`request-context.ts`** — request path/method now travel via
+  `AsyncLocalStorage` instead of the injected `x-mantle-path`/`x-mantle-method`
+  headers the Edge middleware used.
+- **`http-compat/`** — a local `NextResponse` subclass (extends `Response`,
+  keeps the cookie set/delete API) plus ambient `cookies()`/`headers()` read
+  shims. This is the seam that let the route files keep their exact shape — the
+  handler signature and helper calls are unchanged behind the compat layer.
+- **`route-loader.ts` + `scripts/gen-route-manifest.ts`** — the `app/**/route.ts`
+  file convention is preserved. A generated, precedence-sorted manifest (288
+  routes) lazily imports each handler and adapts the Next handler signature onto
+  Hono (including catch-all `[[...x]]`-optional vs `[...x]`-required semantics).
+- **Render surfaces are hand-rolled, no Next renderer.** `/s/[token]`
+  server-renders through `react-dom/server` with three client **islands**
+  (app-presenter, table-presenter, team-token-prompt) bundled by
+  `scripts/build-share-runtime.ts` into `public/share-runtime/` (a Tailwind v4
+  CLI compile of `globals.css`, an esbuild islands bundle, and KaTeX css+fonts).
+  `/print/pages/[id]` is a plain HTML template wrapped around `renderPageDoc` —
+  no React at all. `/login`, `/hub`, `/team/*` are Hono redirect stubs.
+
+**What did NOT change:** the HTTP contract (same routes, request/response
+shapes), the port (3000), `/api/health`, and the **env contract — no new env
+vars**. The Docker server image drops the compile step (`build` is asset
+generation only — app-runtime, route manifest, share-runtime); `CMD` is
+`pnpm -C server/web start` (tsx). e2e is green in **both** topologies (29
+passed / 0 failed), with SSE client-abort, 8 MB multipart upload, and share-asset
+`Range` all verified live under the node server. `client/web` is untouched.
+
+**Gotcha — the tsx tsconfig `include`.** `tsx` applies the **cwd tsconfig only
+to files its `include` matches**. `server/web`'s app imports `.tsx` from
+`web-ui`; until `web-ui`'s `src` was added to the `include` (and `jsx` set to
+`react-jsx`), those files compiled with esbuild's **classic** JSX transform and
+SSR threw `React is not defined`. If you add a new source tree that the server
+renders, make sure it falls under the `include` or it silently gets the classic
+transform.
+
+**Route files keep the Next handler convention on purpose.** They still export
+`GET`/`POST`/… functions taking a request and a `{ params }` context, behind the
+`http-compat` shim — a deliberate choice to keep the ~280-file diff mechanical
+and reviewable, not an accident. Migrating individual routes to native Hono
+idioms (context-first handlers, Hono's own cookie/response helpers) is optional
+future cleanup, not required for correctness.

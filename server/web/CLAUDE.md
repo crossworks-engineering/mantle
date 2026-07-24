@@ -47,14 +47,18 @@ Non-negotiables (full detail in the guide):
   runtime CSS-var override). Defaults: Bukhari wordmark, sans title.
 - **Tailwind v4**: no dynamically built class names (use literal-string arrays).
 - **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
-  with the `Co-Authored-By` trailer; don't push unless asked. To see changes in a
-  browser without a local stack, run `pnpm dev:fe` (detached mode against the test
-  box — [docs/db-less-dev.md](../../docs/db-less-dev.md)).
-- **Detached mode must keep working**: server-side code in the `(app)` layout, pages,
-  or auth path that reads the DB during render (direct `@mantle/db` or via helpers
-  like `isOnboarded`) breaks `pnpm dev:fe` with a 500 — gate such reads behind
-  `isDetachedDev()` (see docs/db-less-dev.md "How it works"). Client code fetches via
-  `apiFetch`/`apiSend`/`apiEventStream` only (never raw same-origin `fetch` for data).
+  with the `Co-Authored-By` trailer; don't push unless asked. `pnpm dev:fe` now runs the
+  owner UI (`client/web`) detached against a deployed brain
+  ([docs/db-less-dev.md](../../docs/db-less-dev.md)) — so it browser-checks **client**
+  changes, not this tier. `server/web` runs under `tsx` (`pnpm -C server/web dev`, no
+  `next build`); its own render surfaces (`/s` shares, `/print`) need a running brain
+  with a DB to view.
+- **Detached dev is a `client/web` concern now**: `server/web` is the backend + render-surface
+  tier — its `/s` and `/print` renderers run on the brain **with** the DB, so the old
+  "gate DB reads behind `isDetachedDev()` or `pnpm dev:fe` 500s" rule no longer applies
+  here. The zero-secret owner UI in `client/web` has no server-side DB path at all; it
+  fetches every screen over HTTP via `apiFetch`/`apiSend`/`apiEventStream` (never raw
+  same-origin `fetch` for data) against `MANTLE_SERVER_ORIGIN`.
 
 **Team surfaces** — since the member carve, the `/team` + `/hub` + `/team-admin`
 UI lives in `client/web` (this app keeps redirect stubs + the `/api/team*` data

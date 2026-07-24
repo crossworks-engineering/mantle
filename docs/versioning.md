@@ -53,19 +53,25 @@ git push origin main v0.2.0   # the tag push cuts the release (see below)
 
 ## How it reaches the UI
 
-Build identity is resolved once, at build/dev-start, in
-[`apps/web/next.config.ts`](../apps/web/next.config.ts) and inlined as
-`NEXT_PUBLIC_*` env so there's no runtime cost:
+Both tiers surface build identity through the shared `@mantle/web-ui/version`
+module, which reads three `NEXT_PUBLIC_*` env values and exposes `VERSION_LABEL`
+(`v0.19.0-alpha`) for the wordmark and `versionDetail()`
+(`v0.19.0-alpha · 5a96bcd · 2026-06-05`) for the hover tooltip:
 
 | value | source |
 | --- | --- |
 | `NEXT_PUBLIC_APP_VERSION` | root `package.json` `version` |
 | `NEXT_PUBLIC_GIT_SHA` | `MANTLE_GIT_SHA` env, else `git rev-parse --short HEAD` |
-| `NEXT_PUBLIC_BUILD_TIME` | `MANTLE_BUILD_TIME` env, else build wall-clock (UTC ISO) |
+| `NEXT_PUBLIC_BUILD_TIME` | `MANTLE_BUILD_TIME` env, else wall-clock (UTC ISO) |
 
-[`apps/web/lib/version.ts`](../apps/web/lib/version.ts) reads them (client +
-server safe) and exposes `VERSION_LABEL` (`v0.19.0-alpha`) for the wordmark and
-`versionDetail()` (`v0.19.0-alpha · 5a96bcd · 2026-06-05`) for the hover tooltip.
+Where those vars come from differs by tier:
+
+- **`client/web` (Next.js)** inlines them at **build** in its `next.config.ts`,
+  so there's no runtime cost — the values are baked into the client bundle.
+- **`server/web` (Hono under `tsx`, no build step)** resolves them at **boot**
+  in `server/main.ts` — reading the root `package.json` version plus
+  `MANTLE_GIT_SHA`/`MANTLE_BUILD_TIME` — and sets the same `NEXT_PUBLIC_*` env
+  before the app starts. `/api/version` reports from there.
 
 ## Changelog entries
 
@@ -88,8 +94,10 @@ so the build can't run `git` inside the image. The build script resolves the SHA
 - [`scripts/docker-build-push.sh`](../scripts/docker-build-push.sh) stamps
   `MANTLE_GIT_SHA` (short HEAD) and `MANTLE_BUILD_TIME` (UTC ISO).
 - [`docker-compose.yml`](../docker-compose.yml) forwards them as `build.args`.
-- The [`Dockerfile`](../Dockerfile) `app` stage turns those ARGs into ENV before
-  `next build`, so `next.config.ts` picks them up.
+- The [`Dockerfile`](../Dockerfile) turns those ARGs into ENV in each app
+  target. The **client** target picks them up during `next build` (inlined into
+  the bundle); the **server** target has no build step, so they stay as ENV and
+  `server/main.ts` reads them at boot.
 
 A bare `docker build .` with no args still works — the SHA/time are simply
 omitted from the label.

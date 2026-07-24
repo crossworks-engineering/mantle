@@ -4,6 +4,57 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.202.0 — 2026-07-25
+
+**The server tier runs Hono now — Next.js is removed from `server/web`.** After
+the member carve (v0.201.0), `server/web` was an API-first tier: the whole
+`/api/**` plane plus a handful of render surfaces, with almost no React left.
+Carrying the full Next.js runtime — App Router, RSC, the Edge middleware
+sandbox, `next build` — to serve JSON and two static pages was pure weight. So
+`server/web` now runs a **Hono app under `@hono/node-server`, executed by
+`tsx`** — the same runtime `server/api` and the workers have always used. Boot
+is a sub-second `tsx server/main.ts`; there is no compile step. `client/web`
+stays a Next.js app, untouched.
+
+- **The gate is a faithful port of the Edge middleware.** Session-HMAC verify,
+  the `k:'m'` mobile bearer, `?at=` asset tokens, `PUBLIC_PATHS`, and CORS
+  (including the wildcard refusal on the credential-minting `/api/auth/**`
+  paths, preflight-before-auth) all moved to `server/middleware/gate.ts`.
+  Request path/method now travel via `AsyncLocalStorage` instead of injected
+  `x-mantle-*` headers.
+- **Route files kept their shape.** A local `NextResponse`/`cookies()`/
+  `headers()` compat shim (`server/http-compat/`) and a generated,
+  precedence-sorted route manifest (288 `app/**/route.ts` handlers, lazily
+  imported and adapted onto Hono) mean the ~280 route files carry the same
+  handler convention behind the seam — a mechanical, reviewable diff, not a
+  rewrite. Migrating individual routes to native Hono idioms is optional
+  future cleanup.
+- **Render surfaces are hand-rolled, no Next renderer.** `/s/<token>`
+  server-renders via `react-dom/server` with three client islands
+  (app/table/token-prompt) bundled into `public/share-runtime/` (Tailwind v4
+  CLI compile + esbuild + KaTeX); `/print/pages/<id>` is a plain HTML template
+  around `renderPageDoc`; `/login`, `/hub`, `/team/*` are redirect stubs.
+- **The HTTP contract did not change.** Same routes and shapes, same port
+  (3000), same `/api/health`, and **no new env vars**. e2e is green in both
+  topologies (29 passed / 0 failed), with SSE client-abort, 8 MB multipart
+  upload, and share-asset `Range` verified live under the node server.
+- **The Docker server image drops the compile step**: `build` is asset
+  generation only (app-runtime, route manifest, share-runtime), and `CMD` is
+  `pnpm -C server/web start` (tsx). The client target is unchanged.
+- **`pnpm dev:fe` now runs `client/web`.** The client app is zero-secret and
+  natively detached, so the old bearer-minting machinery is gone — you sign in
+  on the login page. Config moved to `client/web/.env.detached.local`
+  (`MANTLE_REMOTE=…` only; the legacy `server/web` file auto-migrates). The
+  remote box must allowlist your dev origin (`http://localhost:3000`) in
+  `MANTLE_API_CORS_ORIGINS` — the wildcard never covers `/api/auth`. See
+  [`docs/db-less-dev.md`](docs/db-less-dev.md).
+- **Footprint** (measured back-to-back on one host, idle boot): server image
+  **1.81 GB, down from 2.01 GB** (the `.next` output is gone); settled RSS
+  ~**643 MB vs ~683 MB** under `next start`; boot-to-ready ~3.2 s vs ~2.4 s —
+  the +0.8 s is tsx transpiling TypeScript at startup (the same trade
+  `server/api` and every worker already ship with), not request-path cost.
+  The multi-minute `next build` disappears from the image build entirely.
+
 ## v0.201.0 — 2026-07-24
 
 **The member carve — the split now covers the team surfaces.** `/team`,
