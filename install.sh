@@ -62,11 +62,13 @@ fetch() { # fetch <repo-path> <local-path>
 }
 
 fetch docker-compose.yml                 docker-compose.yml
-# Baseline for the release-owned compose contract: the updater sidecar
-# auto-refreshes docker-compose.yml on updates ONLY while it stays
-# byte-identical to this baseline (proof the box never hand-edited it —
-# box-local changes go in docker-compose.override.yml + .env instead).
+fetch docker-compose.client.yml          docker-compose.client.yml
+# Baselines for the release-owned compose contract: the updater sidecar
+# auto-refreshes these files on updates ONLY while each stays byte-identical
+# to its baseline (proof the box never hand-edited it — box-local changes go
+# in docker-compose.override.yml + .env instead).
 cp docker-compose.yml docker-compose.yml.release
+cp docker-compose.client.yml docker-compose.client.yml.release
 fetch .env.prod.example                  .env.prod.example
 fetch infra/caddy/Caddyfile              infra/caddy/Caddyfile
 fetch infra/postgres/init/01-extensions.sql  infra/postgres/init/01-extensions.sql

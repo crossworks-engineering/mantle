@@ -3,10 +3,11 @@
 #   pnpm version:bump patch && git commit … && git tag v0.20.71
 #   git push origin main v0.20.71
 #
-# 1. Builds the single Mantle image (one image runs web, agent, workers,
-#    migrate — see Dockerfile) for amd64 + arm64, each on its OWN native
-#    GitHub runner in parallel, then merges them into one multi-arch manifest
-#    pushed to Docker Hub as <namespace>/mantle:<tag> and :latest.
+# 1. Builds BOTH Mantle images (v0.200.0 split — mantle-server runs web/agent/
+#    workers/migrate; mantle-client is the zero-secret owner UI) for amd64 +
+#    arm64, each (target, arch) on its OWN native GitHub runner in parallel,
+#    then merges each target's digests into a multi-arch manifest pushed to
+#    Docker Hub as <namespace>/mantle-{server,client}:<tag> and :latest.
 # 2. Cuts a GitHub Release carrying the deploy bundle (docker-compose.yml,
 #    .env.prod.example, infra/, install.sh, db scripts) so compose + image are
 #    versioned TOGETHER — the contract docs/self-hosting.md documents.
@@ -30,13 +31,14 @@ on:
     tags: ['v*']
 
 env:
-  IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle
+  IMAGE_BASE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle
 
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
+        target: [server, client]
         include:
           - platform: linux/amd64
             runner: ubuntu-24.04
@@ -49,7 +51,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Platform label
-        run: echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+        run: |
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+          echo "IMAGE=${IMAGE_BASE}-${{ matrix.target }}" >> "$GITHUB_ENV"
         env:
           platform: ${{ matrix.platform }}
 
@@ -66,15 +70,15 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: app
+          target: ${{ matrix.target }}
           platforms: ${{ matrix.platform }}
           build-args: |
             MANTLE_GIT_SHA=${{ github.sha }}
             MANTLE_BUILD_TIME=${{ github.event.head_commit.timestamp }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           # Per-arch cache scope so the two runners don't clobber each other's cache.
-          cache-from: type=gha,scope=${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          cache-from: type=gha,scope=${{ matrix.target }}-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}-${{ matrix.platform }}
 
       # Name the marker file with the BARE hex (strip the sha256: prefix); the
       # merge job re-adds @sha256: when it assembles the manifest. Keeping the
@@ -87,21 +91,27 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ env.PLATFORM_PAIR }}
+          name: digests-${{ matrix.target }}-${{ env.PLATFORM_PAIR }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
 
   merge:
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [server, client]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    env:
+      IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle-${{ matrix.target }}
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digests-*
+          pattern: digests-${{ matrix.target }}-*
           merge-multiple: true
 
       - uses: docker/setup-buildx-action@v3
@@ -126,8 +136,10 @@ jobs:
       # engine behaviors table storage leans on (readOnly enforcement, FTS5
       # trigram, VACUUM INTO under WAL, …) are re-proven on the ACTUAL image —
       # the exact Node binary boxes will run — before the release is cut. A
-      # drifted image fails here instead of on a customer box.
+      # drifted image fails here instead of on a customer box. Server image
+      # only — the client image has no table engine.
       - name: Probe node:sqlite on the prod image
+        if: matrix.target == 'server'
         run: |
           docker run --rm "${IMAGE}:${{ github.ref_name }}" \
             pnpm -C server/web exec tsx ../../packages/tabledb/src/probes-cli.ts
@@ -143,7 +155,7 @@ jobs:
       - name: Assemble deploy bundle
         run: |
           mkdir -p dist/mantle-deploy
-          cp docker-compose.yml .env.prod.example install.sh dist/mantle-deploy/
+          cp docker-compose.yml docker-compose.client.yml .env.prod.example install.sh dist/mantle-deploy/
           cp -R infra dist/mantle-deploy/infra
           mkdir -p dist/mantle-deploy/scripts
           cp scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh scripts/compose-adopt.sh dist/mantle-deploy/scripts/
