@@ -43,6 +43,22 @@ export function mountStatic(app: Hono): void {
   }
 }
 
+/** Next (trailingSlash:false) 308-redirected `/api/x/` → `/api/x`; Hono has no
+ *  such normalization, so without this external callers with trailing slashes
+ *  would 404 (parity fix from the v0.202.0 audit). Mounted before everything. */
+export function trailingSlashRedirect() {
+  return async (
+    c: { req: { url: string; method: string }; redirect: (to: string, s: 308) => Response },
+    next: () => Promise<void>,
+  ) => {
+    const url = new URL(c.req.url);
+    if (url.pathname.length > 1 && url.pathname.endsWith('/')) {
+      return c.redirect(url.pathname.replace(/\/+$/, '') + url.search, 308);
+    }
+    await next();
+  };
+}
+
 /** Legacy screen renames — old bookmarks/deep-links keep working; query params
  *  pass through (ported from next.config redirects(), permanent = 308). */
 const REDIRECTS: ReadonlyArray<readonly [string, string]> = [

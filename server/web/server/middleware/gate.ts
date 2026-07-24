@@ -184,6 +184,10 @@ export function gate(): MiddlewareHandler {
   };
 }
 
+/** Raw (undecoded) cookie read — tokens are unpadded base64url, so this always
+ *  agrees with lib/auth's decoded read; if token minting ever emits `%`/`=`,
+ *  revisit BOTH reads together (audit note L2). Gate is defense-in-depth only —
+ *  every route re-authenticates. */
 function cookieValue(req: Request, name: string): string | undefined {
   const header = req.headers.get('cookie');
   if (!header) return undefined;

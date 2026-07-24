@@ -1,4 +1,5 @@
 import type { Context, Hono } from 'hono';
+import { escapeHtml } from './template';
 
 /**
  * Redirect stubs for the surfaces that moved to the CLIENT app with the split
@@ -13,11 +14,14 @@ function clientOrigin(): string {
   return (process.env.MANTLE_CLIENT_ORIGIN ?? '').replace(/\/+$/, '');
 }
 
-function movedCard(title: string, heading: string, body: string): string {
+/** Both args are static literals today, but escape anyway so a future caller
+ *  can't accidentally interpolate user input (audit hardening). `body` may
+ *  carry entities (&rsquo;) — callers pass pre-escaped copy, nothing dynamic. */
+function movedCard(heading: string, bodyHtml: string): string {
   return `<div class="flex h-dvh items-center justify-center bg-background p-6 text-foreground">
 <div class="w-full max-w-sm rounded-lg border border-border bg-card p-6 text-card-foreground shadow-sm">
-<h1 class="text-base font-semibold">${heading}</h1>
-<p class="mt-2 text-sm text-muted-foreground">${body}</p>
+<h1 class="text-base font-semibold">${escapeHtml(heading)}</h1>
+<p class="mt-2 text-sm text-muted-foreground">${bodyHtml}</p>
 </div>
 </div>`;
 }
@@ -40,7 +44,6 @@ export function mountStubs(app: Hono): void {
       htmlPage(
         { title: 'Team Hub' },
         movedCard(
-          'Team Hub',
           'The team hub has moved',
           'This brain serves its team hub from a separate app address. Ask the brain&rsquo;s admin for the current link.',
         ),
@@ -61,7 +64,6 @@ export function mountStubs(app: Hono): void {
       htmlPage(
         { title: 'Team' },
         movedCard(
-          'Team',
           'The team workspace has moved',
           'This brain serves its member workspace from a separate app address. Ask the brain&rsquo;s admin for the current team link.',
         ),

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { RedirectError } from './http-compat/redirect-error';
 import { gate } from './middleware/gate';
 import { registerRoutes } from './route-loader';
-import { mountRedirects, mountStatic } from './static';
+import { mountRedirects, mountStatic, trailingSlashRedirect } from './static';
 
 /**
  * The server/web HTTP app. Layering (first match wins):
@@ -12,6 +12,7 @@ import { mountRedirects, mountStatic } from './static';
 export async function createApp(): Promise<Hono> {
   const app = new Hono();
 
+  app.use('*', trailingSlashRedirect());
   mountRedirects(app);
   mountStatic(app);
   app.use('*', gate());
@@ -32,6 +33,11 @@ export async function createApp(): Promise<Hono> {
   mountPrint(app);
   mountStubs(app);
 
+  // NOTE: notFound + onError run OUTSIDE the gate's ALS frame (Hono's compose
+  // catches thrown errors after store.run unwinds) — never call the ambient
+  // cookies()/headers() shims from these two handlers; they would throw
+  // "outside a request scope". Use c.req.raw directly if request data is
+  // ever needed here.
   app.notFound((c) => {
     const path = new URL(c.req.url).pathname;
     if (path === '/api' || path.startsWith('/api/')) {
