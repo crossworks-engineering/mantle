@@ -93,6 +93,46 @@ describe('route loader', () => {
     expect((await app.request('/files/a')).status).toBe(200);
   });
 
+  it('unexported methods get 405 + Allow; bare OPTIONS gets 204 + Allow (Next parity)', async () => {
+    const app = new Hono();
+    registerRoutes(app, [
+      entry({
+        pattern: '/api/notes',
+        methods: ['GET', 'POST'],
+        load: async () => ({ GET: echo('GET'), POST: echo('POST') }),
+      }),
+    ]);
+    const res = await app.request('/api/notes', { method: 'DELETE' });
+    expect(res.status).toBe(405);
+    expect(res.headers.get('allow')).toBe('GET, POST, HEAD, OPTIONS');
+    const opt = await app.request('/api/notes', { method: 'OPTIONS' });
+    expect(opt.status).toBe(204);
+    expect(opt.headers.get('allow')).toBe('GET, POST, HEAD, OPTIONS');
+    // Registered methods still win over the fallback.
+    expect((await app.request('/api/notes')).status).toBe(200);
+  });
+
+  it('the 405 fallback does not shadow overlapping dynamic patterns', async () => {
+    const app = new Hono();
+    registerRoutes(app, [
+      entry({ pattern: '/api/agents/options', load: async () => ({ GET: echo('options') }) }),
+      entry({
+        pattern: '/api/agents/:id',
+        methods: ['PATCH', 'DELETE'],
+        load: async () => ({ PATCH: echo('patch'), DELETE: echo('del') }),
+      }),
+    ]);
+    // Dynamic route's own methods work…
+    expect((await app.request('/api/agents/xyz', { method: 'DELETE' })).status).toBe(200);
+    // …the static path 405s methods it doesn't export (Next would too — the
+    // options route file wins the path match)…
+    expect((await app.request('/api/agents/options', { method: 'DELETE' })).status).toBe(405);
+    // …and unmatched methods on the dynamic path 405 with its Allow set.
+    const res = await app.request('/api/agents/xyz', { method: 'PUT' });
+    expect(res.status).toBe(405);
+    expect(res.headers.get('allow')).toBe('PATCH, DELETE, OPTIONS');
+  });
+
   it('answers 405 when the module lacks the method export', async () => {
     const app = new Hono();
     registerRoutes(app, [

@@ -134,7 +134,13 @@ COPY docker-compose.client.yml /app/release/docker-compose.client.yml
 COPY infra/caddy/Caddyfile /app/release/Caddyfile
 COPY infra/updater/updater.sh /app/release/updater.sh
 EXPOSE 3000
-CMD ["pnpm", "-C", "server/web", "start"]
+# `pnpm … exec` (NOT the run-script form): `pnpm run start` interposes an
+# `sh -c` layer that swallows SIGTERM, so compose stop/update would never reach
+# the server's graceful-shutdown handler and every stop would burn the full
+# grace period before SIGKILL — verified empirically in the v0.202.0 audit.
+# The exec form forwards signals through tsx to node (same as the old
+# `pnpm exec next start` CMD and every worker service).
+CMD ["pnpm", "-C", "server/web", "exec", "tsx", "server/main.ts"]
 
 # ── 3. client: the zero-secret owner-UI image ────────────────────────────────
 # Same deps layer (one lockfile, shared cache); only client/web is built. No

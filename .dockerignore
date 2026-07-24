@@ -24,3 +24,9 @@ data
 # brain by worker_docs. Do not re-add `docs` here.
 README.md
 *.dump
+
+# Generated at image build (pnpm build) — never ship a dev checkout copy
+server/web/public/share-runtime/
+server/web/public/app-runtime/
+client/web/public/app-runtime/
+server/web/server/route-manifest.gen.ts

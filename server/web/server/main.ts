@@ -57,6 +57,8 @@ const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
 
 // Compose sends SIGTERM on stop/update — close the listener, let in-flight
 // requests finish, and bail hard if something (an SSE stream) pins the process.
+// NOTE: signals only reach us via `pnpm exec tsx …` (the image CMD + worker
+// form); the `pnpm run` script form interposes an sh layer that swallows them.
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     console.log(`[server] ${signal} — shutting down`);
@@ -64,3 +66,17 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     setTimeout(() => process.exit(0), 5000).unref();
   });
 }
+
+// Next's server logged process-level failures and stayed up; bare node's
+// default is to CRASH on an unhandled rejection — and this app deliberately
+// fire-and-forgets promises (view counters, audit rows, boot reconcile), so a
+// detached rejection must never take the web tier down. Mirrors server/api's
+// runtime guard. Uncaught exceptions log-and-continue too: with request errors
+// already contained by app.onError, anything reaching here is a background
+// task, and killing live SSE streams over it is the worse failure.
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] unhandled rejection (continuing):', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[server] uncaught exception (continuing):', err);
+});

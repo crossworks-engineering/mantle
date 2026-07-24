@@ -86,5 +86,25 @@ export function registerRoutes(app: Hono, manifest: RouteEntry[]): void {
 
       app.on(method, entry.pattern, handle);
     }
+
+    // Next parity for the error path: a request whose PATH matches a route
+    // file but whose METHOD isn't exported got a 405 + Allow from Next (and
+    // OPTIONS was auto-answered 204 + Allow). Registered after the real
+    // methods, so it only fires for the leftovers. (CORS-eligible OPTIONS
+    // never reaches here — the gate answers those preflights first.)
+    const allow = [
+      ...entry.methods,
+      ...(entry.methods.includes('GET') ? ['HEAD'] : []),
+      'OPTIONS',
+    ].join(', ');
+    app.all(entry.pattern, (c) => {
+      if (c.req.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: { Allow: allow } });
+      }
+      return Response.json(
+        { error: 'method not allowed' },
+        { status: 405, headers: { Allow: allow } },
+      );
+    });
   }
 }
