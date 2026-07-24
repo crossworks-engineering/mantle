@@ -21,10 +21,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { Button } from '@mantle/web-ui/ui/button';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import type {
   MaintenanceOverview,
   MaintenanceRunView,

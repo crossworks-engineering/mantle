@@ -17,7 +17,7 @@ import {
   useState,
 } from 'react';
 import { sendHttpDraft, sendMcpCall, sendToolCall } from '@/lib/dev-tools/client';
-import { apiFetch, ApiError } from '@/lib/api-fetch';
+import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
 import {
   STORAGE_KEYS,
   appendHistory,

@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import { ApiError, apiFetch } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
+import { ApiError, apiFetch } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   CommandDialog,
   CommandGroup,
@@ -12,8 +12,8 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-} from '@/components/ui/command';
-import { ALL_NAV_ITEMS } from '@/components/layout/nav-items';
+} from '@mantle/web-ui/ui/command';
+import { ALL_NAV_ITEMS } from '@mantle/web-ui/layout/nav-items';
 import { nodeTypeIcon } from '@/components/search/node-type-icons';
 import {
   displayTitle,

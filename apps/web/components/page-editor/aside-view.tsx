@@ -2,7 +2,7 @@
 
 import { NodeViewContent, NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { Sparkles } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 import {
   asideBackground,
   asideBorderColor,

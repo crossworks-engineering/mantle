@@ -3,10 +3,10 @@
 import { Inbox, Mail, MailOpen, Paperclip, Star } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { EmailDTO, EmailAttachmentDTO } from '@mantle/client-types';
-import { apiSend } from '@/lib/api-fetch';
-import { assetUrl } from '@/lib/asset-url';
-import { cn } from '@/lib/utils';
-import { formatDateTime } from '@/lib/format-datetime';
+import { apiSend } from '@mantle/web-ui/api-fetch';
+import { assetUrl } from '@mantle/web-ui/asset-url';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 
 /**
  * Right-hand pane that renders the selected email. Client component: the body

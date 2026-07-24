@@ -10,7 +10,7 @@ import {
   DEFAULT_COLOR_THEME,
   coerceRandomInterval,
   pickRandomColorTheme,
-} from '@/lib/themes';
+} from '@mantle/web-ui/lib/themes';
 
 type Ctx = {
   colorTheme: string;

@@ -4,7 +4,7 @@ import { MinusIcon, PlusIcon } from 'lucide-react';
 import * as React from 'react';
 import { Bar, BarChart } from 'recharts';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   Card,
   CardContent,
@@ -12,8 +12,8 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { ChartConfig, ChartContainer } from '@/components/ui/chart';
+} from '@mantle/web-ui/ui/card';
+import { ChartConfig, ChartContainer } from '@mantle/web-ui/ui/chart';
 
 const data = [
   {

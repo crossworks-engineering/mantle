@@ -16,9 +16,9 @@
 import { useCallback, useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Send } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import type { AgentTelegramBinding, AgentTelegramChat } from '@/lib/agent-telegram';
 
 export function TelegramBotSection({ agentId }: { agentId: string }) {

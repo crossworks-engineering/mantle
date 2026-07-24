@@ -1,13 +1,13 @@
 import * as React from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@mantle/web-ui/ui/select';
 
 interface AccountSwitcherProps {
   isCollapsed: boolean;

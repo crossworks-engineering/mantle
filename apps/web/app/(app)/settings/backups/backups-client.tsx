@@ -16,22 +16,22 @@
 import { useState, useTransition } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DatabaseBackup, FolderOpen } from 'lucide-react';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { useToast } from '@/components/ui/toast';
+} from '@mantle/web-ui/ui/select';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import type { BackupConfig, BackupFile, BackupStatus } from '@mantle/content';
 
 type BackupsData = {

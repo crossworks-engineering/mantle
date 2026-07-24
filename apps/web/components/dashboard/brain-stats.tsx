@@ -1,7 +1,7 @@
 import { AlertTriangle, Boxes, CheckCircle2, Network, Sparkles } from 'lucide-react';
 import type { BrainCounts, GraphIntegrity, VectorCounts } from '@/lib/dashboard';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { formatCount } from '@/lib/format-bytes';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
+import { formatCount } from '@mantle/web-ui/lib/format-bytes';
 import { VitalsBar } from './vitals-bar';
 
 /** Memory-index coverage (how much of the brain is embedded/searchable) plus

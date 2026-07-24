@@ -2,9 +2,9 @@
 
 import { useQuery } from '@tanstack/react-query';
 import type { CalendarAccountDTO } from '@mantle/client-types';
-import { apiFetch } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { AddFeedForm } from './add-form';
 import { CalendarRow } from './calendar-row';
 

@@ -2,16 +2,16 @@
 
 import { ScrollText } from 'lucide-react';
 import { useListNav } from '@/lib/use-list-nav';
-import { ListPager } from '@/components/layout/list-pager';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@mantle/web-ui/ui/select';
 import {
   Table,
   TableBody,
@@ -19,9 +19,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { formatDateTime } from '@/lib/format-datetime';
+} from '@mantle/web-ui/ui/table';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 
 export type AuditRow = {
   id: string;

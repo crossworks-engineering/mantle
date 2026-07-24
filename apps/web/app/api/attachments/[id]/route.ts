@@ -5,7 +5,7 @@ import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts, emailAttachments, emails } from '@mantle/db';
 import { getContent } from '@mantle/storage';
 import { getOwnerForAsset } from '@/lib/auth';
-import { safeDownloadHeaders } from '@/lib/safe-download';
+import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
 
 /**
  * Attachment download. Looks up the attachment by id, verifies it belongs to

@@ -13,18 +13,18 @@
  */
 import { useState } from 'react';
 import { X, Pin } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { tagColorClass } from '@/components/tag-pill';
-import { Label } from '@/components/ui/label';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { tagColorClass } from '@mantle/web-ui/tag-pill';
+import { Label } from '@mantle/web-ui/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { useToast } from '@/components/ui/toast';
-import { apiSend } from '@/lib/api-fetch';
+} from '@mantle/web-ui/ui/select';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 
 const MAX_TAGS = 8; // mirrors TEAM_HUB_TAGS_MAX server-side
 

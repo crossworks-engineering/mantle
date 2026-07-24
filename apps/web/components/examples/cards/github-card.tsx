@@ -2,8 +2,8 @@
 
 import { Activity, Circle, Settings2 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
 
 export function GithubCard() {
   return (

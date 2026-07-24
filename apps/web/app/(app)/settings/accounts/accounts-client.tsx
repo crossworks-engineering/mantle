@@ -12,12 +12,12 @@ import { useSearchParams } from 'next/navigation';
 import { Activity, FolderTree, Mail, Pencil, Plus, SlidersHorizontal } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import type { PublicEmailAccount, SyncRun, AccountFoldersResult } from '@mantle/email';
-import { formatDateTime } from '@/lib/format-datetime';
-import { BackLink } from '@/components/layout/back-link';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { cn } from '@/lib/utils';
-import { apiFetch } from '@/lib/api-fetch';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
+import { BackLink } from '@mantle/web-ui/layout/back-link';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { ImapForm } from './imap/imap-form';
 import { FolderPicker } from './[id]/folders/folder-picker';
 

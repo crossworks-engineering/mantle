@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getOwnerOr401, getOwnerForAsset } from '@/lib/auth';
 import { deleteFileById, fileById, readFileById, renameFileById, upsertFile } from '@/lib/files';
 import { recordIngest } from '@mantle/tracing';
-import { safeDownloadHeaders } from '@/lib/safe-download';
+import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([

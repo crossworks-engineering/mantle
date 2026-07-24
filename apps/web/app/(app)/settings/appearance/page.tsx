@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { Check, Moon, Sun, Monitor, type LucideIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { useColorTheme } from '@/components/color-theme-provider';
-import { COLOR_THEMES } from '@/lib/themes';
+import { COLOR_THEMES } from '@mantle/web-ui/lib/themes';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PreviewTabs } from '@/components/theme-preview/preview-tabs';
 

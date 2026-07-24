@@ -21,7 +21,7 @@ import {
   Loader2,
   RefreshCw,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,12 +31,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import type { ComposeStatus, UpdateCheck, UpdaterStatus } from '@/lib/updates';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 
 type Build = { version: string; sha: string; time: string };
 

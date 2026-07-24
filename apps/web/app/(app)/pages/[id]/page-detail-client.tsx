@@ -17,23 +17,23 @@ import {
   Undo2,
 } from 'lucide-react';
 import { computeDiffOverlay, type DiffOverlay } from '@mantle/content/page-diff';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
 import { TagInput } from '@/components/tag-input';
 import { EmojiPicker } from '@/components/emoji-picker';
-import { BackLink } from '@/components/layout/back-link';
+import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { ShareControl } from '@/components/share/share-control';
 import { ExportMenu } from '@/components/export/export-menu';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
-import { PageOutline } from '@/components/page-editor/page-outline';
+import { PageOutline } from '@mantle/web-ui/page-outline';
 import { PageBacklinks } from '@/components/page-editor/page-backlinks';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import type { SurfaceSelection } from '@/components/assistant/assistant-dock';
 import { buildFocusDirective } from '@/lib/focus-directive';
 import type { Backlink } from '@/lib/pages';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { buildPageToc, type TocEntry } from '@mantle/content/page-toc';
 import {
   AlertDialog,
@@ -44,9 +44,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 type PageWidth = 'narrow' | 'wide';
 

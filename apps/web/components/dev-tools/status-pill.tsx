@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 /** Status-code pill + the request meta line (duration, size). */
 export function StatusPill({ status, statusText }: { status: number; statusText: string }) {

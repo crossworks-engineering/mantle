@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, Loader2, Plug, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,12 +16,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { formatDateTime } from '@/lib/format-datetime';
-import { cn } from '@/lib/utils';
-import { copyText } from '@/lib/secure-context-fallbacks';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
 type ConnectedClient = {
   id: string;

@@ -1,9 +1,9 @@
 import { ComponentProps } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 
-import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { ScrollArea } from '@mantle/web-ui/ui/scroll-area';
 import { Mail } from '@/components/examples/mail/data';
 import { useMail } from '@/components/examples/mail/use-mail';
 

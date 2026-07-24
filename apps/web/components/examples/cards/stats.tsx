@@ -2,8 +2,8 @@
 
 import { Area, AreaChart, Line, LineChart } from 'recharts';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChartConfig, ChartContainer } from '@/components/ui/chart';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
+import { ChartConfig, ChartContainer } from '@mantle/web-ui/ui/chart';
 
 const data = [
   { tokens: 10400, traces: 40 },

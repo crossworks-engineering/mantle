@@ -1,12 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@mantle/web-ui/ui/button';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import { TagInput } from '@/components/tag-input';
-import { DateTimePicker } from '@/components/ui/date-time-picker';
+import { DateTimePicker } from '@mantle/web-ui/ui/date-time-picker';
 
 export const PRIORITIES = ['low', 'normal', 'high'] as const;
 export type Priority = (typeof PRIORITIES)[number];

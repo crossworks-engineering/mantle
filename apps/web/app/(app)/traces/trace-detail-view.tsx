@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { formatDateTime } from '@/lib/format-datetime';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 // Pure formatters + type from the client-safe module (not `@/lib/traces`, which
 // drags postgres in) so this can render inside a client component.
 import {

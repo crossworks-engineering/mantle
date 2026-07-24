@@ -16,7 +16,7 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,17 +26,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { Input } from '@mantle/web-ui/ui/input';
 import { ShareControl } from '@/components/share/share-control';
 import { ExportButton } from '@/components/export/export-button';
-import { useToast } from '@/components/ui/toast';
-import { TagPill } from '@/components/tag-pill';
-import { cn } from '@/lib/utils';
-import { formatDateTime } from '@/lib/format-datetime';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { TagPill } from '@mantle/web-ui/tag-pill';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { syncSelectionParam } from '@/lib/url-sync';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { NoteEditor, type NoteRow } from './note-editor';
 
 type TagCount = { tag: string; count: number };

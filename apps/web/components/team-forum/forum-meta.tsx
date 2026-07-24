@@ -5,7 +5,7 @@
  * could not guarantee contrast across the ~40 themes).
  */
 import { Lock, Pin } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 export type ForumKind = 'question' | 'review' | 'feature' | 'bug' | 'discussion';
 export type ForumStatus = 'open' | 'answered' | 'closed';

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Table2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Button } from '@mantle/web-ui/ui/button';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 type CellValue = string | number | boolean | string[] | null;
 type PublicRow = { id: string; cells: Record<string, CellValue> };

@@ -21,9 +21,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { useToast } from '@/components/ui/toast';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+} from '@mantle/web-ui/ui/select';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 
 type AgentOption = { slug: string; name: string };
 

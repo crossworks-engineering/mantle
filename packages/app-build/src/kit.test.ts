@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { KIT } from './kit';
 
-// The @host kit module is a string mirror of apps/web/lib/app-bridge/protocol.ts
+// The @host kit module is a string mirror of packages/web-ui/src/app-bridge/protocol.ts (formerly apps/web/lib/app-bridge)
 // (the sandbox can't import host code, so the shapes are duplicated by design).
 // These are drift tripwires: if a bridge kind is renamed or dropped on either
 // side, the app-facing API silently stops matching what the host answers.

@@ -1,4 +1,4 @@
-import type { NavItem } from '@/components/layout/nav-items';
+import type { NavItem } from '@mantle/web-ui/layout/nav-items';
 
 /**
  * Pure logic behind the ⌘K search palette, split out for colocated vitest —

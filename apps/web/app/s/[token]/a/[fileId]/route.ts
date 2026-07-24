@@ -2,7 +2,7 @@ import { resolveActiveShareByToken, isAssetAllowed } from '@/lib/shares';
 import { resolveShareVisitor } from '@/lib/team-gate';
 import { readFileById } from '@/lib/files';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
-import { safeDownloadHeaders } from '@/lib/safe-download';
+import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
 
 /**
  * Public asset bytes for a shared node. Authorization = the token must be

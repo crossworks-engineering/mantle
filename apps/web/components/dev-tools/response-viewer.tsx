@@ -7,8 +7,8 @@
  */
 
 import { Loader2 } from 'lucide-react';
-import { CopyButton } from '@/components/ui/copy-button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CopyButton } from '@mantle/web-ui/ui/copy-button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
 import { useDevTools } from './context';
 import { JsonTree } from './json-tree';
 import { StatusPill, formatBytes } from './status-pill';

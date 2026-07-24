@@ -11,12 +11,12 @@ import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Mail, Phone, Plus, RefreshCw, Search, Trash2, Users, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,20 +26,20 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from '@mantle/web-ui/ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { copyText } from '@/lib/secure-context-fallbacks';
-import { useToast } from '@/components/ui/toast';
+} from '@mantle/web-ui/ui/dialog';
+import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { TagInput } from '@/components/tag-input';
-import { ListPager } from '@/components/layout/list-pager';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 // IMPORTANT: import from the *leaf* `contacts-format` subpath, NOT the
 // `@/lib/contacts` re-export — that one barrels through `@mantle/content` →
 // `@mantle/db` → `postgres` (Node-only `fs`), which Next can't ship to the
@@ -51,8 +51,8 @@ import {
   normalizeCountryCode,
   type ContactRow,
 } from '@mantle/content/contacts-format';
-import { cn } from '@/lib/utils';
-import { formatDateTime } from '@/lib/format-datetime';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 
 type ContactsListResponse = {
   contacts: ContactRow[];

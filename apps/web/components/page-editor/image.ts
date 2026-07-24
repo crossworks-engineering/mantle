@@ -1,5 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core';
-import { assetUrl } from '@/lib/asset-url';
+import { assetUrl } from '@mantle/web-ui/asset-url';
 
 /**
  * Block image node. Carries `nodeId` (the backing `file` node) alongside `src`

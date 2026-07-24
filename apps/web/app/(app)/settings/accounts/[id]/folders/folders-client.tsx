@@ -2,8 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query';
 import type { AccountFoldersResult } from '@mantle/email';
-import { Spinner } from '@/components/ui/spinner';
-import { apiFetch } from '@/lib/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { FolderPicker } from './folder-picker';
 
 /** Fetches the live IMAP folder tree for an account and renders the picker.

@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import { ArrowLeft, ExternalLink, Network, Server, Plug } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CopyBlock } from '@/components/ui/copy-button';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
+import { CopyBlock } from '@mantle/web-ui/ui/copy-button';
 
 const TS_KEYS_URL = 'https://login.tailscale.com/admin/settings/keys';
 const TS_DOWNLOAD_URL = 'https://tailscale.com/download';

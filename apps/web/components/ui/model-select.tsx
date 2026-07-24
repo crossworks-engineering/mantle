@@ -9,10 +9,10 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+} from '@mantle/web-ui/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@mantle/web-ui/ui/popover';
+import { Button } from '@mantle/web-ui/ui/button';
+import { cn } from '@mantle/web-ui/lib/utils';
 import type { ExplorerModel } from '@/lib/model-explorer';
 import {
   formatContext,

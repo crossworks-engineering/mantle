@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { requireOwner } from '@/lib/auth';
-import { Spinner } from '@/components/ui/spinner';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { FilesClient } from './files-client';
 
 /**

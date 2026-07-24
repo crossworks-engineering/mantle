@@ -2,7 +2,7 @@
 
 import { NodeViewContent, NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { AlertTriangle, CheckCircle2, Info, OctagonAlert, type LucideIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { CALLOUT_VARIANTS, type CalloutVariant } from './callout';
 
 // Literal class strings (no dynamic construction) so Tailwind v4 picks them up.

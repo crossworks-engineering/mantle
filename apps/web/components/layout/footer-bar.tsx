@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { navItemMatches } from './nav-items';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { navItemMatches } from '@mantle/web-ui/layout/nav-items';
 import { useTopNavItems } from '@/lib/nav-usage';
 import {
   AssistantButton,

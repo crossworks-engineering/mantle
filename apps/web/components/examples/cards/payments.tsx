@@ -15,9 +15,9 @@ import {
 import { MoreHorizontalIcon } from 'lucide-react';
 import * as React from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
+import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +25,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@mantle/web-ui/ui/dropdown-menu';
 import {
   Table,
   TableBody,
@@ -33,8 +33,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { copyText } from '@/lib/secure-context-fallbacks';
+} from '@mantle/web-ui/ui/table';
+import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
 const data: Trace[] = [
   {

@@ -52,14 +52,14 @@ import {
   type LucideIcon,
   ArrowUpRight,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { apiFetch } from '@/lib/api-fetch';
-import { Badge } from '@/components/ui/badge';
-import { Calendar as CalendarPicker } from '@/components/ui/calendar';
-import { DateTimePicker } from '@/components/ui/date-time-picker';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Checkbox } from '@mantle/web-ui/ui/checkbox';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Calendar as CalendarPicker } from '@mantle/web-ui/ui/calendar';
+import { DateTimePicker } from '@mantle/web-ui/ui/date-time-picker';
+import { Popover, PopoverContent, PopoverTrigger } from '@mantle/web-ui/ui/popover';
 import {
   Command,
   CommandEmpty,
@@ -67,14 +67,14 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command';
+} from '@mantle/web-ui/ui/command';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@mantle/web-ui/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,7 +87,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@mantle/web-ui/ui/dropdown-menu';
 import {
   addColumn,
   addRow,

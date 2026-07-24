@@ -1,5 +1,5 @@
 import { Download, FileText } from 'lucide-react';
-import { formatBytes } from '@/lib/format-bytes';
+import { formatBytes } from '@mantle/web-ui/lib/format-bytes';
 
 /**
  * Public file render with a media-appropriate viewer: images, PDFs, video, and

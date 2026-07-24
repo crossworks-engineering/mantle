@@ -2,10 +2,10 @@
 
 import { Boxes, DollarSign, Sparkles, UserCheck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { formatMicroUsd } from '@/lib/traces-format';
-import { formatCount } from '@/lib/format-bytes';
-import { Spinner } from '@/components/ui/spinner';
+import { formatCount } from '@mantle/web-ui/lib/format-bytes';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { KpiCards, type Kpi } from '@/components/dashboard/kpi-cards';
 import { SpendChart } from '@/components/dashboard/spend-chart';
 import { IngestChart } from '@/components/dashboard/ingest-chart';

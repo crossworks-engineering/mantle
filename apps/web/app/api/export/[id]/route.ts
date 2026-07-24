@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { resolveExport, getPage } from '@mantle/content';
 import { readFileById } from '@/lib/files';
-import { safeDownloadHeaders } from '@/lib/safe-download';
+import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
 import { renderUrlToPdf, printOrigin, PdfRendererUnavailableError } from '@/lib/render-pdf';
 import { slugify } from '@/lib/slugify';
 

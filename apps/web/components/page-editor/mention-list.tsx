@@ -10,8 +10,8 @@ import {
   useState,
 } from 'react';
 import { AtSign, FileText, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { apiFetch } from '@/lib/api-fetch';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 
 export type MentionItem = {
   ref: 'node' | 'entity';

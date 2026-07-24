@@ -10,8 +10,8 @@ import {
   useState,
 } from 'react';
 import { AlertCircle, CheckCircle2, ChevronDown, Loader2, UploadCloud, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { apiFetch } from '@/lib/api-fetch';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 
 /**
  * App-wide background file uploader. Lives in the persistent app shell so a

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { LiveActivity } from '@/lib/journey';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 
 /**
  * Polls /api/activity for the always-on live snapshot (active / recent /

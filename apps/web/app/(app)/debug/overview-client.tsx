@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api-fetch';
-import { formatDateTime, localDay } from '@/lib/format-datetime';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { formatDateTime, localDay } from '@mantle/web-ui/lib/format-datetime';
 import { formatDuration, formatMicroUsd } from '@/lib/traces-format';
-import { Spinner } from '@/components/ui/spinner';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import type { ContentIndexCoverage, DuplicateEdgeStats } from '@/lib/debug';
 import type {
   AgentSpend,

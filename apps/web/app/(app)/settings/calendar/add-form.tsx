@@ -3,10 +3,10 @@
 import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { apiSend } from '@/lib/api-fetch';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { apiSend } from '@mantle/web-ui/api-fetch';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 
 /** Subscribe to an iCalendar feed. On success the form resets so the next feed
  *  can be added immediately, and the ['calendar'] list is invalidated. */

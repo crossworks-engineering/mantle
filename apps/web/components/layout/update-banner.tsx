@@ -13,7 +13,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpCircle } from 'lucide-react';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 
 type CheckPayload = {
   updateAvailable?: boolean;

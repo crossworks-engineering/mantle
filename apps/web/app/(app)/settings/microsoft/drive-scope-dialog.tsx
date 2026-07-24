@@ -4,19 +4,19 @@ import { useState } from 'react';
 import { ChevronRight, File, Folder, FolderOpen } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { MsDriveChildDTO, MsDriveDTO, MsDriveScopeDTO } from '@mantle/client-types';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Spinner } from '@/components/ui/spinner';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { useToast } from '@/components/ui/toast';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
+} from '@mantle/web-ui/ui/dialog';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 
 /** Breadcrumb frame: null itemId = the drive root. */
 type Crumb = { itemId: string | null; name: string };

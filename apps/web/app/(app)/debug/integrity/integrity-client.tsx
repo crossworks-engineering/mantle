@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
-import { localDay } from '@/lib/format-datetime';
+import { Button } from '@mantle/web-ui/ui/button';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { localDay } from '@mantle/web-ui/lib/format-datetime';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,18 +15,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+} from '@mantle/web-ui/ui/alert-dialog';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { MaintenanceView } from './maintenance-tab';
-import { ListPager } from '@/components/layout/list-pager';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+} from '@mantle/web-ui/ui/select';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import type {
   AuditCheck,
   AuditReport,

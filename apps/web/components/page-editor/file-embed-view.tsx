@@ -2,7 +2,7 @@
 
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { Download, FileText } from 'lucide-react';
-import { formatBytes } from '@/lib/format-bytes';
+import { formatBytes } from '@mantle/web-ui/lib/format-bytes';
 
 /**
  * Download chip for an embedded file. Read-only chrome (the node is an atom) —

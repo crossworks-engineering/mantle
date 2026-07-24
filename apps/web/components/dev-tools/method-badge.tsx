@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 import type { HttpMethod, RequestKind } from '@/lib/dev-tools/types';
 
 /** Color-coded HTTP method label. Categorical, so chart tokens (theme-safe). */

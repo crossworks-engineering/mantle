@@ -2,9 +2,9 @@
 
 import { Mail } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Switch } from '@/components/ui/switch';
-import { useToast } from '@/components/ui/toast';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 
 /** Opt-in toggle for Outlook mail sync on a connected account. Mail flows
  *  through the same pipeline (and contact gate) as IMAP. Self-fetches its

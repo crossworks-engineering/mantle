@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Cpu, Database, HardDrive, MemoryStick } from 'lucide-react';
 import type { SystemHealth } from '@/lib/system-health';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
-import { apiFetch } from '@/lib/api-fetch';
-import { formatBytes, formatPct, formatUptime } from '@/lib/format-bytes';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
+import { Skeleton } from '@mantle/web-ui/ui/skeleton';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { formatBytes, formatPct, formatUptime } from '@mantle/web-ui/lib/format-bytes';
 import { VitalsBar } from './vitals-bar';
 
 const POLL_MS = 10_000;

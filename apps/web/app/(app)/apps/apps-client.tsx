@@ -5,20 +5,20 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppWindow, Plus, Trash2, Pencil } from 'lucide-react';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Spinner } from '@/components/ui/spinner';
-import { SubmitButton } from '@/components/ui/submit-button';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
+} from '@mantle/web-ui/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,12 +28,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { useListNav } from '@/lib/use-list-nav';
-import { ListPager } from '@/components/layout/list-pager';
-import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
-import { cn } from '@/lib/utils';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
+import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
+import { cn } from '@mantle/web-ui/lib/utils';
 import type { AppRow } from '@mantle/content';
 
 type AppsPage = { apps: AppRow[]; total: number; page: number; pageSize: number };

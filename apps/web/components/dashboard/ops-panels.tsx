@@ -3,10 +3,10 @@ import { formatDistanceToNow } from 'date-fns';
 import { AlertTriangle, Mail, MessageCircle, HeartPulse } from 'lucide-react';
 import type { EmailStats, HeartbeatStats, TelegramStats } from '@/lib/dashboard';
 import type { RecentFailure, TopError } from '@/lib/metrics';
-import { formatCount } from '@/lib/format-bytes';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { formatCount } from '@mantle/web-ui/lib/format-bytes';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 function rel(iso: string | null): string {
   if (!iso) return 'never';

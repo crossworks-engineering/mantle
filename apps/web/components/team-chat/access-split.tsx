@@ -17,8 +17,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronDown, ScrollText } from 'lucide-react';
 import { usePanelRef, type Layout } from 'react-resizable-panels';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
-import { cn } from '@/lib/utils';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@mantle/web-ui/ui/resizable';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 const LS_KEY = 'team-admin.access-split';
 /** Collapsed = exactly the header bar. */

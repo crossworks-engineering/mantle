@@ -7,7 +7,7 @@
  * (or doesn't fill) that space is the app's own business; it owns its
  * internal layout and scrolling.
  */
-import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
+import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
 import type { ShareView } from '@/lib/shares';
 
 export function AppPresenter({

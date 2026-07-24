@@ -1,5 +1,5 @@
 import type { Editor } from '@tiptap/core';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 
 /**
  * Upload a file through the existing files pipeline and turn it into an

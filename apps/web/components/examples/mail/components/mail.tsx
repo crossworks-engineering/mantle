@@ -13,12 +13,12 @@ import {
   Users2,
 } from 'lucide-react';
 
-import { cn } from '@/lib/utils';
-import { Input } from '@/components/ui/input';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
-import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { Input } from '@mantle/web-ui/ui/input';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@mantle/web-ui/ui/resizable';
+import { Separator } from '@mantle/web-ui/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
+import { TooltipProvider } from '@mantle/web-ui/ui/tooltip';
 import { AccountSwitcher } from '@/components/examples/mail/components/account-switcher';
 import { MailDisplay } from '@/components/examples/mail/components/mail-display';
 import { MailList } from '@/components/examples/mail/components/mail-list';

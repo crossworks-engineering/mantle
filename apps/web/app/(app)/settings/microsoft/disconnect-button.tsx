@@ -2,7 +2,7 @@
 
 import { Trash2 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,11 +13,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { buttonVariants } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
-import { apiSend } from '@/lib/api-fetch';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { buttonVariants } from '@mantle/web-ui/ui/button';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 
 /** Destructive confirm before dropping a connected Microsoft account's tokens.
  *  Per the style guide: AlertDialog (not window.confirm), red action. */

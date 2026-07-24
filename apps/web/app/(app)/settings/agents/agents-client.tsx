@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftRight, Copy, Plus, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Switch } from '@mantle/web-ui/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,13 +15,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import { ModelSelect } from '@/components/ui/model-select';
-import { Slider } from '@/components/ui/slider';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+import { Slider } from '@mantle/web-ui/ui/slider';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
 import type { ExplorerModel } from '@/lib/model-explorer';
 import { getProvider, isProviderWired, providersForCapability } from '@mantle/voice/client';
 import type {
@@ -32,10 +32,10 @@ import type {
   ToolGroupWithRefs,
   AiWorkerDTO,
 } from '@mantle/client-types';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { AvatarPicker } from '@/components/avatar-picker';
-import { SubmitButton } from '@/components/ui/submit-button';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { ToggleList, type ToggleListItem } from '@/components/toggle-list';
 import { TelegramBotSection } from '@/components/telegram/telegram-bot-section';
 import { BoringAvatar } from '@/components/boring-avatar';

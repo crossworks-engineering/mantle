@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Avatar from 'boring-avatars';
 import { useTheme } from 'next-themes';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { AVATAR_STYLE_IDS, DEFAULT_AVATAR_STYLE, type AvatarStyleId } from '@/lib/avatar';
 import { useColorTheme } from '@/components/color-theme-provider';
 

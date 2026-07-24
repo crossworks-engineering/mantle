@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Dices, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,10 +12,10 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@mantle/web-ui/ui/dropdown-menu';
 import { useColorTheme } from '@/components/color-theme-provider';
-import { RANDOM_THEME_INTERVALS } from '@/lib/themes';
-import { cn } from '@/lib/utils';
+import { RANDOM_THEME_INTERVALS } from '@mantle/web-ui/lib/themes';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 const OFF = 'off';
 

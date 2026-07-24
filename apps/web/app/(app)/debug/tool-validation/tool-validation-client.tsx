@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
-import { Badge } from '@/components/ui/badge';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { Badge } from '@mantle/web-ui/ui/badge';
 import type { ToolValidationAgg, ToolValidationEvent } from '@/lib/metrics';
 
 type ToolValidationData = {

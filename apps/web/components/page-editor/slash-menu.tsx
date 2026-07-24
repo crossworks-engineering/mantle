@@ -33,8 +33,8 @@ import {
   Type,
   type LucideIcon,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { apiSend } from '@/lib/api-fetch';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 import { columnsContent } from './column';
 import { randomAsideAngle, randomAsideColor } from './aside-style';
 import { uploadAndInsert } from './upload';

@@ -12,10 +12,10 @@
 
 import { useCallback, useState } from 'react';
 import { History, Pencil, RotateCcw, Save, X } from 'lucide-react';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { Input } from '@mantle/web-ui/ui/input';
 import { lineDiff } from '@/lib/studio/diff';
 
 type Version = {

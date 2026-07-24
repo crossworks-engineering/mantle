@@ -4,12 +4,21 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Search, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Input } from '@mantle/web-ui/ui/input';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@mantle/web-ui/ui/tooltip';
 import { useRealtime } from '@/components/realtime/use-realtime';
-import { NAV_GROUPS, navItemMatches, type NavItem as BaseNavItem } from './nav-items';
+import {
+  NAV_GROUPS,
+  navItemMatches,
+  type NavItem as BaseNavItem,
+} from '@mantle/web-ui/layout/nav-items';
 
 /** A rendered nav item may carry a live badge (e.g. Pending approvals). */
 type NavItem = BaseNavItem & { badge?: number };

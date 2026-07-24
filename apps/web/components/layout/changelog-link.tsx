@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Megaphone } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { Badge } from '@mantle/web-ui/ui/badge';
 import {
   APP_VERSION,
   CHANGELOG_LAST_SEEN_VERSION_KEY,

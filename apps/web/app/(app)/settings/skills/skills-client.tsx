@@ -5,11 +5,11 @@ import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import type { SkillDTO, SkillBackrefs } from '@mantle/client-types';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
-import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Switch } from '@/components/ui/switch';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { Button } from '@mantle/web-ui/ui/button';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Switch } from '@mantle/web-ui/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,11 +19,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { slugify } from '@/lib/slugify';
 
 // Row + backref shapes come from the shared client-types package (the wire

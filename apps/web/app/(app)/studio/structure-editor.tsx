@@ -10,9 +10,9 @@
 
 import { useEffect, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Loader2, RotateCcw } from 'lucide-react';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
 import { ModelSelect } from '@/components/ui/model-select';
 import {
   AlertDialog,
@@ -24,7 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+} from '@mantle/web-ui/ui/alert-dialog';
 import type { ExplorerModel } from '@/lib/model-explorer';
 
 export type SkillOpt = { slug: string; name: string; usedByAgentSlugs: string[] };

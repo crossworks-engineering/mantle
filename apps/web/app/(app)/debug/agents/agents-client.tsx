@@ -2,9 +2,9 @@
 
 import { Bot, Sparkles } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
-import { TagPill } from '@/components/tag-pill';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { TagPill } from '@mantle/web-ui/tag-pill';
 import { fmtRelative } from '../format';
 import type { AgentActivityRow, PersonaNotesRow } from '@/lib/debug';
 

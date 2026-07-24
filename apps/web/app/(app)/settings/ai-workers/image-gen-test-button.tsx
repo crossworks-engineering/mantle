@@ -13,10 +13,10 @@
 
 import { useState, useTransition } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/components/ui/toast';
-import { apiSend } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Label } from '@mantle/web-ui/ui/label';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 
 export function ImageGenTestButton({ workerId }: { workerId: string }) {
   const toast = useToast();

@@ -7,9 +7,9 @@
  */
 
 import { Plus, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Checkbox } from '@mantle/web-ui/ui/checkbox';
+import { Input } from '@mantle/web-ui/ui/input';
 import { emptyKv } from '@/lib/dev-tools/storage';
 import type { KeyValueEntry } from '@/lib/dev-tools/types';
 

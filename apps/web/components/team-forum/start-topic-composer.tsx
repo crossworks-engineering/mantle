@@ -10,10 +10,10 @@
  */
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Label } from '@/components/ui/label';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@mantle/web-ui/ui/label';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
 
 export function StartTopicComposer() {
   const router = useRouter();

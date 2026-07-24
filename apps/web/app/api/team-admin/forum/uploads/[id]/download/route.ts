@@ -5,7 +5,7 @@
  * a member-uploaded HTML/SVG must not execute in the owner's origin either.
  */
 import { getOwnerOr401 } from '@/lib/auth';
-import { safeDownloadHeaders } from '@/lib/safe-download';
+import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
 import { getForumUpload } from '@mantle/content';
 import { readFileById, readQuarantineBytes } from '@mantle/files';
 

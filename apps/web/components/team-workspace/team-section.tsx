@@ -32,16 +32,16 @@ import {
   Search,
   Tag,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+} from '@mantle/web-ui/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@mantle/web-ui/ui/popover';
 import {
   Command,
   CommandEmpty,
@@ -49,11 +49,11 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command';
-import { ListPager } from '@/components/layout/list-pager';
+} from '@mantle/web-ui/ui/command';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { buildChildrenIndex } from '@/app/(app)/pages/page-tree';
-import { formatDate } from '@/lib/format-datetime';
-import { cn } from '@/lib/utils';
+import { formatDate } from '@mantle/web-ui/lib/format-datetime';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 type Item = {
   token: string;

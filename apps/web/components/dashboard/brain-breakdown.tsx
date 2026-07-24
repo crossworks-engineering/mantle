@@ -2,14 +2,14 @@
 
 import * as React from 'react';
 import { Label, Pie, PieChart } from 'recharts';
-import { formatCount } from '@/lib/format-bytes';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatCount } from '@mantle/web-ui/lib/format-bytes';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from '@/components/ui/chart';
+} from '@mantle/web-ui/ui/chart';
 
 type Bucket = { key: string; count: number };
 const PALETTE = [

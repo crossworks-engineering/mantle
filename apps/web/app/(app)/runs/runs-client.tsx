@@ -11,8 +11,8 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState } from 'react';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,13 +23,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
-import { Spinner } from '@/components/ui/spinner';
-import { ListPager } from '@/components/layout/list-pager';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { useListNav } from '@/lib/use-list-nav';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 /** The realtime change type the migration-0135 `runs_changed` triggers reach
  *  the browser as (see apps/web/lib/realtime.ts). A literal, like every other

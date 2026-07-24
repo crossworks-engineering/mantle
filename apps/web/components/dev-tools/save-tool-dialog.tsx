@@ -17,29 +17,29 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from '@mantle/web-ui/ui/dialog';
+import { Checkbox } from '@mantle/web-ui/ui/checkbox';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Switch } from '@/components/ui/switch';
-import { useToast } from '@/components/ui/toast';
+} from '@mantle/web-ui/ui/select';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { buildVarMap, substituteVars } from '@/lib/dev-tools/client';
-import { apiSend, ApiError } from '@/lib/api-fetch';
+import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { useDevTools } from './context';
 import { slugify } from '@/lib/slugify';
 

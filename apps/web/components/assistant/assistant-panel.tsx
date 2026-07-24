@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { AssistantThreadClient } from '@/app/(app)/assistant/assistant-thread-client';
 import { useAssistantDock } from './assistant-dock';
 

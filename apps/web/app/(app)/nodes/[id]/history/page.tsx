@@ -14,7 +14,7 @@
 
 import { requireOwner } from '@/lib/auth';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { BackLink } from '@/components/layout/back-link';
+import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { NodeHistoryClient } from './node-history-client';
 
 export default async function NodeHistoryPage(props: { params: Promise<{ id: string }> }) {

@@ -1,8 +1,8 @@
 import { LucideIcon } from 'lucide-react';
 
-import { cn } from '@/lib/utils';
-import { buttonVariants } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { buttonVariants } from '@mantle/web-ui/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@mantle/web-ui/ui/tooltip';
 
 interface NavProps {
   isCollapsed: boolean;
