@@ -19,7 +19,6 @@ import { getSessionUser } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
 
-
 type AuthorizeParams = {
   clientId: string;
   redirectUri: string;

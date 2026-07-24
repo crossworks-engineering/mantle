@@ -20,7 +20,6 @@ import {
 } from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
-
 const PAGE_SIZE = 30;
 /** Tree mode returns everything at once (a hierarchy can't paginate). */
 const TREE_CAP = 500;

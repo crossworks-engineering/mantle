@@ -6,7 +6,6 @@ import { formatInProfile, loadProfilePreferences } from '@mantle/content';
 import { getReaderNav } from '@/lib/docs-reader';
 import { getOwnerOr401 } from '@/lib/auth';
 
-
 /** Doc collections + their server-formatted "last synced" strings (tz/locale
  *  stable) + a first-doc link per collection, for the /docs management pane. */
 export async function GET() {

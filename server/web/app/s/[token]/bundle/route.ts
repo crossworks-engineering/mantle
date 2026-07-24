@@ -12,7 +12,6 @@ import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 
-
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
   const share = await resolveActiveShareByToken(token);

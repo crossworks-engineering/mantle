@@ -13,7 +13,6 @@ import {
 } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 
-
 /** Backup settings + last-run status + dumps on disk for /settings/backups. */
 export async function GET() {
   const user = await getOwnerOr401();

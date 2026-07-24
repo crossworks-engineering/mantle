@@ -15,7 +15,6 @@ import {
   MAX_APP_PATH_LEN,
 } from '@mantle/content';
 
-
 // Shares the content layer's source-tree limits (single source of truth); the
 // content layer re-checks and is the real authority (covers the agent path too).
 const Body = z.object({

@@ -10,7 +10,6 @@ import prettier from 'prettier';
 import { getOwnerOr401 } from '@/lib/auth';
 import { MAX_APP_FILE_BYTES, MAX_APP_PATH_LEN } from '@mantle/content';
 
-
 // ext → Prettier parser. Mirrors what the editor highlights; anything else is
 // refused (the button is hidden for those, but defend the endpoint too).
 const PARSER: Record<string, string> = {

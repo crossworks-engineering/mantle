@@ -8,7 +8,6 @@ import { NextResponse } from '@/server/http-compat';
 import { isAllowedRedirectUri, isRemoteMcpEnabled, registerClient } from '@/lib/mcp-oauth';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
-
 function error(status: number, error: string, description?: string) {
   return NextResponse.json(
     { error, ...(description ? { error_description: description } : {}) },

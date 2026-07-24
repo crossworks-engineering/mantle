@@ -8,7 +8,6 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { notifyTeamRequester } from '@mantle/content';
 
-
 export async function POST(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;

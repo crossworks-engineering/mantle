@@ -14,7 +14,6 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { getApp } from '@mantle/content';
 import { resolveTool, dispatchTool } from '@mantle/tools';
 
-
 const Body = z.object({
   slug: z.string().min(1).max(120),
   input: z.record(z.string(), z.unknown()).optional().default({}),

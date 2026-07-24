@@ -4,7 +4,6 @@
  */
 import { handleTeamSso } from '@/lib/team-sso';
 
-
 export async function POST(req: Request) {
   return handleTeamSso(req);
 }

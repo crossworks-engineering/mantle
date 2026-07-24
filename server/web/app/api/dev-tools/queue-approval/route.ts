@@ -17,7 +17,6 @@ import { db, pendingToolCalls } from '@mantle/db';
 import { notifyPendingCreated } from '@mantle/tools';
 import { getOwnerOr401 } from '@/lib/auth';
 
-
 const Body = z.object({
   // A real, enabled tool so the approve path can actually dispatch it.
   // Defaults to a harmless read-only builtin.

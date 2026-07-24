@@ -26,7 +26,6 @@ import {
 } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 
-
 export async function PUT(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;

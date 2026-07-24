@@ -6,7 +6,6 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter } from '@mantle/voice';
 import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/agent-runtime';
 
-
 /**
  * Agent Studio Phase 4 — the no-persist sandbox (docs/agent-studio.md).
  *

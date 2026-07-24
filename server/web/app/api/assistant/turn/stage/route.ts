@@ -10,7 +10,6 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { currentTurnStageLabel } from '@/lib/assistant/turn-stage';
 
-
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;

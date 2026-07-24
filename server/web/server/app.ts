@@ -21,6 +21,17 @@ export async function createApp(): Promise<Hono> {
   const { routeManifest } = await import('./route-manifest.gen');
   registerRoutes(app, routeManifest);
 
+  // Render surfaces (after the API routes: /s/:token must not shadow the
+  // /s/:token/* brokers registered from the manifest).
+  const [{ mountShare }, { mountPrint }, { mountStubs }] = await Promise.all([
+    import('./pages/share'),
+    import('./pages/print'),
+    import('./pages/stubs'),
+  ]);
+  mountShare(app);
+  mountPrint(app);
+  mountStubs(app);
+
   app.notFound((c) => {
     const path = new URL(c.req.url).pathname;
     if (path === '/api' || path.startsWith('/api/')) {

@@ -8,7 +8,6 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { getForumUpload, markForumUploadDismissed } from '@mantle/content';
 import { deleteQuarantineBytes } from '@mantle/files';
 
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {

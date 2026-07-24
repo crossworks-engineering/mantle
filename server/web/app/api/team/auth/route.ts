@@ -23,7 +23,6 @@ import { buildTeamChatToken, TEAM_CHAT_COOKIE } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
-
 const Body = z.object({
   token: z.string().min(1).max(64),
   mode: z.enum(['cookie', 'bearer']).optional(),

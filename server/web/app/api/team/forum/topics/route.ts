@@ -30,7 +30,6 @@ import {
   type ForumTopicSort,
 } from '@mantle/content';
 
-
 const PAGE_SIZE = 20;
 
 const CreateBody = z.object({

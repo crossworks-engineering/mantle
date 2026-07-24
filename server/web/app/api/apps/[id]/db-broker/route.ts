@@ -11,7 +11,6 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { getApp } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
 
-
 const Body = z.object({
   op: z.enum(['query', 'exec']),
   sql: z.string().min(1).max(20_000),

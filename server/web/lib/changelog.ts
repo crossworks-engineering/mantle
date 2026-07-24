@@ -1,4 +1,3 @@
-
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { docsRoot } from '@mantle/files';

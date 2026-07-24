@@ -8,7 +8,6 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { setForumTopicPinned } from '@mantle/content';
 
-
 const Body = z.object({ topicId: z.string().uuid(), pinned: z.boolean() });
 
 export async function POST(req: Request) {

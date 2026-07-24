@@ -14,7 +14,6 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { resolveAssistAgentSlug, type AssistSurface } from '@/lib/assist-agent';
 
-
 const SURFACES: readonly AssistSurface[] = ['pages', 'tables', 'apps', 'dev-tools'];
 
 function isSurface(v: string | null): v is AssistSurface {

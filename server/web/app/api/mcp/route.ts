@@ -21,7 +21,6 @@ import { registerMantleTools } from '@mantle/mcp-core';
 import { isRemoteMcpEnabled, ownerFromBearer, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
-
 // Generous — the MCP client makes one HTTP request per tool call, so this must
 // clear normal bursty tool traffic while still capping a flood.
 const RATE = { max: 300, windowMs: 60_000 };

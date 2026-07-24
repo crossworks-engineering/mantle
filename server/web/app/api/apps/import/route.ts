@@ -30,7 +30,6 @@ import { assertSafeScript } from '@mantle/content/app-broker';
 import { resolveTool } from '@mantle/tools';
 import { runAppBuild } from '@/lib/app-build-run';
 
-
 const Body = z.object({
   /** Update this app if given; otherwise create a new one (then `name` is required). */
   appId: z.string().uuid().optional(),

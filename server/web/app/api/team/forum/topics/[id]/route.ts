@@ -9,7 +9,6 @@ import { z } from 'zod';
 import { getForumTopic, listForumPosts, listForumUploadStatesForTopic } from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
-
 const IdParams = z.object({ id: z.string().uuid() });
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {

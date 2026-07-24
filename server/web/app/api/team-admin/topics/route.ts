@@ -20,7 +20,6 @@ import {
 } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
-
 const TOPICS_PAGE_SIZE = 30;
 
 export async function GET(req: Request) {

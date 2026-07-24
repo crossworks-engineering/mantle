@@ -9,7 +9,6 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { callMcpTool, listMcpTools } from '@/lib/dev-tools/mcp-bridge';
 
-
 export async function GET() {
   const gate = await getOwnerOr401();
   if (gate instanceof Response) return gate;

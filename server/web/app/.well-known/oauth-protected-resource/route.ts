@@ -6,7 +6,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { issuerUrl, mcpResourceUrl } from '@/lib/mcp-oauth';
 
-
 export async function GET() {
   return NextResponse.json(
     {

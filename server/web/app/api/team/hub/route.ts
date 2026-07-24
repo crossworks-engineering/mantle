@@ -20,7 +20,6 @@ import {
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
 import { APP_VERSION } from '@mantle/web-ui/version';
 
-
 export async function GET(req: Request) {
   const caller = await resolveTeamChatCaller(req);
   if (!caller) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
