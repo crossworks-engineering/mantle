@@ -24,7 +24,7 @@ import { z } from 'zod';
 import { resolveActiveShareByToken } from '@/lib/shares';
 import { getApp, recordAppAccess } from '@mantle/content';
 import { resolveTool, dispatchTool, isPublicToolAllowed } from '@mantle/tools';
-import { resolveShareVisitor } from '@/lib/team-gate';
+import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 
 export const runtime = 'nodejs';
 
@@ -40,7 +40,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
   }
 
-  const visitor = await resolveShareVisitor(req.headers.get('cookie'), share);
+  const visitor = await resolveShareVisitorFromRequest(req, share);
   if (!visitor) {
     return NextResponse.json(
       { ok: false, error: 'team session required — enter your team token to use this app' },

@@ -1,14 +1,18 @@
 /**
  * Caller resolution for the Team Chat surface (/team + /api/team/*).
  *
- * Two credentials resolve to the same identity:
- *   - the signed `mantle_team_chat` cookie (browser members, minted by
- *     POST /api/team/auth), or
+ * Three credentials resolve to the same identity:
+ *   - the signed `mantle_team_chat` cookie (same-origin browser members,
+ *     minted by POST /api/team/auth), or
+ *   - `Authorization: Bearer <signed team-chat token>` (the split client app —
+ *     the SAME signed value the cookie carries, exchanged for the member's
+ *     contact token by POST /api/team/auth {mode:'bearer'} and held in
+ *     localStorage; cookies can't cross origins, bearers can), or
  *   - `Authorization: Bearer <contact team token>` (API clients — the MS Teams
- *     adapter seam). The bearer path re-verifies the raw token by hash on every
+ *     adapter seam). This path re-verifies the raw token by hash on every
  *     call, so revocation is instant there too.
  *
- * Either way, membership LIVENESS is re-checked against contact_team_tokens on
+ * Any way in, membership LIVENESS is re-checked against contact_team_tokens on
  * every request — the cookie/token alone is never sufficient, so removing a
  * member locks them out mid-session.
  */
@@ -46,7 +50,19 @@ function teamChatCookieValues(cookieHeader: string | null): string[] {
 export async function resolveTeamChatCaller(req: Request): Promise<TeamChatCaller | null> {
   const authz = req.headers.get('authorization');
   if (authz?.toLowerCase().startsWith('bearer ')) {
-    const member = await verifyTeamToken(authz.slice(7).trim());
+    const bearer = authz.slice(7).trim();
+    // Signed team-chat token first (the split client app — a browser member,
+    // just carrying the credential in a header instead of a cookie, so it
+    // channels as 'web' like its same-origin twin). Pure HMAC check, no DB.
+    const signed = verifyTeamChatValue(bearer);
+    if (signed) {
+      if (await isTeamMember(signed.ownerId, signed.contactId)) {
+        return { ownerId: signed.ownerId, contactId: signed.contactId, channel: 'web' };
+      }
+      return null; // an explicit-but-bad bearer never falls through to the cookie
+    }
+    // Raw contact team token (API clients — the MS Teams adapter seam).
+    const member = await verifyTeamToken(bearer);
     if (member && (await isTeamMember(member.ownerId, member.contactId))) {
       return { ownerId: member.ownerId, contactId: member.contactId, channel: 'api' };
     }

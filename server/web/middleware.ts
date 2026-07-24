@@ -91,6 +91,16 @@ function isAssetPath(path: string): boolean {
   return path.startsWith('/api/files/files/') || path.startsWith('/api/attachments/');
 }
 
+/** The /s APP broker sub-paths the split client's hub calls cross-origin
+ *  (bearer-authed by resolveShareVisitorFromRequest). They get the same CORS
+ *  treatment as /api/** — and ONLY they: the /s/<token> HTML page and the
+ *  non-app brokers (rows, auth, a/) stay same-origin cookie surfaces with no
+ *  CORS headers at all. */
+const SHARE_BROKER_RE = /^\/s\/[^/]+\/(bundle|tool-broker|db-broker)$/;
+function isShareBroker(path: string): boolean {
+  return SHARE_BROKER_RE.test(path);
+}
+
 // ── CORS for the detached client (Electron / cross-origin dev / DB-less) ──────
 // Opt-in: set MANTLE_API_CORS_ORIGINS to a comma-separated list of allowed
 // origins (or '*' to reflect any). OFF by default — a same-origin browser needs
@@ -144,7 +154,8 @@ function unauthorized(): NextResponse {
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
   const isApi = path === '/api' || path.startsWith('/api/');
-  const origin = isApi ? corsOrigin(req, path) : null;
+  const corsEligible = isApi || isShareBroker(path);
+  const origin = corsEligible ? corsOrigin(req, path) : null;
   const withCors = (res: NextResponse) => (origin ? applyCors(res, origin) : res);
 
   // Tell the Node layer what was requested: `getOwnerOr401` reads method+path
@@ -158,8 +169,9 @@ export async function middleware(req: NextRequest) {
 
   // CORS preflight is answered before auth — a preflight carries no credentials
   // and only asks "may I send this request"; gating it would break every
-  // cross-origin call.
-  if (isApi && req.method === 'OPTIONS') {
+  // cross-origin call. Covers the /s app brokers too (Authorization forces a
+  // preflight on every cross-origin broker call).
+  if (corsEligible && req.method === 'OPTIONS') {
     return withCors(new NextResponse(null, { status: 204 }));
   }
 

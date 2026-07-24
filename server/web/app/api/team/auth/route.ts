@@ -1,23 +1,34 @@
 /**
- * POST /api/team/auth — exchange a contact TEAM TOKEN for a team-chat cookie.
+ * POST /api/team/auth — exchange a contact TEAM TOKEN for a team-chat
+ * credential.
+ *
+ * Two modes, one verification path:
+ *   - default: sets the signed `mantle_team_chat` cookie (brain-level, path
+ *     `/` — see lib/auth.ts for why that's safe). Same-origin browsers.
+ *   - `mode:'bearer'`: returns the SAME signed value in the body
+ *     (`{teamToken, expiresAt}`) and sets nothing — the split client app holds
+ *     it in localStorage and sends `Authorization: Bearer` (cookies can't
+ *     cross origins; resolveTeamChatCaller verifies both carriers alike).
  *
  * The /team analogue of /s/[token]/auth: rate-limited per IP AND globally (an
  * unauthenticated endpoint taking a short secret gets both), uniform 401 on
  * every failure so nothing about which case applies can be enumerated. On
- * success: sets the signed `mantle_team_chat` cookie (brain-level, path `/` —
- * see lib/auth.ts for why that's safe), marks the token used, and writes an
- * 'auth' row to the team access log.
+ * success either way: marks the token used and writes an 'auth' row to the
+ * team access log.
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { verifyTeamToken, markTeamTokenUsed, recordTeamAccess } from '@mantle/content';
-import { buildTeamChatCookie, TEAM_CHAT_COOKIE } from '@/lib/auth';
+import { buildTeamChatToken, TEAM_CHAT_COOKIE } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
-const Body = z.object({ token: z.string().min(1).max(64) });
+const Body = z.object({
+  token: z.string().min(1).max(64),
+  mode: z.enum(['cookie', 'bearer']).optional(),
+});
 
 function invalid() {
   return NextResponse.json({ ok: false, error: 'invalid token' }, { status: 401 });
@@ -52,14 +63,18 @@ export async function POST(req: Request) {
     detail: { surface: 'team-chat' },
   });
 
-  const cookie = buildTeamChatCookie(member.ownerId, member.contactId);
+  const minted = buildTeamChatToken(member.ownerId, member.contactId);
+  if (parsed.data.mode === 'bearer') {
+    // The split client stores this and authenticates by header — no cookie.
+    return NextResponse.json({ ok: true, teamToken: minted.value, expiresAt: minted.expiresAt });
+  }
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(TEAM_CHAT_COOKIE, cookie.value, {
+  res.cookies.set(TEAM_CHAT_COOKIE, minted.value, {
     httpOnly: true,
     sameSite: 'lax',
     secure: secureCookies(req),
     path: '/',
-    maxAge: cookie.maxAgeSec,
+    maxAge: minted.maxAgeSec,
   });
   return res;
 }
