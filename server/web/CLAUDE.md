@@ -56,11 +56,13 @@ Non-negotiables (full detail in the guide):
   `isDetachedDev()` (see docs/db-less-dev.md "How it works"). Client code fetches via
   `apiFetch`/`apiSend`/`apiEventStream` only (never raw same-origin `fetch` for data).
 
-**Team Hub app** — `/hub` can render a designated mini-app full-bleed instead of
-the built-in hub (Team admin → "Hub app"); `/team` itself is the read-only
-member workspace (`components/team-workspace/`). The authoring contract (thin `host.hub`
-SDK, sandbox rules, fallback chain) is [`docs/team-hub-app-sdk.md`](../../docs/team-hub-app-sdk.md);
-the bridge protocol (`lib/app-bridge/protocol.ts`) and the `@host` kit string
+**Team surfaces** — since the member carve, the `/team` + `/hub` + `/team-admin`
+UI lives in `client/web` (this app keeps redirect stubs + the `/api/team*` data
+plane and the `/s` share brokers; member credential model:
+[`docs/team-chat.md`](../../docs/team-chat.md) topology note). The hub-app
+authoring contract (thin `host.hub` SDK, sandbox rules, fallback chain) is
+[`docs/team-hub-app-sdk.md`](../../docs/team-hub-app-sdk.md); the bridge
+protocol (`@mantle/web-ui/app-bridge/protocol`) and the `@host` kit string
 (`packages/app-build/src/kit.ts`) MUST stay mirrored (tripwire: `kit.test.ts`).
 
 **Changing what a brain ships with** (default agents, skills, tool groups, workers,

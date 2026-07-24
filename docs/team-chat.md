@@ -23,6 +23,15 @@
 > [`app-authoring-guide.md`](./app-authoring-guide.md) (the other consumer of
 > team tokens), [`system-integrity.md`](./system-integrity.md) (how the
 > team-responder is provisioned and drift-checked).
+>
+> **Topology update (v0.200 member carve):** the `/team` + `/hub` UI moved to
+> the client app; `/api/team/*` stays on the server origin. The signed
+> `mantle_team_chat` VALUE is now also a first-class **bearer**
+> (`POST /api/team/auth {mode:'bearer'}` → localStorage → `Authorization`
+> header via `@mantle/web-ui/team-fetch`), verified by the same gate with the
+> same per-request membership liveness. Everything below about the credential's
+> claims, kinds and isolation still holds — read "cookie" as "cookie or
+> bearer". Detail: [`frontend-backend-split.md`](./frontend-backend-split.md).
 
 ---
 

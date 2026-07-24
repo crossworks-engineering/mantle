@@ -7,9 +7,8 @@ import { redirect } from 'next/navigation';
  *
  * MANTLE_CLIENT_ORIGIN unset (single-host/monolith-style deployment where the
  * client app is served elsewhere behind the same host, or a headless box with
- * no owner UI at all) ⇒ a minimal explanation page would be nicer, but a
- * redirect loop is worse — so we just fall back to the team surface, which is
- * this origin's only interactive login-like entry.
+ * no owner UI at all) ⇒ fall through to /team, whose own stub renders a
+ * static "ask the admin for the link" card — an explanation, never a loop.
  */
 export default async function LoginStub({
   searchParams,
