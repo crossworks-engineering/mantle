@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { performSignOut } from '@mantle/web-ui/sign-out';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogOut, Menu, Search, User as UserIcon } from 'lucide-react';
@@ -42,7 +43,7 @@ export function Header({
 
   async function signOut() {
     setBusy(true);
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await performSignOut();
     router.push('/login');
     router.refresh();
   }

@@ -22,6 +22,8 @@ export type AuditEntry = {
     | 'auth.login'
     | 'auth.login_failed'
     | 'auth.logout'
+    | 'auth.token_refreshed'
+    | 'auth.device_revoked'
     | 'auth.password_change'
     | 'user.create'
     | 'user.update'

@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 import {
   COLOR_THEME_STORAGE_KEY,
   RANDOM_THEME_STORAGE_KEY,
@@ -110,11 +111,7 @@ export function ColorThemeProvider({ children }: { children: React.ReactNode }) 
       // The DB copy is the cross-browser source of truth (and what member
       // surfaces brand with); localStorage above is only the before-paint
       // cache. Fire-and-forget — a failed write costs nothing but the sync.
-      void fetch('/api/profile/color-theme', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ colorTheme: id }),
-      }).catch(() => {});
+      void apiSend('/api/profile/color-theme', 'PUT', { colorTheme: id }).catch(() => {});
     },
     [adoptServerTheme],
   );

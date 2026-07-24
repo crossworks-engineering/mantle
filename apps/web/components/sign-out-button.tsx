@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { performSignOut } from '@mantle/web-ui/sign-out';
 import { useRouter } from 'next/navigation';
 
 export function SignOutButton() {
@@ -9,7 +10,7 @@ export function SignOutButton() {
 
   async function signOut() {
     setBusy(true);
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await performSignOut();
     router.push('/login');
     router.refresh();
   }

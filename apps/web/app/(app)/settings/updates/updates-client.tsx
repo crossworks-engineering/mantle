@@ -169,13 +169,11 @@ function UpdatesView({
     pollStartRef.current = Date.now();
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch('/api/updates/status', { cache: 'no-store' });
-        if (!res.ok) throw new Error(String(res.status));
-        const data = (await res.json()) as {
+        const data = await apiFetch<{
           status: UpdaterStatus | null;
           log: string;
           version: string;
-        };
+        }>('/api/updates/status', { cache: 'no-store' });
         setRestarting(false);
         setStatus(data.status);
         setLog(data.log);

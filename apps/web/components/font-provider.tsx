@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 import {
   DISPLAY_FONTS,
   DEFAULT_LOGO_FONT,
@@ -88,11 +89,7 @@ export function FontProvider({ children }: { children: React.ReactNode }) {
   const persist = React.useCallback((body: { fontLogo?: string; fontTitle?: string }) => {
     // The DB copy is the cross-browser source of truth; localStorage above is
     // the pre-paint cache. Fire-and-forget — a failed write costs only the sync.
-    void fetch('/api/profile/fonts', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }).catch(() => {});
+    void apiSend('/api/profile/fonts', 'PUT', body).catch(() => {});
   }, []);
 
   // Each setter touches ONLY its own var + persists ONLY its own field — no

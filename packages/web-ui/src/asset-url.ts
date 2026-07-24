@@ -12,7 +12,12 @@
  * the asset-path acceptance in middleware.ts).
  */
 
-const API_BASE = (process.env.NEXT_PUBLIC_MANTLE_API_BASE ?? '').replace(/\/+$/, '');
+import { runtimeApiBase } from './runtime-env';
+
+/** Resolved at call time (runtime config first) — see api-fetch.ts. */
+function apiBaseValue(): string {
+  return runtimeApiBase();
+}
 
 let assetToken: string | null = null;
 
@@ -24,8 +29,8 @@ export function setAssetToken(token: string | null | undefined): void {
 
 /** Resolve a raw-asset path to a loadable URL (see module comment). */
 export function assetUrl(path: string): string {
-  if (!API_BASE) return path; // same-origin — cookie auth, path unchanged
-  const base = `${API_BASE}${path}`;
+  if (!apiBaseValue()) return path; // same-origin — cookie auth, path unchanged
+  const base = `${apiBaseValue()}${path}`;
   if (!assetToken) return base; // token not loaded yet — will 401 until shell resolves
   return `${base}${path.includes('?') ? '&' : '?'}at=${encodeURIComponent(assetToken)}`;
 }

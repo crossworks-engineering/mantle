@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
@@ -32,11 +33,14 @@ export function ChangePasswordForm() {
     }
 
     setBusy(true);
-    const res = await fetch('/api/auth/change-password', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ oldPassword, newPassword }),
-    });
+    const res = await fetch(
+      apiUrl('/api/auth/change-password'),
+      withAuth({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ oldPassword, newPassword }),
+      }),
+    );
     setBusy(false);
 
     if (!res.ok) {

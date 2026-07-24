@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getOwnerOr401 } from '@/lib/auth';
+import { buildInternalRenderCookie, getOwnerOr401 } from '@/lib/auth';
 import { resolveExport, getPage } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
@@ -47,10 +47,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // The browser SIDECAR (not this process) fetches the print route, so the
     // URL must be reachable from that container: http://web:3000 in prod
     // (compose DNS), host.docker.internal in dev — never the public origin,
-    // which would round-trip out through Caddy/Tailscale + TLS. The caller's
-    // session cookie is forwarded per request, so host-scoped cookie rules
-    // don't matter.
-    const cookie = req.headers.get('cookie') ?? '';
+    // which would round-trip out through Caddy/Tailscale + TLS. Auth: a
+    // server-MINTED short-lived session cookie (not the caller's raw Cookie
+    // header, which is EMPTY for bearer-authed owners — web-client and mobile
+    // callers would 307 at the print gate). We already hold the verified
+    // owner here, so mint locally and the print route + its image
+    // subresources authenticate regardless of the caller's transport.
+    const cookie = buildInternalRenderCookie(user.id);
     try {
       const bytes = await renderUrlToPdf(`${printOrigin()}/print/pages/${id}`, cookie);
       return download(

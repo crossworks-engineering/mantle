@@ -16,6 +16,16 @@ export async function register(): Promise<void> {
   // dead-code-eliminated and never bundled for edge. An early-return guard does
   // NOT achieve this — webpack still bundles the dynamic chunk after the return.
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    // Deprecation tripwire for the split: server logic (share URLs, MS OAuth
+    // redirect fallback) reads MANTLE_PUBLIC_URL; NEXT_PUBLIC_APP_URL only
+    // still works as a fallback. Warn boxes that haven't set the server var.
+    if (!process.env.MANTLE_PUBLIC_URL && process.env.NEXT_PUBLIC_APP_URL) {
+      console.warn(
+        '[boot] MANTLE_PUBLIC_URL is unset — falling back to NEXT_PUBLIC_APP_URL for ' +
+          'server-side URLs (shares, Microsoft OAuth redirect). Set MANTLE_PUBLIC_URL; ' +
+          'the fallback is deprecated and goes away with the server/client split.',
+      );
+    }
     const { reconcileManifestOnBoot } = await import('@/lib/system-manifest/reconcile');
     void reconcileManifestOnBoot();
   }

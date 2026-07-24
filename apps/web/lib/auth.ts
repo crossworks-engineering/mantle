@@ -114,6 +114,19 @@ function verify(token: string): { uid: string; exp: number } | null {
   }
 }
 
+/**
+ * Short-lived session-cookie VALUE for server-internal renders — the PDF path
+ * (lib/render-pdf.ts) hands it to the browserless sidecar so /print/pages/[id]
+ * and its image subresources authenticate as the owner REGARDLESS of how the
+ * caller authenticated (cookie, mobile bearer, web bearer). Never sent to a
+ * client; ~5 minutes bounds a leaked render URL.
+ */
+export function buildInternalRenderCookie(userId: string, ttlSeconds = 300): string {
+  const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
+  const payload = b64urlEncode(Buffer.from(JSON.stringify({ uid: userId, exp }), 'utf8'));
+  return `${SESSION_COOKIE_NAME}=${sign(payload)}`;
+}
+
 export function buildSessionCookie(userId: string): { value: string; maxAgeSec: number } {
   const exp = Math.floor(Date.now() / 1000) + ONE_YEAR_SECONDS;
   const payload = b64urlEncode(Buffer.from(JSON.stringify({ uid: userId, exp }), 'utf8'));
@@ -127,19 +140,26 @@ export function buildSessionCookie(userId: string): { value: string; maxAgeSec: 
 
 const MOBILE_TOKEN_TTL_SECONDS = ONE_YEAR_SECONDS;
 
+/** Web-client bearer TTL — 30 days idle-max. Shorter than the mobile year
+ *  because browsers refresh opportunistically (see /api/auth/token/refresh):
+ *  an active browser rotates well before expiry; an idle one dies in ≤30d. */
+export const WEB_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
+
 /** Mint a per-device mobile bearer token. Caller inserts the matching
- *  mobile_tokens row keyed by `jti`. */
+ *  mobile_tokens row keyed by `jti`. `ttlSeconds` defaults to the mobile
+ *  year; the web client passes WEB_TOKEN_TTL_SECONDS. */
 export function buildMobileToken(
   userId: string,
   jti: string,
+  ttlSeconds: number = MOBILE_TOKEN_TTL_SECONDS,
 ): { value: string; expiresInSec: number; expiresAt: Date } {
-  const expEpoch = Math.floor(Date.now() / 1000) + MOBILE_TOKEN_TTL_SECONDS;
+  const expEpoch = Math.floor(Date.now() / 1000) + ttlSeconds;
   const payload = b64urlEncode(
     Buffer.from(JSON.stringify({ uid: userId, exp: expEpoch, jti, k: 'm' }), 'utf8'),
   );
   return {
     value: sign(payload),
-    expiresInSec: MOBILE_TOKEN_TTL_SECONDS,
+    expiresInSec: ttlSeconds,
     expiresAt: new Date(expEpoch * 1000),
   };
 }
