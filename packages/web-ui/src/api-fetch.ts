@@ -157,7 +157,16 @@ export function eventStreamCore(
   makeRequest: (headers: Record<string, string>, signal: AbortSignal) => Promise<Response>,
   onAuthFailure: () => void,
   onMessage: (data: string) => void,
-  opts?: { onError?: (err: unknown) => void },
+  opts?: {
+    onError?: (err: unknown) => void;
+    /** Give up after this many CONSECUTIVE failed attempts (a successful
+     *  connect resets the count) and call `onExhausted` instead of retrying
+     *  forever. Consumers whose durable state can reconcile a missed ending
+     *  (the team turn streams) use this so an outage can't strand a spinner;
+     *  absent ⇒ the original reconnect-forever behavior (owner realtime). */
+    maxAttempts?: number;
+    onExhausted?: () => void;
+  },
 ): () => void {
   const controller = new AbortController();
   let closed = false;
@@ -229,6 +238,12 @@ export function eventStreamCore(
       }
       if (closed) return;
       attempt += 1;
+      if (opts?.maxAttempts !== undefined && attempt > opts.maxAttempts) {
+        // Consecutive failures exhausted — stop and let the consumer reconcile
+        // against its durable state rather than spinning forever.
+        opts.onExhausted?.();
+        return;
+      }
       // Exponential backoff with full-ish jitter: a synchronously-failing
       // endpoint doesn't get hammered ~1×/s, and a deploy/restart doesn't make
       // every tab reconnect in lockstep (thundering herd). Resets to 0 above on
