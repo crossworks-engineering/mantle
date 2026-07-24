@@ -6,12 +6,29 @@
  * Order matters: env files load BEFORE any app import, because workspace
  * packages capture env at module init (DATABASE_URL, S3_*, …).
  */
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvFiles } from './env';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 loadEnvFiles(webRoot);
+
+// Build identity. Next used to inline NEXT_PUBLIC_* at compile time; under tsx
+// the shared @mantle/web-ui/version module reads the same vars at import — so
+// resolve them HERE, before anything imports it. Version comes from the ROOT
+// package.json (single source of truth); SHA + build time are stamped into the
+// image as MANTLE_* (Dockerfile build args).
+try {
+  const rootPkg = JSON.parse(readFileSync(join(webRoot, '../../package.json'), 'utf8')) as {
+    version?: string;
+  };
+  process.env.NEXT_PUBLIC_APP_VERSION ??= rootPkg.version ?? '0.0.0';
+} catch {
+  /* keep the module's 0.0.0 fallback */
+}
+process.env.NEXT_PUBLIC_GIT_SHA ??= process.env.MANTLE_GIT_SHA ?? '';
+process.env.NEXT_PUBLIC_BUILD_TIME ??= process.env.MANTLE_BUILD_TIME ?? '';
 
 const { serve } = await import('@hono/node-server');
 const { createApp } = await import('./app');

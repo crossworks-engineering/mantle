@@ -83,13 +83,15 @@ RUN apt-get update \
 # Now copy sources.
 COPY . .
 
-# ── 2. server: backend runtime image — workspace + the server Next build ─────
-# Carries source + node_modules + the compiled .next, so the SAME image can run
-# `next start` (web), the agent, the tsx workers, and the migrator — selected by
-# the compose `command:` per service. Defaults to the web server.
+# ── 2. server: backend runtime image — workspace + generated assets ─────────
+# Carries source + node_modules + the generated runtime assets (app-runtime,
+# share-runtime, route manifest), so the SAME image can run the Hono web
+# server (tsx), the agent, the tsx workers, and the migrator — selected by the
+# compose `command:` per service. Defaults to the web server. There is no
+# compile step: server/web runs raw TypeScript under tsx, like server/api and
+# every worker always have.
 FROM deps AS server
 ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
 # pg_dump for the scheduled-backup feature (/settings/backups). Must be the
 # pgdg v17 client — bookworm's default postgresql-client is 15, and pg_dump
 # refuses servers newer than itself. curl is installed and purged in the same
@@ -116,23 +118,23 @@ ARG MANTLE_GIT_SHA=""
 ARG MANTLE_BUILD_TIME=""
 ENV MANTLE_GIT_SHA=$MANTLE_GIT_SHA
 ENV MANTLE_BUILD_TIME=$MANTLE_BUILD_TIME
-# `.next/cache` is the build cache (~1.1GB) — `next start` never reads it, so
-# drop it: it's the layer that changes every build, so this also keeps
-# incremental re-pulls small (the runtime .next is only ~50MB).
-RUN pnpm -C server/web build && rm -rf server/web/.next/cache
+# Generate the runtime assets: mini-app runtime (public/app-runtime), the
+# route manifest, and the share-runtime bundle (Tailwind styles + share
+# islands + KaTeX) for the server-rendered /s + /print surfaces.
+RUN pnpm -C server/web build
 # Release-owned deploy files, embedded so (a) the updater sidecar can extract
 # the CANONICAL docker-compose.yml for this exact release from the already-
 # pulled image (in-band — no extra network fetch) and refresh a pristine box
 # copy, and (b) the web app can fingerprint the canonical to flag compose
 # drift on /settings/updates. Kept AFTER the build layer: compose edits must
-# not invalidate the (expensive) next-build cache. See infra/updater/updater.sh
-# (compose refresh) + docs/deploy.md.
+# not invalidate the (expensive) asset-generation cache. See
+# infra/updater/updater.sh (compose refresh) + docs/deploy.md.
 COPY docker-compose.yml /app/release/docker-compose.yml
 COPY docker-compose.client.yml /app/release/docker-compose.client.yml
 COPY infra/caddy/Caddyfile /app/release/Caddyfile
 COPY infra/updater/updater.sh /app/release/updater.sh
 EXPOSE 3000
-CMD ["pnpm", "-C", "server/web", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
+CMD ["pnpm", "-C", "server/web", "start"]
 
 # ── 3. client: the zero-secret owner-UI image ────────────────────────────────
 # Same deps layer (one lockfile, shared cache); only client/web is built. No
