@@ -19,7 +19,7 @@
 #   PROD_DB_LOCAL_PORT     local port → Postgres        (default: 55432)
 #   PROD_S3_LOCAL_PORT     local port → MinIO           (default: 9100)
 #
-# Holds NO secrets. DB password + S3 keys live in apps/web/.env.local.
+# Holds NO secrets. DB password + S3 keys live in server/web/.env.local.
 set -euo pipefail
 
 PROD_SSH_HOST="${PROD_SSH_HOST:-mantle-prod}"
@@ -83,7 +83,7 @@ case "$ACTION" in
       [ -n "$MINIO_IP" ] && { port_open "$MINIO_LOCAL_PORT" \
         && echo "✓ MinIO tunnel up — S3_ENDPOINT: http://127.0.0.1:${MINIO_LOCAL_PORT}" \
         || echo "✗ MinIO port ${MINIO_LOCAL_PORT} didn't open." >&2; }
-      echo "  (credentials live in apps/web/.env.local) — close with: scripts/prod-db-tunnel.sh down"
+      echo "  (credentials live in server/web/.env.local) — close with: scripts/prod-db-tunnel.sh down"
     else
       echo "✗ tunnel did not come up — is the SSH host reachable? (ssh ${PROD_SSH_HOST})" >&2
       exit 1

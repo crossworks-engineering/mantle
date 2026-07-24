@@ -7,7 +7,7 @@
 name: mantle-dev
 
 # Mantle dev infra: just Postgres + MinIO.
-# apps/web, apps/mcp, and workers run as native Node via `pnpm dev`.
+# server/web, server/mcp, and workers run as native Node via `pnpm dev`.
 # Bring everything up with `pnpm up` (which runs scripts/up.sh).
 
 services:
@@ -81,7 +81,7 @@ services:
       # MaxHeapSize stayed at the JVM ergonomic default of ~2 GB).
       JAVA_TOOL_OPTIONS: "-Xmx512m -Xms128m"
     ports:
-      # 9998 on the host. apps/web + workers run as native Node in dev
+      # 9998 on the host. server/web + workers run as native Node in dev
       # and reach Tika here. TIKA_URL in .env.local must match.
       - "127.0.0.1:9998:9998"
     healthcheck:
@@ -101,9 +101,9 @@ services:
 
   # Browser sidecar (browserless/chromium) — the PDF-export render engine, run
   # exactly like Tika: a stateless, self-hosted service with its own memory
-  # space, session queue, and per-session timeout. apps/web connects with
+  # space, session queue, and per-session timeout. server/web connects with
   # puppeteer-core over websocket and drives it to print the owner-authed
-  # /print/pages/<id> surface. See apps/web/lib/render-pdf.ts.
+  # /print/pages/<id> surface. See server/web/lib/render-pdf.ts.
   browser:
     image: ghcr.io/browserless/chromium:v2.55.0
     container_name: mantle_dev_browser
@@ -114,12 +114,12 @@ services:
       # BROWSER_WS_ENDPOINT must carry the same token.
       TOKEN: mantle
       # Two concurrent renders, small queue, 60s per-session hard cap — a stuck
-      # or pathological page render dies in the sidecar, never in apps/web.
+      # or pathological page render dies in the sidecar, never in server/web.
       CONCURRENT: "2"
       QUEUED: "5"
       TIMEOUT: "60000"
     ports:
-      # 9222 on the host. apps/web runs as native Node in dev and connects
+      # 9222 on the host. server/web runs as native Node in dev and connects
       # here: BROWSER_WS_ENDPOINT=ws://127.0.0.1:9222?token=mantle
       - "127.0.0.1:9222:3000"
     extra_hosts:

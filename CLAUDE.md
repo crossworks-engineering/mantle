@@ -37,7 +37,7 @@ store, so ~seconds), and copies `.env.local`. Tear down with
 - Each worktree has its own `.next`, so concurrent `next build`s are safe (the
   "one build at a time" hazard only applies inside a *shared* checkout).
 - Run the dev server on a non-default port when another session holds `:3000`
-  (`PORT=3100 pnpm -C apps/web dev`).
+  (`PORT=3100 pnpm -C server/web dev`).
 
 ## Other guidance
 
@@ -45,7 +45,7 @@ store, so ~seconds), and copies `.env.local`. Tear down with
   detached against a deployed brain (the test box). Setup + troubleshooting:
   [docs/db-less-dev.md](docs/db-less-dev.md). Plain `pnpm dev` expects a full
   local stack and will 500 without one.
-- UI conventions: [apps/web/CLAUDE.md](apps/web/CLAUDE.md).
+- UI conventions: [server/web/CLAUDE.md](server/web/CLAUDE.md).
 - What a brain ships with (agents/skills/tool-groups/workers/persona): the system
   manifest is the single source of truth — see
-  [apps/web/lib/system-manifest/CLAUDE.md](apps/web/lib/system-manifest/CLAUDE.md).
+  [server/web/lib/system-manifest/CLAUDE.md](server/web/lib/system-manifest/CLAUDE.md).

@@ -47,7 +47,7 @@ The one addition a brain needs to serve a detached frontend:
 
 ## 2. Set up the frontend (once per machine)
 
-Create `apps/web/.env.detached.local` (git-ignored):
+Create `server/web/.env.detached.local` (git-ignored):
 
 ```
 MANTLE_REMOTE=https://test.crossworks.network
@@ -55,7 +55,7 @@ MANTLE_REMOTE_EMAIL=<login email on that box>
 MANTLE_REMOTE_PASSWORD=<its password>
 ```
 
-That's it. Your regular `apps/web/.env.local` needs nothing detached-specific
+That's it. Your regular `server/web/.env.local` needs nothing detached-specific
 (only `SESSION_SECRET`, which every install has; `DATABASE_URL` is ignored in
 this mode).
 
@@ -74,7 +74,7 @@ pnpm dev:fe --port 3001     # extra args pass through to `next dev`
   re-onboarded since the last mint, it re-mints automatically
 - exports the detached env (`MANTLE_DETACHED_DEV=1`,
   `NEXT_PUBLIC_MANTLE_API_BASE`, `NEXT_PUBLIC_MANTLE_API_TOKEN`,
-  `MANTLE_DEV_EMAIL`) and execs `pnpm -C apps/web dev`
+  `MANTLE_DEV_EMAIL`) and execs `pnpm -C server/web dev`
 
 Open any `(app)` screen: you're already "logged in" as the token's user (no
 login step), and every data fetch goes browser → remote. There's also a
@@ -116,17 +116,17 @@ Claude preview sessions.
 
 Every dynamic `(app)` screen is **client-fetched**: the server page is an auth
 gate only (no DB reads during render), and the browser loads its data with
-`apiFetch`/`apiSend`/`apiEventStream` (`apps/web/lib/api-fetch.ts`). Those
+`apiFetch`/`apiSend`/`apiEventStream` (`server/web/lib/api-fetch.ts`). Those
 helpers honor `NEXT_PUBLIC_MANTLE_API_BASE` + `NEXT_PUBLIC_MANTLE_API_TOKEN`,
 so when they're set the browser talks straight to the remote API and the local
 Next server never queries a database for screen data.
 
 Four things would otherwise still touch Postgres (or break) on a data-free
-page; all are gated by `isDetachedDev()` (`apps/web/lib/auth-constants.ts`):
+page; all are gated by `isDetachedDev()` (`server/web/lib/auth-constants.ts`):
 
 1. **The page auth gate** — `requireOwner()` → `getSessionUser()` → an
    `authUsers` lookup. Detached, that's replaced by `detachedDevUser()`
-   (`apps/web/lib/auth.ts`), which *decodes* (does not verify — the token is
+   (`server/web/lib/auth.ts`), which *decodes* (does not verify — the token is
    signed by the remote) the bearer to learn which user the client acts as, so
    the local page gate agrees with the remote data, with no DB.
 2. **The Edge middleware** — it runs before the page render and would 307 every

@@ -65,7 +65,7 @@ if ! docker exec mantle_dev_pg psql -U postgres -d postgres -tA -c \
   ✗ The pg-boss schema isn't created yet.
 
     The workers will race to create it on a fresh DB and lose. Run:
-      pnpm -C apps/web pgboss:init    ← then `pnpm dev`
+      pnpm -C server/web pgboss:init    ← then `pnpm dev`
 
     Or just `pnpm start`, which does this for you.
 

@@ -157,10 +157,10 @@ x-app-env: &app-env
   # warns about.
   MANTLE_RUNS: ${MANTLE_RUNS:-}
   MANTLE_RUNS_WORKER_CONCURRENCY: ${MANTLE_RUNS_WORKER_CONCURRENCY:-}
-  # Cap on the dedicated background-runs DBOS queue in apps/api (slice 4 WP-F,
+  # Cap on the dedicated background-runs DBOS queue in server/api (slice 4 WP-F,
   # `RUNS_TURN_QUEUE`) — what keeps a run fanning out N worker turns from
   # queueing ahead of a live chat message. Default 2. It shipped read-only:
-  # apps/api read it from day one but nothing passed it through, so no box
+  # server/api read it from day one but nothing passed it through, so no box
   # could tune it.
   MANTLE_RUNS_TURN_CONCURRENCY: ${MANTLE_RUNS_TURN_CONCURRENCY:-}
   # Extractor worker concurrency (in-flight extraction jobs). Default 2 suits a
@@ -377,12 +377,12 @@ services:
 
   # Browser sidecar (browserless/chromium) — the PDF-export render engine, run
   # exactly like Tika: a stateless, self-hosted service with its own memory
-  # space, session queue, and per-session hard timeout. apps/web connects with
+  # space, session queue, and per-session hard timeout. server/web connects with
   # puppeteer-core over websocket (BROWSER_WS_ENDPOINT) and drives it to print
   # the owner-authed /print/pages/<id> surface — so the PDF reuses the live
   # page CSS byte-for-byte. No published ports: only the internal network can
   # reach it, and a crashed/pathological render dies here, never in web.
-  # See apps/web/lib/render-pdf.ts.
+  # See server/web/lib/render-pdf.ts.
   browser:
     image: ghcr.io/browserless/chromium:v2.55.0
     container_name: mantle_browser
@@ -496,7 +496,7 @@ services:
     # same one-shot gate — every worker depends_on this completing, so by the time
     # they call pg-boss start() the schema exists and they can't race to create it
     # (which on a fresh DB leaves it uncreated). Idempotent on an existing brain.
-    command: ["sh", "-c", "pnpm -C packages/db migrate && pnpm -C apps/web pgboss:init && pnpm -C apps/api provision"]
+    command: ["sh", "-c", "pnpm -C packages/db migrate && pnpm -C server/web pgboss:init && pnpm -C server/api provision"]
     container_name: mantle_migrate
     restart: "no"
     depends_on:
@@ -667,7 +667,7 @@ services:
   # the separate `agent` service). Same image, different command.
   api:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/api", "start"]
+    command: ["pnpm", "-C", "server/api", "start"]
     container_name: mantle_api
     restart: unless-stopped
     logging: *default-logging
@@ -697,7 +697,7 @@ services:
 
   worker_email:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/email-sync.ts"]
+    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/email-sync.ts"]
     container_name: mantle_worker_email
     restart: unless-stopped
     logging: *default-logging
@@ -718,7 +718,7 @@ services:
 
   worker_telegram:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/telegram-poll.ts"]
+    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/telegram-poll.ts"]
     container_name: mantle_worker_telegram
     restart: unless-stopped
     logging: *default-logging
@@ -740,7 +740,7 @@ services:
   # like the email worker.
   worker_microsoft:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/microsoft-sync.ts"]
+    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/microsoft-sync.ts"]
     container_name: mantle_worker_microsoft
     restart: unless-stopped
     logging: *default-logging
@@ -763,7 +763,7 @@ services:
   # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
   worker_files:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/files-watch.ts"]
+    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/files-watch.ts"]
     container_name: mantle_worker_files
     restart: unless-stopped
     logging: *default-logging
@@ -791,7 +791,7 @@ services:
   # operator opts in at /settings/documentation.
   worker_docs:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/docs-sync.ts"]
+    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/docs-sync.ts"]
     container_name: mantle_worker_docs
     restart: unless-stopped
     logging: *default-logging
@@ -812,7 +812,7 @@ services:
   # reminders silently never fire in prod (they work in `pnpm dev`).
   worker_events:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/events-reminders.ts"]
+    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/events-reminders.ts"]
     container_name: mantle_worker_events
     restart: unless-stopped
     logging: *default-logging
@@ -843,7 +843,7 @@ services:
   # later) into the brain as event nodes. No volume — events live in Postgres.
   worker_calendar:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/calendar-sync.ts"]
+    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/calendar-sync.ts"]
     container_name: mantle_worker_calendar
     restart: unless-stopped
     logging: *default-logging
@@ -866,7 +866,7 @@ services:
   # same history the CLI and the /debug/integrity Maintenance tab write.
   worker_maintenance:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/maintenance.ts"]
+    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/maintenance.ts"]
     container_name: mantle_worker_maintenance
     restart: unless-stopped
     logging: *default-logging
@@ -890,7 +890,7 @@ services:
   # healthy with the feature off.
   worker_runs:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/runs.ts"]
+    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/runs.ts"]
     container_name: mantle_worker_runs
     restart: unless-stopped
     logging: *default-logging
@@ -909,7 +909,7 @@ services:
   # No-op until a device Connects (push_instance/push_subscriptions empty).
   worker_push:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "apps/web", "exec", "tsx", "workers/push-notify.ts"]
+    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/push-notify.ts"]
     container_name: mantle_worker_push
     restart: unless-stopped
     logging: *default-logging

@@ -23,7 +23,7 @@ web_pid_file="$artifacts/web.pid"
 web_log="$artifacts/web.log"
 port=3900
 
-# The web app's env for THIS stack. Set explicitly so apps/web/.env.local (which
+# The web app's env for THIS stack. Set explicitly so server/web/.env.local (which
 # next dev always loads, and which may point at a REAL local brain) cannot leak
 # in — explicit process env beats .env.local in Next.
 export DATABASE_URL="postgres://postgres:postgres@127.0.0.1:55432/postgres"
@@ -45,17 +45,17 @@ up() {
   "${compose[@]}" run --rm createbucket
   echo "→ migrations + pg-boss schema"
   pnpm --filter @mantle/db migrate
-  pnpm -C apps/web pgboss:init
+  pnpm -C server/web pgboss:init
   echo "→ web app on :$port (log: $web_log)"
   # A stale server from an interrupted run holds the port and answers with the
   # WRONG code/DB — sweep it before starting.
   fuser -k "$port/tcp" 2>/dev/null && sleep 1 || true
-  # `pnpm -C apps/web dev` (not `exec next dev`) so the package's predev hook
+  # `pnpm -C server/web dev` (not `exec next dev`) so the package's predev hook
   # generates public/app-runtime/ — the mini-app runtime the CORS spec checks.
   # PORT is exported above; next dev honours it. setsid gives the pnpm→next
   # chain its own process GROUP so teardown can kill the whole tree (killing
   # just the pnpm wrapper leaves next alive — the stale-port failure mode).
-  ( setsid pnpm -C apps/web dev >"$web_log" 2>&1 & echo $! >"$web_pid_file" )
+  ( setsid pnpm -C server/web dev >"$web_log" 2>&1 & echo $! >"$web_pid_file" )
   for i in $(seq 1 120); do
     if curl -sf "http://localhost:$port/api/version" >/dev/null 2>&1; then
       echo "→ web ready"

@@ -130,7 +130,7 @@ jobs:
       - name: Probe node:sqlite on the prod image
         run: |
           docker run --rm "${IMAGE}:${{ github.ref_name }}" \
-            pnpm -C apps/web exec tsx ../../packages/tabledb/src/probes-cli.ts
+            pnpm -C server/web exec tsx ../../packages/tabledb/src/probes-cli.ts
 
   release:
     needs: merge
