@@ -13,6 +13,7 @@
  */
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { teamFetch } from '@mantle/web-ui/team-fetch';
 import type { CuratedTeamSection } from '@mantle/content';
 
 function relTime(iso: string): string {
@@ -38,7 +39,7 @@ export function CuratedSections() {
     let cancelled = false;
     void (async () => {
       try {
-        const r = await fetch('/api/team/curated', { cache: 'no-store' });
+        const r = await teamFetch('/api/team/curated', { cache: 'no-store' });
         if (!r.ok) return;
         const body = (await r.json()) as { sections?: CuratedTeamSection[] };
         if (!cancelled && Array.isArray(body.sections)) setSections(body.sections);

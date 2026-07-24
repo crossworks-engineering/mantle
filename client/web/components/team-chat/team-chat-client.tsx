@@ -15,10 +15,11 @@
  * members get standard-Markdown replies (no TipTap rich dialect), no thought
  * trail, no tool ledger — those are owner-surface features.
  *
- * Public surface: raw fetch/EventSource on purpose (apiFetch is the app
+ * Public surface: teamFetch/teamEventStream on purpose (apiFetch is the app
  * shell's authenticated wrapper), inline feedback (no toast provider), and the
- * signed team-chat cookie carries auth on every call. A 401 anywhere flips
- * back to the token prompt — that's what mid-session revocation looks like.
+ * team credential (cookie same-origin, bearer on the split client) carries
+ * auth on every call. A 401 anywhere flips back to the token prompt — that's
+ * what mid-session revocation looks like.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -28,6 +29,7 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { CopyButton } from '@mantle/web-ui/copy-button';
 import { TokenGate } from '@/components/team-chat/token-gate';
+import { teamFetch, teamEventStream } from '@mantle/web-ui/team-fetch';
 import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
 
 type TeamMessage = {
@@ -178,7 +180,8 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
   const [showJump, setShowJump] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const esRef = useRef<EventSource | null>(null);
+  // Disposer for the open turn stream (teamEventStream) — null when idle.
+  const esRef = useRef<(() => void) | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Whether the view is pinned to the bottom. Starts pinned; scrolling up
   // unpins (reading history must not be yanked away by a streaming reply),
@@ -187,7 +190,7 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
 
   const refetch = useCallback(async (): Promise<boolean> => {
     try {
-      const r = await fetch('/api/team/messages', { cache: 'no-store' });
+      const r = await teamFetch('/api/team/messages', { cache: 'no-store' });
       if (r.status === 401) {
         setAuthed(false);
         return false;
@@ -204,7 +207,7 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
 
   useEffect(() => {
     void refetch();
-    return () => esRef.current?.close();
+    return () => esRef.current?.();
   }, [refetch]);
 
   const jumpToBottom = useCallback(() => {
@@ -248,7 +251,7 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
   }, []);
 
   const finishTurn = useCallback(() => {
-    esRef.current?.close();
+    esRef.current?.();
     esRef.current = null;
     setLive(null);
     setSending(false);
@@ -257,43 +260,45 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
 
   // Open the live stream for a server-minted turn id. The id embeds the caller's
   // contact, so the stream route only ever serves this member their own turn.
+  // teamEventStream (fetch-based SSE) carries the member credential across
+  // origins — EventSource can't set an Authorization header — and reconnects
+  // with Last-Event-ID resume on drops, so we only reconcile on done/error/401.
   const openStream = useCallback(
     (turnId: string) => {
-      let es: EventSource;
-      try {
-        es = new EventSource(`/api/team/turn/${turnId}/stream`);
-      } catch {
-        // EventSource unsupported — reconcile against the durable row instead.
-        finishTurn();
-        return;
-      }
-      esRef.current = es;
-      es.onmessage = (ev) => {
-        try {
-          const event = JSON.parse(ev.data) as {
-            type: string;
-            data: { label?: string; text?: string; message?: string };
-          };
-          if (event.type === 'status' && event.data.label) {
-            setLive((l) => (l ? { ...l, status: event.data.label ?? l.status } : l));
-          } else if (event.type === 'text-delta' && event.data.text) {
-            setLive((l) =>
-              l ? { ...l, status: null, text: l.text + (event.data.text ?? '') } : l,
-            );
-          } else if (event.type === 'done' || event.type === 'error') {
-            if (event.type === 'error') setSendError(event.data.message ?? 'The turn failed.');
-            finishTurn();
+      let dispose: (() => void) | null = null;
+      dispose = teamEventStream(
+        `/api/team/turn/${turnId}/stream`,
+        (data) => {
+          try {
+            const event = JSON.parse(data) as {
+              type: string;
+              data: { label?: string; text?: string; message?: string };
+            };
+            if (event.type === 'status' && event.data.label) {
+              setLive((l) => (l ? { ...l, status: event.data.label ?? l.status } : l));
+            } else if (event.type === 'text-delta' && event.data.text) {
+              setLive((l) =>
+                l ? { ...l, status: null, text: l.text + (event.data.text ?? '') } : l,
+              );
+            } else if (event.type === 'done' || event.type === 'error') {
+              if (event.type === 'error') setSendError(event.data.message ?? 'The turn failed.');
+              if (esRef.current === dispose) finishTurn();
+            }
+          } catch {
+            /* ignore malformed frames */
           }
-        } catch {
-          /* ignore malformed frames */
-        }
-      };
-      es.onerror = () => {
-        // The connection dropped (proxy idle-timeout, network blip). The reply
-        // is durable server-side, so reconcile by refetching rather than leaving
-        // the turn stuck 'sending' forever. Guard against a close WE initiated.
-        if (esRef.current === es) finishTurn();
-      };
+        },
+        {
+          onUnauthorized: () => {
+            // Mid-turn revocation: stop streaming and flip to the token gate.
+            if (esRef.current === dispose) {
+              finishTurn();
+              setAuthed(false);
+            }
+          },
+        },
+      );
+      esRef.current = dispose;
     },
     [finishTurn],
   );
@@ -339,13 +344,13 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
         const form = new FormData();
         if (text) form.set('text', text);
         form.set('file', outgoingFile);
-        r = await fetch('/api/team/turn', {
+        r = await teamFetch('/api/team/turn', {
           method: 'POST',
           headers: { 'idempotency-key': nonce },
           body: form,
         });
       } else {
-        r = await fetch('/api/team/turn', {
+        r = await teamFetch('/api/team/turn', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'idempotency-key': nonce },
           body: JSON.stringify({ text }),

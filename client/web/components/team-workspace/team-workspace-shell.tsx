@@ -6,9 +6,10 @@
  * left section nav (Notes/Pages/Tables/Apps/Tasks/Events), footer with the
  * shared folders + Assistant. No Highlight, no owner chrome, no edit anywhere.
  *
- * Client-fetch on purpose (raw fetch, not apiFetch): /team is the external
- * member surface — auth is the team cookie, 401 renders the TokenGate, and
- * pages stay free of server DB reads (detached-safe, same as the old hub).
+ * Client-fetch on purpose (teamFetch, not apiFetch): /team is the external
+ * member surface — auth is the team credential (cookie same-origin, bearer on
+ * the split client origin), 401 renders the TokenGate, and pages stay free of
+ * server DB reads (detached-safe, same as the old hub).
  */
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
@@ -32,6 +33,7 @@ import { navItemMatches } from '@mantle/web-ui/layout/nav-items';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@mantle/web-ui/ui/sheet';
 import { ThemeToggle } from '@mantle/web-ui/theme-toggle';
 import { TokenGate } from '@/components/team-chat/token-gate';
+import { teamFetch } from '@mantle/web-ui/team-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
 
 export type WorkspaceData = {
@@ -118,7 +120,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
 
   const refetch = useCallback(async () => {
     try {
-      const r = await fetch('/api/team/workspace', { cache: 'no-store' });
+      const r = await teamFetch('/api/team/workspace', { cache: 'no-store' });
       if (r.status === 401) {
         setAuthed(false);
         return;

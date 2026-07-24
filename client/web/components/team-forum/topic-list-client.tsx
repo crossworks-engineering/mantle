@@ -61,8 +61,9 @@ import {
   timeAgo,
   type ForumKind,
   type ForumStatus,
-} from './forum-meta';
+} from '@mantle/web-ui/forum-meta';
 import { ComposerAttachments, type StagedUpload } from './attachment-ui';
+import { teamFetch } from '@mantle/web-ui/team-fetch';
 
 export type ForumTopicItem = {
   id: string;
@@ -104,7 +105,7 @@ function NewTopicDialog() {
     setError(null);
     try {
       const attachmentIds = staged.map((s) => s.blobId);
-      const r = await fetch('/api/team/forum/topics', {
+      const r = await teamFetch('/api/team/forum/topics', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -285,7 +286,7 @@ export function TopicListClient() {
       if (sort !== 'activity') qs.set('sort', sort);
       if (page > 1) qs.set('page', String(page));
       const s = qs.toString();
-      const r = await fetch(`/api/team/forum/topics${s ? `?${s}` : ''}`, { cache: 'no-store' });
+      const r = await teamFetch(`/api/team/forum/topics${s ? `?${s}` : ''}`, { cache: 'no-store' });
       if (r.status === 401) {
         setError('Your team session ended — reload the page to sign in again.');
         return;

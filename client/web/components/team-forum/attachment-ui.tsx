@@ -14,9 +14,10 @@
  * The /team landing quick box deliberately stays attachment-free (decision:
  * keep it zero-friction).
  */
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { FileText, Film, Image as ImageIcon, Loader2, Music, Paperclip, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
+import { teamFetch, teamUrl } from '@mantle/web-ui/team-fetch';
 
 export type PostAttachment = {
   kind?: string;
@@ -57,6 +58,55 @@ function KindIcon({ kind }: { kind?: string }) {
   return <FileText className="size-3.5 shrink-0" aria-hidden />;
 }
 
+const CHIP_CLASS =
+  'inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-card-foreground transition-colors hover:bg-accent hover:text-accent-foreground';
+
+/**
+ * One downloadable chip. Same-origin it's the plain new-tab anchor it always
+ * was (cookie auth, inline preview via content-disposition). On the split
+ * client origin a bare link can't carry the member bearer, so the chip
+ * fetches the bytes with teamFetch and opens the blob in a new tab —
+ * same inline-preview behavior, credential in the header.
+ */
+function AttachmentChip({ fileId, children }: { fileId: string; children: ReactNode }) {
+  const path = `/api/team/forum/attachments/${fileId}`;
+  const [busy, setBusy] = useState(false);
+  if (teamUrl('') === '') {
+    return (
+      <a href={path} target="_blank" rel="noreferrer" className={CHIP_CLASS}>
+        {children}
+      </a>
+    );
+  }
+  const open = async () => {
+    if (busy) return;
+    setBusy(true);
+    // Open the tab SYNCHRONOUSLY (inside the click gesture — a post-await
+    // window.open gets popup-blocked), then steer it to the blob when ready.
+    const tab = window.open('', '_blank');
+    try {
+      const r = await teamFetch(path);
+      if (!r.ok) {
+        tab?.close();
+        return;
+      }
+      const url = URL.createObjectURL(await r.blob());
+      if (tab) tab.location = url;
+      // Give the new tab time to take the blob before releasing it.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      tab?.close(); /* network blip — the member can tap again */
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button type="button" onClick={() => void open()} disabled={busy} className={CHIP_CLASS}>
+      {children}
+    </button>
+  );
+}
+
 /** Attachment chips under a post. `states` maps blobId → review state; an
  *  attachment with no state row (race with a sweep) still renders a chip. */
 export function AttachmentChips({
@@ -89,13 +139,7 @@ export function AttachmentChips({
           );
         }
         return (
-          <a
-            key={a.fileId}
-            href={`/api/team/forum/attachments/${a.fileId}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-card-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-          >
+          <AttachmentChip key={a.fileId} fileId={a.fileId}>
             <KindIcon kind={a.kind} />
             <span className="max-w-48 truncate">
               {label}
@@ -109,7 +153,7 @@ export function AttachmentChips({
                 in review
               </span>
             )}
-          </a>
+          </AttachmentChip>
         );
       })}
     </div>
@@ -183,7 +227,7 @@ export function ComposerAttachments({
     for (const f of candidates) form.append('file', f);
     setBusy(true);
     try {
-      const r = await fetch('/api/team/forum/uploads', { method: 'POST', body: form });
+      const r = await teamFetch('/api/team/forum/uploads', { method: 'POST', body: form });
       const data = (await r.json().catch(() => ({}))) as {
         uploads?: StagedUpload[];
         error?: string;

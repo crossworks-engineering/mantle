@@ -238,6 +238,8 @@ export function AppSandbox({
   onSelect,
   onInspectChange,
   hub,
+  apiBase: apiBaseOverride,
+  fetcher,
   onLoadFailure,
 }: {
   appId: string;
@@ -275,6 +277,14 @@ export function AppSandbox({
     getData: () => HubData;
     onNav: (target: HubNavTarget) => void;
   };
+  /** Absolute API base override — the split client's hub passes the SERVER
+   *  origin's /s/<token> here so the parent-page broker fetches cross origins.
+   *  Absent ⇒ the same-origin derivation below (unchanged). */
+  apiBase?: string;
+  /** Fetch used for the bundle/tool-broker/db-broker calls ONLY — the split
+   *  client injects a bearer-attaching wrapper (a cross-origin broker call
+   *  can't ride a cookie). Defaults to plain fetch. */
+  fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
   /** The bundle could not be fetched/rendered (missing build or load error).
    *  The /team shell uses this to fall back to the built-in hub instead of
    *  showing members a broken slot. */
@@ -282,7 +292,8 @@ export function AppSandbox({
 }) {
   // Public share mode swaps the session-authed API base for the token-authed
   // public one; the route suffixes (bundle / tool-broker / db-broker) match.
-  const apiBase = shareToken ? `/s/${shareToken}` : `/api/apps/${appId}`;
+  // An explicit apiBase (the split client's cross-origin hub) wins outright.
+  const apiBase = apiBaseOverride ?? (shareToken ? `/s/${shareToken}` : `/api/apps/${appId}`);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [height, setHeight] = useState(320);
@@ -298,8 +309,17 @@ export function AppSandbox({
   // them as deps. Parents pass inline closures (e.g. onError={(m)=>toast(m)})
   // that change identity every render — without this, typing in the Assist box
   // re-ran the bundle-fetch effect below and reloaded the iframe (white flash).
+  // `fetcher` rides along for the same reason (the split hub passes an inline
+  // bearer-attaching wrapper); the default stays a plain window-bound fetch.
   const cbRef = useRef({ onError, onSelect, onInspectChange, hub, onLoadFailure });
   cbRef.current = { onError, onSelect, onInspectChange, hub, onLoadFailure };
+  const fetcherRef = useRef(fetcher);
+  fetcherRef.current = fetcher;
+  const doFetch = useCallback(
+    (input: string, init?: RequestInit) =>
+      fetcherRef.current ? fetcherRef.current(input, init) : fetch(input, init),
+    [],
+  );
 
   // Push inspect-mode + the locked selection down whenever they change or the
   // app (re)becomes ready, so a fresh iframe inherits the current state.
@@ -353,7 +373,7 @@ export function AppSandbox({
           return;
         }
         if (req.kind === 'tool.call') {
-          const r = await fetch(`${apiBase}/tool-broker`, {
+          const r = await doFetch(`${apiBase}/tool-broker`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ slug: req.slug, input: req.input }),
@@ -373,7 +393,7 @@ export function AppSandbox({
         }
         // db.query | db.exec
         const op = req.kind === 'db.query' ? 'query' : 'exec';
-        const r = await fetch(`${apiBase}/db-broker`, {
+        const r = await doFetch(`${apiBase}/db-broker`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ op, sql: req.sql, params: req.params ?? [] }),
@@ -383,7 +403,7 @@ export function AppSandbox({
         reply({ ok: false, error: err instanceof Error ? err.message : String(err) });
       }
     },
-    [apiBase],
+    [apiBase, doFetch],
   );
 
   // Listen for messages from THIS iframe only.
@@ -448,7 +468,7 @@ export function AppSandbox({
     let cancelled = false;
     setStatus('loading');
     everReadyRef.current = false;
-    Promise.all([fetch(`${apiBase}/bundle`), loadImportMap()])
+    Promise.all([doFetch(`${apiBase}/bundle`), loadImportMap()])
       .then(async ([r, importMap]) => {
         if (cancelled) return;
         if (r.status === 404) {
@@ -475,7 +495,7 @@ export function AppSandbox({
     return () => {
       cancelled = true;
     };
-  }, [apiBase, reloadKey, frame]);
+  }, [apiBase, reloadKey, frame, doFetch]);
 
   const isViewport = frame === 'viewport';
   return (

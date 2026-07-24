@@ -21,7 +21,8 @@ import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
-import { KindBadge, TopicFlags, type ForumKind, type ForumStatus } from './forum-meta';
+import { KindBadge, TopicFlags, type ForumKind, type ForumStatus } from '@mantle/web-ui/forum-meta';
+import { teamFetch, teamEventStream } from '@mantle/web-ui/team-fetch';
 import {
   AttachmentChips,
   ComposerAttachments,
@@ -210,7 +211,8 @@ export function TopicViewClient({
   const [showJump, setShowJump] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const esRef = useRef<EventSource | null>(null);
+  // Disposer for the open turn stream (teamEventStream) — null when idle.
+  const esRef = useRef<(() => void) | null>(null);
   const pinnedRef = useRef(true);
   const openedInitialTurn = useRef(false);
   // Scroll-height snapshot taken before a "Load earlier" prepend so the layout
@@ -224,7 +226,7 @@ export function TopicViewClient({
 
   const refetch = useCallback(async (): Promise<void> => {
     try {
-      const r = await fetch(`/api/team/forum/topics/${topicId}`, { cache: 'no-store' });
+      const r = await teamFetch(`/api/team/forum/topics/${topicId}`, { cache: 'no-store' });
       if (r.status === 404 || r.status === 401 || r.status === 400) {
         setNotFound(true);
         return;
@@ -258,54 +260,58 @@ export function TopicViewClient({
       setPosts(data.posts);
       setUploadStateRows(data.uploadStates ?? []);
       // Mark read — best-effort, clears the unread dot on the list.
-      void fetch(`/api/team/forum/topics/${topicId}/read`, { method: 'POST' }).catch(() => {});
+      void teamFetch(`/api/team/forum/topics/${topicId}/read`, { method: 'POST' }).catch(() => {});
     } catch {
       /* network blip */
     }
   }, [topicId]);
 
   const finishTurn = useCallback(() => {
-    esRef.current?.close();
+    esRef.current?.();
     esRef.current = null;
     setLive(null);
     setSending(false);
     void refetch();
   }, [refetch]);
 
+  // teamEventStream (fetch-based SSE) carries the member credential across
+  // origins — EventSource can't set an Authorization header — and reconnects
+  // with Last-Event-ID resume on drops, so we only reconcile on done/error/401.
   const openStream = useCallback(
     (turnId: string) => {
-      let es: EventSource;
-      try {
-        es = new EventSource(`/api/team/turn/${turnId}/stream`);
-      } catch {
-        finishTurn();
-        return;
-      }
-      esRef.current = es;
+      let dispose: (() => void) | null = null;
       setLive({ turnId, status: 'Thinking…', text: '' });
-      es.onmessage = (ev) => {
-        try {
-          const event = JSON.parse(ev.data) as {
-            type: string;
-            data: { label?: string; text?: string; message?: string };
-          };
-          if (event.type === 'status' && event.data.label) {
-            setLive((l) => (l ? { ...l, status: event.data.label ?? l.status } : l));
-          } else if (event.type === 'text-delta' && event.data.text) {
-            setLive((l) =>
-              l ? { ...l, status: null, text: l.text + (event.data.text ?? '') } : l,
-            );
-          } else if (event.type === 'done' || event.type === 'error') {
-            if (event.type === 'error') setSendError(event.data.message ?? 'The turn failed.');
-            finishTurn();
+      dispose = teamEventStream(
+        `/api/team/turn/${turnId}/stream`,
+        (data) => {
+          try {
+            const event = JSON.parse(data) as {
+              type: string;
+              data: { label?: string; text?: string; message?: string };
+            };
+            if (event.type === 'status' && event.data.label) {
+              setLive((l) => (l ? { ...l, status: event.data.label ?? l.status } : l));
+            } else if (event.type === 'text-delta' && event.data.text) {
+              setLive((l) =>
+                l ? { ...l, status: null, text: l.text + (event.data.text ?? '') } : l,
+              );
+            } else if (event.type === 'done' || event.type === 'error') {
+              if (event.type === 'error') setSendError(event.data.message ?? 'The turn failed.');
+              if (esRef.current === dispose) finishTurn();
+            }
+          } catch {
+            /* ignore malformed frames */
           }
-        } catch {
-          /* ignore malformed frames */
-        }
-      };
-      es.onerror = () => {
-        if (esRef.current === es) finishTurn();
-      };
+        },
+        {
+          onUnauthorized: () => {
+            // Mid-turn revocation: stop streaming; the next refetch 401s into
+            // the not-found state this view already renders.
+            if (esRef.current === dispose) finishTurn();
+          },
+        },
+      );
+      esRef.current = dispose;
     },
     [finishTurn],
   );
@@ -319,7 +325,7 @@ export function TopicViewClient({
     window.addEventListener('focus', onFocus);
     return () => {
       window.removeEventListener('focus', onFocus);
-      esRef.current?.close();
+      esRef.current?.();
     };
   }, [refetch]);
 
@@ -393,7 +399,7 @@ export function TopicViewClient({
   const fetchBefore = useCallback(
     async (beforeIso: string): Promise<Post[]> => {
       try {
-        const r = await fetch(
+        const r = await teamFetch(
           `/api/team/forum/topics/${topicId}?before=${encodeURIComponent(beforeIso)}&limit=50`,
           { cache: 'no-store' },
         );
@@ -485,7 +491,7 @@ export function TopicViewClient({
     setSearching(true);
     const t = setTimeout(async () => {
       try {
-        const r = await fetch(
+        const r = await teamFetch(
           `/api/team/forum/topics/${topicId}/search?q=${encodeURIComponent(q)}`,
           {
             cache: 'no-store',
@@ -597,7 +603,7 @@ export function TopicViewClient({
     };
 
     try {
-      const r = await fetch(`/api/team/forum/topics/${topicId}/posts`, {
+      const r = await teamFetch(`/api/team/forum/topics/${topicId}/posts`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
         body: JSON.stringify({

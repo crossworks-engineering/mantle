@@ -19,6 +19,7 @@
     "./display-fonts": "./src/display-fonts.ts",
     "./docs-labels": "./src/docs-labels.ts",
     "./font-provider": "./src/font-provider.tsx",
+    "./forum-meta": "./src/forum-meta.tsx",
     "./highlight-colors": "./src/highlight-colors.ts",
     "./hooks/use-media-query": "./src/hooks/use-media-query.tsx",
     "./hooks/use-mobile": "./src/hooks/use-mobile.tsx",
