@@ -15,7 +15,7 @@
 import { NextResponse } from 'next/server';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { subscribeTurnStream } from '@/lib/realtime';
-import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
+import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
 import { resolveTeamChatCaller, contactOfTeamTurnId } from '@/lib/team-chat-gate';
 
 export const dynamic = 'force-dynamic';

@@ -1,0 +1,907 @@
+@import 'tailwindcss';
+/* Shared theme layer (tokens + ~40 palettes + @theme inline mapping) — lives in
+ * packages/web-ui so both Next apps share one source. Relative path: Tailwind's
+ * CSS @import resolver does not follow package `exports`. */
+@import '../../../packages/web-ui/styles/themes.css';
+@plugin 'tailwindcss-animate';
+@plugin '@tailwindcss/typography';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Theme: Clean Slate (generated with tweakcn.com).
+ * Tokens live in :root / .dark; the @theme inline block maps them to
+ * Tailwind utilities (bg-background, text-muted-foreground, etc.).
+ * --font-sans is owned by next/font (see lib/fonts.ts) and overridden
+ * on <body>; the value here is just a fallback.
+ */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body {
+    overflow: hidden;
+  }
+  body {
+    @apply bg-background text-foreground;
+    letter-spacing: var(--tracking-normal);
+  }
+  /* Native <select> option lists: Chrome/Edge render the dropdown popup with
+     system colours, so a themed (e.g. near-white dark-theme) foreground lands
+     on the browser's light popup — invisible options. Pin both the option fill
+     and text to the popover token pair so the native list tracks the theme. */
+  select option {
+    background-color: var(--popover);
+    color: var(--popover-foreground);
+  }
+}
+
+/* ============================================================================
+   Scrollbar utilities — used by <Scrollable> and fixed shell regions.
+   ========================================================================== */
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
+  border-radius: 3px;
+  transition: background-color 0.2s ease;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+}
+
+/* React Flow controls (trace step graph). The library's default control
+   buttons render white-on-white in some of our themes; pin them to theme
+   tokens so the zoom/fit icons stay legible in every theme + light/dark.
+   The double-class selector outranks the library's single-class rule
+   regardless of stylesheet load order. */
+.react-flow .react-flow__controls-button {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border-bottom-color: var(--border);
+}
+.react-flow .react-flow__controls-button:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+.react-flow .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+/* Drag-handle / focus-marker gutter (pages editor only). The block drag handle
+   + focus-marker strip live in this left padding band, INSIDE the editing
+   surface, so moving the mouse toward them never leaves .ProseMirror — which is
+   what made the handle vanish before you could grab it (the library hides on
+   the editor's mouseleave). Scoped to the `page-gutter` class (added only by
+   PageEditor) so the read-only PageView + public render aren't indented — and,
+   unlike the old [contenteditable='true'] scope, the padding STAYS while the
+   editor is locked during an AI run (setEditable(false) flips contenteditable
+   to 'false', which used to collapse the padding and slide text under the
+   gutter). The page title + tags are padded to match in page-detail-client. */
+.ProseMirror.page-gutter {
+  /* Widened to a two-tool lane: the block drag handle sits at the far left,
+     leaving room next to the content for per-block tools (e.g. the table
+     row/column trash). Keep focus-gutter's strip width + the pl-* on any
+     gutter-aligned helper text in sync with this value. */
+  padding-left: 4rem;
+}
+
+/* TipTap empty-canvas placeholder (pages editor). Shows the hint text on the
+   first empty line only; theme-aware via the muted-foreground token. */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  opacity: 0.55;
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Pages blockquotes keep their accent border ("highlight") but drop the
+   curly quotation marks that `prose` adds before/after the text. Scoped to
+   the TipTap editor so Notes' markdown blockquotes are unaffected. */
+.ProseMirror blockquote p:first-of-type::before,
+.ProseMirror blockquote p:last-of-type::after {
+  content: none;
+}
+
+/* Divider: a soft full-width rule that fades to transparent at both ends
+   (nicer than prose's flat hairline). Themed via --border so it tracks the
+   active theme + light/dark. Halved spacing vs prose's default (3em → 1.5em).
+   Applies to the editor, read-only PageView, and the public render. */
+.ProseMirror hr {
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+  height: 1px;
+  border: 0;
+  background: linear-gradient(to right, transparent, var(--border), transparent);
+}
+.ProseMirror hr.ProseMirror-selectednode {
+  outline: none;
+  background: linear-gradient(to right, transparent, var(--primary), transparent);
+}
+
+/* Pages multi-column layout (2–4 columns). CSS grid with equal auto-columns
+   guarantees identical widths regardless of content (flex sized unevenly).
+   Each column is a lightly shaded, rounded panel so its bounds are visible.
+   Stacks on narrow widths (mobile / narrow public pages). */
+.ProseMirror .column-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 1rem;
+  margin-block: 1rem;
+}
+.ProseMirror .column-list > .column {
+  border-radius: var(--radius, 0.5rem);
+  background-color: var(--muted);
+  padding: 0.75rem 1rem;
+}
+.ProseMirror .column > :first-child {
+  margin-top: 0;
+}
+.ProseMirror .column > :last-child {
+  margin-bottom: 0;
+}
+@media (max-width: 640px) {
+  .ProseMirror .column-list {
+    grid-auto-flow: row;
+  }
+}
+
+/* Pages tables (TipTap / prosemirror-tables) — themed borders + header row,
+   column-resize handle, and cell-selection highlight. */
+/* The wrapper carries the outer border + theme radius and clips (overflow-x:auto
+   makes it a clipping box), so the table reads as a rounded, bordered card that
+   tracks --radius (sharp on radius-0 themes). */
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+  margin-block: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0;
+}
+.ProseMirror table td,
+.ProseMirror table th {
+  position: relative;
+  min-width: 4rem;
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  vertical-align: top;
+}
+/* Drop the cells' outer borders — the rounded wrapper provides the outer edge,
+   so it follows the corner radius cleanly; internal grid lines stay. */
+.ProseMirror table tr:first-child > * {
+  border-top: 0;
+}
+.ProseMirror table tr:last-child > * {
+  border-bottom: 0;
+}
+.ProseMirror table tr > :first-child {
+  border-left: 0;
+}
+.ProseMirror table tr > :last-child {
+  border-right: 0;
+}
+.ProseMirror table th {
+  background-color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+}
+.ProseMirror table td > p,
+.ProseMirror table th > p {
+  margin: 0;
+}
+.ProseMirror table .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--primary) 14%, transparent);
+  pointer-events: none;
+}
+.ProseMirror table .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--primary);
+  cursor: col-resize;
+}
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+/* Pages inline marks: themed links + highlight. */
+.ProseMirror a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.ProseMirror mark {
+  background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+  border-radius: 0.2rem;
+  padding: 0 0.1em;
+  color: inherit;
+}
+
+/* Tighter lists. Tailwind Typography spaces list items almost as far apart as
+   headings (ul/ol ~1.25em, li ~0.5em, plus the <p> TipTap wraps each item in).
+   Pull bullets / numbers / items together so a list reads like normal running
+   text. em-based to track the prose scale; applies to every .prose surface
+   (Pages editor + read view + public share + notes + assistant). */
+.prose :is(ul, ol) {
+  margin-block: 0.5em;
+}
+.prose :is(ul, ol) :is(ul, ol) {
+  margin-block: 0.15em;
+}
+.prose li {
+  margin-block: 0.15em;
+}
+/* TipTap wraps each item's content in a <p>; that paragraph's own margins are
+   the biggest gap. Collapse them so the line sits snug against its marker. */
+.prose li > p {
+  margin-block: 0;
+}
+
+/* Tighter heading-to-body gap. Typography leaves a lot of room below a heading
+   (h1 ~0.89em/32px, h2 ~1em/24px, h3 ~0.6em/12px); trim the bottom margin so a
+   heading sits closer to the text it introduces. Top margins (section
+   separation above a heading) are left as-is. em-based, so it scales per
+   level — h1 0.5em→18px, h2 0.5em→12px, h3 0.4em→8px, h4 0.4em→~6px. */
+.prose :is(h1, h2) {
+  margin-bottom: 0.5em;
+}
+.prose :is(h3, h4, h5, h6) {
+  margin-bottom: 0.4em;
+}
+
+/* Pages to-do lists: no bullets, themed checkbox aligned to the first line;
+   completed items dim + strike. */
+.ProseMirror ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+  margin-block: 0.5rem;
+}
+.ProseMirror ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.ProseMirror ul[data-type='taskList'] li > label {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+  user-select: none;
+}
+.ProseMirror ul[data-type='taskList'] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ProseMirror ul[data-type='taskList'] li > div > p {
+  margin: 0;
+}
+.ProseMirror ul[data-type='taskList'] input[type='checkbox'] {
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+.ProseMirror ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}
+
+/* Pages @-mention chips. Entities tint with primary; page/note links use a
+   distinct categorical colour so the two reference kinds read differently. */
+.ProseMirror .mention {
+  border-radius: 0.3rem;
+  background-color: color-mix(in oklab, var(--primary) 14%, transparent);
+  color: var(--primary);
+  padding: 0.05em 0.3em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ProseMirror .mention[data-ref='node'] {
+  background-color: color-mix(in oklab, var(--chart-2) 16%, transparent);
+  color: var(--chart-2);
+  cursor: pointer;
+}
+.ProseMirror .mention[data-ref='node']:hover {
+  background-color: color-mix(in oklab, var(--chart-2) 26%, transparent);
+  text-decoration: underline;
+}
+
+/* Code-block syntax highlighting (CodeBlockLowlight / highlight.js). Token
+   classes map onto theme tokens so highlighting tracks the active theme +
+   light/dark instead of shipping a fixed hljs colour scheme. Scoped to
+   .ProseMirror (Pages editor + assistant rich renderer) and .code-view (the
+   Apps source viewer). Unhighlighted code falls back to the foreground. */
+:is(.ProseMirror, .code-view) .hljs-comment,
+:is(.ProseMirror, .code-view) .hljs-quote {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+:is(.ProseMirror, .code-view) .hljs-keyword,
+:is(.ProseMirror, .code-view) .hljs-selector-tag,
+:is(.ProseMirror, .code-view) .hljs-built_in,
+:is(.ProseMirror, .code-view) .hljs-name,
+:is(.ProseMirror, .code-view) .hljs-tag {
+  color: var(--chart-1);
+}
+:is(.ProseMirror, .code-view) .hljs-string,
+:is(.ProseMirror, .code-view) .hljs-attr,
+:is(.ProseMirror, .code-view) .hljs-regexp,
+:is(.ProseMirror, .code-view) .hljs-addition,
+:is(.ProseMirror, .code-view) .hljs-meta-string {
+  color: var(--chart-4);
+}
+:is(.ProseMirror, .code-view) .hljs-number,
+:is(.ProseMirror, .code-view) .hljs-literal,
+:is(.ProseMirror, .code-view) .hljs-type,
+:is(.ProseMirror, .code-view) .hljs-symbol,
+:is(.ProseMirror, .code-view) .hljs-bullet,
+:is(.ProseMirror, .code-view) .hljs-link {
+  color: var(--chart-2);
+}
+:is(.ProseMirror, .code-view) .hljs-title,
+:is(.ProseMirror, .code-view) .hljs-section,
+:is(.ProseMirror, .code-view) .hljs-function .hljs-title,
+:is(.ProseMirror, .code-view) .hljs-class .hljs-title {
+  color: var(--chart-3);
+}
+:is(.ProseMirror, .code-view) .hljs-attribute,
+:is(.ProseMirror, .code-view) .hljs-variable,
+:is(.ProseMirror, .code-view) .hljs-template-variable,
+:is(.ProseMirror, .code-view) .hljs-params,
+:is(.ProseMirror, .code-view) .hljs-meta {
+  color: var(--chart-5);
+}
+:is(.ProseMirror, .code-view) .hljs-deletion {
+  color: var(--destructive);
+}
+:is(.ProseMirror, .code-view) .hljs-emphasis {
+  font-style: italic;
+}
+:is(.ProseMirror, .code-view) .hljs-strong {
+  font-weight: 600;
+}
+
+/* Embedded images (page-editor `image` node) — fit the column, themed radius,
+   and a clear selection ring when picked. */
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  display: block;
+  margin-block: 0.75rem;
+}
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Math nodes (KaTeX). Block formulas get breathing room + horizontal scroll on
+   overflow; inline ones sit in the text run. KaTeX colours inherit currentColor
+   so they track the theme foreground. */
+.ProseMirror [data-type='block-math'] {
+  margin-block: 1rem;
+  text-align: center;
+  overflow-x: auto;
+}
+.ProseMirror [data-type='inline-math'] {
+  padding: 0 0.1em;
+}
+.ProseMirror [data-type='block-math'].ProseMirror-selectednode,
+.ProseMirror [data-type='inline-math'].ProseMirror-selectednode {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 0.2rem;
+}
+
+/* Callouts on the raw/public render. In-app callouts use a React NodeView; the
+   public page surface (server-rendered HTML) emits raw [data-callout] divs, so
+   these rules style only that path — a tinted panel + left accent, themed per
+   variant (matching the in-app icon colours). */
+.ProseMirror [data-callout] {
+  margin-block: 0.75rem;
+  border-left: 3px solid var(--chart-2);
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--chart-2) 8%, transparent);
+  padding: 0.5rem 0.9rem;
+}
+.ProseMirror [data-callout] > :first-child {
+  margin-top: 0;
+}
+.ProseMirror [data-callout] > :last-child {
+  margin-bottom: 0;
+}
+.ProseMirror [data-callout][data-variant='success'] {
+  border-left-color: var(--chart-4);
+  background-color: color-mix(in oklab, var(--chart-4) 8%, transparent);
+}
+.ProseMirror [data-callout][data-variant='warning'] {
+  border-left-color: var(--chart-5);
+  background-color: color-mix(in oklab, var(--chart-5) 8%, transparent);
+}
+.ProseMirror [data-callout][data-variant='danger'] {
+  border-left-color: var(--destructive);
+  background-color: color-mix(in oklab, var(--destructive) 8%, transparent);
+}
+
+/* Asides on the raw/public render. The fancier cousin of the callout: a rounded
+   gradient panel (no icon, no left bar). The gradient `background` + themed
+   `border-color` are emitted INLINE by render-page-doc.ts (and the in-app
+   NodeView) so they track the selected chart colour + angle; these rules only
+   own the box geometry so the two paths look identical. */
+.ProseMirror [data-aside] {
+  margin-block: 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 1px 2px 0 color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+.ProseMirror [data-aside] > :first-child {
+  margin-top: 0;
+}
+.ProseMirror [data-aside] > :last-child {
+  margin-bottom: 0;
+}
+
+/* Embedded file chip on the raw/public render. */
+.ProseMirror a.file-embed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--muted) 40%, transparent);
+  padding: 0.5rem 0.85rem;
+  font-size: 0.875rem;
+  text-decoration: none;
+  color: var(--foreground);
+}
+.ProseMirror a.file-embed::before {
+  content: '📎';
+}
+
+/* Focus marker (pages editor). Blocks the user marked via the left-gutter
+   marker get a primary accent bar + faint tint so a multi-section selection
+   reads at a glance. Editor-only (decorations); never serialized into the doc.
+   The negative-margin / padding pair pulls the tint into the gutter band and
+   keeps the text from shifting when a block becomes marked. */
+.ProseMirror .is-focus-marked {
+  position: relative;
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--primary) 8%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--primary);
+  margin-left: -0.75rem;
+  padding-left: 0.75rem;
+  padding-right: 0.4rem;
+}
+
+/* Edited (green) — blocks Pages changed in the current draft. Same shape as the
+   marked highlight, distinct colour (chart-4, the theme's success/green), so a
+   post-run page reads as "this is what moved" at a glance. Cleared on commit. */
+.ProseMirror .is-edited {
+  position: relative;
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--chart-4) 12%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--chart-4);
+  margin-left: -0.75rem;
+  padding-left: 0.75rem;
+  padding-right: 0.4rem;
+}
+
+/* ── Visual diff (review mode, Phase 3a Pass 2) ────────────────────────────
+   Added blocks (green / chart-4) and changed blocks (amber / chart-5) get a
+   left accent bar + faint tint. Each carries a hover-reveal "Discard" pill
+   (placed as a widget at the block's start, absolutely positioned). Removed
+   blocks aren't in the doc — they render as struck "ghost" widget cards. All
+   themed-token only, so they track the active theme + light/dark. */
+.ProseMirror .is-diff-added,
+.ProseMirror .is-diff-changed {
+  position: relative;
+  border-radius: var(--radius);
+  margin-left: -0.75rem;
+  padding-left: 0.75rem;
+  padding-right: 0.4rem;
+}
+.ProseMirror .is-diff-added {
+  background-color: color-mix(in oklab, var(--chart-4) 12%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--chart-4);
+}
+.ProseMirror .is-diff-changed {
+  background-color: color-mix(in oklab, var(--chart-5) 12%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--chart-5);
+}
+
+/* The per-block action pill (Discard / Restore). Lives inside a positioned diff
+   block (added/changed) or a ghost card. Hidden until the block is hovered so
+   it doesn't clutter the read. */
+.ProseMirror .diff-pill {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.2rem;
+  z-index: 2;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  padding: 0.05rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  user-select: none;
+}
+.ProseMirror .is-diff-added:hover > .diff-pill,
+.ProseMirror .is-diff-changed:hover > .diff-pill,
+.ProseMirror .diff-pill:focus-visible {
+  opacity: 1;
+}
+.ProseMirror .diff-pill-discard:hover {
+  border-color: var(--destructive);
+  color: var(--destructive);
+}
+
+/* Removed-block ghost — a read-only card showing deleted content where it used
+   to be. Always shows its Restore pill (it's the only handle on a ghost). */
+.ProseMirror .diff-removed-ghost {
+  position: relative;
+  margin: 0.4rem 0;
+  border: 1px dashed color-mix(in oklab, var(--destructive) 45%, transparent);
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--destructive) 7%, transparent);
+  padding: 0.4rem 0.6rem;
+  user-select: none;
+}
+.ProseMirror .diff-removed-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.ProseMirror .diff-removed-tag {
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--destructive);
+}
+.ProseMirror .diff-removed-ghost .diff-pill {
+  position: static;
+  opacity: 1;
+}
+.ProseMirror .diff-pill-restore:hover {
+  border-color: var(--chart-4);
+  color: var(--chart-4);
+}
+.ProseMirror .diff-removed-body {
+  margin-top: 0.2rem;
+  font-size: 0.9rem;
+  color: color-mix(in oklab, var(--foreground) 65%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklab, var(--destructive) 55%, transparent);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Sub-page card on the raw/public render. In-app it's a React NodeView (a
+   Link); the public surface emits an inert [data-child-page] div (sub-pages
+   aren't part of a shared subtree), styled to match the in-app card. */
+.ProseMirror [data-child-page] {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-block: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--card);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+.ProseMirror [data-child-page] .child-page-icon {
+  flex: none;
+}
+.ProseMirror [data-child-page] .child-page-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   Theme-accented prose (`.prose-accent`) — opt-in markdown brightening.
+   Used by the docs reader (/docs) and Notes (read view + public share).
+   Brightens the otherwise black-and-white markdown with the ACTIVE theme's
+   tokens (primary + chart palette + border). Everything resolves from CSS
+   vars, so it recolours with every theme × light/dark; nothing is hardcoded.
+   Opt-in via the `.prose-accent` class, so the Pages editor and any prose that
+   doesn't add it are untouched. Selectors are class+element (specificity
+   0,1,1+), which outranks Tailwind Typography's `:where()`-wrapped rules
+   (0,1,0) without `!important`.
+   ========================================================================== */
+
+/* h1 — solid brand colour. (Was a primary→chart-3 gradient via background-clip:
+   text, but transparent glyph fill caused headaches with PDF export, editing,
+   and general fragility — a flat colour is robust everywhere.) */
+.prose-accent h1 {
+  color: var(--primary);
+  letter-spacing: -0.01em;
+}
+
+/* h2 — solid primary with a hairline divider for section structure. */
+.prose-accent h2 {
+  color: var(--primary);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+}
+
+/* h3 — primary nudged toward the body colour so the hierarchy still reads. */
+.prose-accent h3 {
+  color: color-mix(in oklab, var(--primary) 82%, var(--foreground));
+}
+
+/* h4 — a distinct chart accent so a fourth level doesn't fall back to grey. */
+.prose-accent h4 {
+  color: var(--chart-4);
+}
+
+/* Links — brand colour, underline only on hover (themed, not prose blue). */
+.prose-accent a {
+  color: var(--primary);
+  font-weight: 500;
+  text-decoration: none;
+}
+.prose-accent a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Inline code — a tinted accent chip. Scoped to NOT touch code blocks (pre),
+   and strip the backtick quotes Typography injects via ::before/::after. */
+.prose-accent :not(pre) > code {
+  background-color: color-mix(in oklab, var(--primary) 12%, transparent);
+  color: var(--primary);
+  padding: 0.15em 0.4em;
+  border-radius: 0.35rem;
+  font-weight: 500;
+}
+.prose-accent :not(pre) > code::before,
+.prose-accent :not(pre) > code::after {
+  content: none;
+}
+
+/* Blockquote — accent bar + faint primary tint, upright (not italic). */
+.prose-accent blockquote {
+  border-left-color: var(--primary);
+  background-color: color-mix(in oklab, var(--primary) 6%, transparent);
+  border-radius: 0 0.4rem 0.4rem 0;
+  padding: 0.5em 1em;
+  font-style: normal;
+  color: var(--foreground);
+}
+.prose-accent blockquote p:first-of-type::before,
+.prose-accent blockquote p:last-of-type::after {
+  content: none;
+}
+
+/* List markers in the accent colour (bullets + ordered numbers). */
+.prose-accent ul > li::marker,
+.prose-accent ol > li::marker {
+  color: var(--primary);
+}
+
+/* hr — a soft accent-fading rule instead of a flat hairline. */
+.prose-accent hr {
+  border: none;
+  height: 1px;
+  background-image: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in oklab, var(--primary) 60%, var(--border)),
+    transparent
+  );
+}
+
+/* ============================================================================
+   Pages (TipTap) — extra flourishes on top of `.prose-accent`.
+   The editor, read view, and public render all carry `.ProseMirror` +
+   `.prose-accent`, so the heading / link / code / quote accents come from the
+   shared block above. These add Pages-only polish the flat markdown surfaces
+   don't need. All theme-token driven.
+   ========================================================================== */
+
+/* Brand-coloured caret + selection. */
+.ProseMirror {
+  caret-color: var(--primary);
+}
+.ProseMirror ::selection {
+  background-color: color-mix(in oklab, var(--primary) 25%, transparent);
+}
+
+/* Code blocks — a themed card with a primary accent spine instead of prose's
+   flat slab. The .hljs-* syntax tokens (chart palette, above) sit on top. The
+   class+element selector outranks Typography's `:where(pre)` without
+   `!important`; inline code keeps its own `.prose-accent` chip. */
+.ProseMirror pre {
+  background-color: var(--muted);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+}
+.ProseMirror pre code {
+  background: none;
+  color: inherit;
+  padding: 0;
+  font-weight: inherit;
+  font-size: 0.875em;
+}
+
+/* ============================================================================
+   Spinner — the indeterminate <Spinner> arc (components/ui/spinner.tsx).
+   The ring rotates while the dash grows/shrinks + drifts, so it reads as a
+   living sweep rather than a flat spin. Honours reduced-motion.
+   ========================================================================== */
+.mantle-spinner {
+  animation: mantle-spin 1.4s linear infinite;
+  transform-origin: center;
+}
+.mantle-spinner-arc {
+  stroke-dasharray: 1 150;
+  stroke-dashoffset: 0;
+  transform-origin: center;
+  animation: mantle-spin-dash 1.4s ease-in-out infinite;
+}
+@keyframes mantle-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes mantle-spin-dash {
+  0% {
+    stroke-dasharray: 1 150;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 90 150;
+    stroke-dashoffset: -35;
+  }
+  100% {
+    stroke-dasharray: 90 150;
+    stroke-dashoffset: -124;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mantle-spinner {
+    animation-duration: 2.4s;
+  }
+  .mantle-spinner-arc {
+    animation: none;
+    stroke-dasharray: 70 150;
+  }
+}
+
+/* ============================================================================
+   Live thought trail (components/assistant/thought-trail.tsx). The narrator
+   line shimmers warmly while the turn runs (a highlight sweeps the text);
+   completed steps fade in beneath it. Theme-safe (uses --foreground /
+   --muted-foreground) and honours reduced-motion.
+   ========================================================================== */
+.mantle-shimmer-text {
+  /* Text stays solid (--foreground is the base); a soft glint sweeps across it —
+     a shine over solid letters, never the letters dimming or disappearing. The
+     gradient is sized 300% so it ALWAYS fully covers the text at every position
+     (0%→100%): no uncovered region can fall back to the transparent color, so
+     the text never blanks out. The glint band is narrow and the sweep slow, so
+     it reads as a subtle, occasional shine rather than a constant wipe. */
+  background-image: linear-gradient(
+    100deg,
+    var(--foreground) 44%,
+    var(--muted-foreground) 50%,
+    var(--foreground) 56%
+  );
+  background-size: 300% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: mantle-shimmer 3.6s linear infinite;
+}
+@keyframes mantle-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0% 0;
+  }
+}
+.mantle-trail-step {
+  animation: mantle-trail-in 0.35s ease-out both;
+}
+@keyframes mantle-trail-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mantle-shimmer-text {
+    animation: none;
+    background-image: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+    -webkit-text-fill-color: var(--foreground);
+    color: var(--foreground);
+  }
+  .mantle-trail-step {
+    animation: none;
+  }
+}
+
+/*
+ * Marker pick mode. While the assistant is in pick mode the shell sets
+ * `data-picking` on <body>; every markable row (data-mark-id) then shows a
+ * dashed primary outline + copy cursor, so it's obvious what can be sent to the
+ * assistant. Inert otherwise — the attributes carry no styling on their own.
+ */
+body[data-picking='true'] [data-mark-id] {
+  outline: 2px dashed var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+  cursor: copy;
+}
+body[data-picking='true'] [data-mark-id]:hover {
+  outline-color: var(--ring);
+  background-color: color-mix(in oklch, var(--primary) 12%, transparent);
+}
+
+/* Attention pulse on the assistant button when a run is blocked on a question.
+   Tailwind's `animate-pulse` is unguarded, and this one persists until the
+   panel is opened — WCAG 2.2.2 covers motion that runs past 5s, so honour the
+   OS setting and fall back to a static ring (the count badge still carries
+   the signal). */
+.mantle-attention-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mantle-attention-pulse {
+    animation: none;
+  }
+}

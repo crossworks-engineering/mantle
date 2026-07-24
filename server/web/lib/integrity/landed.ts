@@ -19,7 +19,7 @@ import { deleteFileById } from '@mantle/files';
 
 import { evaluateLanded } from './evaluate-landed';
 import { rowsOf } from './sql-util';
-import type { LandedItem, ProbeFootprint } from './types';
+import type { LandedItem, ProbeFootprint } from '@mantle/web-ui/types/integrity';
 
 export { evaluateLanded } from './evaluate-landed';
 

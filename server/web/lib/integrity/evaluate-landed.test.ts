@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { evaluateLanded, EXPECTED_DIMS, STALL_MS } from './evaluate-landed';
-import type { ProbeFootprint } from './types';
+import type { ProbeFootprint } from '@mantle/web-ui/types/integrity';
 
 /** A footprint with sensible "fully indexed" defaults; override per case. */
 function fp(over: Partial<ProbeFootprint> = {}): ProbeFootprint {

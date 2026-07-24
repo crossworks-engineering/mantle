@@ -5,7 +5,7 @@ import {
   readUpdaterStatus,
   updaterAvailable,
 } from '@/lib/updates';
-import { APP_VERSION, GIT_SHA, BUILD_TIME } from '@/lib/version';
+import { APP_VERSION, GIT_SHA, BUILD_TIME } from '@mantle/web-ui/version';
 import { getOwnerOr401 } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';

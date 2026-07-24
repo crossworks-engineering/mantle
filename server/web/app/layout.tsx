@@ -7,12 +7,12 @@ import { loadProfilePreferences } from '@mantle/content';
 import { fontSans, fontLogo } from '@/lib/fonts';
 import { getSessionUser } from '@/lib/auth';
 import { isDetachedDev } from '@/lib/auth-constants';
-import { ThemeProvider } from '@/components/theme-provider';
-import { ColorThemeProvider } from '@/components/color-theme-provider';
-import { FontProvider } from '@/components/font-provider';
-import { QueryProvider } from '@/components/query-provider';
+import { ThemeProvider } from '@mantle/web-ui/theme-provider';
+import { ColorThemeProvider } from '@mantle/web-ui/color-theme-provider';
+import { FontProvider } from '@mantle/web-ui/font-provider';
+import { QueryProvider } from '@mantle/web-ui/query-provider';
 import { COLOR_THEME_STORAGE_KEY, DEFAULT_COLOR_THEME } from '@mantle/web-ui/lib/themes';
-import { displayFontFaceCss, fontPrepaintScript } from '@/lib/display-fonts';
+import { displayFontFaceCss, fontPrepaintScript } from '@mantle/web-ui/display-fonts';
 
 const DEFAULT_METADATA: Metadata = {
   title: 'Mantle',

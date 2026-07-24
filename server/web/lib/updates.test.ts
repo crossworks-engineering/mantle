@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { APP_VERSION } from './version';
+import { APP_VERSION } from '@mantle/web-ui/version';
 
 /**
  * The release-check cache splits its TTL: a confirmed update is cached long

@@ -19,7 +19,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getDbosClient } from '@/lib/dbos-client';
-import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
+import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller, teamCallerName, mintTeamTurnId } from '@/lib/team-chat-gate';
 import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';

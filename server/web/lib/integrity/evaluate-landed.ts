@@ -10,7 +10,7 @@
  * *correct* skip is neutral and surfaces its disposition; red is reserved for
  * genuine bugs (success-but-no-summary, dimension drift, duplicate edges).
  */
-import type { CheckResult, LandedState, ProbeFootprint } from './types';
+import type { CheckResult, LandedState, ProbeFootprint } from '@mantle/web-ui/types/integrity';
 
 /** Every brain vector is `vector(768)` (EmbeddingGemma, migration 0060). A
  *  landed embedding with any other dim is a drift bug. */

@@ -17,7 +17,7 @@ import {
   DEFAULT_ONLINE_EMBEDDING_PROVIDER,
 } from '@mantle/embeddings';
 import { upsertEmbeddingConfig } from '@/lib/embedding-config';
-import { ASSISTANT_MODEL_CHOICES, WORKER_MODEL_CHOICES } from '@/lib/system-manifest/model-choices';
+import { ASSISTANT_MODEL_CHOICES, WORKER_MODEL_CHOICES } from '@mantle/web-ui/model-choices';
 import { getOwnerOr401 } from '@/lib/auth';
 import { probeApiKey } from '@/lib/api-key-test';
 import {

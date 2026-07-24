@@ -9,7 +9,7 @@ import type {
   MaintenanceTaskInfo,
   RunHistoryEntry,
   RunState,
-} from '@/lib/maintenance/types';
+} from '@mantle/web-ui/types/maintenance';
 
 // Registry overview + current/last run. Read-only; runs start via ./run.
 export const runtime = 'nodejs';

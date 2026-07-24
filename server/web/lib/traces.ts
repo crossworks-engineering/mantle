@@ -1,6 +1,11 @@
 import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { agents, db, traceSteps, traces, type TraceStep } from '@mantle/db';
-import type { TraceDetail, TraceFilter, TraceStepSummary, TraceSummary } from './traces-format';
+import type {
+  TraceDetail,
+  TraceFilter,
+  TraceStepSummary,
+  TraceSummary,
+} from '@mantle/web-ui/traces-format';
 
 /**
  * Read-only helpers for /traces. Owner-scoped — pass the user's id.
@@ -10,8 +15,13 @@ import type { TraceDetail, TraceFilter, TraceStepSummary, TraceSummary } from '.
  * browser bundle.
  */
 
-export type { TraceSummary, TraceFilter, TraceStepSummary, TraceDetail } from './traces-format';
-export { formatMicroUsd, formatDuration } from './traces-format';
+export type {
+  TraceSummary,
+  TraceFilter,
+  TraceStepSummary,
+  TraceDetail,
+} from '@mantle/web-ui/traces-format';
+export { formatMicroUsd, formatDuration } from '@mantle/web-ui/traces-format';
 
 /** Shared WHERE for trace list/count queries. */
 function traceConds(userId: string, filter: TraceFilter) {

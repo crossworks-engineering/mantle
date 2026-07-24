@@ -23,7 +23,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getOwnerOr401WithSource } from '@/lib/auth';
 import { getDbosClient } from '@/lib/dbos-client';
-import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
+import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
 import {
   ASSISTANT_TURN_WORKFLOW,
   RUNNER_QUEUE,

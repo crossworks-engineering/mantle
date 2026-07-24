@@ -72,7 +72,7 @@ export default tseslint.config(
     // old `next lint` setup, and add real value (hook-deps, next foot-guns).
     // exhaustive-deps backlog triaged + burned down (audit #4) — now `error`;
     // intentional omissions carry an inline `eslint-disable` with a reason.
-    files: ['server/web/**/*.{ts,tsx}'],
+    files: ['server/web/**/*.{ts,tsx}', 'client/web/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
     rules: {
       'react-hooks/rules-of-hooks': 'warn',
@@ -85,6 +85,83 @@ export default tseslint.config(
     files: ['**/*.test.ts', '**/*.test.tsx', 'scripts/**', '**/scripts/**'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    // ── The split boundary ──────────────────────────────────────────────────
+    // client/web + packages/web-ui are the ZERO-SECRET tier: server packages
+    // may be imported as TYPES only (erased at compile); values would drag
+    // Postgres/node into the browser bundle. The content BARREL is banned as a
+    // value even server-side of the fence — clients use its runtime-pure
+    // subpaths. `@server/*` and `@/…`-fallback resolution exist for TYPE
+    // reach-through only.
+    files: ['client/web/**/*.{ts,tsx}', 'packages/web-ui/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            ...[
+              '@mantle/db',
+              '@mantle/agent-runtime',
+              '@mantle/assistant-runtime',
+              '@mantle/tools',
+              '@mantle/runs',
+              '@mantle/email',
+              '@mantle/microsoft',
+              '@mantle/telegram',
+              '@mantle/storage',
+              '@mantle/files',
+              '@mantle/search',
+              '@mantle/embeddings',
+              '@mantle/rules',
+              '@mantle/heartbeats',
+              '@mantle/calendar',
+              '@mantle/crypto',
+              '@mantle/api-keys',
+              '@mantle/mcp-core',
+              '@mantle/tracing',
+              '@mantle/tabledb',
+              '@mantle/turn-stream',
+            ].map((name) => ({
+              name,
+              allowTypeImports: true,
+              message: 'server-only package — the client tier may import types only',
+            })),
+            {
+              name: '@mantle/content',
+              allowTypeImports: true,
+              message:
+                'import a runtime-pure subpath (e.g. @mantle/content/markdown), never the barrel',
+            },
+          ],
+          patterns: [
+            {
+              group: ['@server/*'],
+              allowTypeImports: true,
+              message:
+                '@server/* is a TYPE-only reach-through into server/web — values would bundle server code',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Server tier must never import the client app.
+    files: ['server/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/client/web/**', '@mantle/client-web*'],
+              message: 'server tier must not import the client app',
+            },
+          ],
+        },
+      ],
     },
   },
 );

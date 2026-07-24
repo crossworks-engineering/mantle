@@ -2,7 +2,7 @@
   "name": "mantle",
   "version": "0.160.17",
   "private": true,
-  "description": "Mantle — an AI-queryable life tree.",
+  "description": "Mantle \u2014 an AI-queryable life tree.",
   "license": "SEE LICENSE IN LICENSE.md",
   "packageManager": "pnpm@11.1.2",
   "engines": {
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "predev": "bash scripts/preflight-dev.sh",
-    "dev": "concurrently -n web,api,mcp,worker,tg,files,docs,events,maint,runs -c blue,red,magenta,green,yellow,gray,blue,white,cyan,green \"pnpm -C server/web dev\" \"pnpm -C server/api dev\" \"pnpm -C server/mcp dev\" \"pnpm -C server/web worker:dev\" \"pnpm -C server/web worker:telegram:dev\" \"pnpm -C server/web worker:files:dev\" \"pnpm -C server/web worker:docs:dev\" \"pnpm -C server/web worker:events:dev\" \"pnpm -C server/web worker:maintenance:dev\" \"pnpm -C server/web worker:runs:dev\"",
+    "dev": "concurrently -n web,client,api,mcp,worker,tg,files,docs,events,maint,runs -c blue,cyan,red,magenta,green,yellow,gray,blue,white,cyan,green \"pnpm -C server/web dev\" \"PORT=3100 MANTLE_SERVER_ORIGIN=http://localhost:3000 pnpm -C client/web dev\" \"pnpm -C server/api dev\" \"pnpm -C server/mcp dev\" \"pnpm -C server/web worker:dev\" \"pnpm -C server/web worker:telegram:dev\" \"pnpm -C server/web worker:files:dev\" \"pnpm -C server/web worker:docs:dev\" \"pnpm -C server/web worker:events:dev\" \"pnpm -C server/web worker:maintenance:dev\" \"pnpm -C server/web worker:runs:dev\"",
     "predev:web": "bash scripts/preflight-dev.sh",
     "dev:web": "pnpm -C server/web dev",
     "dev:fe": "bash scripts/dev-frontend.sh",
@@ -61,7 +61,8 @@
     "db:tunnel": "bash scripts/prod-db-tunnel.sh up",
     "db:tunnel:down": "bash scripts/prod-db-tunnel.sh down",
     "tailscale:serve": "bash scripts/prod-tailscale-serve.sh up",
-    "tailscale:serve:status": "bash scripts/prod-tailscale-serve.sh status"
+    "tailscale:serve:status": "bash scripts/prod-tailscale-serve.sh status",
+    "dev:client": "PORT=3100 MANTLE_SERVER_ORIGIN=http://localhost:3000 pnpm -C client/web dev"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

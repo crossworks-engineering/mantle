@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getOwnerOr401 } from '@/lib/auth';
 import { publishTurnCancel } from '@mantle/turn-stream';
-import { isTurnStreamingEnabled } from '@/lib/turn-streaming';
+import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
 
 /**
  * POST /api/assistant/turn/[turnId]/cancel — stop an in-flight streamed turn.

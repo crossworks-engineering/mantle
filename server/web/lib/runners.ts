@@ -19,7 +19,7 @@ import type {
   RunnerRun,
   RunnerRunDetail,
   RunnerStep,
-} from '@/lib/runners-types';
+} from '@mantle/web-ui/runners-types';
 
 /** StepInfo isn't re-exported from the SDK index, so derive it from the client. */
 type StepInfo = NonNullable<Awaited<ReturnType<DBOSClient['listWorkflowSteps']>>>[number];

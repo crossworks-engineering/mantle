@@ -22,7 +22,7 @@
 
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db, agents, nodes, traces, traceSteps } from '@mantle/db';
-import type { TraceDetail, TraceStepSummary } from './traces-format';
+import type { TraceDetail, TraceStepSummary } from '@mantle/web-ui/traces-format';
 
 export type NodeBiographyView = {
   node: {

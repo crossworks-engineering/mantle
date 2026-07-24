@@ -33,7 +33,7 @@ import {
 import { resolveEffectivePersona } from './persona';
 // Type-only — erased at compile, so importing it doesn't pull @/ runtime code
 // into the pure (vitest) module graph.
-import type { AuditSeverity } from '@/lib/integrity/types';
+import type { AuditSeverity } from '@mantle/web-ui/types/integrity';
 
 // ─── result types ────────────────────────────────────────────────────────────
 

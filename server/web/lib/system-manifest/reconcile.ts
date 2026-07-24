@@ -50,7 +50,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { db, agents, skills, type AgentParams } from '@mantle/db';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
-import { APP_VERSION } from '@/lib/version';
+import { APP_VERSION } from '@mantle/web-ui/version';
 import { applyManifest, seedToolCapabilities, seedManifestWorkers } from './seed';
 import {
   MANIFEST_AGENTS,
