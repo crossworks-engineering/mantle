@@ -46,7 +46,7 @@ import {
   TopicReplyForm,
 } from '@/components/team-forum/admin-topic-controls';
 import { UploadReviewActions } from '@/components/team-forum/admin-upload-controls';
-import { KindBadge, TopicFlags } from '@/components/team-forum/forum-meta';
+import { KindBadge, TopicFlags } from '@mantle/web-ui/forum-meta';
 import {
   Archive,
   MessagesSquare,

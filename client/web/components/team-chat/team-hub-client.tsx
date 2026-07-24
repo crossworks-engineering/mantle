@@ -7,8 +7,16 @@
  * stats, and the existing chat client one tap away (view switch, no separate
  * route — same token gate, same cookie).
  *
- * Public surface: raw fetch on purpose (apiFetch is the app shell's
+ * Public surface: teamFetch on purpose (apiFetch is the app shell's
  * authenticated wrapper); a 401 anywhere flips back to the token gate.
+ *
+ * Split client origin: the designated hub APP still runs here, first-class —
+ * AppSandbox's broker fetches happen in THIS page (not the sandboxed iframe),
+ * so they cross to the server origin with the member bearer (the /s app
+ * brokers accept it; middleware CORS covers them). Only the non-app share
+ * READER changes shape: a cross-origin iframe can never carry the member
+ * cookie, so briefings/apps open top-level through the SSO handoff instead
+ * of the in-hub iframe.
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -28,6 +36,9 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
 import { TeamChatClient } from '@/components/team-chat/team-chat-client';
 import { TokenGate } from '@/components/team-chat/token-gate';
+import { OpenShare, openShareOnServer } from '@/components/team-workspace/open-on-server';
+import { teamFetch, withTeamAuth } from '@mantle/web-ui/team-fetch';
+import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
 import type { HubData as BridgeHubData, HubNavTarget } from '@mantle/web-ui/app-bridge/protocol';
 
 /** The /api/team/hub payload — the bridge `HubData` (what `hub.get` answers a
@@ -150,7 +161,9 @@ type ReaderTarget = { token: string; title: string; icon?: string | null };
 
 /** In-hub reader: the /s page in a same-origin iframe (auth rides the team
  *  cookie) — members read briefings and open team apps without leaving the
- *  hub. Shared by both hubs. */
+ *  hub. Shared by both hubs. Same-origin ONLY: on the split client origin the
+ *  reader view is never entered (cards open top-level via OpenShare instead —
+ *  a cross-origin iframe can't carry the member cookie). */
 function ReaderView({ target, onBack }: { target: ReaderTarget; onBack: () => void }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -190,7 +203,7 @@ export function TeamHubShell() {
 
   const refetch = useCallback(async () => {
     try {
-      const r = await fetch('/api/team/hub', { cache: 'no-store' });
+      const r = await teamFetch('/api/team/hub', { cache: 'no-store' });
       if (r.status === 401) {
         setAuthed(false);
         return;
@@ -243,6 +256,15 @@ export function TeamHubShell() {
   // members a working hub. The sandbox stays MOUNTED (hidden) while chat/reader
   // views are open, so "back to the hub" restores the app instantly with its
   // scroll position and state intact instead of re-fetching + remounting.
+  // Split client origin: no in-hub iframe reader (cross-origin iframes can't
+  // carry the member cookie) — validated share opens go top-level through the
+  // SSO handoff instead, and browser Back returns to the hub.
+  const split = runtimeApiBase() !== '';
+  const openReader = (target: ReaderTarget) => {
+    if (split) openShareOnServer(target.token);
+    else setView({ reader: target });
+  };
+
   if (data.hubApp && data.hubApp.appId !== failedAppId) {
     const { appId, shareToken } = data.hubApp;
     const onNav = (target: HubNavTarget) => {
@@ -254,13 +276,13 @@ export function TeamHubShell() {
         // Only open apps that are REAL team-app launchers — never an arbitrary
         // token an app hands us. The reader opens /s/<token> like a briefing.
         const appCard = (data.apps ?? []).find((a) => a.token === target.app);
-        if (appCard) setView({ reader: appCard });
+        if (appCard) openReader(appCard);
         return;
       }
       // Only open briefings that are REAL hub sections (active team-mode page
       // shares) — never navigate to an arbitrary token an app hands us.
       const section = data.sections.find((s) => s.token === target.briefing);
-      if (section) setView({ reader: section });
+      if (section) openReader(section);
     };
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -269,6 +291,10 @@ export function TeamHubShell() {
             appId={appId}
             shareToken={shareToken}
             frame="viewport"
+            // Split: the brokers live on the server origin and the parent-page
+            // fetches carry the member bearer (the /s app brokers accept it).
+            apiBase={split ? `${runtimeApiBase()}/s/${shareToken}` : undefined}
+            fetcher={split ? (input, init) => fetch(input, withTeamAuth(init)) : undefined}
             hub={{
               getData: () => ({
                 siteName: data.siteName,
@@ -387,17 +413,12 @@ export function TeamHubShell() {
           ) : (
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               {topSections.map((s) => (
-                <a
+                <OpenShare
                   key={s.token}
-                  href={`/s/${s.token}`}
-                  onClick={(e) => {
-                    // Plain click opens the in-hub reader; modified clicks
-                    // (new tab / window) keep native anchor behaviour.
-                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                    e.preventDefault();
-                    setView({ reader: s });
-                  }}
-                  className="group rounded-lg border border-border bg-card p-5 text-card-foreground transition-colors hover:border-primary/50"
+                  token={s.token}
+                  target="_self"
+                  onPlainClick={() => setView({ reader: s })}
+                  className="group block w-full rounded-lg border border-border bg-card p-5 text-left text-card-foreground transition-colors hover:border-primary/50"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5">
@@ -419,7 +440,7 @@ export function TeamHubShell() {
                   <p className="mt-3 text-xs text-muted-foreground">
                     Updated {formatDate(s.updatedAt)}
                   </p>
-                </a>
+                </OpenShare>
               ))}
             </div>
           )}
@@ -436,17 +457,12 @@ export function TeamHubShell() {
             </h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               {(data.apps ?? []).map((a) => (
-                <a
+                <OpenShare
                   key={a.token}
-                  href={`/s/${a.token}`}
-                  onClick={(e) => {
-                    // Plain click opens in the hub; modified clicks (new tab /
-                    // window) keep native anchor behaviour — same as briefings.
-                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                    e.preventDefault();
-                    setView({ reader: a });
-                  }}
-                  className="group rounded-lg border border-border bg-card p-5 text-card-foreground transition-colors hover:border-primary/50"
+                  token={a.token}
+                  target="_self"
+                  onPlainClick={() => setView({ reader: a })}
+                  className="group block w-full rounded-lg border border-border bg-card p-5 text-left text-card-foreground transition-colors hover:border-primary/50"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5">
@@ -468,7 +484,7 @@ export function TeamHubShell() {
                   <p className="mt-3 text-xs text-muted-foreground">
                     Updated {formatDate(a.updatedAt)}
                   </p>
-                </a>
+                </OpenShare>
               ))}
             </div>
           </section>

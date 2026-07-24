@@ -13,8 +13,10 @@ import type { NextRequest } from 'next/server';
  */
 const PRESENCE_COOKIE = 'mantle_authed';
 
-/** Paths that render without a session: login itself + the runtime bits. */
-const PUBLIC_PREFIXES = ['/login', '/env.js', '/app-runtime'];
+/** Paths that render without a session: login itself, the runtime bits, and
+ *  the team-member surfaces (members are not brain users — they authenticate
+ *  with a team token against /api/team/*, never the owner presence flow). */
+const PUBLIC_PREFIXES = ['/login', '/env.js', '/app-runtime', '/team', '/hub'];
 
 export function middleware(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;

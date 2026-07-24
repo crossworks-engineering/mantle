@@ -3,9 +3,12 @@
 /**
  * One /team workspace section: the list of team-visible shares of one type
  * (left, mirroring the owner screens' master-detail list pane) and a
- * read-only reader for the selected item (right) — the /s/<token> presenter
- * in a same-origin iframe, auth riding the team cookie. The share surface
- * stays the only content door, so this component never touches content APIs.
+ * read-only reader for the selected item (right) — the /s/<token> presenter.
+ * Same-origin that's an iframe with auth riding the team cookie; on the
+ * split client origin shares open TOP-LEVEL on the server origin instead
+ * (OpenShare → the SSO handoff — a cross-origin iframe can never carry the
+ * cookie). The share surface stays the only content door, so this component
+ * never touches content APIs.
  *
  * List state is URL-driven (the /pages pattern): `?q=` search, `?tag=`
  * filter, `?sort=` order, `?page=` pager, `?s=<token>` selection — so
@@ -32,7 +35,7 @@ import {
   Search,
   Tag,
 } from 'lucide-react';
-import { Button } from '@mantle/web-ui/ui/button';
+import { Button, buttonVariants } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import {
   DropdownMenu,
@@ -53,6 +56,9 @@ import {
 import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { buildChildrenIndex } from '@mantle/web-ui/page-tree';
 import { formatDate } from '@mantle/web-ui/lib/format-datetime';
+import { teamFetch } from '@mantle/web-ui/team-fetch';
+import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
+import { OpenShare } from './open-on-server';
 import { cn } from '@mantle/web-ui/lib/utils';
 
 type Item = {
@@ -141,7 +147,7 @@ export function TeamSection({
       if (sort !== 'newest') qs.set('sort', sort);
       if (treeActive) qs.set('tree', '1');
       else if (page > 1) qs.set('page', String(page));
-      const r = await fetch(`/api/team/list?${qs.toString()}`, { cache: 'no-store' });
+      const r = await teamFetch(`/api/team/list?${qs.toString()}`, { cache: 'no-store' });
       if (!r.ok) throw new Error(String(r.status));
       setData((await r.json()) as SectionResponse);
     } catch {
@@ -421,18 +427,37 @@ export function TeamSection({
                 {selected.icon ? <span className="mr-1.5">{selected.icon}</span> : null}
                 {selected.title}
               </p>
-              <Button variant="ghost" size="sm" asChild aria-label="Open in a new tab">
-                <a href={`/s/${selected.token}`} target="_blank" rel="noreferrer">
-                  <ExternalLink />
-                </a>
-              </Button>
+              <OpenShare
+                token={selected.token}
+                ariaLabel="Open in a new tab"
+                className={buttonVariants({ variant: 'ghost', size: 'sm' })}
+              >
+                <ExternalLink />
+              </OpenShare>
             </div>
-            <iframe
-              key={selected.token}
-              src={`/s/${selected.token}`}
-              title={selected.title}
-              className="min-h-0 w-full flex-1 border-0 bg-background"
-            />
+            {runtimeApiBase() === '' ? (
+              <iframe
+                key={selected.token}
+                src={`/s/${selected.token}`}
+                title={selected.title}
+                className="min-h-0 w-full flex-1 border-0 bg-background"
+              />
+            ) : (
+              // Split client origin: no inline reader — a cross-origin iframe
+              // can never carry the member cookie. Reading happens top-level
+              // on the server origin through the SSO handoff.
+              <div className="flex flex-1 items-center justify-center p-6">
+                <div className="max-w-sm text-center">
+                  <p className="text-sm text-muted-foreground">
+                    This item opens on the brain&rsquo;s own site.
+                  </p>
+                  <OpenShare token={selected.token} className={cn(buttonVariants(), 'mt-4')}>
+                    <ExternalLink />
+                    <span className="max-w-56 truncate">Open {selected.title}</span>
+                  </OpenShare>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex flex-1 items-center justify-center">

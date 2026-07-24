@@ -14,6 +14,7 @@ import { Label } from '@mantle/web-ui/ui/label';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Switch } from '@mantle/web-ui/ui/switch';
 import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { teamFetch } from '@mantle/web-ui/team-fetch';
 
 export function StartTopicComposer() {
   const router = useRouter();
@@ -28,7 +29,7 @@ export function StartTopicComposer() {
     setSubmitting(true);
     setError(null);
     try {
-      const r = await fetch('/api/team/forum/topics', {
+      const r = await teamFetch('/api/team/forum/topics', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',

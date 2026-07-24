@@ -2,11 +2,14 @@
 
 /**
  * Token-entry gate for the /team member surface. A valid contact team token
- * sets the signed team-chat cookie (POST /api/team/auth); `onAuthed` lets the
- * caller refetch whatever it was rendering. Shared by the Team Hub landing and
- * the chat client — one gate, one cookie, both views.
+ * becomes the member credential (POST /api/team/auth): same-origin it lands as
+ * the signed team-chat cookie; on the split client origin it's exchanged for
+ * the SAME signed value as a bearer ({mode:'bearer'}) and stored for
+ * teamFetch to send. `onAuthed` lets the caller refetch whatever it was
+ * rendering. Shared by the Team Hub landing and the chat client — one gate,
+ * one credential, both views.
  *
- * Public surface: raw fetch on purpose (apiFetch is the app shell's
+ * Public surface: teamFetch (not apiFetch — that's the owner shell's
  * authenticated wrapper), inline feedback (no toast provider).
  */
 import { useState } from 'react';
@@ -14,6 +17,8 @@ import { KeyRound } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { teamFetch, teamTokenStore } from '@mantle/web-ui/team-fetch';
+import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
 
 export function TokenGate({
   onAuthed,
@@ -32,12 +37,19 @@ export function TokenGate({
     setError(null);
     setPending(true);
     try {
-      const r = await fetch('/api/team/auth', {
+      // Split client (runtime base set): exchange for the bearer and store it.
+      // Same-origin: default cookie mode, exactly as before the split.
+      const split = runtimeApiBase() !== '';
+      const r = await teamFetch('/api/team/auth', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token: value }),
+        body: JSON.stringify(split ? { token: value, mode: 'bearer' } : { token: value }),
       });
       if (r.ok) {
+        if (split) {
+          const body = (await r.json().catch(() => ({}))) as { teamToken?: string };
+          if (body.teamToken) teamTokenStore.set(body.teamToken);
+        }
         onAuthed();
         return;
       }
