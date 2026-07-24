@@ -15,7 +15,6 @@ import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';
 import { resolveStagedAttachments } from '@/lib/forum-attachments';
 import { appendForumPost, getForumTopic, recordTeamAccess } from '@mantle/content';
 
-
 const IdParams = z.object({ id: z.string().uuid() });
 const Body = z.object({
   text: z.string().min(1).max(20_000),

@@ -38,9 +38,9 @@ describe('route loader', () => {
       }),
     ]);
     expect((await (await app.request('/api/notes')).json()).method).toBe('GET');
-    expect(
-      (await (await app.request('/api/notes', { method: 'POST' })).json()).method,
-    ).toBe('POST');
+    expect((await (await app.request('/api/notes', { method: 'POST' })).json()).method).toBe(
+      'POST',
+    );
   });
 
   it('static beats :param when registered in manifest order (Next precedence)', async () => {

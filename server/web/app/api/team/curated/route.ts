@@ -16,7 +16,6 @@ import { NextResponse } from '@/server/http-compat';
 import { curatedTeamSections, loadProfilePreferences } from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
-
 export async function GET(req: Request) {
   const caller = await resolveTeamChatCaller(req);
   if (!caller) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });

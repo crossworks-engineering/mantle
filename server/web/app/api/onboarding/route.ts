@@ -30,7 +30,6 @@ import { isOnboarded, markOnboarded } from '@/lib/onboarding';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { getAgentBySlug } from '@/lib/agents';
 
-
 /**
  * Onboarding wizard backend — the first-run flow's reads (GET) + every step's
  * mutation (POST, dispatched by `action`). Each step persists immediately

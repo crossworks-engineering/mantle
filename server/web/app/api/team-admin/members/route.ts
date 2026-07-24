@@ -25,7 +25,6 @@ import {
 } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
-
 const ACTIVITY_PAGE_SIZE = 25;
 const ARCHIVE_SHOWN = 50;
 

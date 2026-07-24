@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { Download, File as FileIcon, Folder as FolderIcon } from 'lucide-react';
 import { listFolders, listFiles, folderByPath, ltreeToDash } from '@/lib/files';
 import { formatBytes } from '@mantle/web-ui/lib/format-bytes';
@@ -16,33 +15,48 @@ import { formatBytes } from '@mantle/web-ui/lib/format-bytes';
  *  crafted `?p=` can't smuggle lquery/ltree syntax into queries. */
 const SUBPATH_RE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)*$/;
 
-export async function FolderPresenter({
-  view,
-  ownerId,
-  sub,
-  assetUrl,
-  makeSubHref,
-}: {
-  view: { folderId: string; title: string; path: string };
-  ownerId: string;
-  /** Relative subpath under the shared folder (from ?p=), '' for the root. */
-  sub: string;
-  assetUrl: (fileId: string) => string;
-  makeSubHref: (sub: string) => string;
-}) {
-  // Resolve the folder being viewed: the shared root, or a validated
-  // descendant of it. Anything suspicious falls back to the root.
+export type FolderListing = {
+  currentPath: string;
+  folders: Awaited<ReturnType<typeof listFolders>>;
+  files: Awaited<ReturnType<typeof listFiles>>;
+};
+
+/**
+ * Data step, hoisted out of the component so the sync render below works under
+ * react-dom/server renderToString (no async-component support outside RSC).
+ * Resolves the folder being viewed: the shared root, or a validated descendant
+ * of it. Anything suspicious falls back to the root.
+ */
+export async function loadFolderListing(
+  ownerId: string,
+  view: { path: string },
+  sub: string,
+): Promise<FolderListing> {
   let currentPath = view.path;
   if (sub && SUBPATH_RE.test(sub)) {
     const candidate = `${view.path}.${sub}`;
     const folder = await folderByPath({ ownerId, path: candidate });
     if (folder) currentPath = candidate;
   }
-
   const [folders, files] = await Promise.all([
     listFolders({ ownerId, parentPath: currentPath }),
     listFiles({ ownerId, parentPath: currentPath }),
   ]);
+  return { currentPath, folders, files };
+}
+
+export function FolderPresenter({
+  view,
+  listing,
+  assetUrl,
+  makeSubHref,
+}: {
+  view: { folderId: string; title: string; path: string };
+  listing: FolderListing;
+  assetUrl: (fileId: string) => string;
+  makeSubHref: (sub: string) => string;
+}) {
+  const { currentPath, folders, files } = listing;
 
   // Breadcrumb: shared root ▸ …descendant labels (never above the share).
   // Labels display in dash form (the disk slug the folder cards show); the
@@ -68,9 +82,9 @@ export async function FolderPresenter({
               {i === crumbs.length - 1 ? (
                 <span className="text-foreground">{c.label}</span>
               ) : (
-                <Link href={makeSubHref(c.sub)} className="hover:text-foreground hover:underline">
+                <a href={makeSubHref(c.sub)} className="hover:text-foreground hover:underline">
                   {c.label}
-                </Link>
+                </a>
               )}
             </span>
           ))}
@@ -82,7 +96,7 @@ export async function FolderPresenter({
           const childSub = f.path.slice(view.path.length + 1);
           return (
             <li key={f.id}>
-              <Link
+              <a
                 href={makeSubHref(childSub)}
                 className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
               >
@@ -91,7 +105,7 @@ export async function FolderPresenter({
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {f.fileCount} file{f.fileCount === 1 ? '' : 's'}
                 </span>
-              </Link>
+              </a>
             </li>
           );
         })}

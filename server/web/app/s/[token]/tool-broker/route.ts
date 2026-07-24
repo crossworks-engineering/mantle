@@ -26,7 +26,6 @@ import { getApp, recordAppAccess } from '@mantle/content';
 import { resolveTool, dispatchTool, isPublicToolAllowed } from '@mantle/tools';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 
-
 const Body = z.object({
   slug: z.string().min(1).max(120),
   input: z.record(z.string(), z.unknown()).optional().default({}),

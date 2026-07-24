@@ -4,7 +4,6 @@ import { addIcsFeed, listCalendarAccounts } from '@mantle/calendar';
 import type { CalendarAccountDTO } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';
 
-
 /** Subscribed calendar feeds for /settings/calendar. Maps each row to the wire
  *  DTO — the sealed `feedUrlEnc` credential / `ownerId` / `syncState` never reach
  *  the browser, and the `CalendarAccountDTO` annotation makes drift a type error. */

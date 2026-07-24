@@ -15,7 +15,6 @@ import { listTeamRequests, listPendingForumUploads } from '@mantle/content';
 import { reconcileForumQuarantine } from '@/lib/forum-quarantine';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
-
 const UPLOADS_SHOWN = 100;
 
 export async function GET() {

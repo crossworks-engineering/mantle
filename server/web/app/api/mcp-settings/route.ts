@@ -9,7 +9,6 @@ import { loadProfilePreferences, updateProfilePreferences } from '@mantle/conten
 import { connectorUrl } from '@/lib/mcp-oauth';
 import { listConnectedClients } from '@/lib/mcp-clients';
 
-
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;

@@ -8,7 +8,6 @@ import { z } from 'zod';
 import { getForumTopic, markForumTopicRead } from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
-
 const IdParams = z.object({ id: z.string().uuid() });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {

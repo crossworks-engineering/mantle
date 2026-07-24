@@ -17,7 +17,6 @@ import { getApp, recordAppAccess } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 
-
 const Body = z.object({
   op: z.enum(['query', 'exec']),
   sql: z.string().min(1).max(20_000),

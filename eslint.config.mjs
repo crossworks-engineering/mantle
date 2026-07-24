@@ -29,6 +29,9 @@ export default tseslint.config(
       '**/next-env.d.ts',
       'server/web/public/app-runtime/**',
       'client/web/public/app-runtime/**',
+      // Generated share-surface bundle + route manifest (gitignored).
+      'server/web/public/share-runtime/**',
+      'server/web/server/route-manifest.gen.ts',
       // Local Docker-stack runtime bind-mounts (gitignored; often root-owned
       // mode 700 — must be pruned so `eslint .` doesn't die on EACCES).
       'data/**',

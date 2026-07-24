@@ -159,7 +159,7 @@ describe('gate: CORS', () => {
     expect(unauth.headers.get('access-control-allow-origin')).toBe(ORIGIN);
   });
 
-  it("wildcard reflects any origin on data APIs but NEVER on credential-minting paths", async () => {
+  it('wildcard reflects any origin on data APIs but NEVER on credential-minting paths', async () => {
     process.env.MANTLE_API_CORS_ORIGINS = '*';
     const app = makeApp();
     const data = await app.request('/api/version', { headers: { origin: 'https://any.example' } });

@@ -6,10 +6,11 @@
   "scripts": {
     "app-runtime": "APP_RUNTIME_OUT=\"$PWD/public/app-runtime\" pnpm --filter @mantle/app-build build:runtime",
     "route-manifest": "tsx scripts/gen-route-manifest.ts",
-    "predev": "pnpm run app-runtime && pnpm run route-manifest",
+    "share-runtime": "tsx scripts/build-share-runtime.ts",
+    "generate": "pnpm run app-runtime && pnpm run route-manifest && pnpm run share-runtime",
+    "predev": "pnpm run generate",
     "dev": "tsx watch server/main.ts",
-    "prebuild": "pnpm run app-runtime",
-    "build": "next build",
+    "build": "pnpm run generate",
     "start": "tsx server/main.ts",
     "typecheck": "tsc --noEmit",
     "worker:dev": "tsx --watch --env-file-if-exists=./.env.local workers/email-sync.ts",
@@ -152,7 +153,6 @@
     "lucide-react": "^1.25.0",
     "marked": "^18.0.7",
     "mcp-handler": "^1.1.0",
-    "next": "^16.2.10",
     "next-themes": "^0.4.6",
     "pdf-to-png-converter": "^4.1.1",
     "pg-boss": "^12.26.1",
@@ -175,6 +175,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/typography": "^0.5.20",
     "@types/dagre": "^0.7.52",

@@ -3,7 +3,6 @@ import { listApiKeys } from '@/lib/api-keys';
 import { EMBEDDING_DIMS, getEmbeddingConfig, upsertEmbeddingConfig } from '@/lib/embedding-config';
 import { getOwnerOr401 } from '@/lib/auth';
 
-
 /** The single embedder config + the vector-column dim + the owner's API keys
  *  (for the route key pickers), for /settings/embedding. */
 export async function GET() {

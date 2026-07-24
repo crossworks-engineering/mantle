@@ -6,7 +6,6 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { publishApp, NoGreenBuildError } from '@mantle/content';
 
-
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;

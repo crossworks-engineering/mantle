@@ -8,7 +8,6 @@ import { NextResponse } from '@/server/http-compat';
 import { exchangeAuthCode, refreshAccessToken, type TokenResponse } from '@/lib/mcp-oauth';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
-
 function oauthError(error: string, description?: string, status = 400) {
   return NextResponse.json(
     { error, ...(description ? { error_description: description } : {}) },

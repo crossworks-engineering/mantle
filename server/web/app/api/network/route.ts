@@ -3,7 +3,6 @@ import { getTailnetStatus } from '@/lib/tailscale';
 import { getTailscaleConfig } from '@/lib/tailscale-config';
 import { getOwnerOr401 } from '@/lib/auth';
 
-
 /** Tailnet connection state + the stored auth-key summary for /settings/network. */
 export async function GET() {
   const owner = await getOwnerOr401();

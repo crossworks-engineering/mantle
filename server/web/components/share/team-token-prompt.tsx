@@ -11,14 +11,12 @@
  * Raw fetch on purpose: apiFetch is the app shell's authenticated wrapper.
  */
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { KeyRound } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 
 export function TeamTokenPrompt({ shareToken, title }: { shareToken: string; title: string }) {
-  const router = useRouter();
   const [token, setToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -35,7 +33,9 @@ export function TeamTokenPrompt({ shareToken, title }: { shareToken: string; tit
           body: JSON.stringify({ token: value }),
         });
         if (r.ok) {
-          router.refresh();
+          // Full reload (was router.refresh()): the server re-renders the share
+          // page, which now sees the freshly-set visitor cookie.
+          window.location.reload();
           return;
         }
         if (r.status === 429) {

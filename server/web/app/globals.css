@@ -1,8 +1,12 @@
 @import 'tailwindcss';
 /* Shared theme layer (tokens + ~40 palettes + @theme inline mapping) — lives in
- * packages/web-ui so both Next apps share one source. Relative path: Tailwind's
+ * packages/web-ui so both apps share one source. Relative path: Tailwind's
  * CSS @import resolver does not follow package `exports`. */
 @import '../../../packages/web-ui/styles/themes.css';
+/* Compiled by scripts/build-share-runtime.ts (Tailwind CLI, cwd server/web) for
+ * the server-rendered /s + /print surfaces. web-ui sits outside that cwd, so
+ * its class names need an explicit source registration. */
+@source '../../../packages/web-ui/src';
 @plugin 'tailwindcss-animate';
 @plugin '@tailwindcss/typography';
 

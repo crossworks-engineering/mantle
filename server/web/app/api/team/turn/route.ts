@@ -43,7 +43,6 @@ import { db, nodes, type ConversationAttachment } from '@mantle/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { recordIngest } from '@mantle/tracing';
 
-
 const Body = z.object({ text: z.string().min(1).max(20_000) });
 
 const TEAM_UPLOADS_SLUG = 'team-uploads';

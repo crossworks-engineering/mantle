@@ -15,7 +15,6 @@ import { z } from 'zod';
 import { dispatchTool, resolveTool } from '@mantle/tools';
 import { getOwnerOr401 } from '@/lib/auth';
 
-
 const Body = z.object({
   slug: z
     .string()

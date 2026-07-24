@@ -18,7 +18,6 @@ import { subscribeTurnStream } from '@/lib/realtime';
 import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
 import { resolveTeamChatCaller, contactOfTeamTurnId } from '@/lib/team-chat-gate';
 
-
 export async function GET(
   req: Request,
   ctx: { params: Promise<{ turnId: string }> },

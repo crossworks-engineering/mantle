@@ -7,7 +7,6 @@ import { NextResponse } from '@/server/http-compat';
 import { getSessionUser } from '@/lib/auth';
 import { checkForUpdate } from '@/lib/updates';
 
-
 export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });

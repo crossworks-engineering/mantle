@@ -18,7 +18,6 @@ import {
 } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
-
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;

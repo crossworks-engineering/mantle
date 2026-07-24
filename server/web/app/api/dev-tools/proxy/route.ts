@@ -29,7 +29,6 @@ import {
 } from '@mantle/tools';
 import { getOwnerOr401 } from '@/lib/auth';
 
-
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 const Body = z.object({

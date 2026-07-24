@@ -9,7 +9,6 @@ import { getSessionUser } from '@/lib/auth';
 import { readUpdaterLog, readUpdaterStatus, updaterAvailable } from '@/lib/updates';
 import { APP_VERSION } from '@mantle/web-ui/version';
 
-
 export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });

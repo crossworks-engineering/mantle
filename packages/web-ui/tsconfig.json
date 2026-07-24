@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "types": ["react", "react-dom", "node"]
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"]

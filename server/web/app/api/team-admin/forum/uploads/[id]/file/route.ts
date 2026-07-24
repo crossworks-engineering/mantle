@@ -33,7 +33,6 @@ import {
 import { dashToLtree, deleteQuarantineBytes, readQuarantineBytes } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Ensure files.review.<slug> exists (both levels). Tolerates the unique-index

@@ -15,7 +15,6 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { resolveAssistAgentSlug, type AssistSurface } from '@/lib/assist-agent';
 import { currentSpecialistStage } from '@/lib/assist-stage';
 
-
 const SURFACES: readonly AssistSurface[] = ['pages', 'tables', 'apps', 'dev-tools'];
 
 function isSurface(v: string | null): v is AssistSurface {

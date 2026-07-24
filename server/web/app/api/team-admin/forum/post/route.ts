@@ -8,7 +8,6 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { appendForumPost, loadProfilePreferences, setForumTopicStatus } from '@mantle/content';
 
-
 const Body = z.object({
   topicId: z.string().uuid(),
   text: z.string().min(1).max(20_000),

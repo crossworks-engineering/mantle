@@ -99,3 +99,4 @@ e2e/.artifacts/
 e2e/test-results/
 client/web/public/app-runtime/
 server/web/server/route-manifest.gen.ts
+server/web/public/share-runtime/

@@ -7,7 +7,6 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { createApp, listApps, countApps, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
 
-
 const PAGE_SIZE = 50;
 
 export async function GET(req: Request) {
