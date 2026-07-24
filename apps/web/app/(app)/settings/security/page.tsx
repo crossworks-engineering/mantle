@@ -1,6 +1,7 @@
 import { requireOwner } from '@/lib/auth';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { ChangePasswordForm } from './change-password-form';
+import { DevicesPanel } from './devices-panel';
 
 export default async function SecuritySettingsPage() {
   await requireOwner();
@@ -14,6 +15,13 @@ export default async function SecuritySettingsPage() {
           Change password
         </h2>
         <ChangePasswordForm />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          Signed-in devices
+        </h2>
+        <DevicesPanel />
       </section>
     </div>
   );

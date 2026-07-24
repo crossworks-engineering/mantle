@@ -8,6 +8,7 @@ import { useColorTheme } from '@/components/color-theme-provider';
 import { useFonts } from '@/components/font-provider';
 import { COLOR_THEMES } from '@mantle/web-ui/lib/themes';
 import { setAssetToken } from '@mantle/web-ui/asset-url';
+import { maybeRefreshToken } from '@mantle/web-ui/token-refresh';
 import { Header } from '@/components/layout/header';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { ChangelogLink } from '@/components/layout/changelog-link';
@@ -171,6 +172,13 @@ function ShellFrame({
   useEffect(() => {
     setAssetToken(shellQuery.data?.assetToken);
   }, [shellQuery.data?.assetToken]);
+
+  // Split-client bearer upkeep, piggybacked on the shell boot round-trip:
+  // rotate the stored token when <7d from expiry. No-op same-origin (no
+  // stored bearer). See @mantle/web-ui/token-refresh.
+  useEffect(() => {
+    if (shellQuery.data) void maybeRefreshToken();
+  }, [shellQuery.data]);
 
   // Close the drawer on navigation.
   useEffect(() => {

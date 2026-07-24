@@ -74,7 +74,10 @@ export function oauthConfigFromEnv(): MsOAuthConfig | null {
   const clientSecret = process.env.MS_CLIENT_SECRET;
   if (!clientId || !clientSecret) return null;
   const tenant = process.env.MS_TENANT || 'common';
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+  // Server-side base URL: MANTLE_PUBLIC_URL is canonical; NEXT_PUBLIC_APP_URL
+  // remains a DEPRECATED fallback (it's a client-namespace var that leaked into
+  // server logic — instrumentation warns at boot when only the fallback is set).
+  const appUrl = process.env.MANTLE_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || '';
   const redirectUri = process.env.MS_REDIRECT_URI || (appUrl ? defaultRedirectUri(appUrl) : '');
   if (!/^https?:\/\//.test(redirectUri)) return null;
   return { clientId, clientSecret, tenant, redirectUri };

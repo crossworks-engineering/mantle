@@ -13,6 +13,7 @@
  * carrying a secret ref goes through POST /api/dev-tools/proxy.
  */
 
+import { apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
 import type {
   ConsoleResponse,
   DraftRequest,
@@ -216,17 +217,20 @@ export async function sendHttpDraft(
   const t0 = performance.now();
 
   if (resolved.needsProxy) {
-    const res = await fetch('/api/dev-tools/proxy', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        url: resolved.url,
-        method: resolved.method,
-        headers: resolved.headers,
-        body: resolved.body,
+    const res = await fetch(
+      apiUrl('/api/dev-tools/proxy'),
+      withAuth({
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          url: resolved.url,
+          method: resolved.method,
+          headers: resolved.headers,
+          body: resolved.body,
+        }),
+        signal,
       }),
-      signal,
-    });
+    );
     const payload = (await res.json()) as Record<string, unknown>;
     if (!res.ok) {
       return {
@@ -315,12 +319,15 @@ export async function sendToolCall(
 ): Promise<ConsoleResponse> {
   const startedAt = new Date().toISOString();
   const t0 = performance.now();
-  const res = await fetch('/api/dev-tools/execute-tool', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ slug, input: args }),
-    signal,
-  });
+  const res = await fetch(
+    apiUrl('/api/dev-tools/execute-tool'),
+    withAuth({
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slug, input: args }),
+      signal,
+    }),
+  );
   const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   const durationMs = Number(payload.durationMs ?? Math.round(performance.now() - t0));
   const ok = res.ok && payload.ok === true;
@@ -349,12 +356,15 @@ export async function sendMcpCall(
 ): Promise<ConsoleResponse> {
   const startedAt = new Date().toISOString();
   const t0 = performance.now();
-  const res = await fetch('/api/dev-tools/mcp', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name, args }),
-    signal,
-  });
+  const res = await fetch(
+    apiUrl('/api/dev-tools/mcp'),
+    withAuth({
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, args }),
+      signal,
+    }),
+  );
   const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
     const durationMs = Math.round(performance.now() - t0);
