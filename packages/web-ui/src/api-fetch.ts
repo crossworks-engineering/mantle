@@ -70,8 +70,10 @@ export function withAuth(init?: RequestInit): RequestInit {
  * `fetch` silently follows (landing on the login HTML, 200). Without this, an
  * expired session would parse as `{}` and render an empty screen instead of
  * bouncing to login — a trap every converted screen would otherwise inherit.
+ * (Exported for team-fetch, whose 401 policy differs but whose detection
+ * doesn't.)
  */
-function isAuthFailure(res: Response): boolean {
+export function isAuthFailure(res: Response): boolean {
   if (res.status === 401) return true;
   if (res.redirected) {
     try {
@@ -135,6 +137,28 @@ export function apiEventStream(
   onMessage: (data: string) => void,
   opts?: { onError?: (err: unknown) => void },
 ): () => void {
+  return eventStreamCore(
+    (headers, signal) => fetch(`${apiBaseValue()}${path}`, withAuth({ signal, headers })),
+    bounceToLogin,
+    onMessage,
+    opts,
+  );
+}
+
+/**
+ * The transport-agnostic SSE reader behind `apiEventStream` (owner surface)
+ * and `teamEventStream` (member surface). The two differ only in how a
+ * request is made (base + credential) and what an auth failure does
+ * (bounceToLogin vs surface the token gate) — everything else (frame parsing,
+ * Last-Event-ID resume, backoff+jitter reconnect, 404-silent-fallback) is
+ * this loop. Exported for team-fetch; app code uses the bound wrappers.
+ */
+export function eventStreamCore(
+  makeRequest: (headers: Record<string, string>, signal: AbortSignal) => Promise<Response>,
+  onAuthFailure: () => void,
+  onMessage: (data: string) => void,
+  opts?: { onError?: (err: unknown) => void },
+): () => void {
   const controller = new AbortController();
   let closed = false;
   let attempt = 0;
@@ -146,12 +170,9 @@ export function apiEventStream(
       try {
         const headers: Record<string, string> = { Accept: 'text/event-stream' };
         if (lastEventId !== null) headers['Last-Event-ID'] = lastEventId;
-        const res = await fetch(
-          `${apiBaseValue()}${path}`,
-          withAuth({ signal: controller.signal, headers }),
-        );
+        const res = await makeRequest(headers, controller.signal);
         if (isAuthFailure(res)) {
-          bounceToLogin();
+          onAuthFailure();
           return; // auth failure won't self-heal — don't reconnect.
         }
         if (res.status === 404) {
