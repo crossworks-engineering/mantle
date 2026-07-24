@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 
 import { getOwnerOr401 } from '@/lib/auth';
 import { resolveCapabilities } from '@/lib/integrity/capabilities';
@@ -7,8 +7,6 @@ import type { LandedReport } from '@mantle/web-ui/types/integrity';
 
 // Read-only live view of the real content you've added and its brain footprint.
 // No writes, no fixtures — safe to poll and safe to leave mid-load.
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   const user = await getOwnerOr401();

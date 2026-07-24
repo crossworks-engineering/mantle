@@ -19,14 +19,13 @@
  *            owner's explicit choice, but an arbitrary HTTP/shell call is not
  *            something we let a share expose).
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { resolveActiveShareByToken } from '@/lib/shares';
 import { getApp, recordAppAccess } from '@mantle/content';
 import { resolveTool, dispatchTool, isPublicToolAllowed } from '@mantle/tools';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 
-export const runtime = 'nodejs';
 
 const Body = z.object({
   slug: z.string().min(1).max(120),

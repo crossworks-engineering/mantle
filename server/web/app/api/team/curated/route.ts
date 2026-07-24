@@ -12,12 +12,10 @@
  * Same trust model as the rest of /api/team: self-authenticated via
  * resolveTeamChatCaller, membership liveness re-checked on every call.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { curatedTeamSections, loadProfilePreferences } from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   const caller = await resolveTeamChatCaller(req);

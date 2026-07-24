@@ -4,11 +4,10 @@
  * editor (and the user) can see what failed. A failed build keeps the last good
  * preview.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { runAppBuild } from '@/lib/app-build-run';
 
-export const runtime = 'nodejs';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();

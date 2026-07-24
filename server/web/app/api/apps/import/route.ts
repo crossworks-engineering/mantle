@@ -11,7 +11,7 @@
  * Mirrors the app_* builtins (createApp / saveDraftSource / setManifest /
  * runAppBuild / publishApp) — the same handlers the agent and MCP client use.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
@@ -30,7 +30,6 @@ import { assertSafeScript } from '@mantle/content/app-broker';
 import { resolveTool } from '@mantle/tools';
 import { runAppBuild } from '@/lib/app-build-run';
 
-export const runtime = 'nodejs';
 
 const Body = z.object({
   /** Update this app if given; otherwise create a new one (then `name` is required). */

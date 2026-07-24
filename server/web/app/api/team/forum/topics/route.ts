@@ -13,7 +13,7 @@
  *  daily budget (team chat inbound + forum posts count against ONE cap — a
  *  leaked token must never become a wallet drain).
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
@@ -30,8 +30,6 @@ import {
   type ForumTopicSort,
 } from '@mantle/content';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 20;
 

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import type { AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';

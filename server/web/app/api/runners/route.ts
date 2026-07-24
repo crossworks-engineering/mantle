@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import type { WorkflowStatusString } from '@dbos-inc/dbos-sdk';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listRuns } from '@/lib/runners';

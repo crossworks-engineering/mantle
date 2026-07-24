@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { searchEntities } from '@mantle/search';
 import { and, db, desc, eq, ilike, inArray, nodes } from '@mantle/db';

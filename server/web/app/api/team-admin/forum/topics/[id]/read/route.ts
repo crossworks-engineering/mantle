@@ -4,12 +4,10 @@
  * Used to happen as a render side effect of the SSR topics pane; now the
  * client fires it once the transcript is on screen. Idempotent.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { markForumTopicRead } from '@mantle/content';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();

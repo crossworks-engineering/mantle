@@ -9,7 +9,6 @@
  * Pure types + presentation helpers live in ./runners-types (client-safe).
  */
 
-import 'server-only';
 import type { DBOSClient, WorkflowStatus, WorkflowStatusString } from '@dbos-inc/dbos-sdk';
 import { RUNNER_QUEUE } from '@mantle/assistant-runtime';
 import { getDbosClient } from '@/lib/dbos-client';

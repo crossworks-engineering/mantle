@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createHeartbeat, listHeartbeats } from '@/lib/heartbeats';
 import { CreateHeartbeatBody, toCreateInput } from '@/lib/heartbeat-schema';

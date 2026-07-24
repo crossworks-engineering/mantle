@@ -6,7 +6,7 @@
  * owner and the agent still can (their paths don't come through here).
  * Cost guards are the shared team-surface budget — see lib/forum-gate.ts.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
@@ -15,8 +15,6 @@ import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';
 import { resolveStagedAttachments } from '@/lib/forum-attachments';
 import { appendForumPost, getForumTopic, recordTeamAccess } from '@mantle/content';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const Body = z.object({

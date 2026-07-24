@@ -19,7 +19,7 @@
  * fall back to a "[… couldn't be read: <reason>]" marker.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401WithSource } from '@/lib/auth';
 import { getDbosClient } from '@/lib/dbos-client';

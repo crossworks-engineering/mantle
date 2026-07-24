@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { SUPPORTED_PROVIDERS, isProviderId, type ProviderId } from '@mantle/voice';
 import { getOwnerOr401 } from '@/lib/auth';
 import {

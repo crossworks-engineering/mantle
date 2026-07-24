@@ -2,13 +2,11 @@
  * GET /api/team-admin/shares — the Shared-links tab: every active share,
  * shaped exactly as SharedLinksPanel expects (the old SSR page's mapping).
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listActiveShares } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const user = await getOwnerOr401();

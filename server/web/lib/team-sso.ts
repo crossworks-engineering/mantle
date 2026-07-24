@@ -17,7 +17,7 @@
  * (open redirect). The Origin check is cheap login-CSRF hardening: only our
  * own origins may pin a browser's server-origin team session to an identity.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '../server/http-compat';
 import { isTeamMember } from '@mantle/content';
 import { buildTeamChatToken, verifyTeamChatValue, TEAM_CHAT_COOKIE } from './auth';
 import { secureCookies, requestOrigin } from './auth-constants';

@@ -10,12 +10,11 @@
  * `{ label: null }` when idle or between recognisable stages. Never touches the
  * run path — two read-only indexed single-row queries.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { resolveAssistAgentSlug, type AssistSurface } from '@/lib/assist-agent';
 import { currentSpecialistStage } from '@/lib/assist-stage';
 
-export const dynamic = 'force-dynamic';
 
 const SURFACES: readonly AssistSurface[] = ['pages', 'tables', 'apps', 'dev-tools'];
 

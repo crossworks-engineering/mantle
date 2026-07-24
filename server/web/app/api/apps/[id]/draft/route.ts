@@ -3,7 +3,7 @@
  * (DELETE). Mirrors the pages draft autosave: writes draft_source only; the
  * published app + its build are untouched until app_publish.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
@@ -15,7 +15,6 @@ import {
   MAX_APP_PATH_LEN,
 } from '@mantle/content';
 
-export const runtime = 'nodejs';
 
 // Shares the content layer's source-tree limits (single source of truth); the
 // content layer re-checks and is the real authority (covers the agent path too).

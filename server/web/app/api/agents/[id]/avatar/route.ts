@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { getOwnerOr401 } from '@/lib/auth';
 import { renderAvatarSvg } from '@/lib/avatar-svg';
@@ -15,7 +15,6 @@ import { db, agents } from '@mantle/db';
 // This sits under the existing `[id]` segment (Next forbids a sibling `[slug]`
 // segment). The companion calls it with a slug; the web app could pass a uuid —
 // so the key is resolved as id when it looks like a uuid, else as slug.
-export const runtime = 'nodejs';
 
 const PALETTE = ['#6366F1', '#4F46E5', '#4338CA', '#3730A3', '#312E81'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

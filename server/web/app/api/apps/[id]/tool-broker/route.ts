@@ -8,13 +8,12 @@
  * The id is bound to the authenticated session + route — an app can only ever
  * broker as itself.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getApp } from '@mantle/content';
 import { resolveTool, dispatchTool } from '@mantle/tools';
 
-export const runtime = 'nodejs';
 
 const Body = z.object({
   slug: z.string().min(1).max(120),

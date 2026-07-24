@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getSystemHealth } from '@/lib/system-health';
 
@@ -7,7 +7,6 @@ import { getSystemHealth } from '@/lib/system-health';
  * never cached. Host probes are timeout-bounded inside getSystemHealth so
  * this returns quickly even if a probe stalls.
  */
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const user = await getOwnerOr401();

@@ -10,11 +10,10 @@
  * when no usable specialist is provisioned, so the overlay just leaves the
  * sticky agent in place.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { resolveAssistAgentSlug, type AssistSurface } from '@/lib/assist-agent';
 
-export const dynamic = 'force-dynamic';
 
 const SURFACES: readonly AssistSurface[] = ['pages', 'tables', 'apps', 'dev-tools'];
 

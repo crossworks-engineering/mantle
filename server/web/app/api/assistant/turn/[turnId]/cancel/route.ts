@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { publishTurnCancel } from '@mantle/turn-stream';
 import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
@@ -20,7 +20,6 @@ import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
  * **Flagged:** 404s until `MANTLE_TURN_STREAMING` is set (cancellation only
  * matters when the non-blocking streaming path is on).
  */
-export const dynamic = 'force-dynamic';
 
 export async function POST(
   _req: Request,

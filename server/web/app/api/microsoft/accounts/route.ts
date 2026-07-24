@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { listAccounts, redactMsAccount } from '@mantle/microsoft';
 import { getOwnerOr401 } from '@/lib/auth';
 

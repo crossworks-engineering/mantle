@@ -4,12 +4,10 @@
  * task (notifiedAt, optionally done). Session-gated (under /api/team-admin,
  * not in PUBLIC_PATHS).
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { notifyTeamRequester } from '@mantle/content';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   const user = await getOwnerOr401();

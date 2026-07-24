@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getTable, saveTableDraft } from '@/lib/tables';
 import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';

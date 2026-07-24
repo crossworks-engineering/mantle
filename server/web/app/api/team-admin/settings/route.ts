@@ -7,7 +7,7 @@
  * `/api/team-admin`, which is NOT in PUBLIC_PATHS (only `/api/team` is), so it
  * carries the owner credential, never a team token.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
   updateProfilePreferences,
@@ -18,8 +18,6 @@ import {
 } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const user = await getOwnerOr401();

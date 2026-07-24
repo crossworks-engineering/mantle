@@ -6,7 +6,7 @@
  * lib/agents, so nothing is ever hard-deleted.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import {

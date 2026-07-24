@@ -3,11 +3,9 @@
  * here via WWW-Authenticate; the connector reads it to learn which authorization
  * server protects the resource, then runs discovery against that AS. Public.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { issuerUrl, mcpResourceUrl } from '@/lib/mcp-oauth';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   return NextResponse.json(

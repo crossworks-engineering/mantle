@@ -8,12 +8,10 @@
  * Expected healthy result when enabled: 401 + WWW-Authenticate (the endpoint is
  * live and correctly OAuth-gated). 404 means the connector is disabled.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { connectorUrl } from '@/lib/mcp-oauth';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function POST() {
   const user = await getOwnerOr401();

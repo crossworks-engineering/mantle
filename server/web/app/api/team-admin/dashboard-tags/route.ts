@@ -13,12 +13,10 @@
  * Session-gated — under /api/team-admin, which is NOT in PUBLIC_PATHS, so it
  * carries the owner session, never a team token.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { updateProfilePreferences } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function PUT(req: Request) {
   const user = await getOwnerOr401();

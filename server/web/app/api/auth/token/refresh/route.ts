@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { db, authUsers, mobileTokens, eq } from '@mantle/db';
 import { buildMobileToken, mobileTokenJti, WEB_TOKEN_TTL_SECONDS } from '@/lib/auth';

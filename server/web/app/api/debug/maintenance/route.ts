@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 
 import { getOwnerOr401 } from '@/lib/auth';
 import { listRecentRuns, reapStaleRuns } from '@/lib/maintenance/history';
@@ -12,8 +12,6 @@ import type {
 } from '@mantle/web-ui/types/maintenance';
 
 // Registry overview + current/last run. Read-only; runs start via ./run.
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const user = await getOwnerOr401();

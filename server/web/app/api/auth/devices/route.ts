@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { db, mobileTokens, and, eq, isNull, gt, desc } from '@mantle/db';
 import { getOwnerOr401, mobileTokenJti } from '@/lib/auth';
 

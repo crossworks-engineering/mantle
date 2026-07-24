@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getHeartbeat, listHeartbeatFires } from '@/lib/heartbeats';
 import { formatInProfile, loadProfilePreferences } from '@mantle/content';

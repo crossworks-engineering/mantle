@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { assistantMessagesBefore, resolveAssistantAgent } from '@/lib/assistant';
 
@@ -8,7 +8,6 @@ import { assistantMessagesBefore, resolveAssistantAgent } from '@/lib/assistant'
  * to the selected agent's thread. Owner-scoped via getOwnerOr401 (a JSON API —
  * 401s an unauthenticated/expired client rather than redirecting to /login).
  */
-export const dynamic = 'force-dynamic';
 
 const PAGE = 100;
 

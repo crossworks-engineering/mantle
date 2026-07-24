@@ -1,4 +1,3 @@
-import 'server-only';
 import { and, asc, eq } from 'drizzle-orm';
 import { agentGroups, agents, db, type AgentGroup } from '@mantle/db';
 

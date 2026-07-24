@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { folderFacets } from '@mantle/email';
 import { getOwnerOr401 } from '@/lib/auth';

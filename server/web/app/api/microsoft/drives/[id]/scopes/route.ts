@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { listScopes, ownedDrive, setDriveScopes } from '@mantle/microsoft';
 import type { MsDriveScopeDTO } from '@mantle/client-types';

@@ -16,14 +16,13 @@
  * success either way: marks the token used and writes an 'auth' row to the
  * team access log.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { verifyTeamToken, markTeamTokenUsed, recordTeamAccess } from '@mantle/content';
 import { buildTeamChatToken, TEAM_CHAT_COOKIE } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
-export const runtime = 'nodejs';
 
 const Body = z.object({
   token: z.string().min(1).max(64),

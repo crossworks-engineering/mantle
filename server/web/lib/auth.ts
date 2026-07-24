@@ -1,6 +1,6 @@
-import { cookies, headers } from 'next/headers';
-import { redirect } from 'next/navigation';
-import { NextResponse } from 'next/server';
+import { cookies, headers } from '../server/http-compat/headers';
+import { NextResponse } from '../server/http-compat';
+import { RedirectError } from '../server/http-compat/redirect-error';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
@@ -550,6 +550,12 @@ export async function getSessionUserWithSource(): Promise<{
  *  every handler that already calls this also accepts the mobile companion. */
 export async function getSessionUser(): Promise<SessionUser | null> {
   return (await getSessionUserWithSource())?.user ?? null;
+}
+
+/** Control-flow login redirect (was next/navigation's redirect signal) — the
+ *  Hono app's onError turns a RedirectError into a real 307. */
+function redirect(to: string): never {
+  throw new RedirectError(to);
 }
 
 /** Gate for protected pages. Redirects to /login if no session. */

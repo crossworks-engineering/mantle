@@ -4,7 +4,7 @@
 // the calling device's OS push token. The app takes the ticket to the relay's
 // /enroll, then posts the routing token back to /api/push/subscriptions.
 
-import { type NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { generateInstanceToken } from '@/lib/push/tokens';
 import { mintTicket } from '@/lib/push/ticket';

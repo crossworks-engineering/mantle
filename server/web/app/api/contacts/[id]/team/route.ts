@@ -9,7 +9,7 @@
  *             non-members — rotation never silently enrolls.
  *   disable → revoke the role; the token dies with it.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { disableTeamMember, enableTeamMember, rotateTeamToken } from '@mantle/content';

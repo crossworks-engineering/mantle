@@ -9,7 +9,7 @@
  *     default specialist slug for that surface.
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';

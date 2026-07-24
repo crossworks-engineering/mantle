@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getSessionUser, updatePassword, verifyPassword } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';

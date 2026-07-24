@@ -14,13 +14,11 @@
  * NOT redirect (never bounce a code to an unvalidated URI).
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getSessionUser } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 type AuthorizeParams = {
   clientId: string;

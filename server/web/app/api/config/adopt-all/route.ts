@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { adoptManifestItem, type AdoptKind } from '@/lib/system-manifest';
 import { computeConfigDiff } from '@/lib/system-manifest/config-diff-db';

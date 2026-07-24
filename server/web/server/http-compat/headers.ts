@@ -62,6 +62,11 @@ function parseCookieHeader(header: string | null): RequestCookie[] {
   return out;
 }
 
+/** Request-cookie lookup on an explicit Request (was NextRequest#cookies). */
+export function requestCookie(req: Request, name: string): RequestCookie | undefined {
+  return parseCookieHeader(req.headers.get('cookie')).find((c) => c.name === name);
+}
+
 export async function cookies(): Promise<ReadonlyRequestCookies> {
   const ctx = requireContext();
   const all = parseCookieHeader(ctx.req.headers.get('cookie'));

@@ -9,8 +9,6 @@ import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
 import { getForumUpload } from '@mantle/content';
 import { readFileById, readQuarantineBytes } from '@mantle/files';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

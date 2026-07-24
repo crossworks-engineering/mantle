@@ -3,13 +3,11 @@
  * member (their unread dot). Best-effort by design; visibility is enforced so
  * the cursor write can't be used to probe private topic ids.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getForumTopic, markForumTopicRead } from '@mantle/content';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const IdParams = z.object({ id: z.string().uuid() });
 

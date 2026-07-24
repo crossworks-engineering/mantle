@@ -5,7 +5,7 @@
  * Owner-scoped via `getOwnerOr401` (a JSON API — 401s rather than redirecting).
  * No cache headers; never proxied.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { revealSecret } from '@/lib/secrets';
 

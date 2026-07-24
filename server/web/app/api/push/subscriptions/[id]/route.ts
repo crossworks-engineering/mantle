@@ -1,7 +1,7 @@
 // DELETE /api/push/subscriptions/:id — unpair a device. Removes the local row
 // and (best-effort) tells the relay to drop its device row too.
 
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deleteSubscription, getPushInstance } from '@/lib/push/store';
 import { relayDeleteDevice } from '@/lib/push/relay-client';

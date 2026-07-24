@@ -3,13 +3,11 @@
  * no agent turn fires; the owner IS the answer). Optionally flips the topic's
  * status in the same call ("answer and mark answered"). Session-gated.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { appendForumPost, loadProfilePreferences, setForumTopicStatus } from '@mantle/content';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const Body = z.object({
   topicId: z.string().uuid(),

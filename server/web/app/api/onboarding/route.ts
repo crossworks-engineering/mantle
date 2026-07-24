@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { db, sql } from '@mantle/db';
@@ -30,7 +30,6 @@ import { isOnboarded, markOnboarded } from '@/lib/onboarding';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { getAgentBySlug } from '@/lib/agents';
 
-export const dynamic = 'force-dynamic';
 
 /**
  * Onboarding wizard backend — the first-run flow's reads (GET) + every step's

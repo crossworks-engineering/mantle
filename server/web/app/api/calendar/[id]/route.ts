@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { deleteCalendarAccount, setCalendarEnabled } from '@mantle/calendar';
 import { getOwnerOr401 } from '@/lib/auth';

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
 import { ASK_HUMAN_FORM_LIMITS as L } from '@mantle/client-types';

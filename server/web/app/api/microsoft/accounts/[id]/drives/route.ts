@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { discoverForAccount, listAccounts, listDrives } from '@mantle/microsoft';
 import type { MsDriveDTO } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';

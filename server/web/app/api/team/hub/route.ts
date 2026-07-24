@@ -9,7 +9,7 @@
  * resolveTeamChatCaller (cookie or bearer), membership liveness re-checked on
  * every call. Read-only; counts only, never content.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import {
   listTeamApps,
   listTeamHubSections,
@@ -20,8 +20,6 @@ import {
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
 import { APP_VERSION } from '@mantle/web-ui/version';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   const caller = await resolveTeamChatCaller(req);

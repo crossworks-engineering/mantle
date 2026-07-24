@@ -4,13 +4,12 @@
  * touch the app (the editor saves via PUT /draft). Server-side so the parser
  * plugins stay off the client bundle. Owner-gated like every app route.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import prettier from 'prettier';
 import { getOwnerOr401 } from '@/lib/auth';
 import { MAX_APP_FILE_BYTES, MAX_APP_PATH_LEN } from '@mantle/content';
 
-export const runtime = 'nodejs';
 
 // ext → Prettier parser. Mirrors what the editor highlights; anything else is
 // refused (the button is hidden for those, but defend the endpoint too).

@@ -1,4 +1,4 @@
-import { headers } from 'next/headers';
+import { headers } from '../server/http-compat/headers';
 import { db, auditLog } from '@mantle/db';
 import { isDetachedDev } from './auth-constants';
 

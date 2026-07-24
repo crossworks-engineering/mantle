@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { buildStudioGraph } from '@/lib/studio/graph';
 
@@ -7,7 +7,6 @@ import { buildStudioGraph } from '@/lib/studio/graph';
  * rows + the config-integrity report, assembled the way a real turn composes
  * each prompt. Owner-scoped; recomputed per request (no cache).
  */
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const user = await getOwnerOr401();

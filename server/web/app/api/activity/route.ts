@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getLiveActivity } from '@/lib/journey';
 
@@ -9,7 +9,6 @@ import { getLiveActivity } from '@/lib/journey';
  * with outcome counts. Polled client-side; owner-scoped via getOwnerOr401 (a
  * JSON API — 401s an unauthenticated/expired client rather than redirecting).
  */
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const user = await getOwnerOr401();

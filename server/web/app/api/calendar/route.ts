@@ -1,10 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { addIcsFeed, listCalendarAccounts } from '@mantle/calendar';
 import type { CalendarAccountDTO } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';
 
-export const dynamic = 'force-dynamic';
 
 /** Subscribed calendar feeds for /settings/calendar. Maps each row to the wire
  *  DTO — the sealed `feedUrlEnc` credential / `ownerId` / `syncState` never reach

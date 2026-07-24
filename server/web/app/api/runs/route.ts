@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { agents, db, runItems, runs } from '@mantle/db';
 import { isRunsEnabled } from '@mantle/runs';

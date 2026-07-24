@@ -5,7 +5,7 @@
  * The reveal endpoint is intentionally separate (`/api/secrets/[id]/reveal`)
  * so it shows up distinctly in access logs and pen-test inventories.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { SECRET_KINDS, countSecrets, createSecret, listSecrets } from '@/lib/secrets';

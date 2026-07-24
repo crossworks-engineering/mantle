@@ -16,7 +16,7 @@
  * ("please update X with this file"), and provenance keeps team-contributed
  * content distinguishable forever.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getDbosClient } from '@/lib/dbos-client';
 import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
@@ -43,7 +43,6 @@ import { db, nodes, type ConversationAttachment } from '@mantle/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { recordIngest } from '@mantle/tracing';
 
-export const runtime = 'nodejs';
 
 const Body = z.object({ text: z.string().min(1).max(20_000) });
 

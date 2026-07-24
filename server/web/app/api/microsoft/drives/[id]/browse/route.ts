@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { browseDrive, type GraphError } from '@mantle/microsoft';
 import type { MsDriveChildDTO } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';

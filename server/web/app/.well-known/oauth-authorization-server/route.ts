@@ -3,11 +3,9 @@
  * to discover the register/authorize/token endpoints. Public (no auth); listed
  * in PUBLIC_PATHS so the session gate lets it through.
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { issuerUrl } from '@/lib/mcp-oauth';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const base = issuerUrl();

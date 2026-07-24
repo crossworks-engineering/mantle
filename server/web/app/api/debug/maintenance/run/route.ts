@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 
 import { getOwnerOr401 } from '@/lib/auth';
@@ -8,8 +8,6 @@ import { getRun, isRunning, startRun } from '@/lib/maintenance/run-store';
 
 // Start (POST) / poll (GET) a maintenance run. The rails mirror the CLI
 // (scripts/maintain.ts) via the shared planRun() — the UI cannot bypass them.
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const Body = z.object({
   slug: z.string().min(1),

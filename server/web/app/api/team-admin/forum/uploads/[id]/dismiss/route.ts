@@ -3,13 +3,11 @@
  * quarantine bytes are deleted; the blob row stays as the audit record (the
  * member's chip renders "removed"). The queue must be drainable (decision).
  */
-import { NextResponse } from 'next/server';
+import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getForumUpload, markForumUploadDismissed } from '@mantle/content';
 import { deleteQuarantineBytes } from '@mantle/files';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
