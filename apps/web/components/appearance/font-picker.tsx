@@ -2,8 +2,8 @@
 
 import * as React from 'react';
 import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { Button } from '@mantle/web-ui/ui/button';
 import { DISPLAY_FONTS, fontFamilyValue } from '@/lib/display-fonts';
 
 /**

@@ -3,8 +3,8 @@
 import * as React from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis } from 'recharts';
 import type { IngestDay } from '@/lib/dashboard';
-import { formatCount } from '@/lib/format-bytes';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatCount } from '@mantle/web-ui/lib/format-bytes';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
 import {
   ChartContainer,
   ChartLegend,
@@ -12,7 +12,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from '@/components/ui/chart';
+} from '@mantle/web-ui/ui/chart';
 
 const PALETTE = [
   'var(--chart-1)',

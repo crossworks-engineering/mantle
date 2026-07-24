@@ -24,11 +24,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ArrowDown, Paperclip, SendHorizontal, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { CopyButton } from '@/components/assistant/copy-button';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { CopyButton } from '@mantle/web-ui/copy-button';
 import { TokenGate } from '@/components/team-chat/token-gate';
-import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@/lib/composer-style';
+import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
 
 type TeamMessage = {
   id: string;

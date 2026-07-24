@@ -11,7 +11,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 /** The universal message text size for every specialist chat. Bumped up from the
  *  old text-xs/text-sm mix for readability; keep all bubbles on this. */

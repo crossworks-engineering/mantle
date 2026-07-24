@@ -16,9 +16,9 @@ import {
   Quote,
   SplitSquareHorizontal,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { cn } from '@/lib/utils';
+import { Button } from '@mantle/web-ui/ui/button';
+import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 type Mode = 'edit' | 'split' | 'preview';
 

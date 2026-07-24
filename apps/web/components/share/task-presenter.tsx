@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, Circle } from 'lucide-react';
-import { formatDateTime } from '@/lib/format-datetime';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 
 /** Public task render — a clean status card. */
 export function TaskPresenter({

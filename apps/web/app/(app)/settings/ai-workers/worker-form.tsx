@@ -57,15 +57,15 @@ import {
   type TtsModelInfo,
   type VisionModelInfo,
 } from '@mantle/voice/client';
-import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { Switch } from '@mantle/web-ui/ui/switch';
 import { ModelSelect } from '@/components/ui/model-select';
-import { useToast } from '@/components/ui/toast';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import type { ExplorerModel } from '@/lib/model-explorer';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { TtsTestButton } from './tts-test-button';
 import { SttTestButton } from './stt-test-button';
 import { ChatTestButton } from './chat-test-button';

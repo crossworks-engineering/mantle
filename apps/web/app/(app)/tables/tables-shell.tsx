@@ -13,24 +13,24 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { useListNav } from '@/lib/use-list-nav';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { TagPill } from '@/components/tag-pill';
-import { useToast } from '@/components/ui/toast';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { TagPill } from '@mantle/web-ui/tag-pill';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@mantle/web-ui/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,7 +40,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from '@mantle/web-ui/ui/alert-dialog';
 import { TableDetailClient } from './[id]/table-detail-client';
 import type { TableDetail, TableRow, TableSort } from '@/lib/tables';
 

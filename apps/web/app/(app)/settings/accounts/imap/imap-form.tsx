@@ -4,11 +4,11 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, Eye, EyeOff, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { apiSend } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 
 /** Probe result from a successful `intent: 'test'` (saves navigate instead). */
 type TestOk = { ok: true; foldersFound: number; folderSample: string[]; serverName?: string };

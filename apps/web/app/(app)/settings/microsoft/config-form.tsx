@@ -3,12 +3,12 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Eye, EyeOff } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@mantle/web-ui/ui/button';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import type { MsConfigStatus } from '@mantle/microsoft';
-import { apiSend } from '@/lib/api-fetch';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 
 /**
  * Azure AD app registration, editable from the UI (replaces editing `.env` +

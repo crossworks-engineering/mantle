@@ -3,14 +3,14 @@
 import { useState } from 'react';
 import { BookOpen, Boxes, Network, ScrollText, Square } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
-import { formatDateTime } from '@/lib/format-datetime';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { formatDuration, formatMicroUsd } from '@/lib/traces-format';
 import { deriveAction, sourceLabel } from '@/lib/journey-format';
 import { ActionIcon } from '@/components/journey/action-icon';
-import { Spinner } from '@/components/ui/spinner';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SetPageTitle } from '@/components/layout/page-title';
 import type { JourneyDetail } from '@/lib/journey';
 

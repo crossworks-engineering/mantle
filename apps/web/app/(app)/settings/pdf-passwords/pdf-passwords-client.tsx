@@ -3,14 +3,14 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Lock, Plus, Trash2 } from 'lucide-react';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Spinner } from '@/components/ui/spinner';
-import { useToast } from '@/components/ui/toast';
-import { formatDateTime } from '@/lib/format-datetime';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 
 type Pw = { id: string; label: string; lastUsedAt: string | null; createdAt: string };
 

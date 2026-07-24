@@ -3,12 +3,12 @@
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api-fetch';
-import { formatDateTime } from '@/lib/format-datetime';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { formatDuration, formatMicroUsd } from '@/lib/traces-format';
 import { PIPELINE_LEGEND, type ActionCategory } from '@/lib/journey-format';
 import { ActionIcon } from '@/components/journey/action-icon';
-import { Spinner } from '@/components/ui/spinner';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import type { ActivityItem } from '@/lib/journey';
 
 const CATS: { key: ActionCategory | 'all'; label: string }[] = [

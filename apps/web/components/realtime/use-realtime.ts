@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { apiEventStream } from '@/lib/api-fetch';
+import { apiEventStream } from '@mantle/web-ui/api-fetch';
 
 export type RealtimeChange = { type: string; id: string };
 

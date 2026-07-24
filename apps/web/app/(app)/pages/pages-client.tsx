@@ -31,7 +31,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,7 +40,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@mantle/web-ui/ui/dropdown-menu';
 import {
   Command,
   CommandEmpty,
@@ -48,19 +48,19 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+} from '@mantle/web-ui/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@mantle/web-ui/ui/popover';
 import type { PageSort } from '@/lib/pages';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
-import { SubmitButton } from '@/components/ui/submit-button';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@mantle/web-ui/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -70,17 +70,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/components/ui/toast';
-import { TagPill } from '@/components/tag-pill';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { Skeleton } from '@mantle/web-ui/ui/skeleton';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { TagPill } from '@mantle/web-ui/tag-pill';
 import { TagInput } from '@/components/tag-input';
 import { PageView } from '@/components/page-editor/page-view';
 import { ExportMenu } from '@/components/export/export-menu';
-import { cn } from '@/lib/utils';
-import { formatDateTime } from '@/lib/format-datetime';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { buildChildrenIndex } from './page-tree';
 import type { PageRow } from '@mantle/content';
 

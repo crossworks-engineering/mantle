@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogOut, Menu, Search, User as UserIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,10 +12,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+} from '@mantle/web-ui/ui/dropdown-menu';
+import { Avatar, AvatarFallback } from '@mantle/web-ui/ui/avatar';
 import { BoringAvatar } from '@/components/boring-avatar';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { ThemeToggle } from '@mantle/web-ui/theme-toggle';
 import { RandomThemeToggle } from '@/components/random-theme-toggle';
 
 export function Header({

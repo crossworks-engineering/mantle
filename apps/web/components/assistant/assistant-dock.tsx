@@ -18,9 +18,9 @@ import {
   Sparkles,
   SquareDashedMousePointer,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { apiEventStream, apiUrl, withAuth } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { apiEventStream, apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
 import { usePendingQuestions } from '@/components/pending/use-pending-questions';
 import type { TurnEvent } from '@mantle/client-types';
 

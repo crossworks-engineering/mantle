@@ -12,11 +12,11 @@
 import Link from 'next/link';
 import { Loader2, Plug, RefreshCw, UserPlus } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { useToast } from '@/components/ui/toast';
-import { formatDateTime } from '@/lib/format-datetime';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 
 /** A recent sender who isn't a contact yet — wire shape of `/api/email/discover`. */
 type UnknownSender = {

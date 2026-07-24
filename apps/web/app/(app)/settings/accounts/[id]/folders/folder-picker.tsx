@@ -3,9 +3,9 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { useToast } from '@/components/ui/toast';
-import { apiSend } from '@/lib/api-fetch';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 
 /**
  * Checkbox picker over an account's IMAP folders. On submit it PUTs the checked,

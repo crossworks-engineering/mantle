@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Check, HelpCircle, Wallet, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { cn } from '@/lib/utils';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { cn } from '@mantle/web-ui/lib/utils';
 import Link from 'next/link';
 import {
   ASK_HUMAN_SLUG,

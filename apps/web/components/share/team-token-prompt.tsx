@@ -13,9 +13,9 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { KeyRound } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 
 export function TeamTokenPrompt({ shareToken, title }: { shareToken: string; title: string }) {
   const router = useRouter();

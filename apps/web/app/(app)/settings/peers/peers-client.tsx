@@ -4,13 +4,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Check, Copy, KeyRound, Network, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Spinner } from '@/components/ui/spinner';
-import { SubmitButton } from '@/components/ui/submit-button';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,11 +20,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
-import { formatDateTime } from '@/lib/format-datetime';
-import { copyText } from '@/lib/secure-context-fallbacks';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
+import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
 type Peer = {
   id: string;

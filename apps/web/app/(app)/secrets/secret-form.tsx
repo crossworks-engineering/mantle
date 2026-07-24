@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@mantle/web-ui/ui/button';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import { TagInput } from '@/components/tag-input';
 
 export const KINDS = ['password', 'token', 'server', 'card', 'note', 'other'] as const;

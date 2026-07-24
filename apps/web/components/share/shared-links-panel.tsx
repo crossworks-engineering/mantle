@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Check, Copy, ExternalLink, Link2Off, Users } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,10 +13,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
-import { apiSend, ApiError } from '@/lib/api-fetch';
-import { formatDate } from '@/lib/format-datetime';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { formatDate } from '@mantle/web-ui/lib/format-datetime';
 
 export type SharedLinkRow = {
   id: string;

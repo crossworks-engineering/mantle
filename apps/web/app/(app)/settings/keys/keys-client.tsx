@@ -4,11 +4,11 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Spinner } from '@/components/ui/spinner';
-import { formatDateTime } from '@/lib/format-datetime';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import type { TestApiKeyResult } from '@/lib/api-key-test';
 import {
   Dialog,
@@ -16,7 +16,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@mantle/web-ui/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,13 +26,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { SUPPORTED_PROVIDERS, wiredCapabilitiesFor } from '@mantle/voice/client';
-import { copyText } from '@/lib/secure-context-fallbacks';
+import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
 type KeyRow = {
   id: string;

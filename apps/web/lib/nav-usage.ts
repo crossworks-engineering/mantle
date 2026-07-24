@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ALL_NAV_ITEMS, type NavItem } from '@/components/layout/nav-items';
+import { ALL_NAV_ITEMS, type NavItem } from '@mantle/web-ui/layout/nav-items';
 
 /**
  * Client-side nav usage tracking. Every time the user lands on a primary nav

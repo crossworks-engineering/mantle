@@ -4,18 +4,18 @@ import { useMemo, useState } from 'react';
 import katex from 'katex';
 import { AlertTriangle, Sigma } from 'lucide-react';
 import type { CoverageGap, FormulaSpec, FormulaValue, TraceStep } from '@/lib/formulas';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+} from '@mantle/web-ui/ui/select';
+import { Separator } from '@mantle/web-ui/ui/separator';
 import {
   Table,
   TableBody,
@@ -23,10 +23,10 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Spinner } from '@/components/ui/spinner';
-import { apiSend } from '@/lib/api-fetch';
-import { cn } from '@/lib/utils';
+} from '@mantle/web-ui/ui/table';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { apiSend } from '@mantle/web-ui/api-fetch';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 export type FormulaRow = {
   id: string;

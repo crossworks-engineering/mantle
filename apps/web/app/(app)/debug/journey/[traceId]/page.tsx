@@ -1,6 +1,6 @@
 import { requireOwner } from '@/lib/auth';
 import { DebugTabs } from '../../debug-tabs';
-import { BackLink } from '@/components/layout/back-link';
+import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { JourneyDetailClient } from './journey-detail-client';
 
 /**

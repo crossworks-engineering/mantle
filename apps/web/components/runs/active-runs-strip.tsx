@@ -12,9 +12,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState } from 'react';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { useRealtime } from '@/components/realtime/use-realtime';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,8 +25,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
 
 type ActiveRun = {
   id: string;

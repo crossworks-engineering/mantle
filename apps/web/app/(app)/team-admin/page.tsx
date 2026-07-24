@@ -58,7 +58,7 @@ import {
   Users,
 } from 'lucide-react';
 import { MemberActivityPager } from '@/components/team-admin/member-activity-pager';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 

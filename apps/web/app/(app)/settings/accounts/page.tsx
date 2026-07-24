@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { requireOwner } from '@/lib/auth';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { Spinner } from '@/components/ui/spinner';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { AccountsClient } from './accounts-client';
 
 /**

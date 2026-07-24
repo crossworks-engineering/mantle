@@ -3,24 +3,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Boxes, Copy, ExternalLink, KeyRound, Loader2, RefreshCw, Search } from 'lucide-react';
-import { apiFetch, ApiError } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
-import { Badge } from '@/components/ui/badge';
+import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { Badge } from '@mantle/web-ui/ui/badge';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { ListPager } from '@/components/layout/list-pager';
+} from '@mantle/web-ui/ui/select';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
 import type { ExplorerModel, ModelSort } from '@/lib/model-explorer';
-import { copyText } from '@/lib/secure-context-fallbacks';
+import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
 export type ProviderMeta = {
   id: string;

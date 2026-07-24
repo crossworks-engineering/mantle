@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   Card,
   CardContent,
@@ -10,17 +10,17 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from '@mantle/web-ui/ui/card';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+} from '@mantle/web-ui/ui/select';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
 
 export function CardsReportIssue() {
   const id = React.useId();

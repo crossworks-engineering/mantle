@@ -61,6 +61,7 @@ const nextConfig: NextConfig = {
     '@mantle/telegram',
     '@mantle/tools',
     '@mantle/tracing',
+    '@mantle/web-ui',
   ],
   experimental: {
     serverActions: { bodySizeLimit: '4mb' },

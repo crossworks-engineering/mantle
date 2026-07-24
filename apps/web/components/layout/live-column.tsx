@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Activity, AlertCircle, CheckCircle2, Loader2, PanelRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { formatMicroUsd } from '@/lib/traces-format';
 import { ActionIcon } from '@/components/journey/action-icon';
 import {

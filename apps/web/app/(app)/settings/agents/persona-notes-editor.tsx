@@ -11,7 +11,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { sha256Hex } from '@/lib/secure-context-fallbacks';
+import { sha256Hex } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import {
   Check,
   ChevronDown,
@@ -24,12 +24,12 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/components/ui/toast';
-import { formatDateTime } from '@/lib/format-datetime';
-import { apiSend, ApiError } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
+import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import type { PersonaNoteDTO } from '@mantle/client-types';
 
 type Kind = PersonaNoteDTO['kind'];

@@ -25,17 +25,17 @@ import {
   SquareDashedMousePointer,
   X,
 } from 'lucide-react';
-import { formatDateTime } from '@/lib/format-datetime';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { RichText } from '@/components/assistant/rich-text';
-import { CopyButton } from '@/components/assistant/copy-button';
+import { CopyButton } from '@mantle/web-ui/copy-button';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { apiFetch } from '@/lib/api-fetch';
-import { assetUrl } from '@/lib/asset-url';
-import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@/lib/composer-style';
-import { uuid } from '@/lib/secure-context-fallbacks';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { assetUrl } from '@mantle/web-ui/asset-url';
+import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
+import { uuid } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
 /** A sidecar artifact attached to a message. Mirrors @mantle/tools
  *  ToolArtifact, with the discriminated `kind` driving the rendering

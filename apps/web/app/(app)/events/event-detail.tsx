@@ -11,7 +11,7 @@ import {
   Repeat,
   Trash2,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,11 +21,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
-import { apiSend, ApiError } from '@/lib/api-fetch';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { ShareControl } from '@/components/share/share-control';
-import { formatDateTime } from '@/lib/format-datetime';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { useNow } from '@/components/use-now';
 import {
   approachProgress,
@@ -34,7 +34,7 @@ import {
   eventProgress,
   eventState,
   formatRelativeShort,
-} from '@/lib/event-time';
+} from '@mantle/web-ui/lib/event-time';
 import { EventForm, eventToForm, type EventPayload } from './event-form';
 import type { EventRow } from '@mantle/content';
 

@@ -15,7 +15,7 @@
  */
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
-import { safeDownloadHeaders } from '@/lib/safe-download';
+import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
 import { getForumTopic, getForumUpload, recordTeamAccess } from '@mantle/content';
 import { readFileById, readQuarantineBytes } from '@mantle/files';
 

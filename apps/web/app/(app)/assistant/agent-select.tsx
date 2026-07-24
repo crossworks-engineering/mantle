@@ -6,7 +6,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@mantle/web-ui/ui/select';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import type { AssistantAgentOption } from '@/lib/assistant';
 

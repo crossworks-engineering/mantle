@@ -1,9 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
-import { Button } from '@/components/ui/button';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { Button } from '@mantle/web-ui/ui/button';
 import { DevToolsShell } from '@/components/dev-tools/dev-tools-shell';
 import type { AgentToolInfo } from '@/lib/dev-tools/types';
 

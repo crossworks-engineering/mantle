@@ -5,12 +5,12 @@ import { FolderGit2, HardDrive, ListTree, Loader2, RefreshCw } from 'lucide-reac
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { MsDriveDTO } from '@mantle/client-types';
 import { DriveScopeDialog } from './drive-scope-dialog';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Spinner } from '@/components/ui/spinner';
-import { useToast } from '@/components/ui/toast';
-import { formatDateTime } from '@/lib/format-datetime';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 
 /**
  * Per-account drive picker. Drives are opt-in — nothing syncs until toggled on.

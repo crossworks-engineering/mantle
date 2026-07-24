@@ -23,15 +23,15 @@ import {
   MessagesSquare,
   Search,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { ListPager } from '@/components/layout/list-pager';
+} from '@mantle/web-ui/ui/dropdown-menu';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import {
   Dialog,
   DialogContent,
@@ -39,20 +39,20 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from '@mantle/web-ui/ui/dialog';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
+} from '@mantle/web-ui/ui/select';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import {
   FORUM_KINDS,
   KindBadge,

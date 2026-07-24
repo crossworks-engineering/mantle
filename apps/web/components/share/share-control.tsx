@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Check, Copy, Loader2, Share2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Switch } from '@/components/ui/switch';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/components/ui/toast';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@mantle/web-ui/ui/popover';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { Input } from '@mantle/web-ui/ui/input';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 
 type ShareInfo = {
   id: string;

@@ -1,7 +1,7 @@
 import { Gauge } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { formatCount } from '@/lib/format-bytes';
-import { cn } from '@/lib/utils';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
+import { formatCount } from '@mantle/web-ui/lib/format-bytes';
+import { cn } from '@mantle/web-ui/lib/utils';
 import type { BrainCapacity, CapacityZone } from '@/lib/dashboard';
 
 /** Zone colours (literal classes so the Tailwind scanner keeps them). Green

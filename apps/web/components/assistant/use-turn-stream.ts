@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { apiEventStream } from '@/lib/api-fetch';
+import { apiEventStream } from '@mantle/web-ui/api-fetch';
 import { isTurnStreamingEnabledClient } from '@/lib/turn-streaming';
 import type { TurnEvent } from '@mantle/client-types';
 

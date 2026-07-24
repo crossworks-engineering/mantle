@@ -12,12 +12,12 @@
 
 import { useRef, useState } from 'react';
 import { Loader2, SendHorizontal, Sparkles, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
+import { Button } from '@mantle/web-ui/ui/button';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { AssistAgentPicker } from '@/components/assist-agent-picker';
 import { useAssistStage, SpecialistWorking } from '@/components/specialist-working';
 import { ChatBubble } from '@/components/chat-bubble';
-import { apiSend, ApiError } from '@/lib/api-fetch';
+import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { useDevTools } from './context';
 
 type Msg = { role: 'user' | 'assistant'; text: string };

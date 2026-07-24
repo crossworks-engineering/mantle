@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
-import { Button } from '@/components/ui/button';
+import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { Button } from '@mantle/web-ui/ui/button';
 import { ImapForm, type ImapFormAccount } from '../../imap/imap-form';
 
 /**

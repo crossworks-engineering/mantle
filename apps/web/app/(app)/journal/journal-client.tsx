@@ -5,15 +5,15 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { NotebookPen, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { MOODS, CATEGORIES, moodDisplay, categoryLabel } from '@mantle/content/journal-options';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@mantle/web-ui/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,15 +23,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { ListPager } from '@/components/layout/list-pager';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
-import { useToast } from '@/components/ui/toast';
-import { TagPill } from '@/components/tag-pill';
-import { cn } from '@/lib/utils';
-import { formatDateTime } from '@/lib/format-datetime';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { TagPill } from '@mantle/web-ui/tag-pill';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { syncSelectionParam } from '@/lib/url-sync';
 import { JournalEditor, type JournalRow } from './journal-editor';
 

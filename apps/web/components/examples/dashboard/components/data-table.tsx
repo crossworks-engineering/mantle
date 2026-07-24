@@ -49,16 +49,16 @@ import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { useIsMobile } from '@/hooks/use-mobile';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { useIsMobile } from '@mantle/web-ui/hooks/use-mobile';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from '@/components/ui/chart';
-import { Checkbox } from '@/components/ui/checkbox';
+} from '@mantle/web-ui/ui/chart';
+import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -66,17 +66,17 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from '@mantle/web-ui/ui/dropdown-menu';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+} from '@mantle/web-ui/ui/select';
+import { Separator } from '@mantle/web-ui/ui/separator';
 import {
   Sheet,
   SheetClose,
@@ -86,7 +86,7 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/sheet';
+} from '@mantle/web-ui/ui/sheet';
 import {
   Table,
   TableBody,
@@ -94,8 +94,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from '@mantle/web-ui/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
 
 export const schema = z.object({
   id: z.number(),

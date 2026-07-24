@@ -7,10 +7,10 @@
  * and journal stay off-limits until the owner opts in here.
  */
 import { useState } from 'react';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/components/ui/toast';
-import { apiSend } from '@/lib/api-fetch';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { Label } from '@mantle/web-ui/ui/label';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,7 +20,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from '@mantle/web-ui/ui/alert-dialog';
 
 export function PrivateReadsToggle({ initial }: { initial: boolean }) {
   const [enabled, setEnabled] = useState(initial);

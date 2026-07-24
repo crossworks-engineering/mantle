@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, X, FlaskConical, AlertTriangle } from 'lucide-react';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { QuestionnaireCard } from '@/components/pending/questionnaire-card';
 import { invalidatePending } from '@/components/pending/use-pending-questions';
 import {

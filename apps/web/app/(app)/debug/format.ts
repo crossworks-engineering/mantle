@@ -1,4 +1,4 @@
-import { formatDate } from '@/lib/format-datetime';
+import { formatDate } from '@mantle/web-ui/lib/format-datetime';
 
 /** "YYYY-MM-DD HH:MM" from an ISO timestamp. */
 export function fmtShort(iso: string): string {

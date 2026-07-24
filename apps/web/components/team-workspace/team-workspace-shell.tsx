@@ -27,12 +27,12 @@ import {
   Table2,
   type LucideIcon,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { navItemMatches } from '@/components/layout/nav-items';
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { Button } from '@mantle/web-ui/ui/button';
+import { navItemMatches } from '@mantle/web-ui/layout/nav-items';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@mantle/web-ui/ui/sheet';
+import { ThemeToggle } from '@mantle/web-ui/theme-toggle';
 import { TokenGate } from '@/components/team-chat/token-gate';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 export type WorkspaceData = {
   memberName: string | null;

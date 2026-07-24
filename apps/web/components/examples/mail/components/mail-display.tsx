@@ -13,16 +13,16 @@ import {
   Trash2,
 } from 'lucide-react';
 
-import { DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
-import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { DropdownMenuContent, DropdownMenuItem } from '@mantle/web-ui/ui/dropdown-menu';
+import { Avatar, AvatarFallback, AvatarImage } from '@mantle/web-ui/ui/avatar';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Calendar } from '@mantle/web-ui/ui/calendar';
+import { DropdownMenu, DropdownMenuTrigger } from '@mantle/web-ui/ui/dropdown-menu';
+import { Label } from '@mantle/web-ui/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@mantle/web-ui/ui/popover';
+import { Separator } from '@mantle/web-ui/ui/separator';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { Mail } from '@/components/examples/mail/data';
 import { useState } from 'react';
 

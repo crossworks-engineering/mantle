@@ -10,13 +10,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Pin, PinOff, Search } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { ListPager } from '@/components/layout/list-pager';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/components/ui/toast';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Checkbox } from '@mantle/web-ui/ui/checkbox';
+import { Input } from '@mantle/web-ui/ui/input';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { useToast } from '@mantle/web-ui/ui/toast';
 
 /** Owner topic-list search box (title OR post body). Debounced; pushes `?q=`
  *  and drops `page`/`topic` so results start on page 1 with the first match.

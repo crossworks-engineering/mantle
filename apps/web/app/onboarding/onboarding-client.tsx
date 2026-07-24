@@ -13,16 +13,16 @@ import {
   type PersonaGender,
   type PersonaPresetKey,
 } from '@mantle/content/persona-bank';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Slider } from '@/components/ui/slider';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { ToastProvider, useToast } from '@/components/ui/toast';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { Label } from '@mantle/web-ui/ui/label';
+import { Slider } from '@mantle/web-ui/ui/slider';
+import { RadioGroup, RadioGroupItem } from '@mantle/web-ui/ui/radio-group';
+import { ToastProvider, useToast } from '@mantle/web-ui/ui/toast';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 
 type SanityCheck = { label: string; ok: boolean; detail: string };
 

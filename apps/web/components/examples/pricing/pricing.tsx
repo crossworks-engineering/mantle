@@ -3,10 +3,10 @@
 import { ArrowRight, CircleCheck } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
+import { Separator } from '@mantle/web-ui/ui/separator';
+import { Switch } from '@mantle/web-ui/ui/switch';
 
 interface MemoryTier {
   id: string;

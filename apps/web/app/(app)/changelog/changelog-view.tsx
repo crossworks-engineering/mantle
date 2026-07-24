@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@mantle/web-ui/ui/badge';
 import { APP_VERSION, CHANGELOG_LAST_SEEN_VERSION_KEY, CHANGELOG_SEEN_EVENT } from '@/lib/version';
 
 /**

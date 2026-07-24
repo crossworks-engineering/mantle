@@ -2,9 +2,9 @@
 
 import * as React from 'react';
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
+import { Avatar, AvatarFallback } from '@mantle/web-ui/ui/avatar';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Card, CardContent, CardFooter, CardHeader } from '@mantle/web-ui/ui/card';
 import {
   Command,
   CommandEmpty,
@@ -12,8 +12,8 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command';
-import { Input } from '@/components/ui/input';
+} from '@mantle/web-ui/ui/command';
+import { Input } from '@mantle/web-ui/ui/input';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -21,9 +21,14 @@ import {
   ResponsiveDialogFooter,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
-} from '@/components/ui/revola';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+} from '@mantle/web-ui/ui/revola';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@mantle/web-ui/ui/tooltip';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { ArrowUpIcon, CheckIcon, PlusIcon } from 'lucide-react';
 
 const agents = [

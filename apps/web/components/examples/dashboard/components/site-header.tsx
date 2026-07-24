@@ -1,5 +1,5 @@
-import { Separator } from '@/components/ui/separator';
-import { SidebarTrigger } from '@/components/ui/sidebar';
+import { Separator } from '@mantle/web-ui/ui/separator';
+import { SidebarTrigger } from '@mantle/web-ui/ui/sidebar';
 
 export function SiteHeader() {
   return (

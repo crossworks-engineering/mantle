@@ -11,10 +11,10 @@
 
 import { useState, useTransition } from 'react';
 import { Play, Loader2, Volume2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/components/ui/toast';
-import { apiSend } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 
 export function TtsTestButton({ workerId }: { workerId: string }) {
   const toast = useToast();

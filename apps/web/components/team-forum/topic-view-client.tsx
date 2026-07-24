@@ -15,12 +15,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ArrowDown, Loader2, Search, SendHorizontal, X } from 'lucide-react';
-import { BackLink } from '@/components/layout/back-link';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@/lib/composer-style';
+import { BackLink } from '@mantle/web-ui/layout/back-link';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Checkbox } from '@mantle/web-ui/ui/checkbox';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
 import { KindBadge, TopicFlags, type ForumKind, type ForumStatus } from './forum-meta';
 import {
   AttachmentChips,

@@ -26,8 +26,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { extractSection } from '@mantle/content/page-split';
-import { cn } from '@/lib/utils';
-import { apiSend } from '@/lib/api-fetch';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 import { randomAsideAngle, randomAsideColor } from './aside-style';
 
 /**

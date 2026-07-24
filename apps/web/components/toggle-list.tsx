@@ -3,8 +3,8 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { ChevronRight, Search } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Switch } from '@/components/ui/switch';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { Switch } from '@mantle/web-ui/ui/switch';
 
 export type ToggleListItem = {
   /** Stable value stored in the selection (e.g. a slug). */

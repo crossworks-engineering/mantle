@@ -3,11 +3,11 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { Search, UserCheck } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Input } from '@/components/ui/input';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
-import { Separator } from '@/components/ui/separator';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { Input } from '@mantle/web-ui/ui/input';
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@mantle/web-ui/ui/resizable';
+import { Separator } from '@mantle/web-ui/ui/separator';
+import { TooltipProvider } from '@mantle/web-ui/ui/tooltip';
 import { AccountSwitcher, type MailAccount } from './account-switcher';
 import { MailNav, type FolderLink } from './mail-nav';
 

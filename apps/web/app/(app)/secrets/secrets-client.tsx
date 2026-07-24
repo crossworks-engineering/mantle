@@ -3,14 +3,14 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Plus, Search } from 'lucide-react';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Spinner } from '@/components/ui/spinner';
-import { ListPager } from '@/components/layout/list-pager';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { SecretForm, emptySecretForm, KINDS, type SecretBody } from './secret-form';
 import { SecretDetail, type SecretRow } from './secret-detail';
 

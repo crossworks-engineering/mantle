@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import Link from 'next/link';
 import { ChevronRight, FileText } from 'lucide-react';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 
 /**
  * Card chrome for a `childPage` block — a clickable link to a sub-page. The

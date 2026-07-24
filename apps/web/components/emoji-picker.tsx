@@ -1,10 +1,10 @@
 'use client';
 
 import { useMemo, useState, type ReactNode } from 'react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@mantle/web-ui/ui/popover';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Button } from '@mantle/web-ui/ui/button';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 /**
  * Lightweight, dependency-free emoji picker. A curated set (the kinds of icons

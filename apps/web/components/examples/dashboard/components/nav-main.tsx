@@ -8,7 +8,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from '@/components/ui/sidebar';
+} from '@mantle/web-ui/ui/sidebar';
 
 export function NavMain({
   items,

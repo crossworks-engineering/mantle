@@ -61,6 +61,7 @@ COPY packages/tools/package.json packages/tools/package.json
 COPY packages/tracing/package.json packages/tracing/package.json
 COPY packages/turn-stream/package.json packages/turn-stream/package.json
 COPY packages/voice/package.json packages/voice/package.json
+COPY packages/web-ui/package.json packages/web-ui/package.json
 
 # Install the build toolchain (python3 / build-essential, needed to COMPILE
 # native modules), pnpm, and the workspace — then PURGE the toolchain in the

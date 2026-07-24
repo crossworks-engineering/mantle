@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { BackLink } from '@/components/layout/back-link';
-import { Spinner } from '@/components/ui/spinner';
-import { apiFetch } from '@/lib/api-fetch';
+import { BackLink } from '@mantle/web-ui/layout/back-link';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { EventDetail, type EventRow } from '../event-detail';
 
 /**

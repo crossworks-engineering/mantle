@@ -1,8 +1,8 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Avatar, AvatarFallback, AvatarImage } from '@mantle/web-ui/ui/avatar';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Card, CardContent } from '@mantle/web-ui/ui/card';
+import { Separator } from '@mantle/web-ui/ui/separator';
 import { Bookmark, Calendar, Clock, Heart, MessageCircle, Share2 } from 'lucide-react';
 
 export function BlogPost() {

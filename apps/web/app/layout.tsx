@@ -11,7 +11,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { ColorThemeProvider } from '@/components/color-theme-provider';
 import { FontProvider } from '@/components/font-provider';
 import { QueryProvider } from '@/components/query-provider';
-import { COLOR_THEME_STORAGE_KEY, DEFAULT_COLOR_THEME } from '@/lib/themes';
+import { COLOR_THEME_STORAGE_KEY, DEFAULT_COLOR_THEME } from '@mantle/web-ui/lib/themes';
 import { displayFontFaceCss, fontPrepaintScript } from '@/lib/display-fonts';
 
 const DEFAULT_METADATA: Metadata = {

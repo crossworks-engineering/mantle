@@ -16,7 +16,7 @@
  */
 import { useRef, useState } from 'react';
 import { FileText, Film, Image as ImageIcon, Loader2, Music, Paperclip, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 
 export type PostAttachment = {
   kind?: string;

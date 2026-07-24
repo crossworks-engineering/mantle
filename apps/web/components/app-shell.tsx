@@ -3,18 +3,18 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { useColorTheme } from '@/components/color-theme-provider';
 import { useFonts } from '@/components/font-provider';
-import { COLOR_THEMES } from '@/lib/themes';
-import { setAssetToken } from '@/lib/asset-url';
+import { COLOR_THEMES } from '@mantle/web-ui/lib/themes';
+import { setAssetToken } from '@mantle/web-ui/asset-url';
 import { Header } from '@/components/layout/header';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { ChangelogLink } from '@/components/layout/changelog-link';
 import { UpdateBanner } from '@/components/layout/update-banner';
 import { LiveColumn } from '@/components/layout/live-column';
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-import { ToastProvider } from '@/components/ui/toast';
+import { Sheet, SheetContent, SheetTitle } from '@mantle/web-ui/ui/sheet';
+import { ToastProvider } from '@mantle/web-ui/ui/toast';
 import { PageTitleProvider } from '@/components/layout/page-title';
 import { UploadProvider, UploadDock } from '@/components/uploads/upload-provider';
 import { AssistantDockProvider, useAssistantDock } from '@/components/assistant/assistant-dock';
@@ -23,7 +23,7 @@ import { PendingQuestionWatcher } from '@/components/pending/question-watcher';
 import { PickMode } from '@/components/assistant/pick-mode';
 import { FooterBar } from '@/components/layout/footer-bar';
 import { recordNavVisit } from '@/lib/nav-usage';
-import { matchNavItem } from '@/components/layout/nav-items';
+import { matchNavItem } from '@mantle/web-ui/layout/nav-items';
 import { SearchPalette } from '@/components/search/search-palette';
 
 /**

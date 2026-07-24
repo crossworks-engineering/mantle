@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, Trash2 } from 'lucide-react';
 import type { CalendarAccountDTO } from '@mantle/client-types';
-import { apiSend } from '@/lib/api-fetch';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
+import { apiSend } from '@mantle/web-ui/api-fetch';
+import { Button, buttonVariants } from '@mantle/web-ui/ui/button';
+import { Switch } from '@mantle/web-ui/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,9 +17,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { cn } from '@/lib/utils';
-import { formatDateTime } from '@/lib/format-datetime';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 
 export function CalendarRow({ account }: { account: CalendarAccountDTO }) {
   const queryClient = useQueryClient();

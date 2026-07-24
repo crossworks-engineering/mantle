@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiUrl, withAuth } from '@/lib/api-fetch';
+import { apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
 
 /**
  * Poll the assistant's current stage label while a turn is in flight.

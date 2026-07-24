@@ -22,18 +22,18 @@ import {
   Strikethrough,
   type LucideIcon,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
+} from '@mantle/web-ui/ui/dialog';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { Separator } from '@mantle/web-ui/ui/separator';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 function ToolButton({
   label,

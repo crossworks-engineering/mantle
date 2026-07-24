@@ -10,13 +10,13 @@ import {
   Table2,
   type LucideIcon,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
+} from '@mantle/web-ui/ui/dropdown-menu';
 
 type ExportItem = { format: string; label: string; Icon: LucideIcon };
 

@@ -18,23 +18,23 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Compass } from 'lucide-react';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Spinner } from '@/components/ui/spinner';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { Label } from '@mantle/web-ui/ui/label';
+import { Switch } from '@mantle/web-ui/ui/switch';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { useToast } from '@/components/ui/toast';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { cn } from '@/lib/utils';
+} from '@mantle/web-ui/ui/select';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { AvatarPicker, type AvatarValue } from '@/components/avatar-picker';
 // Import the value from the browser-safe LEAF, not the @mantle/content barrel —
 // the barrel pulls backup.ts (node:os) + identity-context (@mantle/db) into the

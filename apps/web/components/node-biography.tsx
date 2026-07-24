@@ -12,7 +12,7 @@
  */
 
 import Link from 'next/link';
-import { formatDateTime } from '@/lib/format-datetime';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { formatDuration, formatMicroUsd } from '@/lib/traces-format';
 import type { NodeBiographyView } from '@/lib/node-biography';
 import type { TraceDetail, TraceStepSummary } from '@/lib/traces-format';

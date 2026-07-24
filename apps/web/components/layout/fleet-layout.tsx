@@ -1,6 +1,6 @@
 import React from 'react';
-import { cn } from '@/lib/utils';
-import { Scrollable, type ScrollbarStyle } from '@/components/ui/scrollable';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { Scrollable, type ScrollbarStyle } from '@mantle/web-ui/ui/scrollable';
 
 /**
  * Two-column list/detail layout (adopted from the DFM "FleetLayout").

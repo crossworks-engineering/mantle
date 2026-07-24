@@ -1,7 +1,7 @@
 import { TrendingDownIcon, TrendingUpIcon } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
-import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
 
 export function SectionCards() {
   return (

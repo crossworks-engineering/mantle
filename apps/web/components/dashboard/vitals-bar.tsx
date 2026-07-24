@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 export type VitalsLevel = 'unknown' | 'ok' | 'warn' | 'crit';
 

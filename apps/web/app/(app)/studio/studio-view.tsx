@@ -23,9 +23,9 @@ import {
   Sparkles,
   Star,
 } from 'lucide-react';
-import { apiFetch } from '@/lib/api-fetch';
-import { Badge } from '@/components/ui/badge';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { ProseEditor } from './prose-editor';
 import { StructureEditor } from './structure-editor';
 import { SandboxPanel } from './sandbox-panel';
@@ -38,7 +38,7 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@mantle/web-ui/ui/select';
 import { StudioCanvas } from './studio-canvas';
 import type {
   StudioGraph,

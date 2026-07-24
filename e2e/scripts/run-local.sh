@@ -47,10 +47,15 @@ up() {
   pnpm --filter @mantle/db migrate
   pnpm -C apps/web pgboss:init
   echo "→ web app on :$port (log: $web_log)"
+  # A stale server from an interrupted run holds the port and answers with the
+  # WRONG code/DB — sweep it before starting.
+  fuser -k "$port/tcp" 2>/dev/null && sleep 1 || true
   # `pnpm -C apps/web dev` (not `exec next dev`) so the package's predev hook
   # generates public/app-runtime/ — the mini-app runtime the CORS spec checks.
-  # PORT is exported above; next dev honours it.
-  ( pnpm -C apps/web dev >"$web_log" 2>&1 & echo $! >"$web_pid_file" )
+  # PORT is exported above; next dev honours it. setsid gives the pnpm→next
+  # chain its own process GROUP so teardown can kill the whole tree (killing
+  # just the pnpm wrapper leaves next alive — the stale-port failure mode).
+  ( setsid pnpm -C apps/web dev >"$web_log" 2>&1 & echo $! >"$web_pid_file" )
   for i in $(seq 1 120); do
     if curl -sf "http://localhost:$port/api/version" >/dev/null 2>&1; then
       echo "→ web ready"
@@ -70,9 +75,11 @@ run_tests() {
 
 down() {
   if [ -f "$web_pid_file" ]; then
-    kill "$(cat "$web_pid_file")" 2>/dev/null || true
+    # Negative pid = the whole process group (see setsid in up()).
+    kill -- "-$(cat "$web_pid_file")" 2>/dev/null || kill "$(cat "$web_pid_file")" 2>/dev/null || true
     rm -f "$web_pid_file"
   fi
+  fuser -k "$port/tcp" 2>/dev/null || true
   "${compose[@]}" down -v --remove-orphans
 }
 

@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 
 export function ChangePasswordForm() {
   const [oldPassword, setOldPassword] = useState('');

@@ -4,11 +4,11 @@ import { useState, useTransition } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { ArrowRight, BookText, Info } from 'lucide-react';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { Switch } from '@mantle/web-ui/ui/switch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,8 +18,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { NewCollectionDialog } from './new-collection-dialog';
 
 export type DocCollectionView = {

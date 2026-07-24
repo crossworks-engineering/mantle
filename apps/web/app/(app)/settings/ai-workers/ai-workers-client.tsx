@@ -6,11 +6,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import type { AiWorkerConfig, AiWorkerDTO, AiWorkerKind } from '@mantle/client-types';
 import { getProvider } from '@mantle/voice/client';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { buildWorkerBody } from '@/lib/ai-worker-form';
-import { Spinner } from '@/components/ui/spinner';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Switch } from '@mantle/web-ui/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,9 +20,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { WorkerForm } from './worker-form';
 
 type KeyOption = { id: string; service: string; label: string; masked: string };

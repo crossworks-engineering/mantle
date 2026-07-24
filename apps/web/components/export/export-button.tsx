@@ -1,7 +1,7 @@
 'use client';
 
 import { Download } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 
 /**
  * Download a content node as an Office document. The `/api/export/<id>` route

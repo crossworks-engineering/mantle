@@ -21,22 +21,22 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@mantle/web-ui/ui/dialog';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
-import { apiFetch } from '@/lib/api-fetch';
+} from '@mantle/web-ui/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { buildVarMap, collectDraftParams } from '@/lib/dev-tools/client';
 import { genId } from '@/lib/dev-tools/storage';
 import type { AuthMode, BodyMode, Environment, HttpMethod } from '@/lib/dev-tools/types';

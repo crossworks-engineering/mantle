@@ -10,7 +10,7 @@ import { NODE_TYPE_ICONS, nodeTypeIcon } from './node-type-icons';
 // Relative, not `@/…`: the root vitest config has no path alias (type-only
 // `@/` imports in the sources are erased and don't hit the resolver).
 import { SEARCH_NODE_TYPES } from '../../lib/search-query';
-import type { NavItem } from '../layout/nav-items';
+import type { NavItem } from '@mantle/web-ui/layout/nav-items';
 
 const nav = (name: string): NavItem => ({ name, href: `/${name.toLowerCase()}`, icon: FileText });
 

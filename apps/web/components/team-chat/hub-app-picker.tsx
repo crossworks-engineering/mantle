@@ -10,16 +10,16 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LayoutTemplate } from 'lucide-react';
-import { Label } from '@/components/ui/label';
+import { Label } from '@mantle/web-ui/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { useToast } from '@/components/ui/toast';
-import { apiSend } from '@/lib/api-fetch';
+} from '@mantle/web-ui/ui/select';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 
 const BUILT_IN = '__built_in__';
 

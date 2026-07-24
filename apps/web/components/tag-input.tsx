@@ -2,8 +2,8 @@
 
 import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { X } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { tagColorClass } from '@/components/tag-pill';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { tagColorClass } from '@mantle/web-ui/tag-pill';
 
 /**
  * Tag editor: type a tag and commit it to a colored pill with comma or

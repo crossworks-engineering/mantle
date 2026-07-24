@@ -13,13 +13,13 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { assetUrl } from '@/lib/asset-url';
-import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Input } from '@/components/ui/input';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { useToast } from '@/components/ui/toast';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { assetUrl } from '@mantle/web-ui/asset-url';
+import { Button } from '@mantle/web-ui/ui/button';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { ToggleGroup, ToggleGroupItem } from '@mantle/web-ui/ui/toggle-group';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { ShareControl } from '@/components/share/share-control';
 
 type FileRow = {

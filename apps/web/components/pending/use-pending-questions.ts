@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { isQuestionRow, type Decide, type PendingRow } from './types';
 

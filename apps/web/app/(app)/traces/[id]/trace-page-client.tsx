@@ -1,10 +1,10 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api-fetch';
-import { Spinner } from '@/components/ui/spinner';
+import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { BackLink } from '@/components/layout/back-link';
+import { BackLink } from '@mantle/web-ui/layout/back-link';
 import type { TraceDetail as TraceDetailRow } from '@/lib/traces-format';
 import { TraceDetailView } from '../trace-detail-view';
 

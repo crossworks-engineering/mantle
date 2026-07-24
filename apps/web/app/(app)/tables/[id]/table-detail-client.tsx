@@ -14,11 +14,11 @@ import {
   Undo2,
   Upload,
 } from 'lucide-react';
-import { BackLink } from '@/components/layout/back-link';
+import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/components/ui/toast';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,20 +28,20 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from '@mantle/web-ui/ui/alert-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@mantle/web-ui/ui/dropdown-menu';
 import { ExportMenu } from '@/components/export/export-menu';
 import { ShareControl } from '@/components/share/share-control';
 import { TableGrid } from '@/components/table-grid/table-grid';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import { diffTableDocs, ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
-import { apiFetch, apiSend, ApiError } from '@/lib/api-fetch';
-import { uuid } from '@/lib/secure-context-fallbacks';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { uuid } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import type { TableDetail } from '@/lib/tables';
 
 const DRAFT_DEBOUNCE_MS = 1200;

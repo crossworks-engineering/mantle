@@ -9,9 +9,9 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { FileUp, Loader2, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
-import { apiSend } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 
 export function DocumentTestButton({ workerId }: { workerId: string }) {
   const toast = useToast();

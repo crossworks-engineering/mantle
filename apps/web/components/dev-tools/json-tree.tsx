@@ -8,9 +8,9 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Copy } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+import { Button } from '@mantle/web-ui/ui/button';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
 
 const INITIAL_DEPTH = 3;
 /** Render children in pages so a huge array/object can't mount thousands of

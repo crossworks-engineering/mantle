@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useToast } from '@/components/ui/toast';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { usePendingQuestions, usePendingQuestionsSync } from './use-pending-questions';
 import { questionPreview, RUN_BUDGET_SLUG } from './types';

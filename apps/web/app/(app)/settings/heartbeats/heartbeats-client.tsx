@@ -5,10 +5,10 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Pause, Play, Plus, Trash2, Zap } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { DateTimePicker } from '@/components/ui/date-time-picker';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { DateTimePicker } from '@mantle/web-ui/ui/date-time-picker';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,12 +18,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/components/ui/toast';
-import { Spinner } from '@/components/ui/spinner';
-import { cn } from '@/lib/utils';
-import { formatDateTime } from '@/lib/format-datetime';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { cn } from '@mantle/web-ui/lib/utils';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import type { HeartbeatDTO, AgentOptionDTO, SkillDTO } from '@mantle/client-types';
 import { slugify } from '@/lib/slugify';
 

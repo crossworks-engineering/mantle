@@ -20,9 +20,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
+} from '@mantle/web-ui/ui/alert-dialog';
+import { Button } from '@mantle/web-ui/ui/button';
+import { useToast } from '@mantle/web-ui/ui/toast';
 
 export function UploadReviewActions({
   uploadId,

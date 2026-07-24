@@ -13,7 +13,7 @@ import {
   Users,
   Wrench,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@mantle/web-ui/lib/utils';
 import type { ThoughtEvent } from './use-turn-stream';
 
 /** Map a status `kind` to its trail icon. Unknown kinds fall back to the tool

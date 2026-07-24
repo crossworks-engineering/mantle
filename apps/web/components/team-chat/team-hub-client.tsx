@@ -24,11 +24,11 @@ import {
   ShieldCheck,
   SlidersHorizontal,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
+import { Button } from '@mantle/web-ui/ui/button';
+import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
 import { TeamChatClient } from '@/components/team-chat/team-chat-client';
 import { TokenGate } from '@/components/team-chat/token-gate';
-import type { HubData as BridgeHubData, HubNavTarget } from '@/lib/app-bridge/protocol';
+import type { HubData as BridgeHubData, HubNavTarget } from '@mantle/web-ui/app-bridge/protocol';
 
 /** The /api/team/hub payload — the bridge `HubData` (what `hub.get` answers a
  *  hub app with; `apps` is now part of that contract) plus the shell-only

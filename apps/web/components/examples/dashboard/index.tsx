@@ -5,7 +5,7 @@ import { ChartAreaInteractive } from '@/components/examples/dashboard/components
 import { DataTable } from '@/components/examples/dashboard/components/data-table';
 import { SectionCards } from '@/components/examples/dashboard/components/section-cards';
 import { SiteHeader } from '@/components/examples/dashboard/components/site-header';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { SidebarInset, SidebarProvider } from '@mantle/web-ui/ui/sidebar';
 import { ChartBarMixed } from './components/chart-bar-mixed';
 import { ChartPieDonut } from './components/chart-pie-donut';
 

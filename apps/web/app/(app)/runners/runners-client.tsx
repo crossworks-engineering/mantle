@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Copy, GitFork, Loader2 } from 'lucide-react';
-import { apiFetch } from '@/lib/api-fetch';
-import { formatDateTime } from '@/lib/format-datetime';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { formatDuration } from '@/lib/traces-format';
 import {
   availableActions,
@@ -21,10 +21,10 @@ import {
   type RunnerRun,
   type RunnerRunDetail,
 } from '@/lib/runners-types';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { useToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { cn } from '@mantle/web-ui/lib/utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,17 +34,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from '@mantle/web-ui/ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { copyText } from '@/lib/secure-context-fallbacks';
+} from '@mantle/web-ui/ui/dialog';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
 const HOURS_OPTIONS: Array<[number, string]> = [
   [1, '1h'],

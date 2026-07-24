@@ -1,5 +1,5 @@
 import { loadProfilePreferences } from '@mantle/content';
-import { DEFAULT_COLOR_THEME } from '@/lib/themes';
+import { DEFAULT_COLOR_THEME } from '@mantle/web-ui/lib/themes';
 
 /**
  * Stamps the share OWNER's stored colour theme onto <html> for the public /s

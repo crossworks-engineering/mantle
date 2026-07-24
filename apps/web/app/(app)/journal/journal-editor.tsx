@@ -3,21 +3,21 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { MOODS, CATEGORIES } from '@mantle/content/journal-options';
-import { Button } from '@/components/ui/button';
-import { SubmitButton } from '@/components/ui/submit-button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@mantle/web-ui/ui/button';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { DateTimePicker } from '@/components/ui/date-time-picker';
+} from '@mantle/web-ui/ui/select';
+import { DateTimePicker } from '@mantle/web-ui/ui/date-time-picker';
 import { TagInput } from '@/components/tag-input';
-import { useToast } from '@/components/ui/toast';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import type { JournalRow } from '@mantle/content';
 
 // Wire shape is the GET /api/journal mapper's output — single source of truth.

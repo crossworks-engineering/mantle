@@ -1,8 +1,8 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CalendarDays, Clock, Download, MapPin } from 'lucide-react';
-import { formatDateTime } from '@/lib/format-datetime';
-import { buildIcsHref } from '@/lib/event-time';
+import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
+import { buildIcsHref } from '@mantle/web-ui/lib/event-time';
 
 type EventView = {
   title: string;

@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@mantle/web-ui/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -11,20 +11,20 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from '@mantle/web-ui/ui/dialog';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Label } from '@mantle/web-ui/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { SubmitButton } from '@/components/ui/submit-button';
+} from '@mantle/web-ui/ui/select';
+import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { slugify } from '@/lib/slugify';
-import { useToast } from '@/components/ui/toast';
-import { apiSend } from '@/lib/api-fetch';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiSend } from '@mantle/web-ui/api-fetch';
 
 /** Lowercase-slug a label for the default key (mirrors the action's regex). */
 /**

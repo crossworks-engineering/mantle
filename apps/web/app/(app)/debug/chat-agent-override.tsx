@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { apiSend, ApiError } from '@/lib/api-fetch';
+import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 
 type AgentOption = {
   id: string;

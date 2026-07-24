@@ -2,10 +2,10 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { GitCompareArrows, Highlighter, MapPin, Minus } from 'lucide-react';
-import { apiFetch } from '@/lib/api-fetch';
+import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
-import { Spinner } from '@/components/ui/spinner';
-import { Button } from '@/components/ui/button';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { Button } from '@mantle/web-ui/ui/button';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { ActiveRunsStrip } from '@/components/runs/active-runs-strip';

@@ -8,7 +8,7 @@
  * other when the owner tabs back and forth.
  */
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ListPager } from '@/components/layout/list-pager';
+import { ListPager } from '@mantle/web-ui/layout/list-pager';
 
 export function MemberActivityPager({
   page,

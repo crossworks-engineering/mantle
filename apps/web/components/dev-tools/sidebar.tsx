@@ -11,10 +11,10 @@
 
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Plug, Plus, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Input } from '@mantle/web-ui/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
+import { cn } from '@mantle/web-ui/lib/utils';
 import { API_CATALOG, API_CATALOG_COUNT } from '@/lib/dev-tools/catalog';
 import {
   catalogHaystack,

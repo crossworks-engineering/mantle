@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast';
-import { apiFetch, ApiError } from '@/lib/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { useToast } from '@mantle/web-ui/ui/toast';
+import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
 import type { SanityCheck, SanityReport, SanityStatus } from '@/lib/sanity/types';
-import { copyText } from '@/lib/secure-context-fallbacks';
+import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
 const STATUS_STYLE: Record<SanityStatus, { badge: string; glyph: string; label: string }> = {
   pass: { badge: 'bg-primary/10 text-primary border-primary/30', glyph: '✓', label: 'PASS' },

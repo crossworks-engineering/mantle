@@ -11,19 +11,19 @@ import {
   Save,
   WandSparkles,
 } from 'lucide-react';
-import { apiFetch, apiSend } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Spinner } from '@/components/ui/spinner';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { useToast } from '@/components/ui/toast';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Badge } from '@mantle/web-ui/ui/badge';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@mantle/web-ui/ui/tabs';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { BackLink } from '@/components/layout/back-link';
+import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { ShareControl } from '@/components/share/share-control';
-import { AppSandbox } from '@/components/app-sandbox/app-sandbox';
-import { AppAccessLog } from '@/components/app-sandbox/access-log';
-import { CodeEditor } from '@/components/app-sandbox/code-editor';
-import { FileTree } from '@/components/app-sandbox/file-tree';
+import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
+import { AppAccessLog } from '@mantle/web-ui/app-sandbox/access-log';
+import { CodeEditor } from '@mantle/web-ui/app-sandbox/code-editor';
+import { FileTree } from '@mantle/web-ui/app-sandbox/file-tree';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import type { AppDetail } from '@mantle/content';
 

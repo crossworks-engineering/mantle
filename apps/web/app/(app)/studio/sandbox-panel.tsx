@@ -12,9 +12,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2, RotateCcw, Send } from 'lucide-react';
-import { apiSend } from '@/lib/api-fetch';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { apiSend } from '@mantle/web-ui/api-fetch';
+import { Button } from '@mantle/web-ui/ui/button';
+import { Textarea } from '@mantle/web-ui/ui/textarea';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 type Meta = { model: string; tokensIn: number | null; tokensOut: number | null };
