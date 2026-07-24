@@ -16,7 +16,7 @@ import {
   loadProfilePreferences,
 } from '@mantle/content';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
-import { APP_VERSION } from '@/lib/version';
+import { APP_VERSION } from '@mantle/web-ui/version';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

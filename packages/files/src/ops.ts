@@ -96,6 +96,9 @@ export async function ensureFilesRootBranch(ownerId: string): Promise<Node> {
     await ensureRoot();
     return existing[0];
   }
+  // Concurrent first-uploads race this create-if-missing (two requests can
+  // both see "missing" and insert) — the nodes_branch_owner_path_uq constraint
+  // is the arbiter, so swallow the loser's 23505 and re-read the winner's row.
   const [row] = await db
     .insert(nodes)
     .values({
@@ -110,8 +113,24 @@ export async function ensureFilesRootBranch(ownerId: string): Promise<Node> {
       },
       tags: ['files-root'],
     })
+    .onConflictDoNothing()
     .returning();
-  if (!row) throw new Error('ensureFilesRootBranch: insert failed');
+  if (!row) {
+    const [won] = await db
+      .select()
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, ownerId),
+          eq(nodes.type, 'branch'),
+          sql`${nodes.path}::text = ${FILES_ROOT_LABEL}`,
+        ),
+      )
+      .limit(1);
+    if (!won) throw new Error('ensureFilesRootBranch: insert failed');
+    await ensureRoot();
+    return won;
+  }
   await ensureRoot();
   return row;
 }

@@ -19,6 +19,8 @@ export default defineConfig({
   testDir: './specs',
   globalSetup: './global-setup.ts',
   fullyParallel: false, // small suite; keeps SSE/asset specs from racing bootstrap
+  workers: 1, // both projects share ONE brain — serialize so cross-project
+  // concurrency can't race server-side create-if-missing paths
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['github']] : [['list']],
   timeout: 60_000,

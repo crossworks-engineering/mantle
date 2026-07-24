@@ -22,6 +22,9 @@ artifacts="$root/e2e/.artifacts"
 web_pid_file="$artifacts/web.pid"
 web_log="$artifacts/web.log"
 port=3900
+client_port=3901
+client_pid_file="$artifacts/client.pid"
+client_log="$artifacts/client.log"
 
 # The web app's env for THIS stack. Set explicitly so server/web/.env.local (which
 # next dev always loads, and which may point at a REAL local brain) cannot leak
@@ -36,6 +39,10 @@ export SESSION_SECRET="e2e-session-secret-0123456789abcdef0123456789abcdef"
 export BROWSER_WS_ENDPOINT="ws://127.0.0.1:59222?token=mantle"
 export MANTLE_PRINT_ORIGIN="http://host.docker.internal:${port}"
 export PORT="$port"
+# Split topology: the client app runs cross-origin on :3901 — the server must
+# allow its origin (bearer-only CORS; middleware refuses wildcard on /api/auth).
+export MANTLE_API_CORS_ORIGINS="http://localhost:3901"
+export MANTLE_CLIENT_ORIGIN="http://localhost:3901"
 unset MANTLE_DETACHED_DEV NEXT_PUBLIC_MANTLE_API_BASE NEXT_PUBLIC_MANTLE_API_TOKEN TIKA_URL || true
 
 up() {
@@ -58,28 +65,44 @@ up() {
   ( setsid pnpm -C server/web dev >"$web_log" 2>&1 & echo $! >"$web_pid_file" )
   for i in $(seq 1 120); do
     if curl -sf "http://localhost:$port/api/version" >/dev/null 2>&1; then
-      echo "→ web ready"
+      echo "→ server web ready"
+      break
+    fi
+    sleep 1
+    [ "$i" = 120 ] && { echo "✗ server web not ready — tail:"; tail -30 "$web_log"; return 1; }
+  done
+  echo "→ client app on :$client_port (log: $client_log)"
+  fuser -k "$client_port/tcp" 2>/dev/null && sleep 1 || true
+  ( setsid env PORT="$client_port" MANTLE_SERVER_ORIGIN="http://localhost:$port" \
+      pnpm -C client/web dev >"$client_log" 2>&1 & echo $! >"$client_pid_file" )
+  for i in $(seq 1 120); do
+    if curl -sf "http://localhost:$client_port/env.js" >/dev/null 2>&1; then
+      echo "→ client ready"
       return 0
     fi
     sleep 1
   done
-  echo "✗ web did not become ready in 120s — tail of $web_log:" >&2
-  tail -30 "$web_log" >&2
+  echo "✗ client did not become ready in 120s — tail of $client_log:" >&2
+  tail -30 "$client_log" >&2
   return 1
 }
 
 run_tests() {
   E2E_SERVER_URL="${E2E_SERVER_URL:-http://localhost:$port}" \
-    pnpm -C e2e e2e:same
+  E2E_CLIENT_URL="${E2E_CLIENT_URL:-http://localhost:$client_port}" \
+    pnpm -C e2e e2e
 }
 
 down() {
-  if [ -f "$web_pid_file" ]; then
-    # Negative pid = the whole process group (see setsid in up()).
-    kill -- "-$(cat "$web_pid_file")" 2>/dev/null || kill "$(cat "$web_pid_file")" 2>/dev/null || true
-    rm -f "$web_pid_file"
-  fi
+  for pf in "$web_pid_file" "$client_pid_file"; do
+    if [ -f "$pf" ]; then
+      # Negative pid = the whole process group (see setsid in up()).
+      kill -- "-$(cat "$pf")" 2>/dev/null || kill "$(cat "$pf")" 2>/dev/null || true
+      rm -f "$pf"
+    fi
+  done
   fuser -k "$port/tcp" 2>/dev/null || true
+  fuser -k "3901/tcp" 2>/dev/null || true
   "${compose[@]}" down -v --remove-orphans
 }
 

@@ -9,7 +9,12 @@ import { fileURLToPath } from 'node:url';
 import { buildRuntime } from '../src/build-runtime.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const outDir = path.resolve(here, '../../../server/web/public/app-runtime');
+// Out dir comes from the invoking app (each Next app serves its own copy —
+// the ACAO:* runtime must exist on every origin that renders sandboxes).
+// Fallback: the server app, for bare invocations.
+const outDir = process.env.APP_RUNTIME_OUT
+  ? path.resolve(process.env.APP_RUNTIME_OUT)
+  : path.resolve(here, '../../../server/web/public/app-runtime');
 
 const manifest = await buildRuntime(outDir);
 const n = Object.keys(manifest.imports).length;

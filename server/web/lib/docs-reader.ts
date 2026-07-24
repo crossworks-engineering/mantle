@@ -11,7 +11,7 @@ import {
   readMarkdownFile,
 } from '@mantle/files';
 import type { DocCollection } from '@mantle/db';
-import { docLabelFromRelPath } from '@/lib/docs-labels';
+import { docLabelFromRelPath } from '@mantle/web-ui/docs-labels';
 import { isDetachedDev } from '@/lib/auth-constants';
 
 /** Collections for the disk reader. Detached dev (`pnpm dev:fe`) has no local

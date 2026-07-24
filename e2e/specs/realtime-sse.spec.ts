@@ -15,6 +15,9 @@ declare global {
  * its `node_ingested` fanout to arrive as a data frame.
  */
 test.describe('realtime SSE', () => {
+  // Post-carve, the owner UI exists only on the CLIENT app — the same-origin
+  // project covers the SERVER-origin surfaces; the split project runs this.
+  test.skip(({ topology }) => topology === 'same-origin', 'owner UI lives on the client app');
   test('stream opens and delivers a change event', async ({ ownerPage, ownerApi }) => {
     await ownerPage.goto('/');
 

@@ -51,7 +51,7 @@ import {
   CommandList,
 } from '@mantle/web-ui/ui/command';
 import { ListPager } from '@mantle/web-ui/layout/list-pager';
-import { buildChildrenIndex } from '@/app/(app)/pages/page-tree';
+import { buildChildrenIndex } from '@mantle/web-ui/page-tree';
 import { formatDate } from '@mantle/web-ui/lib/format-datetime';
 import { cn } from '@mantle/web-ui/lib/utils';
 

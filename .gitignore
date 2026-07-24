@@ -97,3 +97,4 @@ server/agent/
 # e2e suite run artifacts (auth states, logs, traces)
 e2e/.artifacts/
 e2e/test-results/
+client/web/public/app-runtime/

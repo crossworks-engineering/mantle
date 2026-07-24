@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { WorkflowStatusString } from '@dbos-inc/dbos-sdk';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listRuns } from '@/lib/runners';
-import { RUNNER_STATUSES } from '@/lib/runners-types';
+import { RUNNER_STATUSES } from '@mantle/web-ui/runners-types';
 
 /**
  * GET /api/runners?status=&name=&queue=&hours=&page=

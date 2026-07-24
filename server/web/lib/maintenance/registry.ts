@@ -10,22 +10,11 @@
  * data (plus invariant assertions) — it must stay importable from CLI, worker,
  * and Next.js contexts alike, so no side effects and no app imports.
  */
-
-export type TaskKind =
-  /** Drifts back as new data arrives — the only kind eligible for scheduling. */
-  | 'recurring'
-  /** One-shot fix re-run only when a monitor (dashboard card) flags drift. */
-  | 'remedy'
-  /** Deliberate operational event: model change, key rotation, deploy bootstrap. */
-  | 'ops'
-  /** Historical migration/backfill. */
-  | 'backfill';
+import type { TaskCost, TaskKind, TaskStatus } from '@mantle/web-ui/types/maintenance';
+export type { TaskCost, TaskKind, TaskStatus };
 
 /** What a LIVE run of the task spends. `sql` and `io` are free; `imap` costs
  * network round-trips to the mailbox; `embedding`/`llm` are real model spend. */
-export type TaskCost = 'sql' | 'io' | 'imap' | 'crypto' | 'embedding' | 'llm';
-
-export type TaskStatus = 'live' | 'retired';
 
 export interface MaintenanceTask {
   slug: string;

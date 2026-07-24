@@ -1,31 +1,26 @@
 import { redirect } from 'next/navigation';
-import { LoginForm } from './login-form';
-import { getSessionUser, isFirstRun } from '@/lib/auth';
 
-export default async function LoginPage({
+/**
+ * Owner login moved to the CLIENT app with the split — this stub keeps the
+ * canonical domain's stale bookmarks and the middleware's unauthenticated
+ * 307→/login chain working by forwarding to the client origin.
+ *
+ * MANTLE_CLIENT_ORIGIN unset (single-host/monolith-style deployment where the
+ * client app is served elsewhere behind the same host, or a headless box with
+ * no owner UI at all) ⇒ a minimal explanation page would be nicer, but a
+ * redirect loop is worse — so we just fall back to the team surface, which is
+ * this origin's only interactive login-like entry.
+ */
+export default async function LoginStub({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; error?: string }>;
+  searchParams: Promise<{ next?: string }>;
 }) {
-  const params = await searchParams;
-  const user = await getSessionUser();
-  if (user) redirect(params.next ?? '/');
-
-  // Fresh install (empty auth.users) ⇒ first-run "create your account" instead
-  // of sign-in. The signup endpoint enforces the same single-user gate server-side.
-  const firstRun = await isFirstRun();
-
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm space-y-8">
-        <div className="space-y-2 text-center">
-          <h1 className="font-logo text-5xl leading-none text-primary">mantle</h1>
-          <p className="text-sm text-muted-foreground">
-            {firstRun ? 'Create your account to begin.' : 'Sign in to your tree.'}
-          </p>
-        </div>
-        <LoginForm mode={firstRun ? 'signup' : 'login'} next={params.next} error={params.error} />
-      </div>
-    </main>
-  );
+  const sp = await searchParams;
+  const clientOrigin = (process.env.MANTLE_CLIENT_ORIGIN ?? '').replace(/\/+$/, '');
+  if (clientOrigin) {
+    const next = sp.next ? `?next=${encodeURIComponent(sp.next)}` : '';
+    redirect(`${clientOrigin}/login${next}`);
+  }
+  redirect('/team');
 }

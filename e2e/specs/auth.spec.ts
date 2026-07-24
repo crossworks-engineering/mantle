@@ -22,13 +22,15 @@ test.describe('auth', () => {
     expect(typeof body.assetToken).toBe('string');
   });
 
-  test('owner page load is not bounced to /login', async ({ ownerPage }) => {
+  test('owner page load is not bounced to /login', async ({ ownerPage, topology }) => {
+    test.skip(topology === 'same-origin', 'owner UI lives on the client app');
     await ownerPage.goto('/');
     await ownerPage.waitForLoadState('domcontentloaded');
     expect(new URL(ownerPage.url()).pathname).not.toBe('/login');
   });
 
-  test('anonymous visitor is bounced to /login', async ({ visitorPage, clientURL }) => {
+  test('anonymous visitor is bounced to /login', async ({ visitorPage, clientURL, topology }) => {
+    test.skip(topology === 'same-origin', 'owner UI lives on the client app');
     await visitorPage.goto(`${clientURL}/pages`);
     await visitorPage.waitForURL(/\/login/);
     expect(new URL(visitorPage.url()).pathname).toBe('/login');

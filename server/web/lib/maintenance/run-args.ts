@@ -5,7 +5,7 @@
  * to keep this testable.
  */
 import { isLiveRun, type MaintenanceTask } from './registry';
-import type { StartRunRequest } from './types';
+import type { StartRunRequest } from '@mantle/web-ui/types/maintenance';
 
 export type RunPlan =
   { ok: true; args: string[]; live: boolean } | { ok: false; error: string; status: 400 | 403 };

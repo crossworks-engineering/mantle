@@ -10,7 +10,7 @@
 import { db, agents, skills, toolGroups, eq } from '@mantle/db';
 import { loadProfilePreferences } from '@mantle/content';
 import { listAiWorkers } from '@/lib/ai-workers';
-import { APP_VERSION } from '@/lib/version';
+import { APP_VERSION } from '@mantle/web-ui/version';
 import { diffConfig, countStatuses, type ConfigDiffReport, type LiveConfig } from './config-diff';
 
 export async function computeConfigDiff(ownerId: string): Promise<ConfigDiffReport> {

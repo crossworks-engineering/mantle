@@ -1,6 +1,9 @@
 import { expect, test } from '../lib/fixtures';
 
 test.describe('pages CRUD', () => {
+  // Post-carve, the owner UI exists only on the CLIENT app — the same-origin
+  // project covers the SERVER-origin surfaces; the split project runs this.
+  test.skip(({ topology }) => topology === 'same-origin', 'owner UI lives on the client app');
   test('create via API → visible in the owner UI list → delete', async ({
     ownerApi,
     ownerPage,

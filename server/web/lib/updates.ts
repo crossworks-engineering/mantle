@@ -16,7 +16,7 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { APP_VERSION } from './version';
+import { APP_VERSION } from '@mantle/web-ui/version';
 
 export const RELEASES_REPO = 'crossworks-engineering/mantle';
 export const RELEASES_URL = `https://github.com/${RELEASES_REPO}/releases`;

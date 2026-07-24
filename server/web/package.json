@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "app-runtime": "pnpm --filter @mantle/app-build build:runtime",
+    "app-runtime": "APP_RUNTIME_OUT=\"$PWD/public/app-runtime\" pnpm --filter @mantle/app-build build:runtime",
     "predev": "pnpm run app-runtime",
     "dev": "next dev",
     "prebuild": "pnpm run app-runtime",

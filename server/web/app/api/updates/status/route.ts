@@ -7,7 +7,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
 import { readUpdaterLog, readUpdaterStatus, updaterAvailable } from '@/lib/updates';
-import { APP_VERSION } from '@/lib/version';
+import { APP_VERSION } from '@mantle/web-ui/version';
 
 export const dynamic = 'force-dynamic';
 

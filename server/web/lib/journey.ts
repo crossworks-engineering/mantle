@@ -2,8 +2,12 @@ import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db, entities, entityEdges, facts, nodes, traces } from '@mantle/db';
 import { getTrace } from './traces';
-import type { TraceDetail } from './traces-format';
-import { deriveAction, type ActionCategory, type ActionPresentation } from './journey-format';
+import type { TraceDetail } from '@mantle/web-ui/traces-format';
+import {
+  deriveAction,
+  type ActionCategory,
+  type ActionPresentation,
+} from '@mantle/web-ui/journey-format';
 
 /**
  * Journey view data layer (server-only). Reads the observability tables and

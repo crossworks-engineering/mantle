@@ -48,4 +48,11 @@ export const tokenStore = {
       /* ignore */
     }
   },
+  /** Set ONLY the presence cookie — the same-origin cookie-login path has no
+   *  bearer to store but the client middleware still keys off presence. */
+  markPresence(): void {
+    if (typeof document === 'undefined') return;
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${PRESENCE_COOKIE}=1; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax${secure}`;
+  },
 };
