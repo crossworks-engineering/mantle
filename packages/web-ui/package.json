@@ -45,6 +45,7 @@
     "./slugify": "./src/slugify.ts",
     "./styles/themes.css": "./styles/themes.css",
     "./tag-pill": "./src/tag-pill.tsx",
+    "./team-fetch": "./src/team-fetch.ts",
     "./text-colors": "./src/text-colors.ts",
     "./theme-provider": "./src/theme-provider.tsx",
     "./theme-toggle": "./src/theme-toggle.tsx",
