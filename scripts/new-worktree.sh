@@ -56,7 +56,7 @@ git worktree add "$dir" -b "$branch" "$base"
 
 # Copy gitignored local env so the dev server + db tooling work in the worktree.
 copied=0
-for env in apps/web/.env.local .env.local; do
+for env in server/web/.env.local .env.local; do
   [ -f "$env" ] || continue
   mkdir -p "$dir/$(dirname "$env")"
   cp "$env" "$dir/$env"
@@ -72,6 +72,6 @@ cat <<EOF
 
 ✓ worktree ready
     cd $dir            # branch $branch, forked from $base
-    PORT=3100 pnpm -C apps/web dev   # use a non-default port if :3000 is taken
+    PORT=3100 pnpm -C server/web dev   # use a non-default port if :3000 is taken
     scripts/rm-worktree.sh $slug     # tear it down when done
 EOF

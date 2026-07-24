@@ -21,15 +21,15 @@ EOF
 fi
 
 # ── 2. .env.local check ----------------------------------------------------
-# Lives at apps/web/.env.local — Next.js, the workers, MCP, agent, and Drizzle
+# Lives at server/web/.env.local — Next.js, the workers, MCP, agent, and Drizzle
 # all read from there (a single source). The template at the repo root is
-# `.env.example`. Easy mistake: copying to the repo root instead of apps/web/.
-if [[ ! -f apps/web/.env.local ]]; then
+# `.env.example`. Easy mistake: copying to the repo root instead of server/web/.
+if [[ ! -f server/web/.env.local ]]; then
   cat <<EOF >&2
-apps/web/.env.local is missing. Copy the template and fill in the required vars:
+server/web/.env.local is missing. Copy the template and fill in the required vars:
 
-  cp .env.example apps/web/.env.local
-  \$EDITOR apps/web/.env.local
+  cp .env.example server/web/.env.local
+  \$EDITOR server/web/.env.local
 
 Required vars to set (the rest of the file has guidance):
   MANTLE_MASTER_KEY=\$(openssl rand -base64 32)
@@ -69,8 +69,8 @@ docker compose -f docker-compose.dev.yml up -d --wait
 # ── 4. Ensure MinIO bucket --------------------------------------------------
 # Read S3 creds from .env.local so the bucket gets created with the same
 # credentials the app uses. Defaults match docker-compose.dev.yml.
-S3_ACCESS_KEY_VAL=$(grep -E '^S3_ACCESS_KEY=' apps/web/.env.local | head -1 | cut -d= -f2- || echo minio)
-S3_SECRET_KEY_VAL=$(grep -E '^S3_SECRET_KEY=' apps/web/.env.local | head -1 | cut -d= -f2- || echo minio12345)
+S3_ACCESS_KEY_VAL=$(grep -E '^S3_ACCESS_KEY=' server/web/.env.local | head -1 | cut -d= -f2- || echo minio)
+S3_SECRET_KEY_VAL=$(grep -E '^S3_SECRET_KEY=' server/web/.env.local | head -1 | cut -d= -f2- || echo minio12345)
 : "${S3_ACCESS_KEY_VAL:=minio}"
 : "${S3_SECRET_KEY_VAL:=minio12345}"
 
@@ -95,7 +95,7 @@ pnpm -C packages/db migrate
 # pg-boss `start()` at once on a fresh DB and race to create it — leaving the
 # schema missing (a storm of `relation "pgboss.*" does not exist`). Idempotent.
 echo "→ Ensuring pg-boss schema…"
-pnpm -C apps/web pgboss:init
+pnpm -C server/web pgboss:init
 
 # ── 6. Dev servers ---------------------------------------------------------
 echo "→ Starting dev servers…"

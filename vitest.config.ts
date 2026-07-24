@@ -8,7 +8,12 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
-    include: ['packages/**/src/**/*.test.ts', 'apps/**/*.test.ts'],
+    include: [
+      'packages/**/src/**/*.test.ts',
+      'server/**/*.test.ts',
+      'client/**/*.test.ts',
+      'e2e/lib/**/*.test.ts',
+    ],
     environment: 'node',
     globals: false,
     // Workspace packages export raw TS — vitest's esbuild handles them.

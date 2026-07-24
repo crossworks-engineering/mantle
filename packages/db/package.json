@@ -12,8 +12,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "migrate": "tsx --env-file-if-exists=../../apps/web/.env.local src/migrate.ts",
-    "studio": "node --env-file-if-exists=../../apps/web/.env.local --import tsx node_modules/drizzle-kit/bin.cjs studio"
+    "migrate": "tsx --env-file-if-exists=../../server/web/.env.local src/migrate.ts",
+    "studio": "node --env-file-if-exists=../../server/web/.env.local --import tsx node_modules/drizzle-kit/bin.cjs studio"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

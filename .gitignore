@@ -17,7 +17,7 @@ build/
 dist/
 # …but the Apps API route segment is named `build` — it's source, not output.
 # (brackets escaped: `[id]` is a literal dir, not a glob character class.)
-!apps/web/app/api/apps/\[id\]/build/
+!server/web/app/api/apps/\[id\]/build/
 
 # misc
 .DS_Store
@@ -38,15 +38,15 @@ pnpm-debug.log*
 
 # database snapshots — multi-GB local-only artefacts. ROOT-ANCHORED on
 # purpose: the unanchored `backups/` matched at any depth and silently
-# swallowed apps/web/app/(app)/settings/backups/ (the Backups settings
+# swallowed server/web/app/(app)/settings/backups/ (the Backups settings
 # page) — it never reached git or production (caught 2026-06-11).
 /backups/
 
 # MANTLE_FILES_ROOT default — the host-mirrored filesystem. Root-anchored
-# like /backups/ above; apps/web/data is the dev runtime data dir and gets
+# like /backups/ above; server/web/data is the dev runtime data dir and gets
 # its own anchored entry.
 /data/
-/apps/web/data/
+/server/web/data/
 
 # vercel
 .vercel
@@ -78,21 +78,21 @@ skills-lock.json
 
 # Recall-eval run snapshots — regenerated per run, contain personal queries.
 # The gold cases (recall-cases.json) and the runner ARE committed.
-apps/web/scripts/eval/last-run.json
-apps/web/scripts/eval/*.run.json
+server/web/scripts/eval/last-run.json
+server/web/scripts/eval/*.run.json
 
 # Per-app SQLite databases (local dev APP_DB_DIR default) — runtime data.
-apps/web/.app-dbs/
+server/web/.app-dbs/
 
 # Generated shared mini-app runtime (packages/app-build → build:runtime, via pre(dev|build))
-apps/web/public/app-runtime/
+server/web/public/app-runtime/
 
 # Embedded agent-os repo (not part of this project)
 /agent-os/
 .table-dbs
 
 # Local agent scratch data — never commit (personal content)
-apps/agent/
+server/agent/
 
 # e2e suite run artifacts (auth states, logs, traces)
 e2e/.artifacts/

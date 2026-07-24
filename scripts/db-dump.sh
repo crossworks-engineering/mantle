@@ -62,7 +62,7 @@ else
   if docker exec "$APP_CONTAINER" sh -c '
         set -e
         rm -rf /tmp/appdbsnap && mkdir -p /tmp/appdbsnap
-        pnpm -C apps/web exec tsx scripts/backup-app-dbs.ts /tmp/appdbsnap 1>&2
+        pnpm -C server/web exec tsx scripts/backup-app-dbs.ts /tmp/appdbsnap 1>&2
         tar -C /tmp/appdbsnap -czf - .
       ' > "$APPDB_OUT"; then
     docker exec "$APP_CONTAINER" rm -rf /tmp/appdbsnap >/dev/null 2>&1 || true
@@ -90,7 +90,7 @@ else
   if docker exec "$APP_CONTAINER" sh -c '
         set -e
         rm -rf /tmp/tabledbsnap && mkdir -p /tmp/tabledbsnap
-        pnpm -C apps/web exec tsx scripts/backup-table-dbs.ts /tmp/tabledbsnap 1>&2
+        pnpm -C server/web exec tsx scripts/backup-table-dbs.ts /tmp/tabledbsnap 1>&2
         tar -C /tmp/tabledbsnap -czf - .
       ' > "$TABLEDB_OUT"; then
     docker exec "$APP_CONTAINER" rm -rf /tmp/tabledbsnap >/dev/null 2>&1 || true

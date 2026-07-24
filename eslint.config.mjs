@@ -27,7 +27,7 @@ export default tseslint.config(
       // Generated Next type shim + generated @host kit bundles (minified,
       // gitignored) — not ours to lint.
       '**/next-env.d.ts',
-      'apps/web/public/app-runtime/**',
+      'server/web/public/app-runtime/**',
       // Local Docker-stack runtime bind-mounts (gitignored; often root-owned
       // mode 700 — must be pruned so `eslint .` doesn't die on EACCES).
       'data/**',
@@ -72,7 +72,7 @@ export default tseslint.config(
     // old `next lint` setup, and add real value (hook-deps, next foot-guns).
     // exhaustive-deps backlog triaged + burned down (audit #4) — now `error`;
     // intentional omissions carry an inline `eslint-disable` with a reason.
-    files: ['apps/web/**/*.{ts,tsx}'],
+    files: ['server/web/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
     rules: {
       'react-hooks/rules-of-hooks': 'warn',

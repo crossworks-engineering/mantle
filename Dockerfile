@@ -7,7 +7,7 @@
 # Build:   docker build -t <namespace>/mantle:<tag> .
 # Or use docker-compose.yml, which runs every service from this one image.
 #
-# Note: apps/mcp is intentionally NOT run here. The MCP server is stdio-only
+# Note: server/mcp is intentionally NOT run here. The MCP server is stdio-only
 # (StdioServerTransport) — a detached daemon would hit EOF on stdin and
 # crash-loop. It runs as a subprocess of whatever launches it (Claude Desktop)
 # until the HTTP transport lands. See docs/architecture.md §16.
@@ -26,16 +26,16 @@ FROM node:24-slim AS deps
 WORKDIR /app
 
 # Copy manifests first so the install layer is cached when only source changes.
-# This list MUST contain every workspace package.json (apps/* + packages/*) or
+# This list MUST contain every workspace package.json (server/* + client/* + packages/*) or
 # `pnpm install --frozen-lockfile` below fails ("missing"/"lockfile mismatch")
 # because the workspace it sees doesn't match the lockfile. Keep it in sync when
 # adding a package — verify with:
 #   diff <(grep -oE '(apps|packages)/[a-z-]+/package.json' Dockerfile | sort -u) \
 #        <(find apps packages -maxdepth 2 -name package.json -not -path '*/node_modules/*' | sort)
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY apps/api/package.json apps/api/package.json
-COPY apps/mcp/package.json apps/mcp/package.json
-COPY apps/web/package.json apps/web/package.json
+COPY server/api/package.json server/api/package.json
+COPY server/mcp/package.json server/mcp/package.json
+COPY server/web/package.json server/web/package.json
 COPY packages/agent-runtime/package.json packages/agent-runtime/package.json
 COPY packages/api-keys/package.json packages/api-keys/package.json
 COPY packages/app-build/package.json packages/app-build/package.json
@@ -102,7 +102,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 # NOTE: no browser in this image. The Pages → PDF export drives the `browser`
 # compose sidecar (browserless/chromium) over websocket via puppeteer-core —
-# see apps/web/lib/render-pdf.ts and the compose service definition.
+# see server/web/lib/render-pdf.ts and the compose service definition.
 # Build identity — surfaced next to the wordmark + at /api/version. `.git` is
 # excluded from the build context (.dockerignore), so next.config.ts can't read
 # the SHA inside the image; the build script (scripts/docker-build-push.sh)
@@ -114,7 +114,7 @@ ENV MANTLE_BUILD_TIME=$MANTLE_BUILD_TIME
 # `.next/cache` is the build cache (~1.1GB) — `next start` never reads it, so
 # drop it: it's the layer that changes every build, so this also keeps
 # incremental re-pulls small (the runtime .next is only ~50MB).
-RUN pnpm -C apps/web build && rm -rf apps/web/.next/cache
+RUN pnpm -C server/web build && rm -rf server/web/.next/cache
 # Release-owned deploy files, embedded so (a) the updater sidecar can extract
 # the CANONICAL docker-compose.yml for this exact release from the already-
 # pulled image (in-band — no extra network fetch) and refresh a pristine box
@@ -125,4 +125,4 @@ RUN pnpm -C apps/web build && rm -rf apps/web/.next/cache
 COPY docker-compose.yml /app/release/docker-compose.yml
 COPY infra/updater/updater.sh /app/release/updater.sh
 EXPOSE 3000
-CMD ["pnpm", "-C", "apps/web", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
+CMD ["pnpm", "-C", "server/web", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3000"]

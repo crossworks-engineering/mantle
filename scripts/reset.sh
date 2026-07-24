@@ -4,7 +4,7 @@
 # takes a backup first (in case you want anything back), then runs the full
 # bring-up via up.sh.
 #
-# What it does NOT touch: apps/web/.env.local (your keys), the host filesystem
+# What it does NOT touch: server/web/.env.local (your keys), the host filesystem
 # outside ${MANTLE_DATA_DIR:-./data}/{postgres,minio}, the production stack, or
 # any other docker-compose project.
 
@@ -32,7 +32,7 @@ This will:
   • Re-run \`pnpm start\` (infra → bucket → migrate → pg-boss → dev servers)
 
 What it KEEPS:
-  • apps/web/.env.local (your API keys, master key)
+  • server/web/.env.local (your API keys, master key)
   • MANTLE_FILES_ROOT (the /files disk mirror), if you've set one —
     delete it yourself for a truly blank slate
   • production data and containers (untouched)
@@ -78,12 +78,12 @@ fi
 # After a wipe, ALLOWED_USER_ID points at a user that no longer exists, which
 # would silently pin every worker to a ghost. Comment it out so waitForOwner
 # adopts the fresh signup automatically.
-if grep -qE '^ALLOWED_USER_ID=' apps/web/.env.local 2>/dev/null; then
-  echo "→ Commenting out ALLOWED_USER_ID in apps/web/.env.local…"
+if grep -qE '^ALLOWED_USER_ID=' server/web/.env.local 2>/dev/null; then
+  echo "→ Commenting out ALLOWED_USER_ID in server/web/.env.local…"
   # Use a tempfile (portable sed -i across BSD/GNU)
   tmp="$(mktemp)"
   sed 's/^ALLOWED_USER_ID=/# ALLOWED_USER_ID (cleared by reset, fresh signup becomes owner) =/' \
-    apps/web/.env.local > "$tmp" && mv "$tmp" apps/web/.env.local
+    server/web/.env.local > "$tmp" && mv "$tmp" server/web/.env.local
   echo "  (re-pin to the new uuid after onboarding if you want stable restarts)"
 fi
 

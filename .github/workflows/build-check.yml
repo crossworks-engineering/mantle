@@ -1,7 +1,7 @@
 # CI build-check — validate a change BEFORE it can reach a deploy.
 #
 # Runs typecheck + lint (ESLint) + format check (Prettier) + the full vitest
-# suite + the apps/web PRODUCTION build (the edge-runtime / webpack gate that
+# suite + the server/web PRODUCTION build (the edge-runtime / webpack gate that
 # tsc + vitest miss — see docs/deploy-preflight). This is the durable
 # replacement for building locally or on a worktree: the build runs OFF your
 # machine, on the right tree, before anything is merged or tagged.
@@ -70,8 +70,8 @@ jobs:
         run: pnpm test
 
       # The real edge/webpack gate. Runs without a DB, same as the image build.
-      - name: Build (apps/web)
-        run: pnpm -C apps/web build
+      - name: Build (server/web)
+        run: pnpm -C server/web build
 
   # The e2e regression net for the server/client split (e2e/). Boots the
   # hermetic throwaway stack (pg + minio + browser sidecar on shifted ports),
