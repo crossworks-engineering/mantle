@@ -98,7 +98,17 @@ export function teamFetch(path: string, init?: RequestInit): Promise<Response> {
 export function teamEventStream(
   path: string,
   onMessage: (data: string) => void,
-  opts?: { onError?: (err: unknown) => void; onUnauthorized?: () => void },
+  opts?: {
+    onError?: (err: unknown) => void;
+    onUnauthorized?: () => void;
+    /** Bound CONSECUTIVE failed reconnects — after this many, `onExhausted`
+     *  fires instead of retrying forever. Turn-stream consumers use it to
+     *  reconcile against the durable reply so an outage can't strand a
+     *  spinner (the server's replay buffer lives 15 min — a reconnect inside
+     *  that window replays the missed `done`). */
+    maxAttempts?: number;
+    onExhausted?: () => void;
+  },
 ): () => void {
   return eventStreamCore(
     (headers, signal) => teamFetch(path, { signal, headers }),
@@ -107,6 +117,10 @@ export function teamEventStream(
       opts?.onUnauthorized?.();
     },
     onMessage,
-    opts?.onError ? { onError: opts.onError } : undefined,
+    {
+      onError: opts?.onError,
+      maxAttempts: opts?.maxAttempts,
+      onExhausted: opts?.onExhausted,
+    },
   );
 }

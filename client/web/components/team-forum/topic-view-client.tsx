@@ -309,6 +309,14 @@ export function TopicViewClient({
             // the not-found state this view already renders.
             if (esRef.current === dispose) finishTurn();
           },
+          // A real outage must not strand the spinner: after a handful of
+          // failed reconnects, give up and reconcile against the durable
+          // reply (finishTurn refetches) — the pre-carve defensiveness, with
+          // resume chances first.
+          maxAttempts: 5,
+          onExhausted: () => {
+            if (esRef.current === dispose) finishTurn();
+          },
         },
       );
       esRef.current = dispose;

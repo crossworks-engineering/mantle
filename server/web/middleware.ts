@@ -121,10 +121,16 @@ function corsOrigin(req: NextRequest, path: string): string | null {
   const origin = req.headers.get('origin');
   if (!origin) return null; // same-origin / non-browser — no CORS needed
   // The `*` wildcard reflects any origin — convenient for the bearer-only data
-  // API, but a foot-gun on the auth surface (`/api/auth/login` etc. return a
-  // bearer token in the body), so the wildcard NEVER applies there: auth routes
-  // require an explicit allowlist entry. Non-auth /api keeps the wildcard.
-  const isAuth = path === '/api/auth' || path.startsWith('/api/auth/');
+  // API, but a foot-gun on the auth surfaces (`/api/auth/login` etc. return a
+  // bearer token in the body, and `/api/team/auth {mode:'bearer'}` +
+  // `/api/team/sso` handle the TEAM credential the same way), so the wildcard
+  // NEVER applies there: credential-minting routes require an explicit
+  // allowlist entry. The rest of /api keeps the wildcard.
+  const isAuth =
+    path === '/api/auth' ||
+    path.startsWith('/api/auth/') ||
+    path === '/api/team/auth' ||
+    path === '/api/team/sso';
   if (CORS_ORIGINS.includes('*') && !isAuth) return origin;
   return CORS_ORIGINS.includes(origin) ? origin : null;
 }
