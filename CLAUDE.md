@@ -41,8 +41,8 @@ store, so ~seconds), and copies `.env.local`. Tear down with
 
 ## Other guidance
 
-- **Frontend-only dev (no local Docker/DB): `pnpm dev:fe`** — runs the web app
-  detached against a deployed brain (the test box). Setup + troubleshooting:
+- **Frontend-only dev (no local Docker/DB): `pnpm dev:fe`** — runs the owner UI
+  (`client/web`) detached against a deployed brain (the test box). Setup + troubleshooting:
   [docs/db-less-dev.md](docs/db-less-dev.md). Plain `pnpm dev` expects a full
   local stack and will 500 without one.
 - UI conventions: [server/web/CLAUDE.md](server/web/CLAUDE.md).
