@@ -305,16 +305,30 @@ export function verifyTeamVisitorValue(
 export const TEAM_CHAT_COOKIE = 'mantle_team_chat';
 const TEAM_CHAT_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days, then re-enter the token.
 
+/**
+ * Mint the signed team-chat credential for an (owner, contact) pair. One
+ * format, two carriers: same-origin browsers get it as the `mantle_team_chat`
+ * cookie value; the split client app holds it in localStorage and sends it as
+ * `Authorization: Bearer` (resolveTeamChatCaller verifies both identically).
+ */
+export function buildTeamChatToken(
+  ownerId: string,
+  contactId: string,
+): { value: string; maxAgeSec: number; expiresAt: number } {
+  const exp = Math.floor(Date.now() / 1000) + TEAM_CHAT_TTL_SECONDS;
+  const payload = b64urlEncode(
+    Buffer.from(JSON.stringify({ own: ownerId, cid: contactId, exp, k: 'c' }), 'utf8'),
+  );
+  return { value: sign(payload), maxAgeSec: TEAM_CHAT_TTL_SECONDS, expiresAt: exp };
+}
+
 /** Mint the team-chat cookie value for an (owner, contact) pair. */
 export function buildTeamChatCookie(
   ownerId: string,
   contactId: string,
 ): { value: string; maxAgeSec: number } {
-  const exp = Math.floor(Date.now() / 1000) + TEAM_CHAT_TTL_SECONDS;
-  const payload = b64urlEncode(
-    Buffer.from(JSON.stringify({ own: ownerId, cid: contactId, exp, k: 'c' }), 'utf8'),
-  );
-  return { value: sign(payload), maxAgeSec: TEAM_CHAT_TTL_SECONDS };
+  const { value, maxAgeSec } = buildTeamChatToken(ownerId, contactId);
+  return { value, maxAgeSec };
 }
 
 /** Verify a team-chat cookie value: signature, expiry, kind (`k:'c'`). No DB —

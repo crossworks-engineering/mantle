@@ -51,6 +51,31 @@ describe('team-chat cookie', () => {
     const chatCookie = buildTeamChatCookie('owner-1', 'contact-9');
     expect(verifyTeamVisitorValue(chatCookie.value)).toBeNull();
   });
+
+  it('NEVER accepts an owner bearer (kind isolation, k:m vs k:c)', async () => {
+    const { buildMobileToken, verifyTeamChatValue } = await authLib();
+    const bearer = buildMobileToken('owner-1', 'jti-1', 3600);
+    expect(verifyTeamChatValue(bearer.value)).toBeNull();
+  });
+});
+
+describe('team-chat token (the bearer carrier of the same credential)', () => {
+  it('buildTeamChatToken and buildTeamChatCookie mint the same verifiable shape', async () => {
+    const { buildTeamChatToken, buildTeamChatCookie, verifyTeamChatValue } = await authLib();
+    const t = buildTeamChatToken('owner-1', 'contact-9');
+    const c = buildTeamChatCookie('owner-1', 'contact-9');
+    expect(verifyTeamChatValue(t.value)).toEqual({ ownerId: 'owner-1', contactId: 'contact-9' });
+    expect(verifyTeamChatValue(c.value)).toEqual({ ownerId: 'owner-1', contactId: 'contact-9' });
+    expect(t.maxAgeSec).toBe(c.maxAgeSec);
+  });
+
+  it('expiresAt matches the claim TTL', async () => {
+    const { buildTeamChatToken } = await authLib();
+    const before = Math.floor(Date.now() / 1000);
+    const t = buildTeamChatToken('owner-1', 'contact-9');
+    expect(t.expiresAt).toBeGreaterThanOrEqual(before + t.maxAgeSec - 2);
+    expect(t.expiresAt).toBeLessThanOrEqual(before + t.maxAgeSec + 2);
+  });
 });
 
 describe('team turn ids are contact-scoped (cross-member isolation)', () => {
