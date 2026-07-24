@@ -22,6 +22,19 @@
 	}
 }
 
+# The owner-UI (client) vhost — v0.200.0 split. Point app.<domain> DNS here and
+# set MANTLE_CLIENT_SITE_ADDRESS in .env; the client stack's client-web joins
+# this stack's network (see docker-compose.client.yml). Defaults to :8080 so a
+# server-only box (no client stack, var unset) doesn't ACME-thrash a hostname
+# it doesn't serve — the port listens, gets no traffic, and costs nothing.
+{$MANTLE_CLIENT_SITE_ADDRESS::8080} {
+	encode zstd gzip
+	reverse_proxy client-web:3000
+	request_body {
+		max_size 100MB
+	}
+}
+
 # NOTE: this is the generic, single-site front door shipped to every install.
 # The author's prod also co-locates a "Mantle Push" relay on a second site block
 # (push.crossworks.network). That stays OUT of the public Caddyfile on purpose:

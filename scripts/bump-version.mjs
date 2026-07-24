@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Bump the Mantle app version. The root package.json `version` is the single
-// source of truth; server/web/package.json is kept in lockstep so the two never
+// source of truth; server/web + client/web package.json are kept in lockstep so they never
 // drift. next.config.ts reads the root value and inlines it into the build.
 //
 // Usage:
@@ -20,7 +20,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const targets = ['package.json', 'server/web/package.json'].map((p) => join(root, p));
+const targets = ['package.json', 'server/web/package.json', 'client/web/package.json'].map((p) =>
+  join(root, p),
+);
 
 const arg = process.argv[2];
 if (!arg) {

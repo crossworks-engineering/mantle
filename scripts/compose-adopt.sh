@@ -39,13 +39,15 @@ for a in "$@"; do [ "$a" = "--apply" ] && APPLY=1; done
 
 NS=$(sed -n 's/^MANTLE_IMAGE_NAMESPACE=//p' "$STACK/.env" 2>/dev/null | head -1)
 TAG=$(sed -n 's/^MANTLE_IMAGE_TAG=//p' "$STACK/.env" 2>/dev/null | head -1)
-IMG="${NS:-titanwest}/mantle:${TAG:-latest}"
+IMG="${NS:-titanwest}/mantle-server:${TAG:-latest}"
 
-echo "▶ extracting canonical docker-compose.yml from $IMG"
+echo "▶ extracting canonical compose files from $IMG"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 CID=$(docker create "$IMG")
 docker cp "$CID:/app/release/docker-compose.yml" "$TMP/canonical.yml" 2>/dev/null || true
+# v0.200+ also ships the client-stack compose; older images simply don't have it.
+docker cp "$CID:/app/release/docker-compose.client.yml" "$TMP/canonical.client.yml" 2>/dev/null || true
 docker rm "$CID" >/dev/null
 [ -s "$TMP/canonical.yml" ] || {
   echo "✘ $IMG ships no embedded canonical (image is older than v0.142)" >&2
@@ -75,4 +77,18 @@ mv "$STACK/docker-compose.yml.release.tmp" "$STACK/docker-compose.yml.release"
 cp "$TMP/canonical.yml" "$STACK/docker-compose.yml.tmp"
 mv "$STACK/docker-compose.yml.tmp" "$STACK/docker-compose.yml"
 echo "✔ canonical installed (previous file: docker-compose.yml.pre-adopt.$TS)"
+# Client compose (v0.200+): adopt/baseline it too when the image ships one AND
+# the box runs (or is adopting) the client stack — presence of either the box
+# file or the canonical means it applies here.
+if [ -s "$TMP/canonical.client.yml" ]; then
+  if [ -f "$STACK/docker-compose.client.yml" ]; then
+    cp "$STACK/docker-compose.client.yml" "$STACK/docker-compose.client.yml.pre-adopt.$TS"
+  fi
+  cp "$TMP/canonical.client.yml" "$STACK/docker-compose.client.yml.release.tmp"
+  mv "$STACK/docker-compose.client.yml.release.tmp" "$STACK/docker-compose.client.yml.release"
+  cp "$TMP/canonical.client.yml" "$STACK/docker-compose.client.yml.tmp"
+  mv "$STACK/docker-compose.client.yml.tmp" "$STACK/docker-compose.client.yml"
+  echo "✔ client compose canonical installed"
+fi
 echo "  converge with: docker compose up -d --remove-orphans"
+echo "  (client stack: docker compose -f docker-compose.client.yml --project-directory . up -d)"

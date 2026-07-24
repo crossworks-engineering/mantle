@@ -4,6 +4,33 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.200.0 — 2026-07-24
+
+**The true server/client split.** Mantle is now TWO applications shipped as two
+images from one lockstep release: **`mantle-server`** — the headless backend
+(the full `/api/**` surface, the DBOS runner, every worker, and the public
+surfaces: `/s/<token>` shares, the `/team` workspace, `/hub`, PDF print) — and
+**`mantle-client`** — the owner UI, a ZERO-SECRET Next app holding no database
+connection, no session secret, and no server code, driving the server origin
+purely over bearer + CORS. Run the server alone for a headless brain; point any
+client at any server via one env var (`MANTLE_SERVER_ORIGIN`, read per-request
+— one prebuilt client image serves every box).
+
+Under the hood: the owner web session is a first-class bearer (30-day tokens
+via `POST /api/auth/token`, atomic rotation via `/token/refresh`, per-device
+revocation with a **Signed-in devices** panel under Settings → Security); PDF
+export works over ANY auth transport (the exporter mints its own short-lived
+internal render cookie for the Chromium sidecar); the shared UI layer lives in
+`packages/web-ui`; and an ESLint boundary makes a server-value import in the
+client tier a build error. Deploys: `docker-compose.yml` (server) +
+`docker-compose.client.yml` (client) share one `.env` and one
+`MANTLE_IMAGE_TAG`; the server Caddy gains an `app.<domain>` vhost
+(`MANTLE_CLIENT_SITE_ADDRESS`); the updater rolls and drift-checks both stacks.
+A new end-to-end Playwright net (owner flows, SSE, asset tokens, shares, team
+tokens, PDF, mini-app sandbox — run in BOTH topologies) gates the whole arc,
+and set `MANTLE_PUBLIC_URL` on every box: the `NEXT_PUBLIC_APP_URL` server-side
+fallback is deprecated.
+
 ## v0.160.2 — 2026-07-23
 
 **Postgres 18 is the default; Tika and Chromium bumped.** The bundled database moves

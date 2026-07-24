@@ -1,11 +1,14 @@
-# Single Mantle image. Every runtime service — web, agent, the four workers,
-# and the one-shot migrate — is the SAME image; they differ only in the command
-# the compose file runs (web → `next start`, agent → its entry, workers → their
-# tsx scripts, migrate → the migrator). One artifact to build, version, push,
-# and pull instead of seven near-identical ones.
+# TWO Mantle images from one file (v0.200.0 split):
 #
-# Build:   docker build -t <namespace>/mantle:<tag> .
-# Or use docker-compose.yml, which runs every service from this one image.
+#   --target server → mantle-server: every backend service — API/web host,
+#     DBOS runner, the workers, one-shot migrate — same image, different
+#     compose `command:` per service (docker-compose.yml).
+#   --target client → mantle-client: the ZERO-SECRET owner UI (client/web),
+#     one Next server, no DB/no secrets (docker-compose.client.yml).
+#
+# Build:  docker build --target server -t <ns>/mantle-server:<tag> .
+#         docker build --target client -t <ns>/mantle-client:<tag> .
+# One MANTLE_IMAGE_TAG drives both composes — releases are lockstep.
 #
 # Note: server/mcp is intentionally NOT run here. The MCP server is stdio-only
 # (StdioServerTransport) — a detached daemon would hit EOF on stdin and
@@ -30,12 +33,14 @@ WORKDIR /app
 # `pnpm install --frozen-lockfile` below fails ("missing"/"lockfile mismatch")
 # because the workspace it sees doesn't match the lockfile. Keep it in sync when
 # adding a package — verify with:
-#   diff <(grep -oE '(apps|packages)/[a-z-]+/package.json' Dockerfile | sort -u) \
-#        <(find apps packages -maxdepth 2 -name package.json -not -path '*/node_modules/*' | sort)
+#   diff <(grep -oE '(server|client|packages)/[a-z-]+/package.json|e2e/package.json' Dockerfile | sort -u) \
+#        <(find server client packages e2e -maxdepth 2 -name package.json -not -path '*/node_modules/*' | sort -u)
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY server/api/package.json server/api/package.json
 COPY server/mcp/package.json server/mcp/package.json
 COPY server/web/package.json server/web/package.json
+COPY client/web/package.json client/web/package.json
+COPY e2e/package.json e2e/package.json
 COPY packages/agent-runtime/package.json packages/agent-runtime/package.json
 COPY packages/api-keys/package.json packages/api-keys/package.json
 COPY packages/app-build/package.json packages/app-build/package.json
@@ -78,11 +83,11 @@ RUN apt-get update \
 # Now copy sources.
 COPY . .
 
-# ── 2. app: the one runtime image — workspace + the Next production build ─────
+# ── 2. server: backend runtime image — workspace + the server Next build ─────
 # Carries source + node_modules + the compiled .next, so the SAME image can run
 # `next start` (web), the agent, the tsx workers, and the migrator — selected by
 # the compose `command:` per service. Defaults to the web server.
-FROM deps AS app
+FROM deps AS server
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 # pg_dump for the scheduled-backup feature (/settings/backups). Must be the
@@ -123,6 +128,23 @@ RUN pnpm -C server/web build && rm -rf server/web/.next/cache
 # not invalidate the (expensive) next-build cache. See infra/updater/updater.sh
 # (compose refresh) + docs/deploy.md.
 COPY docker-compose.yml /app/release/docker-compose.yml
+COPY docker-compose.client.yml /app/release/docker-compose.client.yml
+COPY infra/caddy/Caddyfile /app/release/Caddyfile
 COPY infra/updater/updater.sh /app/release/updater.sh
 EXPOSE 3000
 CMD ["pnpm", "-C", "server/web", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
+
+# ── 3. client: the zero-secret owner-UI image ────────────────────────────────
+# Same deps layer (one lockfile, shared cache); only client/web is built. No
+# DB, no SESSION_SECRET — runtime config is compose env (MANTLE_SERVER_ORIGIN)
+# read per-request by /env.js. Small public surface: `next start` only.
+FROM deps AS client
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ARG MANTLE_GIT_SHA=""
+ARG MANTLE_BUILD_TIME=""
+ENV MANTLE_GIT_SHA=$MANTLE_GIT_SHA
+ENV MANTLE_BUILD_TIME=$MANTLE_BUILD_TIME
+RUN pnpm -C client/web build && rm -rf client/web/.next/cache
+EXPOSE 3000
+CMD ["pnpm", "-C", "client/web", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3000"]

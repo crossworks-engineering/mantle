@@ -1,0 +1,83 @@
+# Mantle CLIENT stack — the zero-secret owner UI (v0.200.0 split).
+#
+# ONE service: the client/web Next app. No database, no S3, no SESSION_SECRET —
+# every byte of data comes from the SERVER stack's origin over bearer + CORS.
+# Runtime config is plain env read per-request by /env.js, so one pulled image
+# serves any server origin.
+#
+# Deployment shapes:
+#   Single box (the fleet default): run beside the server stack; this service
+#     joins the server stack's network (external: mantle_default) and the
+#     server's Caddy fronts it at the app.<domain> vhost
+#     (MANTLE_CLIENT_SITE_ADDRESS in the server .env).
+#   Separate box: `--profile standalone` adds a dedicated Caddy front door.
+#
+# Version: the SAME MANTLE_IMAGE_TAG as the server stack — releases are
+# lockstep; never roll one without the other.
+name: mantle-client
+
+services:
+  client-web:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-client:${MANTLE_IMAGE_TAG:-latest}
+    build:
+      context: .
+      target: client
+      args:
+        MANTLE_GIT_SHA: ${MANTLE_GIT_SHA:-}
+        MANTLE_BUILD_TIME: ${MANTLE_BUILD_TIME:-}
+    container_name: mantle_client_web
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      # The server stack's public origin — the ONLY config this app needs.
+      # Empty ⇒ same-origin (a reverse proxy serving both apps on one host).
+      MANTLE_SERVER_ORIGIN: ${MANTLE_SERVER_ORIGIN:-}
+      # Mirrors the server's live-turn-streaming gate for the UI feature flag.
+      MANTLE_TURN_STREAMING: ${MANTLE_TURN_STREAMING:-}
+      NODE_ENV: production
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "node -e \"fetch('http://127.0.0.1:3000/env.js').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - mantle
+
+  # Separate-box deployments only (`docker compose --profile standalone up`):
+  # a dedicated HTTPS front door. Single-box installs use the SERVER stack's
+  # Caddy instead (app.<domain> vhost).
+  caddy:
+    profiles: ['standalone']
+    image: caddy:2-alpine
+    container_name: mantle_client_caddy
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      MANTLE_CLIENT_SITE_ADDRESS: ${MANTLE_CLIENT_SITE_ADDRESS:-:80}
+    command: >
+      sh -c 'printf "{$$MANTLE_CLIENT_SITE_ADDRESS::80} {\n  encode zstd gzip\n  reverse_proxy client-web:3000\n  request_body {\n    max_size 100MB\n  }\n}\n" > /etc/caddy/Caddyfile && caddy run --config /etc/caddy/Caddyfile --adapter caddyfile'
+    volumes:
+      - caddy_client_data:/data
+      - caddy_client_config:/config
+    networks:
+      - mantle
+
+networks:
+  mantle:
+    # Single-box default: join the SERVER stack's network so the server Caddy
+    # can reach client-web:3000. On a separate box, override with a local
+    # network via docker-compose.override.yml (and use the standalone profile).
+    external: true
+    name: mantle_default
+
+volumes:
+  caddy_client_data:
+  caddy_client_config:

@@ -28,6 +28,7 @@ export default tseslint.config(
       // gitignored) — not ours to lint.
       '**/next-env.d.ts',
       'server/web/public/app-runtime/**',
+      'client/web/public/app-runtime/**',
       // Local Docker-stack runtime bind-mounts (gitignored; often root-owned
       // mode 700 — must be pruned so `eslint .` doesn't die on EACCES).
       'data/**',

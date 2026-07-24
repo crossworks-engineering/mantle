@@ -210,6 +210,8 @@ export async function readUpdaterStatus(): Promise<UpdaterStatus | null> {
 
 const RELEASE_COMPOSE_PATH =
   process.env.MANTLE_RELEASE_COMPOSE_PATH ?? '/app/release/docker-compose.yml';
+const RELEASE_CLIENT_COMPOSE_PATH =
+  process.env.MANTLE_RELEASE_CLIENT_COMPOSE_PATH ?? '/app/release/docker-compose.client.yml';
 
 export type ComposeState =
   | 'in-sync' // box compose == this release's canonical
@@ -223,43 +225,68 @@ export type ComposeStatus = {
   /** The updater's last refresh outcome verbatim (e.g. 'refreshed',
    *  'modified', 'no-baseline', 'unavailable'), for the details view. */
   refresh: string | null;
+  /** The CLIENT stack's compose (v0.200 split). 'absent' state = a
+   *  server-only box (no docker-compose.client.yml — nothing to drift). */
+  client: { state: ComposeState | 'absent'; refresh: string | null };
   checkedAt: string | null;
 };
 
-/** Canonical-compose hash is constant for the life of the build. */
-let canonicalComposeSha: string | null | undefined;
+/** Canonical-compose hashes are constant for the life of the build. */
+const canonicalShaCache = new Map<string, string | null>();
 
-async function releaseComposeSha(): Promise<string | null> {
-  if (canonicalComposeSha !== undefined) return canonicalComposeSha;
+async function canonicalSha(path_: string): Promise<string | null> {
+  const hit = canonicalShaCache.get(path_);
+  if (hit !== undefined) return hit;
+  let sha: string | null;
   try {
-    const buf = await fs.readFile(RELEASE_COMPOSE_PATH);
-    canonicalComposeSha = createHash('sha256').update(buf).digest('hex');
+    const buf = await fs.readFile(path_);
+    sha = createHash('sha256').update(buf).digest('hex');
   } catch {
-    canonicalComposeSha = null; // dev / pre-embed image
+    sha = null; // dev / pre-embed image
   }
-  return canonicalComposeSha;
+  canonicalShaCache.set(path_, sha);
+  return sha;
+}
+
+function classify(boxSha: string, baselineSha: string, canonical: string | null): ComposeState {
+  if (!canonical || !boxSha) return 'unknown';
+  if (boxSha === canonical) return 'in-sync';
+  if (!baselineSha) return 'no-baseline';
+  if (boxSha === baselineSha) return 'stale';
+  return 'modified';
 }
 
 export async function readComposeStatus(): Promise<ComposeStatus> {
+  const none = {
+    state: 'unknown' as const,
+    refresh: null,
+    client: { state: 'unknown' as const, refresh: null },
+    checkedAt: null,
+  };
   try {
-    const [raw, canonical] = await Promise.all([
+    const [raw, canonical, clientCanonical] = await Promise.all([
       fs.readFile(path.join(SIGNAL_DIR, 'stack.json'), 'utf8'),
-      releaseComposeSha(),
+      canonicalSha(RELEASE_COMPOSE_PATH),
+      canonicalSha(RELEASE_CLIENT_COMPOSE_PATH),
     ]);
     const j = JSON.parse(raw) as Record<string, unknown>;
-    const composeSha = typeof j.compose_sha === 'string' ? j.compose_sha : '';
-    const baselineSha = typeof j.baseline_sha === 'string' ? j.baseline_sha : '';
-    const refresh = typeof j.refresh === 'string' && j.refresh ? j.refresh : null;
-    const checkedAt = typeof j.checked_at === 'string' && j.checked_at ? j.checked_at : null;
-    if (!canonical || !composeSha) return { state: 'unknown', refresh, checkedAt };
-    let state: ComposeState;
-    if (composeSha === canonical) state = 'in-sync';
-    else if (!baselineSha) state = 'no-baseline';
-    else if (composeSha === baselineSha) state = 'stale';
-    else state = 'modified';
-    return { state, refresh, checkedAt };
+    const str = (k: string) => (typeof j[k] === 'string' ? (j[k] as string) : '');
+    const refresh = str('refresh') || null;
+    const checkedAt = str('checked_at') || null;
+    const state = classify(str('compose_sha'), str('baseline_sha'), canonical);
+    // Client compose: an empty sha with refresh 'absent' (or an old updater
+    // that reports no client fields at all) = a server-only box.
+    const clientRefresh = str('client_refresh') || null;
+    const client =
+      clientRefresh === 'absent' || (!str('client_compose_sha') && !clientRefresh)
+        ? { state: 'absent' as const, refresh: clientRefresh }
+        : {
+            state: classify(str('client_compose_sha'), str('client_baseline_sha'), clientCanonical),
+            refresh: clientRefresh,
+          };
+    return { state, refresh, client, checkedAt };
   } catch {
-    return { state: 'unknown', refresh: null, checkedAt: null };
+    return none;
   }
 }
 

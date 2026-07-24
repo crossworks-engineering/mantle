@@ -78,75 +78,81 @@ cur_phase() {
 # Security note: the extraction source is the target image itself — content
 # this box is about to run anyway — so no new trust or network surface.
 
-REFRESH=none   # last compose-refresh outcome, reported via stack.json
+REFRESH=none          # last server-compose refresh outcome (stack.json)
+CLIENT_REFRESH=none   # last client-compose refresh outcome (stack.json)
 
 sha_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
 # Compose fingerprints for the web app's drift check (best-effort).
 write_stack_info() {
-  printf '{"compose_sha":"%s","baseline_sha":"%s","refresh":"%s","checked_at":"%s"}\n' \
+  printf '{"compose_sha":"%s","baseline_sha":"%s","client_compose_sha":"%s","client_baseline_sha":"%s","refresh":"%s","client_refresh":"%s","checked_at":"%s"}\n' \
     "$(sha_of "$STACK/docker-compose.yml")" \
     "$(sha_of "$STACK/docker-compose.yml.release")" \
-    "$REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
+    "$(sha_of "$STACK/docker-compose.client.yml")" \
+    "$(sha_of "$STACK/docker-compose.client.yml.release")" \
+    "$REFRESH" "$CLIENT_REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
     && mv "$SIG/stack.json.tmp" "$SIG/stack.json"
 }
 
-# refresh_compose <tag> — extract the canonical compose from the target image
-# and swap it in when the box copy is pristine. Sets REFRESH; never blocks the
-# update (every outcome is reported, the image roll continues regardless).
-refresh_compose() {
-  ns=$(sed -n 's/^MANTLE_IMAGE_NAMESPACE=//p' "$STACK/.env" 2>/dev/null | head -1)
-  img="${ns:-titanwest}/mantle:$1"
+# refresh_one <box-file> <release-path> — extract one canonical compose from
+# the (already pulled) target image and swap it in when the box copy is
+# pristine. Echoes the outcome token. Never blocks the update.
+refresh_one() {
+  file="$1"; rel="$2"
   incoming="$STACK/.compose-incoming.tmp"
   rm -f "$incoming"
-  echo "[updater] compose refresh: reading canonical from $img" | tee -a "$SIG/update.log"
-  if ! docker pull "$img" >> "$SIG/update.log" 2>&1; then
-    REFRESH=pull-failed
-    echo "[updater] compose refresh skipped: could not pull $img" | tee -a "$SIG/update.log"
-    return
-  fi
-  cid=$(docker create "$img" 2>> "$SIG/update.log") || { REFRESH=extract-failed; return; }
-  docker cp "$cid:/app/release/docker-compose.yml" "$incoming" >> "$SIG/update.log" 2>&1
+  cid=$(docker create "$IMG" 2>> "$SIG/update.log") || { echo extract-failed; return; }
+  docker cp "$cid:$rel" "$incoming" >> "$SIG/update.log" 2>&1
   docker rm "$cid" > /dev/null 2>&1
   if [ ! -s "$incoming" ]; then
-    # Target image predates the embedded canonical (< v0.142) — nothing to
-    # refresh from; on a deep rollback swap the compose manually
-    # (docker-compose.yml.prev holds the previous canonical).
-    REFRESH=unavailable
-    rm -f "$incoming"
-    echo "[updater] compose refresh skipped: $img ships no embedded canonical" | tee -a "$SIG/update.log"
-    return
+    rm -f "$incoming"; echo unavailable; return
   fi
-  if [ ! -f "$STACK/docker-compose.yml.release" ]; then
-    REFRESH=no-baseline
-    rm -f "$incoming"
-    echo "[updater] ⚠ COMPOSE NOT REFRESHED: no baseline (pre-adoption box)." \
-         "Run scripts/compose-adopt.sh once from the stack dir to enable automatic" \
-         "compose refresh. Continuing on the EXISTING compose." | tee -a "$SIG/update.log"
-    return
+  if [ ! -f "$STACK/$file.release" ]; then
+    rm -f "$incoming"; echo no-baseline; return
   fi
-  if cmp -s "$STACK/docker-compose.yml" "$STACK/docker-compose.yml.release"; then
-    # Pristine — swap in the new canonical (mv over cp: atomic, and never
-    # rewrites an inode a running process may hold open). Keep the outgoing
-    # file as .prev for one-step rollback.
-    if cp "$STACK/docker-compose.yml" "$STACK/docker-compose.yml.prev" \
+  if cmp -s "$STACK/$file" "$STACK/$file.release"; then
+    if cp "$STACK/$file" "$STACK/$file.prev" \
       && cp "$incoming" "$STACK/.compose-release.tmp" \
-      && mv "$STACK/.compose-release.tmp" "$STACK/docker-compose.yml.release" \
-      && mv "$incoming" "$STACK/docker-compose.yml"; then
-      REFRESH=refreshed
-      echo "[updater] compose refreshed to the $1 canonical" | tee -a "$SIG/update.log"
+      && mv "$STACK/.compose-release.tmp" "$STACK/$file.release" \
+      && mv "$incoming" "$STACK/$file"; then
+      echo refreshed
     else
-      REFRESH=write-failed
-      rm -f "$incoming" "$STACK/.compose-release.tmp"
-      echo "[updater] ⚠ compose refresh FAILED writing files — continuing on the existing compose" | tee -a "$SIG/update.log"
+      rm -f "$incoming" "$STACK/.compose-release.tmp"; echo write-failed
     fi
   else
-    REFRESH=modified
-    rm -f "$incoming"
-    echo "[updater] ⚠ COMPOSE NOT REFRESHED: docker-compose.yml has LOCAL EDITS." \
-         "Move box-local customization to docker-compose.override.yml + .env, then run" \
-         "scripts/compose-adopt.sh to re-baseline. Running the new image on the OLD compose" \
-         "— release-level compose changes (sidecars/healthchecks/mounts) are MISSING here." | tee -a "$SIG/update.log"
+    rm -f "$incoming"; echo modified
+  fi
+}
+
+# refresh_compose <tag> — refresh BOTH release-owned compose files (server +
+# client) from the target server image. The client file is optional: a
+# server-only box (file absent) skips it. Sets REFRESH / CLIENT_REFRESH.
+refresh_compose() {
+  ns=$(sed -n 's/^MANTLE_IMAGE_NAMESPACE=//p' "$STACK/.env" 2>/dev/null | head -1)
+  IMG="${ns:-titanwest}/mantle-server:$1"
+  echo "[updater] compose refresh: reading canonicals from $IMG" | tee -a "$SIG/update.log"
+  if ! docker pull "$IMG" >> "$SIG/update.log" 2>&1; then
+    REFRESH=pull-failed; CLIENT_REFRESH=pull-failed
+    echo "[updater] compose refresh skipped: could not pull $IMG" | tee -a "$SIG/update.log"
+    return
+  fi
+  REFRESH=$(refresh_one docker-compose.yml /app/release/docker-compose.yml)
+  case "$REFRESH" in
+    refreshed) echo "[updater] server compose refreshed to the $1 canonical" | tee -a "$SIG/update.log" ;;
+    unavailable) echo "[updater] compose refresh skipped: $IMG ships no embedded canonical" | tee -a "$SIG/update.log" ;;
+    no-baseline) echo "[updater] ⚠ SERVER COMPOSE NOT REFRESHED: no baseline (pre-adoption box)." \
+         "Run scripts/compose-adopt.sh once from the stack dir. Continuing on the EXISTING compose." | tee -a "$SIG/update.log" ;;
+    modified) echo "[updater] ⚠ SERVER COMPOSE NOT REFRESHED: docker-compose.yml has LOCAL EDITS." \
+         "Move customization to docker-compose.override.yml + .env, then re-run scripts/compose-adopt.sh." \
+         "Release-level compose changes are MISSING on this box." | tee -a "$SIG/update.log" ;;
+    write-failed) echo "[updater] ⚠ server compose refresh FAILED writing files" | tee -a "$SIG/update.log" ;;
+  esac
+  # Client stack (v0.200+): only on boxes that RUN it (file present).
+  if [ -f "$STACK/docker-compose.client.yml" ]; then
+    CLIENT_REFRESH=$(refresh_one docker-compose.client.yml /app/release/docker-compose.client.yml)
+    echo "[updater] client compose refresh: $CLIENT_REFRESH" | tee -a "$SIG/update.log"
+  else
+    CLIENT_REFRESH=absent
   fi
 }
 
@@ -230,6 +236,18 @@ while true; do
       fi
       # shellcheck disable=SC2086  # word-splitting $SERVICES into args is intended
       if docker compose --project-directory "$STACK" up -d --remove-orphans $SERVICES >> "$SIG/update.log" 2>&1; then
+        # v0.200+ lockstep: roll the CLIENT stack with the same tag (its compose
+        # reads the same $STACK/.env, so the persisted MANTLE_IMAGE_TAG applies).
+        # A failure here is loud but non-fatal to the server roll (already done).
+        if [ -f "$STACK/docker-compose.client.yml" ]; then
+          echo "[updater] rolling client stack → $TARGET" | tee -a "$SIG/update.log"
+          if ! docker compose -f "$STACK/docker-compose.client.yml" --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1 \
+            || ! docker compose -f "$STACK/docker-compose.client.yml" --project-directory "$STACK" up -d --remove-orphans >> "$SIG/update.log" 2>&1; then
+            write_status error "$TARGET" "$STARTED" "$(now)" false "server rolled OK but CLIENT stack roll failed — see update.log"
+            write_stack_info
+            continue
+          fi
+        fi
         write_status done "$TARGET" "$STARTED" "$(now)" true ""
         echo "[updater] done → $TARGET" | tee -a "$SIG/update.log"
       else

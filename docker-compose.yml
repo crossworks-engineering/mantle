@@ -491,7 +491,7 @@ services:
   # One-shot schema migration. App services wait for this to complete
   # successfully before starting, so the DB schema is never behind the code.
   migrate:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     # Drizzle migrations, THEN create the pg-boss schema deterministically in the
     # same one-shot gate — every worker depends_on this completing, so by the time
     # they call pg-boss start() the schema exists and they can't race to create it
@@ -507,10 +507,10 @@ services:
   # `web` is the one service that BUILDS the shared image (target: app); every
   # other service just references the same image with its own command.
   web:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     build:
       context: .
-      target: app
+      target: server
       args:
         # Stamped by scripts/docker-build-push.sh (git SHA + UTC build time).
         MANTLE_GIT_SHA: ${MANTLE_GIT_SHA:-}
@@ -666,7 +666,7 @@ services:
   # heartbeat listeners + the reflector/heartbeat/extract-sweep ticks (formerly
   # the separate `agent` service). Same image, different command.
   api:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/api", "start"]
     container_name: mantle_api
     restart: unless-stopped
@@ -696,7 +696,7 @@ services:
       - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
 
   worker_email:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/email-sync.ts"]
     container_name: mantle_worker_email
     restart: unless-stopped
@@ -717,7 +717,7 @@ services:
       <<: *app-env
 
   worker_telegram:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/telegram-poll.ts"]
     container_name: mantle_worker_telegram
     restart: unless-stopped
@@ -739,7 +739,7 @@ services:
   # libraries into the brain as file nodes. Needs MinIO (file bytes → storage)
   # like the email worker.
   worker_microsoft:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/microsoft-sync.ts"]
     container_name: mantle_worker_microsoft
     restart: unless-stopped
@@ -762,7 +762,7 @@ services:
   # External-edit watcher: chokidar over MANTLE_FILES_ROOT mirrors host file
   # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
   worker_files:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/files-watch.ts"]
     container_name: mantle_worker_files
     restart: unless-stopped
@@ -790,7 +790,7 @@ services:
   # indexing path. Disabled collections are inert, so this is cheap until the
   # operator opts in at /settings/documentation.
   worker_docs:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/docs-sync.ts"]
     container_name: mantle_worker_docs
     restart: unless-stopped
@@ -811,7 +811,7 @@ services:
   # Event-reminder poller: fires due calendar/event reminders. Without this,
   # reminders silently never fire in prod (they work in `pnpm dev`).
   worker_events:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/events-reminders.ts"]
     container_name: mantle_worker_events
     restart: unless-stopped
@@ -842,7 +842,7 @@ services:
   # Calendar sync: pulls subscribed external calendars (ICS feeds; Google/MS
   # later) into the brain as event nodes. No volume — events live in Postgres.
   worker_calendar:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/calendar-sync.ts"]
     container_name: mantle_worker_calendar
     restart: unless-stopped
@@ -865,7 +865,7 @@ services:
   # entities-dedupe auto tier, pure SQL). Records into maintenance_runs, the
   # same history the CLI and the /debug/integrity Maintenance tab write.
   worker_maintenance:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/maintenance.ts"]
     container_name: mantle_worker_maintenance
     restart: unless-stopped
@@ -889,7 +889,7 @@ services:
   # DARK unless MANTLE_RUNS=1 is set in the app env — the container idles
   # healthy with the feature off.
   worker_runs:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/runs.ts"]
     container_name: mantle_worker_runs
     restart: unless-stopped
@@ -908,7 +908,7 @@ services:
   # teasers to Mantle Push (push.crossworks.network) for backgrounded devices.
   # No-op until a device Connects (push_instance/push_subscriptions empty).
   worker_push:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle:${MANTLE_IMAGE_TAG:-latest}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/push-notify.ts"]
     container_name: mantle_worker_push
     restart: unless-stopped
