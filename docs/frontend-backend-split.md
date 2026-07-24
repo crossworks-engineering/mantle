@@ -277,3 +277,46 @@ the `agent` service, the `api` service already exists.
 - No `apps/web` page/component/server-action imports `@mantle/db` (the grep in
   Task 0 returns empty for non-API code), and `revalidatePath` is gone.
 - The Phase 1 durable assistant path still works unchanged.
+
+---
+
+## 10. The v0.200 member carve (T1–T5) — /team, /hub, /team-admin
+
+The v0.200 "true split" (P0–P5) carved the owner UI into `client/web` but
+froze the team-member surfaces server-side (locked decision 4): members
+authenticated with cookies, and cookies don't cross origins. The member carve
+(T1–T5, v0.201) finished the job:
+
+- **The credential went bearer-shaped.** The signed `mantle_team_chat` VALUE
+  (`{own, cid, exp, k:'c'}`, 30d) is now minted either as the classic cookie
+  or as a bearer (`POST /api/team/auth {mode:'bearer'}` → localStorage
+  `mantle_team_token`). `resolveTeamChatCaller` verifies both carriers with
+  the same per-request membership liveness; the raw-contact-token bearer (the
+  MS Teams seam) still works. Bearer = no ambient credential = CSRF-free.
+- **`/team` + `/hub` render on the client origin** via
+  `teamFetch`/`teamEventStream` (`@mantle/web-ui/team-fetch` — cookie
+  same-origin, bearer + `credentials:'omit'` cross-origin; fetch-based SSE
+  because EventSource can't set an Authorization header). The server keeps
+  redirect stubs for old bookmarks; members re-enter their 8-char token once
+  (a URL-fragment credential handoff was REJECTED — 30-day credentials don't
+  belong in history/session stores).
+- **Share reading goes top-level through the SSO handoff.** A cross-origin
+  iframe never receives a Lax cookie, so `POST /api/team/sso` (form body
+  `{tb, next}` — the bearer never rides a URL) verifies the bearer, mints a
+  fresh server-origin cookie and 303s to `/s/<token>`. `next` is locked to a
+  single `/s/` path segment.
+- **The designated hub app stays first-class**: `AppSandbox` broker fetches
+  happen in the parent page, so the client-origin hub passes an absolute
+  `apiBase` + a bearer-attaching `fetcher`; the three `/s` app brokers
+  (`bundle`/`tool-broker`/`db-broker`) accept the bearer
+  (`resolveShareVisitorFromRequest`) and get the `/api/**` CORS treatment —
+  and ONLY they.
+- **`/team-admin` rehomed under the owner bearer**: per-tab
+  `GET /api/team-admin/*` routes + a client page in `client/web`; the old
+  render side effects (mark thread/topic read) became explicit POSTs.
+- **What stays server-side, by design**: `/s/[token]` (anonymous shares, SEO),
+  `/print` (the PDF loop), the share brokers and presenters, the login stub.
+  The server app's UI is render surfaces only.
+
+The regression net is `e2e/` (`team.spec`, `team-bearer.spec`,
+`team-admin.spec` + the rest) across both topology projects.

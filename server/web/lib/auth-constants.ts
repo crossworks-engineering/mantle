@@ -36,11 +36,12 @@ export const PUBLIC_PATHS = [
   '/api/oauth',
   '/.well-known/oauth-authorization-server',
   '/.well-known/oauth-protected-resource',
-  // Team surfaces: the external member workspace (/team + /api/team/* routes)
-  // and the Team Hub's home (/hub — the designated hub app or the built-in
-  // briefing hub) self-authenticate with contact team tokens (signed team-chat
-  // cookie or bearer), never the session cookie. The owner's admin view lives
-  // inside the (app) group as /team-admin and stays session-gated.
+  // Team surfaces: /api/team/* self-authenticates with contact team tokens
+  // (signed team-chat cookie or bearer), never the session cookie. The /team
+  // and /hub UI moved to the CLIENT app with the member carve — here they are
+  // redirect stubs for canonical-domain bookmarks, public for the same
+  // reason. The owner's admin view (/team-admin) lives in the client app too,
+  // behind the owner credential.
   '/team',
   '/hub',
   '/api/team',

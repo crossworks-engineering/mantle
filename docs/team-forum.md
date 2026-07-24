@@ -7,6 +7,16 @@ team responder answers; the thread continues, and **every team member can
 read every `team` topic**. Plan of record: "PLAN: Team Forum" (dev brain page
 71601ba2, signed off 2026-07-17). This document covers Phase 1 (forum core).
 
+> **Topology (v0.200 member carve):** the `/team` UI (forum included) is served
+> by the **client app** (`client/web`); the data plane stays `/api/team/*` on
+> the server origin. Cross-origin, the member credential is the **signed team
+> bearer** (localStorage `mantle_team_token`, minted by
+> `POST /api/team/auth {mode:'bearer'}`) sent via `teamFetch`/`teamEventStream`
+> from `@mantle/web-ui/team-fetch`; same-origin it's the classic
+> `mantle_team_chat` cookie. The server origin keeps a redirect stub for old
+> `/team` bookmarks. See the member-carve section of
+> [`frontend-backend-split.md`](./frontend-backend-split.md).
+
 ## 1. The model in one paragraph
 
 Topics are titled, multi-author threads (`forum_topics` + `forum_posts`,

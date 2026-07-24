@@ -50,6 +50,15 @@ Brokered traffic (bundle, tool calls, SQLite) goes through the app's team-mode
 share routes, so the member's identity is re-derived server-side on every call
 and every access is logged per member.
 
+Since the v0.200 member carve, `/hub` renders on the **client origin** and the
+broker calls cross to the server origin: the sandbox host page attaches the
+member's signed team bearer (`AppSandbox`'s `apiBase` + `fetcher` props), the
+`/s/<token>/{bundle,tool-broker,db-broker}` routes accept it
+(`resolveShareVisitorFromRequest`), and the middleware gives exactly those
+three sub-paths the `/api/**` CORS treatment. Nothing changes for the app
+author — broker calls still happen in the parent page, never the sandboxed
+iframe.
+
 ## 3. The `host.hub` SDK
 
 ```ts

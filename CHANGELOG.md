@@ -4,6 +4,43 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.201.0 — 2026-07-24
+
+**The member carve — the split now covers the team surfaces.** `/team`,
+`/hub` and the owner's `/team-admin` move off the server app into the client
+tier, completing what v0.200.0 started: the server app's UI is now render
+surfaces only (`/s/<token>` shares, `/print`, the login stub).
+
+- **The team credential goes bearer-shaped.** The signed team-chat value is
+  minted either as the classic cookie (same-origin) or as a bearer
+  (`POST /api/team/auth {mode:'bearer'}`, held by the client app and sent as
+  `Authorization`). One format, two carriers; the same per-request membership
+  liveness — revoking a member still locks them out mid-session — and the
+  raw-contact-token bearer (the MS Teams seam) is untouched. No ambient
+  credential cross-origin means no CSRF surface.
+- **Members ride the client origin.** The workspace, forum and hub fetch
+  through the new `@mantle/web-ui/team-fetch` transport; live turn streaming
+  is a fetch-based SSE reader (Last-Event-ID resume) because EventSource
+  can't carry a bearer. Old `/team` bookmarks redirect from the server
+  origin; members re-enter their 8-char token once (deliberate: forwarding a
+  30-day credential through a URL fragment was rejected — fragments land in
+  history and session stores).
+- **Share reading hops origins safely.** Opening a briefing/team share from
+  the client origin goes top-level through `POST /api/team/sso` — the bearer
+  rides the form BODY (never a URL), a fresh server-origin cookie is minted,
+  and `/s/<token>` renders exactly as before. Cross-origin iframes are not
+  used (they can never carry the cookie, and third-party cookies are dying).
+- **The designated hub app stays first-class**: the sandbox host page
+  attaches the bearer to the app brokers (`bundle`/`tool-broker`/
+  `db-broker`), which now accept it and answer CORS preflights — only those
+  three `/s` sub-paths, nothing else.
+- **`/team-admin` under the owner bearer**: per-tab `GET /api/team-admin/*`
+  routes + a client page; "mark read" is now an explicit action, not a render
+  side effect.
+- e2e grows `team-bearer.spec` (exchange, cookie-free workspace, SSO
+  open-redirect table, broker CORS scoping) + a team-admin smoke; the full
+  suite gates both topologies.
+
 ## v0.200.0 — 2026-07-24
 
 **The true server/client split.** Mantle is now TWO applications shipped as two

@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Pin, PinOff, Search } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
+import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { Checkbox } from '@mantle/web-ui/ui/checkbox';
 import { Input } from '@mantle/web-ui/ui/input';
 import { ListPager } from '@mantle/web-ui/layout/list-pager';
@@ -93,7 +94,17 @@ export function AdminTopicPager({
   );
 }
 
-export function TopicPinToggle({ topicId, pinned }: { topicId: string; pinned: boolean }) {
+export function TopicPinToggle({
+  topicId,
+  pinned,
+  onDone,
+}: {
+  topicId: string;
+  pinned: boolean;
+  /** Refetch hook for the client-query page (router.refresh() only re-runs
+   *  server components, which no longer carry this data). */
+  onDone?: () => void;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -105,17 +116,12 @@ export function TopicPinToggle({ topicId, pinned }: { topicId: string; pinned: b
       onClick={async () => {
         setBusy(true);
         try {
-          const r = await fetch('/api/team-admin/forum/pin', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ topicId, pinned: !pinned }),
-          });
-          if (!r.ok) {
-            const data = (await r.json().catch(() => ({}))) as { error?: string };
-            toast.error(data.error ?? 'Could not update the pin');
-          }
-          router.refresh();
+          await apiSend('/api/team-admin/forum/pin', 'POST', { topicId, pinned: !pinned });
+        } catch (err) {
+          toast.error(err instanceof ApiError ? err.message : 'Could not update the pin');
         } finally {
+          router.refresh();
+          onDone?.();
           setBusy(false);
         }
       }}
@@ -126,7 +132,15 @@ export function TopicPinToggle({ topicId, pinned }: { topicId: string; pinned: b
   );
 }
 
-export function TopicReplyForm({ topicId, status }: { topicId: string; status: string }) {
+export function TopicReplyForm({
+  topicId,
+  status,
+  onDone,
+}: {
+  topicId: string;
+  status: string;
+  onDone?: () => void;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [text, setText] = useState('');
@@ -137,24 +151,18 @@ export function TopicReplyForm({ topicId, status }: { topicId: string; status: s
     if (!text.trim() || busy) return;
     setBusy(true);
     try {
-      const r = await fetch('/api/team-admin/forum/post', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          topicId,
-          text: text.trim(),
-          ...(markAnswered && status === 'open' ? { status: 'answered' } : {}),
-        }),
+      await apiSend('/api/team-admin/forum/post', 'POST', {
+        topicId,
+        text: text.trim(),
+        ...(markAnswered && status === 'open' ? { status: 'answered' } : {}),
       });
-      if (!r.ok) {
-        const data = (await r.json().catch(() => ({}))) as { error?: string };
-        toast.error(data.error ?? 'Could not post the reply');
-      } else {
-        setText('');
-        toast.success('Posted to the topic');
-      }
-      router.refresh();
+      setText('');
+      toast.success('Posted to the topic');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not post the reply');
     } finally {
+      router.refresh();
+      onDone?.();
       setBusy(false);
     }
   };
