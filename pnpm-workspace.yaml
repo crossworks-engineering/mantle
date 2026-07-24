@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "e2e"
 
 # pnpm 11 requires explicit approval for packages with build scripts.
 # Build scripts for anything not listed `true` are silently skipped,
