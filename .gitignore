@@ -93,3 +93,7 @@ apps/web/public/app-runtime/
 
 # Local agent scratch data — never commit (personal content)
 apps/agent/
+
+# e2e suite run artifacts (auth states, logs, traces)
+e2e/.artifacts/
+e2e/test-results/

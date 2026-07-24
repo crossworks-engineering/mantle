@@ -1,0 +1,87 @@
+# Hermetic e2e infra — throwaway Postgres + MinIO + browser sidecar on
+# NON-default host ports, so it can run alongside a real dev stack (54323/9000/
+# 9222) without touching it. Project + container names are distinct for the
+# same reason the dev compose's are (see docker-compose.dev.yml header).
+#
+# Data lives in anonymous volumes: `docker compose down -v` wipes the stack
+# completely — every run can start from a fresh brain (the e2e bootstrap
+# exercises real signup + onboarding on it).
+#
+# Driven by e2e/scripts/run-local.sh; CI uses the same file.
+name: mantle-e2e
+
+services:
+  postgres:
+    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
+    container_name: mantle_e2e_pg
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      PGDATA: /var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../../infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    container_name: mantle_e2e_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio12345
+    ports:
+      - "127.0.0.1:59000:9000"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # One-shot: the app expects the `mantle` bucket to exist (a missing bucket is
+  # a known fresh-install failure mode — see the prod compose's createbuckets).
+  createbucket:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set e2e http://minio:9000 minio minio12345 &&
+      mc mb --ignore-existing e2e/mantle
+      "
+
+  # PDF-export render engine (see apps/web/lib/render-pdf.ts). Chromium in the
+  # container renders the web app running on the HOST (:3900) — host-gateway
+  # alias makes host.docker.internal resolve on Linux too.
+  browser:
+    image: ghcr.io/browserless/chromium:v2.55.0
+    container_name: mantle_e2e_browser
+    environment:
+      TOKEN: mantle
+      CONCURRENT: "2"
+      QUEUED: "5"
+      TIMEOUT: "60000"
+    ports:
+      - "127.0.0.1:59222:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/meta?token=mantle >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  pgdata:
+  miniodata:
