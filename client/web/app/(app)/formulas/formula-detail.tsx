@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import katex from 'katex';
-import { AlertTriangle, Sigma } from 'lucide-react';
+import { AlertTriangle, Pencil, Sigma, Trash2 } from 'lucide-react';
 import type {
   CoverageGap,
   DimensionIssue,
@@ -33,6 +33,18 @@ import {
   TableRow,
 } from '@mantle/web-ui/ui/table';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@mantle/web-ui/ui/alert-dialog';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
 
@@ -176,15 +188,34 @@ export function FormulaDetail({
   dimensionIssues,
   signature,
   specErrors,
+  onEdit,
+  onDeleted,
 }: {
   formula: FormulaRow;
   coverageGaps: CoverageGap[];
   dimensionIssues: DimensionIssue[];
   signature: TargetSignature[];
   specErrors?: string[];
+  onEdit: () => void;
+  onDeleted: () => void | Promise<void>;
 }) {
+  const toast = useToast();
   const spec = formula.spec;
   const cite = citation(spec);
+  const [deleting, setDeleting] = useState(false);
+
+  async function remove() {
+    setDeleting(true);
+    try {
+      await apiSend(`/api/formulas/${formula.id}`, 'DELETE');
+      toast.success('Formula deleted');
+      await onDeleted();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not delete');
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const [target, setTarget] = useState(signature[0]?.id ?? '');
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -225,16 +256,55 @@ export function FormulaDetail({
 
   const header = (
     <header className="border-b border-border px-6 py-4">
-      <div className="flex items-center gap-2">
-        <Sigma className="size-4 text-muted-foreground" />
-        <h2 className="truncate text-base font-semibold text-foreground">{formula.title}</h2>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Sigma className="size-4 shrink-0 text-muted-foreground" />
+            <h2 className="truncate text-base font-semibold text-foreground">{formula.title}</h2>
+          </div>
+          {cite ? <p className="mt-1 text-xs text-muted-foreground">{cite}</p> : null}
+          {spec?.unitSystem ? (
+            <Badge variant="secondary" className="mt-2">
+              {spec.unitSystem}
+            </Badge>
+          ) : null}
+        </div>
+        {/* No <ShareControl> yet: 'formula' is not in SHAREABLE_TYPES, so the
+            toggle would fail on click. It arrives with Phase 3, alongside the
+            /s presenter and the public calculator that give a link a reason to
+            exist. */}
+        <div className="flex shrink-0 items-center gap-1">
+          <Button variant="outline" size="sm" onClick={onEdit}>
+            <Pencil />
+            Edit
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="sm" title="Delete formula" disabled={deleting}>
+                <Trash2 />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete “{formula.title}”?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This removes the formula and its brain index permanently. Anything that cited it
+                  keeps only the text of the citation, not the calculation.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={remove}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Delete formula
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
-      {cite ? <p className="mt-1 text-xs text-muted-foreground">{cite}</p> : null}
-      {spec?.unitSystem ? (
-        <Badge variant="secondary" className="mt-2">
-          {spec.unitSystem}
-        </Badge>
-      ) : null}
     </header>
   );
 

@@ -2,8 +2,18 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import { Search, Sigma, X } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import YAML from 'yaml';
+import { Plus, Search, Sigma, X } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@mantle/web-ui/ui/dialog';
+import { FormulaEditor, type Draft } from './formula-editor';
+import { FORMULA_TEMPLATES } from './formula-templates';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import {
@@ -42,9 +52,15 @@ type DetailResponse = {
 /** Radix Select has no empty-string value, so "no filter" needs a sentinel. */
 const ANY = '__any__';
 
+/** Which editor is open, if any. `new` carries the chosen template's spec. */
+type EditorState = { mode: 'new'; spec: Draft } | { mode: 'edit' } | null;
+
 export function FormulasClient() {
   const searchParams = useSearchParams();
   const { pending, go } = useListNav();
+  const queryClient = useQueryClient();
+  const [editor, setEditor] = useState<EditorState>(null);
+  const [picking, setPicking] = useState(false);
 
   const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
   const query = searchParams.get('q')?.trim() ?? '';
@@ -102,6 +118,27 @@ export function FormulasClient() {
     syncSelectionParam('id', id);
   }
 
+  function openTemplate(yaml: string) {
+    // The templates are YAML because that is how a spec is authored; parse once
+    // here so the editor only ever deals in the draft object.
+    let spec: Draft = {};
+    try {
+      const parsed = YAML.parse(yaml);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) spec = parsed as Draft;
+    } catch {
+      spec = {};
+    }
+    setPicking(false);
+    setEditor({ mode: 'new', spec });
+  }
+
+  async function afterSave(id: string) {
+    setEditor(null);
+    await queryClient.invalidateQueries({ queryKey: ['formulas'] });
+    await queryClient.invalidateQueries({ queryKey: ['formula'] });
+    select(id);
+  }
+
   if (listQuery.isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -121,19 +158,76 @@ export function FormulasClient() {
     );
   }
 
+  // The editor takes the whole pane rather than sitting in the detail column:
+  // it has its own validation rail, and a two-column form inside a 1fr column
+  // is unusable at any realistic width.
+  if (editor?.mode === 'new') {
+    return (
+      <FormulaEditor
+        initialSpec={editor.spec}
+        initialTitle=""
+        initialTags={[]}
+        onSaved={afterSave}
+        onCancel={() => setEditor(null)}
+      />
+    );
+  }
+  if (editor?.mode === 'edit' && detailQuery.data) {
+    return (
+      <FormulaEditor
+        formulaId={detailQuery.data.formula.id}
+        initialSpec={detailQuery.data.formula.spec as unknown as Draft}
+        initialTitle={detailQuery.data.formula.title}
+        initialTags={detailQuery.data.formula.tags}
+        onSaved={afterSave}
+        onCancel={() => setEditor(null)}
+      />
+    );
+  }
+
   return (
     <div className="relative md:grid md:h-full md:grid-cols-[360px_1fr] md:overflow-hidden">
+      <Dialog open={picking} onOpenChange={setPicking}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>New formula</DialogTitle>
+            <DialogDescription>
+              Start from a template. The annotated example carries teaching comments on every field
+              — worth reading once even if you delete it after.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {FORMULA_TEMPLATES.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => openTemplate(t.yaml)}
+                className="block w-full rounded-md border border-border bg-card p-3 text-left transition-colors hover:bg-muted/50"
+              >
+                <div className="text-sm font-medium text-foreground">{t.name}</div>
+                <p className="mt-0.5 text-xs text-muted-foreground">{t.blurb}</p>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Left: list ─────────────────────────────────────────────── */}
       <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
         <div className="space-y-2 border-b border-border p-4">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search formulas…"
-              className="pl-8"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search formulas…"
+                className="pl-8"
+              />
+            </div>
+            <Button size="sm" onClick={() => setPicking(true)}>
+              <Plus />
+              New
+            </Button>
           </div>
           <div className="flex items-center gap-2">
             <Select
@@ -168,9 +262,15 @@ export function FormulasClient() {
 
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto scrollbar-thin p-3">
           {formulas.length === 0 ? (
-            <p className="px-1 py-8 text-center text-sm text-muted-foreground">
-              No formulas yet. Ask the assistant to transcribe one from a standard.
-            </p>
+            <div className="space-y-3 px-1 py-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                No formulas yet. Write one from a standard, or ask the assistant to transcribe one.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => setPicking(true)}>
+                <Plus />
+                New formula
+              </Button>
+            </div>
           ) : (
             formulas.map((f) => (
               // The tags are filter buttons, so they sit OUTSIDE the row button
@@ -254,6 +354,12 @@ export function FormulasClient() {
             dimensionIssues={detailQuery.data.dimensionIssues ?? []}
             signature={detailQuery.data.signature ?? []}
             specErrors={detailQuery.data.specErrors}
+            onEdit={() => setEditor({ mode: 'edit' })}
+            onDeleted={async () => {
+              setSelectedId(null);
+              syncSelectionParam('id', null);
+              await queryClient.invalidateQueries({ queryKey: ['formulas'] });
+            }}
           />
         ) : (
           <div className="flex h-full items-center justify-center">
