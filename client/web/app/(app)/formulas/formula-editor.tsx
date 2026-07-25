@@ -53,80 +53,21 @@ import { Tabs, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ApiError, apiSend } from '@mantle/web-ui/api-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
+import {
+  arr,
+  listOf,
+  normalised,
+  obj,
+  scalar,
+  text,
+  toSpec,
+  type Draft,
+  type Row,
+} from './formula-draft';
 
-// ─── draft shape ───────────────────────────────────────────────────────────
-// Deliberately loose: a draft is mid-edit and therefore usually invalid. Only
-// `parseFormulaSpec` decides what a FormulaSpec is.
-
-type Row = Record<string, unknown>;
-export type Draft = Record<string, unknown>;
+export type { Draft } from './formula-draft';
 
 const ROLES = ['input', 'constant', 'derived', 'output'] as const;
-
-function arr(draft: Draft, key: string): Row[] {
-  const v = draft[key];
-  return Array.isArray(v) ? (v as Row[]) : [];
-}
-
-function obj(value: unknown): Row {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Row) : {};
-}
-
-function text(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  return typeof value === 'string' ? value : String(value);
-}
-
-/** Split a comma list into a string array, dropping blanks. */
-function listOf(raw: string): string[] {
-  return raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-/**
- * A number where the text reads as one, else the text. Units are prose and
- * ratings are letters, so coercing everything to a number would be wrong — but
- * so would storing `0.61` as a string, which `toNum` would then re-parse.
- */
-function scalar(raw: string): unknown {
-  const t = raw.trim();
-  if (t === '') return undefined;
-  if (t === 'true') return true;
-  if (t === 'false') return false;
-  const n = Number(t);
-  return Number.isFinite(n) && /^[-+]?[0-9.]+(e[-+]?[0-9]+)?$/i.test(t) ? n : t;
-}
-
-/** Drop empty strings/arrays/objects so the YAML view and the saved spec stay
- *  free of noise the author never typed. */
-function prune(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    const out = value.map(prune).filter((v) => v !== undefined);
-    return out.length > 0 ? out : undefined;
-  }
-  if (value && typeof value === 'object') {
-    const out: Row = {};
-    for (const [k, v] of Object.entries(value as Row)) {
-      const pruned = prune(v);
-      if (pruned !== undefined) out[k] = pruned;
-    }
-    return Object.keys(out).length > 0 ? out : undefined;
-  }
-  if (value === '' || value === null) return undefined;
-  return value;
-}
-
-/** The spec always carries its five arrays, even when empty — the validator
- *  reports a missing one as an error and an author should not have to guess. */
-function normalised(draft: Draft): Draft {
-  const out: Draft = { ...draft };
-  for (const key of ['variables', 'expressions', 'piecewise', 'lookups', 'classifications']) {
-    if (!Array.isArray(out[key])) out[key] = [];
-  }
-  return out;
-}
 
 // ─── small building blocks ─────────────────────────────────────────────────
 
@@ -222,7 +163,7 @@ export function FormulaEditor({
   // reflects what the form holds. Leaving it keeps whatever last parsed.
   useEffect(() => {
     if (mode === 'source') {
-      setYamlText(YAML.stringify(prune(draft) ?? {}));
+      setYamlText(YAML.stringify(toSpec(draft)));
       setYamlError(null);
     }
     // Only on the switch — re-serialising while typing would fight the cursor.
@@ -273,7 +214,7 @@ export function FormulaEditor({
 
   // The rail. Runs the SAME validators the server runs on save.
   const findings = useMemo(() => {
-    const parsed = parseFormulaSpec(prune(normalised(draft)) ?? {});
+    const parsed = parseFormulaSpec(toSpec(draft));
     if (!parsed.ok) {
       return { errors: parsed.errors, coverage: [] as CoverageGap[], dims: [] as DimensionIssue[] };
     }
@@ -296,7 +237,7 @@ export function FormulaEditor({
     setSaving(true);
     setServerErrors([]);
     try {
-      const spec = prune(normalised(draft)) ?? {};
+      const spec = toSpec(draft);
       const body = { spec, title: title.trim() || undefined, tags: listOf(tagsText) };
       const saved = formulaId
         ? await apiSend<{ formula: { id: string } }>(
