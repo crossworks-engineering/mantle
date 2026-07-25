@@ -582,6 +582,13 @@ services:
     environment:
       # Drives the Caddyfile site block. Hostname → auto-TLS; ":80" → HTTP only.
       MANTLE_SITE_ADDRESS: ${MANTLE_SITE_ADDRESS:-:80}
+      # The owner-UI (client) vhost — v0.200.0 split. The Caddyfile references
+      # this placeholder, and a compose env var only reaches the container if
+      # it is forwarded HERE: v0.202.1 shipped the Caddyfile block without
+      # this line, so app.<domain> silently fell back to the :8080 default on
+      # every box (found on the first production roll). Unset ⇒ :8080, which
+      # serves nothing and costs nothing on a server-only box.
+      MANTLE_CLIENT_SITE_ADDRESS: ${MANTLE_CLIENT_SITE_ADDRESS:-:8080}
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${MANTLE_DATA_DIR:-./data}/caddy/data:/data
