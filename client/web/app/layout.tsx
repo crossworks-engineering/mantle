@@ -22,8 +22,13 @@ export const metadata: Metadata = {
   description: 'Your tree of everything.',
 };
 
-// Apply the stored color theme before paint to avoid a flash.
-const colorThemeScript = `(function(){try{var t=localStorage.getItem('${COLOR_THEME_STORAGE_KEY}');if(t&&t!=='${DEFAULT_COLOR_THEME}'){document.documentElement.dataset.colorTheme=t;}}catch(e){}})();`;
+// Apply the stored color theme before paint to avoid a flash. Yields when
+// /env.js (which runs first, blocking) fetched the brain's appearance and set
+// __MANTLE_APPEARANCE__ — server truth must win even when that truth is
+// "default", or a stale local copy would override a theme the admin changed
+// from another browser. localStorage stays as the fallback for when the
+// server tier couldn't be reached.
+const colorThemeScript = `(function(){try{if(window.__MANTLE_APPEARANCE__)return;var t=localStorage.getItem('${COLOR_THEME_STORAGE_KEY}');if(t&&t!=='${DEFAULT_COLOR_THEME}'){document.documentElement.dataset.colorTheme=t;}}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

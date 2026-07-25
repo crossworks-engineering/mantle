@@ -47,7 +47,8 @@ Non-negotiables (full detail in the guide):
   runtime CSS-var override). Defaults: Bukhari wordmark, sans title.
 - **Tailwind v4**: no dynamically built class names (use literal-string arrays).
 - **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
-  with the `Co-Authored-By` trailer; don't push unless asked. `pnpm dev:fe` now runs the
+  with **no agent co-authorship trailers** (repo rule — see the root CLAUDE.md; a
+  commit-msg hook strips them); don't push unless asked. `pnpm dev:fe` now runs the
   owner UI (`client/web`) detached against a deployed brain
   ([docs/db-less-dev.md](../../docs/db-less-dev.md)) — so it browser-checks **client**
   changes, not this tier. `server/web` runs under `tsx` (`pnpm -C server/web dev`, no

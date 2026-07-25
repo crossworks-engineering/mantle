@@ -21,11 +21,13 @@ export async function GET() {
   const empty = { colorTheme: null, fontLogo: null, fontTitle: null };
   const headers = { 'Cache-Control': 'public, max-age=30' };
 
-  const ownerId = await resolveSingleOwnerId();
-  // Fresh install, no account yet — defaults, not an error.
-  if (!ownerId) return NextResponse.json(empty, { headers });
-
+  // The whole body is fail-soft: resolveSingleOwnerId THROWS on a corrupt
+  // no-anchor multi-user state (deliberately loud for workers), and a branding
+  // endpoint must never turn that into a 500 — defaults, always.
   try {
+    const ownerId = await resolveSingleOwnerId();
+    // Fresh install, no account yet — defaults, not an error.
+    if (!ownerId) return NextResponse.json(empty, { headers });
     const prefs = await loadProfilePreferences(ownerId);
     return NextResponse.json(
       {
