@@ -71,6 +71,10 @@ cp docker-compose.yml docker-compose.yml.release
 cp docker-compose.client.yml docker-compose.client.yml.release
 fetch .env.prod.example                  .env.prod.example
 fetch infra/caddy/Caddyfile              infra/caddy/Caddyfile
+# The same-origin front door (one domain path-routed to BOTH apps). This is
+# what scripts/install.sh installs by default — without it a fresh box serves
+# the server app only and the visitor can never reach signup.
+fetch infra/caddy/Caddyfile.same-origin  infra/caddy/Caddyfile.same-origin
 fetch infra/postgres/init/01-extensions.sql  infra/postgres/init/01-extensions.sql
 fetch infra/postgres/init/02-auth-schema.sql infra/postgres/init/02-auth-schema.sql
 # The updater sidecar's entrypoint script. Compose bind-mounts it at

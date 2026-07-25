@@ -31,7 +31,7 @@ MANTLE_DOMAIN=mantle.example.com bash -c "$(curl -fsSL https://raw.githubusercon
 ```
 
 What it does — and all it does: checks Docker, downloads the deploy bundle
-(compose file, env template, Caddy + Postgres init files, backup + install
+(both compose files, env template, Caddy + Postgres init files, backup + install
 scripts) into `./mantle`, then delegates to the bundled
 **`scripts/install.sh`** — the single configurator. That **generates the
 secrets** (`SESSION_SECRET`, `MANTLE_MASTER_KEY`, DB + object-store
@@ -39,8 +39,16 @@ passwords) into a mode-600 `.env` (re-runs never rotate an existing master
 key), **verifies your domain's DNS points at the box before enabling
 HTTPS**, then `docker compose pull && docker compose up -d --wait` and a
 **per-service sanity check** (every container's health + the app answering).
-First boot downloads ~2 GB of images and runs DB migrations (the one-shot
+First boot downloads ~4 GB of images and runs DB migrations (the one-shot
 `migrate` service gates every app service).
+
+Mantle runs as **two stacks**: the server (API, agent, workers, share/print
+surfaces) and the owner UI — a separate zero-secret app. The installer brings
+up both and points Caddy at them on ONE domain, path-routed, so there is
+nothing extra to configure: `/api`, `/s` and `/print` go to the server, and
+everything else — including sign-up — goes to the UI. You'd only split them
+across two hostnames deliberately; see
+[`upgrading-to-v0.202.md`](./upgrading-to-v0.202.md).
 
 Then open `http://localhost` (or your domain), **create your account**, and
 let the onboarding wizard do the rest — it starts with its own system-status
@@ -93,8 +101,22 @@ Fully by hand instead: `cp .env.prod.example .env`, fill in the two
 mandatory secrets (each has its `openssl rand` one-liner next to it), set
 **`MANTLE_STACK_DIR`** to this directory's host-absolute path
 (`MANTLE_STACK_DIR=$(pwd -P)` — without it the in-app updater can't run),
-and `docker compose up -d --wait`. The bundle and the image are versioned
-together — a release's compose always matches its image.
+set `MANTLE_SERVER_ORIGIN` to your public origin (the owner UI reaches the
+API over HTTP and needs an absolute address), then bring up **both** stacks
+and the front door:
+
+```bash
+cp infra/caddy/Caddyfile.same-origin infra/caddy/Caddyfile
+docker compose up -d --wait
+docker compose -f docker-compose.client.yml --project-directory . up -d --wait
+docker compose up -d --force-recreate caddy   # now that client-web exists
+```
+
+Skipping the second stack leaves a healthy backend with **no interface** —
+sign-up lives in the owner UI, so the server app alone will only show you a
+"this has moved" card. The bundle and the images are versioned together — a
+release's compose always matches its images, and the two images are lockstep
+on one `MANTLE_IMAGE_TAG`.
 
 ## Updating
 

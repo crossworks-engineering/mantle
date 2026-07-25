@@ -201,6 +201,17 @@ upsert MANTLE_SITE_ADDRESS "$SITE_ADDRESS"
 if [[ "$SITE_ADDRESS" != :* ]]; then
   upsert MANTLE_PUBLIC_URL "https://$SITE_ADDRESS"
 fi
+# The owner UI is its OWN app since the v0.200 split, and it reaches the API
+# over HTTP — so it needs an absolute origin even in the same-origin shape we
+# install by default (the browser sees one domain; the client's server-side
+# render does not). Without this a fresh install comes up with the server
+# stack only and the visitor lands on a "this has moved" card, unable to sign
+# up at all — signup lives in the client app.
+if [[ "$SITE_ADDRESS" == :* ]]; then
+  upsert MANTLE_SERVER_ORIGIN "http://localhost"
+else
+  upsert MANTLE_SERVER_ORIGIN "https://$SITE_ADDRESS"
+fi
 upsert MANTLE_DATA_DIR     "$DATA_DIR"
 upsert MANTLE_STACK_DIR    "$STACK_DIR"
 upsert MANTLE_IMAGE_TAG    "$IMAGE_TAG"
@@ -243,14 +254,42 @@ if command -v ss >/dev/null 2>&1; then
   done
 fi
 
+# ── 3b. front door: route BOTH apps on one domain ────────────────────────────
+# Since v0.200 Mantle is two images — the server (API + share/print surfaces)
+# and the zero-secret owner UI. A fresh install uses the SAME-ORIGIN shape:
+# one domain, path-routed, no second DNS record and no CORS. The shipped
+# default Caddyfile expects a separate app.<domain> vhost, so swap it.
+if [[ -f "$STACK_DIR/infra/caddy/Caddyfile.same-origin" ]]; then
+  cp "$STACK_DIR/infra/caddy/Caddyfile.same-origin" "$STACK_DIR/infra/caddy/Caddyfile"
+  ok "Front door configured (same-origin: one domain serves both apps)"
+else
+  warn "infra/caddy/Caddyfile.same-origin missing — the front door may not route the owner UI. Re-download the deploy bundle."
+fi
+
 # ── 4. bring the stack up ────────────────────────────────────────────────────
 hd "Starting the stack"
 COMPOSE=(docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR")
+CLIENT_COMPOSE=(docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" -f "$STACK_DIR/docker-compose.client.yml")
 inf "Pulling images (tag: ${B}$IMAGE_TAG${RS}) — a first install downloads ~2 GB…"
 "${COMPOSE[@]}" pull -q 2>&1 | sed 's/^/    /' \
   || warn "Image pull failed. If the image is private, run 'docker login <registry>' and re-run. Continuing so the sanity check can report."
 inf "Bringing services up (waits for migrate + health)…"
 "${COMPOSE[@]}" up -d --wait || warn "up --wait returned non-zero — the sanity check below will show what's wrong."
+
+# The owner UI — a SEPARATE stack on the same tag (releases are lockstep).
+# Skipping this leaves a brain with no usable interface: signup and every
+# owner screen live here.
+if [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then
+  inf "Bringing up the owner UI (client app)…"
+  "${CLIENT_COMPOSE[@]}" pull -q 2>&1 | sed 's/^/    /' || warn "Client image pull failed — the owner UI will not start."
+  "${CLIENT_COMPOSE[@]}" up -d --wait || warn "Client app did not become healthy — check 'docker logs mantle_client_web'."
+  # Caddy is already running from the step above with the OLD routing table;
+  # reload it now that the client container exists to proxy to.
+  "${COMPOSE[@]}" up -d --force-recreate caddy >/dev/null 2>&1 \
+    || warn "Could not recreate Caddy — run: docker compose up -d --force-recreate caddy"
+else
+  warn "docker-compose.client.yml missing — the owner UI cannot start. Re-download the deploy bundle."
+fi
 
 # ── 5. sanity check ──────────────────────────────────────────────────────────
 bash "$(dirname "$0")/sanity.sh" || true

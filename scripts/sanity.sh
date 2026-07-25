@@ -35,6 +35,12 @@ if [[ ${#NAMES[@]} -eq 0 && -z "${MANTLE_COMPOSE_PROJECT:-}" ]]; then
   PROJECT="mantle-dev"
   mapfile -t NAMES < <(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}}' | sort)
 fi
+# The owner UI is a SEPARATE compose project (`mantle-client`,
+# docker-compose.client.yml) since the v0.200 split. Fold its container in so
+# a brain with a perfectly healthy backend and NO usable interface can't pass
+# a sanity check — the exact shape of a broken fresh install.
+mapfile -t CLIENT_NAMES < <(docker ps -a --filter "label=com.docker.compose.project=mantle-client" --format '{{.Names}}' | sort)
+NAMES+=("${CLIENT_NAMES[@]}")
 if [[ ${#NAMES[@]} -eq 0 ]]; then bad "No containers found for compose project 'mantle' (or 'mantle-dev'). Is the stack up?"; exit 1; fi
 
 fail=0; up=0
