@@ -182,7 +182,7 @@ and **Docker** running (`pnpm start` boots Postgres/MinIO/Tika in containers):
 ```bash
 git clone https://github.com/crossworks-engineering/mantle && cd mantle
 pnpm install
-cp .env.example apps/web/.env.local   # two generated secrets — see the guide
+cp .env.example server/web/.env.local   # two generated secrets — see the guide
 pnpm start
 ```
 
