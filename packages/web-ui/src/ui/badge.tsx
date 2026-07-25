@@ -23,10 +23,17 @@ const badgeVariants = cva(
 );
 
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
+  extends React.HTMLAttributes<HTMLSpanElement>, VariantProps<typeof badgeVariants> {}
 
+/**
+ * Renders a `<span>`, not a `<div>`: badges routinely sit inside `<p>`, `<h2>`
+ * and other phrasing-content parents, and a block-level descendant there is
+ * invalid HTML — React reports it as a hydration error and the browser's parser
+ * silently closes the `<p>` early. The base class is `inline-flex`, so the
+ * element type makes no visual difference.
+ */
 function Badge({ className, variant, ...props }: BadgeProps) {
-  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
+  return <span className={cn(badgeVariants({ variant }), className)} {...props} />;
 }
 
 export { Badge, badgeVariants };
