@@ -16,6 +16,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { serverUrl } from '@mantle/web-ui/runtime-env';
 import { formatDate } from '@mantle/web-ui/lib/format-datetime';
 
 export type SharedLinkRow = {
@@ -58,7 +59,8 @@ export function SharedLinksPanel({ initial }: { initial: SharedLinkRow[] }) {
 
   const copy = async (row: SharedLinkRow) => {
     try {
-      await navigator.clipboard.writeText(window.location.origin + row.path);
+      // Same origin fix as ShareControl: /s/… is the server tier's surface.
+      await navigator.clipboard.writeText(serverUrl(row.path));
       setCopiedId(row.id);
       setTimeout(() => setCopiedId(null), 1500);
     } catch {
