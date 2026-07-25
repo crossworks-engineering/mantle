@@ -15,6 +15,7 @@
  * Lossy by design; pure, no DB.
  */
 import type { FormulaSpec, FormulaValue, SpecLookup } from './formula-spec';
+import { signatureLine, signatureOf } from './formula-signature';
 
 function cell(v: FormulaValue | undefined): string {
   if (v === null || v === undefined) return '';
@@ -49,6 +50,16 @@ export function formulaToText(spec: FormulaSpec): string {
   const cite = citation(spec);
   if (cite) out.push(`Source: ${cite}`);
   if (spec.unitSystem) out.push(`Unit system: ${spec.unitSystem}`);
+
+  // What this formula can COMPUTE, not only what it says. Retrieval questions
+  // are phrased as capability — "can it work out a release rate from pressure
+  // and temperature?" — and until the call lines were indexed, the symbols an
+  // answer depends on appeared only scattered through a variable table.
+  const signatures = signatureOf(spec);
+  if (signatures.length > 0) {
+    out.push('', '## Callable');
+    for (const sig of signatures) out.push(`- ${signatureLine(sig)}`);
+  }
 
   if (spec.expressions.length > 0) {
     out.push('', '## Equations');

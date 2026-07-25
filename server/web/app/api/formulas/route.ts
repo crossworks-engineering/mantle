@@ -1,7 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { countFormulas, createFormula, listFormulas, isFormulaSpecError } from '@/lib/formulas';
+import {
+  countFormulas,
+  createFormula,
+  listFormulas,
+  listFormulaStandards,
+  isFormulaSpecError,
+} from '@/lib/formulas';
 
 const PAGE_SIZE = 50;
 
@@ -23,11 +29,14 @@ export async function GET(req: Request) {
     standard: url.searchParams.get('standard') ?? undefined,
     tag: url.searchParams.get('tag') ?? undefined,
   };
-  const [formulas, total] = await Promise.all([
+  const [formulas, total, standards] = await Promise.all([
     listFormulas(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
     countFormulas(user.id, opts),
+    // Unfiltered, so the filter control keeps every option regardless of what
+    // is currently selected.
+    listFormulaStandards(user.id),
   ]);
-  return NextResponse.json({ formulas, total, page, pageSize: PAGE_SIZE });
+  return NextResponse.json({ formulas, total, page, pageSize: PAGE_SIZE, standards });
 }
 
 export async function POST(req: Request) {

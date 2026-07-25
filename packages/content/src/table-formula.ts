@@ -317,6 +317,33 @@ class Parser {
   }
 }
 
+/**
+ * The `{braced}` symbols an expression references, in source order, deduped.
+ *
+ * STATIC — nothing is evaluated, so this sees every branch of an `IF()` rather
+ * than the one a particular set of inputs would take. That is the property
+ * `signatureOf` needs: "what must I supply" has to be answered before any
+ * value exists to supply. Reusing the tokenizer rather than a `/\{([^}]*)\}/`
+ * scan matters for one case — a brace inside a string literal (`'{x}'`) is
+ * text, not a reference, and only the tokenizer knows that.
+ *
+ * Throws on an unparseable expression, like `evalExpression`.
+ */
+export function refsIn(src: string): string[] {
+  const text = (src ?? '').trim();
+  if (!text) return [];
+  if (text.length > MAX_FORMULA_LEN) throw new Error('expression too long');
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const tok of tokenize(text)) {
+    if (tok.t === 'ref' && tok.v && !seen.has(tok.v)) {
+      seen.add(tok.v);
+      out.push(tok.v);
+    }
+  }
+  return out;
+}
+
 /** Binds `{refs}` to columns of one row. */
 function columnResolver(doc: TableDoc, row: Row): RefResolver {
   return (name) => {

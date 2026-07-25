@@ -56,6 +56,14 @@ describe('formulaToText', () => {
     expect(text).toContain('Source: API RP 581 Part 3, §5.3.2, Tables 5.6');
   });
 
+  it('indexes what the formula can COMPUTE, not only what it says', () => {
+    // The retrieval question is capability — "can it work out a release rate
+    // from a liquid density?" — so each target's call line is indexed.
+    expect(text).toContain('## Callable');
+    expect(text).toContain('- liquid-release-rate(rho_l [lb/ft3]) → Wn [lb/sec]');
+    expect(text).toContain('- fact_di(detection, isolation)');
+  });
+
   it('includes the equations with their numbers and units', () => {
     expect(text).toContain('liquid-release-rate (Eq 3.3) → Wn [lb/sec]');
     expect(text).toContain('{Cd} * {rho_l}');
