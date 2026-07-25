@@ -13,8 +13,16 @@ import {
   referencedFileIds,
   ensureTableDoc,
   emptyTableDoc,
+  parseFormulaSpec,
+  checkLookupCoverage,
+  checkDimensions,
+  signatureOf,
   type Column,
   type Row,
+  type FormulaSpec,
+  type TargetSignature,
+  type CoverageGap,
+  type DimensionIssue,
 } from '@mantle/content';
 import { describeWorkbook, resolveStoragePath } from '@mantle/tabledb';
 import { fileById, folderById } from '@/lib/files';
@@ -79,6 +87,17 @@ export type ShareView =
       }> | null;
       /** Legacy JSONB tables (pre-registry, small): the whole doc inline. */
       legacyDoc: { columns: Column[]; rows: Row[] } | null;
+    }
+  | {
+      kind: 'formula';
+      title: string;
+      spec: FormulaSpec;
+      /** Computed on read, never stored (docs/formulas.md §1). The public
+       *  calculator builds its fields from this rather than re-deriving which
+       *  symbols a target needs — the same contract the owner UI uses. */
+      signature: TargetSignature[];
+      coverageGaps: CoverageGap[];
+      dimensionIssues: DimensionIssue[];
     }
   | { kind: 'folder'; folderId: string; title: string; path: string };
 
@@ -195,6 +214,25 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
         icon,
         tabs: null,
         legacyDoc: { columns: doc.columns, rows: doc.rows },
+      };
+    }
+    case 'formula': {
+      const n = await loadNode(ownerId, nodeId);
+      if (!n) return null;
+      const d = (n.data ?? {}) as Record<string, unknown>;
+      // Re-validate rather than cast. A spec that no longer parses cannot be
+      // rendered OR evaluated, and a public page is the last place to discover
+      // that halfway down — treat it as vanished instead.
+      const parsed = parseFormulaSpec(d.spec);
+      if (!parsed.ok) return null;
+      const spec = parsed.spec;
+      return {
+        kind: 'formula',
+        title: n.title,
+        spec,
+        signature: signatureOf(spec),
+        coverageGaps: checkLookupCoverage(spec),
+        dimensionIssues: checkDimensions(spec),
       };
     }
     case 'branch': {

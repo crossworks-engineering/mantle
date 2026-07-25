@@ -47,6 +47,7 @@ import {
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { ShareControl } from '@/components/share-control';
 
 export type FormulaRow = {
   id: string;
@@ -269,11 +270,10 @@ export function FormulaDetail({
             </Badge>
           ) : null}
         </div>
-        {/* No <ShareControl> yet: 'formula' is not in SHAREABLE_TYPES, so the
-            toggle would fail on click. It arrives with Phase 3, alongside the
-            /s presenter and the public calculator that give a link a reason to
-            exist. */}
         <div className="flex shrink-0 items-center gap-1">
+          {/* The shared page is a live calculator, so team mode is offered:
+              a colleague can put their own numbers in without an account. */}
+          <ShareControl nodeId={formula.id} iconOnly teamMode />
           <Button variant="outline" size="sm" onClick={onEdit}>
             <Pencil />
             Edit

@@ -3,7 +3,17 @@ import { SHAREABLE_TYPES, isShareable, isShareableFolderPath } from './shares';
 
 describe('isShareable', () => {
   it('accepts every workspace content type (sharing parity)', () => {
-    for (const t of ['page', 'note', 'task', 'event', 'file', 'app', 'table', 'branch']) {
+    for (const t of [
+      'page',
+      'note',
+      'task',
+      'event',
+      'file',
+      'app',
+      'table',
+      'formula',
+      'branch',
+    ]) {
       expect(isShareable(t)).toBe(true);
     }
   });

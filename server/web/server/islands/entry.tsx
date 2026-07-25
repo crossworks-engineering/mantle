@@ -13,12 +13,17 @@
 import { createRoot } from 'react-dom/client';
 import { AppPresenter } from '../../components/share/app-presenter';
 import { TablePresenter } from '../../components/share/table-presenter';
+import { FormulaCalculator } from '../../components/share/formula-calculator';
 import { TeamTokenPrompt } from '../../components/share/team-token-prompt';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ISLANDS: Record<string, (props: any) => React.ReactNode> = {
   app: AppPresenter,
   table: TablePresenter,
+  // Unlike the others, this island is a FRAGMENT of an otherwise static page:
+  // a shared formula renders its equations, tables and warnings as HTML, and
+  // only the calculator needs JavaScript.
+  'formula-calculator': FormulaCalculator,
   'team-token-prompt': TeamTokenPrompt,
 };
 

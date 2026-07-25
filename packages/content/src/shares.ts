@@ -22,6 +22,10 @@ export const SHAREABLE_TYPES = [
   'file',
   'app',
   'table',
+  // A formula is a calculation model, and the shared surface is a live
+  // calculator — the point of sending someone a link is that they can put their
+  // own numbers in and see the derivation, not just read the equations.
+  'formula',
   'branch',
 ] as const;
 export type ShareableType = (typeof SHAREABLE_TYPES)[number];
