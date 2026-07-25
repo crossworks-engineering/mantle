@@ -10,6 +10,7 @@ import { FilePresenter } from '@/components/share/file-presenter';
 import { TaskPresenter } from '@/components/share/task-presenter';
 import { EventPresenter } from '@/components/share/event-presenter';
 import { FolderPresenter, loadFolderListing } from '@/components/share/folder-presenter';
+import { FormulaPresenter } from '@/components/share/formula-presenter';
 import { htmlPage, islandDiv, shareShell } from './template';
 
 /**
@@ -89,6 +90,17 @@ async function renderShare(c: Context): Promise<Response> {
       break;
     case 'table':
       body = islandDiv('table', { view, token });
+      islands = true;
+      break;
+    case 'formula':
+      // Static spec + warnings, with the calculator embedded as an island —
+      // the equations and the `unverified` notices must render with no JS.
+      body = renderToStaticMarkup(
+        <FormulaPresenter
+          view={view}
+          calculator={islandDiv('formula-calculator', { token, signature: view.signature })}
+        />,
+      );
       islands = true;
       break;
     case 'folder': {
