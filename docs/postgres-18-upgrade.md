@@ -51,6 +51,28 @@ enough.
 > ships **PostgreSQL 18.4 + pgvector 0.8.5** (same pgvector as the `pg17` image, so
 > the extension version does not change — only the Postgres major does).
 
+## ⚠️ After you land on pg18: scheduled backups need v0.202.1+
+
+A box that completes this upgrade while running an image older than
+**v0.202.1** has **silently broken scheduled backups** from that moment on.
+The image shipped the PostgreSQL **17** client, and `pg_dump` refuses to dump
+a server newer than itself — so the in-app backup path (Settings → Backups,
+and the nightly schedule) fails on every run while the UI shows no obvious
+alarm. It was found in the field on 2026-07-25 and dated precisely: the last
+successful scheduled dump on the reference box was the morning of its pg18
+roll.
+
+The manual paths in this document are unaffected, because they run `pg_dump`
+INSIDE the Postgres container where client and server versions match by
+construction. That is also why the breakage hid for so long.
+
+**So:** either upgrade the image to v0.202.1+ (which ships the pg18 client)
+in the same maintenance window, or treat the box as having no automatic
+backups until you do. Either way, once you are on v0.202.1+, **run
+Settings → Backups → “Run backup now” once** and confirm a fresh dump lands —
+that is the only positive proof the scheduled path is alive. And distrust the
+age of your newest pre-fix dump: it is probably older than it looks.
+
 ## What the standard dump scripts do and don't cover
 
 `scripts/db-dump.sh` / `scripts/db-restore.sh` operate on the **`postgres`

@@ -99,6 +99,22 @@ automatic HTTPS, before first boot:
 
 Certs persist in the `caddy_data` volume — don't wipe it, or you risk LE rate limits.
 
+Since **v0.202.0** the front door also routes to the *client* app (the split
+shipped two images). Two shapes, both driven by the same Caddy:
+
+- **Same-origin** — one domain, path-routed. `/api/*`, `/s/*`, `/print/*` and
+  the runtime bundles go to the server app; everything else (owner UI,
+  `/login`, `/team`, `/hub`) goes to the client app. No extra DNS, no CORS.
+  Ship [`infra/caddy/Caddyfile.same-origin`](../infra/caddy/Caddyfile.same-origin)
+  as your `Caddyfile`. `MANTLE_SITE_ADDRESS` may hold a comma-separated list
+  of hostnames — all of them get routed and certificated.
+- **Split origins** — `<domain>` + `app.<domain>`, using the default
+  Caddyfile's second vhost. Needs the extra DNS record, plus
+  `MANTLE_CLIENT_SITE_ADDRESS` and `MANTLE_API_CORS_ORIGINS`.
+
+Upgrading an existing box into either shape:
+[`upgrading-to-v0.202.md`](./upgrading-to-v0.202.md).
+
 > `MANTLE_MASTER_KEY` and `ALLOWED_USER_ID` **must match dev** for the imported
 > data to be usable — the master key decrypts the secrets/API-key vault, and the
 > user id owns every row.

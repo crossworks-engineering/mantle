@@ -102,6 +102,18 @@ Releases are tagged `vX.Y.Z`; every release publishes the image to Docker
 Hub (`titanwest/mantle:vX.Y.Z` + `latest`, amd64 + arm64) and attaches the
 matching deploy bundle.
 
+> **Two upgrades need their own runbook — a routine `pull` will not do them:**
+>
+> - **v0.202.x — the server/client split.** Mantle now ships TWO images
+>   (`mantle-server` + `mantle-client`) and the front door gains routing.
+>   Follow [`upgrading-to-v0.202.md`](./upgrading-to-v0.202.md) (env, compose
+>   adoption, start order, Caddy).
+> - **PostgreSQL 17 → 18.** A new major refuses to start on an old major's
+>   data directory. Follow [`postgres-18-upgrade.md`](./postgres-18-upgrade.md)
+>   — and note its warning about scheduled backups needing v0.202.1+.
+>
+> Do them on separate days, verifying in between.
+
 **Routine update** (image only — the common case):
 
 ```bash

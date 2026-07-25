@@ -61,82 +61,128 @@ origin isolation).
 
 ## Prerequisites
 
-1. **DNS** *(split shape only)*: create `app.<domain>` → the same IP as
-   `<domain>`. Do this FIRST — Caddy needs it resolvable to obtain the
-   certificate, and propagation is the one step you can't script.
-   (`CNAME app <domain>.` works too.)
-2. **Backup**: `scripts/db-dump.sh` from the stack dir — or directly:
-   `docker exec mantle_pg pg_dump -U postgres -Fc postgres > pre-v0202.dump`.
-   Also snapshot your env + compose: `cp .env .env.bak-pre-v0202 && cp docker-compose.yml docker-compose.yml.bak-pre-v0202`.
-3. **Compose baseline**: the split ships a new compose contract
-   (`docker-compose.yml` + `docker-compose.client.yml`, lockstep on ONE
-   `MANTLE_IMAGE_TAG`). If the box predates v0.142 (no `.release` baseline),
-   update once to any ≥ v0.142 single-image tag first so `compose-adopt.sh`
-   has an embedded canonical to extract.
-4. **Grab the deploy bundle** from the v0.202.1 GitHub release (it carries both
-   compose files, `install.sh`, `infra/`, and `scripts/` including
-   `compose-adopt.sh`).
+1. **On Postgres 18 already?** If the box is still on pg17, that major is a
+   SEPARATE migration with its own runbook —
+   [`docs/postgres-18-upgrade.md`](./postgres-18-upgrade.md) — and it is not
+   required for this upgrade (pin `POSTGRES_IMAGE_TAG=pg17` to stay put).
+   Never batch the two: do the split, verify, then the database major on its
+   own day.
+2. **Backup.** Only some boxes have `scripts/db-dump.sh`; the portable form
+   runs `pg_dump` INSIDE the container, where client and server versions
+   always match:
+   ```sh
+   docker exec mantle_pg pg_dump -U postgres -Fc postgres > ~/pre-v0202-$(date -u +%Y%m%d-%H%M%S).dump
+   ```
+   Write it to `$HOME`, not `data/` — the data dir is often root-owned and
+   the redirect fails with a bare "Permission denied". Snapshot the config
+   too:
+   ```sh
+   cp .env .env.bak-pre-v0202
+   cp docker-compose.yml docker-compose.yml.bak-pre-v0202
+   cp infra/caddy/Caddyfile infra/caddy/Caddyfile.pre-v0202
+   ```
+3. **Get the deploy bundle** from the v0.202.1 GitHub release. You need two
+   files out of it that are almost certainly NOT on the box already:
+   `scripts/compose-adopt.sh` and the Caddyfile for your chosen shape. Copy
+   them up before you start.
+   ```sh
+   scp scripts/compose-adopt.sh                <box>:<stack>/scripts/
+   scp infra/caddy/Caddyfile.same-origin       <box>:/tmp/
+   ```
+   If `scripts/` or `infra/` is root-owned (it is on some boxes), stage in
+   `/tmp` and `sudo cp` into place.
+4. **Compose baseline**: if the box predates v0.142 (no
+   `docker-compose.yml.release`), update once to any ≥ v0.142 tag first so
+   `compose-adopt.sh` has an embedded canonical to extract.
+5. **DNS** *(split shape only)*: create `app.<domain>` → the same IP as
+   `<domain>`, and let it propagate before step 6 — Caddy can't obtain the
+   certificate until it resolves. Same-origin needs no DNS change at all.
 
 ## Steps
 
-From the stack directory (all commands assume it):
+All commands run from the stack directory. This is the same-origin sequence
+(the proven default); split-shape deltas are called out inline.
 
 ```sh
-# 1. Backup (see prerequisites) — do not skip.
+# 1. Backup + snapshots — see prerequisites. Do not skip.
 
-# 2. Env additions — append to .env:
-#    MANTLE_PUBLIC_URL          canonical public origin (share links, OAuth
-#                               redirects) — set it explicitly now; several
-#                               subsystems stop guessing from headers.
-#    MANTLE_CLIENT_SITE_ADDRESS the new vhost Caddy should answer for.
-#    MANTLE_SERVER_ORIGIN       what the client app calls (the server origin).
-#    MANTLE_API_CORS_ORIGINS    += the client origin (the wildcard never
-#                               covers credentialed paths — this must be
-#                               explicit).
-#    MANTLE_IMAGE_TAG=v0.202.1
-#
-# Example for mantle.example.com:
+# 2. Env. Same-origin needs exactly two changes:
+sed -i 's/^MANTLE_IMAGE_TAG=.*/MANTLE_IMAGE_TAG=v0.202.1/' .env
 cat >> .env <<'ENV'
-MANTLE_PUBLIC_URL=https://mantle.example.com
-MANTLE_CLIENT_SITE_ADDRESS=https://app.mantle.example.com
+
+# v0.202 split — same-origin shape
 MANTLE_SERVER_ORIGIN=https://mantle.example.com
-MANTLE_API_CORS_ORIGINS=https://app.mantle.example.com
-MANTLE_IMAGE_TAG=v0.202.1
 ENV
-
-# 3. Adopt the release compose contract (shows the diff first; --apply saves
-#    the old file as docker-compose.yml.pre-adopt.<ts> and installs the
-#    canonical + baseline). Move any box-local customization the diff reveals
-#    into docker-compose.override.yml BEFORE --apply.
-sh scripts/compose-adopt.sh          # review
-sh scripts/compose-adopt.sh --apply
-
-# 3b. Sync the Caddyfile — compose-adopt handles COMPOSE files only; the
-#     box's infra/caddy/Caddyfile predates the split and lacks the client
-#     vhost (split shape) / path routing (same-origin shape). Copy the one
-#     you chose from the release bundle, then recreate caddy AFTER step 4.
+#    MANTLE_PUBLIC_URL should already be set; if not, set it now — several
+#    subsystems stop guessing the public origin from headers.
+#    MANTLE_SITE_ADDRESS is unchanged, and may carry a COMMA-SEPARATED list
+#    of hostnames; every one of them keeps working under the new Caddyfile.
 #
-#     Split shape on v0.202.1 also needs a compose override until the next
-#     tag: the canonical compose forgot to forward the vhost env to the
-#     caddy container (found on the first production roll), so add:
-#
-#       services:
-#         caddy:
-#           environment:
-#             MANTLE_CLIENT_SITE_ADDRESS: ${MANTLE_CLIENT_SITE_ADDRESS:-:8080}
-#
-#     to docker-compose.override.yml. Not needed for same-origin.
+#    SPLIT SHAPE instead adds:
+#      MANTLE_CLIENT_SITE_ADDRESS=https://app.mantle.example.com
+#      MANTLE_API_CORS_ORIGINS=https://app.mantle.example.com
 
-# 4. Roll the SERVER stack first: pull, migrate, up.
+# 3. Adopt the release compose contract. Dry run FIRST and read the diff:
+#    left-only ('-') lines are things your box adds. Anything box-specific
+#    must move to docker-compose.override.yml BEFORE --apply, or it is lost.
+#    (Common local pins that DO survive, because the override wins: the pg18
+#    image + PGDATA, a held-back browser sidecar version.)
+sh scripts/compose-adopt.sh            # review
+sh scripts/compose-adopt.sh --apply    # installs canonical + .release baseline
+                                       # and the new docker-compose.client.yml
+
+# 4. Server stack: pull, migrate, up.
 docker compose pull
 docker compose run --rm migrate
 docker compose up -d --wait --remove-orphans
 
-# 5. Then the CLIENT stack (same tag — releases are lockstep, never roll one
-#    without the other):
-docker compose -f docker-compose.client.yml pull
-docker compose -f docker-compose.client.yml up -d --wait
+# 5. Client stack — SAME tag, releases are lockstep. Note --project-directory:
+#    without it compose resolves .env relative to the compose file and the
+#    client comes up unconfigured.
+docker compose -f docker-compose.client.yml --project-directory . pull
+docker compose -f docker-compose.client.yml --project-directory . up -d --wait
+
+# 6. Caddy LAST — compose-adopt handles COMPOSE FILES ONLY, so the box's
+#    Caddyfile is still the pre-split one and knows nothing about the client
+#    app. Install the shape you chose, then recreate:
+cp infra/caddy/Caddyfile.same-origin infra/caddy/Caddyfile   # or your split vhost
+docker compose up -d --force-recreate caddy
 ```
+
+Recreating Caddy is a ~2 second blip on the public origin; everything else
+above is rolling. Confirm Caddy picked up every hostname you expect:
+
+```sh
+docker logs mantle_caddy 2>&1 | grep "automatic TLS"
+# → "domains":["mantle.example.com", ...]   ← all of them, or stop and fix
+```
+
+### What the routing now looks like (same-origin)
+
+One domain, split by path — no CORS, no second certificate, and existing
+member cookies keep working because the origin never changes:
+
+| Path | Served by |
+| --- | --- |
+| `/api/*` | server app (Hono) |
+| `/s/*`, `/print/*` | server app — the server-rendered share + print surfaces |
+| `/share-runtime/*`, `/app-runtime/*` | server app — bundles those surfaces load |
+| `/.well-known/oauth-*` | server app — MCP connector discovery |
+| **everything else** | client app — owner UI, `/login`, `/team`, `/hub`, `/env.js`, `/_next/*` |
+
+**Split shape on v0.202.1 needs one extra thing:** the canonical compose
+does not forward the vhost variable to the Caddy container, so
+`app.<domain>` silently falls back to `:8080`. Until the next tag, add to
+`docker-compose.override.yml`:
+
+```yaml
+services:
+  caddy:
+    environment:
+      MANTLE_CLIENT_SITE_ADDRESS: ${MANTLE_CLIENT_SITE_ADDRESS:-:8080}
+```
+
+Same-origin is unaffected.
 
 ## Smoke checklist (per box, in order)
 
