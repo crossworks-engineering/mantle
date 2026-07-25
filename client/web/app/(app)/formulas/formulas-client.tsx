@@ -228,6 +228,28 @@ export function FormulasClient() {
               </button>
             ))}
           </div>
+          {/* Also reachable here, not only in the empty state — a brain with
+              even one formula never shows the empty state again, which made
+              the seed set undiscoverable exactly when someone wants worked
+              examples beside their own work. Idempotent server-side. */}
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+            <p className="text-xs text-muted-foreground">
+              Or add the 5 worked examples — gas density, Reynolds, head loss, orifice flow, pump
+              power.
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={seeding}
+              onClick={async () => {
+                await addSeedSet();
+                setPicking(false);
+              }}
+            >
+              {seeding ? <Spinner /> : null}
+              Add examples
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
