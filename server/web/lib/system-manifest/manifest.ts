@@ -591,6 +591,16 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: [...FORMULA_AUTO_GRANT_SLUGS],
   },
   {
+    slug: 'formulas-eval',
+    name: 'Formulas (read + compute)',
+    description:
+      'Find, read and evaluate a stored formula, but never author or change one. For team members who need a number, not a librarian.',
+    // Authoring is a different responsibility from asking. A team member should
+    // be able to get a computed release rate with its derivation; writing a new
+    // calculation model into the owner's brain is the mathematician's job.
+    toolSlugs: ['formula_list', 'formula_get', 'formula_evaluate'],
+  },
+  {
     slug: 'calculator',
     name: 'Calculator',
     description:
@@ -1070,10 +1080,15 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-sonnet-5',
     envModelVar: 'TEAM_RESPONDER_MODEL',
     systemPrompt: AGENT_PROMPTS['team-responder']!,
-    // `team-read` is its ENTIRE surface (see the group's description for the
-    // exclusion rationale). Not a delegate, no assist surface — it is resolved
-    // explicitly by the team turn pipeline and nothing else.
-    toolGroupSlugs: ['team-read'],
+    // `team-read` is the bulk of its surface (see that group's description for
+    // the exclusion rationale). `formulas-eval` is the one addition, and it
+    // holds to the same posture: non-private reads of the owner's calculation
+    // models plus `formula_evaluate`, which is pure arithmetic — no write, no
+    // I/O, no model. A member asking "what's the release rate at 300 psi" gets
+    // a number with its derivation; authoring stays owner-side.
+    // Not a delegate, no assist surface — it is resolved explicitly by the team
+    // turn pipeline and nothing else.
+    toolGroupSlugs: ['team-read', 'formulas-eval'],
     skillSlugs: ['tool_grounding', 'chat_writing'],
     params: { temperature: 0.4, max_tokens: 16000 },
     // No owner-personal context: inject_journal OFF (the identity context is

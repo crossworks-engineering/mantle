@@ -24,6 +24,7 @@ import {
   listFormulas,
   nodeUrl,
   readFormulaSpec,
+  signatureOf,
   updateFormula,
   type FormulaRow,
   type FormulaValue,
@@ -61,32 +62,15 @@ function compact(n: FormulaRow) {
   };
 }
 
-/** The evaluable targets, so an agent never has to guess an id. */
+/**
+ * The evaluable targets with their full calling contract — id, what it
+ * produces, and the inputs it needs. This used to list ids and result symbols
+ * only, which left the agent to reconstruct the resolution ladder by hand from
+ * the variable table and guess which symbols it had to supply; `signatureOf`
+ * derives that statically and is not allowed to disagree with the evaluator.
+ */
 function targetsOf(n: FormulaRow) {
-  const spec = n.spec;
-  return [
-    ...(spec?.expressions ?? []).map((e) => ({
-      id: e.id,
-      kind: 'expression' as const,
-      equation: e.equation ?? null,
-      produces: e.resultSymbol ?? null,
-      unit: e.unit ?? null,
-    })),
-    ...(spec?.piecewise ?? []).map((p) => ({
-      id: p.id,
-      kind: 'piecewise' as const,
-      equation: null,
-      produces: p.resultSymbol ?? null,
-      unit: null,
-    })),
-    ...(spec?.lookups ?? []).map((l) => ({
-      id: l.id,
-      kind: 'lookup' as const,
-      equation: null,
-      produces: l.resultSymbol ?? null,
-      unit: null,
-    })),
-  ];
+  return n.spec ? signatureOf(n.spec) : [];
 }
 
 // ─── read ──────────────────────────────────────────────────────────────────
@@ -148,7 +132,7 @@ const formula_get: BuiltinToolDef = {
   slug: 'formula_get',
   name: 'Read a formula',
   description:
-    'Return one formula in full: the spec (variables, equations, branches, lookup tables, rating criteria), the list of evaluable `targets` to pass to `formula_evaluate`, `coverage_gaps` — key combinations a lookup declares as legal but has no row for — and `dimension_issues`, where a declared unit disagrees with the arithmetic that produces it (a dropped term, or a mislabelled constant). **A non-empty `coverage_gaps` means the source table is incomplete, not that the spec is wrong**; say so rather than inventing a value for the missing case.',
+    'Return one formula in full: the spec (variables, equations, branches, lookup tables, rating criteria) and `targets` — every evaluable id with what it produces and **the exact inputs `formula_evaluate` needs**, each marked required or defaulted, carrying its unit and, for a rating or lookup key, its legal values. Read the input list from there rather than inferring one from the spec. Also `coverage_gaps` — key combinations a lookup declares as legal but has no row for — and `dimension_issues`, where a declared unit disagrees with the arithmetic that produces it. **A non-empty `coverage_gaps` means the source table is incomplete, not that the spec is wrong**; say so rather than inventing a value for the missing case.',
   inputSchema: {
     type: 'object',
     properties: {

@@ -26,6 +26,15 @@ export {
 export { evaluateSpec, type EvalResult, type TraceStep } from '@mantle/content/formula-eval';
 
 export {
+  signatureOf,
+  signatureForTarget,
+  signatureLine,
+  type TargetSignature,
+  type SignatureInput,
+  type SignatureBranch,
+} from '@mantle/content/formula-signature';
+
+export {
   checkDimensions,
   normaliseUnit,
   type DimensionIssue,

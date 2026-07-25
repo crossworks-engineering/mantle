@@ -9,6 +9,7 @@ import {
   isFormulaSpecError,
   parseFormulaSpec,
   checkDimensions,
+  signatureOf,
 } from '@/lib/formulas';
 
 const PatchBody = z.object({
@@ -32,6 +33,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     formula: row,
     coverageGaps: parsed.ok ? checkLookupCoverage(parsed.spec) : [],
     dimensionIssues: parsed.ok ? checkDimensions(parsed.spec) : [],
+    // The evaluator form and the public share calculator both build their
+    // fields from this rather than each re-deriving which symbols are needed.
+    signature: parsed.ok ? signatureOf(parsed.spec) : [],
     ...(parsed.ok ? {} : { specErrors: parsed.errors }),
   });
 }

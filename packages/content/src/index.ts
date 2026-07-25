@@ -293,7 +293,13 @@ export {
   type FilterOp,
 } from './table-model';
 
-export { evalFormula, evalExpression, type RefResolver, type EvalValue } from './table-formula';
+export {
+  evalFormula,
+  evalExpression,
+  refsIn,
+  type RefResolver,
+  type EvalValue,
+} from './table-formula';
 
 export { tableToText, tableToCsv, formatCellText } from './table-to-text';
 
@@ -311,6 +317,16 @@ export {
 } from './formula-spec';
 
 export { evaluateSpec, type EvalResult, type TraceStep } from './formula-eval';
+
+export {
+  signatureOf,
+  signatureForTarget,
+  signatureLine,
+  type TargetSignature,
+  type SignatureInput,
+  type SignatureInputKind,
+  type SignatureBranch,
+} from './formula-signature';
 
 export { formulaToText } from './formula-to-text';
 
