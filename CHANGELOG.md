@@ -51,6 +51,15 @@ stays a Next.js app, untouched.
   remote box must allowlist your dev origin (`http://localhost:3000`) in
   `MANTLE_API_CORS_ORIGINS` — the wildcard never covers `/api/auth`. See
   [`docs/db-less-dev.md`](docs/db-less-dev.md).
+- **Scheduled backups work again on PostgreSQL 18 boxes.** The image shipped
+  the PostgreSQL 17 client, and `pg_dump` refuses to dump a server newer than
+  itself — so from the moment a box moved to pg18, every scheduled backup
+  failed silently. The image now ships the **18** client (a newer `pg_dump`
+  handles older servers, so pg17 boxes are unaffected). After upgrading, run
+  one manual backup (Settings → Backups) to confirm the pipeline is alive.
+- **Migration guide:** [`docs/upgrading-to-v0.202.md`](docs/upgrading-to-v0.202.md)
+  — the full path from the single-image era to the split (DNS, env additions,
+  compose adoption, per-box smoke checklist, the pg17-era notes, rollback).
 - **The runtime moves to Node 26** (`26.5.0`, V8 14.6) — base image
   `node:26-slim`, `engines: node >=26`, `.nvmrc` and CI matched. Node 26 is the
   *current* line, not yet LTS; it promotes around Oct 2026, so until then this
