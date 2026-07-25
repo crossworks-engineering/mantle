@@ -63,6 +63,10 @@ ssh mantle-prod 'cd ~/mantle && docker compose pull'
 ssh mantle-prod 'cd ~/mantle && docker compose up -d --wait'
 #   Do NOT stop worker_telegram (see Gotchas). For a service rename/add/remove,
 #   see the topology-change gotcha — you need the bundle's compose + --remove-orphans.
+
+# ── 3b. (VPS) roll the CLIENT stack — a SEPARATE compose file, easily missed ──
+ssh mantle-prod 'cd ~/mantle && docker compose -f docker-compose.client.yml --project-directory . pull \
+  && docker compose -f docker-compose.client.yml --project-directory . up -d --wait'
 ```
 
 ## Verify
@@ -80,6 +84,20 @@ Then smoke-test the surface the release actually changed in the browser (and
 
 ## Gotchas
 
+- **The owner UI is a SECOND stack — `docker compose up` does not roll it.**
+  Since the v0.200.0 split the client image (`mantle-client`, the zero-secret
+  owner UI) is driven by `docker-compose.client.yml`, which the default project
+  never loads. A plain `docker compose pull && up -d` leaves `mantle_client_web`
+  on the OLD image, silently: every container reports healthy, `/api/version`
+  reports the new version (that's the *server*), and only the UI is stale. Hit
+  on the v0.203.0 roll, where the release's two fixes were both client-side, so
+  the roll would have shipped nothing a user could see. Always run step 3b, and
+  verify with `docker ps` that `mantle_client_web` shows the new tag — the
+  version endpoint cannot tell you.
+- **The box may pin an explicit tag, not `latest`.** Check
+  `grep MANTLE_IMAGE_TAG .env` before pulling; if it names a version, bump it
+  or `pull` re-fetches the old one and `up -d` is a no-op that looks like
+  success.
 - **Compose is release-owned (v0.142+)** — updates driven by the in-app
   **updater** auto-refresh a pristine `docker-compose.yml` from the target
   image, so compose-level changes (new services, healthchecks, mounts) land
