@@ -172,6 +172,20 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['tool_grounding']!,
   },
   {
+    slug: 'formula_use',
+    name: 'Formula use',
+    description:
+      'Find a stored calculation model, collect its inputs by unit, and report the number WITH its derivation.',
+    instructions: SKILL_INSTRUCTIONS['formula_use']!,
+  },
+  {
+    slug: 'formula_authoring',
+    name: 'Formula authoring',
+    description:
+      'How to transcribe a calculation out of a standard: the spec shape, the transcription ethic, and the checks that make it done.',
+    instructions: SKILL_INSTRUCTIONS['formula_authoring']!,
+  },
+  {
     slug: 'specialist_routing',
     name: 'Specialist routing',
     description:
@@ -880,6 +894,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'navigation',
       'integrations',
       'specialist_routing',
+      // It holds `formulas` + `calculator`, so running a stored model is its
+      // own job; this is the how — units named when asking, trace quoted when
+      // answering. Authoring still routes to the mathematician.
+      'formula_use',
     ],
     params: { temperature: 0.7, max_tokens: 16000 },
     // Context budgets for the generalist responder. Onboarding seeds these
@@ -992,6 +1010,30 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     priority: 100,
   },
   {
+    slug: 'mathematician',
+    // ⚠ DISPLAY NAME IS JASON'S CALL — "Euler" is the plan's placeholder,
+    // chosen to sit alongside Remy / Ledger / Reader. Confirm before release.
+    name: 'Euler',
+    description:
+      'Calculation librarian — transcribes equations out of standards into stored formulas, and audits the ones already there.',
+    role: 'custom',
+    model: 'anthropic/claude-sonnet-5',
+    envModelVar: 'MATHEMATICIAN_MODEL',
+    systemPrompt: AGENT_PROMPTS['mathematician']!,
+    // `formulas` (author + evaluate, no delete) + `calculator` for arithmetic it
+    // does itself; `memory-core` to read standards already ingested into the
+    // brain, and `files` to read a PDF or sheet the user just uploaded — a
+    // transcriber that cannot open its source is useless. NOT `formulas-admin`:
+    // deleting a calculation model stays a deliberate human act.
+    toolGroupSlugs: ['formulas', 'calculator', 'memory-core', 'files'],
+    skillSlugs: ['formula_authoring', 'formula_use', 'tool_grounding'],
+    isDelegate: true,
+    // Low: transcription is the opposite of a creative task — the failure mode
+    // is a plausible invented equation, not a dull one.
+    params: { temperature: 0.2 },
+    priority: 100,
+  },
+  {
     slug: 'reader',
     name: 'Reader',
     description:
@@ -1089,7 +1131,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // Not a delegate, no assist surface — it is resolved explicitly by the team
     // turn pipeline and nothing else.
     toolGroupSlugs: ['team-read', 'formulas-eval'],
-    skillSlugs: ['tool_grounding', 'chat_writing'],
+    skillSlugs: ['tool_grounding', 'chat_writing', 'formula_use'],
     params: { temperature: 0.4, max_tokens: 16000 },
     // No owner-personal context: inject_journal OFF (the identity context is
     // the OWNER's self-knowledge), no digests (those summarize the owner's own
