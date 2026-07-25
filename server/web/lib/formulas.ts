@@ -5,6 +5,7 @@ export {
   isFormulaSpecError,
   listFormulas,
   countFormulas,
+  listFormulaStandards,
   getFormula,
   readFormulaSpec,
   createFormula,

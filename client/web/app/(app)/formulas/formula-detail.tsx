@@ -3,7 +3,15 @@
 import { useMemo, useState } from 'react';
 import katex from 'katex';
 import { AlertTriangle, Sigma } from 'lucide-react';
-import type { CoverageGap, FormulaSpec, FormulaValue, TraceStep } from '@server/lib/formulas';
+import type {
+  CoverageGap,
+  DimensionIssue,
+  FormulaSpec,
+  FormulaValue,
+  SignatureInput,
+  TargetSignature,
+  TraceStep,
+} from '@server/lib/formulas';
 import { Badge } from '@mantle/web-ui/ui/badge';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
@@ -42,15 +50,22 @@ type EvalResponse =
   | { ok: true; value: FormulaValue; trace: TraceStep[] }
   | { ok: false; error: string; trace: TraceStep[] };
 
-function citation(spec: FormulaSpec): string | null {
-  const s = spec.source;
+/** Runs BEFORE the degraded-spec guard below (the title bar renders either
+ *  way), so it must tolerate a spec that no longer validates — `sections: '5.3'`
+ *  as a bare string reaches `.join` and throws. */
+function citation(spec: FormulaSpec | undefined): string | null {
+  const s = spec?.source;
   if (!s) return null;
+  const list = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
   const head = [s.standard, s.part ? `Part ${s.part}` : '', s.edition ? `(${s.edition})` : '']
     .filter(Boolean)
     .join(' ');
-  const sections = s.sections?.length ? `, §${s.sections.join(', §')}` : '';
-  const tables = s.tables?.length ? `, Tables ${s.tables.join(', ')}` : '';
-  return `${head}${sections}${tables}`.trim() || null;
+  const sections = list(s.sections);
+  const tables = list(s.tables);
+  const out = `${head}${sections.length ? `, §${sections.join(', §')}` : ''}${
+    tables.length ? `, Tables ${tables.join(', ')}` : ''
+  }`.trim();
+  return out || null;
 }
 
 /** Renders the author-supplied `latex` when present, else the literal
@@ -98,6 +113,56 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/** A finding about the spec itself, rather than about a computed value. */
+function Notice({
+  tone = 'muted',
+  title,
+  children,
+}: {
+  tone?: 'muted' | 'destructive';
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex gap-3 rounded-md border p-3',
+        tone === 'destructive'
+          ? 'border-destructive/40 bg-destructive/5'
+          : 'border-border bg-muted/50',
+      )}
+    >
+      <AlertTriangle
+        className={cn(
+          'mt-0.5 size-4 shrink-0',
+          tone === 'destructive' ? 'text-destructive' : 'text-muted-foreground',
+        )}
+      />
+      <div className="min-w-0 space-y-1 text-xs">
+        <p className="font-medium text-foreground">{title}</p>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The equation was not read off the source — supplied from memory, inferred, or
+ * reconstructed. docs/formulas.md promises this "renders as a warning
+ * everywhere"; it is the one mark that changes whether a reader may rely on the
+ * number, so it travels with the equation rather than sitting in a footnote.
+ */
+function UnverifiedBadge({ reason }: { reason: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Badge variant="destructive" className="text-[10px]">
+        Unverified
+      </Badge>
+      <span className="text-xs text-muted-foreground">{reason}</span>
+    </span>
+  );
+}
+
 function valueOf(raw: string): FormulaValue {
   const t = raw.trim();
   if (t === '') return null;
@@ -108,44 +173,30 @@ function valueOf(raw: string): FormulaValue {
 export function FormulaDetail({
   formula,
   coverageGaps,
+  dimensionIssues,
+  signature,
+  specErrors,
 }: {
   formula: FormulaRow;
   coverageGaps: CoverageGap[];
+  dimensionIssues: DimensionIssue[];
+  signature: TargetSignature[];
+  specErrors?: string[];
 }) {
   const spec = formula.spec;
   const cite = citation(spec);
 
-  const targets = useMemo(
-    () => [
-      ...spec.expressions.map((e) => ({ id: e.id, kind: 'expression' })),
-      ...spec.piecewise.map((p) => ({ id: p.id, kind: 'branch' })),
-      ...spec.lookups.map((l) => ({ id: l.id, kind: 'lookup' })),
-    ],
-    [spec],
-  );
-
-  const [target, setTarget] = useState(targets[0]?.id ?? '');
+  const [target, setTarget] = useState(signature[0]?.id ?? '');
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [result, setResult] = useState<EvalResponse | null>(null);
   const [running, setRunning] = useState(false);
 
-  // Everything the user may supply: declared inputs, plus the key symbols of
-  // every lookup (which are enums rather than variables).
-  const inputFields = useMemo(() => {
-    const fields = spec.variables
-      .filter((v) => v.role === 'input')
-      .map((v) => ({ symbol: v.symbol, label: v.name ?? v.symbol, unit: v.unit ?? null }));
-    const seen = new Set(fields.map((f) => f.symbol));
-    for (const lookup of spec.lookups) {
-      for (const key of lookup.keys) {
-        if (!seen.has(key)) {
-          seen.add(key);
-          fields.push({ symbol: key, label: key, unit: null });
-        }
-      }
-    }
-    return fields;
-  }, [spec]);
+  const activeTarget = useMemo(() => signature.find((s) => s.id === target), [signature, target]);
+
+  // Exactly what the chosen target needs — no more. This used to offer every
+  // declared input plus every lookup key in the whole spec, so a two-variable
+  // equation rendered a dozen boxes and gave no clue which mattered.
+  const inputFields: SignatureInput[] = activeTarget?.inputs ?? [];
 
   async function run() {
     if (!target) return;
@@ -172,46 +223,105 @@ export function FormulaDetail({
     }
   }
 
+  const header = (
+    <header className="border-b border-border px-6 py-4">
+      <div className="flex items-center gap-2">
+        <Sigma className="size-4 text-muted-foreground" />
+        <h2 className="truncate text-base font-semibold text-foreground">{formula.title}</h2>
+      </div>
+      {cite ? <p className="mt-1 text-xs text-muted-foreground">{cite}</p> : null}
+      {spec?.unitSystem ? (
+        <Badge variant="secondary" className="mt-2">
+          {spec.unitSystem}
+        </Badge>
+      ) : null}
+    </header>
+  );
+
+  // A stored spec that no longer re-parses. Every section below indexes into
+  // spec arrays the validator guarantees, so rendering on regardless would
+  // throw and blank the pane — which is how this degraded silently: the node
+  // exists, the list shows it, and selecting it produced nothing at all.
+  if (specErrors && specErrors.length > 0) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {header}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto scrollbar-thin px-6 py-5">
+          <Notice tone="destructive" title="This formula no longer validates">
+            <p className="text-muted-foreground">
+              The stored spec fails to parse, so it cannot be rendered or evaluated. Fix it with the
+              assistant, or edit the source directly.
+            </p>
+            <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
+              {specErrors.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+            </ul>
+          </Notice>
+          <Section title="Stored spec">
+            <pre className="overflow-x-auto rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground scrollbar-thin">
+              <code>{JSON.stringify(spec, null, 2)}</code>
+            </pre>
+          </Section>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-border px-6 py-4">
-        <div className="flex items-center gap-2">
-          <Sigma className="size-4 text-muted-foreground" />
-          <h2 className="truncate text-base font-semibold text-foreground">{formula.title}</h2>
-        </div>
-        {cite ? <p className="mt-1 text-xs text-muted-foreground">{cite}</p> : null}
-        {spec.unitSystem ? (
-          <Badge variant="secondary" className="mt-2">
-            {spec.unitSystem}
-          </Badge>
-        ) : null}
-      </header>
+      {header}
 
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto scrollbar-thin px-6 py-5">
         {coverageGaps.length > 0 ? (
-          <div className="flex gap-3 rounded-md border border-border bg-muted/50 p-3">
-            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-            <div className="space-y-1 text-xs">
-              <p className="font-medium text-foreground">
-                The source leaves {coverageGaps.length} combination
-                {coverageGaps.length === 1 ? '' : 's'} unspecified
-              </p>
-              <p className="text-muted-foreground">
-                These keys are declared legal but have no row. Evaluating one is an error rather
-                than a zero.
-              </p>
-              <ul className="text-muted-foreground">
-                {coverageGaps.slice(0, 12).map((gap, i) => (
-                  <li key={i}>
-                    <code>{gap.lookupId}</code>:{' '}
-                    {Object.entries(gap.key)
-                      .map(([k, v]) => `${k}=${String(v)}`)
-                      .join(', ')}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+          <Notice
+            title={`The source leaves ${coverageGaps.length} combination${
+              coverageGaps.length === 1 ? '' : 's'
+            } unspecified`}
+          >
+            <p className="text-muted-foreground">
+              These keys are declared legal but have no row. Evaluating one is an error rather than
+              a zero.
+            </p>
+            <ul className="text-muted-foreground">
+              {coverageGaps.slice(0, 12).map((gap, i) => (
+                <li key={i}>
+                  <code>{gap.lookupId}</code>
+                  {gap.skipped ? (
+                    <> — {gap.skipped}</>
+                  ) : (
+                    <>
+                      :{' '}
+                      {Object.entries(gap.key)
+                        .map(([k, v]) => `${k}=${String(v)}`)
+                        .join(', ')}
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </Notice>
+        ) : null}
+
+        {dimensionIssues.length > 0 ? (
+          <Notice
+            tone="destructive"
+            title={`The arithmetic disagrees with ${dimensionIssues.length} declared unit${
+              dimensionIssues.length === 1 ? '' : 's'
+            }`}
+          >
+            <p className="text-muted-foreground">
+              A term is missing, or a variable&apos;s unit is wrong. Values may still look right —
+              this is the check that catches a constant labelled with the wrong dimension.
+            </p>
+            <ul className="space-y-1 text-muted-foreground">
+              {dimensionIssues.map((issue, i) => (
+                <li key={i}>
+                  <code>{issue.id}</code> — {issue.detail}
+                </li>
+              ))}
+            </ul>
+          </Notice>
         ) : null}
 
         {spec.expressions.length > 0 ? (
@@ -234,6 +344,8 @@ export function FormulaDetail({
                     ) : null}
                   </div>
                   <Equation latex={e.latex} expression={e.expression} />
+                  {e.unverified ? <UnverifiedBadge reason={e.unverified} /> : null}
+                  {e.note ? <p className="text-xs text-muted-foreground">{e.note}</p> : null}
                 </div>
               ))}
             </div>
@@ -367,14 +479,27 @@ export function FormulaDetail({
                   <SelectValue placeholder="Choose a target" />
                 </SelectTrigger>
                 <SelectContent>
-                  {targets.map((t) => (
+                  {signature.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
                       {t.id} · {t.kind}
+                      {t.produces ? ` → ${t.produces}` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+
+            {activeTarget && activeTarget.unverified.length > 0 ? (
+              <Notice tone="destructive" title="This result depends on an unverified equation">
+                <ul className="space-y-1 text-muted-foreground">
+                  {activeTarget.unverified.map((u) => (
+                    <li key={u.id}>
+                      <code>{u.id}</code> — {u.reason}
+                    </li>
+                  ))}
+                </ul>
+              </Notice>
+            ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
               {inputFields.map((f) => (
@@ -384,13 +509,46 @@ export function FormulaDetail({
                     {f.unit ? (
                       <span className="ml-1 font-sans text-muted-foreground">({f.unit})</span>
                     ) : null}
+                    {f.required ? null : (
+                      <span className="ml-1 font-sans text-muted-foreground">optional</span>
+                    )}
                   </Label>
-                  <Input
-                    id={`in-${f.symbol}`}
-                    value={inputs[f.symbol] ?? ''}
-                    placeholder={f.label === f.symbol ? '' : f.label}
-                    onChange={(e) => setInputs((prev) => ({ ...prev, [f.symbol]: e.target.value }))}
-                  />
+                  {/* An enum whose legal values are known becomes a picker, so a
+                      case-typo is impossible rather than merely loud — symbols
+                      are case-sensitive and 'a' would be an error, not an 'A'. */}
+                  {f.kind === 'enum' && f.domain?.length ? (
+                    <Select
+                      value={inputs[f.symbol] ?? ''}
+                      onValueChange={(v) => setInputs((prev) => ({ ...prev, [f.symbol]: v }))}
+                    >
+                      <SelectTrigger id={`in-${f.symbol}`}>
+                        <SelectValue placeholder={f.name ?? 'Choose…'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {f.domain.map((v) => (
+                          <SelectItem key={String(v)} value={String(v)}>
+                            {String(v)}
+                            {f.criteria?.[String(v)] ? ` — ${f.criteria[String(v)]}` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id={`in-${f.symbol}`}
+                      value={inputs[f.symbol] ?? ''}
+                      placeholder={f.default !== undefined ? String(f.default) : (f.name ?? '')}
+                      onChange={(e) =>
+                        setInputs((prev) => ({ ...prev, [f.symbol]: e.target.value }))
+                      }
+                    />
+                  )}
+                  {f.undeclared ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Not declared as a variable in the spec.
+                    </p>
+                  ) : null}
+                  {f.note ? <p className="text-[11px] text-muted-foreground">{f.note}</p> : null}
                 </div>
               ))}
             </div>

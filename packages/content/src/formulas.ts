@@ -174,6 +174,30 @@ export async function countFormulas(ownerId: string, opts: ListFormulasOpts = {}
   return row?.n ?? 0;
 }
 
+/**
+ * The distinct source standards across ALL of an owner's formulas.
+ *
+ * Deliberately unfiltered: this populates the standard filter itself, and a
+ * dropdown built from the current (filtered, paged) result set would drop the
+ * option you are standing on the moment you select it.
+ */
+export async function listFormulaStandards(ownerId: string): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ standard: sql<string>`${nodes.data}->'spec'->'source'->>'standard'` })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'formula'),
+        sql`${nodes.data}->'spec'->'source'->>'standard' is not null`,
+      ),
+    );
+  return rows
+    .map((r) => r.standard)
+    .filter((s): s is string => typeof s === 'string' && s.trim() !== '')
+    .sort((a, b) => a.localeCompare(b));
+}
+
 export async function getFormula(ownerId: string, id: string): Promise<FormulaRow | null> {
   const [row] = await db
     .select()
