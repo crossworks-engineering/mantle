@@ -3,6 +3,7 @@ import { getPage } from '@mantle/content';
 import { requireOwner } from '@/lib/auth';
 import { renderPageDoc } from '@/lib/render-page-doc';
 import { htmlPage } from './template';
+import { appearanceStamp } from './appearance';
 
 /**
  * Owner-only print surface for a Page (port of app/print/pages/[id]) — no app
@@ -28,11 +29,18 @@ export function mountPrint(app: Hono): void {
       htmlPage(
         {
           title: page.title ?? 'Page', // htmlPage escapes
+          // The brain's brand palette + display fonts, so an exported PDF
+          // carries the same typography and accents as every other surface.
+          // The forced white background below still wins: the colour theme is
+          // the accent palette, not the light/dark mode, so a PDF keeps
+          // printing light regardless of it.
+          //
           // The compiled stylesheet pins html/body to overflow:hidden for the
           // app shell; a printed document needs natural height so Chromium
-          // paginates it all. Force a white page too — a PDF should print
-          // light regardless of theme.
-          extraHead: `<style>html,body{overflow:visible!important;height:auto!important;background:#fff}</style>`,
+          // paginates it all.
+          extraHead:
+            (await appearanceStamp(user.id)) +
+            `<style>html,body{overflow:visible!important;height:auto!important;background:#fff}</style>`,
         },
         // WYSIWYG: render only the page content — no injected page-name
         // heading, matching the public share surface and the Markdown export.

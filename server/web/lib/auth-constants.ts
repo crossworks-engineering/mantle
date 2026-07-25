@@ -24,6 +24,10 @@ export const PUBLIC_PATHS = [
   '/s',
   '/api/federation',
   '/api/version',
+  // System-wide branding (colour theme + display fonts). Public because the
+  // zero-secret client app must stamp it before first paint from a different
+  // origin, and it's the same branding every /s share already renders openly.
+  '/api/appearance',
   '/app-runtime',
   // The remote MCP endpoint self-authenticates with an OAuth bearer, so it must
   // bypass the session-cookie gate. See apps/web/app/api/mcp/route.ts.

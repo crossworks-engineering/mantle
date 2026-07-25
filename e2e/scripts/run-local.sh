@@ -72,6 +72,26 @@ up() {
     [ "$i" = 120 ] && { echo "✗ server web not ready — tail:"; tail -30 "$web_log"; return 1; }
   done
   echo "→ client app on :$client_port (log: $client_log)"
+  # Next 16 permits only ONE dev server per project DIRECTORY — not per port.
+  # A `pnpm dev` stack holding client/web therefore makes this one exit at once,
+  # and the only symptom is the useless 120s "did not become ready" below, with
+  # the real reason ("Another next dev server is already running") buried in the
+  # client log. Fail fast and name the process instead.
+  #
+  # Matched by CWD, not by process name, so a `next dev` for an unrelated
+  # project doesn't trip it. Needs /proc; where that's absent we skip the check
+  # rather than guess (fail open — worst case is the old 120s timeout).
+  if [ -d /proc ]; then
+    for pid in $(pgrep -f 'next dev' 2>/dev/null); do
+      cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+      if [ "$cwd" = "$root/client/web" ]; then
+        echo "✗ a 'next dev' server (PID $pid) is already running in client/web." >&2
+        echo "  Next allows only one per project dir, so the e2e client cannot start." >&2
+        echo "  Stop your dev stack first (e.g. kill -TERM -\$(ps -o pgid= -p $pid | tr -d ' '))." >&2
+        return 1
+      fi
+    done
+  fi
   fuser -k "$client_port/tcp" 2>/dev/null && sleep 1 || true
   ( setsid env PORT="$client_port" MANTLE_SERVER_ORIGIN="http://localhost:$port" \
       pnpm -C client/web dev >"$client_log" 2>&1 & echo $! >"$client_pid_file" )

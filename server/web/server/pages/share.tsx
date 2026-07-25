@@ -1,7 +1,7 @@
 import type { Context, Hono } from 'hono';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { loadProfilePreferences, shareModeOf } from '@mantle/content';
-import { DEFAULT_COLOR_THEME } from '@mantle/web-ui/lib/themes';
+import { shareModeOf } from '@mantle/content';
+import { appearanceStamp } from './appearance';
 import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
 import { resolveShareVisitor } from '@/lib/team-gate';
 import { PagePresenter } from '@/components/share/page-presenter';
@@ -10,7 +10,7 @@ import { FilePresenter } from '@/components/share/file-presenter';
 import { TaskPresenter } from '@/components/share/task-presenter';
 import { EventPresenter } from '@/components/share/event-presenter';
 import { FolderPresenter, loadFolderListing } from '@/components/share/folder-presenter';
-import { htmlPage, islandDiv, scriptSafeJson, shareShell } from './template';
+import { htmlPage, islandDiv, shareShell } from './template';
 
 /**
  * The public /s/[token] share surface — the port of app/s/[token]/page.tsx.
@@ -20,23 +20,6 @@ import { htmlPage, islandDiv, scriptSafeJson, shareShell } from './template';
  * /share-runtime/islands.js. Always resolved per request against the live DB —
  * a revoked link must 404 immediately.
  */
-
-/** The share OWNER's stored color theme, stamped before paint so shared
- *  pages/apps render in the brain's brand theme rather than the visitor
- *  default (was components/share/owner-color-theme.tsx). colorThemeOwner is
- *  the lock ColorThemeProvider checks on mount inside sandboxed apps. */
-async function ownerThemeStamp(ownerId: string): Promise<string> {
-  let theme: string | undefined;
-  try {
-    theme = (await loadProfilePreferences(ownerId)).colorTheme;
-  } catch {
-    // prefs unavailable — fall back to the default theme rather than failing
-  }
-  if (!theme || theme === DEFAULT_COLOR_THEME) return '';
-  return `<script>(function(h){h.dataset.colorTheme=${scriptSafeJson(
-    theme,
-  )};h.dataset.colorThemeOwner='1';})(document.documentElement);</script>`;
-}
 
 async function renderShare(c: Context): Promise<Response> {
   const token = c.req.param('token') ?? '';
@@ -50,7 +33,7 @@ async function renderShare(c: Context): Promise<Response> {
   if (!view) return c.notFound();
 
   const heading = 'title' in view ? view.title : view.filename;
-  const extraHead = await ownerThemeStamp(share.ownerId);
+  const extraHead = await appearanceStamp(share.ownerId);
   const gated = shareModeOf(share) === 'team';
 
   // Team-mode shares gate on a live team session; without one the visitor

@@ -8,6 +8,7 @@ import { useColorTheme } from '@mantle/web-ui/color-theme-provider';
 import { COLOR_THEMES } from '@mantle/web-ui/lib/themes';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PreviewTabs } from '@/components/theme-preview/preview-tabs';
+import { TypographyFontControls } from '@/components/appearance/typography-font-controls';
 
 const MODES: Array<{ id: string; label: string; icon: LucideIcon }> = [
   { id: 'light', label: 'Light', icon: Sun },
@@ -91,6 +92,17 @@ function Controls() {
             );
           })}
         </div>
+      </section>
+
+      {/* Display fonts. These persist to the brain's profile row exactly like
+          the colour theme above (PUT /api/profile/fonts), so they are
+          system-wide — but until now the picker was only mounted in an
+          UNROUTED typography demo, leaving no way to actually set them. */}
+      <section className="space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Typography
+        </h2>
+        <TypographyFontControls />
       </section>
     </div>
   );

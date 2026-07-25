@@ -263,10 +263,40 @@ export function displayFontFaceCss(): string {
 }
 
 /**
+ * The two display-font CSS vars as a `:root{…}` rule, for callers that already
+ * know the stored keys SERVER-SIDE and can render them into the document —
+ * the share/print surfaces and the client's blocking /env.js. That path beats
+ * `fontPrepaintScript()` below: it needs no localStorage, so it is correct on a
+ * browser (or an origin) that has never been visited, and correct for an
+ * anonymous visitor who has no stored copy at all.
+ *
+ * Returns '' when both are default/unknown, so the var() fallbacks win and the
+ * caller emits nothing.
+ */
+export function fontVarsCss(
+  logo: string | null | undefined,
+  title: string | null | undefined,
+): string {
+  const decls: string[] = [];
+  if (logo && logo !== DEFAULT_LOGO_FONT) {
+    const v = fontFamilyValue(logo);
+    if (v) decls.push(`--font-wordmark:${v}`);
+  }
+  if (title && title !== DEFAULT_TITLE_FONT) {
+    const v = fontFamilyValue(title);
+    if (v) decls.push(`--font-page-title:${v}`);
+  }
+  return decls.length ? `:root{${decls.join(';')}}` : '';
+}
+
+/**
  * Before-paint script (mirrors the colour-theme one in the root layout): reads
  * this browser's cached choices from localStorage and sets the two CSS vars
  * BEFORE React hydrates, so a stored custom font paints without a flash of the
  * default. A default choice sets nothing (the element's var() fallback wins).
+ *
+ * Kept as the FALLBACK for when the server-side values aren't available (the
+ * /env.js fetch failed); `fontVarsCss` above is the primary path.
  */
 export function fontPrepaintScript(): string {
   const map: Record<string, string> = {};
