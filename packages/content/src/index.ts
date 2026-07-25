@@ -330,6 +330,14 @@ export {
 
 export { formulaToText } from './formula-to-text';
 
+export {
+  FORMULA_SEED,
+  FORMULA_SEED_SLUGS,
+  SEED_TAG,
+  type SeedFormula,
+  type SeedExample,
+} from './formula-seed';
+
 export { calculate, type CalcResult, type CalcOptions } from './calculate';
 
 export { checkDimensions, normaliseUnit, type DimensionIssue } from './formula-dimensions';

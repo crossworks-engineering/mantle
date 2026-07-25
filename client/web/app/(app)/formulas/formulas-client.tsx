@@ -27,7 +27,8 @@ import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { TagPill } from '@mantle/web-ui/tag-pill';
 import { useListNav } from '@/lib/use-list-nav';
-import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { useToast } from '@mantle/web-ui/ui/toast';
 import { syncSelectionParam } from '@/lib/url-sync';
 import { cn } from '@mantle/web-ui/lib/utils';
 import type { CoverageGap, DimensionIssue, TargetSignature } from '@server/lib/formulas';
@@ -59,8 +60,10 @@ export function FormulasClient() {
   const searchParams = useSearchParams();
   const { pending, go } = useListNav();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [editor, setEditor] = useState<EditorState>(null);
   const [picking, setPicking] = useState(false);
+  const [seeding, setSeeding] = useState(false);
 
   const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
   const query = searchParams.get('q')?.trim() ?? '';
@@ -130,6 +133,23 @@ export function FormulasClient() {
     }
     setPicking(false);
     setEditor({ mode: 'new', spec });
+  }
+
+  async function addSeedSet() {
+    setSeeding(true);
+    try {
+      const res = await apiSend<{ created: string[] }>('/api/formulas/seed', 'POST');
+      await queryClient.invalidateQueries({ queryKey: ['formulas'] });
+      toast.success(
+        res.created.length > 0
+          ? `Added ${res.created.length} example formula${res.created.length === 1 ? '' : 's'}`
+          : 'The examples are already here',
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not add the examples');
+    } finally {
+      setSeeding(false);
+    }
   }
 
   async function afterSave(id: string) {
@@ -266,10 +286,20 @@ export function FormulasClient() {
               <p className="text-sm text-muted-foreground">
                 No formulas yet. Write one from a standard, or ask the assistant to transcribe one.
               </p>
-              <Button variant="outline" size="sm" onClick={() => setPicking(true)}>
-                <Plus />
-                New formula
-              </Button>
+              <div className="flex flex-col items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPicking(true)}>
+                  <Plus />
+                  New formula
+                </Button>
+                <Button variant="ghost" size="sm" disabled={seeding} onClick={addSeedSet}>
+                  {seeding ? <Spinner /> : null}
+                  Add 5 example formulas
+                </Button>
+                <p className="max-w-[260px] text-xs text-muted-foreground">
+                  Widely-known models — gas density, Reynolds number, head loss, orifice flow, pump
+                  power — that show how each part of the format is written. Delete them any time.
+                </p>
+              </div>
             </div>
           ) : (
             formulas.map((f) => (
