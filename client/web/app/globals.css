@@ -3,6 +3,14 @@
  * packages/web-ui so both Next apps share one source. Relative path: Tailwind's
  * CSS @import resolver does not follow package `exports`. */
 @import '../../../packages/web-ui/styles/themes.css';
+/* Scan the shared component package for utilities. An @import pulls in CSS but
+ * does NOT add source files, and Tailwind's auto-detection stops at this app's
+ * own root — so any class used ONLY in packages/web-ui generated no CSS at all.
+ * That silently broke every Switch and Checkbox in the owner UI: their
+ * `data-[state=checked]:bg-primary` / `:translate-x-4` rules were never emitted,
+ * so a toggle looked identical on and off. server/web has always had this line;
+ * it was missed when the owner UI moved here in the member carve. */
+@source '../../../packages/web-ui/src';
 @plugin 'tailwindcss-animate';
 @plugin '@tailwindcss/typography';
 
