@@ -137,15 +137,10 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
     void refetch();
   }, [refetch]);
 
-  // Brand the member surface: stamp the OWNER's colour theme on <html> (same
-  // lock OwnerColorTheme sets, so the visitor's localStorage never re-applies
-  // over the brain's brand). Light/dark stays the member's own toggle.
-  useEffect(() => {
-    const t = data?.colorTheme;
-    if (!t) return;
-    document.documentElement.dataset.colorTheme = t;
-    document.documentElement.dataset.colorThemeOwner = '1';
-  }, [data?.colorTheme]);
+  // No theme stamping here: the OWNER's brand + the `data-color-theme-owner`
+  // lock arrive server-rendered on <html> (root layout + middleware member
+  // flag) — see team-hub-client for the full rationale. Light/dark stays the
+  // member's own toggle.
 
   if (authed === null) {
     return (

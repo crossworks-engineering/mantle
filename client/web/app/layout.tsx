@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import Script from 'next/script';
 import './globals.css';
 // KaTeX styles for math nodes (inlineMath/blockMath) — bundled locally from the
@@ -12,6 +13,7 @@ import { QueryProvider } from '@mantle/web-ui/query-provider';
 import { displayFontFaceCss } from '@mantle/web-ui/display-fonts';
 import { resolveAppearanceAttrs } from '@mantle/web-ui/appearance';
 import { loadBrainAppearance } from '@/lib/appearance';
+import { MEMBER_SURFACE_HEADER } from '@/lib/member-surface';
 
 /**
  * ZERO-SECRET client root layout. No DB, no session read — the tab title is
@@ -35,7 +37,16 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const appearance = resolveAppearanceAttrs(await loadBrainAppearance());
+  const [appearance, hdrs] = await Promise.all([
+    loadBrainAppearance().then(resolveAppearanceAttrs),
+    headers(),
+  ]);
+  // Member surfaces (/team, /hub — flagged by the middleware) carry the
+  // owner-brand lock in the ORIGINAL HTML, so the providers see it at mount
+  // and never start visitor-local behavior (the random-theme toggle) over the
+  // brand. The attributes themselves are the same for every surface — the
+  // brain has ONE appearance.
+  const memberSurface = hdrs.get(MEMBER_SURFACE_HEADER) === '1';
   const fontStyle: Record<string, string> = {};
   if (appearance.fontVars.wordmark) fontStyle['--font-wordmark'] = appearance.fontVars.wordmark;
   if (appearance.fontVars.pageTitle) fontStyle['--font-page-title'] = appearance.fontVars.pageTitle;
@@ -45,6 +56,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       className="h-full"
       suppressHydrationWarning
       data-color-theme={appearance.colorTheme}
+      data-color-theme-owner={memberSurface ? '1' : undefined}
       data-font-logo={appearance.fontLogo}
       data-font-title={appearance.fontTitle}
       style={fontStyle as React.CSSProperties}

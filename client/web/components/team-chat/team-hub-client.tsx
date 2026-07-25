@@ -220,18 +220,13 @@ export function TeamHubShell() {
     void refetch();
   }, [refetch]);
 
-  // Brand the member surface: stamp the OWNER's colour theme on <html>. The
-  // sandboxed hub app mirrors the host <html> attributes live, so this
-  // restyles a designated hub app too. Never clears — an unset owner theme
-  // just leaves the default in place.
-  useEffect(() => {
-    const t = data?.colorTheme;
-    if (!t) return;
-    document.documentElement.dataset.colorTheme = t;
-    // Same lock OwnerColorTheme sets: the ColorThemeProvider must not re-apply
-    // the visitor's localStorage over the brain's brand theme.
-    document.documentElement.dataset.colorThemeOwner = '1';
-  }, [data?.colorTheme]);
+  // No theme stamping here: the OWNER's brand + the `data-color-theme-owner`
+  // lock arrive server-rendered on <html> (root layout + middleware member
+  // flag), so the document is branded BEFORE the providers mount — the
+  // post-fetch stamp this replaced left a window where visitor-local state
+  // could start over the brand. The sandboxed hub app mirrors the host <html>
+  // attributes, so it inherits the brand the same way. A mid-session admin
+  // theme change shows on the member's next load.
 
   if (authed === null) {
     return (

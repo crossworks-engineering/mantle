@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { MEMBER_SURFACE_HEADER } from '@/lib/member-surface';
 
 /**
  * ZERO-SECRET client middleware. This app holds no SESSION_SECRET, so it can
@@ -18,13 +19,27 @@ const PRESENCE_COOKIE = 'mantle_authed';
  *  with a team token against /api/team/*, never the owner presence flow). */
 const PUBLIC_PREFIXES = ['/login', '/env.js', '/app-runtime', '/team', '/hub'];
 
+/** Member surfaces get the owner-brand LOCK rendered into the original HTML.
+ *  The root layout can't see the pathname, so this is forwarded as a request
+ *  header — always overwritten here (never trusted from the client; spoofing
+ *  it only locks the spoofer's own theme, but determinism matters). NOTE:
+ *  '/team-admin' is the OWNER's console, not a member surface — the prefix
+ *  match below is exact-or-slash so it doesn't catch it. */
+const MEMBER_PREFIXES = ['/team', '/hub'];
+
 export function middleware(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
+  const isMember = MEMBER_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.delete(MEMBER_SURFACE_HEADER);
+  if (isMember) requestHeaders.set(MEMBER_SURFACE_HEADER, '1');
+  const pass = () => NextResponse.next({ request: { headers: requestHeaders } });
+
   if (PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
-    return NextResponse.next();
+    return pass();
   }
   if (req.cookies.get(PRESENCE_COOKIE)?.value === '1') {
-    return NextResponse.next();
+    return pass();
   }
   const url = req.nextUrl.clone();
   url.pathname = '/login';
