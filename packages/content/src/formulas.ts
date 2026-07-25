@@ -175,6 +175,24 @@ export async function countFormulas(ownerId: string, opts: ListFormulasOpts = {}
 }
 
 /**
+ * Every `spec.id` the owner already holds, uncapped.
+ *
+ * The seeder's "already present" check used `listFormulas` — whose default
+ * LIMIT is 500 — so on a brain past that, presence detection silently ran on a
+ * page of the collection and re-seeding could duplicate. Presence is a
+ * question about ALL formulas or it is not a presence check.
+ */
+export async function listFormulaSpecIds(ownerId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ specId: sql<string | null>`${nodes.data}->'spec'->>'id'` })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'formula')));
+  return new Set(
+    rows.map((r) => r.specId).filter((s): s is string => typeof s === 'string' && s !== ''),
+  );
+}
+
+/**
  * The distinct source standards across ALL of an owner's formulas.
  *
  * Deliberately unfiltered: this populates the standard filter itself, and a

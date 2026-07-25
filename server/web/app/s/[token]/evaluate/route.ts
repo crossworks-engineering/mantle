@@ -29,6 +29,10 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
 /** Enough for the largest real model; far below anything that costs time. */
 const MAX_INPUT_KEYS = 200;
 const MAX_VALUE_LENGTH = 1000;
+/** The legit ceiling is ~MAX_INPUT_KEYS × MAX_VALUE_LENGTH plus JSON overhead
+ *  (~250KB). Anything past double that is not a calculation — refuse it before
+ *  `req.json()` buffers it, since there is no server-wide body limit. */
+const MAX_BODY_BYTES = 512_000;
 
 function notFound() {
   return NextResponse.json(
@@ -57,6 +61,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'formula') return notFound();
   if (!(await resolveShareVisitor(req.headers.get('cookie'), share))) return notFound();
+
+  const declaredLength = Number(req.headers.get('content-length') ?? 0);
+  if (declaredLength > MAX_BODY_BYTES) {
+    return NextResponse.json(
+      { error: 'request body too large' },
+      { status: 413, headers: { 'cache-control': 'no-store' } },
+    );
+  }
 
   const raw = (await req.json().catch(() => null)) as {
     target?: unknown;

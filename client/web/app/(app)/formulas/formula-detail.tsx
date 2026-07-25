@@ -47,6 +47,7 @@ import {
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { parseInputText } from '@mantle/content/formula-eval';
 import { ShareControl } from '@/components/share-control';
 
 export type FormulaRow = {
@@ -176,12 +177,7 @@ function UnverifiedBadge({ reason }: { reason: string }) {
   );
 }
 
-function valueOf(raw: string): FormulaValue {
-  const t = raw.trim();
-  if (t === '') return null;
-  const n = Number(t);
-  return Number.isFinite(n) && /^[-+]?[0-9.eE+]+$/.test(t) ? n : t;
-}
+// One coercer for every evaluation surface — see parseInputText's rationale.
 
 export function FormulaDetail({
   formula,
@@ -236,8 +232,8 @@ export function FormulaDetail({
     try {
       const supplied: Record<string, FormulaValue> = {};
       for (const [k, v] of Object.entries(inputs)) {
-        const parsed = valueOf(v);
-        if (parsed !== null) supplied[k] = parsed;
+        const parsed = parseInputText(v);
+        if (parsed !== undefined) supplied[k] = parsed;
       }
       const res = await apiSend<EvalResponse>(`/api/formulas/${formula.id}/evaluate`, 'POST', {
         target,
@@ -272,8 +268,18 @@ export function FormulaDetail({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {/* The shared page is a live calculator, so team mode is offered:
-              a colleague can put their own numbers in without an account. */}
-          <ShareControl nodeId={formula.id} iconOnly teamMode />
+              a colleague can put their own numbers in without an account.
+              The hint is kind-specific because the DEFAULT one promises the
+              item "lists in the team workspace either way" — and formulas are
+              not in TEAM_WORKSPACE_TYPES (a deliberate whitelist), so that
+              would be false here. Listing formulas in the hub is deferred
+              work; until then the link must be passed along directly. */}
+          <ShareControl
+            nodeId={formula.id}
+            iconOnly
+            teamMode
+            teamHint="Visitors must enter their team token to open the calculator. Formulas don't appear in the team workspace yet — send the link directly."
+          />
           <Button variant="outline" size="sm" onClick={onEdit}>
             <Pencil />
             Edit

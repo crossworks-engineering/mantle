@@ -10,6 +10,8 @@
  * through either has to be lossless.
  */
 
+import { parseInputText } from '@mantle/content/formula-eval';
+
 export type Row = Record<string, unknown>;
 export type Draft = Record<string, unknown>;
 
@@ -52,15 +54,13 @@ export function listOf(raw: string): string[] {
  * coercing everything would be worse: a hole size of `'1/4 in'` and a rating of
  * `'A'` are values, not arithmetic, and `'1.2.3'` is a version string rather
  * than NaN.
+ *
+ * Delegates to the ONE coercer beside the evaluator — three UIs each grew a
+ * near-copy with different numeric regexes, and the divergence is exactly the
+ * kind of wrong that only shows on a numeric lookup key.
  */
 export function scalar(raw: string): unknown {
-  const t = raw.trim();
-  if (t === '') return undefined;
-  if (t === 'true') return true;
-  if (t === 'false') return false;
-  if (!/^[-+]?[0-9.]+(e[-+]?[0-9]+)?$/i.test(t)) return t;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : t;
+  return parseInputText(raw);
 }
 
 /**
@@ -69,21 +69,29 @@ export function scalar(raw: string): unknown {
  * should not appear in the source view, let alone in the stored spec.
  *
  * `false` and `0` are VALUES and survive; only genuinely absent things go.
+ *
+ * `keepEmpty` protects LOOKUP ROWS. A `null` cell is a legal value there
+ * (`isScalar` allows it, and an `onMiss: 'null'` table legitimately carries
+ * them) — the first cut pruned it like any other absence, so a VALID stored
+ * spec came back from the editor with the cell gone, failed validation on a
+ * "missing result" it never had, and could not be saved at all.
  */
-export function prune(value: unknown): unknown {
+export function prune(value: unknown, keepEmpty = false): unknown {
   if (Array.isArray(value)) {
-    const out = value.map(prune).filter((v) => v !== undefined);
+    const out = value.map((v) => prune(v, keepEmpty)).filter((v) => v !== undefined);
     return out.length > 0 ? out : undefined;
   }
   if (value && typeof value === 'object') {
     const out: Row = {};
     for (const [k, v] of Object.entries(value as Row)) {
-      const pruned = prune(v);
+      // Everything under a `rows` key is table DATA, where null and '' are
+      // cell values rather than editor noise.
+      const pruned = prune(v, keepEmpty || k === 'rows');
       if (pruned !== undefined) out[k] = pruned;
     }
     return Object.keys(out).length > 0 ? out : undefined;
   }
-  if (value === '' || value === null) return undefined;
+  if (!keepEmpty && (value === '' || value === null)) return undefined;
   return value;
 }
 

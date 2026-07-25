@@ -34,6 +34,7 @@
     "./formula-eval": "./src/formula-eval.ts",
     "./formula-to-text": "./src/formula-to-text.ts",
     "./formula-signature": "./src/formula-signature.ts",
+    "./formula-seed": "./src/formula-seed.ts",
     "./formulas": "./src/formulas.ts",
     "./calculate": "./src/calculate.ts",
     "./formula-dimensions": "./src/formula-dimensions.ts"

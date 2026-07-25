@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { parseInputText } from '@mantle/content/formula-eval';
 import type { FormulaValue, TargetSignature, TraceStep } from '@mantle/content';
 
 /**
@@ -43,10 +44,8 @@ export function FormulaCalculator({
     try {
       const supplied: Record<string, FormulaValue> = {};
       for (const [k, v] of Object.entries(inputs)) {
-        const t = v.trim();
-        if (t === '') continue;
-        const n = Number(t);
-        supplied[k] = Number.isFinite(n) && /^[-+]?[0-9.]+(e[-+]?[0-9]+)?$/i.test(t) ? n : t;
+        const parsed = parseInputText(v);
+        if (parsed !== undefined) supplied[k] = parsed;
       }
       const res = await fetch(`/s/${encodeURIComponent(token)}/evaluate`, {
         method: 'POST',
