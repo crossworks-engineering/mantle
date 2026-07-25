@@ -20,12 +20,15 @@
 # cost is fine; the operational simplicity is worth more.
 
 # ── 1. deps: full workspace install ─────────────────────────────────────────
-# Node 24 LTS — long support window (25 is the short-lived "current" line).
+# Node 26 — the current line, adopted 2026-07-25 for the V8 14.6 performance
+# work. It is NOT yet LTS: 26 is an even-numbered line and promotes to Active
+# LTS around Oct 2026, at which point this pin simply becomes the LTS pin. Until
+# then we ride "current", so watch the release notes on minor bumps.
 # pnpm 11.1.2 (pinned in packageManager) imports a Node builtin not present in
-# Node 20, so node:20-slim fails install with ERR_UNKNOWN_BUILTIN_MODULE; 24 is
+# Node 20, so node:20-slim fails install with ERR_UNKNOWN_BUILTIN_MODULE; 26 is
 # safely above that. corepack is unbundled from Node 25+, so we install pnpm via
-# npm directly (works on 24 and forward).
-FROM node:24-slim AS deps
+# npm directly.
+FROM node:26-slim AS deps
 WORKDIR /app
 
 # Copy manifests first so the install layer is cached when only source changes.
@@ -93,15 +96,19 @@ COPY . .
 FROM deps AS server
 ENV NODE_ENV=production
 # pg_dump for the scheduled-backup feature (/settings/backups). Must be the
-# pgdg v17 client — bookworm's default postgresql-client is 15, and pg_dump
-# refuses servers newer than itself. curl is installed and purged in the same
-# layer; the pgdg keyring + client stay.
+# pgdg client — the distro default lags (bookworm shipped 15, trixie 17), and
+# pg_dump refuses servers newer than itself. The repo codename is DERIVED from
+# the base image, not hardcoded: node:24-slim was bookworm, node:26-slim is
+# trixie, and a stale hardcoded codename fails the apt install outright (that
+# is exactly what the Node 24 → 26 bump hit). curl is installed and purged in
+# the same layer; the pgdg keyring + client stay.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && install -d /usr/share/postgresql-common/pgdg \
     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
          -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+    && . /etc/os-release \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
          > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends postgresql-client-17 \

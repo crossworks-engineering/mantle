@@ -4,9 +4,10 @@
  * never reach another app's data (there is no path input — only the
  * authenticated app node id, resolved to a registry row here).
  *
- * Uses the built-in `node:sqlite` (DatabaseSync) — no native dependency; works
- * on Node 24+ (prod) and 26 (dev). Dynamic-imported so merely importing content
- * elsewhere doesn't trip the experimental-module warning. Server-only.
+ * Uses the built-in `node:sqlite` (DatabaseSync) — no native dependency; Node 26
+ * in both dev and prod since 2026-07-25 (engines >=26). Dynamic-imported so
+ * merely importing content elsewhere doesn't trip the experimental-module
+ * warning. Server-only.
  *
  * NOT re-exported from the package index — import via '@mantle/content/app-broker'
  * so it stays out of client/edge bundles.

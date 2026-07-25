@@ -176,7 +176,7 @@ Updating is `docker compose pull && docker compose up -d --wait`. Full guide
 (domains/HTTPS, pinned versions, backups, rollback):
 **[docs/self-hosting.md](./docs/self-hosting.md)**
 
-Hack on it — dev checkout with hot reload. Prereqs: **Node 24+**, **pnpm**,
+Hack on it — dev checkout with hot reload. Prereqs: **Node 26+**, **pnpm**,
 and **Docker** running (`pnpm start` boots Postgres/MinIO/Tika in containers):
 
 ```bash

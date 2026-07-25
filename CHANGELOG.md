@@ -40,7 +40,10 @@ stays a Next.js app, untouched.
   upload, and share-asset `Range` verified live under the node server.
 - **The Docker server image drops the compile step**: `build` is asset
   generation only (app-runtime, route manifest, share-runtime), and `CMD` is
-  `pnpm -C server/web start` (tsx). The client target is unchanged.
+  the exec form `pnpm -C server/web exec tsx server/main.ts` — exec, not the
+  run-script form, so `SIGTERM` reaches the server instead of dying in the
+  package-manager wrapper (`docker stop` settles in ~0.2 s rather than burning
+  the full 10 s grace and taking a `SIGKILL`). The client target is unchanged.
 - **`pnpm dev:fe` now runs `client/web`.** The client app is zero-secret and
   natively detached, so the old bearer-minting machinery is gone — you sign in
   on the login page. Config moved to `client/web/.env.detached.local`
@@ -48,6 +51,23 @@ stays a Next.js app, untouched.
   remote box must allowlist your dev origin (`http://localhost:3000`) in
   `MANTLE_API_CORS_ORIGINS` — the wildcard never covers `/api/auth`. See
   [`docs/db-less-dev.md`](docs/db-less-dev.md).
+- **The runtime moves to Node 26** (`26.5.0`, V8 14.6) — base image
+  `node:26-slim`, `engines: node >=26`, `.nvmrc` and CI matched. Node 26 is the
+  *current* line, not yet LTS; it promotes around Oct 2026, so until then this
+  pin rides ahead of LTS deliberately, for the V8 and stream performance work.
+  Nothing in the application tree needed changing: the only native/wasm
+  dependencies (`@napi-rs/canvas`, `libsodium-wrappers`) are N-API/wasm and
+  survive the ABI 147 bump untouched, and the `node:sqlite` engine probes that
+  back Tables v2 and the per-app broker — the exact things a runtime bump would
+  break — pass unchanged.
+- **The image's base OS moves with it: Debian 12 (bookworm) → 13 (trixie)**,
+  since that is what `node:26-slim` is built on. This broke the image build
+  until fixed: the PostgreSQL apt repo line hardcoded `bookworm-pgdg`, which
+  does not resolve on trixie, and `apt-get install postgresql-client` failed
+  outright. The codename is now **derived from the base image**
+  (`. /etc/os-release` → `${VERSION_CODENAME}-pgdg`) so the next base bump
+  can't reintroduce it. Anything else that assumes bookworm package names in
+  an image layer is worth a second look.
 - **Footprint** (measured back-to-back on one host, idle boot): server image
   **1.81 GB, down from 2.01 GB** (the `.next` output is gone); settled RSS
   ~**643 MB vs ~683 MB** under `next start`; boot-to-ready ~3.2 s vs ~2.4 s —

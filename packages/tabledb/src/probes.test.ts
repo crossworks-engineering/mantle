@@ -4,9 +4,10 @@ import { runTableStorageProbes } from './probes';
 
 /**
  * Behavior-pinned foundations of Tables v2 (plan §2). These run on every CI
- * branch (host Node 24 — same major as the prod image) and, via probes-cli,
+ * branch (host Node 26 — same major as the prod image) and, via probes-cli,
  * inside the prod image itself on release. A failure here means node:sqlite
  * drifted under us — fix the engine assumption before anything else.
+ * They were the gate for the Node 24 → 26 bump (2026-07-25) and passed unchanged.
  */
 describe('table-storage probes', () => {
   it('every required probe passes, each pinning one engine behavior', async () => {

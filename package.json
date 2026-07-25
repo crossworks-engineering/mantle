@@ -6,7 +6,7 @@
   "license": "SEE LICENSE IN LICENSE.md",
   "packageManager": "pnpm@11.1.2",
   "engines": {
-    "node": ">=24"
+    "node": ">=26"
   },
   "scripts": {
     "predev": "bash scripts/preflight-dev.sh",
@@ -27,8 +27,8 @@
     "apps:push": "pnpm -C server/web apps:push",
     "licenses:notices": "node scripts/generate-notices.mjs",
     "lint": "eslint .",
-    "format": "prettier --write \"**/*.{ts,tsx,mjs,cjs}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,mjs,cjs}\"",
+    "format": "prettier --write \"{server,client,packages,e2e,scripts}/**/*.{ts,tsx,mjs,cjs}\" \"*.{ts,tsx,mjs,cjs}\"",
+    "format:check": "prettier --check \"{server,client,packages,e2e,scripts}/**/*.{ts,tsx,mjs,cjs}\" \"*.{ts,tsx,mjs,cjs}\"",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
