@@ -35,3 +35,18 @@ export function runtimeApiBase(): string {
   const v = runtimeEnv().apiBase ?? process.env.NEXT_PUBLIC_MANTLE_API_BASE ?? '';
   return v.replace(/\/+$/, '');
 }
+
+/**
+ * Absolute URL for a path the SERVER app serves, not the client one.
+ *
+ * `/s/…` share links are the case that matters. Since the member carve the
+ * owner UI and the server are two different origins, and a link built from
+ * `window.location.origin` points at the client — which does not serve `/s` at
+ * all, so every link an owner copied 404'd (or bounced to /login). Falls back
+ * to the current origin, which is correct for the same-origin monolith.
+ */
+export function serverUrl(path: string): string {
+  const base = (runtimeEnv().serverOrigin ?? runtimeApiBase()).replace(/\/+$/, '');
+  if (base) return `${base}${path}`;
+  return typeof window === 'undefined' ? path : `${window.location.origin}${path}`;
+}

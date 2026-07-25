@@ -8,6 +8,7 @@ import { Switch } from '@mantle/web-ui/ui/switch';
 import { Input } from '@mantle/web-ui/ui/input';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
+import { serverUrl } from '@mantle/web-ui/runtime-env';
 
 type ShareInfo = {
   id: string;
@@ -63,8 +64,10 @@ export function ShareControl({
   const [childCount, setChildCount] = useState(0);
   const [copied, setCopied] = useState(false);
 
-  const absoluteUrl =
-    share && typeof window !== 'undefined' ? window.location.origin + share.path : '';
+  // The SERVER's origin, not this app's: /s/… is served by the server tier,
+  // and since the client/server split a link built from window.location.origin
+  // pointed at an app that does not serve it at all.
+  const absoluteUrl = share ? serverUrl(share.path) : '';
 
   const load = useCallback(async () => {
     try {
