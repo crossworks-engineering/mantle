@@ -38,7 +38,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # BOTH dimensions must be original matrix keys. With platform only in
+        # `include`, the includes merge into the 2 target combinations and the
+        # LAST include overwrites the first (added values are overwritable) —
+        # v0.202.0 shipped arm64-only manifests for both images exactly that
+        # way. As original keys this is a true 4-job cross product, and the
+        # includes merely attach the right runner to each platform.
         target: [server, client]
+        platform: [linux/amd64, linux/arm64]
         include:
           - platform: linux/amd64
             runner: ubuntu-24.04
@@ -121,6 +128,20 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Tripwire: exactly one digest per architecture BEFORE anything is
+      # tagged. A missing arch here means the build matrix regressed (see the
+      # matrix note above) — fail now, while the registry tags are untouched,
+      # instead of publishing a partial manifest that `:latest` consumers pull.
+      - name: Assert one digest per architecture
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          n=$(ls -1 | wc -l)
+          if [ "$n" -ne 2 ]; then
+            echo "expected 2 per-arch digests (amd64 + arm64), got $n:" >&2
+            ls -1 >&2
+            exit 1
+          fi
+
       - name: Create + push the multi-arch manifest
         working-directory: ${{ runner.temp }}/digests
         run: |
@@ -129,8 +150,15 @@ jobs:
             -t "${IMAGE}:latest" \
             $(printf "${IMAGE}@sha256:%s " *)
 
-      - name: Inspect
-        run: docker buildx imagetools inspect "${IMAGE}:${{ github.ref_name }}"
+      # Belt to the braces above: the PUSHED manifest must list both
+      # platforms, for BOTH targets (the node:sqlite probe below only runs on
+      # the server image and only exercises amd64 — the client merge passed
+      # v0.202.0's arm64-only manifest without it).
+      - name: Inspect + assert both platforms
+        run: |
+          docker buildx imagetools inspect "${IMAGE}:${{ github.ref_name }}" | tee /tmp/inspect.txt
+          grep -q "linux/amd64" /tmp/inspect.txt
+          grep -q "linux/arm64" /tmp/inspect.txt
 
       # Tables v2 foundation gate: node:sqlite is experimental upstream, so the
       # engine behaviors table storage leans on (readOnly enforcement, FTS5

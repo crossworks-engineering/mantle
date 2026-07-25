@@ -4,7 +4,28 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.202.1 — 2026-07-25
+
+**Release-engineering fix — use this tag, not v0.202.0.** The split's release
+matrix (its first real run) collapsed to arm64-only: `platform` lived only in
+the matrix `include`, whose entries merge into existing combinations with
+later includes overwriting values earlier ones added — so both targets built
+arm64 twice, and `mantle-{server,client}:v0.202.0` + `:latest` published as
+**arm64-only manifests** unusable on amd64 boxes. (The server image's
+`node:sqlite` probe caught it; the client had no such gate and published.)
+No code changes vs v0.202.0.
+
+- `platform` is now an original matrix dimension (a true 4-job cross
+  product); the `include` entries only attach the runner.
+- Two new tripwires in the merge job: exactly one digest per architecture
+  BEFORE anything is tagged, and the pushed manifest must list both
+  platforms — for both targets, closing the client's gateless publish.
+
 ## v0.202.0 — 2026-07-25
+
+> **Do not deploy this tag** — its published images are arm64-only (release
+> matrix bug, fixed in v0.202.1). Everything below shipped correctly in
+> v0.202.1.
 
 **The server tier runs Hono now — Next.js is removed from `server/web`.** After
 the member carve (v0.201.0), `server/web` was an API-first tier: the whole

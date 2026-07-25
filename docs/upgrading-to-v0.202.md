@@ -43,7 +43,7 @@ follows the same order minus the pulls.
    `MANTLE_IMAGE_TAG`). If the box predates v0.142 (no `.release` baseline),
    update once to any ≥ v0.142 single-image tag first so `compose-adopt.sh`
    has an embedded canonical to extract.
-4. **Grab the deploy bundle** from the v0.202.0 GitHub release (it carries both
+4. **Grab the deploy bundle** from the v0.202.1 GitHub release (it carries both
    compose files, `install.sh`, `infra/`, and `scripts/` including
    `compose-adopt.sh`).
 
@@ -63,7 +63,7 @@ From the stack directory (all commands assume it):
 #    MANTLE_API_CORS_ORIGINS    += the client origin (the wildcard never
 #                               covers credentialed paths — this must be
 #                               explicit).
-#    MANTLE_IMAGE_TAG=v0.202.0
+#    MANTLE_IMAGE_TAG=v0.202.1
 #
 # Example for mantle.example.com:
 cat >> .env <<'ENV'
@@ -71,7 +71,7 @@ MANTLE_PUBLIC_URL=https://mantle.example.com
 MANTLE_CLIENT_SITE_ADDRESS=https://app.mantle.example.com
 MANTLE_SERVER_ORIGIN=https://mantle.example.com
 MANTLE_API_CORS_ORIGINS=https://app.mantle.example.com
-MANTLE_IMAGE_TAG=v0.202.0
+MANTLE_IMAGE_TAG=v0.202.1
 ENV
 
 # 3. Adopt the release compose contract (shows the diff first; --apply saves
