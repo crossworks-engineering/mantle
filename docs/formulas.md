@@ -123,6 +123,34 @@ convention. (Excel disagrees — there `=-2^2` is `+4`. We do not follow Excel.)
 Right-associative with a unary-capable exponent: `2^3^2` = 512, `2^-1` = 0.5.
 Scientific notation and leading-dot decimals are accepted (`1.5E-6`, `.5`).
 
+## 4a. The calling contract — `formula-signature.ts`
+
+`signatureOf(spec)` answers the question that comes *before* "what is the
+number": **what must I hand it?** Per evaluable target it returns what the
+target produces and every input — unit, required-vs-defaulted, and for a lookup
+key or a rating its legal values plus the classification's criteria prose.
+
+It is a **static mirror** of the evaluator's resolution ladder, not a second
+opinion. If the two ever disagree, the evaluator is right and the signature is
+the bug. Two properties follow from being static rather than a dry run:
+
+- **It sees every branch.** A dry run with placeholder values would report the
+  inputs of whichever piecewise case happened to match, so a form built from it
+  would lose fields the moment a pressure crossed a threshold. Branch needs are
+  unioned; `branches` still carries the per-case breakdown.
+- **It cannot fail on arithmetic.** No divide-by-zero, no lookup miss — asking
+  what a formula needs must never itself error.
+
+It also rolls `unverified` **up**: a piecewise carries none of its own while
+branching entirely on a from-memory equation, and "may I rely on this number"
+is the question that matters.
+
+Never persisted — computed on read, same drift rule as the rendered text.
+Surfaced on `formula_get`'s `targets`, on `GET /api/formulas/[id]` as
+`signature`, and as a `Callable:` section in `formulaToText` so the embedding
+captures *capability* ("can it work out a release rate from pressure and
+temperature?") rather than only text.
+
 ## 5. Dimensional checking — `formula-dimensions.ts`
 
 `checkDimensions(spec)` evaluates each expression with unit-bearing quantities
@@ -171,6 +199,94 @@ formula itself.
 
 Set `edition` too. Equation numbers move between editions, so a numbered
 citation to an editionless standard is not a citation.
+
+## 7. The owner UI — `client/web/app/(app)/formulas/`
+
+Master-detail, `?id=` selection, with `standard` and `tag` filters driven from
+the URL. The detail pane renders the spec plus **every finding the backend
+computes**: `unverified` badges on the equations that carry them, the dimension
+issues, the coverage gaps, and — when a stored spec no longer parses — the
+`specErrors` with the raw JSON, instead of a blank pane.
+
+The evaluator builds its fields from the signature, so only the chosen target's
+inputs appear and a rating renders as a picker carrying the source's criteria.
+
+**The editor** (`formula-editor.tsx`) is a guided form and a YAML source view
+over one draft. Its validation rail runs `parseFormulaSpec`,
+`checkLookupCoverage` and `checkDimensions` **in the browser** on every
+keystroke — the same pure functions the server runs on save, never a
+reimplementation — and shows every problem at once. The three findings are kept
+apart because they mean different things: a parse error is a malformed spec, a
+dimension issue is usually a dropped term, and a coverage gap is a fact about
+the *source* that is not the author's to fix.
+
+YAML is a first-class view rather than an export (criteria prose and notes are
+multi-line English, which JSON makes unreadable). The parser lives in
+`client/web` so `@mantle/content` stays parser-free. Templates cover blank /
+single / piecewise / lookup / full model, plus an **annotated showcase** whose
+comments carry what no form label conveys.
+
+## 8. Sharing — a link that shows its work
+
+`formula` is in `SHAREABLE_TYPES`, so `<ShareControl>`, the share API and the
+Shared-links registry all follow. The `/s/[token]` page is deliberately **split**:
+
+- **Server-rendered, no JavaScript** — equations (KaTeX server-side,
+  `trust: false` pinned), lookup tables, rating criteria, transcription notes,
+  and all the warnings. A shared engineering calculation that renders *without*
+  its `unverified` notice is worse than one that does not render at all, so
+  nothing load-bearing depends on a bundle arriving.
+- **A client island** — the live calculator, built from the signature embedded
+  in the page payload. It renders the derivation, not just the number.
+
+`POST /s/[token]/evaluate` is a safe public compute surface because
+`evaluateSpec` is pure: no model, no network, no DB write, no filesystem, and a
+hand-written parser over a fixed grammar with no path to a global scope. It is
+capped anyway (60/min per IP, 200 input symbols, 1000 chars per value).
+Authorization mirrors the shared-table rows route: an active formula share plus,
+in team mode, a live team session; everything else 404s uniformly.
+
+## 9. The mathematician
+
+`mathematician` (display name **Euler**) is a manifest specialist — which is the
+point: the boot reconcile auto-provisions it with delegation wired on every
+brain's next upgrade. It holds `formulas` + `calculator` to work, `memory-core`
+to read an ingested standard and `files` to open an uploaded PDF; **not**
+`formulas-admin`, because deleting a calculation model stays a deliberate human
+act. Temperature is low — the failure mode here is a plausible invented
+equation, not a dull one.
+
+Two skills split by audience. `formula_use` (persona + team responder) is the
+fast path for "calculate X": read the input list off the contract, **name the
+units** when asking, quote the trace when answering. `formula_authoring` (the
+specialist) carries the spec shape and the transcription ethic.
+
+Routing: transcribing and auditing delegate to the mathematician; *evaluating* a
+stored formula stays with the persona, which holds the tools. Team members get
+`formulas-eval` — find, read, compute; never author.
+
+## 10. The instructional set
+
+Five widely-known models — gas density, Reynolds number, Darcy–Weisbach head
+loss, orifice discharge, pump power — in `formula-seed.ts`. Their job is to
+teach the format by example, so between them every construct appears at least
+once, including exactly one deliberately `unverified` equation so the warning
+can be seen rather than described.
+
+They are also the **regression suite**: each carries worked examples with
+expected values, so a change that quietly breaks exponentiation or lookup
+matching fails in CI rather than on a live assessment.
+
+Delivery is an owner action (`POST /api/formulas/seed`, offered in the empty
+state), idempotent on `spec.id`, tagged `instructional` so the set can be found
+and cleared as a group. It is deliberately **out of the boot reconcile**: if the
+owner reads them and deletes them, an upgrade that silently restored them would
+overrule a decision they already made. Content is owner space — the one place
+the manifest's "product owns the defaults" rule stops.
+
+⚠ **Copyright.** This repo is public. Equations are facts; a standard's tables
+and prose are not. Nothing transcribed from API/ASME/ISO documents ships — those
+stay per-brain, authored on site from the operator's own licensed copy.
 
 When transcribing from a standard, record what the source got wrong in `notes`
 rather than silently correcting it. Real examples found while encoding the
