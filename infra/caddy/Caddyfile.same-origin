@@ -1,0 +1,34 @@
+# Mantle front door — SAME-ORIGIN shape: ONE domain serves both apps,
+# path-routed. Use this instead of the default Caddyfile when you don't want
+# an app.<domain> subdomain: no extra DNS record, no CORS, cookies are plainly
+# same-origin — and members' existing team cookies keep working (the origin
+# never changes).
+#
+#   cp infra/caddy/Caddyfile.same-origin infra/caddy/Caddyfile
+#   docker compose up -d --force-recreate caddy
+#
+# Env for this shape: MANTLE_SERVER_ORIGIN=https://<domain> (the client app
+# needs an absolute origin for its server-side appearance fetch; for browsers
+# it is same-origin anyway). MANTLE_CLIENT_SITE_ADDRESS and
+# MANTLE_API_CORS_ORIGINS are NOT needed — leave them unset.
+{$MANTLE_SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# Server-owned paths: the API plane, the share + print render surfaces,
+	# the generated runtime bundles those surfaces load, and the MCP OAuth
+	# discovery docs. Everything else (owner UI, /login, /hub, /team*,
+	# /env.js, /_next/*, fonts) falls through to the client app — both
+	# publics ship identical font/runtime assets, so either could serve
+	# them; the client is the natural default.
+	@server path /api /api/* /s /s/* /print /print/* /share-runtime/* /app-runtime/* /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource
+	handle @server {
+		reverse_proxy web:3000
+	}
+	handle {
+		reverse_proxy client-web:3000
+	}
+
+	request_body {
+		max_size 100MB
+	}
+}

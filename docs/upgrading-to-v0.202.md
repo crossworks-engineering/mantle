@@ -30,11 +30,41 @@ Registry-pull boxes: pinned `MANTLE_IMAGE_TAG` in `.env`, compose files from
 the release deploy bundle, updater sidecar optional. A source-run dev box
 follows the same order minus the pulls.
 
+## Pick your shape first: same-origin or split
+
+The two apps can be served two ways; decide before touching anything.
+
+**Same-origin (one domain, path-routed)** — recommended for a single-box
+install, and what the reference production box runs. Caddy routes the
+server-owned paths (`/api/*`, `/s/*`, `/print/*`, the runtime bundles, the
+OAuth discovery docs) to the server app and everything else to the client
+app on ONE domain. No new DNS record, no CORS config, cookies are plainly
+same-origin — and existing member team cookies keep working, since the
+origin never changes. Use
+[`infra/caddy/Caddyfile.same-origin`](../infra/caddy/Caddyfile.same-origin):
+
+```sh
+cp infra/caddy/Caddyfile.same-origin infra/caddy/Caddyfile
+```
+
+Env for this shape: `MANTLE_SERVER_ORIGIN=https://<domain>` (the client's
+server-side appearance fetch needs an absolute origin; browsers treat it as
+same-origin anyway). Skip `MANTLE_CLIENT_SITE_ADDRESS`,
+`MANTLE_API_CORS_ORIGINS`, and the DNS prerequisite below entirely — steps
+2's example simplifies accordingly, and the member re-token note does not
+apply.
+
+**Split (two origins: `<domain>` + `app.<domain>`)** — the generic default
+the rest of this guide describes. Choose it when you want the owner UI on a
+distinct origin (separate client box, CDN in front of the UI, stricter
+origin isolation).
+
 ## Prerequisites
 
-1. **DNS**: create `app.<domain>` → the same IP as `<domain>`. Do this FIRST —
-   Caddy needs it resolvable to obtain the certificate, and propagation is the
-   one step you can't script. (`CNAME app <domain>.` works too.)
+1. **DNS** *(split shape only)*: create `app.<domain>` → the same IP as
+   `<domain>`. Do this FIRST — Caddy needs it resolvable to obtain the
+   certificate, and propagation is the one step you can't script.
+   (`CNAME app <domain>.` works too.)
 2. **Backup**: `scripts/db-dump.sh` from the stack dir — or directly:
    `docker exec mantle_pg pg_dump -U postgres -Fc postgres > pre-v0202.dump`.
    Also snapshot your env + compose: `cp .env .env.bak-pre-v0202 && cp docker-compose.yml docker-compose.yml.bak-pre-v0202`.
@@ -80,6 +110,22 @@ ENV
 #    into docker-compose.override.yml BEFORE --apply.
 sh scripts/compose-adopt.sh          # review
 sh scripts/compose-adopt.sh --apply
+
+# 3b. Sync the Caddyfile — compose-adopt handles COMPOSE files only; the
+#     box's infra/caddy/Caddyfile predates the split and lacks the client
+#     vhost (split shape) / path routing (same-origin shape). Copy the one
+#     you chose from the release bundle, then recreate caddy AFTER step 4.
+#
+#     Split shape on v0.202.1 also needs a compose override until the next
+#     tag: the canonical compose forgot to forward the vhost env to the
+#     caddy container (found on the first production roll), so add:
+#
+#       services:
+#         caddy:
+#           environment:
+#             MANTLE_CLIENT_SITE_ADDRESS: ${MANTLE_CLIENT_SITE_ADDRESS:-:8080}
+#
+#     to docker-compose.override.yml. Not needed for same-origin.
 
 # 4. Roll the SERVER stack first: pull, migrate, up.
 docker compose pull
