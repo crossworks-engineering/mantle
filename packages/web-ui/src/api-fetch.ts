@@ -31,6 +31,14 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /**
+     * The parsed error body, for endpoints that return more than a message.
+     * Formula and table specs are validated all-at-once and reject with an
+     * `errors` array — collapsing that to the first line would hand the author
+     * one problem at a time, which is precisely what the validator exists to
+     * avoid.
+     */
+    readonly body?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -107,7 +115,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
     const msg = typeof body.error === 'string' ? body.error : `${res.status} ${res.statusText}`;
-    throw new ApiError(msg, res.status);
+    throw new ApiError(msg, res.status, body);
   }
   return body as T;
 }
