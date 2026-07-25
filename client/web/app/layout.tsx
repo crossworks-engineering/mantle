@@ -9,41 +9,54 @@ import { ThemeProvider } from '@mantle/web-ui/theme-provider';
 import { ColorThemeProvider } from '@mantle/web-ui/color-theme-provider';
 import { FontProvider } from '@mantle/web-ui/font-provider';
 import { QueryProvider } from '@mantle/web-ui/query-provider';
-import { COLOR_THEME_STORAGE_KEY, DEFAULT_COLOR_THEME } from '@mantle/web-ui/lib/themes';
-import { displayFontFaceCss, fontPrepaintScript } from '@mantle/web-ui/display-fonts';
+import { displayFontFaceCss } from '@mantle/web-ui/display-fonts';
+import { resolveAppearanceAttrs } from '@mantle/web-ui/appearance';
+import { loadBrainAppearance } from '@/lib/appearance';
 
 /**
  * ZERO-SECRET client root layout. No DB, no session read — the tab title is
  * the static default (the server app's logged-in metadata personalization
  * doesn't apply here; the shell adopts siteName client-side after /api/shell).
+ *
+ * The brain's SYSTEM-WIDE appearance (colour theme + display fonts) is
+ * rendered straight into the <html> tag: attributes for the ids and inline
+ * style for the two font vars, fetched server-to-server from the public
+ * GET /api/appearance (cached in lib/appearance.ts). The document arrives
+ * correct — no before-paint scripts, no localStorage, nothing to coordinate;
+ * the client providers read these attributes back on mount. That fetch is
+ * per-request state, so the layout is explicitly dynamic — which this app
+ * effectively is anyway (/env.js already serves per-request runtime config).
  */
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Mantle',
   description: 'Your tree of everything.',
 };
 
-// Apply the stored color theme before paint to avoid a flash. Yields when
-// /env.js (which runs first, blocking) fetched the brain's appearance and set
-// __MANTLE_APPEARANCE__ — server truth must win even when that truth is
-// "default", or a stale local copy would override a theme the admin changed
-// from another browser. localStorage stays as the fallback for when the
-// server tier couldn't be reached.
-const colorThemeScript = `(function(){try{if(window.__MANTLE_APPEARANCE__)return;var t=localStorage.getItem('${COLOR_THEME_STORAGE_KEY}');if(t&&t!=='${DEFAULT_COLOR_THEME}'){document.documentElement.dataset.colorTheme=t;}}catch(e){}})();`;
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const appearance = resolveAppearanceAttrs(await loadBrainAppearance());
+  const fontStyle: Record<string, string> = {};
+  if (appearance.fontVars.wordmark) fontStyle['--font-wordmark'] = appearance.fontVars.wordmark;
+  if (appearance.fontVars.pageTitle) fontStyle['--font-page-title'] = appearance.fontVars.pageTitle;
   return (
-    <html lang="en" className="h-full" suppressHydrationWarning>
+    <html
+      lang="en"
+      className="h-full"
+      suppressHydrationWarning
+      data-color-theme={appearance.colorTheme}
+      data-font-logo={appearance.fontLogo}
+      data-font-title={appearance.fontTitle}
+      style={fontStyle as React.CSSProperties}
+    >
       <head>
         {/* Runtime config FIRST and BLOCKING — window.__MANTLE_ENV__ (api base,
             flags) must exist before any bundle code runs. Served per-request by
             app/env.js/route.ts from process.env: one image, any server origin. */}
         <Script src="/env.js" strategy="beforeInteractive" />
-        <script dangerouslySetInnerHTML={{ __html: colorThemeScript }} />
         {/* Selectable wordmark/title fonts: @font-face declarations (lazy — a
-            file downloads only when a face is actually painted) + the before-paint
-            var restore, mirroring the colour-theme script above. */}
+            file downloads only when a face is actually painted). */}
         <style dangerouslySetInnerHTML={{ __html: displayFontFaceCss() }} />
-        <script dangerouslySetInnerHTML={{ __html: fontPrepaintScript() }} />
       </head>
       <body className={`${fontSans.variable} ${fontLogo.variable} h-full font-sans antialiased`}>
         <ThemeProvider

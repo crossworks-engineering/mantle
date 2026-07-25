@@ -63,7 +63,10 @@ export const COLOR_THEMES: ColorTheme[] = [
 ];
 
 export const DEFAULT_COLOR_THEME = 'clean-slate';
-export const COLOR_THEME_STORAGE_KEY = 'mantle-color-theme';
+// (No storage key for the theme itself: the choice lives on the anchor
+// owner's profile row and is server-rendered into <html data-color-theme> —
+// see @mantle/web-ui/appearance. The RANDOM_* keys below are genuinely
+// visitor-local behavior toggles, so localStorage remains right for them.)
 /** Whether "random theme" mode (reshuffle on a timer) is on. */
 export const RANDOM_THEME_STORAGE_KEY = 'mantle-random-theme';
 /** Epoch-ms of the last random reshuffle, so the timer survives reloads. */

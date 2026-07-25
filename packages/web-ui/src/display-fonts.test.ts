@@ -1,17 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  DEFAULT_LOGO_FONT,
-  DEFAULT_TITLE_FONT,
-  fontPrepaintScript,
-  resolveFontVars,
-} from './display-fonts';
+import { DEFAULT_LOGO_FONT, DEFAULT_TITLE_FONT, resolveFontVars } from './display-fonts';
+import { resolveAppearanceAttrs } from './appearance';
 
 /**
- * resolveFontVars is the single projection behind every server-side appearance
- * stamp (share/print `appearanceStamp` + the client's /env.js). Its contract:
- * defaults and unknown keys resolve to NOTHING — the emitting side must be
- * able to treat "no key" as "emit no statement" so the var() fallbacks win.
+ * resolveFontVars is the projection behind the server-rendered <html>
+ * appearance (see appearance.ts). Its contract: defaults and unknown keys
+ * resolve to NOTHING — "default" is the absence of the var, so the elements'
+ * var() fallbacks win.
  */
 describe('resolveFontVars', () => {
   it('returns nothing for unset / default / unknown keys', () => {
@@ -32,10 +28,7 @@ describe('resolveFontVars', () => {
     expect(vars.pageTitle).toBe('"Capriola", sans-serif');
   });
 
-  it("maps the 'sans' title choice onto the UI font var (non-default for the title slot)", () => {
-    // 'sans' IS the default logo font's counterpart case: default for neither
-    // slot here — as a title it's the default (skipped); as a logo it's a real
-    // choice resolving to the app font var.
+  it("maps the 'sans' logo choice onto the UI font var; as a title it IS the default", () => {
     expect(resolveFontVars('sans', undefined).wordmark).toBe(
       'var(--font-sans, ui-sans-serif, sans-serif)',
     );
@@ -43,15 +36,43 @@ describe('resolveFontVars', () => {
   });
 });
 
-describe('fontPrepaintScript', () => {
-  it('yields to a server-side stamp via the __MANTLE_APPEARANCE__ flag', () => {
-    // The guard is load-bearing: without it a stale localStorage copy repaints
-    // over the authoritative /env.js stamp. Pin its presence and position
-    // (before any localStorage read).
-    const script = fontPrepaintScript();
-    const guard = script.indexOf('if(window.__MANTLE_APPEARANCE__)return;');
-    const firstRead = script.indexOf('localStorage.getItem');
-    expect(guard).toBeGreaterThan(-1);
-    expect(firstRead).toBeGreaterThan(guard);
+/**
+ * resolveAppearanceAttrs feeds every <html> render of the brain's appearance
+ * (client root layout + the server htmlPage). Contract: "default" means the
+ * attribute is ABSENT — the appearance of a fresh brain is an empty object,
+ * and an unknown key must never surface as attribute/provider state.
+ */
+describe('resolveAppearanceAttrs', () => {
+  it('null / all-default input resolves to no attributes', () => {
+    expect(resolveAppearanceAttrs(null)).toEqual({ fontVars: {} });
+    expect(
+      resolveAppearanceAttrs({ colorTheme: 'clean-slate', fontLogo: null, fontTitle: null }),
+    ).toEqual({ fontVars: {} });
+  });
+
+  it('carries a non-default theme and resolved fonts, attributes + vars in lockstep', () => {
+    const attrs = resolveAppearanceAttrs({
+      colorTheme: 'amethyst-haze',
+      fontLogo: 'bungee-shade',
+      fontTitle: 'capriola',
+    });
+    expect(attrs.colorTheme).toBe('amethyst-haze');
+    expect(attrs.fontLogo).toBe('bungee-shade');
+    expect(attrs.fontTitle).toBe('capriola');
+    expect(attrs.fontVars).toEqual({
+      wordmark: '"Bungee Shade", sans-serif',
+      pageTitle: '"Capriola", sans-serif',
+    });
+  });
+
+  it('drops unknown font keys entirely — no attribute without a resolved var', () => {
+    const attrs = resolveAppearanceAttrs({
+      colorTheme: null,
+      fontLogo: 'ghost-font',
+      fontTitle: 'capriola',
+    });
+    expect(attrs.fontLogo).toBeUndefined();
+    expect(attrs.fontVars.wordmark).toBeUndefined();
+    expect(attrs.fontTitle).toBe('capriola');
   });
 });

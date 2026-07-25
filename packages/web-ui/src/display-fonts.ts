@@ -39,10 +39,6 @@ export type DisplayFont = {
 export const DEFAULT_LOGO_FONT = 'bukhari';
 export const DEFAULT_TITLE_FONT = 'sans';
 
-/** localStorage keys — the before-paint cache (mirrors the colour theme). */
-export const FONT_LOGO_STORAGE_KEY = 'mantle_font_logo';
-export const FONT_TITLE_STORAGE_KEY = 'mantle_font_title';
-
 const LIB = '/fonts/library';
 
 export const DISPLAY_FONTS: DisplayFont[] = [
@@ -264,13 +260,13 @@ export function displayFontFaceCss(): string {
 
 /**
  * Resolve the two stored display-font keys to their CSS `font-family` values,
- * dropping defaults and unknown keys — the shared projection behind every
- * server-side stamp (the share/print `appearanceStamp` and the client's
- * blocking /env.js). Both emit the result as INLINE style properties on
- * `<html>`, never a `:root{}` rule: `fontPrepaintScript()` below sets inline
- * props from localStorage, and inline style beats any stylesheet rule
- * regardless of document order — a `:root` stamp would silently lose to a
- * visitor's stale cached fonts.
+ * dropping defaults and unknown keys — the shared projection behind the
+ * server-rendered `<html>` appearance attributes (see appearance.ts). Values
+ * land as inline style on the root element; "default" is the absence of the
+ * var, so the elements' var() fallbacks win. There is deliberately NO
+ * localStorage / before-paint-script path anymore: the document arrives
+ * correct, and the client providers read the rendered attributes back as
+ * their initial state.
  */
 export type ResolvedFontVars = { wordmark?: string; pageTitle?: string };
 export function resolveFontVars(
@@ -287,34 +283,4 @@ export function resolveFontVars(
     if (v) out.pageTitle = v;
   }
   return out;
-}
-
-/**
- * Before-paint script (mirrors the colour-theme one in the root layout): reads
- * this browser's cached choices from localStorage and sets the two CSS vars
- * BEFORE React hydrates, so a stored custom font paints without a flash of the
- * default. A default choice sets nothing (the element's var() fallback wins).
- *
- * This is the FALLBACK: when /env.js fetched the brain's appearance it sets
- * `__MANTLE_APPEARANCE__` and this script yields — server truth must win even
- * when that truth is "default", or a stale local copy would keep repainting a
- * theme the admin already changed. On the server-rendered surfaces the flag
- * never exists, so this applies the local cache and the owner's
- * `appearanceStamp` script (which runs later) overrides it.
- */
-export function fontPrepaintScript(): string {
-  const map: Record<string, string> = {};
-  for (const f of DISPLAY_FONTS) {
-    const v = fontFamilyValue(f.key);
-    if (v) map[f.key] = v;
-  }
-  return (
-    `(function(){try{if(window.__MANTLE_APPEARANCE__)return;` +
-    `var M=${JSON.stringify(map)},` +
-    `L=localStorage.getItem('${FONT_LOGO_STORAGE_KEY}'),` +
-    `T=localStorage.getItem('${FONT_TITLE_STORAGE_KEY}'),r=document.documentElement.style;` +
-    `if(L&&L!=='${DEFAULT_LOGO_FONT}'&&M[L])r.setProperty('--font-wordmark',M[L]);` +
-    `if(T&&T!=='${DEFAULT_TITLE_FONT}'&&M[T])r.setProperty('--font-page-title',M[T]);` +
-    `}catch(e){}})();`
-  );
 }

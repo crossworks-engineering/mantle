@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     "./api-fetch": "./src/api-fetch.ts",
+    "./appearance": "./src/appearance.ts",
     "./app-bridge/protocol": "./src/app-bridge/protocol.ts",
     "./app-sandbox/access-log": "./src/app-sandbox/access-log.tsx",
     "./app-sandbox/app-sandbox": "./src/app-sandbox/app-sandbox.tsx",

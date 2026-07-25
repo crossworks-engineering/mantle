@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 import {
-  COLOR_THEME_STORAGE_KEY,
   RANDOM_THEME_STORAGE_KEY,
   RANDOM_THEME_AT_STORAGE_KEY,
   RANDOM_THEME_INTERVAL_STORAGE_KEY,
@@ -16,9 +15,9 @@ import {
 type Ctx = {
   colorTheme: string;
   setColorTheme: (id: string) => void;
-  /** Apply the server-stored theme (shell load): paints + caches in
-   *  localStorage but never writes back to the server — the DB copy is
-   *  already the source it came from. */
+  /** Apply the server-stored theme (shell load / live sync): paints, never
+   *  writes back to the server — the DB copy is already the source it came
+   *  from. */
   adoptServerTheme: (id: string) => void;
   /** When on, the color theme reshuffles to a random one every `intervalMs`. */
   randomTheme: boolean;
@@ -73,15 +72,19 @@ export function ColorThemeProvider({ children }: { children: React.ReactNode }) 
   colorThemeRef.current = colorTheme;
 
   React.useEffect(() => {
-    // Owner-stamped surfaces (/s, /team — see OwnerColorTheme) lock the theme
-    // to the BRAIN OWNER's choice; this browser's localStorage reflects the
-    // visitor and must not clobber the stamp on hydration.
+    // Owner-stamped surfaces (/s share pages, member surfaces) lock the theme
+    // to the BRAIN OWNER's choice; the provider must not re-derive anything
+    // over the lock on hydration.
     if (document.documentElement.dataset.colorThemeOwner === '1') return;
-    let stored = DEFAULT_COLOR_THEME;
+    // The theme itself is SERVER-RENDERED into <html data-color-theme> (the
+    // brain's system-wide choice — see @mantle/web-ui/appearance); the DOM is
+    // already painted correctly when we mount, so all we do is read the
+    // attribute back as initial state. The RANDOM_* toggles are visitor-local
+    // behavior, so localStorage remains their home.
+    const stored = document.documentElement.dataset.colorTheme || DEFAULT_COLOR_THEME;
     let random = false;
     let interval = RANDOM_THEME_INTERVAL_MS;
     try {
-      stored = window.localStorage.getItem(COLOR_THEME_STORAGE_KEY) || DEFAULT_COLOR_THEME;
       random = window.localStorage.getItem(RANDOM_THEME_STORAGE_KEY) === '1';
       interval = coerceRandomInterval(
         window.localStorage.getItem(RANDOM_THEME_INTERVAL_STORAGE_KEY),
@@ -92,25 +95,19 @@ export function ColorThemeProvider({ children }: { children: React.ReactNode }) 
     setColorThemeState(stored);
     setRandomThemeState(random);
     setIntervalMsState(interval);
-    apply(stored);
   }, []);
 
   const adoptServerTheme = React.useCallback((id: string) => {
     setColorThemeState(id);
     apply(id);
-    try {
-      window.localStorage.setItem(COLOR_THEME_STORAGE_KEY, id);
-    } catch {
-      // storage blocked — preference won't persist, no-op
-    }
   }, []);
 
   const setColorTheme = React.useCallback(
     (id: string) => {
       adoptServerTheme(id);
-      // The DB copy is the cross-browser source of truth (and what member
-      // surfaces brand with); localStorage above is only the before-paint
-      // cache. Fire-and-forget — a failed write costs nothing but the sync.
+      // The DB copy is the source of truth; the next full page load renders it
+      // straight into the HTML. Fire-and-forget — a failed write costs nothing
+      // but the sync.
       void apiSend('/api/profile/color-theme', 'PUT', { colorTheme: id }).catch(() => {});
     },
     [adoptServerTheme],

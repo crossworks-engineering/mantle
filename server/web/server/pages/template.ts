@@ -1,5 +1,5 @@
-import { COLOR_THEME_STORAGE_KEY, DEFAULT_COLOR_THEME } from '@mantle/web-ui/lib/themes';
-import { displayFontFaceCss, fontPrepaintScript } from '@mantle/web-ui/display-fonts';
+import { displayFontFaceCss } from '@mantle/web-ui/display-fonts';
+import type { AppearanceAttrs } from '@mantle/web-ui/appearance';
 
 /**
  * HTML shells for the server-rendered surfaces (/s, /print, stubs) — the
@@ -37,10 +37,6 @@ const FONT_CSS = `
 :root{--font-sans:'InterVariable',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif;--font-logo:'Bukhari Script'}
 `.trim();
 
-// Apply the visitor's stored color theme before paint to avoid a flash
-// (verbatim from app/layout.tsx).
-const COLOR_THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('${COLOR_THEME_STORAGE_KEY}');if(t&&t!=='${DEFAULT_COLOR_THEME}'){document.documentElement.dataset.colorTheme=t;}}catch(e){}})();`;
-
 export type PageMeta = {
   title: string;
   description?: string;
@@ -48,11 +44,40 @@ export type PageMeta = {
   og?: { title: string; description: string };
   /** `noindex, nofollow` robots tag (share surface). */
   noindex?: boolean;
-  /** Extra raw HTML appended to <head> (owner theme stamp, inline styles). */
+  /** Extra raw HTML appended to <head> (surface-specific inline styles). */
   extraHead?: string;
   /** Load /share-runtime/islands.js at the end of <body>. */
   islands?: boolean;
+  /**
+   * The brain OWNER's appearance, rendered as attributes + inline style on the
+   * `<html>` tag (see @mantle/web-ui/appearance). These are BRANDED surfaces:
+   * the owner's theme is the only theme — there is no visitor-localStorage
+   * layer here — and `data-color-theme-owner` locks the client providers in
+   * any mounted island (AppSandbox, table) from re-deriving over it.
+   * Omitted (stubs, prefs unreadable) ⇒ default theme + fonts.
+   */
+  appearance?: AppearanceAttrs;
 };
+
+/** The <html> attribute string for a surface's appearance. Values are
+ *  registry/projection-validated slugs, but escape anyway — attributes are an
+ *  injection surface and this must stay safe by construction. */
+function htmlAttrs(a: AppearanceAttrs | undefined): string {
+  if (!a) return '';
+  const parts: string[] = [];
+  if (a.colorTheme) parts.push(`data-color-theme="${escapeHtml(a.colorTheme)}"`);
+  if (a.fontLogo) parts.push(`data-font-logo="${escapeHtml(a.fontLogo)}"`);
+  if (a.fontTitle) parts.push(`data-font-title="${escapeHtml(a.fontTitle)}"`);
+  const vars: string[] = [];
+  if (a.fontVars.wordmark) vars.push(`--font-wordmark:${a.fontVars.wordmark}`);
+  if (a.fontVars.pageTitle) vars.push(`--font-page-title:${a.fontVars.pageTitle}`);
+  if (vars.length) parts.push(`style="${escapeHtml(vars.join(';'))}"`);
+  // The lock rides along even when everything is default: an owner surface is
+  // owner-branded regardless, and the lock is what stops a mounted island's
+  // provider from applying visitor-local state (e.g. the random-theme toggle)
+  // over it.
+  return [' data-color-theme-owner="1"', ...parts].join(' ');
+}
 
 export function htmlPage(meta: PageMeta, bodyHtml: string): string {
   const head = [
@@ -74,17 +99,16 @@ export function htmlPage(meta: PageMeta, bodyHtml: string): string {
     `<link rel="icon" href="/favicon.ico" sizes="48x48"/>`,
     `<link rel="icon" href="/icon.svg" type="image/svg+xml"/>`,
     `<link rel="apple-touch-icon" href="/apple-icon.png"/>`,
-    `<script>${COLOR_THEME_SCRIPT}</script>`,
     `<link rel="stylesheet" href="/share-runtime/styles.css"/>`,
     `<link rel="stylesheet" href="/share-runtime/katex/katex.min.css"/>`,
     // AFTER the compiled stylesheet: themes.css declares a fallback
     // `--font-sans` on :root, and the self-hosted @font-face override must win
     // the cascade (same specificity ⇒ source order decides).
     `<style>${FONT_CSS}</style>`,
-    // Selectable wordmark/title fonts: @font-face declarations (lazy) + the
-    // before-paint var restore, mirroring the color-theme script above.
+    // Selectable wordmark/title fonts: @font-face declarations (lazy — a file
+    // downloads only when a face is actually painted). The CHOSEN faces render
+    // as <html> attributes/inline style via meta.appearance, not a script.
     `<style>${displayFontFaceCss()}</style>`,
-    `<script>${fontPrepaintScript()}</script>`,
     meta.extraHead ?? '',
   ]
     .filter(Boolean)
@@ -94,7 +118,7 @@ export function htmlPage(meta: PageMeta, bodyHtml: string): string {
     ? `<script type="module" src="/share-runtime/islands.js"></script>`
     : '';
   return `<!DOCTYPE html>
-<html lang="en" class="h-full" suppressHydrationWarning>
+<html lang="en" class="h-full"${htmlAttrs(meta.appearance)}>
 <head>
 ${head}
 </head>

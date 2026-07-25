@@ -68,6 +68,23 @@ stays a Next.js app, untouched.
   (`. /etc/os-release` → `${VERSION_CODENAME}-pgdg`) so the next base bump
   can't reintroduce it. Anything else that assumes bookworm package names in
   an image layer is worth a second look.
+- **The brain's appearance is server-rendered — one delivery path.** The
+  colour theme + the two display fonts (system-wide: they live on the anchor
+  owner's profile row, so one admin choice brands every surface and every
+  browser) now render straight into the `<html>` tag as attributes + inline
+  font vars, everywhere: the client app's root layout fetches the new public
+  `GET /api/appearance` server-to-server (30s cache, 2s timeout, fail-soft —
+  a page never fails over branding) and the share/print surfaces read the DB
+  directly. The old localStorage before-paint scripts are DELETED, not
+  coordinated with: the document arrives correct, the client providers read
+  the attributes back as initial state, and the theme-flash on a
+  never-visited browser (which the client-origin split would have made
+  universal) is gone. Semantics: share/print surfaces are the brain's brand —
+  the owner's appearance is the only appearance, including branded PDF
+  exports (still forced-white paper); a default choice is the absence of the
+  attribute. The font picker also gains a home it never had: Settings →
+  Appearance → Typography (it was previously mounted only on an unrouted
+  demo page, so display fonts could not be set from the UI at all).
 - **Footprint** (measured back-to-back on one host, idle boot): server image
   **1.81 GB, down from 2.01 GB** (the `.next` output is gone); settled RSS
   ~**643 MB vs ~683 MB** under `next start`; boot-to-ready ~3.2 s vs ~2.4 s —

@@ -1,7 +1,7 @@
 import type { Context, Hono } from 'hono';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { shareModeOf } from '@mantle/content';
-import { appearanceStamp } from './appearance';
+import { loadAppearanceAttrs } from './appearance';
 import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
 import { resolveShareVisitor } from '@/lib/team-gate';
 import { PagePresenter } from '@/components/share/page-presenter';
@@ -33,7 +33,9 @@ async function renderShare(c: Context): Promise<Response> {
   if (!view) return c.notFound();
 
   const heading = 'title' in view ? view.title : view.filename;
-  const extraHead = await appearanceStamp(share.ownerId);
+  // The owner's brand renders into the <html> tag — a share page is the
+  // BRAIN's surface, so the owner's theme + fonts are the only appearance.
+  const appearance = await loadAppearanceAttrs(share.ownerId);
   const gated = shareModeOf(share) === 'team';
 
   // Team-mode shares gate on a live team session; without one the visitor
@@ -47,7 +49,7 @@ async function renderShare(c: Context): Promise<Response> {
       gated && !visitor
         ? { title: 'Shared', description: 'Shared via Mantle' }
         : { title: heading, description: 'Shared via Mantle' },
-    extraHead,
+    appearance,
   };
 
   if (!visitor) {

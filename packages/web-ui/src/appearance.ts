@@ -1,0 +1,47 @@
+import { DEFAULT_COLOR_THEME } from './lib/themes';
+import { fontByKey, resolveFontVars, type ResolvedFontVars } from './display-fonts';
+
+/**
+ * The brain's system-wide appearance — colour theme + the two display fonts —
+ * as it travels from the anchor owner's profile row to a rendered document.
+ *
+ * There is ONE delivery mechanism: the values are rendered into the `<html>`
+ * tag as attributes (`data-color-theme`, `data-font-logo`, `data-font-title`)
+ * plus the two font CSS vars as inline style, server-side, on every surface —
+ * the client app's root layout (fed by the public GET /api/appearance) and the
+ * server-rendered share/print pages (read straight from the DB). No before-
+ * paint scripts, no localStorage cache, no coordination flags: the HTML is
+ * simply correct when it arrives, and the client providers read the attributes
+ * back on mount as their initial state.
+ *
+ * `resolveAppearanceAttrs` is that projection: defaults and unknown keys
+ * resolve to NOTHING (attribute absent, var unset) so the CSS fallbacks win —
+ * "default" is the absence of the attribute, never a value.
+ */
+export type BrainAppearance = {
+  colorTheme: string | null;
+  fontLogo: string | null;
+  fontTitle: string | null;
+};
+
+export type AppearanceAttrs = {
+  /** Non-default colour theme id, or undefined (attribute omitted). */
+  colorTheme?: string;
+  /** Non-default, registry-known font keys — the client providers' initial state. */
+  fontLogo?: string;
+  fontTitle?: string;
+  /** Resolved font-family values for the two CSS vars (inline style on <html>). */
+  fontVars: ResolvedFontVars;
+};
+
+export function resolveAppearanceAttrs(a: BrainAppearance | null | undefined): AppearanceAttrs {
+  const out: AppearanceAttrs = { fontVars: {} };
+  if (!a) return out;
+  if (a.colorTheme && a.colorTheme !== DEFAULT_COLOR_THEME) out.colorTheme = a.colorTheme;
+  out.fontVars = resolveFontVars(a.fontLogo, a.fontTitle);
+  // Only keys that actually resolved travel as attributes — an unknown key
+  // must not become provider state a picker would then display.
+  if (out.fontVars.wordmark && a.fontLogo && fontByKey(a.fontLogo)) out.fontLogo = a.fontLogo;
+  if (out.fontVars.pageTitle && a.fontTitle && fontByKey(a.fontTitle)) out.fontTitle = a.fontTitle;
+  return out;
+}

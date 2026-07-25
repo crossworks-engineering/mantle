@@ -6,27 +6,25 @@ import {
   DISPLAY_FONTS,
   DEFAULT_LOGO_FONT,
   DEFAULT_TITLE_FONT,
-  FONT_LOGO_STORAGE_KEY,
-  FONT_TITLE_STORAGE_KEY,
   fontFamilyValue,
   fontByKey,
 } from './display-fonts';
 
 /**
- * Wordmark + page-title font selection. Two user choices (Settings → Appearance)
- * override two CSS variables at runtime:
+ * Wordmark + page-title font selection. Two admin choices (Settings →
+ * Appearance) override two CSS variables at runtime:
  *   --font-wordmark  → the header wordmark (default: the next/font Bukhari)
  *   --font-page-title → the centered header page title (default: the UI sans)
  * The header elements read them with a var() fallback, so "default" is simply
  * *not setting* the variable. Live: setting a choice repaints instantly.
  *
- * Persistence mirrors the colour theme exactly: localStorage is the before-paint
- * cache, the DB copy (profiles.preferences) is the cross-browser source of truth
- * — adopted once per shell load, written back fire-and-forget on change.
+ * Persistence mirrors the colour theme exactly: the DB copy
+ * (profiles.preferences on the anchor owner) is the source of truth, rendered
+ * server-side into `<html data-font-logo/-title>` + the inline style vars
+ * (see @mantle/web-ui/appearance) — the document arrives painted; this
+ * provider reads the attributes back on mount and writes changes through
+ * fire-and-forget.
  */
-
-const LOGO_KEY = FONT_LOGO_STORAGE_KEY;
-const TITLE_KEY = FONT_TITLE_STORAGE_KEY;
 
 type Ctx = {
   logoFont: string;
@@ -51,39 +49,33 @@ function applyVar(prop: string, key: string, defaultKey: string) {
   else root.style.removeProperty(prop);
 }
 
-function apply(logo: string, title: string) {
-  applyVar('--font-wordmark', logo, DEFAULT_LOGO_FONT);
-  applyVar('--font-page-title', title, DEFAULT_TITLE_FONT);
+/** Mirror a chosen key into the <html> dataset (default clears the attribute,
+ *  matching the server render, where "default" is the attribute's absence). */
+function syncAttr(prop: 'fontLogo' | 'fontTitle', key: string, defaultKey: string) {
+  if (typeof document === 'undefined') return;
+  const d = document.documentElement.dataset;
+  if (key === defaultKey) delete d[prop];
+  else d[prop] = key;
 }
 
-function readStored(key: string, fallback: string): string {
-  try {
-    const v = window.localStorage.getItem(key);
-    return v && fontByKey(v) ? v : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function cache(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    /* storage blocked — preference won't persist, no-op */
-  }
+/** Read a server-rendered key attribute off <html>, falling back to the
+ *  default when absent or unknown (a key removed from the registry must not
+ *  become picker state). */
+function readAttr(value: string | undefined, fallback: string): string {
+  return value && fontByKey(value) ? value : fallback;
 }
 
 export function FontProvider({ children }: { children: React.ReactNode }) {
   const [logoFont, setLogoState] = React.useState(DEFAULT_LOGO_FONT);
   const [titleFont, setTitleState] = React.useState(DEFAULT_TITLE_FONT);
 
-  // Before-paint cache: adopt this browser's last choice on mount.
+  // The document arrived with the brain's fonts already rendered (attributes +
+  // inline vars, server-side). Read the attributes back as initial state — no
+  // repaint needed, the DOM is already correct.
   React.useEffect(() => {
-    const logo = readStored(LOGO_KEY, DEFAULT_LOGO_FONT);
-    const title = readStored(TITLE_KEY, DEFAULT_TITLE_FONT);
-    setLogoState(logo);
-    setTitleState(title);
-    apply(logo, title);
+    const d = document.documentElement.dataset;
+    setLogoState(readAttr(d.fontLogo, DEFAULT_LOGO_FONT));
+    setTitleState(readAttr(d.fontTitle, DEFAULT_TITLE_FONT));
   }, []);
 
   const persist = React.useCallback((body: { fontLogo?: string; fontTitle?: string }) => {
@@ -95,12 +87,14 @@ export function FontProvider({ children }: { children: React.ReactNode }) {
   // Each setter touches ONLY its own var + persists ONLY its own field — no
   // dependence on the other font's state. (A combined apply() reading the other
   // choice from a closure could revert it when both change before a re-render.)
+  // The dataset key is kept in sync with the style var so the DOM stays
+  // self-consistent with what the server would have rendered.
   const setLogoFont = React.useCallback(
     (key: string) => {
       if (!fontByKey(key)) return;
       setLogoState(key);
       applyVar('--font-wordmark', key, DEFAULT_LOGO_FONT);
-      cache(LOGO_KEY, key);
+      syncAttr('fontLogo', key, DEFAULT_LOGO_FONT);
       persist({ fontLogo: key });
     },
     [persist],
@@ -111,29 +105,26 @@ export function FontProvider({ children }: { children: React.ReactNode }) {
       if (!fontByKey(key)) return;
       setTitleState(key);
       applyVar('--font-page-title', key, DEFAULT_TITLE_FONT);
-      cache(TITLE_KEY, key);
+      syncAttr('fontTitle', key, DEFAULT_TITLE_FONT);
       persist({ fontTitle: key });
     },
     [persist],
   );
 
-  // Adopt the DB copy (cross-browser source of truth) — but ONLY for a field the
-  // server actually has. A null means "never saved": keep this browser's choice
-  // (the pre-paint script already applied it from localStorage) rather than
-  // forcing the default and clobbering it. Mirrors the colour theme's guard
-  // (`if (!stored) return`). Without this, a brain whose backend predates this
-  // feature — or a user who's only ever set fonts on ONE browser — would have
-  // their local choice wiped on every shell load.
+  // Live sync from /api/shell (another browser changed the brain's fonts mid-
+  // session) — adopt ONLY fields the server actually has. A null means "never
+  // saved": the server-rendered document already reflects that (no attribute),
+  // so there is nothing to undo.
   const adoptServerFonts = React.useCallback((logo: string | null, title: string | null) => {
     if (logo && fontByKey(logo)) {
       setLogoState(logo);
       applyVar('--font-wordmark', logo, DEFAULT_LOGO_FONT);
-      cache(LOGO_KEY, logo);
+      syncAttr('fontLogo', logo, DEFAULT_LOGO_FONT);
     }
     if (title && fontByKey(title)) {
       setTitleState(title);
       applyVar('--font-page-title', title, DEFAULT_TITLE_FONT);
-      cache(TITLE_KEY, title);
+      syncAttr('fontTitle', title, DEFAULT_TITLE_FONT);
     }
   }, []);
 
