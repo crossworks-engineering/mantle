@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Commit-msg gate: strip agent co-authorship trailers before the commit is made.
+#
+# The repo is public, and these commits are Jason's work — a `Co-Authored-By:
+# Claude …` trailer misrepresents authorship, and GitHub renders it as a real
+# co-author on the commit and in the contributors graph. Assistant sessions add
+# the trailer by default, and asking each one to remember not to has already
+# failed ~1695 times across the history, so this enforces it mechanically
+# instead. History before 2026-07-25 is left as-is deliberately: scrubbing it
+# would mean rewriting every SHA and re-pointing 115 release tags, which would
+# re-fire the tag-triggered image builds.
+#
+# Activate once per clone (also enables the pre-push verify gate):
+#
+#     git config core.hooksPath scripts/git-hooks
+#
+# Bypass in an emergency: `git commit --no-verify`.
+
+set -euo pipefail
+
+msg_file="$1"
+tmp="$(mktemp)"
+
+# Drop the attribution lines. Fixed strings, anchored — a commit body that
+# legitimately discusses Claude or CLAUDE.md is untouched.
+grep -v \
+  -e '^Co-Authored-By: Claude' \
+  -e '^🤖 Generated with \[Claude Code\]' \
+  "$msg_file" > "$tmp" || true
+
+# Removing a trailer block leaves trailing blank lines; drop those but keep
+# blank lines that separate paragraphs inside the body.
+awk '
+  NF     { while (pending-- > 0) print ""; pending = 0; print; next }
+         { pending++ }
+' "$tmp" > "$msg_file"
+
+rm -f "$tmp"

@@ -39,6 +39,28 @@ store, so ~seconds), and copies `.env.local`. Tear down with
 - Run the dev server on a non-default port when another session holds `:3000`
   (`PORT=3100 pnpm -C server/web dev`).
 
+## Commits: no agent co-authorship
+
+This repo is **public**, and the commits are Jason's work. Never add a
+`Co-Authored-By: Claude …` trailer or a `🤖 Generated with [Claude Code]` line
+to a commit message — GitHub renders them as a real co-author on the commit and
+in the contributors graph, which misrepresents authorship. This holds for every
+session, every model, every worktree.
+
+A `commit-msg` hook strips them mechanically, but only once the clone opts in:
+
+```sh
+git config core.hooksPath scripts/git-hooks   # once per clone/worktree
+```
+
+That same setting enables the `pre-push` gate, which runs `pnpm verify` before
+a push (bypass with `--no-verify`). Write commit messages without the trailers
+anyway — the hook is the backstop, not the rule.
+
+History before 2026-07-25 still carries ~1695 of these. Left deliberately:
+scrubbing them means rewriting every SHA and re-pointing 115 release tags,
+which would re-fire the tag-triggered image builds.
+
 ## Other guidance
 
 - **Frontend-only dev (no local Docker/DB): `pnpm dev:fe`** — runs the owner UI
