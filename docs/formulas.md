@@ -8,12 +8,12 @@ The motivating example throughout is the release-quantity calculation from
 API RP 581 Part 3 §5.3 (a leaking pressure vessel). One "formula" there needs
 four different kinds of thing at once, and only the first is maths:
 
-| Kind | In the example |
-|---|---|
-| `expressions` | the liquid and vapour release-rate equations |
-| `piecewise` | sonic vs subsonic, branching on a pressure threshold |
-| `lookups` | a reduction factor per detection/isolation rating; a leak duration per rating **and** hole size |
-| `classifications` | prose rubrics mapping a described system to an A/B/C rating |
+| Kind              | In the example                                                                                  |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| `expressions`     | the liquid and vapour release-rate equations                                                    |
+| `piecewise`       | sonic vs subsonic, branching on a pressure threshold                                            |
+| `lookups`         | a reduction factor per detection/isolation rating; a leak duration per rating **and** hole size |
+| `classifications` | prose rubrics mapping a described system to an A/B/C rating                                     |
 
 A format that stores only expressions cannot hold that model, which is why this
 one exists.
@@ -125,7 +125,7 @@ Scientific notation and leading-dot decimals are accepted (`1.5E-6`, `.5`).
 
 ## 4a. The calling contract — `formula-signature.ts`
 
-`signatureOf(spec)` answers the question that comes *before* "what is the
+`signatureOf(spec)` answers the question that comes _before_ "what is the
 number": **what must I hand it?** Per evaluable target it returns what the
 target produces and every input — unit, required-vs-defaulted, and for a lookup
 key or a rating its legal values plus the classification's criteria prose.
@@ -148,8 +148,14 @@ is the question that matters.
 Never persisted — computed on read, same drift rule as the rendered text.
 Surfaced on `formula_get`'s `targets`, on `GET /api/formulas/[id]` as
 `signature`, and as a `Callable:` section in `formulaToText` so the embedding
-captures *capability* ("can it work out a release rate from pressure and
+captures _capability_ ("can it work out a release rate from pressure and
 temperature?") rather than only text.
+
+**Rollout note**: formulas stored before the `Callable:` section existed keep
+their old embeddings until the next spec edit re-extracts them. After rolling
+this to a brain with existing formulas, bump-touch them (re-save each spec via
+`formula_update`, unchanged) so capability retrieval covers the back catalogue
+— that is deliberate, instead of a backfill job.
 
 ## 5. Dimensional checking — `formula-dimensions.ts`
 
@@ -186,7 +192,7 @@ either; nothing in `packages/content` depends on a YAML parser.
 **Cite what you actually read.** A worked example applying a standard is not
 the standard. If the values were transcribed from a derived document — a
 company calculation sheet, a vendor note — `source.standard` should say which
-standard it *applies*, and a `notes` entry should say the values came from a
+standard it _applies_, and a `notes` entry should say the values came from a
 derived document. Two tells that you are not looking at the standard itself:
 parameters it never uses (API RP 581 has four discrete hole sizes, so a 3/8 in
 hole is somebody's spreadsheet), and tables that look abridged.
@@ -218,7 +224,7 @@ keystroke — the same pure functions the server runs on save, never a
 reimplementation — and shows every problem at once. The three findings are kept
 apart because they mean different things: a parse error is a malformed spec, a
 dimension issue is usually a dropped term, and a coverage gap is a fact about
-the *source* that is not the author's to fix.
+the _source_ that is not the author's to fix.
 
 YAML is a first-class view rather than an export (criteria prose and notes are
 multi-line English, which JSON makes unreadable). The parser lives in
@@ -233,7 +239,7 @@ Shared-links registry all follow. The `/s/[token]` page is deliberately **split*
 
 - **Server-rendered, no JavaScript** — equations (KaTeX server-side,
   `trust: false` pinned), lookup tables, rating criteria, transcription notes,
-  and all the warnings. A shared engineering calculation that renders *without*
+  and all the warnings. A shared engineering calculation that renders _without_
   its `unverified` notice is worse than one that does not render at all, so
   nothing load-bearing depends on a bundle arriving.
 - **A client island** — the live calculator, built from the signature embedded
@@ -242,9 +248,14 @@ Shared-links registry all follow. The `/s/[token]` page is deliberately **split*
 `POST /s/[token]/evaluate` is a safe public compute surface because
 `evaluateSpec` is pure: no model, no network, no DB write, no filesystem, and a
 hand-written parser over a fixed grammar with no path to a global scope. It is
-capped anyway (60/min per IP, 200 input symbols, 1000 chars per value).
-Authorization mirrors the shared-table rows route: an active formula share plus,
-in team mode, a live team session; everything else 404s uniformly.
+capped anyway (60/min per IP, 200 input symbols, 1000 chars per value, 512KB
+body). Authorization mirrors the shared-table rows route: an active formula
+share plus, in team mode, a live team session; everything else 404s uniformly.
+
+**Team mode caveat**: `formula` is not in `TEAM_WORKSPACE_TYPES` (a deliberate
+whitelist), so a team-mode formula share does **not** list in the /team
+workspace — the link must be passed along directly, and the ShareControl hint
+says so. Adding formulas to the workspace is deferred work.
 
 ## 9. The mathematician
 
@@ -261,7 +272,7 @@ fast path for "calculate X": read the input list off the contract, **name the
 units** when asking, quote the trace when answering. `formula_authoring` (the
 specialist) carries the spec shape and the transcription ethic.
 
-Routing: transcribing and auditing delegate to the mathematician; *evaluating* a
+Routing: transcribing and auditing delegate to the mathematician; _evaluating_ a
 stored formula stays with the persona, which holds the tools. Team members get
 `formulas-eval` — find, read, compute; never author.
 

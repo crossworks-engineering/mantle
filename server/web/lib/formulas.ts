@@ -6,6 +6,7 @@ export {
   listFormulas,
   countFormulas,
   listFormulaStandards,
+  listFormulaSpecIds,
   getFormula,
   readFormulaSpec,
   createFormula,

@@ -240,6 +240,31 @@ function unitHint(unit: string | null | undefined): string {
 }
 
 /**
+ * Coerce ONE text-field input into the value `evaluateSpec` should receive.
+ *
+ * This exists exactly once because three UIs (the owner evaluator, the editor,
+ * the public share calculator) each grew their own copy with subtly different
+ * numeric regexes — `'1e-5'` was a number in two of them and a string in the
+ * third. Arithmetic forgives that (`toNum` re-parses strings), but lookup keys
+ * match with STRICT equality, so a numeric key supplied as a string silently
+ * matches no row.
+ *
+ * Rules: blank → `undefined` (absent — mirrors the evaluator's blank-input
+ * treatment above); `true`/`false` → boolean; anything that reads as a finite
+ * number → number; everything else stays the string it was ('1/4 in', 'A',
+ * '1.2.3').
+ */
+export function parseInputText(raw: string): FormulaValue | undefined {
+  const t = raw.trim();
+  if (t === '') return undefined;
+  if (t === 'true') return true;
+  if (t === 'false') return false;
+  if (!/^[-+]?[0-9.]+(e[-+]?[0-9]+)?$/i.test(t)) return t;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : t;
+}
+
+/**
  * Evaluate one target — an expression, a piecewise branch, or a lookup — by id.
  * Inputs are keyed by symbol and override anything the spec declares.
  */

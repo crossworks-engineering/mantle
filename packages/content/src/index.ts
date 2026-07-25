@@ -316,7 +316,7 @@ export {
   type CoverageGap,
 } from './formula-spec';
 
-export { evaluateSpec, type EvalResult, type TraceStep } from './formula-eval';
+export { evaluateSpec, parseInputText, type EvalResult, type TraceStep } from './formula-eval';
 
 export {
   signatureOf,
@@ -350,6 +350,7 @@ export {
   listFormulas,
   countFormulas,
   listFormulaStandards,
+  listFormulaSpecIds,
   getFormula,
   readFormulaSpec,
   updateFormula,

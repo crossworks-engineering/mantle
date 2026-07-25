@@ -170,7 +170,12 @@ function safeRefs(expression: string | undefined): string[] {
   }
 }
 
-type EnumContext = { domain: FormulaValue[] };
+type EnumContext = {
+  domain: FormulaValue[];
+  /** The lookup tolerates values outside the domain (`onMiss: 'null'`) —
+   *  the enum is then guidance, not law, and the input says so. */
+  open?: boolean;
+};
 
 class SignatureWalker {
   private readonly variables = new Map<string, SpecVariable>();
@@ -267,7 +272,13 @@ class SignatureWalker {
     const lookup = this.lookups.get(id);
     if (lookup) {
       for (const key of lookup.keys ?? []) {
-        this.walkSymbol(key, scope, { domain: domainOfKey(lookup, key) });
+        this.walkSymbol(key, scope, {
+          domain: domainOfKey(lookup, key),
+          // `onMiss: 'null'` means an unmatched key is DEFINED behaviour (the
+          // lookup yields null), so the enum must present itself as guidance
+          // rather than the law the evaluator will enforce.
+          open: lookup.onMiss === 'null',
+        });
       }
     }
     // An unknown id contributes nothing — `evaluateSpec` reports it, and a
@@ -356,6 +367,9 @@ class SignatureWalker {
     if (!values?.length) return;
     input.kind = 'enum';
     input.domain = values;
+    if (enumCtx?.open && !input.note) {
+      input.note = 'Other values are accepted; an unmatched one yields an empty result.';
+    }
     if (classification) {
       const criteria: Record<string, string> = {};
       for (const value of values) {

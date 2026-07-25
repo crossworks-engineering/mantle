@@ -97,6 +97,34 @@ describe('form ↔ source round trip', () => {
     if (a.ok && b.ok) expect(b.spec).toEqual(a.spec);
   });
 
+  it('keeps a null lookup cell — pruning it made a VALID spec uneditable', () => {
+    // isScalar allows null cells, and an onMiss:'null' table legitimately
+    // carries them. The first prune dropped the cell like any other absence,
+    // so the re-validated spec failed with "missing result" and the editor's
+    // save button locked on an error the author never caused.
+    const withNull = {
+      id: 'x',
+      lookups: [
+        {
+          id: 't',
+          keys: ['k'],
+          result: 'r',
+          onMiss: 'null',
+          rows: [
+            { k: 'A', r: 0.5 },
+            { k: 'B', r: null },
+          ],
+        },
+      ],
+    };
+    expect(parseFormulaSpec(withNull).ok).toBe(true);
+    const roundTripped = toSpec(normalised(YAML.parse(YAML.stringify(toSpec(withNull))) as Draft));
+    const parsed = parseFormulaSpec(roundTripped);
+    expect(parsed.ok ? [] : parsed.errors).toEqual([]);
+    const rows = (roundTripped.lookups as Array<{ rows: Array<Record<string, unknown>> }>)[0]!.rows;
+    expect(rows[1]).toEqual({ k: 'B', r: null });
+  });
+
   it('keeps numeric lookup values numeric across the trip', () => {
     // The failure this guards: a factor re-read as a string, so the strict
     // row match in the evaluator silently stops finding it.

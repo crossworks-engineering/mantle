@@ -25,7 +25,7 @@
  * dropped term and always worth stopping for.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import YAML from 'yaml';
 import { AlertTriangle, Check, Plus, Trash2 } from 'lucide-react';
 import {
@@ -170,6 +170,16 @@ export function FormulaEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
+  function switchMode(next: 'form' | 'source') {
+    // Leaving the source view with YAML that never parsed would silently
+    // regenerate from the last VALID draft — the broken text (and whatever
+    // edits it carried) would be gone without a word. Say so instead.
+    if (mode === 'source' && next === 'form' && yamlError) {
+      toast.error('The YAML did not parse — the form shows the last valid state.');
+    }
+    setMode(next);
+  }
+
   function onYamlChange(next: string) {
     setYamlText(next);
     try {
@@ -212,9 +222,12 @@ export function FormulaEditor({
     }));
   }, []);
 
-  // The rail. Runs the SAME validators the server runs on save.
+  // The rail. Runs the SAME validators the server runs on save. Deferred so a
+  // keystroke never waits on the mathjs dimension pass — on an API-581-sized
+  // spec that pass is the difference between typing and wading.
+  const deferredDraft = useDeferredValue(draft);
   const findings = useMemo(() => {
-    const parsed = parseFormulaSpec(toSpec(draft));
+    const parsed = parseFormulaSpec(toSpec(deferredDraft));
     if (!parsed.ok) {
       return { errors: parsed.errors, coverage: [] as CoverageGap[], dims: [] as DimensionIssue[] };
     }
@@ -228,7 +241,7 @@ export function FormulaEditor({
       dims = [];
     }
     return { errors: [] as string[], coverage: checkLookupCoverage(spec), dims };
-  }, [draft]);
+  }, [deferredDraft]);
 
   const valid = findings.errors.length === 0 && !yamlError;
 
@@ -238,7 +251,10 @@ export function FormulaEditor({
     setServerErrors([]);
     try {
       const spec = toSpec(draft);
-      const body = { spec, title: title.trim() || undefined, tags: listOf(tagsText) };
+      // Title always sent: '' means "reset to the spec's name" server-side
+      // (updateFormula falls back when the spec changes), where undefined
+      // silently kept the old one after the author cleared the field.
+      const body = { spec, title: title.trim(), tags: listOf(tagsText) };
       const saved = formulaId
         ? await apiSend<{ formula: { id: string } }>(
             `/api/formulas/${formulaId}`,
@@ -279,7 +295,7 @@ export function FormulaEditor({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Tabs value={mode} onValueChange={(v) => setMode(v as 'form' | 'source')}>
+          <Tabs value={mode} onValueChange={(v) => switchMode(v as 'form' | 'source')}>
             <TabsList>
               <TabsTrigger value="form">Form</TabsTrigger>
               <TabsTrigger value="source">YAML</TabsTrigger>

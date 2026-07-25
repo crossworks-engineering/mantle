@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { FORMULA_SEED, SEED_TAG } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
-import { createFormula, listFormulas } from '@/lib/formulas';
+import { createFormula, listFormulaSpecIds } from '@/lib/formulas';
 
 /**
  * Add the five instructional formulas — the primer that teaches the spec format
@@ -18,8 +18,9 @@ export async function POST() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
 
-  const existing = await listFormulas(user.id, { limit: 500 });
-  const present = new Set(existing.map((f) => f.spec?.id).filter(Boolean));
+  // Uncapped: presence is a question about ALL formulas, and the earlier
+  // list-based check silently ran on the first 500 only.
+  const present = await listFormulaSpecIds(user.id);
 
   const created: string[] = [];
   const skipped: string[] = [];

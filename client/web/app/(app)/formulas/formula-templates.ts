@@ -34,8 +34,8 @@ lookups: []
 classifications: []
 `;
 
-const SINGLE = `id: ideal-gas-density
-name: Ideal gas density
+const SINGLE = `id: ideal-gas-density-example
+name: Ideal gas density (example)
 source:
   standard: Any thermodynamics text
   edition: ''
@@ -186,8 +186,11 @@ const SHOWCASE = `# ────────────────────
 # ─────────────────────────────────────────────────────────────────────────
 
 # Stable slug for this calculation. Referenced in citations; keep it durable.
-id: reynolds-number
-name: Reynolds number and flow regime
+# (The '-worked' suffix is deliberate: the instructional seed set ships a
+# 'reynolds-number' of its own, and the seeder detects presence BY spec id —
+# a showcase saved under the same id would make it skip the real one.)
+id: reynolds-number-worked
+name: Reynolds number and flow regime (worked example)
 
 # CITE WHAT YOU ACTUALLY READ. A worked example applying a standard is not the
 # standard. 'edition' is part of the claim — equation numbers move between

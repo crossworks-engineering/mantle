@@ -41,6 +41,7 @@ const TYPE_LABEL: Record<string, string> = {
   file: 'File',
   app: 'App',
   table: 'Table',
+  formula: 'Formula',
   branch: 'Folder',
 };
 

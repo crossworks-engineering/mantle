@@ -281,7 +281,20 @@ export function FormulasClient() {
         </div>
 
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto scrollbar-thin p-3">
-          {formulas.length === 0 ? (
+          {formulas.length === 0 && (query || standard || tag) ? (
+            // A FILTERED nothing is not an empty collection — "no formulas
+            // yet" plus a seed button here would be a lie with a call to action.
+            <div className="space-y-3 px-1 py-8 text-center">
+              <p className="text-sm text-muted-foreground">Nothing matches these filters.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => go({ q: null, standard: null, tag: null, page: null })}
+              >
+                Clear filters
+              </Button>
+            </div>
+          ) : formulas.length === 0 ? (
             <div className="space-y-3 px-1 py-8 text-center">
               <p className="text-sm text-muted-foreground">
                 No formulas yet. Write one from a standard, or ask the assistant to transcribe one.

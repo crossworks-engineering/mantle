@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import YAML from 'yaml';
 import katex from 'katex';
 import { parseFormulaSpec } from '@mantle/content/formula-spec';
+import { FORMULA_SEED_SLUGS } from '@mantle/content/formula-seed';
 import { FORMULA_TEMPLATES } from './formula-templates';
 
 /**
@@ -23,6 +24,20 @@ describe('FORMULA_TEMPLATES', () => {
       expect(parsed.ok ? [] : parsed.errors).toEqual([]);
     },
   );
+
+  it('never shares a spec id with the instructional seed set', () => {
+    // The seeder detects "already present" BY spec id. A template saved under
+    // a seed slug would make "Add 5 example formulas" silently skip the real
+    // one — the showcase originally shipped as 'reynolds-number' and did
+    // exactly that.
+    const seedSlugs = new Set(FORMULA_SEED_SLUGS);
+    for (const t of FORMULA_TEMPLATES) {
+      const spec = YAML.parse(t.yaml) as { id?: string };
+      expect(seedSlugs.has(spec.id ?? ''), `template '${t.key}' collides on '${spec.id}'`).toBe(
+        false,
+      );
+    }
+  });
 
   /**
    * `latex` survives a JS template literal AND a YAML single-quoted scalar, and
