@@ -63,6 +63,23 @@ grant path, the console. This plan adds a **binding layer**, not a new factory.
 4. **Toolsmith stays the special agent.** No new agent. It gains the
    group-first workflow + two docs tools; the persona's `integrations` skill
    already routes "connect an API" to it.
+5. **The group carries a usage SKILL (Jason, 2026-07-26).** An integration
+   holds three kinds of knowledge: reference (the stored docs, read on
+   demand), selection (tool descriptions, ~120-word budget), and **usage
+   judgment** — which endpoint answers which question, unit conventions, how
+   calls chain, how to read responses. The third had no home: skills attach
+   to agents, so know-how never travelled with a grant. Now
+   `integration.skillSlug` references a `skills` row (convention:
+   `api-<group-slug>`), and the runtime includes granted groups' skills in
+   context assembly: effective skills = agent's own ∪ skills of granted
+   groups (deduped). Toolsmith DISTILLS the docs into this skill as its
+   final authoring step — short (~150–250 words), per-tool sections where
+   one call needs special handling. **No per-tool skill override** (each
+   tool carrying its own instruction block is context bloat); per-tool
+   sections inside the group skill cover that need, and a real override can
+   be added later on the same mechanism if a case demands it. Docs must
+   state plainly: the group *references* a skill; capability-only stays the
+   rule for everything else.
 
 ## Phase 1 — Schema + content layer
 
