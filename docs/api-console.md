@@ -74,6 +74,30 @@ tested in `http-template.test.ts`):
   (non-GET) or query string (GET). A handler with no templates at all
   behaves exactly like the legacy one: POST the whole input as JSON.
 
+## 2b. Integration groups — the base URL + key, decided once
+
+A tool group can carry a **service binding** (`tool_groups.integration`): the
+service, its base URL, the vault entry that authenticates it, where that
+credential goes, the API's stored documentation, and a short usage skill. The
+console meets it in two places:
+
+- **The agent-tools catalog groups by integration**, with the bound
+  `service/label` ref shown beside the group name, so a tool's provenance
+  ("which API, on whose key") is visible without opening it.
+- **"Save as agent tool" offers an integration-group picker.** Pick one and the
+  tool is added to that group and inherits its base URL + credential placement —
+  the identical fold `api_tool_create` performs, applied server-side in
+  `POST /api/tools` (`groupSlug`). Your request's own headers/query win on a key
+  conflict, and the response says what was inherited. A relative URL is fine when
+  the group has a base URL.
+
+The owner edits the binding at **Settings → Tool groups** (service, base URL, a
+credential picker fed by the vault — refs and masked previews only — an
+auth-placement editor, view/replace for the stored docs, and a link to the usage
+skill). Everything Toolsmith can set, you can correct. Full model:
+[`toolsmith.md`](./toolsmith.md) §0 and
+[`tools-and-skills.md`](./tools-and-skills.md#integration-groups--a-group-that-is-an-api).
+
 ## 3. Granting and the heartbeat path
 
 Saving a tool registers it; agents see it once it's in a granted tool
@@ -109,7 +133,9 @@ The console's header has a **Toolsmith** button — an in-surface Assist
 panel (same pattern as /pages and /tables) backed by the Toolsmith
 specialist. Instead of building a request by hand, describe the
 integration ("read the API docs at <url> and build tools for X") and
-Toolsmith runs the whole loop: web_fetch the docs, author the
-templates, test against the live API, bundle + grant. The same
+Toolsmith runs the whole loop: web_fetch the docs, set up the integration
+group (base URL + vault ref + auth placement), store the docs on it, author
+the templates against it, test against the live API, distil a usage skill,
+and grant. The same
 capability is exposed over MCP for Claude Code users. See
 [`toolsmith.md`](./toolsmith.md).

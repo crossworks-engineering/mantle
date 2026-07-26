@@ -117,6 +117,11 @@ const TOOLSMITH_WRITE_SLUGS = new Set([
   'recipe_tool_create',
   'tool_group_ensure',
   'agent_grant_tool_group',
+  // Integration-group writes: api_docs_set writes a file node + the group's docs
+  // pointer, api_skill_set writes a skills row every granted agent then reads.
+  // (api_docs_get is a read — always exposed.)
+  'api_docs_set',
+  'api_skill_set',
 ]);
 const toolsmithWriteEnabled = !/^(0|false|off|no)$/i.test(
   process.env.MANTLE_MCP_TOOLSMITH_WRITE ?? '',
@@ -1556,10 +1561,12 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
    * handlers run with the MCP process's ownerId — same trust model as
    * every other tool in this file.
    *
-   * Scoping: the read-only set (list/get/test/api_key_refs/web_fetch) is
-   * always exposed. The mutating set — authoring (create/update/delete),
-   * grouping (tool_group_ensure), and granting (agent_grant_tool_group) —
-   * is gated on MANTLE_MCP_TOOLSMITH_WRITE, which defaults ON. Set it to
+   * Scoping: the read-only set (list/get/test/api_key_refs/api_docs_get/
+   * web_fetch) is always exposed. The mutating set — authoring
+   * (create/update/delete), grouping (tool_group_ensure), the integration
+   * writes (api_docs_set / api_skill_set), and granting
+   * (agent_grant_tool_group) — is gated on MANTLE_MCP_TOOLSMITH_WRITE,
+   * which defaults ON. Set it to
    * 0/false/off on a shared or headless deployment to expose Toolsmith
    * read-only while keeping tool authoring + granting to the in-app agent.
    */

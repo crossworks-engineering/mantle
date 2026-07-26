@@ -75,7 +75,9 @@ export async function POST(req: Request) {
       );
 
     // Compose the same prompt a real turn assembles: base + attached skills.
-    const skills = await resolveAgentSkills(user.id, agent.skillSlugs ?? []);
+    const skills = await resolveAgentSkills(user.id, agent.skillSlugs ?? [], {
+      toolGroupSlugs: agent.toolGroupSlugs ?? [],
+    });
     const systemPrompt = composeSystemPromptWithSkills(agent.systemPrompt, skills);
     const params = agent.params as { temperature?: number; max_tokens?: number };
 

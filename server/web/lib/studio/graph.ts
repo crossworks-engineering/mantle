@@ -270,7 +270,9 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
   // are only a handful of agents and each is one cached skill query.
   const agentDetails: StudioAgentDetail[] = [];
   for (const a of agents) {
-    const attached = await resolveAgentSkills(ownerId, a.skillSlugs ?? []);
+    const attached = await resolveAgentSkills(ownerId, a.skillSlugs ?? [], {
+      toolGroupSlugs: a.toolGroupSlugs ?? [],
+    });
     const attachedSet = new Set(attached.map((s) => s.slug));
     agentDetails.push({
       id: a.id,

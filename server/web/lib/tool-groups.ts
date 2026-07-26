@@ -8,7 +8,7 @@
  */
 
 import { and, asc, eq, sql } from 'drizzle-orm';
-import { db, toolGroups, agents, type ToolGroup } from '@mantle/db';
+import { db, toolGroups, agents, type ToolGroup, type ToolGroupIntegration } from '@mantle/db';
 import type { ToolGroupDTO } from '@mantle/client-types';
 
 /** The API/wire shape (see @mantle/client-types). Aliased so `toSummary`'s output
@@ -22,6 +22,7 @@ function toSummary(g: ToolGroup): ToolGroupSummary {
     name: g.name,
     description: g.description,
     toolSlugs: g.toolSlugs ?? [],
+    integration: g.integration ?? null,
     enabled: g.enabled,
     createdAt: g.createdAt.toISOString(),
     updatedAt: g.updatedAt.toISOString(),
@@ -72,6 +73,8 @@ export type CreateToolGroupInput = {
   name: string;
   description?: string;
   toolSlugs?: string[];
+  /** Service binding when the owner is creating an integration group outright. */
+  integration?: ToolGroupIntegration | null;
   enabled?: boolean;
 };
 
@@ -87,6 +90,7 @@ export async function createToolGroup(
       name: input.name,
       description: input.description ?? '',
       toolSlugs: input.toolSlugs ?? [],
+      ...(input.integration ? { integration: input.integration } : {}),
       enabled: input.enabled ?? true,
     })
     .returning();
@@ -105,6 +109,9 @@ export async function updateToolGroup(
   if (patch.name !== undefined) next.name = patch.name;
   if (patch.description !== undefined) next.description = patch.description;
   if (patch.toolSlugs !== undefined) next.toolSlugs = patch.toolSlugs;
+  // `integration: null` clears the binding (back to a capability-only bundle);
+  // omitting the key leaves whatever Toolsmith or a previous edit stored.
+  if (patch.integration !== undefined) next.integration = patch.integration;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
   const [row] = await db
     .update(toolGroups)
