@@ -14,6 +14,7 @@ import {
   countTeamVisibleShares,
   listTeamVisibleShares,
   loadProfilePreferences,
+  logoVersion,
 } from '@mantle/content';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
 import { APP_VERSION } from '@mantle/web-ui/version';
@@ -35,6 +36,9 @@ export async function GET(req: Request) {
     // The brain's federation label — the member header centres it exactly as
     // the owner shell does (one brand, admin-determined, both surfaces).
     peerName: prefs.peerName ?? null,
+    // Brand logo (replaces the wordmark when set) — same public src +
+    // version contract as the owner shell.
+    logoVersion: logoVersion(prefs.logoKey),
     // The OWNER's colour theme — the workspace renders in the brain's brand
     // theme for members (light/dark stays the member's own choice).
     colorTheme: prefs.colorTheme ?? null,
