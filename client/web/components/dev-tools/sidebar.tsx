@@ -95,6 +95,7 @@ export function DevToolsSidebar() {
     mcp,
     loadMcpTools,
     agentTools,
+    integrationGroups,
   } = useDevTools();
 
   const [filter, setFilter] = useState('');
@@ -138,6 +139,21 @@ export function DevToolsSidebar() {
 
   const builtinAgentTools = filteredAgentTools.filter((t) => t.handler.kind === 'builtin');
   const customAgentTools = filteredAgentTools.filter((t) => t.handler.kind !== 'builtin');
+
+  // Custom tools that belong to an integration group are shown under it (with
+  // the bound credential ref), because that group IS the integration: the base
+  // URL and key they inherited live there. Everything else stays under "Other".
+  const integrationSections = useMemo(() => {
+    const claimed = new Set<string>();
+    const sections = integrationGroups
+      .map((g) => {
+        const tools = customAgentTools.filter((t) => g.toolSlugs.includes(t.slug));
+        for (const t of tools) claimed.add(t.slug);
+        return { group: g, tools };
+      })
+      .filter((s) => s.tools.length > 0);
+    return { sections, ungrouped: customAgentTools.filter((t) => !claimed.has(t.slug)) };
+  }, [integrationGroups, customAgentTools]);
 
   const isSelected = (sourceId: string) => draft.sourceId === sourceId;
   const searching = q !== '';
@@ -277,10 +293,45 @@ export function DevToolsSidebar() {
               <h3 className="px-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Agent tools · {agentTools.length}
               </h3>
-              {customAgentTools.length > 0 && (
+              {integrationSections.sections.map(({ group, tools }) => (
+                <div key={group.id} className="space-y-0.5">
+                  <p
+                    className="truncate px-1.5 text-[10px] text-muted-foreground/70"
+                    title={
+                      group.integration?.secretRef
+                        ? `${group.name} · key ${group.integration.secretRef}`
+                        : group.name
+                    }
+                  >
+                    {group.name}
+                    {group.integration?.secretRef ? ` · ${group.integration.secretRef}` : ''}
+                  </p>
+                  {tools.map((t) => (
+                    <Row
+                      key={t.id}
+                      selected={isSelected(`tool_${t.slug}`)}
+                      onClick={() => replaceDraft(draftFromAgentTool(t))}
+                      title={t.description}
+                    >
+                      <KindBadge kind="tool" />
+                      <span
+                        className={cn(
+                          'min-w-0 flex-1 truncate font-mono text-[11px]',
+                          !t.enabled && 'opacity-50 line-through',
+                        )}
+                      >
+                        {t.slug}
+                      </span>
+                    </Row>
+                  ))}
+                </div>
+              ))}
+              {integrationSections.ungrouped.length > 0 && (
                 <div className="space-y-0.5">
-                  <p className="px-1.5 text-[10px] text-muted-foreground/70">Custom</p>
-                  {customAgentTools.map((t) => (
+                  <p className="px-1.5 pt-1 text-[10px] text-muted-foreground/70">
+                    {integrationSections.sections.length > 0 ? 'Other custom' : 'Custom'}
+                  </p>
+                  {integrationSections.ungrouped.map((t) => (
                     <Row
                       key={t.id}
                       selected={isSelected(`tool_${t.slug}`)}

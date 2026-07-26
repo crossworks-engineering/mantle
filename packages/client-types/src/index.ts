@@ -93,6 +93,28 @@ export interface ToolSettings {
 
 // ── Tool groups ───────────────────────────────────────────────────────────────
 
+/**
+ * The service binding on a group that IS an API integration: where its calls go,
+ * which vault entry authenticates them, where that credential is placed, and
+ * pointers to the stored API docs + usage skill. Mirrors the `ToolGroupIntegration`
+ * type in @mantle/db. `secretRef` is a `service/label` pointer and auth-template
+ * values are `{{secret:…}}` refs — a plaintext key never crosses this wire.
+ */
+export interface ToolGroupIntegrationDTO {
+  service: string;
+  baseUrl?: string;
+  secretRef?: string;
+  authTemplate?: {
+    headers?: Record<string, string>;
+    query?: Record<string, string>;
+  };
+  docsNodeId?: string;
+  docsSourceUrl?: string;
+  docsUpdatedAt?: string;
+  /** Slug of the usage skill that travels with this group's grant. */
+  skillSlug?: string;
+}
+
 /** A tool group — a named bundle of tool slugs granted to agents wholesale. */
 export interface ToolGroupDTO {
   id: string;
@@ -100,6 +122,8 @@ export interface ToolGroupDTO {
   name: string;
   description: string;
   toolSlugs: string[];
+  /** Set when the group is an API integration; null for capability-only bundles. */
+  integration: ToolGroupIntegrationDTO | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
