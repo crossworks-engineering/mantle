@@ -16,6 +16,12 @@
  * deliberately if /s ever grows deep links, never to a startsWith('/') check
  * (open redirect). The Origin check is cheap login-CSRF hardening: only our
  * own origins may pin a browser's server-origin team session to an identity.
+ *
+ * `next` may also be ABSENT: verify the bearer, set the cookie, answer 204,
+ * no redirect. That's the silent bearer→cookie upgrade the same-origin /team
+ * workspace fires once per session, so members who authenticated in bearer
+ * mode (the pre-v0.204 same-origin mis-detection) regain the cookie that the
+ * share asset/HTML surfaces authenticate by — without re-entering a token.
  */
 import { NextResponse } from '../server/http-compat';
 import { isTeamMember } from '@mantle/content';
@@ -50,8 +56,10 @@ export async function handleTeamSso(req: Request): Promise<NextResponse> {
 
   const form = await req.formData().catch(() => null);
   const tb = form?.get('tb');
-  const next = form?.get('next');
-  if (typeof tb !== 'string' || typeof next !== 'string' || !NEXT_RE.test(next)) {
+  const next = form?.get('next') ?? null;
+  if (typeof tb !== 'string') return denied(403);
+  // Present ⇒ must be a valid /s path. Absent ⇒ the cookie-upgrade shape.
+  if (next !== null && (typeof next !== 'string' || !NEXT_RE.test(next))) {
     return denied(403);
   }
 
@@ -61,7 +69,10 @@ export async function handleTeamSso(req: Request): Promise<NextResponse> {
   if (!(await isTeamMember(claims.ownerId, claims.contactId))) return denied(401);
 
   const minted = buildTeamChatToken(claims.ownerId, claims.contactId);
-  const res = NextResponse.redirect(new URL(next, requestOrigin(req)), 303);
+  const res =
+    next === null
+      ? new NextResponse(null, { status: 204 })
+      : NextResponse.redirect(new URL(next, requestOrigin(req)), 303);
   res.cookies.set(TEAM_CHAT_COOKIE, minted.value, {
     httpOnly: true,
     sameSite: 'lax',

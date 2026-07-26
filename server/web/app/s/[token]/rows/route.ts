@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
 import { resolveActiveShareByToken } from '@/lib/shares';
-import { resolveShareVisitor } from '@/lib/team-gate';
+import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 /**
@@ -41,7 +41,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
 
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'table') return notFound();
-  if (!(await resolveShareVisitor(req.headers.get('cookie'), share))) return notFound();
+  // Bearer OR cookie — the /team inline reader pages rows cross-fetch style
+  // (same trust as the app brokers: right brain + live membership).
+  if (!(await resolveShareVisitorFromRequest(req, share))) return notFound();
 
   const [row] = await db
     .select({ storagePath: tables.storagePath })

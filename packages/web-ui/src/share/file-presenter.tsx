@@ -31,7 +31,8 @@ export function FilePresenter({
 
       {isImage ? (
         <a href={src} target="_blank" rel="noreferrer" className="block">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {/* A plain <img> on purpose: share assets are token-scoped bytes,
+              not next/image-optimizable public files. */}
           <img
             src={src}
             alt={view.filename}

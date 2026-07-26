@@ -4,7 +4,10 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
  * POST /api/team/sso — the bearer→cookie handoff. What must hold:
  *   - a valid signed team-chat bearer + a well-formed /s/<token> `next` mints
  *     a fresh cookie and 303s to the share;
- *   - `next` is a SINGLE /s path segment — every open-redirect shape is 403;
+ *   - a valid bearer with NO `next` mints the cookie and answers 204 (the
+ *     silent bearer→cookie upgrade the same-origin /team workspace fires);
+ *   - `next` is a SINGLE /s path segment — every open-redirect shape is 403
+ *     (absent means the upgrade; PRESENT-but-bad is always a reject);
  *   - a foreign/garbage/wrong-kind bearer or dead membership is 401;
  *   - a cross-origin Origin that isn't ours is 403 (login-CSRF hardening).
  * Membership liveness is mocked — this is the route contract, not the DB.
@@ -55,6 +58,23 @@ describe('POST /api/team/sso', () => {
     expect(setCookie).toContain('mantle_team_chat=');
     expect(setCookie.toLowerCase()).toContain('httponly');
     expect(setCookie.toLowerCase()).toContain('samesite=lax');
+  });
+
+  it('valid bearer, next absent → 204 cookie upgrade, no redirect', async () => {
+    isTeamMember.mockResolvedValue(true);
+    const res = await post({ tb: await mintBearer() });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('location')).toBeNull();
+    const setCookie = res.headers.get('set-cookie') ?? '';
+    expect(setCookie).toContain('mantle_team_chat=');
+    expect(setCookie.toLowerCase()).toContain('httponly');
+  });
+
+  it('next absent with a bad bearer still mints nothing', async () => {
+    isTeamMember.mockResolvedValue(true);
+    const res = await post({ tb: 'garbage' });
+    expect(res.status).toBe(401);
+    expect(res.headers.get('set-cookie')).toBeNull();
   });
 
   it('rejects every open-redirect shape of next with 403', async () => {

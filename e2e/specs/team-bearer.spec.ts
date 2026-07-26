@@ -1,7 +1,7 @@
 import type { APIRequestContext } from '@playwright/test';
 import { expect, test } from '../lib/fixtures';
 import { TEAM_TOKEN_STORAGE_KEY } from '../lib/contract';
-import { CLIENT_URL } from '../lib/env';
+import { CLIENT_URL, SERVER_URL } from '../lib/env';
 
 /**
  * The member carve's credential plumbing (T1–T4): the contact team token
@@ -70,11 +70,7 @@ test.describe('team bearer (split member carve)', () => {
     }
   });
 
-  test('a stored bearer renders the workspace cookie-free', async ({
-    ownerApi,
-    visitorPage,
-    serverURL,
-  }) => {
+  test('a stored bearer renders the workspace', async ({ ownerApi, visitorPage, serverURL }) => {
     const { contactId, token } = await mintMember(ownerApi);
     try {
       const exchange = await visitorPage.request.post(`${serverURL}/api/team/auth`, {
@@ -84,7 +80,7 @@ test.describe('team bearer (split member carve)', () => {
 
       // Land on the FINAL origin first (the server stub may redirect), then
       // seed the contract key and reload — the shell must boot straight into
-      // the workspace, no gate, with zero cookies involved.
+      // the workspace, no gate, on the bearer alone.
       await visitorPage.goto(`${CLIENT_URL}/team`);
       await visitorPage.evaluate(
         ([key, value]) => window.localStorage.setItem(key!, value!),
@@ -95,8 +91,26 @@ test.describe('team bearer (split member carve)', () => {
         timeout: 30_000,
       });
       expect(visitorPage.getByPlaceholder(/Xk3mP2vQ/)).toBeHidden();
-      const cookies = await visitorPage.context().cookies();
-      expect(cookies.find((c) => c.name === 'mantle_team_chat')).toBeUndefined();
+
+      if (CLIENT_URL !== SERVER_URL) {
+        // Split: the bearer IS the credential — no cookie may appear on the
+        // client origin, ever.
+        const cookies = await visitorPage.context().cookies(CLIENT_URL);
+        expect(cookies.find((c) => c.name === 'mantle_team_chat')).toBeUndefined();
+      } else {
+        // Same-origin: the shell fires the silent bearer→cookie upgrade
+        // (POST /api/team/sso, no next) so the /s subresources the inline
+        // reader loads authenticate. The cookie must arrive.
+        await expect
+          .poll(
+            async () => {
+              const cookies = await visitorPage.context().cookies(SERVER_URL);
+              return cookies.some((c) => c.name === 'mantle_team_chat');
+            },
+            { timeout: 10_000 },
+          )
+          .toBe(true);
+      }
     } finally {
       await cleanup(ownerApi, contactId);
     }

@@ -37,8 +37,9 @@ import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
 import { TeamChatClient } from '@/components/team-chat/team-chat-client';
 import { TokenGate } from '@/components/team-chat/token-gate';
 import { OpenShare, openShareOnServer } from '@/components/team-workspace/open-on-server';
-import { teamFetch, withTeamAuth } from '@mantle/web-ui/team-fetch';
-import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
+import { ShareReader } from '@/components/team-workspace/share-reader';
+import { teamFetch, upgradeTeamCookie, withTeamAuth } from '@mantle/web-ui/team-fetch';
+import { isCrossOrigin, runtimeApiBase } from '@mantle/web-ui/runtime-env';
 import type { HubData as BridgeHubData, HubNavTarget } from '@mantle/web-ui/app-bridge/protocol';
 
 /** The /api/team/hub payload — the bridge `HubData` (what `hub.get` answers a
@@ -159,11 +160,12 @@ function ChatView({ onBack }: { onBack: () => void }) {
  *  card — both are just an active team-mode /s/<token> under the hood. */
 type ReaderTarget = { token: string; title: string; icon?: string | null };
 
-/** In-hub reader: the /s page in a same-origin iframe (auth rides the team
- *  cookie) — members read briefings and open team apps without leaving the
- *  hub. Shared by both hubs. Same-origin ONLY: on the split client origin the
- *  reader view is never entered (cards open top-level via OpenShare instead —
- *  a cross-origin iframe can't carry the member cookie). */
+/** In-hub reader: the share content INLINE (ShareReader → GET /s/<token>/view,
+ *  no iframe) — members read briefings and open team apps without leaving the
+ *  hub. Shared by both hubs. Same-origin ONLY: on a genuinely cross-origin
+ *  client the reader view is never entered (cards open top-level via
+ *  OpenShare instead — the reader's cookie-authenticated subresources can't
+ *  follow across origins). */
 function ReaderView({ target, onBack }: { target: ReaderTarget; onBack: () => void }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -182,11 +184,7 @@ function ReaderView({ target, onBack }: { target: ReaderTarget; onBack: () => vo
           </a>
         </Button>
       </div>
-      <iframe
-        src={`/s/${target.token}`}
-        title={target.title}
-        className="min-h-0 w-full flex-1 border-0 bg-background"
-      />
+      <ShareReader key={target.token} token={target.token} title={target.title} />
     </div>
   );
 }
@@ -217,6 +215,9 @@ export function TeamHubShell() {
   }, []);
 
   useEffect(() => {
+    // Same-origin sessions minted in bearer mode regain the cookie the /s
+    // subresources (reader images, downloads, rows) authenticate by.
+    upgradeTeamCookie();
     void refetch();
   }, [refetch]);
 
@@ -251,10 +252,12 @@ export function TeamHubShell() {
   // members a working hub. The sandbox stays MOUNTED (hidden) while chat/reader
   // views are open, so "back to the hub" restores the app instantly with its
   // scroll position and state intact instead of re-fetching + remounting.
-  // Split client origin: no in-hub iframe reader (cross-origin iframes can't
-  // carry the member cookie) — validated share opens go top-level through the
-  // SSO handoff instead, and browser Back returns to the hub.
-  const split = runtimeApiBase() !== '';
+  // Genuinely cross-origin client: no in-hub reader (its cookie-authenticated
+  // subresources can't follow) — validated share opens go top-level through
+  // the SSO handoff instead, and browser Back returns to the hub. The default
+  // one-domain deploy (apiBase set but EQUAL to the page origin) reads
+  // in-hub like the monolith always did.
+  const split = isCrossOrigin();
   const openReader = (target: ReaderTarget) => {
     if (split) openShareOnServer(target.token);
     else setView({ reader: target });

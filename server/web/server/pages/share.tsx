@@ -5,12 +5,12 @@ import { loadAppearanceAttrs } from './appearance';
 import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
 import { resolveShareVisitor } from '@/lib/team-gate';
 import { PagePresenter } from '@/components/share/page-presenter';
-import { NotePresenter } from '@/components/share/note-presenter';
-import { FilePresenter } from '@/components/share/file-presenter';
-import { TaskPresenter } from '@/components/share/task-presenter';
-import { EventPresenter } from '@/components/share/event-presenter';
+import { NotePresenter } from '@mantle/web-ui/share/note-presenter';
+import { FilePresenter } from '@mantle/web-ui/share/file-presenter';
+import { TaskPresenter } from '@mantle/web-ui/share/task-presenter';
+import { EventPresenter } from '@mantle/web-ui/share/event-presenter';
 import { FolderPresenter, loadFolderListing } from '@/components/share/folder-presenter';
-import { FormulaPresenter } from '@/components/share/formula-presenter';
+import { FormulaPresenter } from '@mantle/web-ui/share/formula-presenter';
 import { htmlPage, islandDiv, shareShell } from './template';
 
 /**
@@ -98,7 +98,13 @@ async function renderShare(c: Context): Promise<Response> {
       body = renderToStaticMarkup(
         <FormulaPresenter
           view={view}
-          calculator={islandDiv('formula-calculator', { token, signature: view.signature })}
+          calculator={
+            <div
+              dangerouslySetInnerHTML={{
+                __html: islandDiv('formula-calculator', { token, signature: view.signature }),
+              }}
+            />
+          }
         />,
       );
       islands = true;

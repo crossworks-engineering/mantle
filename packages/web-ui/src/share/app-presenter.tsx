@@ -8,13 +8,13 @@
  * internal layout and scrolling.
  */
 import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
-import type { ShareView } from '@/lib/shares';
+import type { ShareViewPayload } from '@mantle/web-ui/share/view-payload';
 
 export function AppPresenter({
   view,
   token,
 }: {
-  view: Extract<ShareView, { kind: 'app' }>;
+  view: Extract<ShareViewPayload, { kind: 'app' }>;
   token: string;
 }) {
   return (

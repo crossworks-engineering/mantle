@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { checkDimensions, checkLookupCoverage, parseFormulaSpec } from '@mantle/content';
+import { checkDimensions } from '@mantle/content/formula-dimensions';
+import { checkLookupCoverage, parseFormulaSpec } from '@mantle/content/formula-spec';
 import { FormulaPresenter } from './formula-presenter';
 
 /**
@@ -76,7 +77,12 @@ const html = renderToStaticMarkup(
       coverageGaps: checkLookupCoverage(spec),
       dimensionIssues: checkDimensions(spec),
     },
-    calculator: '<div data-island="formula-calculator"></div>',
+    // The /s surface's shape: pre-rendered island markup behind its own
+    // dangerouslySetInnerHTML wrapper (the /team reader mounts the live
+    // component instead — the prop is a ReactNode either way).
+    calculator: createElement('div', {
+      dangerouslySetInnerHTML: { __html: '<div data-island="formula-calculator"></div>' },
+    }),
   }),
 );
 

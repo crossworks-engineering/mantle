@@ -33,7 +33,7 @@ import { navItemMatches } from '@mantle/web-ui/layout/nav-items';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@mantle/web-ui/ui/sheet';
 import { ThemeToggle } from '@mantle/web-ui/theme-toggle';
 import { TokenGate } from '@/components/team-chat/token-gate';
-import { teamFetch } from '@mantle/web-ui/team-fetch';
+import { teamFetch, upgradeTeamCookie } from '@mantle/web-ui/team-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
 
 export type WorkspaceData = {
@@ -134,6 +134,9 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Same-origin sessions minted in bearer mode regain the cookie the /s
+    // subresources (inline-reader images, downloads, rows) authenticate by.
+    upgradeTeamCookie();
     void refetch();
   }, [refetch]);
 
