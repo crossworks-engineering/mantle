@@ -12,6 +12,7 @@
     "dev": "tsx watch server/main.ts",
     "build": "pnpm run generate",
     "start": "tsx server/main.ts",
+    "pretypecheck": "pnpm run route-manifest",
     "typecheck": "tsc --noEmit",
     "worker:dev": "tsx --watch --env-file-if-exists=./.env.local workers/email-sync.ts",
     "worker:telegram:dev": "tsx --watch --env-file-if-exists=./.env.local workers/telegram-poll.ts",
