@@ -300,26 +300,40 @@ authenticated with cookies, and cookies don't cross origins. The member carve
   redirect stubs for old bookmarks; members re-enter their 8-char token once
   (a URL-fragment credential handoff was REJECTED — 30-day credentials don't
   belong in history/session stores).
-- **Share reading goes top-level through the SSO handoff.** A cross-origin
-  iframe never receives a Lax cookie, so `POST /api/team/sso` (form body
-  `{tb, next}` — the bearer never rides a URL) verifies the bearer, mints a
-  fresh server-origin cookie and 303s to `/s/<token>`. `next` is locked to a
-  single `/s/` path segment.
+- **Share reading is INLINE same-origin; the SSO handoff covers the genuine
+  split.** (Revised in v0.204 — the carve originally keyed "split" off
+  "apiBase configured", but the DEFAULT deployment is one domain path-routed
+  with an absolute `MANTLE_SERVER_ORIGIN`, so every production box misread as
+  split. `isCrossOrigin()` compares real origins now.) Same-origin, `/team`
+  and the hub render share content inline: `ShareReader` fetches
+  `GET /s/<token>/view` (the presenter payload as JSON — pages arrive as
+  pre-rendered sanitized HTML) and mounts the shared presenters from
+  `@mantle/web-ui/share` — no iframe. On a genuinely cross-origin client the
+  open still goes top-level through `POST /api/team/sso` (form body
+  `{tb, next}` — the bearer never rides a URL), which verifies the bearer,
+  mints a fresh server-origin cookie and 303s to `/s/<token>`; `next` is
+  locked to a single `/s/` path segment, and an ABSENT `next` answers 204 +
+  Set-Cookie — the silent bearer→cookie upgrade same-origin sessions minted
+  in bearer mode need for the reader's cookie-authenticated subresources.
 - **The designated hub app stays first-class**: `AppSandbox` broker fetches
   happen in the parent page, so the client-origin hub passes an absolute
-  `apiBase` + a bearer-attaching `fetcher`; the three `/s` app brokers
-  (`bundle`/`tool-broker`/`db-broker`) accept the bearer
-  (`resolveShareVisitorFromRequest`) and get the `/api/**` CORS treatment —
-  and ONLY they.
+  `apiBase` + a bearer-attaching `fetcher`; the `/s` sub-paths a client-origin
+  page calls (`bundle`/`tool-broker`/`db-broker`, plus `view`/`rows` for the
+  inline reader) accept the bearer (`resolveShareVisitorFromRequest`) and get
+  the `/api/**` CORS treatment — and ONLY they.
 - **`/team-admin` rehomed under the owner bearer**: per-tab
   `GET /api/team-admin/*` routes + a client page in `client/web`; the old
   render side effects (mark thread/topic read) became explicit POSTs.
 - **What stays server-side, by design**: `/s/[token]` (anonymous shares, SEO),
-  `/print` (the PDF loop), the share brokers and presenters, the login stub.
-  The server app's UI is render surfaces only.
+  `/print` (the PDF loop), the share brokers, and page rendering
+  (`renderPageDoc` — sanitization never moves client-side). The presenter
+  COMPONENTS live in `@mantle/web-ui/share` since v0.204 so both surfaces
+  render the same UI; the server still renders them for /s. The server app's
+  UI is render surfaces only.
 
 The regression net is `e2e/` (`team.spec`, `team-bearer.spec`,
-`team-admin.spec` + the rest) across both topology projects.
+`team-reader.spec`, `team-admin.spec` + the rest) across both topology
+projects.
 
 ## 11. The Hono server (v0.202.0) — Next.js removed from `server/web`
 
