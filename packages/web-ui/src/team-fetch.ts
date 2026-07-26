@@ -84,31 +84,41 @@ export function withTeamAuth(init?: RequestInit): RequestInit {
   };
 }
 
-// One upgrade attempt per page load — module-level, so concurrent callers
-// (shell mount + hub mount) don't double-fire.
-let cookieUpgradeFired = false;
+// One upgrade attempt per page load, shared as a PROMISE — concurrent callers
+// (shell mount, hub mount, a reader about to load cookie-authenticated
+// subresources) all await the same in-flight request instead of double-firing.
+let cookieUpgrade: Promise<void> | null = null;
 
 /**
  * Silent bearer→cookie upgrade, same-origin only. Members who authenticated
  * while the split mis-detection was live hold ONLY the localStorage bearer —
  * but the /s subresources an inline reader loads (page images, downloads,
- * table rows, the formula evaluate POST) authenticate by cookie. POST
- * /api/team/sso with no `next` verifies the bearer (signature + membership
- * liveness) and answers 204 with a fresh first-party cookie — no token
- * re-entry, no redirect. Fire-and-forget; a failure just retries next load.
+ * table rows, the app bundle, the formula evaluate POST) authenticate by
+ * cookie. POST /api/team/sso with no `next` verifies the bearer (signature +
+ * membership liveness) and answers 204 with a fresh first-party cookie — no
+ * token re-entry, no redirect.
+ *
+ * Returns a promise that settles once the cookie is in place (or there was
+ * nothing to do): callers that are about to load cookie-dependent resources
+ * await it so the FIRST reader open doesn't race the Set-Cookie; shells just
+ * fire it. A failed attempt clears the memo so a later caller retries.
  */
-export function upgradeTeamCookie(): void {
-  if (cookieUpgradeFired || isCrossOrigin()) return;
-  const token = teamTokenStore.get();
-  if (!token) return; // cookie-mode session — nothing to upgrade
-  cookieUpgradeFired = true;
-  void fetch(teamUrl('/api/team/sso'), {
-    method: 'POST',
-    body: new URLSearchParams({ tb: token }),
-    credentials: 'include',
-  }).catch(() => {
-    /* offline / transient — the next page load tries again */
-  });
+export function upgradeTeamCookie(): Promise<void> {
+  cookieUpgrade ??= (async () => {
+    if (isCrossOrigin()) return;
+    const token = teamTokenStore.get();
+    if (!token) return; // cookie-mode session — nothing to upgrade
+    try {
+      await fetch(teamUrl('/api/team/sso'), {
+        method: 'POST',
+        body: new URLSearchParams({ tb: token }),
+        credentials: 'include',
+      });
+    } catch {
+      cookieUpgrade = null; // offline / transient — the next caller retries
+    }
+  })();
+  return cookieUpgrade;
 }
 
 /** Fetch with the member credential, returning the raw `Response` — callers
