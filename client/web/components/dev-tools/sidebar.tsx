@@ -11,6 +11,16 @@
 
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Plug, Plus, Trash2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@mantle/web-ui/ui/alert-dialog';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
@@ -100,6 +110,12 @@ export function DevToolsSidebar() {
 
   const [filter, setFilter] = useState('');
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
+  // Destructive deletes confirm via AlertDialog (house rule — no instant loss).
+  const [confirmDelete, setConfirmDelete] = useState<
+    | { kind: 'collection'; id: string; name: string; count: number }
+    | { kind: 'request'; collectionId: string; id: string; name: string }
+    | null
+  >(null);
   const q = filter.trim().toLowerCase();
 
   const toggle = (id: string) =>
@@ -157,6 +173,10 @@ export function DevToolsSidebar() {
 
   const isSelected = (sourceId: string) => draft.sourceId === sourceId;
   const searching = q !== '';
+  // While searching, counts show shown/total — a filtered list must not
+  // present the full-catalog number as if everything were visible.
+  const shownOf = (shown: number, total: number) => (searching ? `${shown}/${total}` : `${total}`);
+  const filteredCatalogCount = filteredCatalog.reduce((n, g) => n + g.endpoints.length, 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -199,7 +219,7 @@ export function DevToolsSidebar() {
           <div className="space-y-3">
             <section>
               <h3 className="px-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Built-in API · {API_CATALOG_COUNT}
+                Built-in API · {shownOf(filteredCatalogCount, API_CATALOG_COUNT)}
               </h3>
               <div className="space-y-0.5">
                 {filteredCatalog.map((g) => {
@@ -237,7 +257,8 @@ export function DevToolsSidebar() {
 
             <section>
               <h3 className="px-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Built-in MCP{mcp.status === 'ready' ? ` · ${mcpTools.length}` : ''}
+                Built-in MCP
+                {mcp.status === 'ready' ? ` · ${shownOf(filteredMcp.length, mcpTools.length)}` : ''}
               </h3>
               {mcp.status === 'idle' && (
                 <Button
@@ -291,7 +312,7 @@ export function DevToolsSidebar() {
 
             <section>
               <h3 className="px-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Agent tools · {agentTools.length}
+                Agent tools · {shownOf(filteredAgentTools.length, agentTools.length)}
               </h3>
               {integrationSections.sections.map(({ group, tools }) => (
                 <div key={group.id} className="space-y-0.5">
@@ -401,7 +422,14 @@ export function DevToolsSidebar() {
                       size="sm"
                       className="h-5 w-5 p-0 text-muted-foreground"
                       title="Delete collection"
-                      onClick={() => deleteCollection(c.id)}
+                      onClick={() =>
+                        setConfirmDelete({
+                          kind: 'collection',
+                          id: c.id,
+                          name: c.name,
+                          count: c.requests.length,
+                        })
+                      }
                     >
                       <Trash2 className="size-3" />
                     </Button>
@@ -431,7 +459,14 @@ export function DevToolsSidebar() {
                             size="sm"
                             className="invisible h-5 w-5 shrink-0 p-0 text-muted-foreground group-hover:visible"
                             title="Delete request"
-                            onClick={() => deleteSaved(c.id, r.id)}
+                            onClick={() =>
+                              setConfirmDelete({
+                                kind: 'request',
+                                collectionId: c.id,
+                                id: r.id,
+                                name: r.name,
+                              })
+                            }
                           >
                             <Trash2 className="size-3" />
                           </Button>
@@ -489,6 +524,37 @@ export function DevToolsSidebar() {
           )}
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={confirmDelete !== null} onOpenChange={(o) => !o && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmDelete?.kind === 'collection'
+                ? `Delete “${confirmDelete.name}”?`
+                : `Delete “${confirmDelete?.name}”?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete?.kind === 'collection'
+                ? `The collection and its ${confirmDelete.count} saved request${confirmDelete.count === 1 ? '' : 's'} are removed from this browser. There is no undo.`
+                : 'The saved request is removed from this browser. There is no undo.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (!confirmDelete) return;
+                if (confirmDelete.kind === 'collection') deleteCollection(confirmDelete.id);
+                else deleteSaved(confirmDelete.collectionId, confirmDelete.id);
+                setConfirmDelete(null);
+              }}
+            >
+              {confirmDelete?.kind === 'collection' ? 'Delete collection' : 'Delete request'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

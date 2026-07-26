@@ -18,6 +18,7 @@ import {
   Send,
   Settings2,
   Sparkles,
+  Terminal,
   Wand2,
   X,
 } from 'lucide-react';
@@ -38,8 +39,10 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { buildVarMap, collectDraftParams } from '@/lib/dev-tools/client';
+import { looksLikeCurl, parseCurl, toCurl } from '@/lib/dev-tools/curl';
 import { genId } from '@/lib/dev-tools/storage';
 import type { AuthMode, BodyMode, Environment, HttpMethod } from '@/lib/dev-tools/types';
+import { ArgsForm, schemaProps } from './args-form';
 import { useDevTools } from './context';
 import { KvEditor } from './kv-editor';
 import { KindBadge } from './method-badge';
@@ -253,6 +256,60 @@ export function RequestBuilder() {
   const vars = useMemo(() => buildVarMap(activeEnv), [activeEnv]);
   const placeholders = useMemo(() => collectDraftParams(draft, vars), [draft, vars]);
 
+  /** Paste a vendor's cURL example anywhere sensible and the whole draft
+   *  populates — the fastest path from API docs to a proven request. */
+  const importCurl = (text: string): boolean => {
+    const parsed = parseCurl(text);
+    if (!parsed.ok) {
+      toast.error(`Couldn't import cURL: ${parsed.error}`);
+      return true; // it WAS a curl command — don't paste it into the field raw
+    }
+    const v = parsed.value;
+    setDraft((d) => ({
+      ...d,
+      method: v.method,
+      url: v.url,
+      params: v.params.map((p) => ({ id: genId('kv'), enabled: true, ...p })),
+      headers: v.headers.map((h) => ({ id: genId('kv'), enabled: true, ...h })),
+      body: v.body,
+      pathValues: {},
+    }));
+    if (v.warnings.length > 0) {
+      toast.info(
+        `Imported with ${v.warnings.length} note${v.warnings.length === 1 ? '' : 's'}: ${v.warnings[0]}`,
+      );
+    } else {
+      toast.success('cURL imported — method, URL, params, headers and body are in.');
+    }
+    return true;
+  };
+
+  const onUrlPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text');
+    if (looksLikeCurl(text)) {
+      e.preventDefault();
+      importCurl(text);
+    }
+  };
+
+  const copyCurl = () => {
+    void navigator.clipboard
+      .writeText(toCurl(draft, vars))
+      .then(() => toast.success('cURL copied — vault refs stay as {{secret:…}} placeholders.'));
+  };
+
+  // ⌘/Ctrl+Enter sends from anywhere in the builder (unless a dialog is up).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !saveOpen && !saveToolOpen && !sending) {
+        e.preventDefault();
+        void send();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [send, sending, saveOpen, saveToolOpen]);
+
   const formatBody = () => {
     try {
       const parsed = JSON.parse(draft.body.text) as unknown;
@@ -297,6 +354,18 @@ export function RequestBuilder() {
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {draft.kind === 'http' && <EnvironmentControls />}
+          {draft.kind === 'http' && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              title="Copy this request as a cURL command — env vars resolve, {{secret:…}} refs stay placeholders"
+              onClick={copyCurl}
+            >
+              <Terminal /> cURL
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -358,7 +427,14 @@ export function RequestBuilder() {
               <Input
                 value={draft.url}
                 onChange={(e) => setDraft((d) => ({ ...d, url: e.target.value }))}
-                placeholder="{{baseUrl}}/api/… or https://…"
+                onPaste={onUrlPaste}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !sending) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+                placeholder="{{baseUrl}}/api/… — or paste a cURL command"
                 className="h-9 flex-1 font-mono text-xs"
               />
               {runButton}
@@ -550,16 +626,45 @@ export function RequestBuilder() {
               </div>
               {runButton}
             </div>
-            {draft.schema && <SchemaPeek schema={draft.schema} />}
-            <div className="space-y-1.5">
-              <Label className="text-xs">Arguments (JSON)</Label>
-              <Textarea
-                value={draft.argsText}
-                onChange={(e) => setDraft((d) => ({ ...d, argsText: e.target.value }))}
-                rows={12}
-                className="font-mono text-xs"
-              />
-            </div>
+            {schemaProps(draft.schema).length > 0 ? (
+              <Tabs defaultValue="form">
+                <TabsList className="h-8">
+                  <TabsTrigger value="form" className="text-xs">
+                    Form
+                  </TabsTrigger>
+                  <TabsTrigger value="json" className="text-xs">
+                    JSON
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="form" className="pt-2">
+                  <ArgsForm
+                    schema={draft.schema}
+                    argsText={draft.argsText}
+                    onArgsText={(argsText) => setDraft((d) => ({ ...d, argsText }))}
+                  />
+                </TabsContent>
+                <TabsContent value="json" className="space-y-2 pt-2">
+                  <Textarea
+                    value={draft.argsText}
+                    onChange={(e) => setDraft((d) => ({ ...d, argsText: e.target.value }))}
+                    rows={12}
+                    className="font-mono text-xs"
+                  />
+                  {draft.schema && <SchemaPeek schema={draft.schema} />}
+                </TabsContent>
+              </Tabs>
+            ) : (
+              <div className="space-y-1.5">
+                {draft.schema && <SchemaPeek schema={draft.schema} />}
+                <Label className="text-xs">Arguments (JSON)</Label>
+                <Textarea
+                  value={draft.argsText}
+                  onChange={(e) => setDraft((d) => ({ ...d, argsText: e.target.value }))}
+                  rows={12}
+                  className="font-mono text-xs"
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
