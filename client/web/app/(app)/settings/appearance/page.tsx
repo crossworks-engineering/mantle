@@ -9,6 +9,7 @@ import { COLOR_THEMES } from '@mantle/web-ui/lib/themes';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PreviewTabs } from '@/components/theme-preview/preview-tabs';
 import { TypographyFontControls } from '@/components/appearance/typography-font-controls';
+import { LogoControl } from '@/components/appearance/logo-control';
 
 const MODES: Array<{ id: string; label: string; icon: LucideIcon }> = [
   { id: 'light', label: 'Light', icon: Sun },
@@ -92,6 +93,15 @@ function Controls() {
             );
           })}
         </div>
+      </section>
+
+      {/* Brand logo — replaces the wordmark TEXT in both headers when set.
+          System-wide like the theme + fonts (anchor prefs, PUT /api/profile/logo). */}
+      <section className="space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Logo
+        </h2>
+        <LogoControl />
       </section>
 
       {/* Display fonts. These persist to the brain's profile row exactly like

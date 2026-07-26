@@ -18,12 +18,14 @@ import { Avatar, AvatarFallback } from '@mantle/web-ui/ui/avatar';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { ThemeToggle } from '@mantle/web-ui/theme-toggle';
 import { RandomThemeToggle } from '@/components/random-theme-toggle';
+import { serverUrl } from '@mantle/web-ui/runtime-env';
 
 export function Header({
   email,
   userAvatar,
   siteName,
   peerName,
+  logoVersion,
   onMenuClick,
   onSearchClick,
 }: {
@@ -33,6 +35,10 @@ export function Header({
   siteName?: string | null;
   /** This brain's peer name, shown centred; null/undefined ⇒ empty centre. */
   peerName?: string | null;
+  /** Brand logo version; set ⇒ an image replaces the wordmark TEXT (fixed
+   *  height, width free, never distorted — same header-bounded treatment as
+   *  the peer name). null/undefined ⇒ the font wordmark. */
+  logoVersion?: string | null;
   onMenuClick: () => void;
   /** Opens the global search palette (the ⌘K twin for mouse/touch). */
   onSearchClick: () => void;
@@ -62,22 +68,35 @@ export function Header({
 
       <Link
         href="/"
-        className="flex min-w-0 items-baseline"
+        className="flex min-w-0 items-center"
         aria-label={`${siteName || 'Mantle'} home`}
       >
-        {/* Script/display faces overshoot the em box (swashes, tall ascenders,
-            deep descenders). Clip only the WIDTH (overflow-x-clip, bounded by
-            max-w) and let the height overflow freely (overflow-y-visible) so the
-            64px header's spare vertical room is used instead of shaving the ink —
-            plain `truncate` clips both axes. -mx-2/px-2 give the sides room too.
-            Font: the user-selectable wordmark var (Settings → Appearance → Fonts),
-            defaulting to the next/font Bukhari when unset. */}
-        <span
-          className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary"
-          style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
-        >
-          {siteName || 'mantle'}
-        </span>
+        {logoVersion ? (
+          /* Uploaded brand logo (Settings → Appearance → Logo): fixed HEIGHT,
+             width free, object-contain — never distorted, bounded by the
+             header the way the peer name is. Src is the server app's public
+             logo route; content-addressed, so ?v busts the immutable cache. */
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={serverUrl(`/api/appearance/logo?v=${logoVersion}`)}
+            alt={siteName || 'Mantle'}
+            className="h-10 w-auto max-w-[45vw] object-contain"
+          />
+        ) : (
+          /* Script/display faces overshoot the em box (swashes, tall ascenders,
+             deep descenders). Clip only the WIDTH (overflow-x-clip, bounded by
+             max-w) and let the height overflow freely (overflow-y-visible) so the
+             64px header's spare vertical room is used instead of shaving the ink —
+             plain `truncate` clips both axes. -mx-2/px-2 give the sides room too.
+             Font: the user-selectable wordmark var (Settings → Appearance → Fonts),
+             defaulting to the next/font Bukhari when unset. */
+          <span
+            className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary"
+            style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
+          >
+            {siteName || 'mantle'}
+          </span>
+        )}
       </Link>
 
       {peerName && (

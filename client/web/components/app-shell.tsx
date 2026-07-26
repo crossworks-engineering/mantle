@@ -59,6 +59,9 @@ type ShellData = {
   siteName: string | null;
   /** Header-centre peer name (Settings → Profile → Peer name); null ⇒ empty centre. */
   peerName: string | null;
+  /** Brand logo cache-busting version (Settings → Appearance → Logo); null ⇒
+   *  no logo, the siteName wordmark renders. Src is /api/appearance/logo. */
+  logoVersion: string | null;
   /** The DB-stored colour theme (the cross-browser source of truth); null ⇒
    *  never saved. Adopted once per shell load. */
   colorTheme: string | null;
@@ -276,6 +279,7 @@ function ShellFrame({
         userAvatar={userAvatar}
         siteName={shellQuery.data?.siteName ?? null}
         peerName={shellQuery.data?.peerName ?? null}
+        logoVersion={shellQuery.data?.logoVersion ?? null}
         onMenuClick={() => setMobileOpen(true)}
         onSearchClick={() => setSearchOpen(true)}
       />

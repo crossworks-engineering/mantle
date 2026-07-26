@@ -34,6 +34,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@mantle/web-ui/ui
 import { ThemeToggle } from '@mantle/web-ui/theme-toggle';
 import { TokenGate } from '@/components/team-chat/token-gate';
 import { teamFetch, upgradeTeamCookie } from '@mantle/web-ui/team-fetch';
+import { serverUrl } from '@mantle/web-ui/runtime-env';
 import { cn } from '@mantle/web-ui/lib/utils';
 
 export type WorkspaceData = {
@@ -41,6 +42,8 @@ export type WorkspaceData = {
   siteName: string | null;
   /** The brain's federation label — centred in the header like the owner shell. */
   peerName: string | null;
+  /** Brand logo version; set ⇒ an image replaces the wordmark text. */
+  logoVersion: string | null;
   colorTheme: string | null;
   version: string;
   counts: Record<string, number>;
@@ -190,14 +193,25 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
             className="flex min-w-0 items-baseline"
             aria-label={`${data.siteName || 'Mantle'} team home`}
           >
-            {/* Script/display faces overshoot the em box — clip only the WIDTH
-                and let the height overflow, same as the owner header. */}
-            <span
-              className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary"
-              style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
-            >
-              {data.siteName || 'mantle'}
-            </span>
+            {data.logoVersion ? (
+              /* Uploaded brand logo — fixed height, width free, never
+                 distorted; bounded by the h-14 header like the peer name. */
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={serverUrl(`/api/appearance/logo?v=${data.logoVersion}`)}
+                alt={data.siteName || 'Mantle'}
+                className="h-9 w-auto max-w-[45vw] object-contain"
+              />
+            ) : (
+              /* Script/display faces overshoot the em box — clip only the WIDTH
+                 and let the height overflow, same as the owner header. */
+              <span
+                className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary"
+                style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
+              >
+                {data.siteName || 'mantle'}
+              </span>
+            )}
           </Link>
           {data.peerName && (
             <span

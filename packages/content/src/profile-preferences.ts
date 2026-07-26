@@ -85,6 +85,16 @@ export type ProfilePreferences = {
   /** Selectable header page-TITLE font key — same contract as `fontLogo`.
    *  Unset ⇒ the default UI sans. Read via projectFontKey, never raw. */
   fontTitle?: string;
+  /** Brand logo: the content-addressed storage key of the uploaded image
+   *  (attachments/aa/bb/<sha256> — @mantle/storage contentKey). Set/cleared
+   *  ONLY via PUT/DELETE /api/profile/logo, which validates the bytes; when
+   *  set, both headers render the image in place of the siteName wordmark.
+   *  The sha in the key doubles as the cache-busting version. Read via
+   *  projectLogoKey, never raw. */
+  logoKey?: string;
+  /** The logo's mime type, from the validated upload (svg/png/jpeg/webp
+   *  allowlist — projectLogoType). The public serve route replays it. */
+  logoType?: string;
   /** Free-text "what this brain is for" — captured at onboarding, editable in
    *  Settings → Profile. Injected as the "# Purpose of this brain" section of the
    *  always-on identity block (identity-context.ts), so every agent knows the
@@ -289,6 +299,33 @@ export function projectPeerName(raw: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+/** Project a stored `logoKey` — must be the exact content-addressed shape
+ *  @mantle/storage's contentKey emits, so a hand-edited row can never point
+ *  the public logo route at an arbitrary object. Same read+write sharing
+ *  contract as the other projectors. */
+export function projectLogoKey(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  return /^attachments\/[0-9a-f]{2}\/[0-9a-f]{2}\/[0-9a-f]{64}$/.test(raw) ? raw : undefined;
+}
+
+/** The image types the logo upload accepts — svg for crisp brand marks, the
+ *  three raster staples for everyone else. The serve route replays ONLY a
+ *  projected value, so an unlisted type can never reach a Content-Type. */
+export const LOGO_TYPES = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/webp'] as const;
+
+export function projectLogoType(raw: unknown): string | undefined {
+  return typeof raw === 'string' && (LOGO_TYPES as readonly string[]).includes(raw)
+    ? raw
+    : undefined;
+}
+
+/** Cache-busting logo version for clients — the first 8 hex of the sha in
+ *  the content-addressed key. null when no logo is set. */
+export function logoVersion(logoKey: string | undefined): string | null {
+  const projected = projectLogoKey(logoKey);
+  return projected ? projected.slice(-64).slice(0, 8) : null;
+}
+
 /** Project a stored `colorTheme` jsonb value — a slug-shaped theme id, or
  *  undefined for unset/garbage (⇒ the default theme). The theme LIST lives in
  *  the web app (apps/web/lib/themes.ts); the server stores any well-formed id
@@ -457,6 +494,8 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     colorTheme: projectColorTheme(prefs.colorTheme),
     fontLogo: projectFontKey(prefs.fontLogo),
     fontTitle: projectFontKey(prefs.fontTitle),
+    logoKey: projectLogoKey(prefs.logoKey),
+    logoType: projectLogoType(prefs.logoType),
     purpose:
       typeof prefs.purpose === 'string' && prefs.purpose.length > 0 ? prefs.purpose : undefined,
     purposeArchetype:
@@ -654,6 +693,8 @@ export async function updateProfilePreferences(
     colorTheme: projectColorTheme(merged.colorTheme),
     fontLogo: projectFontKey(merged.fontLogo),
     fontTitle: projectFontKey(merged.fontTitle),
+    logoKey: projectLogoKey(merged.logoKey),
+    logoType: projectLogoType(merged.logoType),
     purpose: merged.purpose || undefined,
     purposeArchetype: merged.purposeArchetype || undefined,
     onboardedAt: merged.onboardedAt || undefined,
