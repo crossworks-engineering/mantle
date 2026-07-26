@@ -1058,6 +1058,22 @@ const api_docs_get: BuiltinToolDef = {
 const MAX_SKILL_BODY_CHARS = 6_000;
 const SOFT_SKILL_WORDS = 320;
 
+/**
+ * The ONLY skill-authoring tool in the codebase — and its narrow scope is the
+ * safety property, not a convenience. An agent must never be able to edit
+ * persona/manifest behaviour, so this tool:
+ *
+ *   - derives the slug (`api-<group-slug>`) from the group; the model cannot
+ *     name the row it writes,
+ *   - refuses a group with no integration binding, so it only ever touches an
+ *     API integration's own skill,
+ *   - refuses when a row with that slug exists but ISN'T already linked to this
+ *     integration — that row belongs to the operator (or the manifest), and
+ *     overwriting it is exactly the escalation this guard exists to prevent.
+ *
+ * Hence no `slug` parameter and no update-by-id path: there is nothing else it
+ * can reach. (Mutation → gated behind MANTLE_MCP_TOOLSMITH_WRITE on MCP.)
+ */
 const api_skill_set: BuiltinToolDef = {
   slug: 'api_skill_set',
   name: "Write an integration's usage skill",
@@ -1088,6 +1104,14 @@ const api_skill_set: BuiltinToolDef = {
     const resolved = await groupForIntegrationWrite(ctx.ownerId, groupSlug);
     if (!resolved.ok) return { ok: false, error: resolved.error };
     const { group } = resolved;
+    // Integration-only by construction: no binding, no skill. Keeps this tool
+    // categorically unable to author a general-purpose behaviour pack.
+    if (!group.integration) {
+      return {
+        ok: false,
+        error: `tool group '${groupSlug}' is not an integration — this tool only writes an API integration's own usage skill. Bind it first with tool_group_ensure (service, base_url, secret_ref, auth_template); a general behaviour skill is the owner's to write in Settings → Skills`,
+      };
+    }
     const body = str(input.body).trim();
     if (body.length < 80) {
       return {
@@ -1109,20 +1133,37 @@ const api_skill_set: BuiltinToolDef = {
         `the skill is ${words} words — it rides in every granted agent's prompt on every turn; cut anything a reader could look up in the stored docs`,
       );
     }
-    if (!group.integration) {
+    if (group.toolSlugs.length === 0) {
       warnings.push(
-        `group '${groupSlug}' has no integration binding yet — set service/base_url/secret_ref with tool_group_ensure so the credential is bound too`,
+        `group '${groupSlug}' has no tools yet — write the skill AFTER authoring and testing the calls, or it describes usage of nothing`,
+      );
+    }
+    if (!group.integration.docsNodeId) {
+      warnings.push(
+        `no API documentation is stored on this group — api_docs_set it too, so the next pass can extend the integration without re-fetching the vendor's site`,
       );
     }
 
+    // The slug is DERIVED, never model-supplied: one skill per group, and no way
+    // to name a different row.
     const skillSlug = apiSkillSlugForGroup(groupSlug);
     const name = str(input.name).trim() || `${group.name} usage`;
-    const description = `How to use the ${group.integration?.service ?? groupSlug} integration's tools — written by Toolsmith from the stored API docs.`;
+    const description = `How to use the ${group.integration.service} integration's tools — written by Toolsmith from the stored API docs.`;
     const [existing] = await db
       .select({ id: skills.id })
       .from(skills)
       .where(and(eq(skills.ownerId, ctx.ownerId), eq(skills.slug, skillSlug)))
       .limit(1);
+    // A row under this slug that this integration doesn't already point at is
+    // someone else's (operator-authored, or a manifest skill). Refuse rather
+    // than overwrite — an agent must not be able to rewrite behaviour it doesn't
+    // own, and silently clobbering a persona skill is the worst version of that.
+    if (existing && group.integration.skillSlug !== skillSlug) {
+      return {
+        ok: false,
+        error: `a skill '${skillSlug}' already exists but isn't linked to this integration — it belongs to the owner (or ships with the product), so I won't overwrite it. Ask the owner to rename or remove it in Settings → Skills, then retry`,
+      };
+    }
     if (existing) {
       await db
         .update(skills)
@@ -1138,10 +1179,7 @@ const api_skill_set: BuiltinToolDef = {
         enabled: true,
       });
     }
-    await setGroupIntegration(ctx.ownerId, groupSlug, {
-      service: group.integration?.service ?? groupSlug,
-      skillSlug,
-    });
+    await setGroupIntegration(ctx.ownerId, groupSlug, { skillSlug });
     ctx.step?.setOutput({ groupSlug, skillSlug, words });
     return {
       ok: true,
