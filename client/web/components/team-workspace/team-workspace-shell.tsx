@@ -34,11 +34,16 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@mantle/web-ui/ui
 import { ThemeToggle } from '@mantle/web-ui/theme-toggle';
 import { TokenGate } from '@/components/team-chat/token-gate';
 import { teamFetch, upgradeTeamCookie } from '@mantle/web-ui/team-fetch';
+import { serverUrl } from '@mantle/web-ui/runtime-env';
 import { cn } from '@mantle/web-ui/lib/utils';
 
 export type WorkspaceData = {
   memberName: string | null;
   siteName: string | null;
+  /** The brain's federation label — centred in the header like the owner shell. */
+  peerName: string | null;
+  /** Brand logo version; set ⇒ an image replaces the wordmark text. */
+  logoVersion: string | null;
   colorTheme: string | null;
   version: string;
   counts: Record<string, number>;
@@ -166,8 +171,12 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
   return (
     <WorkspaceContext.Provider value={data}>
       <div className="flex min-h-0 flex-1 flex-col">
-        {/* ── Header ─────────────────────────────────────────────── */}
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
+        {/* ── Header — the owner shell's brand treatment, member-sized:
+               wordmark in the user-selectable wordmark font, the brain's peer
+               name centred (page-title font, chart-2), the primary-tinted
+               gradient. Below md the centre shows the section label instead
+               (the sidebar that names the section is hidden there). ─────── */}
+        <header className="relative flex h-14 shrink-0 items-center gap-3 border-b border-border bg-gradient-to-b from-primary/10 to-background px-4">
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open sections">
@@ -179,13 +188,43 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
               <NavList data={data} onNavigate={() => setMobileNavOpen(false)} />
             </SheetContent>
           </Sheet>
-          <Link href="/team" className="font-logo text-2xl leading-none text-primary">
-            {data.siteName || 'mantle'}
+          <Link
+            href="/team"
+            className="flex min-w-0 items-baseline"
+            aria-label={`${data.siteName || 'Mantle'} team home`}
+          >
+            {data.logoVersion ? (
+              /* Uploaded brand logo — fixed height, width free, never
+                 distorted; bounded by the h-14 header like the peer name. */
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={serverUrl(`/api/appearance/logo?v=${data.logoVersion}`)}
+                alt={data.siteName || 'Mantle'}
+                className="h-9 w-auto max-w-[45vw] object-contain"
+              />
+            ) : (
+              /* Script/display faces overshoot the em box — clip only the WIDTH
+                 and let the height overflow, same as the owner header. */
+              <span
+                className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary"
+                style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
+              >
+                {data.siteName || 'mantle'}
+              </span>
+            )}
           </Link>
-          <p className="min-w-0 flex-1 truncate text-center text-sm font-medium text-muted-foreground">
+          {data.peerName && (
+            <span
+              className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-[2px] text-center text-lg font-bold leading-normal text-chart-2 md:block"
+              style={{ fontFamily: 'var(--font-page-title)' }}
+            >
+              {data.peerName}
+            </span>
+          )}
+          <p className="min-w-0 flex-1 truncate text-center text-sm font-medium text-muted-foreground md:hidden">
             {sectionLabel}
           </p>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {data.memberName && (
               <span className="hidden text-xs text-muted-foreground sm:inline">
                 {data.memberName}

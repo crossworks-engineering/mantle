@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { countPending } from '@mantle/tools';
-import { loadProfilePreferences } from '@mantle/content';
+import { loadProfilePreferences, logoVersion } from '@mantle/content';
 import { buildAssetToken, getOwnerOr401 } from '@/lib/auth';
 import { isOnboarded } from '@/lib/onboarding';
 
@@ -39,5 +39,8 @@ export async function GET() {
     colorTheme: prefs.colorTheme ?? null,
     fontLogo: prefs.fontLogo ?? null,
     fontTitle: prefs.fontTitle ?? null,
+    // Brand logo (replaces the wordmark when set) — src is the public
+    // /api/appearance/logo, this is the cache-busting version.
+    logoVersion: logoVersion(prefs.logoKey),
   });
 }
