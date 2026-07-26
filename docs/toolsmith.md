@@ -25,11 +25,50 @@ user prompt ("read <docs url>, build me routing tools")
    └─→ Toolsmith
          ├─ web_fetch        — read the API docs (Tika HTML→text, paged)
          ├─ api_key_refs     — find the {{secret:service/label}} vault ref
-         ├─ api_tool_create  — url/query/headers/body templates + input schema
+         ├─ tool_group_ensure        — the INTEGRATION: service + base URL +
+         │                            vault ref + where the credential goes
+         ├─ api_docs_set     — store the docs on the group (searchable file)
+         ├─ api_tool_create  — templates + input schema, with group_slug so the
+         │                     base URL + credential are inherited
          ├─ api_tool_test    — real call through the agents' dispatcher
-         ├─ tool_group_ensure        — bundle (e.g. mapbox-tools)
+         ├─ api_skill_set    — distil the usage know-how into the group's skill
          └─ agent_grant_tool_group   — hand it to the assistant
 ```
+
+## 0. The integration lives on the group
+
+The binding layer (`tool_groups.integration`, migration `0137`) is what makes an
+integration a *thing* rather than a pile of tools that happen to hit the same
+host. One group carries the service, its base URL, which vault entry
+authenticates it, WHERE that credential goes, the API's documentation, and a
+short usage skill. Two payoffs:
+
+- **Author once, inherit forever.** `api_tool_create`/`_update` take
+  `group_slug`: a relative `url` is joined onto the group's base URL and the
+  group's `authTemplate` merges **under** the tool's own headers/query (the tool
+  wins on a key conflict; header conflicts match case-insensitively so a call
+  never carries two spellings of `Authorization`). This resolves **at authoring
+  time** into the stored handler — the dispatcher is untouched, every tool
+  authored before this feature still runs byte-identically, and `api_tool_get`
+  shows exactly what will fire. The result reports what was inherited.
+- **The knowledge doesn't evaporate.** `api_docs_set` stores the documentation as
+  `files/api-docs/<group-slug>.md` through the ordinary file pipeline, so it
+  summarises, embeds, and FTS-indexes like any upload — every agent's
+  `search_nodes` can find it. Adding endpoint #2 next month starts with
+  `api_docs_get`, not a re-fetch of a page that may have moved or gone behind
+  auth. `api_skill_set` then holds the *judgment* (which call answers which
+  question, unit conventions, chaining) and travels with the grant: an agent
+  granted the group gets that skill in its context automatically
+  ([tools-and-skills.md](tools-and-skills.md#integration-groups--a-group-that-is-an-api)).
+
+Secrets don't move: `secretRef` is a `service/label` pointer and auth templates
+hold the same `{{secret:…}}` refs the templates always used, resolved once in the
+dispatcher. A credential-shaped literal in an auth template earns a warning
+rather than being quietly stored in the clear, and neither a stored docs file nor
+a usage skill may contain a key.
+
+The owner sees and can correct all of it at **Settings → Tool groups** — service,
+base URL, credential, stored docs (view/replace), and a link to the usage skill.
 
 ## 1. The three ways in
 
@@ -37,10 +76,10 @@ user prompt ("read <docs url>, build me routing tools")
 |---|---|---|
 | API Console Assist panel | /dev-tools → Toolsmith button | the agent's OpenRouter key |
 | Main assistant delegation | "ask Saskia to add a weather API" → invoke_agent | the agent's OpenRouter key |
-| **Claude Code / Desktop over MCP** | the same 12 tools registered on apps/mcp | **the user's Claude subscription** |
+| **Claude Code / Desktop over MCP** | the same tool set registered on apps/mcp | **the user's Claude subscription** |
 
-The MCP row is the power-user path: every `api_tool_*` /
-`tool_group_*` / `agent_*` / `web_fetch` / `api_key_refs` tool is
+The MCP row is the power-user path: every `api_tool_*` / `api_docs_*` /
+`api_skill_set` / `tool_group_*` / `agent_*` / `web_fetch` / `api_key_refs` tool is
 registered on the MCP server straight from the same `TOOLSMITH_TOOLS`
 definitions (apps/mcp/src/server.ts registers the array through a
 JSON-Schema→zod bridge, so the surfaces cannot drift). A Claude Code
@@ -49,9 +88,10 @@ read-docs → author → test → grant loop with no Mantle-side LLM spend.
 
 **Scoping the MCP surface.** The read-only tools (`api_tool_list` /
 `api_tool_get` / `api_tool_test` / `tool_group_list` / `agent_list` /
-`api_key_refs` / `web_fetch`) are always exposed. The mutating set —
-authoring (`api_tool_create` / `_update` / `_delete`), grouping
-(`tool_group_ensure`), and granting (`agent_grant_tool_group`) — is
+`api_key_refs` / `api_docs_get` / `web_fetch`) are always exposed. The mutating
+set — authoring (`api_tool_create` / `_update` / `_delete`), grouping
+(`tool_group_ensure`), the integration writes (`api_docs_set` /
+`api_skill_set`), and granting (`agent_grant_tool_group`) — is
 gated on **`MANTLE_MCP_TOOLSMITH_WRITE`**, which defaults **on**. Set it
 to `0` / `false` / `off` on a shared or headless deployment to keep tool
 authoring + granting to the in-app agent while still letting an MCP
@@ -76,7 +116,22 @@ client browse and test the registry.
 - `api_key_refs` — vault entries as `{{secret:service/label}}` refs,
   masked previews only; plaintext never leaves the dispatcher.
 - `tool_group_list / tool_group_ensure` — capability bundles, with
-  which-agents-grant-this backrefs.
+  which-agents-grant-this backrefs. `tool_group_ensure` also sets the
+  **integration** binding (`service`, `base_url`, `secret_ref`,
+  `auth_template`); a `secret_ref` with no vault entry warns rather than
+  failing, mirroring `api_tool_create`.
+- `api_docs_set / api_docs_get` — store and read an integration's
+  documentation. `_get` is paged like `web_fetch` and returns
+  `has_docs: false` (not an error) when nothing is stored, so "no docs" is
+  never mistaken for a retryable failure.
+- `api_skill_set(group_slug, body)` — write the group's usage skill
+  (`api-<group-slug>`). The **only** skill-authoring tool in the codebase, and
+  deliberately the narrowest possible one: the slug is derived (no `slug`
+  parameter, no update-by-id), a group with no integration is refused, and a
+  skills row under that slug which the integration doesn't already own is
+  refused rather than overwritten — so an agent can never edit a persona or
+  product skill. Hard character cap, plus a warning past ~320 words, because
+  the body ships in every granted agent's prompt on every turn.
 - `agent_list / agent_grant_tool_group` — read the agent roster, add a
   group to an agent's grants. The prompt instructs Toolsmith to ask
   the user which agent gets new capabilities rather than guessing.

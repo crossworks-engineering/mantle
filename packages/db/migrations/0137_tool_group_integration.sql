@@ -1,0 +1,15 @@
+-- 0137 — tool_groups.integration: the service-binding layer for an API group
+-- (docs/plans/api-integration-groups.md §Phase 1). One nullable jsonb column
+-- carrying { service, baseUrl?, secretRef?, authTemplate?, docsNodeId? } so a
+-- group can BE an integration: where the calls go, which vault ref authenticates
+-- them, where the auth goes, and which file node holds the stored API docs.
+--
+-- Deliberately a column on the existing table rather than a second entity: a
+-- parallel api_services table would need its own CRUD/UI/grant story and every
+-- consumer would join the two. Manifest groups leave it NULL — capability-only
+-- bundles are unchanged.
+--
+-- secretRef holds a `service/label` pointer into api_keys, never a plaintext;
+-- authTemplate holds the same `{{secret:service/label}}` strings http tool
+-- templates already carry, so resolution is unchanged (dispatch-time, vault).
+ALTER TABLE "tool_groups" ADD COLUMN IF NOT EXISTS "integration" jsonb;

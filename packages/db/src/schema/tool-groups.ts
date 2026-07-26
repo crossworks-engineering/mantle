@@ -1,10 +1,63 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
+
+/**
+ * The service binding that turns a plain capability bundle into an API
+ * *integration*: where its calls go, which vault entry authenticates them,
+ * where the credential is placed, and which file node holds the stored API
+ * documentation. Set by Toolsmith at group-setup time (or by the owner in
+ * Settings → Tool groups); NULL on every manifest/capability-only group.
+ *
+ * `secretRef` is a `service/label` pointer into `api_keys` and `authTemplate`
+ * carries the same `{{secret:service/label}}` strings http tool templates
+ * already use — a plaintext secret never lands here. Validation +
+ * accessors live in @mantle/tools (`integration.ts`).
+ */
+export type ToolGroupIntegration = {
+  /** Vendor/service key, e.g. 'openweathermap'. */
+  service: string;
+  /** Base URL relative tool paths are joined onto, e.g. 'https://api.example.com/v1'. */
+  baseUrl?: string;
+  /** `service/label` pointer into the api_keys vault — never a plaintext. */
+  secretRef?: string;
+  /** Header/query fragment merged UNDER each authored tool's own maps. */
+  authTemplate?: {
+    headers?: Record<string, string>;
+    query?: Record<string, string>;
+  };
+  /** `nodes` id of the markdown file holding this API's stored documentation. */
+  docsNodeId?: string;
+  /**
+   * Slug of the `skills` row carrying this integration's USAGE know-how — which
+   * endpoint answers which question, unit conventions, how to chain calls.
+   * Convention: `api-<group-slug>`. It travels WITH the grant: an agent granted
+   * this group gets the skill in its context (see the effective-skills union in
+   * @mantle/agent-runtime), which is why it must stay short. The docs file
+   * remains the reference; the skill is judgment.
+   */
+  skillSlug?: string;
+  /** Where the stored docs came from (URL) + when they were captured. */
+  docsSourceUrl?: string;
+  docsUpdatedAt?: string;
+};
 
 /**
  * A named bundle of tools an owner grants to an agent as a unit (e.g. "Pages
- * toolkit", "Calendar", "Memory core"). Capability-only: no instructions, no
- * behaviour — that's what `skills` are for. See docs/tools-and-skills.md.
+ * toolkit", "Calendar", "Memory core"). Capability-only in the sense that
+ * matters: no instructions, no behaviour — that's what `skills` are for. See
+ * docs/tools-and-skills.md. A group MAY additionally carry static integration
+ * *configuration* (`integration`) — a base URL, a vault ref, an auth
+ * placement, a docs pointer — which is data the authoring path reads, not
+ * behaviour handed to a model.
  *
  * Phase 0 (dormant substrate): the table + `agents.tool_group_slugs` exist and
  * are seeded from the manifest, but the runtime does not yet expand groups into
@@ -25,6 +78,8 @@ export const toolGroups = pgTable(
       .array()
       .default(sql`'{}'::text[]`)
       .notNull(),
+    /** Service binding when this group IS an API integration; NULL otherwise. */
+    integration: jsonb('integration').$type<ToolGroupIntegration>(),
     enabled: boolean('enabled').default(true).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

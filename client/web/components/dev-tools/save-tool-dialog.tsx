@@ -11,6 +11,11 @@
  * Environment `{{vars}}` are baked in at save time so the tool is
  * self-contained.
  *
+ * Picking an integration group applies the same inheritance the Toolsmith
+ * builtin does: the group's base URL prefixes a relative path and its auth
+ * template merges under this request's own headers/query (this request wins),
+ * resolved server-side into the stored tool.
+ *
  * Grant path after saving: add the slug to a tool group, grant the group
  * to an agent — heartbeat runs pick it up automatically.
  */
@@ -59,7 +64,7 @@ export function SaveToolDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { draft, activeEnv, refreshAgentTools } = useDevTools();
+  const { draft, activeEnv, refreshAgentTools, integrationGroups } = useDevTools();
   const toast = useToast();
 
   const [name, setName] = useState('');
@@ -68,6 +73,7 @@ export function SaveToolDialog({
   const [description, setDescription] = useState('');
   const [requiresConfirm, setRequiresConfirm] = useState(false);
   const [params, setParams] = useState<ParamSpec[]>([]);
+  const [groupSlug, setGroupSlug] = useState('none');
   const [pending, setPending] = useState(false);
   const [savedSlug, setSavedSlug] = useState<string | null>(null);
 
@@ -158,6 +164,7 @@ export function SaveToolDialog({
     setSlugTouched(false);
     setDescription(draft.description ?? '');
     setRequiresConfirm(false);
+    setGroupSlug('none');
     setSavedSlug(null);
     setParams(
       detectedParams.map((n) => ({ name: n, type: 'string', description: '', required: true })),
@@ -178,16 +185,21 @@ export function SaveToolDialog({
     }
     setPending(true);
     try {
-      await apiSend('/api/tools', 'POST', {
+      const res = await apiSend<{ inherited?: string }>('/api/tools', 'POST', {
         slug: slug.trim(),
         name: name.trim(),
         description: description.trim(),
         inputSchema: { type: 'object', properties, ...(required.length ? { required } : {}) },
         handler,
+        ...(groupSlug !== 'none' ? { groupSlug } : {}),
         requiresConfirm,
         enabled: true,
       });
-      toast.success(`Tool ${slug.trim()} created`);
+      toast.success(
+        res?.inherited && groupSlug !== 'none'
+          ? `Tool ${slug.trim()} created — ${res.inherited}`
+          : `Tool ${slug.trim()} created`,
+      );
       setSavedSlug(slug.trim());
       void refreshAgentTools();
     } catch (e) {
@@ -212,9 +224,12 @@ export function SaveToolDialog({
         {savedSlug ? (
           <div className="space-y-3">
             <p className="text-sm">
-              <code className="font-mono font-semibold">{savedSlug}</code> is registered. To put it
-              in agents&apos; hands, add it to a tool group and grant that group to an agent —
-              heartbeat runs pick it up automatically.
+              <code className="font-mono font-semibold">{savedSlug}</code> is registered
+              {groupSlug !== 'none' ? ` in ${groupSlug}` : ''}. To put it in agents&apos; hands,
+              {groupSlug !== 'none'
+                ? ' grant that group to an agent'
+                : ' add it to a tool group and grant that group to an agent'}{' '}
+              — heartbeat runs pick it up automatically.
             </p>
             <div className="flex gap-2">
               <Button asChild variant="outline" size="sm">
@@ -386,6 +401,29 @@ export function SaveToolDialog({
                 </div>
               )}
             </div>
+
+            {integrationGroups.length > 0 && (
+              <div className="space-y-1.5">
+                <Label htmlFor="tool-group">Integration group</Label>
+                <Select value={groupSlug} onValueChange={setGroupSlug}>
+                  <SelectTrigger id="tool-group">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None — standalone tool</SelectItem>
+                    {integrationGroups.map((g) => (
+                      <SelectItem key={g.id} value={g.slug}>
+                        {g.name} · {g.integration?.service}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Adds the tool to that group and inherits its base URL + stored credential — this
+                  request&apos;s own headers and query win on a conflict.
+                </p>
+              </div>
+            )}
 
             <label className="flex items-center gap-2 text-sm">
               <Switch checked={requiresConfirm} onCheckedChange={setRequiresConfirm} />

@@ -18,7 +18,15 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, agents, pendingToolCalls, toolGroups, tools, type ToolHandler } from '@mantle/db';
+import {
+  db,
+  agents,
+  pendingToolCalls,
+  skills,
+  toolGroups,
+  tools,
+  type ToolHandler,
+} from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
 import { appUrl, loadProfilePreferences } from '@mantle/content';
 import { parseTikaBytes } from '@mantle/files';
@@ -26,6 +34,19 @@ import { createTool, deleteTool, listToolsForOwner, updateTool } from './crud';
 import { dispatchTool } from './dispatch';
 import { notifyPendingCreated } from './pending-notify';
 import { collectParamNames, collectSecretRefs, refKey, type HttpHandler } from './http-template';
+import {
+  apiSkillSlugForGroup,
+  applyIntegrationInheritance,
+  describeInheritance,
+  getGroupIntegration,
+  parseIntegrationMeta,
+  readApiDocsFile,
+  setGroupIntegration,
+  upsertApiDocsFile,
+  API_DOCS_MAX_CHARS,
+  type InheritedPieces,
+  type ToolGroupIntegration,
+} from './integration';
 import { guardedFetch } from './ssrf-guard';
 import {
   AGENT_GRANTABLE_KINDS,
@@ -124,14 +145,22 @@ async function handlerWarnings(
   return warnings;
 }
 
-/** Validate + assemble an http handler from model input. Shared by
- *  create/update. Returns an error string on the first problem. */
+/**
+ * Validate + assemble an http handler from model input. Shared by create/update.
+ * Returns an error string on the first problem.
+ *
+ * When the tool joins an integration group (`opts.integration`), the group's
+ * base URL + auth template fold in HERE, at authoring time: a relative `url` is
+ * joined onto the base and the group's headers/query merge UNDER the tool's own
+ * (the tool wins on conflict). What comes back is what gets STORED, so the
+ * dispatcher is untouched and `api_tool_get` shows exactly what will run.
+ */
 function buildHandlerFromInput(
   input: Record<string, unknown>,
-  base?: HttpHandler,
-): HttpHandler | { error: string } {
+  opts?: { base?: HttpHandler; integration?: ToolGroupIntegration | null },
+): { handler: HttpHandler; inherited: InheritedPieces } | { error: string } {
+  const base = opts?.base;
   const url = str(input.url).trim() || base?.url || '';
-  if (!URL_RE.test(url)) return { error: 'url must start with http(s):// and contain no spaces' };
   const method = (str(input.method).trim() || base?.method || 'POST').toUpperCase();
   if (!METHODS.has(method)) return { error: `method must be one of ${[...METHODS].join(', ')}` };
 
@@ -163,15 +192,81 @@ function buildHandlerFromInput(
     timeoutMs = t;
   }
 
-  return {
-    kind: 'http',
+  // Inheritance + the absolute-url check in one place: with no group this is
+  // exactly the old rule (url must be http(s):// with no spaces); with a group
+  // a relative path is joined onto its base and its auth merges underneath.
+  const resolved = applyIntegrationInheritance(opts?.integration ?? null, {
     url,
-    method: method as HttpHandler['method'],
     ...(headers ? { headers } : {}),
     ...(query ? { query } : {}),
-    ...(body !== undefined ? { body } : {}),
-    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  });
+  if (!resolved.ok) return { error: resolved.error };
+
+  return {
+    handler: {
+      kind: 'http',
+      url: resolved.url,
+      method: method as HttpHandler['method'],
+      ...(resolved.headers ? { headers: resolved.headers } : {}),
+      ...(resolved.query ? { query: resolved.query } : {}),
+      ...(body !== undefined ? { body } : {}),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    },
+    inherited: resolved.inherited,
   };
+}
+
+/**
+ * Resolve `group_slug` on an authoring call: the group must already exist
+ * (create it with `tool_group_ensure`), and its integration — if any — is what
+ * the tool inherits. Returns null when no group_slug was passed.
+ */
+async function resolveAuthoringGroup(
+  ownerId: string,
+  input: Record<string, unknown>,
+): Promise<
+  | { ok: true; group: Awaited<ReturnType<typeof getGroupIntegration>> | null }
+  | { ok: false; error: string }
+> {
+  const slug = str(input.group_slug).trim();
+  if (!slug) return { ok: true, group: null };
+  const group = await getGroupIntegration(ownerId, slug);
+  if (!group) {
+    return {
+      ok: false,
+      error: `tool group '${slug}' not found — list the real ones with tool_group_list, or create it (with its service/base_url/secret_ref) using tool_group_ensure before authoring into it`,
+    };
+  }
+  return { ok: true, group };
+}
+
+/** Add a tool slug to a group's list (idempotent). The group is known to exist. */
+async function addToolToGroup(ownerId: string, groupSlug: string, toolSlug: string): Promise<void> {
+  const [existing] = await db
+    .select({ id: toolGroups.id, toolSlugs: toolGroups.toolSlugs })
+    .from(toolGroups)
+    .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, groupSlug)))
+    .limit(1);
+  if (!existing) return;
+  const current = existing.toolSlugs ?? [];
+  if (current.includes(toolSlug)) return;
+  await db
+    .update(toolGroups)
+    .set({ toolSlugs: [...current, toolSlug], updatedAt: new Date() })
+    .where(eq(toolGroups.id, existing.id));
+}
+
+/** Vault-presence check for a group's `secret_ref` — a warning, not a failure,
+ *  mirroring `api_tool_create`'s missing-ref warning. The owner adds keys. */
+async function integrationWarnings(ownerId: string, meta: ToolGroupIntegration): Promise<string[]> {
+  if (!meta.secretRef) return [];
+  const vault = await listApiKeys(ownerId);
+  const have = new Set(vault.map((k) => `${k.service}/${k.label}`));
+  if (have.has(meta.secretRef)) return [];
+  const [service, label] = meta.secretRef.split('/');
+  return [
+    `secret_ref '${meta.secretRef}' has no matching vault entry — ask the owner to add it under Settings → API keys (service '${service}', label '${label}'); until then every tool in this group will fail at call time`,
+  ];
 }
 
 function summarizeHandler(h: ToolHandler): Record<string, unknown> {
@@ -370,6 +465,7 @@ const api_tool_create: BuiltinToolDef = {
   description:
     `Register a new HTTP tool agents can call. ${TEMPLATE_DOC} ` +
     'Write a precise description (the model granting agents read it) and declare every {param} in input_schema.properties. ' +
+    'Pass group_slug to author INTO an integration group: its base URL and credential fold into the stored tool (your own headers/query win). ' +
     'Always api_tool_test after creating. Only http tools can be authored this way — shell tools are human-only.',
   inputSchema: {
     type: 'object',
@@ -391,7 +487,16 @@ const api_tool_create: BuiltinToolDef = {
         type: 'object',
         description: 'JSON Schema for the tool input. Declare every {param} used in the templates.',
       },
-      url: { type: 'string', description: 'http(s) URL template, may contain {param}' },
+      url: {
+        type: 'string',
+        description:
+          'http(s) URL template, may contain {param}. With group_slug a path relative to the group base URL is fine, e.g. /weather',
+      },
+      group_slug: {
+        type: 'string',
+        description:
+          'integration group this tool joins, e.g. weather-tools — the tool is added to the group and inherits its base URL + credential placement. Must already exist (`tool_group_ensure`)',
+      },
       method: {
         type: 'string',
         enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
@@ -427,8 +532,12 @@ const api_tool_create: BuiltinToolDef = {
     const description = str(input.description).trim();
     if (!name || !description) return { ok: false, error: 'name and description are required' };
     const inputSchema = rec(input.input_schema) ?? { type: 'object', properties: {} };
-    const handler = buildHandlerFromInput(input);
-    if ('error' in handler) return { ok: false, error: handler.error };
+    const resolvedGroup = await resolveAuthoringGroup(ctx.ownerId, input);
+    if (!resolvedGroup.ok) return { ok: false, error: resolvedGroup.error };
+    const group = resolvedGroup.group;
+    const built = buildHandlerFromInput(input, { integration: group?.integration ?? null });
+    if ('error' in built) return { ok: false, error: built.error };
+    const { handler, inherited } = built;
     // When the owner has turned on "require approval for agent-built tools",
     // authored tools start confirm-gated so an injected agent can't stand up a
     // no-confirmation exfiltration endpoint; the operator clears the gate per
@@ -446,6 +555,11 @@ const api_tool_create: BuiltinToolDef = {
         enabled: true,
       });
       const warnings = await handlerWarnings(ctx.ownerId, handler, inputSchema);
+      if (group) {
+        await addToolToGroup(ctx.ownerId, group.slug, row.slug);
+        if (group.integration)
+          warnings.push(...(await integrationWarnings(ctx.ownerId, group.integration)));
+      }
       ctx.step?.setOutput({ slug: row.slug, warnings });
       return {
         ok: true,
@@ -453,7 +567,17 @@ const api_tool_create: BuiltinToolDef = {
           slug: row.slug,
           created: true,
           warnings,
-          next: `Test it with api_tool_test, then add it to a group via tool_group_ensure and grant with agent_grant_tool_group.`,
+          ...(group
+            ? {
+                group_slug: group.slug,
+                added_to_group: true,
+                inherited: describeInheritance(inherited),
+                request: summarizeHandler(handler),
+              }
+            : {}),
+          next: group
+            ? `Test it with api_tool_test (the group's base URL + credential are already baked into the stored tool), then grant '${group.slug}' with agent_grant_tool_group.`
+            : `Test it with api_tool_test, then add it to a group via tool_group_ensure and grant with agent_grant_tool_group.`,
         },
       };
     } catch (err) {
@@ -473,7 +597,7 @@ const api_tool_update: BuiltinToolDef = {
   slug: 'api_tool_update',
   name: 'Update an HTTP API tool',
   description:
-    'Update a user-defined HTTP tool by slug. Provide only the fields to change; headers/query replace the whole map when given; body: null clears the template. Built-in tools only allow enabled/requires_confirm changes; shell tools cannot be edited by agents.',
+    'Update a user-defined HTTP tool by slug. Provide only the fields to change; headers/query replace the whole map when given; body: null clears the template. Pass group_slug to (re)join an integration group — the tool is added to it and re-inherits its base URL + auth placement into the stored templates. Built-in tools only allow enabled/requires_confirm changes; shell tools cannot be edited by agents.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -495,7 +619,16 @@ const api_tool_update: BuiltinToolDef = {
         description:
           'replacement JSON Schema for the tool input (the whole schema, not a merge). Declare every {param} the templates use.',
       },
-      url: { type: 'string', description: 'replacement http(s) URL template, may contain {param}' },
+      url: {
+        type: 'string',
+        description:
+          'replacement http(s) URL template, may contain {param}; relative to the group base URL when group_slug is given',
+      },
+      group_slug: {
+        type: 'string',
+        description:
+          'integration group this tool should belong to, e.g. weather-tools — adds it and re-applies the group base URL + credential placement',
+      },
       method: {
         type: 'string',
         enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
@@ -555,6 +688,11 @@ const api_tool_update: BuiltinToolDef = {
     }
     if (input.enabled !== undefined) patch.enabled = input.enabled === true;
 
+    const resolvedGroup = await resolveAuthoringGroup(ctx.ownerId, input);
+    if (!resolvedGroup.ok) return { ok: false, error: resolvedGroup.error };
+    const group = resolvedGroup.group;
+
+    let inherited: InheritedPieces | null = null;
     const touchesDefinition =
       input.name !== undefined ||
       input.description !== undefined ||
@@ -587,9 +725,13 @@ const api_tool_update: BuiltinToolDef = {
         if (!schema) return { ok: false, error: 'input_schema must be an object' };
         patch.inputSchema = schema;
       }
-      const handler = buildHandlerFromInput(input, existing);
-      if ('error' in handler) return { ok: false, error: handler.error };
-      patch.handler = handler;
+      const built = buildHandlerFromInput(input, {
+        base: existing,
+        integration: group?.integration ?? null,
+      });
+      if ('error' in built) return { ok: false, error: built.error };
+      patch.handler = built.handler;
+      inherited = built.inherited;
     }
 
     try {
@@ -599,8 +741,28 @@ const api_tool_update: BuiltinToolDef = {
         updated.handler.kind === 'http'
           ? await handlerWarnings(ctx.ownerId, updated.handler as HttpHandler, updated.inputSchema)
           : [];
+      if (group) {
+        await addToolToGroup(ctx.ownerId, group.slug, slug);
+        if (group.integration) {
+          warnings.push(...(await integrationWarnings(ctx.ownerId, group.integration)));
+        }
+      }
       ctx.step?.setOutput({ slug, warnings });
-      return { ok: true, output: { slug, updated: true, warnings } };
+      return {
+        ok: true,
+        output: {
+          slug,
+          updated: true,
+          warnings,
+          ...(group
+            ? {
+                group_slug: group.slug,
+                ...(inherited ? { inherited: describeInheritance(inherited) } : {}),
+                request: summarizeHandler(updated.handler as ToolHandler),
+              }
+            : {}),
+        },
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -686,6 +848,348 @@ const api_key_refs: BuiltinToolDef = {
           masked: k.masked,
           ref: `{{secret:${k.service}/${k.label}}}`,
         })),
+      },
+    };
+  },
+};
+
+/* ────────────────── integration docs + usage skill ───────────────── */
+
+const DEFAULT_DOCS_PAGE = 20_000;
+const MAX_DOCS_PAGE = 60_000;
+
+/** Resolve a group for a docs/skill call, with a teaching error when it's not
+ *  there and a warning when it isn't an integration yet. */
+async function groupForIntegrationWrite(
+  ownerId: string,
+  slug: string,
+): Promise<
+  | { ok: true; group: NonNullable<Awaited<ReturnType<typeof getGroupIntegration>>> }
+  | { ok: false; error: string }
+> {
+  if (!SLUG_RE.test(slug)) {
+    return { ok: false, error: 'group_slug must be lowercase letters/digits/dash/underscore' };
+  }
+  const group = await getGroupIntegration(ownerId, slug);
+  if (!group) {
+    return {
+      ok: false,
+      error: `tool group '${slug}' not found — list them with tool_group_list, or create it with tool_group_ensure (pass service/base_url/secret_ref to make it an integration) and then retry`,
+    };
+  }
+  return { ok: true, group };
+}
+
+const api_docs_set: BuiltinToolDef = {
+  slug: 'api_docs_set',
+  name: "Store an integration's API docs",
+  description:
+    "Store (or REPLACE) an integration group's API documentation as a markdown file on this brain and point the group at it. Returns the stored size. Do this right after `web_fetch`ing a service's docs, before authoring: the next pass — any agent, months later — then reads `api_docs_get` instead of re-fetching a page that may have moved or gone behind auth. The stored copy is indexed, so every agent's `search_nodes` can find it. Keep the endpoint reference, auth scheme, parameters, and an example response; drop the marketing pages. Pass source_url so provenance is recorded.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      group_slug: {
+        type: 'string',
+        description: 'integration group these docs belong to, e.g. weather-tools',
+      },
+      markdown: {
+        type: 'string',
+        description:
+          "the documentation itself, as markdown — endpoints, auth, parameters, an example response. Replaces the whole file, so include everything you still want (read the old copy first with `api_docs_get` when you're extending)",
+      },
+      source_url: {
+        type: 'string',
+        description:
+          'where it came from, e.g. https://openweathermap.org/api/one-call-3 — recorded in the file header so a later reader can refresh it',
+      },
+    },
+    required: ['group_slug', 'markdown'],
+  },
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const groupSlug = str(input.group_slug).trim();
+    const resolved = await groupForIntegrationWrite(ctx.ownerId, groupSlug);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    const { group } = resolved;
+    const markdown = str(input.markdown);
+    if (markdown.trim().length < 40) {
+      return {
+        ok: false,
+        error:
+          'markdown is empty or too short to be documentation — pass the endpoint reference you read (web_fetch the docs first, following offset for long pages)',
+      };
+    }
+    const sourceUrl = str(input.source_url).trim();
+    if (sourceUrl && !URL_RE.test(sourceUrl)) {
+      return {
+        ok: false,
+        error: 'source_url must start with http(s):// — omit it if you have none',
+      };
+    }
+
+    const warnings: string[] = [];
+    // A group with no integration yet still gets its docs — recording the
+    // service from the slug beats refusing and losing the fetched page. Say so.
+    const service = group.integration?.service ?? groupSlug;
+    if (!group.integration) {
+      warnings.push(
+        `group '${groupSlug}' had no integration binding — recorded service '${service}'. Set the real service, base_url and secret_ref with tool_group_ensure, or tools authored into this group inherit no credential`,
+      );
+    }
+    if (markdown.length > API_DOCS_MAX_CHARS) {
+      warnings.push(
+        `docs were clipped to fit the stored file — keep the endpoint reference and drop prose if anything important is missing`,
+      );
+    }
+
+    try {
+      const stored = await upsertApiDocsFile({
+        ownerId: ctx.ownerId,
+        groupSlug,
+        markdown,
+        service,
+        ...(sourceUrl ? { sourceUrl } : {}),
+      });
+      await setGroupIntegration(ctx.ownerId, groupSlug, {
+        service,
+        docsNodeId: stored.nodeId,
+        docsUpdatedAt: stored.capturedAt,
+        ...(sourceUrl ? { docsSourceUrl: sourceUrl } : {}),
+      });
+      ctx.step?.setOutput({ groupSlug, file: stored.filename, chars: stored.chars });
+      return {
+        ok: true,
+        output: {
+          group_slug: groupSlug,
+          file: `files/api-docs/${stored.filename}`,
+          chars: stored.chars,
+          stored: true,
+          warnings,
+          next: 'Author calls with group_slug so they inherit the base URL + credential, then distil what you learned into the usage skill with api_skill_set.',
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const api_docs_get: BuiltinToolDef = {
+  slug: 'api_docs_get',
+  name: "Read an integration's stored API docs",
+  description:
+    "Read back the API documentation stored on an integration group — the markdown `api_docs_set` saved, in slices (pass offset to continue). **Read this FIRST when adding a call to an existing integration**: it's this brain's captured copy, so it costs nothing and can't have moved. Use `web_fetch` only when a group has no stored docs or they don't cover the endpoint you need — then `api_docs_set` the refreshed copy back. Returns has_docs false (not an error) when nothing is stored, plus where the copy came from and when it was captured, so you can judge staleness.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      group_slug: {
+        type: 'string',
+        description: 'integration group whose docs to read, e.g. weather-tools',
+      },
+      offset: {
+        type: 'number',
+        description: 'character offset to resume from when the previous slice was truncated',
+        default: 0,
+        minimum: 0,
+      },
+      max_chars: {
+        type: 'number',
+        description: 'size of the slice to return',
+        default: DEFAULT_DOCS_PAGE,
+        minimum: 1_000,
+        maximum: MAX_DOCS_PAGE,
+      },
+    },
+    required: ['group_slug'],
+  },
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const groupSlug = str(input.group_slug).trim();
+    const resolved = await groupForIntegrationWrite(ctx.ownerId, groupSlug);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    const { group } = resolved;
+    const meta = group.integration;
+    const noDocs = (note: string): ToolHandlerResult => ({
+      ok: true,
+      output: {
+        group_slug: groupSlug,
+        has_docs: false,
+        note,
+        next: "web_fetch the service's documentation, then store it with api_docs_set so the next pass doesn't have to.",
+      },
+    });
+    if (!meta?.docsNodeId)
+      return noDocs('no documentation has been stored for this integration yet');
+
+    const file = await readApiDocsFile({ ownerId: ctx.ownerId, nodeId: meta.docsNodeId });
+    if (!file) {
+      return noDocs(
+        'the stored docs file is gone (deleted from Files) — the group still points at it',
+      );
+    }
+    const offset = Math.max(0, Math.floor(Number(input.offset) || 0));
+    const cap = Math.min(
+      MAX_DOCS_PAGE,
+      Math.max(1_000, Math.floor(Number(input.max_chars) || DEFAULT_DOCS_PAGE)),
+    );
+    const slice = file.text.slice(offset, offset + cap);
+    ctx.step?.setMeta({ groupSlug, totalChars: file.text.length, offset });
+    return {
+      ok: true,
+      output: {
+        group_slug: groupSlug,
+        has_docs: true,
+        service: meta.service,
+        base_url: meta.baseUrl ?? null,
+        secret_ref: meta.secretRef ?? null,
+        source_url: meta.docsSourceUrl ?? null,
+        captured_at: meta.docsUpdatedAt ?? null,
+        file: `files/api-docs/${file.filename}`,
+        text: slice,
+        offset,
+        total_chars: file.text.length,
+        truncated: offset + cap < file.text.length,
+      },
+    };
+  },
+};
+
+/** Usage-skill body bounds. The skill ships in the system prompt of EVERY agent
+ *  granted the group, on every turn — a long one is a permanent tax, so the cap
+ *  is a hard refusal and the soft bound is a warning. */
+const MAX_SKILL_BODY_CHARS = 6_000;
+const SOFT_SKILL_WORDS = 320;
+
+/**
+ * The ONLY skill-authoring tool in the codebase — and its narrow scope is the
+ * safety property, not a convenience. An agent must never be able to edit
+ * persona/manifest behaviour, so this tool:
+ *
+ *   - derives the slug (`api-<group-slug>`) from the group; the model cannot
+ *     name the row it writes,
+ *   - refuses a group with no integration binding, so it only ever touches an
+ *     API integration's own skill,
+ *   - refuses when a row with that slug exists but ISN'T already linked to this
+ *     integration — that row belongs to the operator (or the manifest), and
+ *     overwriting it is exactly the escalation this guard exists to prevent.
+ *
+ * Hence no `slug` parameter and no update-by-id path: there is nothing else it
+ * can reach. (Mutation → gated behind MANTLE_MCP_TOOLSMITH_WRITE on MCP.)
+ */
+const api_skill_set: BuiltinToolDef = {
+  slug: 'api_skill_set',
+  name: "Write an integration's usage skill",
+  description:
+    'Write (or replace) the short USAGE skill that travels with an integration group: distilled judgment — which endpoint answers which question, unit and date conventions, how to chain two calls, how to read the response. Every agent granted the group gets this in its context on every turn, so keep it tight and never paste the reference docs in (those live in `api_docs_set`; this is what you learned USING them). Do it last, after the calls test green. Creates/updates one skill per group and links it, so calling twice revises rather than forking.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      group_slug: {
+        type: 'string',
+        description: 'integration group this skill belongs to, e.g. weather-tools',
+      },
+      body: {
+        type: 'string',
+        description:
+          'the skill in markdown, ~150–250 words: when to reach for each tool, the conventions a caller gets wrong (units, timezones, id lookups), and per-tool notes where one call needs special handling',
+      },
+      name: {
+        type: 'string',
+        description:
+          'display name for the skill, e.g. "Weather API usage" — defaults to the group name plus "usage"',
+      },
+    },
+    required: ['group_slug', 'body'],
+  },
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const groupSlug = str(input.group_slug).trim();
+    const resolved = await groupForIntegrationWrite(ctx.ownerId, groupSlug);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    const { group } = resolved;
+    // Integration-only by construction: no binding, no skill. Keeps this tool
+    // categorically unable to author a general-purpose behaviour pack.
+    if (!group.integration) {
+      return {
+        ok: false,
+        error: `tool group '${groupSlug}' is not an integration — this tool only writes an API integration's own usage skill. Bind it first with tool_group_ensure (service, base_url, secret_ref, auth_template); a general behaviour skill is the owner's to write in Settings → Skills`,
+      };
+    }
+    const body = str(input.body).trim();
+    if (body.length < 80) {
+      return {
+        ok: false,
+        error:
+          'body is too short to be useful know-how — say which tool answers which question and the conventions a caller gets wrong (units, timezones, id lookups)',
+      };
+    }
+    if (body.length > MAX_SKILL_BODY_CHARS) {
+      return {
+        ok: false,
+        error: `body is ${body.length} characters — this ships in every granted agent's prompt on every turn, so trim it to the judgment (the reference belongs in api_docs_set)`,
+      };
+    }
+    const warnings: string[] = [];
+    const words = body.split(/\s+/).filter(Boolean).length;
+    if (words > SOFT_SKILL_WORDS) {
+      warnings.push(
+        `the skill is ${words} words — it rides in every granted agent's prompt on every turn; cut anything a reader could look up in the stored docs`,
+      );
+    }
+    if (group.toolSlugs.length === 0) {
+      warnings.push(
+        `group '${groupSlug}' has no tools yet — write the skill AFTER authoring and testing the calls, or it describes usage of nothing`,
+      );
+    }
+    if (!group.integration.docsNodeId) {
+      warnings.push(
+        `no API documentation is stored on this group — api_docs_set it too, so the next pass can extend the integration without re-fetching the vendor's site`,
+      );
+    }
+
+    // The slug is DERIVED, never model-supplied: one skill per group, and no way
+    // to name a different row.
+    const skillSlug = apiSkillSlugForGroup(groupSlug);
+    const name = str(input.name).trim() || `${group.name} usage`;
+    const description = `How to use the ${group.integration.service} integration's tools — written by Toolsmith from the stored API docs.`;
+    const [existing] = await db
+      .select({ id: skills.id })
+      .from(skills)
+      .where(and(eq(skills.ownerId, ctx.ownerId), eq(skills.slug, skillSlug)))
+      .limit(1);
+    // A row under this slug that this integration doesn't already point at is
+    // someone else's (operator-authored, or a manifest skill). Refuse rather
+    // than overwrite — an agent must not be able to rewrite behaviour it doesn't
+    // own, and silently clobbering a persona skill is the worst version of that.
+    if (existing && group.integration.skillSlug !== skillSlug) {
+      return {
+        ok: false,
+        error: `a skill '${skillSlug}' already exists but isn't linked to this integration — it belongs to the owner (or ships with the product), so I won't overwrite it. Ask the owner to rename or remove it in Settings → Skills, then retry`,
+      };
+    }
+    if (existing) {
+      await db
+        .update(skills)
+        .set({ name, description, instructions: body, updatedAt: new Date() })
+        .where(eq(skills.id, existing.id));
+    } else {
+      await db.insert(skills).values({
+        ownerId: ctx.ownerId,
+        slug: skillSlug,
+        name,
+        description,
+        instructions: body,
+        enabled: true,
+      });
+    }
+    await setGroupIntegration(ctx.ownerId, groupSlug, { skillSlug });
+    ctx.step?.setOutput({ groupSlug, skillSlug, words });
+    return {
+      ok: true,
+      output: {
+        group_slug: groupSlug,
+        skill_slug: skillSlug,
+        created: !existing,
+        words,
+        warnings,
+        note: `Every agent granted '${groupSlug}' now carries this skill in its context — no separate attach step.`,
       },
     };
   },
@@ -944,7 +1448,7 @@ const tool_group_list: BuiltinToolDef = {
   slug: 'tool_group_list',
   name: 'List tool groups',
   description:
-    'List tool groups (capability bundles agents are granted): slug, tool slugs, and which agents currently grant each group.',
+    'List tool groups (capability bundles agents are granted): slug, tool slugs, and which agents currently grant each group. A group bound to an API also reports its integration — service, base URL, vault ref, whether documentation is stored, and its usage skill. Start here when extending an existing integration: find the group, then `api_docs_get` its stored docs.',
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
     const groups = await db.select().from(toolGroups).where(eq(toolGroups.ownerId, ctx.ownerId));
@@ -968,6 +1472,19 @@ const tool_group_list: BuiltinToolDef = {
           tool_slugs: g.toolSlugs ?? [],
           enabled: g.enabled,
           granted_to_agents: grantedBy.get(g.slug) ?? [],
+          // The binding, when this group IS an API integration. Refs only — a
+          // secret_ref is a vault pointer, the same string api_key_refs returns.
+          integration: g.integration
+            ? {
+                service: g.integration.service,
+                base_url: g.integration.baseUrl ?? null,
+                secret_ref: g.integration.secretRef ?? null,
+                auth_template: g.integration.authTemplate ?? null,
+                has_stored_docs: !!g.integration.docsNodeId,
+                docs_captured_at: g.integration.docsUpdatedAt ?? null,
+                skill_slug: g.integration.skillSlug ?? null,
+              }
+            : null,
         })),
       },
     };
@@ -978,7 +1495,9 @@ const tool_group_ensure: BuiltinToolDef = {
   slug: 'tool_group_ensure',
   name: 'Create or update a tool group',
   description:
-    "Create a tool group if it doesn't exist, or update its tool list. mode 'add' (default) merges slugs in; 'replace' overwrites the list. Unknown tool slugs are reported as warnings, not errors.",
+    "Create a tool group if it doesn't exist, or update its tool list. mode 'add' (default) merges slugs in; 'replace' overwrites the list. Unknown tool slugs are reported as warnings, not errors. " +
+    'Pass `service` (+ `base_url` / `secret_ref` / `auth_template`) to make the group an INTEGRATION: auth placement and the base URL are decided ONCE here, and every tool later authored with group_slug inherits them. ' +
+    'Then `api_docs_set` the API documentation onto the same group so the next authoring pass reads it instead of the web.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -996,6 +1515,30 @@ const tool_group_ensure: BuiltinToolDef = {
           'slugs of the tools the group should contain — http/recipe tools only, e.g. ["mapbox_geocode"]',
       },
       mode: { type: 'string', enum: ['add', 'replace'], description: "default 'add'" },
+      service: {
+        type: 'string',
+        description:
+          "vendor key for the API this group integrates, e.g. 'openweathermap' — set it (with the fields below) to turn a plain bundle into an integration",
+      },
+      base_url: {
+        type: 'string',
+        description:
+          'URL every call in this group hangs off, e.g. https://api.openweathermap.org/data/2.5 — authored tools may then use relative paths',
+      },
+      secret_ref: {
+        type: 'string',
+        description:
+          "vault entry that authenticates this API as 'service/label', e.g. openweathermap/default — list the real ones with `api_key_refs` and ask the user when two could fit",
+      },
+      auth_template: {
+        type: 'object',
+        description:
+          'WHERE the credential goes: { "query": { "appid": "{{secret:openweathermap/default}}" } } or { "headers": { "Authorization": "Bearer {{secret:svc/default}}" } }',
+        properties: {
+          headers: { type: 'object', description: 'header name → value template' },
+          query: { type: 'object', description: 'query key → value template' },
+        },
+      },
     },
     required: ['slug', 'tool_slugs'],
   },
@@ -1037,6 +1580,30 @@ const tool_group_ensure: BuiltinToolDef = {
       .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, slug)))
       .limit(1);
 
+    // Integration binding. Only touched when the call carries one of its fields,
+    // so a plain capability-bundle ensure leaves `integration` NULL as before.
+    // Merged onto whatever is already there: re-declaring auth must not drop the
+    // docs pointer, and attaching docs must not require restating the service.
+    const wantsIntegration =
+      input.service !== undefined ||
+      input.base_url !== undefined ||
+      input.secret_ref !== undefined ||
+      input.auth_template !== undefined;
+    let integration: ToolGroupIntegration | null = existing?.integration ?? null;
+    if (wantsIntegration) {
+      const parsed = parseIntegrationMeta({
+        ...(integration ?? {}),
+        ...(input.service !== undefined ? { service: str(input.service).trim() } : {}),
+        ...(input.base_url !== undefined ? { base_url: input.base_url } : {}),
+        ...(input.secret_ref !== undefined ? { secret_ref: input.secret_ref } : {}),
+        ...(input.auth_template !== undefined ? { auth_template: input.auth_template } : {}),
+      });
+      if (!parsed.ok) return { ok: false, error: parsed.error };
+      integration = parsed.value;
+      warnings.push(...parsed.warnings);
+      warnings.push(...(await integrationWarnings(ctx.ownerId, integration)));
+    }
+
     let toolSlugs: string[];
     if (existing) {
       toolSlugs =
@@ -1049,6 +1616,7 @@ const tool_group_ensure: BuiltinToolDef = {
           toolSlugs,
           ...(str(input.name).trim() ? { name: str(input.name).trim() } : {}),
           ...(str(input.description).trim() ? { description: str(input.description).trim() } : {}),
+          ...(wantsIntegration ? { integration } : {}),
           updatedAt: new Date(),
         })
         .where(eq(toolGroups.id, existing.id));
@@ -1062,13 +1630,34 @@ const tool_group_ensure: BuiltinToolDef = {
         name,
         description: str(input.description).trim(),
         toolSlugs,
+        ...(integration ? { integration } : {}),
         enabled: true,
       });
     }
     ctx.step?.setOutput({ slug, toolSlugs, warnings });
     return {
       ok: true,
-      output: { slug, created: !existing, tool_slugs: toolSlugs, warnings },
+      output: {
+        slug,
+        created: !existing,
+        tool_slugs: toolSlugs,
+        warnings,
+        ...(integration
+          ? {
+              integration: {
+                service: integration.service,
+                base_url: integration.baseUrl ?? null,
+                secret_ref: integration.secretRef ?? null,
+                auth_template: integration.authTemplate ?? null,
+                has_stored_docs: !!integration.docsNodeId,
+                skill_slug: integration.skillSlug ?? null,
+              },
+              next: integration.docsNodeId
+                ? 'Author calls with group_slug so they inherit the base URL + credential, then api_tool_test.'
+                : 'Store the API documentation on this group with api_docs_set, then author calls with group_slug so they inherit the base URL + credential.',
+            }
+          : {}),
+      },
     };
   },
 };
@@ -1248,6 +1837,9 @@ export const TOOLSMITH_TOOLS: BuiltinToolDef[] = [
   api_tool_delete,
   api_tool_test,
   api_key_refs,
+  api_docs_set,
+  api_docs_get,
+  api_skill_set,
   tool_catalog,
   recipe_tool_create,
   recipe_tool_test,

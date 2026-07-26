@@ -18,6 +18,7 @@ import {
 } from 'react';
 import { sendHttpDraft, sendMcpCall, sendToolCall } from '@/lib/dev-tools/client';
 import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
+import type { ToolGroupDTO } from '@mantle/client-types';
 import {
   STORAGE_KEYS,
   appendHistory,
@@ -75,6 +76,10 @@ type DevToolsContextValue = {
   agentTools: AgentToolInfo[];
   refreshAgentTools: () => Promise<void>;
 
+  /** Tool groups that carry an integration binding — the console groups the
+   *  agent-tool catalog by them and offers them when saving a new tool. */
+  integrationGroups: ToolGroupDTO[];
+
   /** Toolsmith Assist panel visibility (toggled from the builder header). */
   assistOpen: boolean;
   setAssistOpen: (open: boolean) => void;
@@ -126,6 +131,7 @@ export function DevToolsProvider({
     Array.isArray(initialAgentTools) ? initialAgentTools : [],
   );
   const [assistOpen, setAssistOpen] = useState(false);
+  const [integrationGroups, setIntegrationGroups] = useState<ToolGroupDTO[]>([]);
 
   const activeEnv = useMemo(
     () => environments.find((e) => e.id === activeEnvId) ?? environments[0] ?? null,
@@ -178,6 +184,20 @@ export function DevToolsProvider({
     })();
   }, []);
 
+  // Integration groups: read once on mount and after every save (a new tool may
+  // have joined one). Failure is non-fatal — the console just doesn't group.
+  const refreshIntegrationGroups = useCallback(async () => {
+    try {
+      const payload = await apiFetch<{ groups?: ToolGroupDTO[] }>('/api/tool-groups');
+      setIntegrationGroups((payload.groups ?? []).filter((g) => g.integration));
+    } catch {
+      /* leave whatever we had */
+    }
+  }, []);
+  useEffect(() => {
+    void refreshIntegrationGroups();
+  }, [refreshIntegrationGroups]);
+
   const refreshAgentTools = useCallback(async () => {
     try {
       const payload = await apiFetch<{ tools?: AgentToolInfo[] }>('/api/tools');
@@ -185,7 +205,8 @@ export function DevToolsProvider({
     } catch {
       /* keep the stale list (a 401 already bounced to /login inside apiFetch) */
     }
-  }, []);
+    await refreshIntegrationGroups();
+  }, [refreshIntegrationGroups]);
 
   const send = useCallback(async () => {
     if (sending) return;
@@ -339,6 +360,7 @@ export function DevToolsProvider({
     loadMcpTools,
     agentTools,
     refreshAgentTools,
+    integrationGroups,
     assistOpen,
     setAssistOpen,
   };
