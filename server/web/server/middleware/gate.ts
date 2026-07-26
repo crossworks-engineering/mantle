@@ -30,12 +30,13 @@ function isAssetPath(path: string): boolean {
   return path.startsWith('/api/files/files/') || path.startsWith('/api/attachments/');
 }
 
-/** The /s APP broker sub-paths the split client's hub calls cross-origin
- *  (bearer-authed by resolveShareVisitorFromRequest). They get the same CORS
+/** The /s sub-paths a client-origin page calls cross-origin (bearer-authed by
+ *  resolveShareVisitorFromRequest): the app brokers the hub uses, plus the
+ *  view/rows pair the /team inline reader fetches. They get the same CORS
  *  treatment as /api/** — and ONLY they: the /s/<token> HTML page and the
- *  non-app brokers (rows, auth, a/) stay same-origin cookie surfaces with no
- *  CORS headers at all. */
-const SHARE_BROKER_RE = /^\/s\/[^/]+\/(bundle|tool-broker|db-broker)$/;
+ *  remaining sub-paths (auth, a/, evaluate) stay same-origin cookie surfaces
+ *  with no CORS headers at all. */
+const SHARE_BROKER_RE = /^\/s\/[^/]+\/(bundle|tool-broker|db-broker|view|rows)$/;
 
 /** Old middleware matcher exclusion: bare image paths never hit the gate. */
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;

@@ -18,7 +18,7 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 import { teamFetch, teamTokenStore } from '@mantle/web-ui/team-fetch';
-import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
+import { isCrossOrigin } from '@mantle/web-ui/runtime-env';
 
 export function TokenGate({
   onAuthed,
@@ -37,9 +37,11 @@ export function TokenGate({
     setError(null);
     setPending(true);
     try {
-      // Split client (runtime base set): exchange for the bearer and store it.
-      // Same-origin: default cookie mode, exactly as before the split.
-      const split = runtimeApiBase() !== '';
+      // Genuinely cross-origin client: exchange for the bearer and store it.
+      // Same-origin — including the default one-domain deploy where apiBase
+      // is set but EQUAL to the page origin — default cookie mode, exactly as
+      // before the split.
+      const split = isCrossOrigin();
       const r = await teamFetch('/api/team/auth', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

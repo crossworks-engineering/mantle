@@ -3,19 +3,22 @@
 /**
  * Open a team-mode /s/<token> share from the client-origin member surface.
  *
- * Same-origin (monolith): a plain anchor — the team-chat cookie is already on
- * this origin, so /s renders directly (today's behavior, untouched).
+ * Same-origin — the monolith AND the default one-domain deploy (apiBase set
+ * but equal to the page origin): a plain anchor — the team-chat cookie is
+ * already on this origin (upgradeTeamCookie covers bearer-mode sessions), so
+ * /s renders directly.
  *
- * Split client origin: shares render on the SERVER origin and authenticate by
- * cookie, which this origin's member (bearer in localStorage) doesn't have
- * there — and can never get via an iframe (cross-origin iframes don't receive
- * Lax cookies; third-party cookies are dying anyway). So the open goes
- * TOP-LEVEL through POST /api/team/sso: a real form navigation (new tab)
- * carrying the bearer in the BODY — never a URL — which mints the server-
- * origin cookie and 303s to the share. See server/web/lib/team-sso.ts.
+ * Genuinely cross-origin client (isCrossOrigin): shares render on the SERVER
+ * origin and authenticate by cookie, which this origin's member (bearer in
+ * localStorage) doesn't have there — and can never get via an iframe
+ * (cross-origin iframes don't receive Lax cookies; third-party cookies are
+ * dying anyway). So the open goes TOP-LEVEL through POST /api/team/sso: a
+ * real form navigation (new tab) carrying the bearer in the BODY — never a
+ * URL — which mints the server-origin cookie and 303s to the share. See
+ * server/web/lib/team-sso.ts.
  */
 import { useRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
-import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
+import { isCrossOrigin, runtimeApiBase } from '@mantle/web-ui/runtime-env';
 import { teamTokenStore } from '@mantle/web-ui/team-fetch';
 
 /**
@@ -26,11 +29,11 @@ import { teamTokenStore } from '@mantle/web-ui/team-fetch';
  * /s/<token> directly.
  */
 export function openShareOnServer(token: string): void {
-  const base = runtimeApiBase();
-  if (!base) {
+  if (!isCrossOrigin()) {
     window.open(`/s/${token}`, '_self');
     return;
   }
+  const base = runtimeApiBase();
   const form = document.createElement('form');
   form.method = 'post';
   form.action = `${base}/api/team/sso`;
@@ -78,7 +81,7 @@ export function OpenShare({
   const nextRef = useRef<HTMLInputElement>(null);
   const base = runtimeApiBase();
 
-  if (!base) {
+  if (!isCrossOrigin()) {
     return (
       <a
         href={`/s/${token}`}

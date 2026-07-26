@@ -3,12 +3,15 @@
 /**
  * One /team workspace section: the list of team-visible shares of one type
  * (left, mirroring the owner screens' master-detail list pane) and a
- * read-only reader for the selected item (right) — the /s/<token> presenter.
- * Same-origin that's an iframe with auth riding the team cookie; on the
- * split client origin shares open TOP-LEVEL on the server origin instead
- * (OpenShare → the SSO handoff — a cross-origin iframe can never carry the
- * cookie). The share surface stays the only content door, so this component
- * never touches content APIs.
+ * read-only INLINE reader for the selected item (right) — ShareReader
+ * fetching GET /s/<token>/view and mounting the share presenters directly
+ * (no iframe). The share surface stays the only content door: /view is a
+ * sub-path of /s with the same authorization, not a second one.
+ *
+ * Only a GENUINELY cross-origin client (isCrossOrigin — the API on another
+ * origin, not merely configured absolutely) falls back to opening shares
+ * top-level via OpenShare → the SSO handoff: inline reading there would
+ * strand cookie-authenticated subresources (page images, downloads).
  *
  * List state is URL-driven (the /pages pattern): `?q=` search, `?tag=`
  * filter, `?sort=` order, `?page=` pager, `?s=<token>` selection — so
@@ -57,8 +60,9 @@ import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { buildChildrenIndex } from '@mantle/web-ui/page-tree';
 import { formatDate } from '@mantle/web-ui/lib/format-datetime';
 import { teamFetch } from '@mantle/web-ui/team-fetch';
-import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
+import { isCrossOrigin } from '@mantle/web-ui/runtime-env';
 import { OpenShare } from './open-on-server';
+import { ShareReader } from './share-reader';
 import { cn } from '@mantle/web-ui/lib/utils';
 
 type Item = {
@@ -435,17 +439,12 @@ export function TeamSection({
                 <ExternalLink />
               </OpenShare>
             </div>
-            {runtimeApiBase() === '' ? (
-              <iframe
-                key={selected.token}
-                src={`/s/${selected.token}`}
-                title={selected.title}
-                className="min-h-0 w-full flex-1 border-0 bg-background"
-              />
+            {!isCrossOrigin() ? (
+              <ShareReader key={selected.token} token={selected.token} title={selected.title} />
             ) : (
-              // Split client origin: no inline reader — a cross-origin iframe
-              // can never carry the member cookie. Reading happens top-level
-              // on the server origin through the SSO handoff.
+              // Genuinely cross-origin client: inline reading would strand the
+              // cookie-authenticated subresources (page images, downloads), so
+              // shares open top-level on the server origin via the SSO handoff.
               <div className="flex flex-1 items-center justify-center p-6">
                 <div className="max-w-sm text-center">
                   <p className="text-sm text-muted-foreground">

@@ -1,4 +1,5 @@
 import katex from 'katex';
+import type { ReactNode } from 'react';
 import type {
   CoverageGap,
   DimensionIssue,
@@ -118,8 +119,10 @@ export function FormulaPresenter({
   calculator,
 }: {
   view: FormulaShareView;
-  /** Pre-rendered island markup for the live calculator. */
-  calculator: string;
+  /** The live calculator: the /s surface passes pre-rendered island markup
+   *  (wrapped in its own dangerouslySetInnerHTML div); the /team inline
+   *  reader mounts <FormulaCalculator> directly. */
+  calculator: ReactNode;
 }) {
   const { spec } = view;
   const cite = citation(spec);
@@ -178,7 +181,7 @@ export function FormulaPresenter({
       ) : null}
 
       {/* The calculator: the reason a link exists rather than a screenshot. */}
-      <div className="mt-10" dangerouslySetInnerHTML={{ __html: calculator }} />
+      <div className="mt-10">{calculator}</div>
 
       {spec.expressions.length > 0 ? (
         <Section title="Equations">

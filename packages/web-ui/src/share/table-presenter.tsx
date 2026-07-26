@@ -76,7 +76,7 @@ export function TablePresenter({
       setTotal(tab.rowCount);
       void fetchPage(0, tab.id);
     }
-  }, [tab?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab?.id]); // deliberately narrower than exhaustive-deps: tab identity only
 
   // Memoized so the `?? []` fallback doesn't mint a fresh array each render and
   // re-run the numericCols useMemo below (react-hooks/exhaustive-deps).

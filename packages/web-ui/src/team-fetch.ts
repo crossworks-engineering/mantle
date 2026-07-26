@@ -18,7 +18,7 @@
  * seeds it directly.
  */
 
-import { runtimeApiBase } from './runtime-env';
+import { isCrossOrigin, runtimeApiBase } from './runtime-env';
 import { eventStreamCore } from './api-fetch';
 
 const TEAM_TOKEN_STORAGE_KEY = 'mantle_team_token';
@@ -66,18 +66,49 @@ export function teamUrl(path: string): string {
 
 /** Build a `RequestInit` carrying the member credential: cookies same-origin,
  *  the team bearer (no credentials) cross-origin — the exact mirror of
- *  api-fetch's `withAuth`. */
+ *  api-fetch's `withAuth`. The bearer attaches whenever one is stored, not
+ *  only cross-origin: same-origin sessions that authenticated in bearer mode
+ *  (minted while the old `apiBase set ⇒ split` predicate misread the default
+ *  one-domain deployment) keep working alongside the cookie — the server
+ *  verifies both carriers with the same trust. */
 export function withTeamAuth(init?: RequestInit): RequestInit {
   const headers = new Headers(init?.headers);
   const token = teamTokenStore.get();
-  if (runtimeApiBase() && token && !headers.has('Authorization')) {
+  if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
   return {
-    credentials: runtimeApiBase() ? 'omit' : 'include',
+    credentials: isCrossOrigin() ? 'omit' : 'include',
     ...init,
     headers,
   };
+}
+
+// One upgrade attempt per page load — module-level, so concurrent callers
+// (shell mount + hub mount) don't double-fire.
+let cookieUpgradeFired = false;
+
+/**
+ * Silent bearer→cookie upgrade, same-origin only. Members who authenticated
+ * while the split mis-detection was live hold ONLY the localStorage bearer —
+ * but the /s subresources an inline reader loads (page images, downloads,
+ * table rows, the formula evaluate POST) authenticate by cookie. POST
+ * /api/team/sso with no `next` verifies the bearer (signature + membership
+ * liveness) and answers 204 with a fresh first-party cookie — no token
+ * re-entry, no redirect. Fire-and-forget; a failure just retries next load.
+ */
+export function upgradeTeamCookie(): void {
+  if (cookieUpgradeFired || isCrossOrigin()) return;
+  const token = teamTokenStore.get();
+  if (!token) return; // cookie-mode session — nothing to upgrade
+  cookieUpgradeFired = true;
+  void fetch(teamUrl('/api/team/sso'), {
+    method: 'POST',
+    body: new URLSearchParams({ tb: token }),
+    credentials: 'include',
+  }).catch(() => {
+    /* offline / transient — the next page load tries again */
+  });
 }
 
 /** Fetch with the member credential, returning the raw `Response` — callers
