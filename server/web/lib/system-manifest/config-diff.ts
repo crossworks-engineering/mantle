@@ -433,7 +433,13 @@ function diffExtras(live: LiveConfig, m: ManifestSlices): EntityDiffCore[] {
       name: s.name || s.slug,
       status: 'extra',
       severity: 'low',
-      summary: 'operator-added (not in template)',
+      // `api-<group>` rows are an integration group's usage skill, authored per
+      // brain by Toolsmith (api_skill_set). They are user-space by design — never
+      // seeded, never reconciled — so name them rather than leaving the operator
+      // wondering which stray skill this is.
+      summary: s.slug.startsWith('api-')
+        ? 'integration usage skill (written by Toolsmith, travels with its tool group)'
+        : 'operator-added (not in template)',
       fields: [],
     });
   }
