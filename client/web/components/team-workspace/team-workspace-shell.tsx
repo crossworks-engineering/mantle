@@ -136,7 +136,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Same-origin sessions minted in bearer mode regain the cookie the /s
     // subresources (inline-reader images, downloads, rows) authenticate by.
-    upgradeTeamCookie();
+    void upgradeTeamCookie();
     void refetch();
   }, [refetch]);
 

@@ -217,7 +217,7 @@ export function TeamHubShell() {
   useEffect(() => {
     // Same-origin sessions minted in bearer mode regain the cookie the /s
     // subresources (reader images, downloads, rows) authenticate by.
-    upgradeTeamCookie();
+    void upgradeTeamCookie();
     void refetch();
   }, [refetch]);
 

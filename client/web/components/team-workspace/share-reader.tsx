@@ -22,7 +22,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { PageOutline } from '@mantle/web-ui/page-outline';
-import { teamFetch } from '@mantle/web-ui/team-fetch';
+import { teamFetch, upgradeTeamCookie } from '@mantle/web-ui/team-fetch';
 import { buttonVariants } from '@mantle/web-ui/ui/button';
 import { formatBytes } from '@mantle/web-ui/lib/format-bytes';
 import { cn } from '@mantle/web-ui/lib/utils';
@@ -41,6 +41,7 @@ import { OpenShare } from './open-on-server';
 type LoadState =
   | { phase: 'loading' }
   | { phase: 'unauthorized' }
+  | { phase: 'gone' }
   | { phase: 'failed' }
   | { phase: 'ready'; view: ShareViewPayload };
 
@@ -53,10 +54,21 @@ export function ShareReader({ token, title }: { token: string; title: string }) 
     async (p?: string) => {
       setState({ phase: 'loading' });
       try {
+        // Sessions minted in bearer mode hold no cookie yet — the view fetch
+        // itself rides the bearer, but the content it renders loads
+        // cookie-authenticated subresources (page images, downloads, rows,
+        // the app bundle). Await the one-shot upgrade so the FIRST open
+        // doesn't race the Set-Cookie; settles instantly when moot.
+        await upgradeTeamCookie();
         const qs = p ? `?p=${encodeURIComponent(p)}` : '';
         const r = await teamFetch(`/s/${token}/view${qs}`, { cache: 'no-store' });
         if (r.status === 401) {
           setState({ phase: 'unauthorized' });
+          return;
+        }
+        if (r.status === 404) {
+          // Revoked / deleted since the list loaded — retry can't help.
+          setState({ phase: 'gone' });
           return;
         }
         if (!r.ok) throw new Error(String(r.status));
@@ -81,21 +93,23 @@ export function ShareReader({ token, title }: { token: string; title: string }) 
     );
   }
 
-  if (state.phase === 'unauthorized' || state.phase === 'failed') {
+  if (state.phase !== 'ready') {
     return (
       <div className="flex flex-1 items-center justify-center p-6">
         <div className="max-w-sm text-center">
           <p className="text-sm text-muted-foreground">
             {state.phase === 'unauthorized'
               ? 'Your team session doesn’t cover this item here.'
-              : 'Could not load this item.'}
+              : state.phase === 'gone'
+                ? 'This item is no longer shared.'
+                : 'Could not load this item.'}
           </p>
           {state.phase === 'unauthorized' ? (
             <OpenShare token={token} className={cn(buttonVariants(), 'mt-4')}>
               <ExternalLink />
               <span className="max-w-56 truncate">Open {title}</span>
             </OpenShare>
-          ) : (
+          ) : state.phase === 'failed' ? (
             <button
               type="button"
               onClick={() => void load()}
@@ -103,7 +117,7 @@ export function ShareReader({ token, title }: { token: string; title: string }) 
             >
               Try again
             </button>
-          )}
+          ) : null}
         </div>
       </div>
     );
