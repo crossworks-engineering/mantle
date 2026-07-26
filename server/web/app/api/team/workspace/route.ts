@@ -32,6 +32,9 @@ export async function GET(req: Request) {
   return NextResponse.json({
     memberName: memberName ?? null,
     siteName: prefs.siteName ?? null,
+    // The brain's federation label — the member header centres it exactly as
+    // the owner shell does (one brand, admin-determined, both surfaces).
+    peerName: prefs.peerName ?? null,
     // The OWNER's colour theme — the workspace renders in the brain's brand
     // theme for members (light/dark stays the member's own choice).
     colorTheme: prefs.colorTheme ?? null,
