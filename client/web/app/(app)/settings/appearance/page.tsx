@@ -55,6 +55,20 @@ function Controls() {
         </div>
       </section>
 
+      {/* Brand — everything the header carries, in one place: the logo (an
+          uploaded image replaces the wordmark TEXT in both headers) and the
+          wordmark + peer-name display fonts. All system-wide anchor prefs
+          (PUT /api/profile/logo + /api/profile/fonts), like the colour theme.
+          Sits ABOVE the ~40-row theme list on purpose — below it, the section
+          lives past the sidebar's fold and reads as missing. */}
+      <section className="space-y-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Brand
+        </h2>
+        <LogoControl />
+        <TypographyFontControls />
+      </section>
+
       <section className="space-y-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Color theme
@@ -93,20 +107,6 @@ function Controls() {
             );
           })}
         </div>
-      </section>
-
-      {/* Brand — everything the header carries, in one place: the logo (an
-          uploaded image replaces the wordmark TEXT in both headers) and the
-          wordmark + peer-name display fonts. All system-wide anchor prefs
-          (PUT /api/profile/logo + /api/profile/fonts), exactly like the
-          colour theme above. The fonts USED to live in a separate Typography
-          section here AND inside the Typography preview tab — one home now. */}
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Brand
-        </h2>
-        <LogoControl />
-        <TypographyFontControls />
       </section>
     </div>
   );
