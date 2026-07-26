@@ -2992,6 +2992,84 @@
   --sidebar-ring: #7c9082;
 }
 
+/* Pinnacle — brand palette, NOT tweakcn-generated. The eight brand colours
+   (#ea3635 #ec1c35 #d48b38 #b2d234 #6fbe44 #6fc173 #6ec7aa #6ec8b7) are all
+   light-key: white text fails WCAG AA on every one of them (best is #ec1c35 at
+   4.39:1). So the brand hexes ship UNCHANGED where they are pure fills with no
+   text on them (chart-1..5, and the primaries in dark mode where the ink is
+   near-black), while the interactive fills that DO carry text use hue-exact
+   shades — scaled toward black in linear light, so chromaticity is identical —
+   dark enough that both roles pass: `bg-primary`+`text-primary-foreground` AND
+   `text-primary` on the background. Enforced by themes.test.ts. */
+[data-color-theme="pinnacle"] {
+  --background: #f7faf7;
+  --foreground: #17241d;
+  --card: #ffffff;
+  --card-foreground: #17241d;
+  --popover: #ffffff;
+  --popover-foreground: #17241d;
+  --primary: #457928; /* #6fbe44 shaded — 5.2:1 under white, 4.7:1 as ink */
+  --primary-foreground: #ffffff;
+  --secondary: #e1f1ed; /* #6ec8b7 tint */
+  --secondary-foreground: #22453f;
+  --muted: #eef4ef;
+  --muted-foreground: #4f6357;
+  --accent: #e9f1d6; /* #b2d234 tint */
+  --accent-foreground: #38440a;
+  --destructive: #d5182f; /* #ec1c35 shaded — 5.25:1 under white, 4.7:1 as ink */
+  --destructive-foreground: #ffffff;
+  --border: #d7e4d9;
+  --input: #d7e4d9;
+  --ring: #457928;
+  --chart-1: #ea3635;
+  --chart-2: #d48b38;
+  --chart-3: #b2d234;
+  --chart-4: #6fbe44;
+  --chart-5: #6ec8b7;
+  --sidebar: #edf4ee;
+  --sidebar-foreground: #17241d;
+  --sidebar-primary: #457928;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e1f1ed;
+  --sidebar-accent-foreground: #22453f;
+  --sidebar-border: #d7e4d9;
+  --sidebar-ring: #457928;
+}
+.dark[data-color-theme="pinnacle"] {
+  --background: #0e1613;
+  --foreground: #e4ede6;
+  --card: #16211c;
+  --card-foreground: #e4ede6;
+  --popover: #16211c;
+  --popover-foreground: #e4ede6;
+  --primary: #6fbe44; /* brand green as-is — dark ink on it, never white */
+  --primary-foreground: #0b1a0b;
+  --secondary: #1e2b25;
+  --secondary-foreground: #e4ede6;
+  --muted: #1a2620;
+  --muted-foreground: #9db3a5;
+  --accent: #1f3a33;
+  --accent-foreground: #8fdcc4;
+  --destructive: #ee5d66; /* #ec1c35 lifted — 5.0:1 as ink on card */
+  --destructive-foreground: #1a0508;
+  --border: #2c3b33;
+  --input: #2c3b33;
+  --ring: #6fbe44;
+  --chart-1: #ec1c35;
+  --chart-2: #d48b38;
+  --chart-3: #b2d234;
+  --chart-4: #6fc173;
+  --chart-5: #6ec7aa;
+  --sidebar: #111b16;
+  --sidebar-foreground: #e4ede6;
+  --sidebar-primary: #6fbe44;
+  --sidebar-primary-foreground: #0b1a0b;
+  --sidebar-accent: #1f3a33;
+  --sidebar-accent-foreground: #8fdcc4;
+  --sidebar-border: #2c3b33;
+  --sidebar-ring: #6fbe44;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
