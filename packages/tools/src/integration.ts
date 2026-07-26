@@ -29,6 +29,7 @@ import { API_DOCS_MAX_CHARS, apiDocsHeader } from './integration-meta';
 export {
   API_DOCS_MAX_CHARS,
   apiDocsHeader,
+  apiSkillSlugForGroup,
   applyIntegrationInheritance,
   describeInheritance,
   joinBaseUrl,

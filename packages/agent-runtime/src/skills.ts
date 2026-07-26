@@ -24,17 +24,87 @@ function toRuntime(s: Skill): SkillForRuntime {
   };
 }
 
-/** Resolve a batch of skill slugs to enabled rows for an owner. */
+/**
+ * Resolve an agent's skills to enabled rows: its OWN `skillSlugs`, plus the
+ * usage skill of every integration tool group it's granted (`opts.toolGroupSlugs`).
+ * An integration's know-how travels with the grant — grant the group, get the
+ * skill — so there's no separate attach step to forget. The agent's own skills
+ * come first; the union is deduped and capped.
+ *
+ * Callers that only ever have literal skill slugs (studio previews, tests) can
+ * omit `opts` and get exactly the old behaviour.
+ */
 export async function resolveAgentSkills(
   ownerId: string,
   slugs: string[],
+  opts?: { toolGroupSlugs?: string[] },
 ): Promise<SkillForRuntime[]> {
-  if (slugs.length === 0) return [];
+  const groupSkillSlugs = await resolveToolGroupSkillSlugs(ownerId, opts?.toolGroupSlugs ?? []);
+  const wanted = effectiveSkillSlugs(slugs, groupSkillSlugs);
+  if (wanted.length === 0) return [];
   const rows = await db
     .select()
     .from(skills)
-    .where(and(eq(skills.ownerId, ownerId), eq(skills.enabled, true), inArray(skills.slug, slugs)));
-  return rows.map(toRuntime);
+    .where(
+      and(eq(skills.ownerId, ownerId), eq(skills.enabled, true), inArray(skills.slug, wanted)),
+    );
+  // Return in the requested order (own skills first) so the composed prompt is
+  // deterministic rather than dependent on row order.
+  const bySlug = new Map(rows.map((r) => [r.slug, r] as const));
+  return wanted.flatMap((s) => {
+    const row = bySlug.get(s);
+    return row ? [toRuntime(row)] : [];
+  });
+}
+
+/**
+ * Granted tool-group slugs → the usage-skill slugs their integrations declare
+ * (ENABLED groups only, matching `resolveAgentToolGroups`). A group with no
+ * integration, or an integration with no skill, contributes nothing.
+ */
+export async function resolveToolGroupSkillSlugs(
+  ownerId: string,
+  groupSlugs: string[],
+): Promise<string[]> {
+  if (groupSlugs.length === 0) return [];
+  const rows = await db
+    .select({ integration: toolGroups.integration })
+    .from(toolGroups)
+    .where(
+      and(
+        eq(toolGroups.ownerId, ownerId),
+        eq(toolGroups.enabled, true),
+        inArray(toolGroups.slug, groupSlugs),
+      ),
+    );
+  const out = new Set<string>();
+  for (const r of rows) {
+    const slug = r.integration?.skillSlug;
+    if (slug) out.add(slug);
+  }
+  return Array.from(out);
+}
+
+/** Upper bound on the effective skill union. A skill's whole body is injected
+ *  into the system prompt on every turn, so this is a context-cost guard, not a
+ *  provider limit — and it's loud when it bites. */
+const MAX_EFFECTIVE_SKILL_SLUGS = 32;
+
+/**
+ * Union of an agent's own skill slugs with the skills its granted groups carry.
+ * Agent's own first (they're the operator's explicit choice), deduped, capped.
+ * Pure — the DB reads happen in `resolveAgentSkills`.
+ */
+export function effectiveSkillSlugs(ownSlugs: string[], groupSkillSlugs: string[]): string[] {
+  const all = Array.from(new Set<string>([...ownSlugs, ...groupSkillSlugs]));
+  if (all.length > MAX_EFFECTIVE_SKILL_SLUGS) {
+    const dropped = all.slice(MAX_EFFECTIVE_SKILL_SLUGS);
+    console.warn(
+      `[skills] effective skill union (${all.length}) exceeds cap ${MAX_EFFECTIVE_SKILL_SLUGS}; dropping ${dropped.length}: ${dropped.join(', ')}`,
+    );
+    return all.slice(0, MAX_EFFECTIVE_SKILL_SLUGS);
+  }
+  return all;
 }
 
 /**

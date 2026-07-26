@@ -25,6 +25,7 @@ const SECRET_REF_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SERVICE_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const HTTP_URL_RE = /^https?:\/\/\S+$/i;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SKILL_SLUG_RE = /^[a-z0-9_-]{1,120}$/;
 /** A header/query name that carries a credential — flagged when its value has
  *  no `{{secret:…}}` ref (mirrors the API Console's baked-credential warning). */
 const CREDENTIAL_KEY_RE = /(authorization|api[-_]?key|token|secret|password|cookie|bearer|appid)/i;
@@ -181,6 +182,18 @@ export function parseIntegrationMeta(raw: unknown): ParsedIntegration | Integrat
     value.docsNodeId = docsNodeId;
   }
 
+  const skillSlugRaw = pick('skillSlug', 'skill_slug');
+  if (skillSlugRaw !== undefined && skillSlugRaw !== null && String(skillSlugRaw).trim() !== '') {
+    const skillSlug = String(skillSlugRaw).trim();
+    if (!SKILL_SLUG_RE.test(skillSlug)) {
+      return {
+        ok: false,
+        error: `integration.skill_slug '${skillSlug}' must be lowercase letters/digits/dash/underscore — write the usage skill with api_skill_set, which names it for you`,
+      };
+    }
+    value.skillSlug = skillSlug;
+  }
+
   const sourceUrlRaw = pick('docsSourceUrl', 'docs_source_url');
   if (sourceUrlRaw !== undefined && sourceUrlRaw !== null && String(sourceUrlRaw).trim() !== '') {
     value.docsSourceUrl = String(sourceUrlRaw).trim().slice(0, 2000);
@@ -209,6 +222,12 @@ export function parseIntegrationMeta(raw: unknown): ParsedIntegration | Integrat
   }
 
   return { ok: true, value, warnings };
+}
+
+/** Naming convention for an integration's usage skill — one skill per group, so
+ *  the slug is derivable and a second call can't fork a duplicate. */
+export function apiSkillSlugForGroup(groupSlug: string): string {
+  return `api-${groupSlug}`;
 }
 
 /* ─────────────────── authoring-time inheritance (pure) ─────────────────── */
@@ -275,7 +294,7 @@ export function applyIntegrationInheritance(
     if (!absolute) {
       return {
         ok: false,
-        error: `url '${url}' must start with http(s):// — a relative path only works when the tool joins an integration group carrying a base_url (pass group_slug, or set base_url with tool_group_ensure)`,
+        error: `url '${url}' must start with http(s):// and contain no spaces — a relative path only works when the tool joins an integration group carrying a base_url (pass group_slug, or set base_url on the group with tool_group_ensure)`,
       };
     }
     return { ok: true, url, headers: input.headers, query: input.query, inherited };

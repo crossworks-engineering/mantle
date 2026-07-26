@@ -191,7 +191,9 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
   //    skill is NOT injected here — it goes into the user-role
   //    synthetic prompt below, because it's situational to this
   //    fire, not a persistent persona trait.
-  const persistentSkills = await resolveAgentSkills(hb.ownerId, agent.skillSlugs ?? []);
+  const persistentSkills = await resolveAgentSkills(hb.ownerId, agent.skillSlugs ?? [], {
+    toolGroupSlugs: agent.toolGroupSlugs ?? [],
+  });
   const prefs = await loadProfilePreferences(hb.ownerId);
   const baseSystem = composeSystemPromptWithSkills(agent.systemPrompt, persistentSkills);
   const systemPrompt = `${buildTimeContextLine(prefs, now)}\n\n${baseSystem}\n\n${HEARTBEAT_DATA_BOUNDARY}`;

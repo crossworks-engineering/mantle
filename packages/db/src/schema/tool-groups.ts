@@ -36,6 +36,15 @@ export type ToolGroupIntegration = {
   };
   /** `nodes` id of the markdown file holding this API's stored documentation. */
   docsNodeId?: string;
+  /**
+   * Slug of the `skills` row carrying this integration's USAGE know-how — which
+   * endpoint answers which question, unit conventions, how to chain calls.
+   * Convention: `api-<group-slug>`. It travels WITH the grant: an agent granted
+   * this group gets the skill in its context (see the effective-skills union in
+   * @mantle/agent-runtime), which is why it must stay short. The docs file
+   * remains the reference; the skill is judgment.
+   */
+  skillSlug?: string;
   /** Where the stored docs came from (URL) + when they were captured. */
   docsSourceUrl?: string;
   docsUpdatedAt?: string;
