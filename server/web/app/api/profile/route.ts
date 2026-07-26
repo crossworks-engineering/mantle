@@ -1,12 +1,19 @@
 /**
- * GET/PUT /api/profile — the operator's own preferences for the
- * /settings/profile form. Holistic counterpart to the concern-specific
- * /api/profile/reminder-channel and /api/profile/assist-agent routes.
+ * GET/PUT /api/profile — the preferences behind the /settings/profile form.
+ * Holistic counterpart to the concern-specific /api/profile/reminder-channel
+ * and /api/profile/assist-agent routes.
  *
  * GET returns the current preferences, the reminder-capable agent list (the
  * "reminders from" picker), the default-fallback prefs (placeholder text), and
- * the owner id (avatar fallback seed) — everything the form needs, so it
- * carries no SSR props. PUT mirrors the old updatePreferencesAction.
+ * the user id (avatar fallback seed) — everything the form needs, so it
+ * carries no SSR props.
+ *
+ * Reads/writes go through loadPreferencesFor/savePreferencesFor, which split
+ * BRAIN-level fields (site name, peer name, purpose — see
+ * BRAIN_PREFERENCE_KEYS) onto the shared anchor row from PERSONAL ones
+ * (timezone, locale, avatar, reminders, thinking prefs) on the caller's own.
+ * Mantle is multi-trusted-admin: any signed-in user edits the one brand, and
+ * everyone sees it — no privilege tier, no per-user brand divergence.
  */
 
 import { NextResponse } from '@/server/http-compat';
@@ -16,10 +23,10 @@ import {
   DEFAULT_PREFERENCES,
   isPurposeArchetype,
   isReminderChannel,
-  loadProfilePreferences,
+  loadPreferencesFor,
+  savePreferencesFor,
   SITE_NAME_MAX,
   PEER_NAME_MAX,
-  updateProfilePreferences,
 } from '@mantle/content';
 import { listReminderCapableAgents } from '@/lib/agents';
 
@@ -27,7 +34,7 @@ export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const [preferences, reminderAgents] = await Promise.all([
-    loadProfilePreferences(user.id),
+    loadPreferencesFor(user.id),
     listReminderCapableAgents(user.id),
   ]);
   return NextResponse.json({
@@ -100,7 +107,7 @@ export async function PUT(req: Request) {
   const purposeTrimmed = (purpose ?? '').trim();
   const archetype = (purposeArchetype ?? '').trim();
   try {
-    const preferences = await updateProfilePreferences(user.id, {
+    const preferences = await savePreferencesFor(user.id, {
       ...(tz ? { timezone: tz } : {}),
       ...(loc ? { locale: loc } : {}),
       avatarStyle: (avatarStyle ?? '').trim(),
