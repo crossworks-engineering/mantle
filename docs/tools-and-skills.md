@@ -51,8 +51,11 @@ Two orthogonal concerns, cleanly separated:
 - **Tools** stay as the existing first-class [`tools`](../packages/db/src/schema/tools.ts)
   registry + [`/settings/tools`](../apps/web/app/(app)/settings/tools) manager.
 - **Tool groups** are NEW — named bundles (e.g. *Pages toolkit*, *Calendar*,
-  *Memory core*) an owner grants to an agent in one move. They are capability-only:
-  no instructions, no behaviour.
+  *Memory core*) an owner grants to an agent in one move. They are capability-only
+  in the sense that matters: they carry **no instructions of their own and no
+  behaviour**. (Since API integration groups they may carry static integration
+  *configuration* and REFERENCE one skill — see
+  [Integration groups](#integration-groups-a-group-that-is-an-api) below.)
 - **Skills lose `tool_slugs` entirely** and become pure teaching — the prose layer
   Studio already versions. A skill never confers a capability; it only shapes how
   an agent uses the capabilities it already holds.
@@ -372,3 +375,51 @@ Shipped in two commits (approach A — coarse groups, specialists expand):
 
 The original design brief is preserved at
 **[docs/handover-tools-skills-p6.md](handover-tools-skills-p6.md)** (historical).
+
+## Integration groups — a group that IS an API
+
+A tool group can additionally carry a **service binding** (`tool_groups.integration`,
+migration `0137`) that turns it from a grant bundle into a whole API integration:
+
+```jsonc
+{
+  "service": "openweathermap",
+  "baseUrl": "https://api.openweathermap.org/data/2.5",
+  "secretRef": "openweathermap/default",          // service/label — never a plaintext
+  "authTemplate": { "query": { "appid": "{{secret:openweathermap/default}}" } },
+  "docsNodeId": "…",                              // files/api-docs/<group-slug>.md
+  "skillSlug": "api-weather-tools"                // the usage skill
+}
+```
+
+Two things about this are worth stating plainly against the capability-only rule:
+
+1. **Configuration is not behaviour.** A base URL, a vault pointer and an auth
+   placement are static data the *authoring* path reads — `api_tool_create` folds
+   them into the stored handler at authoring time (see
+   [toolsmith.md](toolsmith.md)). No instruction reaches a model from them, and
+   the dispatcher is untouched.
+2. **A group may REFERENCE one skill, and granted groups' skills enter the
+   agent's context.** An integration's know-how travels with its grant:
+
+   ```
+   effectiveSkillSlugs = agent.skill_slugs
+                         ∪ (granted ENABLED groups → integration.skillSlug)
+   ```
+
+   resolved in `resolveAgentSkills` (`@mantle/agent-runtime`), agent's own first,
+   deduped, capped at 32 (loudly). Grant `weather-tools` and the agent both *can*
+   call the weather tools and *knows how* — no second attach step to forget.
+
+   **The context cost is the reason these stay short.** A group skill ships in the
+   system prompt of every granted agent on every turn. `api_skill_set` enforces a
+   hard character cap and warns past ~320 words; the *reference* stays in the docs
+   file, which is read on demand via `api_docs_get`.
+
+Manifest groups leave `integration` NULL, so nothing above changes a
+capability-only bundle. The per-group `api-<group-slug>` skills are user-space
+rows — authored per brain by Toolsmith, never seeded, never reconciled;
+`/settings/config` lists them as integration usage skills rather than unexplained
+extras. `api_skill_set` can only write the skill of the integration it names, and
+refuses a row it doesn't already own, so an agent cannot reach a persona or
+product skill.
