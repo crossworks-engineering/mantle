@@ -1448,7 +1448,7 @@ const tool_group_list: BuiltinToolDef = {
   slug: 'tool_group_list',
   name: 'List tool groups',
   description:
-    'List tool groups (capability bundles agents are granted): slug, tool slugs, and which agents currently grant each group.',
+    'List tool groups (capability bundles agents are granted): slug, tool slugs, and which agents currently grant each group. A group bound to an API also reports its integration — service, base URL, vault ref, whether documentation is stored, and its usage skill. Start here when extending an existing integration: find the group, then `api_docs_get` its stored docs.',
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
     const groups = await db.select().from(toolGroups).where(eq(toolGroups.ownerId, ctx.ownerId));
@@ -1472,6 +1472,19 @@ const tool_group_list: BuiltinToolDef = {
           tool_slugs: g.toolSlugs ?? [],
           enabled: g.enabled,
           granted_to_agents: grantedBy.get(g.slug) ?? [],
+          // The binding, when this group IS an API integration. Refs only — a
+          // secret_ref is a vault pointer, the same string api_key_refs returns.
+          integration: g.integration
+            ? {
+                service: g.integration.service,
+                base_url: g.integration.baseUrl ?? null,
+                secret_ref: g.integration.secretRef ?? null,
+                auth_template: g.integration.authTemplate ?? null,
+                has_stored_docs: !!g.integration.docsNodeId,
+                docs_captured_at: g.integration.docsUpdatedAt ?? null,
+                skill_slug: g.integration.skillSlug ?? null,
+              }
+            : null,
         })),
       },
     };
