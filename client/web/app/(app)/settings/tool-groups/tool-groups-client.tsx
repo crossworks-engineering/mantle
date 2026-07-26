@@ -24,6 +24,13 @@ import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ToolPicker, type ToolOption } from '@/components/tool-picker';
+import {
+  ToolGroupIntegrationSection,
+  emptyIntegrationForm,
+  integrationFormFrom,
+  integrationToPayload,
+  type IntegrationForm,
+} from '@/components/tool-group-integration';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { slugify } from '@mantle/web-ui/slugify';
 
@@ -35,6 +42,7 @@ type FormState = {
   name: string;
   description: string;
   toolSlugs: string[];
+  integration: IntegrationForm;
   enabled: boolean;
 };
 
@@ -43,6 +51,7 @@ const emptyForm = (): FormState => ({
   name: '',
   description: '',
   toolSlugs: [],
+  integration: emptyIntegrationForm(),
   enabled: true,
 });
 
@@ -52,6 +61,7 @@ function fromGroup(g: ToolGroupSummary): FormState {
     name: g.name,
     description: g.description,
     toolSlugs: g.toolSlugs,
+    integration: integrationFormFrom(g.integration),
     enabled: g.enabled,
   };
 }
@@ -147,10 +157,18 @@ export function ToolGroupsClient() {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
+    const integration = integrationToPayload(form.integration);
+    if (integration === undefined) {
+      toast.error('An integration needs a service — e.g. openweathermap.');
+      return;
+    }
     const body = {
       name: form.name.trim(),
       description: form.description.trim(),
       toolSlugs: form.toolSlugs,
+      // PATCH takes the whole binding (null = plain capability bundle). POST
+      // ignores it — a new group starts unbound and is edited into one.
+      ...(editing.mode === 'edit' ? { integration } : {}),
       enabled: form.enabled,
       ...(editing.mode === 'create' ? { slug: form.slug.trim() } : {}),
     };
@@ -222,6 +240,14 @@ export function ToolGroupsClient() {
                     <span className="shrink-0 rounded-sm bg-muted px-1 text-[10px] uppercase tracking-wider text-muted-foreground">
                       {g.toolSlugs.length} tool{g.toolSlugs.length === 1 ? '' : 's'}
                     </span>
+                    {g.integration && (
+                      <span
+                        className="shrink-0 rounded-sm bg-accent px-1 text-[10px] uppercase tracking-wider text-accent-foreground"
+                        title={`API integration: ${g.integration.service}${g.integration.secretRef ? ` · ${g.integration.secretRef}` : ''}`}
+                      >
+                        {g.integration.service}
+                      </span>
+                    )}
                     {!g.enabled && (
                       <span className="shrink-0 rounded-sm bg-muted px-1 text-[10px] uppercase tracking-wider text-muted-foreground">
                         off
@@ -327,6 +353,18 @@ export function ToolGroupsClient() {
                 />
               </div>
 
+              {editing.mode === 'edit' ? (
+                <ToolGroupIntegrationSection
+                  value={form.integration}
+                  onChange={(next) => setForm((f) => ({ ...f, integration: next }))}
+                />
+              ) : (
+                <p className="rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  Create the group first, then bind it to an API (base URL, credential, docs) here —
+                  or just ask Toolsmith to build the integration and it sets all of this up.
+                </p>
+              )}
+
               <div className="space-y-1.5">
                 <Label>Tools in this group</Label>
                 {toolsQuery.isError ? (
@@ -355,8 +393,9 @@ export function ToolGroupsClient() {
                   />
                 )}
                 <p className="text-xs text-muted-foreground">
-                  When an agent is granted this group, every tool here joins its effective tool set.
-                  Capability only — no instructions (that&apos;s what skills are for).
+                  When an agent is granted this group, every tool here joins its effective tool set
+                  — plus the integration&apos;s usage skill, if it has one. No other instructions:
+                  behaviour still belongs to skills.
                 </p>
               </div>
 

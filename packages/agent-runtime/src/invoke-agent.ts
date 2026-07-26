@@ -125,7 +125,9 @@ export const invokeAgent: AgentInvoker = async ({
   // Compose system prompt + tool allowlist exactly the same way the
   // entry-point flow does. The child gets full access to its own
   // configured skills + tools — but its own ones, not the parent's.
-  const skills = await resolveAgentSkills(ownerId, (target as Agent).skillSlugs ?? []);
+  const skills = await resolveAgentSkills(ownerId, (target as Agent).skillSlugs ?? [], {
+    toolGroupSlugs: (target as Agent).toolGroupSlugs ?? [],
+  });
   const systemPrompt = composeSystemPromptWithSkills(target.systemPrompt, skills);
   const initialMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },

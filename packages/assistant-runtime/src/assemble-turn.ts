@@ -134,7 +134,11 @@ export async function assembleResponderTurn(
     max_calls_per_tool?: number;
   };
 
-  const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? []);
+  // Own skills + the usage skill of every granted integration group (the
+  // know-how travels with the grant — see resolveAgentSkills).
+  const attachedSkills = await resolveAgentSkills(ownerId, agent.skillSlugs ?? [], {
+    toolGroupSlugs: agent.toolGroupSlugs ?? [],
+  });
   // One-line "current time + timezone + locale" so the agent can resolve
   // relative references like "tomorrow at 3pm" into a UTC ISO when calling
   // event_create. It carries a per-turn millisecond timestamp, so it MUST

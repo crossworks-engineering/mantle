@@ -105,6 +105,27 @@ export {
   type SecretRef,
 } from './http-template';
 export {
+  API_DOCS_FOLDER_PATH,
+  API_DOCS_FOLDER_SLUG,
+  API_DOCS_MAX_CHARS,
+  apiDocsHeader,
+  apiSkillSlugForGroup,
+  applyIntegrationInheritance,
+  describeInheritance,
+  getGroupIntegration,
+  joinBaseUrl,
+  parseIntegrationMeta,
+  readApiDocsFile,
+  setGroupIntegration,
+  upsertApiDocsFile,
+  type IntegrationGroup,
+  type InheritanceInput,
+  type InheritanceResult,
+  type InheritedPieces,
+  type ParsedIntegration,
+  type ToolGroupIntegration,
+} from './integration';
+export {
   listPendingCalls,
   countPending,
   getPendingCall,
