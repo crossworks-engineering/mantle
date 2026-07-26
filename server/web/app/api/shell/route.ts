@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { countPending } from '@mantle/tools';
-import { loadProfilePreferences, logoVersion } from '@mantle/content';
+import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import { buildAssetToken, getOwnerOr401 } from '@/lib/auth';
 import { isOnboarded } from '@/lib/onboarding';
 
@@ -16,7 +16,7 @@ import { isOnboarded } from '@/lib/onboarding';
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const prefs = await loadProfilePreferences(user.id);
+  const prefs = await loadPreferencesFor(user.id);
   const [onboarded, pendingApprovals] = await Promise.all([
     isOnboarded(user.id, prefs),
     countPending(user.id),

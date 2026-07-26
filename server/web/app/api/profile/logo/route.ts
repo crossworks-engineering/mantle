@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
-import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
+import { loadPreferencesFor, savePreferencesFor } from '@mantle/content';
 import { putContent, deleteContent } from '@mantle/storage';
 import { sniffType, SVG_ACTIVE_RE, LOGO_MAX_BYTES } from '@/lib/logo-validation';
 
@@ -10,7 +10,11 @@ import { sniffType, SVG_ACTIVE_RE, LOGO_MAX_BYTES } from '@/lib/logo-validation'
  *
  * Bytes land content-addressed in object storage (@mantle/storage putContent —
  * NOT the files system, so the logo is never a user-visible, user-deletable
- * file node), and prefs store only the validated {logoKey, logoType} pointer.
+ * file node), and prefs store only the validated {logoKey, logoType} pointer
+ * — BRAIN-level, so savePreferencesFor writes it to the shared anchor row that
+ * the public serve route reads. (Before that split a second admin's upload set
+ * a logoVersion on their own row while the bytes resolved from the anchor's:
+ * a broken image in their header, invisible to everyone else.)
  * The sha in the key is the cache-busting version. Serving is the public
  * GET /api/appearance/logo.
  *
@@ -61,9 +65,9 @@ export async function PUT(req: Request) {
     );
   }
 
-  const prev = await loadProfilePreferences(user.id);
+  const prev = await loadPreferencesFor(user.id);
   const { key, sha256 } = await putContent(buf, type);
-  await updateProfilePreferences(user.id, { logoKey: key, logoType: type });
+  await savePreferencesFor(user.id, { logoKey: key, logoType: type });
   // Replaced a different logo: best-effort cleanup of the old bytes. Content-
   // addressed keys are shared by identical bytes, so only delete on change.
   if (prev.logoKey && prev.logoKey !== key) {
@@ -75,9 +79,9 @@ export async function PUT(req: Request) {
 export async function DELETE() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const prev = await loadProfilePreferences(user.id);
+  const prev = await loadPreferencesFor(user.id);
   // '' is the jsonb-merge "clear" write (projects to undefined on read).
-  await updateProfilePreferences(user.id, { logoKey: '', logoType: '' });
+  await savePreferencesFor(user.id, { logoKey: '', logoType: '' });
   if (prev.logoKey) await deleteContent(prev.logoKey).catch(() => {});
   return NextResponse.json({ ok: true });
 }

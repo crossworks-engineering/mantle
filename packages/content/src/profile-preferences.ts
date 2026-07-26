@@ -18,7 +18,7 @@
  */
 
 import { eq, sql } from 'drizzle-orm';
-import { db, profiles, type ConversationChannel } from '@mantle/db';
+import { db, profiles, resolveSingleOwnerId, type ConversationChannel } from '@mantle/db';
 
 /** Transports that can deliver a reminder out-of-band. A browser ('web') can't
  *  receive a push, so it never becomes a reminder target. */
@@ -716,6 +716,117 @@ export async function updateProfilePreferences(
     teamHubTags: projectTeamHubTags(merged.teamHubTags),
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };
+}
+
+/**
+ * ── Brain-level vs personal preferences ──────────────────────────────────────
+ *
+ * Preference rows are keyed by user, but not every preference describes a
+ * USER. These describe the BRAIN — its identity, its brand, its mission — and
+ * every surface that renders them (the public /api/appearance first-paint
+ * stamp, /s shares, /print, /team, and every agent's identity block) resolves
+ * them from the ANCHOR owner's row, because a brain has exactly one of each.
+ *
+ * Mantle is multi-trusted-admin by design: a handful of peers, no privilege
+ * tiers. So these are SHARED, not owned — any signed-in user reads and writes
+ * the same record, and the change is visible to everyone immediately. Before
+ * this split a second user's edits landed in their own row, which nothing
+ * brand-facing read: themes diverged from the first-paint stamp, site names
+ * showed only in that user's own header, and an uploaded logo produced a
+ * BROKEN IMAGE (the version came from their row, the bytes from the anchor's).
+ *
+ * Everything NOT listed here stays personal — timezone, locale, avatar,
+ * reminder routing, thinking/streaming prefs — because those describe how one
+ * person works, and two admins should differ freely.
+ */
+export const BRAIN_PREFERENCE_KEYS = [
+  'siteName',
+  'peerName',
+  'colorTheme',
+  'fontLogo',
+  'fontTitle',
+  'logoKey',
+  'logoType',
+  'purpose',
+  'purposeArchetype',
+] as const satisfies ReadonlyArray<keyof ProfilePreferences>;
+
+type BrainPreferenceKey = (typeof BRAIN_PREFERENCE_KEYS)[number];
+
+function isBrainKey(k: string): k is BrainPreferenceKey {
+  return (BRAIN_PREFERENCE_KEYS as readonly string[]).includes(k);
+}
+
+/**
+ * Which row holds the brain-level preferences. The anchor owner's — the same
+ * row /api/appearance and every share surface already read. Falls back to
+ * `userId` when there's no anchor to resolve (fresh install) or the lookup
+ * throws (corrupt multi-user state): degrading to per-user is strictly better
+ * than failing a settings save.
+ */
+async function brandRowId(userId: string): Promise<string> {
+  try {
+    return (await resolveSingleOwnerId()) ?? userId;
+  } catch {
+    return userId;
+  }
+}
+
+/**
+ * Read preferences AS ONE USER SEES THEM: brain-level fields from the anchor
+ * row, personal fields from their own. On a single-user brain (the default)
+ * this is exactly `loadProfilePreferences`, one query.
+ *
+ * Use this for the owner-facing settings/shell surfaces. Background callers
+ * that already operate on the anchor's tree (agents, workers, /s, /team) keep
+ * calling `loadProfilePreferences(ownerId)` — same row, no extra work.
+ */
+export async function loadPreferencesFor(userId: string): Promise<ProfilePreferences> {
+  const brandId = await brandRowId(userId);
+  if (brandId === userId) return loadProfilePreferences(userId);
+  const [own, brand] = await Promise.all([
+    loadProfilePreferences(userId),
+    loadProfilePreferences(brandId),
+  ]);
+  const merged = { ...own };
+  for (const k of BRAIN_PREFERENCE_KEYS) {
+    (merged as Record<string, unknown>)[k] = brand[k];
+  }
+  return merged;
+}
+
+/**
+ * Save preferences from one user's edit: brain-level fields land on the anchor
+ * row (shared — every admin edits the same brand), personal fields on their
+ * own. Returns the same merged view `loadPreferencesFor` produces, so a form
+ * can render straight from the response.
+ */
+export async function savePreferencesFor(
+  userId: string,
+  patch: Partial<ProfilePreferences>,
+): Promise<ProfilePreferences> {
+  const brandId = await brandRowId(userId);
+  if (brandId === userId) return updateProfilePreferences(userId, patch);
+
+  const brandPatch: Partial<ProfilePreferences> = {};
+  const ownPatch: Partial<ProfilePreferences> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    const target = isBrainKey(k) ? brandPatch : ownPatch;
+    (target as Record<string, unknown>)[k] = v;
+  }
+  // Personal write first: it carries the validated timezone/locale, so a bad
+  // value throws before the shared brand row is touched.
+  const own = Object.keys(ownPatch).length
+    ? await updateProfilePreferences(userId, ownPatch)
+    : await loadProfilePreferences(userId);
+  const brand = Object.keys(brandPatch).length
+    ? await updateProfilePreferences(brandId, brandPatch)
+    : await loadProfilePreferences(brandId);
+  const merged = { ...own };
+  for (const k of BRAIN_PREFERENCE_KEYS) {
+    (merged as Record<string, unknown>)[k] = brand[k];
+  }
+  return merged;
 }
 
 /** Format a Date in the user's timezone + locale. Cached per-locale
