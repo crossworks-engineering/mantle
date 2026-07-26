@@ -103,8 +103,16 @@ Rules:
   light + dark and, being neutral, keeps grey `muted-foreground` text legible
   (a coloured `accent` tint muddies it).
 - Light/dark is handled by `next-themes`; the color theme by
-  `ColorThemeProvider` (`data-color-theme` on `<html>`, presets in
-  `globals.css`, registry in `lib/themes.ts`). Don't fork theme logic.
+  `ColorThemeProvider` (`data-color-theme` on `<html>`, palettes in
+  `packages/web-ui/styles/themes.css`, registry in
+  `packages/web-ui/src/lib/themes.ts`). Don't fork theme logic.
+- **Adding a hand-authored theme** (as opposed to the imported tweakcn presets):
+  a token has to clear contrast in *both* the roles the app uses it in — `--primary`
+  is a fill under `--primary-foreground` **and** ink as `text-primary` on
+  `--background`/`--card`/`--sidebar`, same for `--destructive`. A mid-tone brand
+  colour usually satisfies neither; shade it for light mode and let the brand hex
+  itself carry dark mode (over near-black ink). `themes.test.ts` asserts the pairs —
+  extend its `describe` rather than eyeballing a new palette.
 
 ---
 

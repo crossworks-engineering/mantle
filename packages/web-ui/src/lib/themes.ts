@@ -42,6 +42,7 @@ export const COLOR_THEMES: ColorTheme[] = [
   { id: 'ocean-breeze', label: 'Ocean Breeze', swatches: ['#22c55e', '#d1fae5', '#f0f8ff'] },
   { id: 'pastel-dreams', label: 'Pastel Dreams', swatches: ['#a78bfa', '#f3e5f5', '#f7f3f9'] },
   { id: 'perpetuity', label: 'Perpetuity', swatches: ['#06858e', '#c9e5e7', '#e8f0f0'] },
+  { id: 'pinnacle', label: 'Pinnacle', swatches: ['#457928', '#e9f1d6', '#f7faf7'] },
   { id: 'quantum-rose', label: 'Quantum Rose', swatches: ['#e6067a', '#ffc1e3', '#fff0f8'] },
   { id: 'retro-arcade', label: 'Retro Arcade', swatches: ['#d33682', '#cb4b16', '#fdf6e3'] },
   { id: 'sage-garden', label: 'Sage Garden', swatches: ['#7c9082', '#bfc9bb', '#f8f7f4'] },
