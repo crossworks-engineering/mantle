@@ -8,8 +8,6 @@ import { useColorTheme } from '@mantle/web-ui/color-theme-provider';
 import { COLOR_THEMES } from '@mantle/web-ui/lib/themes';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PreviewTabs } from '@/components/theme-preview/preview-tabs';
-import { TypographyFontControls } from '@/components/appearance/typography-font-controls';
-import { LogoControl } from '@/components/appearance/logo-control';
 
 const MODES: Array<{ id: string; label: string; icon: LucideIcon }> = [
   { id: 'light', label: 'Light', icon: Sun },
@@ -55,20 +53,8 @@ function Controls() {
         </div>
       </section>
 
-      {/* Brand — everything the header carries, in one place: the logo (an
-          uploaded image replaces the wordmark TEXT in both headers) and the
-          wordmark + peer-name display fonts. All system-wide anchor prefs
-          (PUT /api/profile/logo + /api/profile/fonts), like the colour theme.
-          Sits ABOVE the ~40-row theme list on purpose — below it, the section
-          lives past the sidebar's fold and reads as missing. */}
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Brand
-        </h2>
-        <LogoControl />
-        <TypographyFontControls />
-      </section>
-
+      {/* Brand identity (logo + wordmark/peer-name fonts) lives in the LOGO
+          tab of the preview strip, not here — the sidebar is mode + theme. */}
       <section className="space-y-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Color theme

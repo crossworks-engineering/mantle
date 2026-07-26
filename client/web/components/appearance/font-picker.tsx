@@ -19,12 +19,16 @@ export function FontPicker({
   sample,
   value,
   onChange,
+  tall = false,
 }: {
   title: string;
   /** Text shown in each font as the preview (e.g. the site name for the wordmark). */
   sample: string;
   value: string;
   onChange: (key: string) => void;
+  /** Column layout (the Logo tab): let the list run tall instead of the
+   *  compact sidebar cap, so the whole library reads at a glance. */
+  tall?: boolean;
 }) {
   const idx = Math.max(
     0,
@@ -64,7 +68,12 @@ export function FontPicker({
         </div>
       </div>
 
-      <div className="scrollbar-thin max-h-72 space-y-1.5 overflow-y-auto pr-1">
+      <div
+        className={cn(
+          'scrollbar-thin space-y-1.5 overflow-y-auto pr-1',
+          tall ? 'max-h-[70vh]' : 'max-h-72',
+        )}
+      >
         {DISPLAY_FONTS.map((f) => {
           const active = f.key === value;
           return (
