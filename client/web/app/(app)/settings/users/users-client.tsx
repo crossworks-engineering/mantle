@@ -74,7 +74,7 @@ export function UsersClient() {
   if (usersQuery.isError && !usersQuery.data) {
     return (
       <div className="mx-auto flex max-w-2xl flex-col items-center gap-3 py-12 text-sm text-muted-foreground">
-        <p>Couldn&apos;t load users.</p>
+        <p>Couldn&apos;t load logins.</p>
         <Button variant="outline" size="sm" onClick={() => usersQuery.refetch()}>
           Retry
         </Button>
@@ -88,14 +88,14 @@ export function UsersClient() {
 
   return (
     <div className="md:grid md:h-full md:grid-cols-[340px_1fr] md:overflow-hidden">
-      {/* LEFT: user list */}
+      {/* LEFT: login list */}
       <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
         <div className="flex items-center justify-between gap-2 border-b border-border p-3">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Users
+            Logins
           </h2>
           <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Plus /> Add user
+            <Plus /> Add login
           </Button>
         </div>
         <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
@@ -144,7 +144,7 @@ export function UsersClient() {
           />
         ) : (
           <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
-            <Users className="mr-2 size-4" /> No users.
+            <Users className="mr-2 size-4" /> No logins.
           </div>
         )}
       </div>
@@ -223,8 +223,8 @@ function UserDetail({
           </div>
           <p className="text-sm text-muted-foreground">
             {user.isOwner
-              ? 'The original account. The brain is keyed to it, so it can’t be deleted.'
-              : 'Co-admin login into this brain. Same data as everyone; actions are recorded under this identity.'}
+              ? 'The anchor login. The brain is keyed to it, so it can’t be deleted.'
+              : 'Another way into this brain. Same brain, same data, same settings — actions are recorded under this identity.'}
           </p>
         </div>
         {!user.isOwner && !isSelf && (
@@ -331,10 +331,10 @@ function AddUserDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add user</DialogTitle>
+          <DialogTitle>Add login</DialogTitle>
           <DialogDescription>
-            A co-admin login into this brain — they see the same data as you. Share the starting
-            password with them; they can change it after signing in.
+            Another way into this brain — same data, same settings, no separate account. Share the
+            starting password; it can be changed after signing in.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
@@ -373,7 +373,7 @@ function AddUserDialog({
             />
           </div>
           <div className="flex justify-end pt-1">
-            <SubmitButton pending={pending}>Add user</SubmitButton>
+            <SubmitButton pending={pending}>Add login</SubmitButton>
           </div>
         </form>
       </DialogContent>

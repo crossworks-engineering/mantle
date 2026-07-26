@@ -4,11 +4,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { db, sql } from '@mantle/db';
 import { bucketStatus } from '@mantle/storage';
 import { tikaVersion } from '@mantle/files';
-import {
-  loadProfilePreferences,
-  updateProfilePreferences,
-  isPurposeArchetype,
-} from '@mantle/content';
+import { loadPreferencesFor, savePreferencesFor, isPurposeArchetype } from '@mantle/content';
 import { setApiKey, listApiKeys } from '@mantle/api-keys';
 import {
   resolveEmbeddingConfig,
@@ -61,7 +57,7 @@ export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const [prefs, keys, onboarded, assistantAgent] = await Promise.all([
-    loadProfilePreferences(user.id),
+    loadPreferencesFor(user.id),
     listApiKeys(user.id),
     isOnboarded(user.id),
     getAgentBySlug(user.id, PERSONA_AGENT_SLUG),
@@ -344,7 +340,7 @@ async function savePurpose(
   // load-bearing field; the archetype is a (validated) hint.
   const key = isPurposeArchetype(archetype) ? archetype : 'custom';
   try {
-    await updateProfilePreferences(userId, {
+    await savePreferencesFor(userId, {
       purpose: p.slice(0, MAX_PURPOSE_CHARS),
       purposeArchetype: key,
       onboardingStep: 'personality',
@@ -364,7 +360,7 @@ export async function POST(req: Request) {
 
   switch (action) {
     case 'step': {
-      await updateProfilePreferences(user.id, { onboardingStep: String(body.step ?? '') });
+      await savePreferencesFor(user.id, { onboardingStep: String(body.step ?? '') });
       return NextResponse.json({ ok: true });
     }
     case 'profile': {
@@ -372,7 +368,7 @@ export async function POST(req: Request) {
         // Optional "Your name" — what the assistant should call the operator
         // (replaces the old interview's name questions). Stored verbatim.
         const displayName = String(body.displayName ?? '').trim();
-        await updateProfilePreferences(user.id, {
+        await savePreferencesFor(user.id, {
           timezone: String(body.timezone ?? ''),
           locale: String(body.locale ?? ''),
           ...(displayName ? { displayName } : {}),
@@ -462,12 +458,12 @@ export async function POST(req: Request) {
           }
           await setApiKey(user.id, 'custom', 'default', azureKey);
         }
-        await updateProfilePreferences(user.id, {
+        await savePreferencesFor(user.id, {
           onboardingModels: { assistantModel, workerModel, route, azureBaseUrl },
         });
         return NextResponse.json({ ok: true, route, assistantModel, workerModel });
       }
-      await updateProfilePreferences(user.id, {
+      await savePreferencesFor(user.id, {
         onboardingModels: { assistantModel, workerModel, route },
       });
       return NextResponse.json({ ok: true, route, assistantModel, workerModel });
@@ -578,7 +574,7 @@ export async function POST(req: Request) {
     }
     case 'provision': {
       const result = await provisionDefaults(user.id);
-      await updateProfilePreferences(user.id, { onboardingStep: 'sanity' });
+      await savePreferencesFor(user.id, { onboardingStep: 'sanity' });
       // The wizard's resume-state snapshot predates this agent (fresh brain →
       // assistantAgentId was null at mount), so hand the id back here for the
       // Telegram step. Resolved by slug, not from `createdAgent`, so an
@@ -605,7 +601,7 @@ export async function POST(req: Request) {
         });
       }
       const applied = await savePersonaAgent(user.id, parsed.data);
-      await updateProfilePreferences(user.id, { onboardingStep: 'telegram' });
+      await savePreferencesFor(user.id, { onboardingStep: 'telegram' });
       if (!applied) {
         return NextResponse.json({
           ok: false,

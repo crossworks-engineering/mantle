@@ -53,9 +53,14 @@ describe('BRAIN_PREFERENCE_KEYS', () => {
     }
   });
 
-  it('leaves onboarding per-user (a new admin still gets the wizard)', () => {
-    expect(BRAIN_PREFERENCE_KEYS).not.toContain('onboardedAt');
-    expect(BRAIN_PREFERENCE_KEYS).not.toContain('onboardingStep');
+  it('shares onboarding — a brain is set up ONCE, not once per login', () => {
+    // Keyed per login this was a trap: an added login had no onboardedAt, no
+    // onboardingStep and owned no agents, so the shell walked it into the
+    // first-run wizard on a fully provisioned brain — and finishing would
+    // have provisioned a second agent set under that login's id.
+    expect(BRAIN_PREFERENCE_KEYS).toContain('onboardedAt');
+    expect(BRAIN_PREFERENCE_KEYS).toContain('onboardingStep');
+    expect(BRAIN_PREFERENCE_KEYS).toContain('onboardingModels');
   });
 
   it('has no duplicates', () => {

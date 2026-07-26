@@ -749,6 +749,13 @@ export const BRAIN_PREFERENCE_KEYS = [
   'logoType',
   'purpose',
   'purposeArchetype',
+  // Onboarding is the BRAIN's, not a login's: a brain is set up once. Keying
+  // it per login sent every additional login through the first-run wizard on
+  // a fully provisioned brain — and finishing it would have provisioned a
+  // SECOND agent set under that login's id (a parallel half-brain).
+  'onboardedAt',
+  'onboardingStep',
+  'onboardingModels',
 ] as const satisfies ReadonlyArray<keyof ProfilePreferences>;
 
 type BrainPreferenceKey = (typeof BRAIN_PREFERENCE_KEYS)[number];

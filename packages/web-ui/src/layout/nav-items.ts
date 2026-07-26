@@ -120,7 +120,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { name: 'Backups', href: '/settings/backups', icon: DatabaseBackup },
       { name: 'Updates', href: '/settings/updates', icon: ArrowUpCircle },
       { name: 'Security', href: '/settings/security', icon: KeyRound },
-      { name: 'Users', href: '/settings/users', icon: Users },
+      { name: 'Logins', href: '/settings/users', icon: Users },
       { name: 'Audit log', href: '/settings/audit', icon: ScrollText },
     ],
   },
