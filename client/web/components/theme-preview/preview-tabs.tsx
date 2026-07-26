@@ -29,17 +29,23 @@ const MemoryTiers = dynamic(() => import('@/components/examples/pricing/pricing'
   loading: Loading,
   ssr: false,
 });
+const LogoTab = dynamic(() => import('@/components/appearance/logo-tab'), {
+  loading: Loading,
+});
 const Typography = dynamic(() => import('@/components/examples/typography/typography-demo'), {
   loading: Loading,
   ssr: false,
 });
 
 const TABS = [
-  { value: 'cards', label: 'Cards' },
+  // 'cards' keeps its value (the default-tab anchor); the LABEL is Theme —
+  // it's the audition surface for the active theme, not a cards gallery.
+  { value: 'cards', label: 'Theme' },
   { value: 'dashboard', label: 'Dashboard' },
   { value: 'mail', label: 'Mail' },
   { value: 'memory', label: 'Memory tiers' },
   { value: 'colors', label: 'Color Palette' },
+  { value: 'logo', label: 'Logo' },
   { value: 'typography', label: 'Typography' },
 ];
 
@@ -74,6 +80,9 @@ export function PreviewTabs() {
       </TabsContent>
       <TabsContent value="colors" className="m-0">
         <ColorPalette />
+      </TabsContent>
+      <TabsContent value="logo" className="m-0">
+        <LogoTab />
       </TabsContent>
       <TabsContent value="typography" className="m-0">
         <Typography />
