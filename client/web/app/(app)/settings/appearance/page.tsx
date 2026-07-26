@@ -95,23 +95,17 @@ function Controls() {
         </div>
       </section>
 
-      {/* Brand logo — replaces the wordmark TEXT in both headers when set.
-          System-wide like the theme + fonts (anchor prefs, PUT /api/profile/logo). */}
-      <section className="space-y-2">
+      {/* Brand — everything the header carries, in one place: the logo (an
+          uploaded image replaces the wordmark TEXT in both headers) and the
+          wordmark + peer-name display fonts. All system-wide anchor prefs
+          (PUT /api/profile/logo + /api/profile/fonts), exactly like the
+          colour theme above. The fonts USED to live in a separate Typography
+          section here AND inside the Typography preview tab — one home now. */}
+      <section className="space-y-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Logo
+          Brand
         </h2>
         <LogoControl />
-      </section>
-
-      {/* Display fonts. These persist to the brain's profile row exactly like
-          the colour theme above (PUT /api/profile/fonts), so they are
-          system-wide — but until now the picker was only mounted in an
-          UNROUTED typography demo, leaving no way to actually set them. */}
-      <section className="space-y-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Typography
-        </h2>
         <TypographyFontControls />
       </section>
     </div>
