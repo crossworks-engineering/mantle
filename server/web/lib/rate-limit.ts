@@ -17,6 +17,20 @@ type Bucket = {
 
 const buckets = new Map<string, Bucket>();
 
+/**
+ * Test-stack escape hatch: multiply every window cap by a factor ≥ 1.
+ * The e2e suite runs BOTH topology projects back-to-back from one IP, and
+ * caps sized for humans (8 team-auth exchanges/min) sit exactly at the
+ * suite's call count — any added spec 429s the later project. run-local.sh
+ * sets MANTLE_RATE_LIMIT_SCALE=10 for the throwaway stack; unset (=1)
+ * everywhere real. Parsed once at module load, deliberately — a runtime
+ * toggle would make limiter behavior ambient state.
+ */
+const SCALE = (() => {
+  const raw = Number(process.env.MANTLE_RATE_LIMIT_SCALE ?? '1');
+  return Number.isFinite(raw) && raw >= 1 ? raw : 1;
+})();
+
 /** Cap the map size so a flood of unique keys can't OOM the process. */
 const MAX_BUCKETS = 10_000;
 
@@ -52,11 +66,12 @@ export function rateLimit(key: string, opts: { max: number; windowMs: number }):
     buckets.set(key, bucket);
   }
   bucket.count += 1;
+  const max = opts.max * SCALE;
   const retryAfterSec = Math.max(1, Math.ceil((bucket.windowStartMs + opts.windowMs - now) / 1000));
-  if (bucket.count > opts.max) {
+  if (bucket.count > max) {
     return { ok: false, retryAfterSec, remaining: 0 };
   }
-  return { ok: true, retryAfterSec, remaining: opts.max - bucket.count };
+  return { ok: true, retryAfterSec, remaining: max - bucket.count };
 }
 
 /**
