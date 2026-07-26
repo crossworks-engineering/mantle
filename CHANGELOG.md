@@ -4,6 +4,44 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## v0.204.0 — 2026-07-26
+
+**The team workspace reads inline — and the split mis-detection is fixed.**
+Selecting a shared page, table, note, task, event, file, folder or formula in
+`/team` (or the hub) renders the content in the reader pane itself: a new
+`GET /s/<token>/view` returns the presenter payload as JSON (same
+authorization as the `/s` page, cookie or bearer), and the share presenters
+moved to `@mantle/web-ui/share` so both apps render one implementation. No
+iframe, no "opens on the brain's own site" card. Pages arrive as
+server-sanitized HTML; apps keep their `AppSandbox` execution sandbox.
+
+Underneath sat the bug that produced that card: the client treated
+"`MANTLE_SERVER_ORIGIN` configured" as "the API is cross-origin" — but the
+installer sets it unconditionally, so **every default one-domain deployment
+read as split**: redirect cards instead of content, bearer-only member
+sessions, needless SSO detours. `isCrossOrigin()` now compares real origins,
+and `POST /api/team/sso` with no `next` answers 204 + Set-Cookie — the silent
+bearer→cookie upgrade existing sessions get on their next load. A genuinely
+cross-origin client keeps the old top-level SSO behavior. No migrations, no
+compose or config changes; e2e 31/0 across both topologies
+([full entry](docs/_changelog/0.204.0.md)).
+
+## v0.203.0 — 2026-07-25
+
+**The formulas workbench.** `/formulas` becomes a place you can author a
+calculation, not only read one: a signature calling-contract (`signatureOf` —
+what must I hand this formula, per target, statically), a guided editor with a
+live in-browser validation rail over one form+YAML draft, sharing a formula as
+a `/s` live calculator (static equations + warnings render with no JS; only
+the calculator is an island), Euler the mathematician specialist, and five
+instructional seed formulas that double as the arithmetic regression suite.
+
+Carries two pre-existing **fleet-wide** fixes found en route: copied share
+links pointed at the client origin (which does not serve `/s` — broken for
+every node type since the member carve), and `client/web` Tailwind never
+scanned `packages/web-ui`, so every Switch and Checkbox rendered with no
+checked state ([full entry](docs/_changelog/0.203.0.md)).
+
 ## v0.202.1 — 2026-07-25
 
 **Release-engineering fix — use this tag, not v0.202.0.** The split's release

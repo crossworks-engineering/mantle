@@ -40,6 +40,10 @@ export SESSION_SECRET="e2e-session-secret-0123456789abcdef0123456789abcdef"
 # dummy — set explicitly so the run doesn't depend on a server/web/.env.local
 # existing (a fresh worktree/box has none and global-setup 500s without it).
 export MANTLE_MASTER_KEY="${MANTLE_MASTER_KEY:-ZTJlLW1hc3Rlci1rZXktMDEyMzQ1Njc4OWFiY2RlZjA=}"
+# Both topology projects hammer the same endpoints from one IP back-to-back;
+# human-sized auth caps (8 team-auth/min) 429 the later project. Scale, don't
+# disable — a runaway loop in a spec should still trip the limiter.
+export MANTLE_RATE_LIMIT_SCALE="${MANTLE_RATE_LIMIT_SCALE:-10}"
 export BROWSER_WS_ENDPOINT="ws://127.0.0.1:59222?token=mantle"
 export MANTLE_PRINT_ORIGIN="http://host.docker.internal:${port}"
 export PORT="$port"
