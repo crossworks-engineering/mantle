@@ -717,7 +717,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'Isolated CLI sandboxes (sandboxd sidecar, compose profile `sandboxes`): create persistent ' +
       'Ubuntu containers on the egress-only network, run commands, manage lifecycle. Untrusted / ' +
       'project code runs here; the server shell stays `terminal`. Coder only.',
-    toolSlugs: ['sandbox_create', 'sandbox_exec', 'sandbox_list', 'sandbox_stop', 'sandbox_rm'],
+    toolSlugs: [
+      'sandbox_create',
+      'sandbox_exec',
+      'sandbox_list',
+      'sandbox_stop',
+      'sandbox_rm',
+      'sandbox_export',
+    ],
   },
   {
     slug: 'brain-health',

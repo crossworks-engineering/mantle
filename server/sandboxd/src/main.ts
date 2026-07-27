@@ -27,10 +27,14 @@
  */
 
 import http from 'node:http';
+import { execFile } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import * as docker from './docker';
+
+const execFileP = promisify(execFile);
 
 const PORT = Number(process.env.SANDBOXD_PORT || 8090);
 const TOKEN = process.env.SANDBOXD_TOKEN || '';
@@ -43,6 +47,13 @@ const NANO_CPUS = Number(process.env.SANDBOX_NANO_CPUS || 1e9); // 1 CPU
 const PIDS_LIMIT = Number(process.env.SANDBOX_PIDS_LIMIT || 512);
 const MAX_TIMEOUT_S = 1800;
 const RAW_CAPTURE_CAP = 16 * 1024 * 1024;
+/** Stop a sandbox nobody has exec'd into for this long (0 disables). Hygiene,
+ *  not policy: /files and installed packages survive; the next exec restarts. */
+const IDLE_STOP_MINUTES = Number(process.env.SANDBOX_IDLE_STOP_MINUTES || 60);
+/** Refuse new sandboxes when the sandboxes dir exceeds this (existing ones
+ *  keep working — the budget guards the box, it never deletes work). */
+const DISK_BUDGET_BYTES = Number(process.env.SANDBOX_DISK_BUDGET_BYTES || 10 * 1024 ** 3);
+const EXPORT_MAX_BYTES = Number(process.env.SANDBOX_EXPORT_MAX_BYTES || 100 * 1024 * 1024);
 
 const LABEL = 'mantle.sandbox';
 const label = (id: string) => `${LABEL}.id=${id}`;
@@ -97,6 +108,18 @@ async function findContainer(id: string): Promise<docker.ContainerSummary> {
   return rows[0]!;
 }
 
+/** In-memory last-activity per sandbox id, feeding the idle-stop sweep.
+ *  Deliberately not persisted: after a sandboxd restart every running sandbox
+ *  is seeded "active now", so the worst case is one extra idle period — never
+ *  a premature stop. */
+const lastActivity = new Map<string, number>();
+const markActive = (id: string) => lastActivity.set(id, Date.now());
+
+async function usedBytes(): Promise<number> {
+  const { stdout } = await execFileP('du', ['-sb', SANDBOXES_DIR]);
+  return Number(stdout.split('\t')[0]) || 0;
+}
+
 /** Hand /files back to uid 1000 so the host-side owner can read/copy/delete
  *  it without root. Runs INSIDE the container (root there even when sandboxd
  *  isn't). Best-effort: callers proceed on failure — losing the chown must
@@ -138,6 +161,13 @@ async function createSandbox(input: CreateInput) {
       `sandbox limit reached (${MAX_SANDBOXES}) — remove one with sandbox_rm (or stop+rm via the UI) before creating another`,
     );
   }
+  const used = await usedBytes().catch(() => 0);
+  if (used > DISK_BUDGET_BYTES) {
+    throw new HttpError(
+      409,
+      `sandbox disk budget exceeded (${Math.round(used / 1024 ** 2)} MB used of ${Math.round(DISK_BUDGET_BYTES / 1024 ** 2)} MB) — export what matters with sandbox_export, then sandbox_rm with purge_files, before creating another`,
+    );
+  }
 
   await mkdir(filesDir(id), { recursive: true });
   await ensureImage(image);
@@ -164,7 +194,51 @@ async function createSandbox(input: CreateInput) {
     },
   });
   await docker.startContainer(containerId);
+  markActive(id);
   return { containerId, image, network };
+}
+
+/**
+ * Tar a path under /files (inside the container, so no host perms involved),
+ * read the archive back host-side, and return its bytes. The temp archive
+ * lands in /files and is unlinked afterwards; sandboxd owns the dir, so the
+ * unlink works even though tar wrote it as root.
+ */
+async function exportSandbox(id: string, body: Record<string, unknown>): Promise<Buffer> {
+  const rel = typeof body.path === 'string' ? body.path.replace(/^\/?files\/?/, '').trim() : '';
+  const relPath = rel || '.';
+  if (relPath.split('/').some((s) => s === '..')) {
+    throw new HttpError(400, 'path must stay under /files (no ..)');
+  }
+  const c = await findContainer(id);
+  if (c.State !== 'running') await docker.startContainer(c.Id);
+  markActive(id);
+
+  const tmpName = `.sbx-export-${Date.now()}.tgz`;
+  const r = await docker.execInContainer(
+    c.Id,
+    ['tar', '-czf', `/files/${tmpName}`, '-C', '/files', '--exclude', tmpName, relPath],
+    { workingDir: '/files', hardTimeoutMs: 300_000, maxBytes: 64 * 1024 },
+  );
+  const hostTmp = path.join(filesDir(id), tmpName);
+  try {
+    if (r.exitCode !== 0) {
+      throw new HttpError(
+        400,
+        `tar failed (exit ${r.exitCode}): ${r.stderr.toString('utf8').trim().slice(0, 300) || 'path not found?'} — list contents with sandbox_exec (ls) and re-issue with an existing path`,
+      );
+    }
+    const size = (await stat(hostTmp)).size;
+    if (size > EXPORT_MAX_BYTES) {
+      throw new HttpError(
+        413,
+        `export is ${Math.round(size / 1024 ** 2)} MB, over the ${Math.round(EXPORT_MAX_BYTES / 1024 ** 2)} MB cap — export a narrower path (a subdirectory or specific files)`,
+      );
+    }
+    return await readFile(hostTmp);
+  } finally {
+    await unlink(hostTmp).catch(() => {});
+  }
 }
 
 async function execSandbox(id: string, body: Record<string, unknown>) {
@@ -178,6 +252,7 @@ async function execSandbox(id: string, body: Record<string, unknown>) {
 
   const c = await findContainer(id);
   if (c.State !== 'running') await docker.startContainer(c.Id);
+  markActive(id);
 
   const started = Date.now();
   // coreutils `timeout` enforces the limit IN the container (exit 124);
@@ -257,7 +332,11 @@ const server = http.createServer(async (req, res) => {
     if (!authed(req)) return send(401, { error: 'missing or invalid bearer token' });
 
     if (req.method === 'GET' && url.pathname === '/sandboxes') {
-      return send(200, { sandboxes: await listSandboxes() });
+      const [sandboxes, used] = await Promise.all([listSandboxes(), usedBytes().catch(() => null)]);
+      return send(200, {
+        sandboxes,
+        disk: { usedBytes: used, budgetBytes: DISK_BUDGET_BYTES },
+      });
     }
     if (req.method === 'POST' && url.pathname === '/sandboxes') {
       const body = await readBody(req);
@@ -271,7 +350,13 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST' && seg[2] === 'start') {
         const c = await findContainer(id);
         if (c.State !== 'running') await docker.startContainer(c.Id);
+        markActive(id);
         return send(200, { ok: true });
+      }
+      if (req.method === 'POST' && seg[2] === 'export') {
+        const bytes = await exportSandbox(id, await readBody(req));
+        res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': bytes.length });
+        return res.end(bytes);
       }
       if (req.method === 'POST' && seg[2] === 'stop') {
         const c = await findContainer(id);
@@ -294,8 +379,37 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+/* ── idle-stop sweep ──────────────────────────────────────────────────── */
+
+if (IDLE_STOP_MINUTES > 0) {
+  const tick = async () => {
+    try {
+      const running = (await docker.listContainers([`${LABEL}=true`])).filter(
+        (c) => c.State === 'running',
+      );
+      const cutoff = Date.now() - IDLE_STOP_MINUTES * 60_000;
+      for (const c of running) {
+        const id = c.Labels[`${LABEL}.id`];
+        if (!id) continue;
+        const seen = lastActivity.get(id);
+        if (seen === undefined) {
+          markActive(id); // post-restart seed: grant one full idle period
+        } else if (seen < cutoff) {
+          console.log(`[sandboxd] idle-stopping ${id} (no activity for ${IDLE_STOP_MINUTES}m)`);
+          await chownFiles(c.Id);
+          await docker.stopContainer(c.Id);
+          lastActivity.delete(id);
+        }
+      }
+    } catch (e) {
+      console.warn('[sandboxd] idle sweep failed (continuing):', (e as Error).message);
+    }
+  };
+  setInterval(tick, 5 * 60_000).unref();
+}
+
 server.listen(PORT, () => {
   console.log(
-    `[sandboxd] listening on :${PORT} — dir=${SANDBOXES_DIR} network=${SANDBOX_NETWORK} max=${MAX_SANDBOXES}`,
+    `[sandboxd] listening on :${PORT} — dir=${SANDBOXES_DIR} network=${SANDBOX_NETWORK} max=${MAX_SANDBOXES} idleStop=${IDLE_STOP_MINUTES}m budget=${Math.round(DISK_BUDGET_BYTES / 1024 ** 2)}MB`,
   );
 });

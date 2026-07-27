@@ -26,6 +26,13 @@ import {
   setSandboxStatus,
   touchSandbox,
 } from '@mantle/content';
+import {
+  createFolder,
+  dashToLtree,
+  ensureFilesRootBranch,
+  folderByPath,
+  upsertFile,
+} from '@mantle/files';
 import { randomUUID } from 'node:crypto';
 import { notFound } from './errors';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
@@ -66,6 +73,56 @@ async function sandboxd(
     };
   }
   return { ok: true, data };
+}
+
+/** Binary sibling of `sandboxd()` for the export stream. */
+async function sandboxdBinary(
+  path: string,
+  body: unknown,
+): Promise<{ ok: true; bytes: Buffer } | { ok: false; error: string }> {
+  const base = process.env.SANDBOXD_URL;
+  const token = process.env.SANDBOXD_TOKEN;
+  if (!base || !token) return { ok: false, error: NOT_ENABLED };
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return { ok: false, error: NOT_ENABLED };
+  }
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    return {
+      ok: false,
+      error: typeof data.error === 'string' ? data.error : `sandboxd → ${res.status}`,
+    };
+  }
+  return { ok: true, bytes: Buffer.from(await res.arrayBuffer()) };
+}
+
+const EXPORTS_FOLDER_SLUG = 'sandbox-exports';
+const EXPORTS_FOLDER_PATH = `files.${dashToLtree(EXPORTS_FOLDER_SLUG)}`;
+
+/** Lazy-create `files/sandbox-exports`, tolerating the concurrent-create race
+ *  the same way the api-docs folder does. */
+async function ensureExportsFolder(ownerId: string): Promise<void> {
+  await ensureFilesRootBranch(ownerId);
+  const existing = await folderByPath({ ownerId, path: EXPORTS_FOLDER_PATH });
+  if (existing) return;
+  try {
+    await createFolder({
+      ownerId,
+      parentPath: 'files',
+      slug: EXPORTS_FOLDER_SLUG,
+      description:
+        'Work exported from CLI sandboxes (sandbox_export): tar.gz snapshots of /files paths, one per export.',
+    });
+  } catch (err) {
+    if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
+  }
 }
 
 function truncate(s: string): { text: string; truncated: boolean } {
@@ -249,6 +306,15 @@ const sandbox_list: BuiltinToolDef = {
   requiresConfirm: false,
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
     const rows = await listSandboxes(ctx.ownerId);
+    // Merge live container state (idle-stop can stop a sandbox between execs;
+    // the row alone would lie). sandboxd down/absent → rows as-is.
+    const live = await sandboxd('GET', '/sandboxes');
+    const liveState = new Map<string, string>();
+    if (live.ok && Array.isArray(live.data.sandboxes)) {
+      for (const s of live.data.sandboxes as Array<{ id?: string; state?: string }>) {
+        if (s.id && s.state) liveState.set(s.id, s.state === 'running' ? 'running' : 'stopped');
+      }
+    }
     return {
       ok: true,
       output: {
@@ -258,10 +324,11 @@ const sandbox_list: BuiltinToolDef = {
           description: r.description,
           image: r.image,
           network: r.network,
-          status: r.status,
+          status: liveState.get(r.id) ?? r.status,
           lastUsedAt: r.lastUsedAt.toISOString(),
           createdAt: r.createdAt.toISOString(),
         })),
+        ...(live.ok && live.data.disk ? { disk: live.data.disk } : {}),
       },
     };
   },
@@ -335,11 +402,79 @@ const sandbox_rm: BuiltinToolDef = {
   },
 };
 
+const sandbox_export: BuiltinToolDef = {
+  slug: 'sandbox_export',
+  name: 'Export sandbox files',
+  description:
+    "Snapshot a path under a sandbox's /files into the brain as a .tgz in the Files workspace " +
+    '(`files/sandbox-exports/`) and return the file node. Use when work should outlive the ' +
+    'sandbox or reach the owner — build outputs, reports, generated code. Export a specific ' +
+    'subpath, not all of /files, when repos are cloned (size cap applies). For ad-hoc reads ' +
+    'inside the sandbox use `sandbox_exec` (cat/ls) instead.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      sandbox: { type: 'string', description: 'Sandbox name or id.' },
+      path: {
+        type: 'string',
+        description: 'Path under /files to export, e.g. "myapi" or "report/out.pdf".',
+        default: '.',
+      },
+      filename: {
+        type: 'string',
+        description: 'Archive filename, e.g. "myapi-v1.tgz". Defaults to <sandbox>-<path>.tgz.',
+      },
+    },
+    required: ['sandbox'],
+    additionalProperties: false,
+  },
+  requiresConfirm: false,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
+    const row = await getSandboxByRef(ctx.ownerId, ref);
+    if (!row) return notFound('sandbox', ref, 'sandbox_list');
+    const relPath = typeof input.path === 'string' && input.path.trim() ? input.path.trim() : '.';
+    ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, path: relPath });
+
+    const res = await sandboxdBinary(`/sandboxes/${row.id}/export`, { path: relPath });
+    if (!res.ok) return res;
+    await touchSandbox(row.id);
+
+    const fallback = `${row.name}-${relPath === '.' ? 'files' : relPath.replace(/[/\\]+/g, '-')}.tgz`;
+    const rawName =
+      typeof input.filename === 'string' && input.filename.trim()
+        ? input.filename.trim()
+        : fallback;
+    const filename =
+      rawName.endsWith('.tgz') || rawName.endsWith('.tar.gz') ? rawName : `${rawName}.tgz`;
+
+    await ensureExportsFolder(ctx.ownerId);
+    const file = await upsertFile({
+      ownerId: ctx.ownerId,
+      parentPath: EXPORTS_FOLDER_PATH,
+      filename,
+      bytes: res.bytes,
+      overwrite: true,
+    });
+    ctx.step?.setOutput({ nodeId: file.id, sizeBytes: res.bytes.length });
+    return {
+      ok: true,
+      output: {
+        exported: relPath,
+        file: `files/sandbox-exports/${filename}`,
+        nodeId: file.id,
+        sizeBytes: res.bytes.length,
+      },
+    };
+  },
+};
+
 export const SANDBOX_TOOLS: BuiltinToolDef[] = [
   sandbox_create,
   sandbox_exec,
   sandbox_list,
   sandbox_stop,
   sandbox_rm,
+  sandbox_export,
 ];
 export const SANDBOX_TOOL_SLUGS = SANDBOX_TOOLS.map((t) => t.slug);
