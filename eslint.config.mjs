@@ -12,6 +12,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 import nextPlugin from '@next/eslint-plugin-next';
+import mantlePlugin from './eslint-rules/pair-fill-foreground.mjs';
 
 export default tseslint.config(
   {
@@ -91,6 +92,20 @@ export default tseslint.config(
       'react-hooks/exhaustive-deps': 'error',
       '@next/next/no-img-element': 'warn',
     },
+  },
+  {
+    // A themed fill must carry an ink that is legible on it. The style guide has
+    // said so for months and it still shipped invisible text twice (v0.205.7,
+    // v0.206.1) — found by a user, not CI. See eslint-rules/ for why the rule is
+    // deliberately narrow: the common `text-muted-foreground hover:bg-accent
+    // hover:text-accent-foreground` idiom is CORRECT and must not be flagged.
+    files: [
+      'client/web/**/*.{ts,tsx}',
+      'server/web/**/*.{ts,tsx}',
+      'packages/web-ui/**/*.{ts,tsx}',
+    ],
+    plugins: { mantle: mantlePlugin },
+    rules: { 'mantle/pair-fill-foreground': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

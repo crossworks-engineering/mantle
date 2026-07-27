@@ -13,6 +13,7 @@ export default defineConfig({
       'server/**/*.test.ts',
       'client/**/*.test.ts',
       'e2e/lib/**/*.test.ts',
+      'eslint-rules/**/*.test.ts',
     ],
     environment: 'node',
     globals: false,

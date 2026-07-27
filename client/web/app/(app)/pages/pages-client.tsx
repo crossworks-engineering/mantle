@@ -803,7 +803,7 @@ function TreeRow({
         {...attributes}
         aria-label={`Drag to move “${row.title}”`}
         title="Drag to move"
-        className="flex size-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100 active:cursor-grabbing focus-visible:opacity-100"
+        className="flex size-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground group-hover:opacity-100 active:cursor-grabbing focus-visible:opacity-100"
       >
         <GripVertical className="size-3.5" />
       </button>
@@ -813,7 +813,7 @@ function TreeRow({
           type="button"
           onClick={onToggle}
           aria-label={expanded ? 'Collapse' : 'Expand'}
-          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent"
+          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           style={{ marginLeft: depth * 16 }}
         >
           {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
