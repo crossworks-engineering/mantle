@@ -133,6 +133,10 @@ describe('system manifest integrity', () => {
     const persona = MANIFEST_AGENTS.find((a) => a.isPersona)!;
     const grant = effectiveTools(persona);
     expect(grant.has('run_terminal'), 'run_terminal stays out').toBe(false);
+    expect(
+      grant.has('sandbox_exec'),
+      'sandbox_exec stays out (coder-only, like the terminal)',
+    ).toBe(false);
     // Hybrid (2026-07-18 delegation review): the persona holds the LIGHT
     // slices directly — create/draft/one-block page edits, table reads +
     // single-row writes — while heavy authoring stays delegated.
@@ -192,6 +196,7 @@ describe('system manifest integrity', () => {
       'recall_window', // replays the OWNER's private conversations
       'invoke_agent', // no delegation
       'run_terminal',
+      'sandbox_exec',
       'email_send',
       'telegram_send',
       'page_share',

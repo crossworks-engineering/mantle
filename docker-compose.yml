@@ -90,6 +90,16 @@ volumes:
   # — a host bind there buys nothing and risks breaking the socket.
   mantle_tailscale_sock:
 
+networks:
+  # Isolated bridge for CLI sandbox containers (compose profile `sandboxes`).
+  # Sandboxes attach ONLY here: egress to the internet via NAT, no route to the
+  # default network's postgres/minio/web. Only sandboxd straddles both. The
+  # fixed `name:` matches SANDBOX_NETWORK in server/sandboxd. Created only when
+  # the profile is active (it's referenced solely by sandboxd).
+  sandbox:
+    name: mantle_sandbox
+    driver: bridge
+
 # Log rotation for every service — Docker's default json-file driver grows
 # unbounded, so a crash-looping worker or chatty extract run can fill the disk
 # and take Postgres (and the whole brain) down with it. Cap each container's
@@ -148,6 +158,11 @@ x-app-env: &app-env
   # the box — no cloud key, no API calls, fast. The resolver already defaults
   # a fresh install to local/embeddinggemma:latest; this just supplies the host.
   MANTLE_LOCAL_EMBEDDING_URL: ${MANTLE_LOCAL_EMBEDDING_URL:-http://ollama:11434/v1}
+  # CLI sandboxes (compose profile `sandboxes`). Always present so the sandbox_*
+  # tools can give a clear "not enabled on this box" error instead of guessing;
+  # with the profile off (or the token unset) they refuse cleanly.
+  SANDBOXD_URL: ${SANDBOXD_URL:-http://sandboxd:8090}
+  SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:-}
   # Runner queues (docs/runs.md) — DARK unless MANTLE_RUNS=1 in the host .env.
   # Read by THREE services off this shared anchor: web (run_* tools),
   # worker_runs (engine + sweep + claims), and api (the DBOS worker-turn
@@ -618,6 +633,52 @@ services:
       - ./infra/updater/updater.sh:/updater.sh:ro
       - .:${MANTLE_STACK_DIR:-/opt/mantle-stack}
       - ${MANTLE_DATA_DIR:-./data}/update-signal:/signal
+
+  # ── sandboxd — CLI-sandboxes supervisor (opt-in: compose profile `sandboxes`)
+  # The third and last docker-socket holder (with updater/autoheal — root-
+  # equivalent on the host). Mitigations mirror theirs: no published ports, a
+  # FIXED verb set (create/exec/stop/rm/list on containers it created, selected
+  # by the mantle.sandbox label — never caller-supplied ids), bearer-token auth,
+  # and the container spec templated server-side. See server/sandboxd/src/main.ts.
+  #
+  # Sandbox containers live on the isolated `mantle_sandbox` network — egress
+  # only, NO route to postgres/minio/web. Each sandbox's /files is a host dir
+  # under MANTLE_SANDBOXES_HOST_DIR, mounted here at the SAME path (the updater's
+  # trick) so the paths sandboxd mkdirs and the bind sources it hands the host
+  # daemon are identical. Enabling on a box = set SANDBOXD_TOKEN +
+  # MANTLE_SANDBOXES_HOST_DIR (host-absolute) in .env and add
+  # COMPOSE_PROFILES=sandboxes. Boxes that don't opt in don't run the feature.
+  sandboxd:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
+    command: ["pnpm", "-C", "server/sandboxd", "start"]
+    container_name: mantle_sandboxd
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 512m
+    profiles: ["sandboxes"]
+    environment:
+      SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:-}
+      SANDBOXES_DIR: ${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}
+      SANDBOX_NETWORK: mantle_sandbox
+      SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-ubuntu:24.04}
+      SANDBOX_MAX_COUNT: ${SANDBOX_MAX_COUNT:-3}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}:${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}
+    networks:
+      - default
+      - sandbox
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   # ── Autoheal sidecar — the actuator for the worker liveness probes ─────────
   # Plain `docker compose` treats `unhealthy` as a FLAG ONLY: `restart:

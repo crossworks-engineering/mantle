@@ -54,6 +54,7 @@ import { TASK_TOOLS } from './builtins-tasks';
 import { TEAM_TOOLS } from './builtins-team';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
+import { SANDBOX_TOOLS } from './builtins-sandbox';
 import { RECALL_TOOLS } from './builtins-recall';
 import { RESEARCH_TOOLS } from './builtins-research';
 import { NOTE_TOOLS } from './builtins-notes';
@@ -1728,6 +1729,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // dedicated coder/ops agent (not for the untrusted-inbound responder).
   // See builtins-terminal.ts for the safety rationale.
   ...TERMINAL_TOOLS,
+  // CLI sandboxes — isolated persistent containers for untrusted/project
+  // work, run_terminal's contained sibling. See builtins-sandbox.ts.
+  ...SANDBOX_TOOLS,
   // Recall — time-windowed replay of past conversations from the
   // permanent message archive. The toolset for the `remy` recall agent
   // (find_window locates via digests, recall_window pulls raw turns).

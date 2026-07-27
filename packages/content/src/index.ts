@@ -137,6 +137,16 @@ export {
 export { computeDiffOverlay, type DiffOverlay, type RemovedGhost } from './page-diff';
 
 export {
+  SANDBOX_NAME_RE,
+  createSandboxRow,
+  listSandboxes,
+  getSandboxByRef,
+  touchSandbox,
+  setSandboxStatus,
+  deleteSandboxRow,
+} from './sandboxes';
+
+export {
   PEERS_ROOT_LABEL,
   PEER_TOKEN_PREFIX,
   createPeer,

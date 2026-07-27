@@ -967,6 +967,13 @@
       "when": 1786234100000,
       "tag": "0137_tool_group_integration",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1786234200000,
+      "tag": "0138_sandboxes",
+      "breakpoints": true
     }
   ]
 }
