@@ -537,10 +537,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'pages-draft',
     name: 'Pages light edits',
     description:
-      'The responder-facing slice of Pages: create a page, write/replace its DRAFT, and read/edit single blocks — enough for "save this as a page" and one-block fixes without the full authoring kit (multi-block surgery, imports, splits, moves stay with the Pages specialist). Every body write lands in the draft; the operator commits.',
+      'The responder-facing slice of Pages: create a page, write/replace its DRAFT, and read/edit single blocks — enough for "save this as a page" and one-block fixes without the full authoring kit (multi-block surgery, imports, splits, moves stay with the Pages specialist). Every body write lands in the draft, which the operator normally reviews and commits in the editor — but the draft is finishable from here too, so an edit the user asked to save can be published (page_commit) and one that went wrong can be abandoned (page_discard_draft) instead of being left shadowing the page.',
     toolSlugs: [
       'page_create',
       'page_update_draft',
+      'page_commit',
+      'page_discard_draft',
       'page_list',
       'page_get',
       'page_blocks_list',

@@ -78,6 +78,7 @@ export {
   saveDraft,
   discardDraft,
   commitPage,
+  commitPageDraft,
   deletePage,
   splitPage,
   NoSplitHeadingsError,
@@ -92,6 +93,8 @@ export {
   type SplitPageResult,
   type ExtractSectionResult,
   type AddMentionResult,
+  type CommitPageResult,
+  type CommitPageDraftResult,
 } from './pages';
 export {
   splitDocByHeading,

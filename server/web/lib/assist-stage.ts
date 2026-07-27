@@ -85,6 +85,10 @@ export function specialistStageLabelForStep(name: string): string | null {
       return 'Editing the page…';
     case 'page_block_delete':
       return 'Removing blocks…';
+    case 'page_commit':
+      return 'Saving…';
+    case 'page_discard_draft':
+      return 'Discarding changes…';
     case 'page_create':
       return 'Creating the page…';
     case 'page_from_file':
