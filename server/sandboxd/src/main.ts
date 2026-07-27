@@ -584,6 +584,12 @@ if (IDLE_STOP_MINUTES > 0) {
   setInterval(tick, 5 * 60_000).unref();
 }
 
+// Ensure the sandboxes root exists from boot — `du` (disk budget/health)
+// and first-create both assume it.
+await mkdir(SANDBOXES_DIR, { recursive: true }).catch((e) =>
+  console.warn('[sandboxd] could not create SANDBOXES_DIR:', (e as Error).message),
+);
+
 startEgressProxy(EGRESS_PROXY_PORT);
 console.log(`[sandboxd] balanced-tier egress proxy on :${EGRESS_PROXY_PORT}`);
 

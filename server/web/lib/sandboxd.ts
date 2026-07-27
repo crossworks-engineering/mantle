@@ -53,6 +53,30 @@ export async function sandboxdList(): Promise<SandboxdList | null> {
   };
 }
 
+export type SandboxdHealth = {
+  /** null = feature not enabled on this box (profile off) — the muted-pill
+   *  resting state, mirroring the tailnet convention. */
+  up: boolean | null;
+  total: number | null;
+  running: number | null;
+  disk: SandboxdList['disk'];
+};
+
+/** Health probe for the dashboard. Never throws; `up: null` when the
+ *  `sandboxes` profile isn't enabled, `up: false` when it is but sandboxd
+ *  doesn't answer. */
+export async function sandboxdHealth(): Promise<SandboxdHealth> {
+  if (!sandboxdEnabled()) return { up: null, total: null, running: null, disk: null };
+  const list = await sandboxdList();
+  if (!list) return { up: false, total: null, running: null, disk: null };
+  return {
+    up: true,
+    total: list.sandboxes.length,
+    running: list.sandboxes.filter((s) => s.state === 'running').length,
+    disk: list.disk,
+  };
+}
+
 /** Stop a sandbox's container. False on any failure (sandboxd down, no container). */
 export async function sandboxdStop(id: string): Promise<boolean> {
   return (await call('POST', `/sandboxes/${id}/stop`)) !== null;
