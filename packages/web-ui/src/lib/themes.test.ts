@@ -4,23 +4,25 @@ import { fileURLToPath } from 'node:url';
 import { COLOR_THEMES } from './themes';
 
 /**
- * Contrast contract for the Pinnacle theme.
+ * Contrast contract for EVERY theme — light and dark.
  *
- * The eight Pinnacle brand colours are all light-key — white text fails AA on
- * every one of them — so the palette is easy to get wrong in exactly the way
- * that bleaches a UI out (pale ink on a pale fill). This test pins the pairs
- * the app actually renders, at WCAG 2.1 thresholds:
+ * themes.css is generated (themes/generate.mjs solves each text token against
+ * the surfaces it must be legible on), so this suite can demand the full
+ * matrix from all themes instead of hand-asserting Pinnacle and hoping about
+ * the rest. It deliberately re-implements the colour maths and re-parses the
+ * CSS instead of importing the generator: the generator asserting its own
+ * output would prove nothing, this recomputes the WCAG numbers from scratch on
+ * the exact bytes that ship. If the generator's solver, gamut clamp or hex
+ * rounding drifts, these fail.
  *
- *   4.5:1  text pairs — a `-foreground` on its own fill, and the tokens that
- *          are used as INK on a surface (`text-muted-foreground` on `bg-card`,
- *          `text-primary-ink`/`text-destructive-ink` on `bg-background`, …). Note
- *          `--primary` therefore has to clear 4.5 in BOTH directions: white on
- *          it, and it on the background.
- *   3.0:1  non-text UI — the focus ring against the surface it rings.
- *
- * Only Pinnacle is asserted: the ~40 tweakcn presets are imported artwork and
- * several of them would fail, so failing the suite on them would just mean a
- * skipped test. Any hand-authored theme added later belongs here.
+ *   4.5:1  text — every `-foreground` on its own fill; `foreground` and
+ *          `muted-foreground` on every neutral surface; every ink
+ *          (primary/destructive/success/warning/info and the code-* syntax
+ *          palette) on every neutral surface, because inks land wherever their
+ *          ~330 call sites happen to sit.
+ *   3.0:1  non-text — focus rings against what they ring, and generated chart
+ *          colours against the chart surfaces. Seeded brand ramps (pinnacle)
+ *          are authored artwork and exempt from the chart bar.
  */
 const CSS = readFileSync(
   fileURLToPath(new URL('../../styles/themes.css', import.meta.url)),
@@ -41,8 +43,9 @@ function tokens(selector: string): Record<string, string> {
 const clamp = (x: number) => Math.min(1, Math.max(0, x));
 const toLinearChannel = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
-/** A CSS colour value -> linear-light sRGB. themes.css uses three notations:
- *  hex for most presets, oklch() for the baseline and `vercel`, and one hsl(). */
+/** A CSS colour value -> linear-light sRGB. The generator emits hex, but the
+ *  parser keeps oklch()/hsl() support so a hand-written value in a consumer
+ *  stylesheet can be measured too. */
 function toLinear(value: string): [number, number, number] {
   const v = value.trim();
 
@@ -122,9 +125,8 @@ function contrast(a: string, b: string): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-/** [ink, surface] pairs the UI actually pairs up, per the style-guide rules. */
-const TEXT_PAIRS: Array<[string, string]> = [
-  // A fill and its own -foreground (the "suggested combination" in the picker).
+/** Every fill and the -foreground the theme declares goes on it. */
+const ON_FILL_PAIRS: Array<[string, string]> = [
   ['foreground', 'background'],
   ['card-foreground', 'card'],
   ['popover-foreground', 'popover'],
@@ -133,35 +135,37 @@ const TEXT_PAIRS: Array<[string, string]> = [
   ['secondary-foreground', 'secondary'],
   ['accent-foreground', 'accent'],
   ['destructive-foreground', 'destructive'],
+  ['success-foreground', 'success'],
+  ['warning-foreground', 'warning'],
+  ['info-foreground', 'info'],
   ['sidebar-foreground', 'sidebar'],
   ['sidebar-primary-foreground', 'sidebar-primary'],
   ['sidebar-accent-foreground', 'sidebar-accent'],
-  // Tokens used as ink on the plain surfaces.
-  ['muted-foreground', 'background'],
-  ['muted-foreground', 'card'],
-  ['muted-foreground', 'popover'],
-  ['muted-foreground', 'sidebar'],
-  // INK tokens, not the fills. `primary`/`destructive` are tuned to sit behind
-  // their own -foreground; as text on a neutral surface they are a different
-  // job, and `-ink` is the token that does it. See INK_SURFACES below.
-  ['primary-ink', 'background'],
-  ['primary-ink', 'card'],
-  ['primary-ink', 'muted'],
-  ['primary-ink', 'sidebar'],
-  ['destructive-ink', 'background'],
-  ['destructive-ink', 'card'],
-  ['destructive-ink', 'muted'],
-  ['destructive-ink', 'sidebar'],
-  ['foreground', 'card'],
-  ['foreground', 'popover'],
-  ['foreground', 'muted'],
-  ['foreground', 'secondary'],
-  ['foreground', 'sidebar'],
 ];
 
-/** Tokens used as TEXT on an undeclared surface, and the surfaces they land on. */
-const INK_TOKENS = ['primary-ink', 'destructive-ink'] as const;
+/** Tokens used as TEXT on an undeclared surface, and the surfaces they can
+ *  land on. THE POINT OF THE INK TOKENS: `text-primary-ink`, a code-* token in
+ *  a highlighted block, a success-ink status line — none of these declare a
+ *  background, so each must clear AA against ALL neutral surfaces, in every
+ *  theme. That is a promise the fills could not keep (a fill must also stay
+ *  behind its own light -foreground; in dark mode the two jobs pull opposite
+ *  ways) — the split is what makes this assertion satisfiable at all. */
+const INK_TOKENS = [
+  'primary-ink',
+  'destructive-ink',
+  'success-ink',
+  'warning-ink',
+  'info-ink',
+  'code-keyword',
+  'code-string',
+  'code-number',
+  'code-title',
+  'code-variable',
+] as const;
 const INK_SURFACES = ['background', 'card', 'muted', 'popover', 'sidebar'] as const;
+
+/** The app's body and secondary text land on every neutral surface too. */
+const WIDE_TEXT = ['foreground', 'muted-foreground'] as const;
 
 const UI_PAIRS: Array<[string, string]> = [
   ['ring', 'background'],
@@ -182,25 +186,6 @@ function resolved(selector: string): Record<string, string> {
   return { ...tokens(':root'), ...tokens(selector) };
 }
 
-/**
- * The one contrast rule that holds for EVERY theme, not just Pinnacle.
- *
- * `accent` is the hover/selected fill behind list rows, command-palette items,
- * menu items and combobox options — the highest-traffic fill in the app. Its
- * own `accent-foreground` must be legible on it, or selected text disappears
- * at exactly the moment the user is looking at it.
- *
- * This is not hypothetical. The same defect shipped TWICE and was found by a
- * user rather than by CI: slash-menu + mention-list (fixed v0.205.7), then the
- * shared CommandItem, the ⌘K palette and four more call sites (v0.206.1). Both
- * were markup pairing the wrong ink with `bg-accent` — but eleven presets ALSO
- * declared a pair that fails on its own, so the palettes were fixed to clear
- * 4.5:1 (v0.206.7, hue and chroma preserved, only lightness moved).
- *
- * The wider ink-on-surface matrix below is still asserted for Pinnacle only —
- * the imported presets fail it in ~659 places and bringing them all to AA is a
- * separate, deliberate piece of work.
- */
 describe('every registered theme', () => {
   for (const theme of COLOR_THEMES) {
     const sels = selectorsFor(theme.id);
@@ -208,60 +193,67 @@ describe('every registered theme', () => {
       ['light', sels.light],
       ['dark', sels.dark],
     ] as const) {
-      it(`${theme.id} ${mode}: accent-foreground on accent reaches AA text contrast`, () => {
-        const t = resolved(selector);
-        const ratio = contrast(t['accent-foreground']!, t.accent!);
-        expect(
-          ratio,
-          `${theme.id} (${mode}) renders accent-foreground ${t['accent-foreground']} on ` +
-            `accent ${t.accent} at ${ratio.toFixed(2)}:1 — selected rows and palette items ` +
-            `would be unreadable. Move the LIGHTNESS of whichever of the two shifts least, ` +
-            `keeping hue and chroma so the theme keeps its character.`,
-        ).toBeGreaterThanOrEqual(4.5);
-      });
-    }
+      const t = resolved(selector);
 
-    for (const [mode, selector] of [
-      ['light', sels.light],
-      ['dark', sels.dark],
-    ] as const) {
-      it.each(INK_TOKENS)(`${theme.id} ${mode}: %s is legible on every surface`, (ink) => {
-        // THE POINT OF THE INK TOKENS. `text-primary-ink` / `text-destructive-ink`
-        // land on whatever surface they happen to sit on — there are ~330 such
-        // call sites and none of them declare a background. So unlike the fills,
-        // these have to clear AA against ALL of them, in every theme. That is a
-        // promise the fill could not keep: a fill must also stay dark enough for
-        // its own light -foreground, and in dark mode those pull opposite ways
-        // (measured: ~25% of themes had no solution). Splitting the ink out is
-        // what makes this assertion satisfiable at all.
-        const t = resolved(selector);
-        for (const surface of INK_SURFACES) {
-          if (!t[surface]) continue;
-          const ratio = contrast(t[ink]!, t[surface]!);
+      it(`${theme.id} ${mode}: every -foreground reaches AA on its own fill`, () => {
+        for (const [fg, fill] of ON_FILL_PAIRS) {
+          const ratio = contrast(t[fg]!, t[fill]!);
           expect(
             ratio,
-            `${theme.id} (${mode}): ${ink} ${t[ink]} on ${surface} ${t[surface]} is ${ratio.toFixed(2)}:1. ` +
-              `Move the LIGHTNESS of --${ink} — it is free to differ from --${ink.replace('-ink', '')}, ` +
-              `which stays as the theme author drew it.`,
+            `${theme.id} (${mode}) renders ${fg} ${t[fg]} on ${fill} ${t[fill]} at ` +
+              `${ratio.toFixed(2)}:1. The generator must solve this pair — fix the seed or ` +
+              `the solver, never the emitted CSS.`,
           ).toBeGreaterThanOrEqual(4.5);
+        }
+      });
+
+      it(`${theme.id} ${mode}: every ink is legible on every neutral surface`, () => {
+        for (const ink of [...INK_TOKENS, ...WIDE_TEXT]) {
+          for (const surface of INK_SURFACES) {
+            const ratio = contrast(t[ink]!, t[surface]!);
+            expect(
+              ratio,
+              `${theme.id} (${mode}): ${ink} ${t[ink]} on ${surface} ${t[surface]} is ` +
+                `${ratio.toFixed(2)}:1 — inks land on any neutral surface, so all must clear AA.`,
+            ).toBeGreaterThanOrEqual(4.5);
+          }
+        }
+      });
+
+      it(`${theme.id} ${mode}: focus rings reach non-text contrast`, () => {
+        for (const [ring, surface] of UI_PAIRS) {
+          expect(
+            contrast(t[ring]!, t[surface]!),
+            `${theme.id} (${mode}): ${ring} on ${surface}`,
+          ).toBeGreaterThanOrEqual(3);
         }
       });
     }
 
     it(`${theme.id}: picker swatches match its real light-mode colours`, () => {
-      // swatches are [primary, accent, background] and drive the picker preview.
-      // A palette edit that skips them leaves the picker advertising a colour
-      // the theme no longer uses — which is how the accent fix could have
-      // silently desynced four themes.
+      // swatches are [primary, accent, background] and drive the picker
+      // preview. They are generated from the same seeds as the CSS, so a
+      // mismatch means one artifact was rebuilt without the other.
       //
-      // Compare RENDERED COLOUR, not notation: the registry stores hex while
-      // the baseline declares oklch, and `#6366f1` === `oklch(0.5854 0.2041
-      // 277.1173)` exactly. A string compare would only ever pass for the
-      // themes that happen to be written in hex.
+      // Compare RENDERED COLOUR, not notation, so a hand-added registry entry
+      // written in oklch would still be judged fairly.
       const t = resolved(sels.light);
       expect(theme.swatches.map(toHex), `${theme.id} swatches are stale`).toEqual(
         [t.primary!, t.accent!, t.background!].map(toHex),
       );
+    });
+  }
+});
+
+describe('dropped themes stay dropped', () => {
+  // retro-arcade declared its own body text on its own muted fill at 2.01:1 —
+  // structurally self-contradicting palettes were removed, not repainted. A
+  // stored data-color-theme for one of these falls back to the :root baseline
+  // because no block matches, which is the intended degradation.
+  for (const id of ['retro-arcade', 'northern-lights']) {
+    it(`${id} has no CSS block and no registry entry`, () => {
+      expect(CSS).not.toContain(`[data-color-theme="${id}"]`);
+      expect(COLOR_THEMES.map((t) => t.id)).not.toContain(id);
     });
   }
 });
@@ -271,12 +263,6 @@ describe('pinnacle theme', () => {
     expect(COLOR_THEMES.map((t) => t.id)).toContain('pinnacle');
     expect(CSS).toContain('[data-color-theme="pinnacle"]');
     expect(CSS).toContain('.dark[data-color-theme="pinnacle"]');
-  });
-
-  it('shows its real light-mode colours in the picker swatches', () => {
-    const t = tokens('[data-color-theme="pinnacle"]');
-    const entry = COLOR_THEMES.find((x) => x.id === 'pinnacle')!;
-    expect(entry.swatches).toEqual([t.primary, t.accent, t.background]);
   });
 
   it('defines the same token set as the baseline in both modes', () => {
@@ -299,32 +285,23 @@ describe('pinnacle theme', () => {
     ['light', '[data-color-theme="pinnacle"]'],
     ['dark', '.dark[data-color-theme="pinnacle"]'],
   ] as const) {
-    describe(mode, () => {
+    it(`${mode}: keeps the brand hues in the chart ramp`, () => {
+      // The one seeded `charts` override: Pinnacle's ramp is brand identity,
+      // pinned verbatim by the seed rather than generated.
       const t = tokens(selector);
-
-      it.each(TEXT_PAIRS)('%s on %s reaches AA text contrast', (ink, surface) => {
-        expect(contrast(t[ink]!, t[surface]!)).toBeGreaterThanOrEqual(4.5);
-      });
-
-      it.each(UI_PAIRS)('%s on %s reaches AA non-text contrast', (a, b) => {
-        expect(contrast(t[a]!, t[b]!)).toBeGreaterThanOrEqual(3);
-      });
-
-      it('keeps the brand hues in the chart ramp', () => {
-        const brand = [
-          '#ea3635',
-          '#ec1c35',
-          '#d48b38',
-          '#b2d234',
-          '#6fbe44',
-          '#6fc173',
-          '#6ec7aa',
-          '#6ec8b7',
-        ];
-        const ramp = [1, 2, 3, 4, 5].map((n) => t[`chart-${n}`]!);
-        expect(ramp.every((c) => brand.includes(c))).toBe(true);
-        expect(new Set(ramp).size).toBe(5);
-      });
+      const brand = [
+        '#ea3635',
+        '#ec1c35',
+        '#d48b38',
+        '#b2d234',
+        '#6fbe44',
+        '#6fc173',
+        '#6ec7aa',
+        '#6ec8b7',
+      ];
+      const ramp = [1, 2, 3, 4, 5].map((n) => t[`chart-${n}`]!);
+      expect(ramp.every((c) => brand.includes(c))).toBe(true);
+      expect(new Set(ramp).size).toBe(5);
     });
   }
 });

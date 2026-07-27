@@ -65,6 +65,15 @@ describe('findMismatches', () => {
   it("catches one fill wearing another fill's foreground", () => {
     expect(flags('bg-primary text-card-foreground')).toEqual(['primary/card-foreground']);
   });
+
+  it('covers the semantic role fills the same as the original four', () => {
+    // success/warning/info are first-class fills beside destructive — the
+    // pairing discipline arrived with them, not after their first regression.
+    expect(flags('bg-success text-muted-foreground')).toEqual(['success/muted-foreground']);
+    expect(flags('bg-warning text-accent-foreground')).toEqual(['warning/accent-foreground']);
+    expect(flags('bg-info text-info-foreground')).toEqual([]);
+    expect(flags('bg-warning/10 text-muted-foreground')).toEqual([]); // tinted wash
+  });
 });
 
 describe('use-ink-for-text', () => {
@@ -90,6 +99,10 @@ describe('use-ink-for-text', () => {
         { code: '<p className="hover:text-destructive" />', errors: [{ messageId: 'useInk' }] },
         { code: '<p className="text-destructive/70" />', errors: [{ messageId: 'useInk' }] },
         { code: 'cn("text-primary")', errors: [{ messageId: 'useInk' }] },
+        // The semantic roles get the same discipline from day one.
+        { code: '<p className="text-success" />', errors: [{ messageId: 'useInk' }] },
+        { code: '<p className="text-warning" />', errors: [{ messageId: 'useInk' }] },
+        { code: '<p className="text-info" />', errors: [{ messageId: 'useInk' }] },
       ],
     });
   });

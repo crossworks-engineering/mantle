@@ -141,10 +141,12 @@ const SCOPED: Record<string, readonly string[]> = {
   'primary-foreground': ['primary'],
   'secondary-foreground': ['secondary'],
   'destructive-foreground': ['destructive'],
-  // Muted text is the app's standard secondary ink and lands anywhere, but its
-  // contract is 4.5 against the muted fill it is named for; on the plain
-  // surfaces it is asserted separately in themes.test.ts.
-  'muted-foreground': ['muted', 'background', 'card', 'popover', 'sidebar'],
+  'success-foreground': ['success'],
+  'warning-foreground': ['warning'],
+  'info-foreground': ['info'],
+  // (muted-foreground needs no entry: the app's standard secondary ink lands
+  // anywhere, so the conservative default — every neutral surface — IS its
+  // contract, and the generator solves it against exactly that set.)
 };
 
 /**
@@ -157,30 +159,44 @@ const SCOPED: Record<string, readonly string[]> = {
  *   2. A token listed here must STILL be failing → the moment it is fixed, the
  *      test fails telling you to delete the entry. A baseline that can hold
  *      stale exemptions is just a mute button.
+ *
+ * EMPTY since the theme generator landed: every text token is now solved
+ * against its surfaces at build time, the chart-as-text consumers moved to the
+ * derived code + success/warning/info roles (task 002794f9), and the two
+ * self-contradicting palettes were dropped. The mechanism stays: the next bad
+ * ink fails CI, and parking it here is a visible, tracked decision.
  */
-const KNOWN_UNSAFE: Record<string, string> = {
-  'chart-1': 'syntax highlighting paints keywords with a CHART token — task 002794f9',
-  'chart-2': 'syntax highlighting + node mentions — task 002794f9',
-  'chart-3': 'hljs-title: function names, 1.02:1 on `claude` dark — task 002794f9',
-  'chart-4': 'hljs strings + the success callout, 1.28:1 on `claude` dark — task 002794f9',
-  'chart-5': 'hljs meta + the warning callout — task 002794f9',
-  // Not a token problem: `retro-arcade` dark declares foreground #93a1a1 and
-  // muted #586e75, which is 2.01:1. Its own body text on its own muted fill.
-  foreground: '`retro-arcade` dark is a self-contradicting palette (2.01:1)',
-  // The app's standard secondary ink, used on every surface. Fails on the
-  // darker/lighter card+sidebar of ~24 presets; wants the same -ink treatment.
-  'muted-foreground': 'secondary ink on non-muted surfaces — folded into task 64e35c98',
-};
+const KNOWN_UNSAFE: Record<string, string> = {};
 
 /** Non-colour `color:` values that carry no token to audit. */
 const IGNORED_VALUES = /^(inherit|currentcolor|transparent|unset|initial|revert)$/i;
 
-type Use = { file: string; selector: string; token: string };
+/**
+ * COMPUTED-VALUE ALLOWLIST. The audit can only measure a bare `var(--token)`;
+ * a `color-mix()`, a relative `oklch(from …)` or a literal hex is opaque to
+ * it. Those used to be SKIPPED SILENTLY — which is exactly how
+ * `.prose-accent h3`'s color-mix() shipped below AA on 52 of 164 surfaces and
+ * survived a session spent on contrast. Now an unresolvable ink FAILS unless
+ * its selector is listed here with a reason, and a listed selector that stops
+ * existing fails too (an allowlist that can hold stale entries is a mute
+ * button, same rule as KNOWN_UNSAFE).
+ */
+const COMPUTED_ALLOWED: Record<string, string> = {
+  '.ProseMirror .diff-removed-body':
+    'struck ghost text of a REMOVED diff block — 65% foreground is deliberate de-emphasis, ' +
+    'the content is decoration around its Restore pill, not information',
+};
 
-/** Every `color:` declaration painting with a theme token. Deliberately not
- *  `background-color` / `border-color` — those are surfaces, not ink. */
-function inkUses(): Use[] {
+type Use = { file: string; selector: string; token: string };
+type Opaque = { file: string; selector: string; value: string };
+
+/** Every `color:` declaration painting with a theme token, plus every one the
+ *  audit CANNOT resolve (computed/literal values — see COMPUTED_ALLOWED).
+ *  Deliberately not `background-color` / `border-color` — those are surfaces,
+ *  not ink. */
+function inkUses(): { uses: Use[]; opaque: Opaque[] } {
   const uses: Use[] = [];
+  const opaque: Opaque[] = [];
   for (const path of shippedStylesheets()) {
     const css = readFileSync(path, 'utf8');
     for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
@@ -189,16 +205,17 @@ function inkUses(): Use[] {
         const value = d[1]!.trim();
         if (IGNORED_VALUES.test(value)) continue;
         const varMatch = /^var\(--([a-z0-9-]+)\)$/.exec(value);
-        if (!varMatch) continue; // literal colours are out of scope, see below
-        uses.push({ file: path.replace(REPO + '/', ''), selector, token: varMatch[1]! });
+        const file = path.replace(REPO + '/', '');
+        if (varMatch) uses.push({ file, selector, token: varMatch[1]! });
+        else opaque.push({ file, selector, value });
       }
     }
   }
-  return uses;
+  return { uses, opaque };
 }
 
 describe('ink audit — every token used as text', () => {
-  const uses = inkUses();
+  const { uses, opaque } = inkUses();
 
   it('finds the `color:` declarations at all (guards against a dead scan)', () => {
     // A scanner that silently matches nothing passes forever. This is the
@@ -207,6 +224,26 @@ describe('ink audit — every token used as text', () => {
       uses.length,
       'no `color: var(--token)` declarations found — the scan is broken',
     ).toBeGreaterThan(10);
+  });
+
+  it('every computed/literal ink is explicitly allowlisted', () => {
+    const unlisted = opaque.filter((o) => !(o.selector in COMPUTED_ALLOWED));
+    expect(
+      unlisted.map((o) => `${o.file} → ${o.selector}: color: ${o.value}`),
+      `these \`color:\` declarations use values the audit cannot measure. Either paint with a ` +
+        `bare var(--token) (deriving a new token in themes/ if needed), or add the selector to ` +
+        `COMPUTED_ALLOWED with a reason — silence is how .prose-accent h3 shipped below AA.`,
+    ).toEqual([]);
+  });
+
+  it('the computed allowlist names only selectors that still exist', () => {
+    const live = new Set(opaque.map((o) => o.selector));
+    const stale = Object.keys(COMPUTED_ALLOWED).filter((sel) => !live.has(sel));
+    expect(
+      stale,
+      `COMPUTED_ALLOWED lists ${stale.join(', ')}, which no stylesheet declares any more — ` +
+        `delete the entr${stale.length === 1 ? 'y' : 'ies'}.`,
+    ).toEqual([]);
   });
 
   const byToken = [...new Set(uses.map((u) => u.token))].sort();

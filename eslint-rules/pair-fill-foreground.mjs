@@ -36,6 +36,9 @@ const BRANDED_FILLS = [
   'primary',
   'secondary',
   'destructive',
+  'success',
+  'warning',
+  'info',
   'sidebar-accent',
   'sidebar-primary',
 ];
@@ -49,6 +52,9 @@ const THEMED_INKS = [
   'primary-foreground',
   'secondary-foreground',
   'destructive-foreground',
+  'success-foreground',
+  'warning-foreground',
+  'info-foreground',
   'sidebar-foreground',
   'sidebar-accent-foreground',
   'sidebar-primary-foreground',
@@ -152,7 +158,7 @@ export const rule = {
 };
 
 /** Fills whose text form is a separate token. */
-const INK_FILLS = ['primary', 'destructive'];
+const INK_FILLS = ['primary', 'destructive', 'success', 'warning', 'info'];
 
 export const inkRule = {
   meta: {

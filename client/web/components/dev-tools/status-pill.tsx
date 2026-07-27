@@ -6,9 +6,9 @@ export function StatusPill({ status, statusText }: { status: number; statusText:
     status === 0
       ? 'bg-muted text-muted-foreground'
       : status < 300
-        ? 'bg-chart-2/15 text-chart-2'
+        ? 'bg-success/15 text-success-ink'
         : status < 500
-          ? 'bg-chart-3/15 text-chart-3'
+          ? 'bg-warning/15 text-warning-ink'
           : 'bg-destructive/15 text-destructive-ink';
   return (
     <span className={cn('rounded-md px-2 py-0.5 font-mono text-xs font-semibold', cls)}>

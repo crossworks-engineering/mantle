@@ -1,6 +1,6 @@
 {
   "name": "mantle",
-  "version": "0.206.12",
+  "version": "0.207.0",
   "private": true,
   "description": "Mantle — an AI-queryable life tree.",
   "license": "SEE LICENSE IN LICENSE.md",
@@ -25,6 +25,7 @@
     "build": "pnpm -r build",
     "version:bump": "node scripts/bump-version.mjs",
     "apps:push": "pnpm -C server/web apps:push",
+    "themes:build": "pnpm -C packages/web-ui themes:build",
     "licenses:notices": "node scripts/generate-notices.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"{server,client,packages,e2e,scripts}/**/*.{ts,tsx,mjs,cjs}\" \"*.{ts,tsx,mjs,cjs}\"",

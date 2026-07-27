@@ -181,7 +181,7 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
                         p.enabled && p.status === 'active'
                           ? 'bg-primary'
                           : p.enabled && p.status === 'pending'
-                            ? 'bg-chart-4'
+                            ? 'bg-success'
                             : 'bg-muted-foreground/40',
                       )}
                       aria-label={

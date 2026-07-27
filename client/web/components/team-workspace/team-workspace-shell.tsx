@@ -174,7 +174,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-0 flex-1 flex-col">
         {/* ── Header — the owner shell's brand treatment, member-sized:
                wordmark in the user-selectable wordmark font, the brain's peer
-               name centred (page-title font, chart-2), the primary-tinted
+               name centred (page-title font, primary ink), the primary-tinted
                gradient. Below md the centre shows the section label instead
                (the sidebar that names the section is hidden there). ─────── */}
         <header className="relative flex h-14 shrink-0 items-center gap-3 border-b border-border bg-gradient-to-b from-primary/10 to-background px-4">
@@ -241,7 +241,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
           </Link>
           {data.peerName && (
             <span
-              className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-[2px] text-center text-lg font-bold leading-normal text-chart-2 md:block"
+              className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-[2px] text-center text-lg font-bold leading-normal text-primary-ink md:block"
               style={{ fontFamily: 'var(--font-page-title)' }}
             >
               {data.peerName}

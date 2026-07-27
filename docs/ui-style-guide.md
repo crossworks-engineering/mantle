@@ -31,8 +31,10 @@ widgets.
 ## 2. Color tokens
 
 Use Tailwind utilities backed by the theme CSS variables (mapped in the
-`@theme inline` block of `app/globals.css`). **Never** put a hex/oklch literal
-in a component.
+`@theme inline` block of `@mantle/web-ui/styles/themes.css`). **Never** put a
+hex/oklch literal in a component. The theme CSS itself is **generated** —
+seeds in `packages/web-ui/themes/`, every text token solved to AA at build
+time; see [themes.md](themes.md) before touching any theme colour.
 
 | Purpose | Tokens (`bg-`/`text-`/`border-`) |
 |---|---|
@@ -43,9 +45,13 @@ in a component.
 | Subtle / muted | `muted`, `muted-foreground` |
 | Hover / highlight | `accent`, `accent-foreground` |
 | Danger | `destructive`, `destructive-foreground` |
-| Brand / danger AS TEXT | `primary-ink`, `destructive-ink` |
+| Positive / confirm | `success`, `success-foreground` |
+| Caution / attention | `warning`, `warning-foreground` |
+| Neutral notice | `info`, `info-foreground` |
+| Any of those AS TEXT | `primary-ink`, `destructive-ink`, `success-ink`, `warning-ink`, `info-ink` |
+| Syntax highlighting | `code-keyword`, `code-string`, `code-number`, `code-title`, `code-variable` |
 | Lines / fields | `border`, `input`, `ring` |
-| Categorical data | `chart-1` … `chart-5` |
+| Categorical data (charts ONLY) | `chart-1` … `chart-5` |
 
 Rules:
 - **A fill is not an ink. Use `text-primary-ink` / `text-destructive-ink` for
@@ -93,12 +99,17 @@ Rules:
   emphasis, a faint `bg-primary/10` (contrast-checked) is fine — but a *filled*
   coloured surface must bring its matching `-foreground`.
 - **Semantic action colours come from tokens, not literal green/red.** Affirmative
-  = `primary`, dangerous/removing = `destructive` (e.g. the sender approve/deny
-  Button variants). A hardcoded `bg-green-600`/`bg-red-600` ignores the theme.
+  = `primary`, dangerous/removing = `destructive`; status = `success` /
+  `warning` / `info` (first-class roles beside `destructive`, each with a
+  `-foreground` for on-fill text and an `-ink` for text on neutral surfaces).
+  A hardcoded `bg-green-600`/`bg-red-600` ignores the theme.
 - **Opacity via the `/NN` modifier** (`bg-primary/10`, `border-chart-2/30`) —
   works through `color-mix`, fully theme-aware.
-- **`chart-1..5`** is the categorical palette — use it for things that need
-  distinct-but-themed colors (e.g. tag pills). Don't use `primary` for
+- **`chart-1..5` is DATA ink, nothing else** — categorical series in actual
+  charts, tag-pill tints, avatar palettes. It is generated at a 3:1 non-text
+  bar and is NOT legible as text (`text-chart-N` on prose shipped function
+  names at 1.02:1 once). Status colours are `success`/`warning`/`info`; code
+  colours are `code-*`; both are AA-guaranteed inks. Don't use `primary` for
   categorical sets.
 - **Selected / active state — mark it with an ACCENT, not a background fill.**
   For list selection use a **left accent bar only**: `border-l-[3px]
@@ -397,8 +408,8 @@ as deep links** even after a master-detail supersedes the in-app navigation
 - **Rendering:** `ReactMarkdown` + `remarkGfm` inside
   `prose prose-sm dark:prose-invert max-w-none`.
 - **Theme-accented prose — add `prose-accent`** next to `prose` to brighten the
-  flat black-and-white markdown with theme tokens: gradient h1
-  (`primary`→`chart-3`), `primary` h2 + divider, h3/h4 accents, primary links,
+  flat black-and-white markdown with theme tokens: `primary-ink` h1/h2/h3 (+ h2
+  divider), `info-ink` h4, primary links,
   tinted inline-code chips, accent-bar blockquote, coloured list markers, gradient
   hr. Defined in `globals.css` (one block, all CSS-var driven, recolours with
   every theme × light/dark). It's **opt-in**: docs reader, Notes (read + public

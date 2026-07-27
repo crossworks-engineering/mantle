@@ -1,12 +1,12 @@
 import { cn } from '@mantle/web-ui/lib/utils';
 import type { HttpMethod, RequestKind } from '@/lib/dev-tools/types';
 
-/** Color-coded HTTP method label. Categorical, so chart tokens (theme-safe). */
+/** Color-coded HTTP method label — semantic inks, AA-safe on any surface. */
 const METHOD_CLASSES: Record<HttpMethod, string> = {
-  GET: 'text-chart-2',
-  POST: 'text-chart-3',
-  PUT: 'text-chart-1',
-  PATCH: 'text-chart-4',
+  GET: 'text-info-ink',
+  POST: 'text-success-ink',
+  PUT: 'text-warning-ink',
+  PATCH: 'text-primary-ink',
   DELETE: 'text-destructive-ink',
 };
 
@@ -30,7 +30,7 @@ export function KindBadge({ kind, className }: { kind: RequestKind; className?: 
     <span
       className={cn(
         'inline-block w-12 shrink-0 font-mono text-[10px] font-bold tracking-wide',
-        kind === 'mcp' ? 'text-chart-5' : 'text-chart-4',
+        kind === 'mcp' ? 'text-primary-ink' : 'text-warning-ink',
         className,
       )}
     >

@@ -319,7 +319,7 @@ export function SaveToolDialog({
                 )}
               </div>
               {targetsOwnApi && (
-                <p className="text-[11px] text-chart-3">
+                <p className="text-[11px] text-warning-ink">
                   This targets Mantle&apos;s own API, which needs a browser session — agent calls
                   will be unauthenticated. For Mantle data, agents should use built-in tools
                   instead.
