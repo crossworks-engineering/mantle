@@ -31,6 +31,9 @@ import { buildSessionCookie, getOwnerOr401, SESSION_COOKIE_NAME } from './auth';
 import { secureCookies, requestOrigin } from './auth-constants';
 import { rateLimit, clientIp } from './rate-limit';
 
+/** See the mint below for why this is days, not the password login's year. */
+export const OWNER_SSO_COOKIE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 export async function handleOwnerSso(req: Request): Promise<NextResponse> {
   const ipGate = rateLimit(`owner-sso:ip:${clientIp(req)}`, { max: 30, windowMs: 60_000 });
   if (!ipGate.ok) {
@@ -61,7 +64,15 @@ export async function handleOwnerSso(req: Request): Promise<NextResponse> {
   // data is keyed to, but a session identifies the login that opened it —
   // keying the cookie to the anchor would silently re-attribute every audit
   // row an added login writes to the anchor instead.
-  const { value, maxAgeSec } = buildSessionCookie(user.actor.id);
+  //
+  // SHORT TTL, deliberately — not the password login's year. The bearer this
+  // upgrades is 30-day and revocable per device; the session cookie has no
+  // revocation at all, so a long mint here would convert a revocable
+  // credential into an irrevocable one that outlives it. Seven days is
+  // enough because the shell re-fires upgradeOwnerCookie on EVERY page load:
+  // the cookie renews continuously while the bearer stays valid, and dies
+  // within a week of the device's token being revoked.
+  const { value, maxAgeSec } = buildSessionCookie(user.actor.id, OWNER_SSO_COOKIE_TTL_SECONDS);
   const res = new NextResponse(null, { status: 204 });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,

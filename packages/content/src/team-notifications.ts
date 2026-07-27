@@ -112,18 +112,23 @@ export type NotifyResult = {
  * the deliveries that were correct. The caller is expected to relay `rejected`
  * back to the member who asked.
  */
-export async function notifyMembers(
-  ownerId: string,
-  input: NotifyInput,
-): Promise<NotifyResult> {
+export async function notifyMembers(ownerId: string, input: NotifyInput): Promise<NotifyResult> {
   const body = input.body.trim().slice(0, MAX_NOTIFICATION_BODY);
   if (!body) throw new Error('notifyMembers: body is required');
 
-  const wanted = [...new Set(input.recipientIds.filter(Boolean))].slice(
-    0,
-    MAX_NOTIFY_RECIPIENTS,
-  );
+  const wanted = [...new Set(input.recipientIds.filter(Boolean))];
   if (wanted.length === 0) return { delivered: [], rejected: [] };
+  // Over-cap is an ERROR, never a silent slice. The tool schema's maxItems
+  // only blocks in 'enforce' validation mode (the fleet default is 'warn'),
+  // so this is the cap that actually holds — and dropping recipient six
+  // while reporting success would tell the member everyone was notified
+  // when they weren't, the exact failure this feature exists to remove.
+  if (wanted.length > MAX_NOTIFY_RECIPIENTS) {
+    throw new Error(
+      `notifyMembers: at most ${MAX_NOTIFY_RECIPIENTS} recipients per send (got ${wanted.length}) — ` +
+        'narrow the list, or send in separate calls if they genuinely all need it.',
+    );
+  }
 
   // The gate: live membership, re-checked here rather than trusted from the
   // caller's earlier lookup — the two are separated by a whole model turn.
@@ -201,7 +206,14 @@ export async function replyToNotification(
 
   const [row] = await db
     .insert(teamNotifications)
-    .values({ ownerId, threadId, recipientId, senderId, senderName: senderName ?? null, body: text })
+    .values({
+      ownerId,
+      threadId,
+      recipientId,
+      senderId,
+      senderName: senderName ?? null,
+      body: text,
+    })
     .returning();
   return row ? toRow(row) : null;
 }
@@ -227,16 +239,28 @@ export async function listNotifications(
   return rows.map(toRow);
 }
 
-/** A whole thread in order — the root and every reply. */
+/**
+ * A whole thread in order — the root and every reply — for one PARTICIPANT.
+ *
+ * `readerId` is required and checked against the root's two ends, because
+ * this module is where the gate lives (see the header): an API route that
+ * passed only ids from the URL would otherwise let any member read any
+ * colleague's thread. A non-participant (or a missing thread — deliberately
+ * indistinguishable, so the response doesn't confirm a thread id exists)
+ * gets an empty list.
+ */
 export async function readThread(
   ownerId: string,
   threadId: string,
+  readerId: string,
 ): Promise<TeamNotificationRow[]> {
   const rows = await db
     .select()
     .from(teamNotifications)
     .where(and(eq(teamNotifications.ownerId, ownerId), eq(teamNotifications.threadId, threadId)))
     .orderBy(asc(teamNotifications.createdAt));
+  const root = rows.find((r) => r.id === r.threadId);
+  if (!root || (readerId !== root.recipientId && readerId !== root.senderId)) return [];
   return rows.map(toRow);
 }
 

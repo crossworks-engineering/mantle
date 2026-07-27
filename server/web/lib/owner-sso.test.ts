@@ -87,6 +87,21 @@ describe('POST /api/auth/sso', () => {
     expect(claims.uid).not.toBe(ANCHOR);
   });
 
+  it('mints a SHORT cookie, not the password login’s year', async () => {
+    getOwnerOr401.mockResolvedValue(addedLoginSession());
+
+    const res = await post();
+
+    // The bearer this upgrades is 30-day and revocable per device; the session
+    // cookie is revocable by nothing. A year here would convert a revocable
+    // credential into an irrevocable one that outlives it — the short TTL is
+    // safe only because the shell re-mints on every page load.
+    const maxAge = /max-age=(\d+)/i.exec(res.headers.get('set-cookie') ?? '')?.[1];
+    const { OWNER_SSO_COOKIE_TTL_SECONDS } = await import('./owner-sso');
+    expect(Number(maxAge)).toBe(OWNER_SSO_COOKIE_TTL_SECONDS);
+    expect(Number(maxAge)).toBeLessThanOrEqual(7 * 24 * 60 * 60);
+  });
+
   it('unauthenticated caller is refused and gets NO cookie', async () => {
     const { NextResponse } = await import('../server/http-compat');
     getOwnerOr401.mockResolvedValue(NextResponse.json({ error: 'unauthorized' }, { status: 401 }));
