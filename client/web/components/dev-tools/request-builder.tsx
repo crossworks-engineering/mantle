@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronRight,
   KeyRound,
+  Loader2,
   Save,
   Send,
   Settings2,
@@ -235,7 +236,7 @@ function SchemaPeek({ schema }: { schema: Record<string, unknown> }) {
 export function RequestBuilder() {
   const { draft, setDraft, send, cancel, sending, activeEnv, saveDraftTo, collections } =
     useDevTools();
-  const { openAssistant } = useAssistantDock();
+  const { openAssistant, busy: assistantBusy } = useAssistantDock();
   const toast = useToast();
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
@@ -310,15 +311,33 @@ export function RequestBuilder() {
               <Wand2 /> Save as agent tool
             </Button>
           )}
+          {/* The console's stand-in for the pages/tables busy treatment: there is
+              no draft here to lock, so the affordance itself carries the state —
+              while a turn runs (a Toolsmith delegation included) the button
+              pulses "Working…", and opening it shows the live trail with the
+              specialist's named steps ("Toolsmith · Testing the API…"). The
+              Agent-tools list refreshes itself when the turn settles. */}
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="h-7 px-2 text-xs max-md:hidden"
-            title="Ask your assistant — it hands tool-building to the Toolsmith specialist without losing your conversation"
+            title={
+              assistantBusy
+                ? 'The assistant is working — open the chat to watch its progress'
+                : 'Ask your assistant — it hands tool-building to the Toolsmith specialist without losing your conversation'
+            }
             onClick={() => openAssistant()}
           >
-            <Sparkles /> Assist
+            {assistantBusy ? (
+              <>
+                <Loader2 className="animate-spin" /> Working…
+              </>
+            ) : (
+              <>
+                <Sparkles /> Assist
+              </>
+            )}
           </Button>
         </div>
       </div>
