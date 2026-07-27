@@ -464,6 +464,24 @@ export {
 } from './team-messages';
 
 export {
+  listNotifiableMembers,
+  notifyMembers,
+  replyToNotification,
+  listNotifications,
+  readThread,
+  markThreadRead,
+  countUnreadNotifications,
+  MAX_NOTIFY_RECIPIENTS,
+  MAX_NOTIFICATION_BODY,
+  TEAM_NOTIFICATION_CHANNEL,
+  TEAM_NOTIFICATION_TYPE,
+  type NotifiableMember,
+  type TeamNotificationRow,
+  type NotifyInput,
+  type NotifyResult,
+} from './team-notifications';
+
+export {
   listTeamRequests,
   notifyTeamRequester,
   TEAM_REQUEST_TAG,

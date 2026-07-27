@@ -809,6 +809,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     ],
   },
   {
+    slug: 'team-notify',
+    name: 'Team notifications (member-to-member)',
+    description:
+      "Let the team responder tell one member's message to another ('can you ask Deepthi to check this?') — resolve a colleague's name to an id, then send. The notification lands in the recipient's dash, carries a link back to the forum topic it came from, and can be replied to. NOT an outbound send: it reaches only LIVE members of this brain, by id, with the sender stamped from the authenticated surface — so unlike email/telegram it cannot carry anything across the trust boundary. ⚠ ATTACHED TO NO AGENT YET: the data path ships (migration 0138) but the recipient's dash inbox does not, and a responder that reports 'I've let her know' for a notification nobody can see is worse than today's honest 'I can't reach her'. Grant this to the team responder in the change that lands the surface.",
+    toolSlugs: ['team_member_list', 'team_notify'],
+  },
+  {
     slug: 'team-admin',
     name: 'Team Chat admin',
     description:
