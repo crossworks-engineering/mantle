@@ -791,7 +791,9 @@ function ReferenceColumnDialog({
                           )}
                         />
                         {c.name}
-                        <span className="ml-auto text-xs text-muted-foreground">{c.type}</span>
+                        <span className="ml-auto text-xs text-muted-foreground group-data-[selected=true]/command-item:text-accent-foreground">
+                          {c.type}
+                        </span>
                       </CommandItem>
                     ))}
                   </CommandGroup>

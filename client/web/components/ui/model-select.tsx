@@ -212,7 +212,7 @@ export function ModelSelect({
                       <div className="truncate text-sm">
                         Use <span className="font-medium tabular-nums">{trimmed}</span>
                       </div>
-                      <div className="text-[11px] text-muted-foreground">
+                      <div className="text-[11px] text-muted-foreground group-data-[selected=true]/command-item:text-accent-foreground">
                         Save as a custom slug — make sure your key has access.
                       </div>
                     </div>
@@ -273,7 +273,7 @@ function ModelRow({ model, selected }: { model: ExplorerModel; selected: boolean
             </span>
           )}
         </div>
-        <div className="truncate text-[11px] text-muted-foreground">
+        <div className="truncate text-[11px] text-muted-foreground group-data-[selected=true]/command-item:text-accent-foreground">
           {model.name && model.name !== model.id ? model.id : null}
           {model.modality && model.name && model.name !== model.id ? ' · ' : null}
           {model.modality}

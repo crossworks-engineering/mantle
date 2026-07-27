@@ -523,7 +523,9 @@ function TagFilter({
                     className={cn('size-4', activeTag === t.tag ? 'opacity-100' : 'opacity-0')}
                   />
                   <span className="min-w-0 flex-1 truncate">{t.tag}</span>
-                  <span className="text-xs text-muted-foreground">{t.count}</span>
+                  <span className="text-xs text-muted-foreground group-data-[selected=true]/command-item:text-accent-foreground">
+                    {t.count}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>

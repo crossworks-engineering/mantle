@@ -125,7 +125,16 @@ function CommandItem({ className, ...props }: React.ComponentProps<typeof Comman
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
+        // The selected row fills with `bg-accent`, so every child must derive
+        // from `accent-foreground` (style guide §2 — pair every fill with its
+        // OWN foreground). An icon left at `text-muted-foreground` is paired
+        // with `--muted` and washes out on themes whose accent is light or
+        // saturated, so the last rule flips it with selection.
+        //
+        // `group/command-item` is the same escape hatch for consumers: meta
+        // text inside a row flips with
+        // `group-data-[selected=true]/command-item:text-accent-foreground`.
+        "group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground data-[selected=true]:[&_svg:not([class*='text-'])]:text-accent-foreground",
         className,
       )}
       {...props}

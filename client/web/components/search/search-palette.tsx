@@ -144,7 +144,10 @@ export function SearchPalette({
                 >
                   <item.icon />
                   <span className="truncate">{item.name}</span>
-                  <span className="ml-auto truncate text-xs text-muted-foreground">
+                  {/* Meta text flips with selection — the row fills with
+                      `bg-accent`, and `muted-foreground` is paired with
+                      `--muted` (style guide §2). */}
+                  <span className="ml-auto truncate text-xs text-muted-foreground group-data-[selected=true]/command-item:text-accent-foreground">
                     {item.href}
                   </span>
                 </CommandItem>
@@ -187,13 +190,13 @@ export function SearchPalette({
                           {displayTitle(r.title)}
                         </span>
                         {r.summary && (
-                          <span className="block truncate text-xs text-muted-foreground">
+                          <span className="block truncate text-xs text-muted-foreground group-data-[selected=true]/command-item:text-accent-foreground">
                             {r.summary}
                           </span>
                         )}
                       </span>
                       {r.supersededBy && <SupersededBadge succ={r.supersededBy} go={go} />}
-                      <span className="shrink-0 text-xs text-muted-foreground">
+                      <span className="shrink-0 text-xs text-muted-foreground group-data-[selected=true]/command-item:text-accent-foreground">
                         {relativeUpdatedAt(r.updatedAt)}
                       </span>
                     </CommandItem>
@@ -209,7 +212,7 @@ export function SearchPalette({
                     >
                       <Icon className="self-start" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs text-muted-foreground">
+                        <span className="block truncate text-xs text-muted-foreground group-data-[selected=true]/command-item:text-accent-foreground">
                           {displayTitle(r.nodeTitle)}
                           {r.heading ? ` · ${r.heading}` : ''}
                         </span>
