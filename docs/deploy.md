@@ -282,6 +282,48 @@ Manual `docker compose pull` rolls skip the refresh (it lives in the updater) �
 `/settings/updates` will show the compose as **stale** until an updater-driven
 update runs or you re-run `scripts/compose-adopt.sh`.
 
+### The updater script refreshes itself too (v0.206+)
+
+The sidecar runs `infra/updater/updater.sh` **bind-mounted from the box**, and
+until v0.206 it was the one release-owned file nothing ever refreshed — so a box
+whose `infra/` predated a script change ran that old logic forever. It failed
+**silently**, which is what made it expensive: on 2026-07-26 every box in the
+fleet was found carrying a pre-v0.200 script that rolled the server stack,
+reported `ok: true`, and skipped the **client** stack with no error anywhere.
+
+It now refreshes on the same trust model as compose — canonical embedded at
+`/app/release/updater.sh`, extracted from the image the box is about to run —
+with three differences that follow from it being the running program:
+
+- **It swaps last, then re-execs.** A shell cannot safely rewrite the script
+  it is executing, so the swap is the final act of a *successful* update, after
+  `status.json` and `stack.json` are final. The re-exec goes through the
+  stack-dir mount, never `/updater.sh`: that entrypoint mount is pinned to the
+  pre-swap **inode** and would silently re-enter the copy just replaced.
+- **A bad script bricks the sidecar**, so the incoming file must start with a
+  shebang and pass `sh -n` before it is installed. Failing either keeps the
+  current copy and says so in update.log.
+- **No `compose-adopt.sh` equivalent, by design.** Compose has a supported
+  box-local dialect; this script takes all box-specific input from the
+  environment and has none, so on a box with no baseline every difference *is*
+  staleness. It adopts itself (previous copy kept as `updater.sh.prev`) and
+  seeds `updater.sh.release` the first time it can prove the box copy pristine.
+  From then on a hand-edited script is detected and **refused**, and shown on
+  `/settings/updates` as "Updater script has local edits".
+
+`/signal/stack.json` carries `updater_sha` / `updater_baseline_sha` /
+`updater_refresh` so a box that cannot self-refresh is visible rather than
+silent — the whole point being that "the update succeeded" was never, on its
+own, evidence that it did everything.
+
+**Availability note:** caddy is deliberately held out of the main `up` and
+converged separately with `--no-deps`. It declares
+`depends_on: web {service_healthy}` — right for first boot, brutal mid-update,
+where it parked the public site (including the progress UI) behind web's
+~2 min health-start window. On a release that changes neither the Caddyfile nor
+the floating `caddy:2-alpine` digest that is now a true no-op and caddy never
+stops serving.
+
 ---
 
 ## 6. Staging on the VPS (for tailnet / remote-inference testing)

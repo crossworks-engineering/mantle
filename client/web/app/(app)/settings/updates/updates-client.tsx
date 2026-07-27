@@ -117,6 +117,44 @@ function ComposeLine({ compose }: { compose: ComposeStatus | null }) {
   );
 }
 
+/** The updater sidecar's own script. Silent when in-sync or unknown — the
+ *  point is only to make the two states that COST something visible.
+ *
+ *  'stale' is not an alarm: the script self-refreshes at the end of the next
+ *  successful update (v0.206+). It is shown because a stale script is exactly
+ *  what made the 2026-07-26 fleet failure invisible — every box rolled the
+ *  server stack, reported ok, and skipped the client stack — so "the update
+ *  succeeded" is not, on its own, evidence that it did everything. */
+function UpdaterScriptLine({ compose }: { compose: ComposeStatus | null }) {
+  const state = compose?.updater.state;
+  if (!state || state === 'unknown' || state === 'in-sync') return null;
+  return (
+    <p
+      className={`mt-2 flex items-start gap-1.5 text-xs ${
+        state === 'modified' ? 'text-destructive' : 'text-muted-foreground'
+      }`}
+    >
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+      <span>
+        {state === 'modified' ? (
+          <>
+            <span className="font-medium">Updater script has local edits. </span>
+            infra/updater/updater.sh differs from the copy it was installed with, so it will not
+            self-refresh and this box keeps running older update logic. Restore it from the release
+            (or delete infra/updater/updater.sh.release to re-adopt it).
+          </>
+        ) : (
+          <>
+            <span className="font-medium">Updater script is from an older release. </span>
+            It refreshes itself at the end of the next successful update. Until then this box runs
+            that release&apos;s update logic, which may not do everything the current one does.
+          </>
+        )}
+      </span>
+    </p>
+  );
+}
+
 const PHASE_LABEL: Record<string, string> = {
   requested: 'Waiting for the updater to pick up the request…',
   pulling: 'Pulling the new image…',
@@ -158,6 +196,20 @@ function UpdatesView({
   // When the current polling run began — used to time out a request the sidecar
   // never picks up (a dead/parked updater).
   const pollStartRef = useRef<number>(0);
+  // started_at of the run that was terminal when we asked for a new one. The
+  // sidecar consumes request.json a beat before it writes the new status, and
+  // in that gap the server has nothing to infer 'requested' from and replays
+  // the PREVIOUS run's phase — so a healthy update briefly reads as the last
+  // one's 'error' (stop polling, toast a failure) or 'done' (toast success
+  // immediately). Identity, not timing, settles it: a terminal status still
+  // carrying this started_at is the OLD run and gets ignored. Comparing
+  // clocks would not work — the stamp is the sidecar's, the poll is ours.
+  // Seeded on load too: a 'requested' phase is SYNTHESIZED by the server from
+  // an unconsumed request.json over the old status, so its started_at is
+  // already the previous run's — exactly the value to disregard.
+  const priorStartedRef = useRef<string | null>(
+    initialStatus?.phase === 'requested' ? initialStatus.startedAt : null,
+  );
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -175,6 +227,15 @@ function UpdatesView({
           version: string;
         }>('/api/updates/status', { cache: 'no-store' });
         setRestarting(false);
+        // A terminal status the sidecar hasn't overwritten yet belongs to the
+        // PREVIOUS run — keep waiting rather than reporting its outcome as
+        // ours. Held back from setStatus too, so the view doesn't flash the
+        // old failure under the spinner.
+        const stale =
+          (data.status?.phase === 'done' || data.status?.phase === 'error') &&
+          !!data.status.startedAt &&
+          data.status.startedAt === priorStartedRef.current;
+        if (stale) return;
         setStatus(data.status);
         setLog(data.log);
         // New build answering = the roll reached the web container. Reload
@@ -250,11 +311,22 @@ function UpdatesView({
       return;
     }
     setLog('');
+    // Whatever run is terminal right now is the one to disregard from here on.
+    priorStartedRef.current = status?.startedAt ?? null;
     setStatus((s) => (s ? { ...s, phase: 'requested', target, error: null } : s));
     setUpdating(true);
   }
 
-  const busy = updating || status?.phase === 'pulling' || status?.phase === 'rolling';
+  // 'requested' counts as busy in its own right, not just via `updating`:
+  // that local flag only knows about updates THIS tab started, so a run
+  // triggered elsewhere (another tab, another operator, a queued request the
+  // sidecar hasn't reached) would otherwise render "Ready." over the top of
+  // an update in flight — with the previous run's failure line under it.
+  const busy =
+    updating ||
+    status?.phase === 'requested' ||
+    status?.phase === 'pulling' ||
+    status?.phase === 'rolling';
   const latest = check.latest;
 
   return (
@@ -271,6 +343,7 @@ function UpdatesView({
           </span>
         </div>
         <ComposeLine compose={compose} />
+        <UpdaterScriptLine compose={compose} />
       </section>
 
       {/* ── Latest release ── */}

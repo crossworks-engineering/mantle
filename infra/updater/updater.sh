@@ -25,8 +25,15 @@
 # choose the image TAG, validated to ^v?[A-Za-z0-9._-]+$), and its own image is
 # the official docker CLI. Don't "improve" it into a general remote executor.
 #
+# This script is itself release-owned and SELF-REFRESHING: after a successful
+# update it installs the canonical copy embedded in the target image and
+# re-execs into it (refresh_updater below). Before v0.206 it was the one
+# release-owned file nothing ever updated, so a box silently ran old update
+# logic forever — the fleet-wide client-stack skip of 2026-07-26.
+#
 # Status surface (read by /settings/updates):
 #   /signal/status.json  — {"phase","target","started_at","finished_at","ok","error"}
+#   /signal/stack.json   — compose + updater-script fingerprints (drift check)
 #   /signal/update.log   — full pull/up output of the current/last run
 #
 # Idle cost: a sleep-5 loop in one busybox sh — effectively zero.
@@ -80,17 +87,28 @@ cur_phase() {
 
 REFRESH=none          # last server-compose refresh outcome (stack.json)
 CLIENT_REFRESH=none   # last client-compose refresh outcome (stack.json)
+UPDATER_REFRESH=none  # last updater-script refresh outcome (stack.json)
+
+# This script's own path INSIDE the container, reached through the stack-dir
+# mount rather than the /updater.sh entrypoint mount. The distinction is load-
+# bearing — see refresh_updater().
+UPDATER_REL=infra/updater/updater.sh
 
 sha_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
-# Compose fingerprints for the web app's drift check (best-effort).
+# Compose + updater-script fingerprints for the web app's drift check
+# (best-effort). The updater sha is what makes a stale SCRIPT visible: a box
+# that cannot self-refresh (modified copy, extraction failure) otherwise
+# reports a perfectly healthy update while silently running old logic.
 write_stack_info() {
-  printf '{"compose_sha":"%s","baseline_sha":"%s","client_compose_sha":"%s","client_baseline_sha":"%s","refresh":"%s","client_refresh":"%s","checked_at":"%s"}\n' \
+  printf '{"compose_sha":"%s","baseline_sha":"%s","client_compose_sha":"%s","client_baseline_sha":"%s","updater_sha":"%s","updater_baseline_sha":"%s","refresh":"%s","client_refresh":"%s","updater_refresh":"%s","checked_at":"%s"}\n' \
     "$(sha_of "$STACK/docker-compose.yml")" \
     "$(sha_of "$STACK/docker-compose.yml.release")" \
     "$(sha_of "$STACK/docker-compose.client.yml")" \
     "$(sha_of "$STACK/docker-compose.client.yml.release")" \
-    "$REFRESH" "$CLIENT_REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
+    "$(sha_of "$STACK/$UPDATER_REL")" \
+    "$(sha_of "$STACK/$UPDATER_REL.release")" \
+    "$REFRESH" "$CLIENT_REFRESH" "$UPDATER_REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
     && mv "$SIG/stack.json.tmp" "$SIG/stack.json"
 }
 
@@ -156,6 +174,84 @@ refresh_compose() {
   fi
 }
 
+# ── release-owned updater: self-refresh ──────────────────────────────────────
+# THIS SCRIPT is bind-mounted from the box and was, until v0.206, the one
+# release-owned file nothing ever refreshed. A box whose infra/ predated a
+# script change ran the old logic forever while everything updated around it —
+# and because the stale copy still reported ok:true, the failure was SILENT.
+# Found live on dev 2026-07-26: every box in the fleet carried a pre-v0.200
+# script, so in-app updates rolled the server stack and skipped the CLIENT
+# stack without a word. Fixed by hand then; this closes it durably.
+#
+# Three things make this different from the compose refresh:
+#
+#  1. IT CANNOT REPLACE ITSELF MID-RUN. busybox sh reads a script
+#     incrementally, so overwriting the file underneath a running shell can
+#     make it resume at a byte offset in the NEW text. So the swap is the last
+#     act of a SUCCESSFUL run, after status.json/stack.json are final, and the
+#     new copy is entered with a clean `exec` rather than fall-through.
+#  2. THE ENTRYPOINT MOUNT IS AN INODE, NOT A PATH. `up` mounts this file at
+#     /updater.sh; an atomic `mv` swaps the stack-dir file for a NEW inode, and
+#     /updater.sh keeps resolving to the OLD one for the life of the container.
+#     Re-exec therefore MUST go through the stack-dir mount ($STACK/$UPDATER_REL,
+#     a directory mount that resolves per-path), never /updater.sh — which would
+#     silently re-enter the very copy we just replaced.
+#  3. A BAD SWAP BRICKS THE SIDECAR. A syntax error here is not a degraded
+#     update, it is a container that crash-loops with no way to ask for the next
+#     one. Hence `sh -n` on the incoming file BEFORE it is installed.
+#
+# Unlike compose there is no `no-baseline` standoff: docker-compose.yml has a
+# supported box-local dialect (install.sh writes it, overrides merge into it),
+# but this script takes ALL of its box-specific input from the environment and
+# has no supported local variation — so on a box with no baseline yet, every
+# difference IS the staleness this exists to fix. It adopts: baseline seeded,
+# canonical installed, previous copy kept as .prev. A copy that differs from an
+# EXISTING baseline is still refused and reported, same as compose.
+refresh_updater() {
+  incoming="$STACK/.updater-incoming.tmp"
+  rm -f "$incoming"
+  cid=$(docker create "$IMG" 2>> "$SIG/update.log") || { echo extract-failed; return; }
+  docker cp "$cid:/app/release/updater.sh" "$incoming" >> "$SIG/update.log" 2>&1
+  docker rm "$cid" > /dev/null 2>&1
+  # Pre-v0.206 images ship no embedded updater.sh — nothing to refresh from.
+  if [ ! -s "$incoming" ]; then
+    rm -f "$incoming"; echo unavailable; return
+  fi
+  # Never install something we cannot prove is a runnable script.
+  if ! head -1 "$incoming" | grep -q '^#!'; then
+    rm -f "$incoming"; echo not-a-script; return
+  fi
+  if ! sh -n "$incoming" 2>> "$SIG/update.log"; then
+    rm -f "$incoming"; echo syntax-error; return
+  fi
+  # Already current — the common case on every run after the first. Seize the
+  # chance to seed a missing baseline: the box copy has just been PROVEN
+  # identical to the canonical, so recording it costs nothing and upgrades
+  # every later refresh from "adopt" to the strict pristine check below —
+  # which is what makes a hand-edit detectable instead of silently overwritten.
+  if cmp -s "$STACK/$UPDATER_REL" "$incoming"; then
+    if [ ! -f "$STACK/$UPDATER_REL.release" ]; then
+      cp "$incoming" "$STACK/.updater-release.tmp" \
+        && mv "$STACK/.updater-release.tmp" "$STACK/$UPDATER_REL.release"
+    fi
+    rm -f "$incoming"; echo current; return
+  fi
+  if [ -f "$STACK/$UPDATER_REL.release" ] \
+    && ! cmp -s "$STACK/$UPDATER_REL" "$STACK/$UPDATER_REL.release"; then
+    rm -f "$incoming"; echo modified; return
+  fi
+  adopted=adopted
+  [ -f "$STACK/$UPDATER_REL.release" ] && adopted=refreshed
+  if cp "$STACK/$UPDATER_REL" "$STACK/$UPDATER_REL.prev" \
+    && cp "$incoming" "$STACK/.updater-release.tmp" \
+    && mv "$STACK/.updater-release.tmp" "$STACK/$UPDATER_REL.release" \
+    && mv "$incoming" "$STACK/$UPDATER_REL"; then
+    echo "$adopted"
+  else
+    rm -f "$incoming" "$STACK/.updater-release.tmp"; echo write-failed
+  fi
+}
+
 CFG_ERR=$(config_error)
 if [ -n "$CFG_ERR" ]; then
   echo "[updater] not configured: $CFG_ERR." \
@@ -199,6 +295,15 @@ while true; do
 
     STARTED=$(now)
     : > "$SIG/update.log"
+    # Claim the run IMMEDIATELY — before the .env rewrite, not after it. From
+    # the moment request.json is consumed until a new status is written, the
+    # web app reads the PREVIOUS run's status: it has no pending request to
+    # infer 'requested' from, so a prior 'error'/'done' is all it can see and
+    # it reports the last run's outcome as this one's. Every statement between
+    # here and the write widens that window (the .env rewrite forks sed+mv),
+    # so there are none. The client is independently race-proofed against it
+    # via started_at, since the window can never be closed to zero.
+    write_status pulling "$TARGET" "$STARTED" "" null ""
     echo "[updater] update requested → $TARGET" | tee -a "$SIG/update.log"
 
     # Persist the tag so a later manual `docker compose up` doesn't roll back.
@@ -213,10 +318,10 @@ while true; do
       fi
     fi
 
-    write_status pulling "$TARGET" "$STARTED" "" null ""
     # Refresh the (pristine) compose from the target image BEFORE `compose
     # pull`/`up`, so a release's compose-level changes — new services, mounts,
-    # healthchecks — take effect in the SAME roll as its image.
+    # healthchecks — take effect in the SAME roll as its image. (Phase is
+    # already 'pulling' — claimed above the .env rewrite.)
     refresh_compose "$TARGET"
     if docker compose --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1; then
       write_status rolling "$TARGET" "$STARTED" "" null ""
@@ -228,7 +333,18 @@ while true; do
       # services absent from the compose file (the updater isn't one).
       # Plain `up -d` (not --wait): the app containers — including the web app
       # showing the progress UI — get recreated mid-command, which is expected.
-      SERVICES=$(docker compose --project-directory "$STACK" config --services 2>/dev/null | grep -vx updater | tr '\n' ' ')
+      ROLLABLE=$(docker compose --project-directory "$STACK" config --services 2>/dev/null | grep -vx updater)
+      # Hold caddy back too, for AVAILABILITY. It declares
+      # `depends_on: web {service_healthy}` — correct for first boot, brutal
+      # during an update: including caddy in this `up` parks it behind web's
+      # health-start window, so the PUBLIC SITE (including the progress UI the
+      # operator is watching) is dead for ~2 min. Worse, that price is usually
+      # paid for nothing — on a release that changes neither the Caddyfile nor
+      # the floating caddy:2-alpine digest, caddy needs no recreate at all.
+      # Rolled separately below with --no-deps: unchanged ⇒ true no-op and
+      # caddy never stops serving; changed ⇒ a ~1s recreate instead of ~2 min.
+      SERVICES=$(printf '%s\n' "$ROLLABLE" | grep -vx caddy | tr '\n' ' ')
+      HAS_CADDY=$(printf '%s\n' "$ROLLABLE" | grep -cx caddy)
       if [ -z "$(printf '%s' "$SERVICES" | tr -d '[:space:]')" ]; then
         write_status error "$TARGET" "$STARTED" "$(now)" false "could not enumerate services to recreate"
         echo "[updater] ERROR: empty service list; aborting to avoid self-recreate" | tee -a "$SIG/update.log"
@@ -236,6 +352,17 @@ while true; do
       fi
       # shellcheck disable=SC2086  # word-splitting $SERVICES into args is intended
       if docker compose --project-directory "$STACK" up -d --remove-orphans $SERVICES >> "$SIG/update.log" 2>&1; then
+        # Converge caddy WITHOUT its depends_on gate (see the hold-back note
+        # above). --no-deps is the whole point: it stops compose re-evaluating
+        # `web: service_healthy`, so an unchanged caddy is left serving and a
+        # changed one is recreated immediately instead of waiting out web's
+        # health-start. Non-fatal — the stack is already rolled, and a caddy
+        # that failed to converge is still the OLD, working caddy.
+        if [ "$HAS_CADDY" -gt 0 ]; then
+          if ! docker compose --project-directory "$STACK" up -d --no-deps caddy >> "$SIG/update.log" 2>&1; then
+            echo "[updater] ⚠ caddy did not converge — the previous caddy is still serving; see update.log" | tee -a "$SIG/update.log"
+          fi
+        fi
         # v0.200+ lockstep: roll the CLIENT stack with the same tag (its compose
         # reads the same $STACK/.env, so the persisted MANTLE_IMAGE_TAG applies).
         # A failure here is loud but non-fatal to the server roll (already done).
@@ -250,6 +377,21 @@ while true; do
         fi
         write_status done "$TARGET" "$STARTED" "$(now)" true ""
         echo "[updater] done → $TARGET" | tee -a "$SIG/update.log"
+        # Self-refresh LAST, on the success path only: a failed roll should
+        # change as little as possible, and the status the UI polls is already
+        # terminal. Sets UPDATER_REFRESH for the write_stack_info below.
+        UPDATER_REFRESH=$(refresh_updater)
+        case "$UPDATER_REFRESH" in
+          refreshed|adopted) echo "[updater] updater script $UPDATER_REFRESH from the $TARGET canonical" | tee -a "$SIG/update.log" ;;
+          current) : ;;
+          unavailable) echo "[updater] updater self-refresh skipped: $IMG ships no embedded updater.sh (pre-v0.206 image)" | tee -a "$SIG/update.log" ;;
+          modified) echo "[updater] ⚠ UPDATER SCRIPT NOT REFRESHED: $UPDATER_REL has LOCAL EDITS." \
+               "This script takes all box-specific input from the environment and has no supported local variation;" \
+               "restore it from the release (or delete $UPDATER_REL.release to re-adopt) or this box keeps running OLD update logic." | tee -a "$SIG/update.log" ;;
+          syntax-error|not-a-script) echo "[updater] ⚠ updater self-refresh REFUSED: incoming script failed its sanity check ($UPDATER_REFRESH)." \
+               "Keeping the current copy — installing it would crash-loop the sidecar." | tee -a "$SIG/update.log" ;;
+          *) echo "[updater] ⚠ updater self-refresh: $UPDATER_REFRESH" | tee -a "$SIG/update.log" ;;
+        esac
       else
         write_status error "$TARGET" "$STARTED" "$(now)" false "compose up failed — see update.log"
       fi
@@ -257,6 +399,16 @@ while true; do
       write_status error "$TARGET" "$STARTED" "$(now)" false "compose pull failed — see update.log"
     fi
     write_stack_info
+    # Enter the refreshed script. Everything the settings page reads —
+    # status.json, stack.json, update.log — is already final on disk, so being
+    # replaced here costs nothing. MUST be the stack-dir path: /updater.sh is a
+    # FILE bind-mount pinned to the pre-swap inode (see refresh_updater note 2).
+    case "$UPDATER_REFRESH" in
+      refreshed | adopted)
+        echo "[updater] re-entering the refreshed script" | tee -a "$SIG/update.log"
+        exec sh "$STACK/$UPDATER_REL"
+        ;;
+    esac
   fi
   # Keep the compose fingerprint fresh (~5 min) so manual edits and manual
   # `docker compose pull` rolls surface on /settings/updates without an update

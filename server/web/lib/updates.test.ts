@@ -1,3 +1,8 @@
+import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { APP_VERSION } from '@mantle/web-ui/version';
@@ -90,5 +95,76 @@ describe('checkForUpdate cache TTL', () => {
     r = await checkForUpdate();
     expect(r.updateAvailable).toBe(true);
     expect(fetchCount).toBe(1);
+  });
+});
+
+/**
+ * Updater-script currency. The sidecar script is release-owned and, from
+ * v0.206, self-refreshing — but the state that matters here is the one it
+ * CAN'T fix: a hand-edited copy, which refuses to refresh and leaves the box
+ * running old update logic. That is the shape of the 2026-07-26 fleet failure
+ * (stale script rolls the server stack, reports ok, skips the client stack),
+ * so these pin the classification that makes it visible.
+ *
+ * Deliberately not folded into the compose `classify`: the script has no
+ * `no-baseline` standoff — it adopts — so an absent baseline must read as the
+ * plain 'stale' it functionally is, never as an operator action.
+ */
+describe('readComposeStatus — updater script state', () => {
+  const CANONICAL = '#!/bin/sh\necho canonical\n';
+  const sha = (s: string) => createHash('sha256').update(s).digest('hex');
+
+  let dir: string;
+
+  /** Write a stack.json with the given updater fields and classify it. */
+  async function stateFor(fields: Record<string, string>) {
+    writeFileSync(
+      join(dir, 'stack.json'),
+      JSON.stringify({ compose_sha: '', baseline_sha: '', ...fields }),
+    );
+    vi.resetModules(); // canonical sha is cached per module instance
+    const { readComposeStatus } = await import('./updates');
+    return (await readComposeStatus()).updater.state;
+  }
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mantle-updates-'));
+    writeFileSync(join(dir, 'updater.sh'), CANONICAL);
+    vi.stubEnv('MANTLE_UPDATE_SIGNAL_DIR', dir);
+    vi.stubEnv('MANTLE_RELEASE_UPDATER_PATH', join(dir, 'updater.sh'));
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reads in-sync when the box script matches this release', async () => {
+    expect(
+      await stateFor({ updater_sha: sha(CANONICAL), updater_baseline_sha: sha(CANONICAL) }),
+    ).toBe('in-sync');
+  });
+
+  it('reads stale — not no-baseline — when an old script has no baseline yet', async () => {
+    expect(await stateFor({ updater_sha: sha('#!/bin/sh\nold\n'), updater_baseline_sha: '' })).toBe(
+      'stale',
+    );
+  });
+
+  it('reads stale when an old script still matches its baseline (pristine, refresh pending)', async () => {
+    const old = sha('#!/bin/sh\nold\n');
+    expect(await stateFor({ updater_sha: old, updater_baseline_sha: old })).toBe('stale');
+  });
+
+  it('reads modified when the script diverges from its own baseline — the one state a human must fix', async () => {
+    expect(
+      await stateFor({
+        updater_sha: sha('#!/bin/sh\nhand-edited\n'),
+        updater_baseline_sha: sha('#!/bin/sh\nold\n'),
+      }),
+    ).toBe('modified');
+  });
+
+  it('reads unknown on a pre-v0.206 sidecar, which reports no script sha at all', async () => {
+    expect(await stateFor({})).toBe('unknown');
   });
 });
