@@ -660,7 +660,7 @@ services:
       SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:-}
       SANDBOXES_DIR: ${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}
       SANDBOX_NETWORK: mantle_sandbox
-      SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-titanwest/mantle-sandbox:24.04-v1}
+      SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-titanwest/mantle-sandbox:24.04-v2}
       SANDBOX_MAX_COUNT: ${SANDBOX_MAX_COUNT:-3}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

@@ -163,7 +163,7 @@ const sandbox_create: BuiltinToolDef = {
         description:
           'Container image reference. The default ships python3+common libs, node22+pnpm, git, ' +
           'docker CLI and claude code — only override for a specialist runtime, e.g. "golang:1.23".',
-        default: 'titanwest/mantle-sandbox:24.04-v1',
+        default: 'titanwest/mantle-sandbox:24.04-v2',
       },
       network: {
         type: 'string',
@@ -197,7 +197,7 @@ const sandbox_create: BuiltinToolDef = {
     const image =
       typeof input.image === 'string' && input.image
         ? input.image
-        : process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v1';
+        : process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v2';
     const created = await sandboxd('POST', '/sandboxes', {
       id,
       ownerId: ctx.ownerId,

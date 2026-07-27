@@ -20,14 +20,16 @@
 #     The CLI is here so `docker context`/compose files can at least be
 #     inspected, and so a future daemon decision needs no image change.
 #   - Everyday tools: git, curl, wget, jq, ripgrep, sqlite3, build-essential,
-#     zip/unzip, nano, less, openssh-client.
+#     zip/unzip, vim, nano, tmux, less, openssh-client.
+#   - Global npm libs (jsonwebtoken) require-able from ANY directory via
+#     NODE_PATH — sandbox scripts shouldn't need an npm init to use them.
 #   - `git config --system safe.directory '*'`: /files is a bind mount whose
 #     ownership legitimately changes (sandboxd chowns it to uid 1000 on
 #     stop/rm), which otherwise trips git's dubious-ownership refusal.
 #
 # Build + push (workstation; titanwest push is pre-authorized):
-#   docker build -t titanwest/mantle-sandbox:24.04-v1 -t titanwest/mantle-sandbox:latest infra/sandbox-image
-#   docker push titanwest/mantle-sandbox:24.04-v1 && docker push titanwest/mantle-sandbox:latest
+#   docker build -t titanwest/mantle-sandbox:24.04-v2 -t titanwest/mantle-sandbox:latest infra/sandbox-image
+#   docker push titanwest/mantle-sandbox:24.04-v2 && docker push titanwest/mantle-sandbox:latest
 # Bump the -vN tag on every content change; boxes pull by the pinned tag
 # (SANDBOX_DEFAULT_IMAGE), so an image update is an explicit env change,
 # never a silent drift.
@@ -41,7 +43,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Base toolchain + apt-sourced runtimes in one layer, caches purged.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    ca-certificates curl wget gnupg git jq ripgrep unzip zip nano less \
+    ca-certificates curl wget gnupg git jq ripgrep unzip zip vim nano tmux less \
     build-essential pkg-config sqlite3 openssh-client \
     python3 python3-pip python3-venv \
     # Node 22 LTS via NodeSource
@@ -61,10 +63,12 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir \
     requests httpx flask fastapi "uvicorn[standard]" pandas numpy
 
-# pnpm via corepack; Claude Code for the keyless MCP toolbelt.
+# pnpm via corepack; Claude Code for the keyless MCP toolbelt; common node
+# libs installed globally and made require-able everywhere via NODE_PATH.
 RUN corepack enable && corepack prepare pnpm@latest --activate \
-    && npm install -g @anthropic-ai/claude-code \
+    && npm install -g @anthropic-ai/claude-code jsonwebtoken \
     && npm cache clean --force
+ENV NODE_PATH=/usr/lib/node_modules
 
 # /files is a bind mount whose ownership sandboxd rewrites on stop/rm.
 RUN git config --system safe.directory '*'
