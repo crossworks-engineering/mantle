@@ -68,7 +68,10 @@ beforeEach(() => {
 
 describe('team_notify', () => {
   it('sends as the AUTHENTICATED member and stamps the forum thread it came from', async () => {
-    const res = await notify.handler({ recipient_ids: [DEEPTHI], body: 'Please check this.' }, forumCtx);
+    const res = await notify.handler(
+      { recipient_ids: [DEEPTHI], body: 'Please check this.' },
+      forumCtx,
+    );
 
     expect(res.ok).toBe(true);
     expect(notifyMembers).toHaveBeenCalledWith('o1', {
