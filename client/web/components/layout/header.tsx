@@ -26,6 +26,7 @@ export function Header({
   siteName,
   peerName,
   logoVersion,
+  logoDarkVersion,
   onMenuClick,
   onSearchClick,
 }: {
@@ -39,6 +40,9 @@ export function Header({
    *  height, width free, never distorted — same header-bounded treatment as
    *  the peer name). null/undefined ⇒ the font wordmark. */
   logoVersion?: string | null;
+  /** Optional dark-mode variant — shown instead of the base logo while the
+   *  `.dark` theme class is active; falls back to the base, then the wordmark. */
+  logoDarkVersion?: string | null;
   onMenuClick: () => void;
   /** Opens the global search palette (the ⌘K twin for mouse/touch). */
   onSearchClick: () => void;
@@ -71,17 +75,43 @@ export function Header({
         className="flex min-w-0 items-center"
         aria-label={`${siteName || 'Mantle'} home`}
       >
-        {logoVersion ? (
+        {logoVersion || logoDarkVersion ? (
           /* Uploaded brand logo (Settings → Appearance → Logo): fixed HEIGHT,
              width free, object-contain — never distorted, bounded by the
              header the way the peer name is. Src is the server app's public
-             logo route; content-addressed, so ?v busts the immutable cache. */
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={serverUrl(`/api/appearance/logo?v=${logoVersion}`)}
-            alt={siteName || 'Mantle'}
-            className="h-10 w-auto max-w-[45vw] object-contain"
-          />
+             logo route; content-addressed, so ?v busts the immutable cache.
+             Light/dark are TWO imgs swapped by the `dark:` variant classes —
+             a CSS swap, so flipping the theme never waits on a fetch. Dark
+             mode shows the dark variant when set, else the base; light mode
+             shows the base, else (dark-only brains) the wordmark below. */
+          <>
+            {logoVersion ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={serverUrl(`/api/appearance/logo?v=${logoVersion}`)}
+                alt={siteName || 'Mantle'}
+                className={
+                  'h-10 w-auto max-w-[45vw] object-contain' +
+                  (logoDarkVersion ? ' dark:hidden' : '')
+                }
+              />
+            ) : (
+              <span
+                className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary dark:hidden"
+                style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
+              >
+                {siteName || 'mantle'}
+              </span>
+            )}
+            {logoDarkVersion && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={serverUrl(`/api/appearance/logo?variant=dark&v=${logoDarkVersion}`)}
+                alt={siteName || 'Mantle'}
+                className="hidden h-10 w-auto max-w-[45vw] object-contain dark:block"
+              />
+            )}
+          </>
         ) : (
           /* Script/display faces overshoot the em box (swashes, tall ascenders,
              deep descenders). Clip only the WIDTH (overflow-x-clip, bounded by

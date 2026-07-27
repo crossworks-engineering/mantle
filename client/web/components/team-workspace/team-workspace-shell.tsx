@@ -44,6 +44,7 @@ export type WorkspaceData = {
   peerName: string | null;
   /** Brand logo version; set ⇒ an image replaces the wordmark text. */
   logoVersion: string | null;
+  logoDarkVersion?: string | null;
   colorTheme: string | null;
   version: string;
   counts: Record<string, number>;
@@ -193,15 +194,40 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
             className="flex min-w-0 items-baseline"
             aria-label={`${data.siteName || 'Mantle'} team home`}
           >
-            {data.logoVersion ? (
+            {data.logoVersion || data.logoDarkVersion ? (
               /* Uploaded brand logo — fixed height, width free, never
-                 distorted; bounded by the h-14 header like the peer name. */
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={serverUrl(`/api/appearance/logo?v=${data.logoVersion}`)}
-                alt={data.siteName || 'Mantle'}
-                className="h-9 w-auto max-w-[45vw] object-contain"
-              />
+                 distorted; bounded by the h-14 header like the peer name.
+                 Light/dark are two imgs swapped by the `dark:` classes, same
+                 as the owner header: dark shows the dark variant when set,
+                 else the base; light shows the base, else the wordmark. */
+              <>
+                {data.logoVersion ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={serverUrl(`/api/appearance/logo?v=${data.logoVersion}`)}
+                    alt={data.siteName || 'Mantle'}
+                    className={
+                      'h-9 w-auto max-w-[45vw] object-contain' +
+                      (data.logoDarkVersion ? ' dark:hidden' : '')
+                    }
+                  />
+                ) : (
+                  <span
+                    className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary dark:hidden"
+                    style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
+                  >
+                    {data.siteName || 'mantle'}
+                  </span>
+                )}
+                {data.logoDarkVersion && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={serverUrl(`/api/appearance/logo?variant=dark&v=${data.logoDarkVersion}`)}
+                    alt={data.siteName || 'Mantle'}
+                    className="hidden h-9 w-auto max-w-[45vw] object-contain dark:block"
+                  />
+                )}
+              </>
             ) : (
               /* Script/display faces overshoot the em box — clip only the WIDTH
                  and let the height overflow, same as the owner header. */

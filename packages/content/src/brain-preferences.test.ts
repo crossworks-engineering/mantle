@@ -22,6 +22,8 @@ describe('BRAIN_PREFERENCE_KEYS', () => {
       'fontTitle',
       'logoKey',
       'logoType',
+      'logoDarkKey',
+      'logoDarkType',
     ]) {
       expect(BRAIN_PREFERENCE_KEYS, k).toContain(k);
     }

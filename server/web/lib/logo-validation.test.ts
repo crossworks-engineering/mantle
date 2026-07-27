@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sniffType, SVG_ACTIVE_RE } from './logo-validation';
+import { sniffType, SVG_ACTIVE_RE, staleLogoBytes } from './logo-validation';
 import { projectLogoKey, projectLogoType, logoVersion } from '@mantle/content';
 
 /**
@@ -81,5 +81,40 @@ describe('logo prefs projections', () => {
     expect(logoVersion(key)).toBe('aaaaaaaa');
     expect(logoVersion(undefined)).toBeNull();
     expect(logoVersion('')).toBeNull();
+  });
+});
+
+/**
+ * staleLogoBytes — the byte-cleanup predicate behind PUT/DELETE
+ * /api/profile/logo. Content-addressed keys are shared by identical bytes
+ * ACROSS THE TWO VARIANTS, so "delete what this variant pointed at" can tear
+ * the bytes out from under the other variant — or from under an identical
+ * re-upload. These pin the three refusals and the one genuine cleanup.
+ */
+describe('staleLogoBytes', () => {
+  const A = 'attachments/aa/aa/' + 'a'.repeat(64);
+  const B = 'attachments/bb/bb/' + 'b'.repeat(64);
+
+  it('cleans up a genuinely replaced key', () => {
+    expect(staleLogoBytes({ replaced: A, newKey: B, otherKey: undefined })).toBe(A);
+  });
+
+  it('never deletes when nothing was replaced', () => {
+    expect(staleLogoBytes({ replaced: undefined, newKey: A, otherKey: B })).toBeNull();
+  });
+
+  it('never deletes an identical re-upload (same bytes ⇒ same key)', () => {
+    expect(staleLogoBytes({ replaced: A, newKey: A, otherKey: undefined })).toBeNull();
+  });
+
+  it('never deletes bytes the OTHER variant still points at', () => {
+    // The same file uploaded as both light and dark is ONE stored object:
+    // removing (or replacing) one variant must leave the other rendering.
+    expect(staleLogoBytes({ replaced: A, newKey: B, otherKey: A })).toBeNull();
+    expect(staleLogoBytes({ replaced: A, otherKey: A })).toBeNull(); // DELETE path
+  });
+
+  it('DELETE of a variant with its own distinct bytes cleans them up', () => {
+    expect(staleLogoBytes({ replaced: A, otherKey: B })).toBe(A);
   });
 });

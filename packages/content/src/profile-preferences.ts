@@ -95,6 +95,14 @@ export type ProfilePreferences = {
   /** The logo's mime type, from the validated upload (svg/png/jpeg/webp
    *  allowlist — projectLogoType). The public serve route replays it. */
   logoType?: string;
+  /** Optional DARK-MODE logo variant — same storage/validation contract as
+   *  logoKey, uploaded via PUT /api/profile/logo?variant=dark. Renderers show
+   *  it when the UI is in dark mode and fall back to the base logo (then the
+   *  wordmark) when unset — so a light-on-transparent mark stays readable on
+   *  both themes without forcing every brain to upload two files. */
+  logoDarkKey?: string;
+  /** The dark variant's mime type (same allowlist as logoType). */
+  logoDarkType?: string;
   /** Free-text "what this brain is for" — captured at onboarding, editable in
    *  Settings → Profile. Injected as the "# Purpose of this brain" section of the
    *  always-on identity block (identity-context.ts), so every agent knows the
@@ -482,6 +490,8 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     fontTitle: projectFontKey(prefs.fontTitle),
     logoKey: projectLogoKey(prefs.logoKey),
     logoType: projectLogoType(prefs.logoType),
+    logoDarkKey: projectLogoKey(prefs.logoDarkKey),
+    logoDarkType: projectLogoType(prefs.logoDarkType),
     purpose:
       typeof prefs.purpose === 'string' && prefs.purpose.length > 0 ? prefs.purpose : undefined,
     purposeArchetype:
@@ -665,6 +675,8 @@ export async function updateProfilePreferences(
     fontTitle: projectFontKey(merged.fontTitle),
     logoKey: projectLogoKey(merged.logoKey),
     logoType: projectLogoType(merged.logoType),
+    logoDarkKey: projectLogoKey(merged.logoDarkKey),
+    logoDarkType: projectLogoType(merged.logoDarkType),
     purpose: merged.purpose || undefined,
     purposeArchetype: merged.purposeArchetype || undefined,
     onboardedAt: merged.onboardedAt || undefined,
@@ -713,6 +725,8 @@ export const BRAIN_PREFERENCE_KEYS = [
   'fontTitle',
   'logoKey',
   'logoType',
+  'logoDarkKey',
+  'logoDarkType',
   'purpose',
   'purposeArchetype',
   // Onboarding is the BRAIN's, not a login's: a brain is set up once. Keying

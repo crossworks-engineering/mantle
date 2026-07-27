@@ -41,3 +41,30 @@ export function sniffType(buf: Buffer): (typeof LOGO_TYPES)[number] | null {
 /** Active-content tripwire for SVG — any hit is a hard reject. */
 export const SVG_ACTIVE_RE =
   /<script|<foreignObject|\son[a-z]+\s*=|javascript:|data:text\/html|<use[^>]+href\s*=\s*["']?\s*http/i;
+
+/**
+ * Which stored logo bytes are safe to delete after a variant write, or null.
+ *
+ * Content-addressed keys are SHARED by identical bytes — across brains is
+ * irrelevant here, but across the two VARIANTS of this brain it bites:
+ * uploading the same file as both light and dark yields ONE key, so "delete
+ * what this variant used to point at" would tear the bytes out from under the
+ * other variant (or from under the very upload that just landed, when the
+ * user re-uploads an identical file). Both routes (PUT replace, DELETE) run
+ * their cleanup through this one predicate.
+ *
+ * `replaced` — the key this variant pointed at before the write.
+ * `newKey`   — the key just written (undefined on DELETE).
+ * `otherKey` — the OTHER variant's current key.
+ */
+export function staleLogoBytes(opts: {
+  replaced: string | undefined;
+  newKey?: string | undefined;
+  otherKey: string | undefined;
+}): string | null {
+  const { replaced, newKey, otherKey } = opts;
+  if (!replaced) return null; // nothing was pointed at — nothing to clean
+  if (replaced === newKey) return null; // identical re-upload — bytes still live
+  if (replaced === otherKey) return null; // the other variant still uses them
+  return replaced;
+}

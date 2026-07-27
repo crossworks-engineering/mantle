@@ -62,6 +62,7 @@ type ShellData = {
   /** Brand logo cache-busting version (Settings → Appearance → Logo); null ⇒
    *  no logo, the siteName wordmark renders. Src is /api/appearance/logo. */
   logoVersion: string | null;
+  logoDarkVersion?: string | null;
   /** The DB-stored colour theme (the cross-browser source of truth); null ⇒
    *  never saved. Adopted once per shell load. */
   colorTheme: string | null;
@@ -290,6 +291,7 @@ function ShellFrame({
         siteName={shellQuery.data?.siteName ?? null}
         peerName={shellQuery.data?.peerName ?? null}
         logoVersion={shellQuery.data?.logoVersion ?? null}
+        logoDarkVersion={shellQuery.data?.logoDarkVersion ?? null}
         onMenuClick={() => setMobileOpen(true)}
         onSearchClick={() => setSearchOpen(true)}
       />

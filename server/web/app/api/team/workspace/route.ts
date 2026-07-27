@@ -39,6 +39,7 @@ export async function GET(req: Request) {
     // Brand logo (replaces the wordmark when set) — same public src +
     // version contract as the owner shell.
     logoVersion: logoVersion(prefs.logoKey),
+    logoDarkVersion: logoVersion(prefs.logoDarkKey),
     // The OWNER's colour theme — the workspace renders in the brain's brand
     // theme for members (light/dark stays the member's own choice).
     colorTheme: prefs.colorTheme ?? null,
