@@ -1,0 +1,5 @@
+[
+  { "label": "dev", "url": "https://dev.example.internal" },
+  { "label": "prod", "url": "https://prod.example.internal" },
+  { "label": "client-a", "url": "https://a.example.internal" }
+]
