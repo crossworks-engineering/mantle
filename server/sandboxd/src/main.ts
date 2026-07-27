@@ -16,8 +16,11 @@
  * `mantle_sandbox` network (egress only — no route to postgres/minio/web).
  * Each owns `${SANDBOXES_DIR}/<id>/files`, bind-mounted at /files (default
  * cwd): the container is disposable, /files survives rm unless purged.
- * Containers run as root (apt must work); /files may therefore be root-owned
- * on the host — copy with sudo, or via the M2 export tool.
+ * Containers run as root (apt must work), so work in /files is root-written —
+ * before stop and rm, sandboxd chowns /files to uid 1000 FROM INSIDE the
+ * container (root in there regardless of who runs sandboxd), so preserved
+ * work is always owner-accessible on the host and purge never needs host
+ * root. Best-effort: a wedged container still gets removed.
  *
  * Compose runs this from the standard server image behind the `sandboxes`
  * profile: a box that hasn't opted in simply doesn't have the feature.
@@ -92,6 +95,22 @@ async function findContainer(id: string): Promise<docker.ContainerSummary> {
   const rows = await docker.listContainers([`${LABEL}=true`, label(id)]);
   if (!rows.length) throw new HttpError(404, `no container for sandbox ${id}`);
   return rows[0]!;
+}
+
+/** Hand /files back to uid 1000 so the host-side owner can read/copy/delete
+ *  it without root. Runs INSIDE the container (root there even when sandboxd
+ *  isn't). Best-effort: callers proceed on failure — losing the chown must
+ *  never block a stop or removal. */
+async function chownFiles(containerId: string): Promise<void> {
+  try {
+    await docker.execInContainer(containerId, ['chown', '-R', '1000:1000', '/files'], {
+      workingDir: '/',
+      hardTimeoutMs: 120_000,
+      maxBytes: 4096,
+    });
+  } catch (e) {
+    console.warn('[sandboxd] chown /files failed (continuing):', (e as Error).message);
+  }
 }
 
 async function ensureImage(image: string): Promise<void> {
@@ -192,11 +211,28 @@ async function listSandboxes() {
 async function rmSandbox(id: string, purge: boolean) {
   try {
     const c = await findContainer(id);
+    try {
+      if (c.State !== 'running') await docker.startContainer(c.Id);
+      await chownFiles(c.Id);
+    } catch (e) {
+      // A container too broken to start still gets removed; the files then
+      // stay owned as-written (purge may need manual cleanup — reported).
+      console.warn('[sandboxd] pre-rm chown skipped:', (e as Error).message);
+    }
     await docker.removeContainer(c.Id);
   } catch (e) {
     if (!(e instanceof HttpError && e.status === 404)) throw e; // already gone: fine
   }
-  if (purge) await rm(path.join(SANDBOXES_DIR, id), { recursive: true, force: true });
+  if (purge) {
+    try {
+      await rm(path.join(SANDBOXES_DIR, id), { recursive: true, force: true });
+    } catch (e) {
+      throw new HttpError(
+        500,
+        `container removed but purging files failed (${(e as Error).message}) — delete ${path.join(SANDBOXES_DIR, id)} manually`,
+      );
+    }
+  }
   return { filesPreserved: !purge, filesDir: purge ? null : filesDir(id) };
 }
 
@@ -239,7 +275,10 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.method === 'POST' && seg[2] === 'stop') {
         const c = await findContainer(id);
-        if (c.State === 'running') await docker.stopContainer(c.Id);
+        if (c.State === 'running') {
+          await chownFiles(c.Id); // hand /files back before the container sleeps
+          await docker.stopContainer(c.Id);
+        }
         return send(200, { ok: true });
       }
       if (req.method === 'DELETE' && !seg[2]) {
