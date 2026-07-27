@@ -39,10 +39,14 @@ Engine: [`packages/content/src/backup.ts`](../packages/content/src/backup.ts).
   window catches it.
 - Config + status live on `profiles.preferences` (`backup` / `backupStatus`
   keys), so the UI and the worker share one source of truth.
-- The Docker image ships `postgresql-client-17` (pgdg) so `pg_dump` matches
-  the bundled Postgres 17. On a bare-metal/dev install, the engine looks for
-  `pg_dump` on `PATH` and in the usual homebrew/pgdg locations; set
-  `MANTLE_PG_DUMP` to point at a specific binary.
+- The Docker image ships `postgresql-client-18` (pgdg) so `pg_dump` matches the
+  compose default `POSTGRES_IMAGE_TAG=pg18`. **The client must never be older
+  than the server** — `pg_dump` aborts outright on a newer server, so a
+  major-version bump in compose has to be matched here in the same change. The
+  reverse is fine (an 18 client dumps a pinned-`pg17` box), so when in doubt
+  ship the newer client. On a bare-metal/dev install, the engine looks for
+  `pg_dump` on `PATH` and in the usual homebrew/pgdg locations (newest pgdg
+  first); set `MANTLE_PG_DUMP` to point at a specific binary.
 
 ## What to copy offsite
 

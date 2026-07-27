@@ -295,12 +295,23 @@ async function writeBackupStatus(userId: string, status: BackupStatus): Promise<
 /** Locate a pg_dump binary: MANTLE_PG_DUMP env wins outright; otherwise the
  *  first candidate that actually RUNS (`--version` probe — an `access` check
  *  can't cover bare PATH names) out of: PATH, pgdg (the Docker image ships
- *  postgresql-client-17 to match the bundled Postgres 17), homebrew libpq.
+ *  postgresql-client-18 to match the compose default POSTGRES_IMAGE_TAG=pg18),
+ *  homebrew libpq. Explicit pgdg paths are NEWEST-FIRST: pg_dump refuses a
+ *  server newer than itself, so when a box has several clients installed the
+ *  highest version is the only always-safe pick.
  *  Null when nothing runs — the caller turns that into an actionable error. */
 async function resolvePgDump(): Promise<string | null> {
   const explicit = (process.env.MANTLE_PG_DUMP ?? '').trim();
   if (explicit) return explicit;
   const candidates = [
+    // The newest pgdg client comes BEFORE the bare PATH name on purpose: a
+    // host with both clients installed resolves `pg_dump` to whichever apt
+    // wired up, often 17, and `canRun` can't tell — it probes `--version`,
+    // which an older client passes happily before aborting on a pg18 server.
+    // Checking 18 first is what actually closes that case; PATH still beats
+    // the older explicit paths, so an operator's own choice is not demoted
+    // below a stale install (and MANTLE_PG_DUMP overrides all of it).
+    '/usr/lib/postgresql/18/bin/pg_dump',
     'pg_dump',
     '/usr/lib/postgresql/17/bin/pg_dump',
     '/opt/homebrew/opt/libpq/bin/pg_dump',
@@ -414,7 +425,7 @@ async function runBackupInner(
   const bin = await resolvePgDump();
   if (!bin) {
     return fail(
-      'no runnable pg_dump found. Install a Postgres 17+ client (Docker images ship it; on macOS `brew install libpq`) or set MANTLE_PG_DUMP to the binary.',
+      'no runnable pg_dump found. Install a Postgres client at least as new as the server (Docker images ship it; on macOS `brew install libpq`) or set MANTLE_PG_DUMP to the binary.',
     );
   }
   const exit = await new Promise<{ code: number | null; stderr: string; spawnErr?: string }>(
@@ -438,7 +449,7 @@ async function runBackupInner(
   if (exit.spawnErr) {
     await unlink(partPath).catch(() => {});
     return fail(
-      `could not run pg_dump (${bin}): ${exit.spawnErr}. Install a Postgres 17 client or set MANTLE_PG_DUMP to the binary.`,
+      `could not run pg_dump (${bin}): ${exit.spawnErr}. Install a Postgres client at least as new as the server or set MANTLE_PG_DUMP to the binary.`,
     );
   }
   if (exit.code !== 0) {
