@@ -1,6 +1,6 @@
 {
   "name": "mantle",
-  "version": "0.206.7",
+  "version": "0.206.8",
   "private": true,
   "description": "Mantle — an AI-queryable life tree.",
   "license": "SEE LICENSE IN LICENSE.md",
@@ -33,6 +33,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "pnpm -r typecheck && pnpm lint && pnpm format:check && vitest run",
+    "status": "node scripts/status.mjs",
     "e2e": "bash e2e/scripts/run-local.sh",
     "e2e:same": "pnpm -C e2e e2e:same",
     "e2e:split": "pnpm -C e2e e2e:split",
