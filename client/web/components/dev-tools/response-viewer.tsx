@@ -55,6 +55,21 @@ export function ResponseViewer() {
         {response.bodyText && <CopyButton value={response.bodyText} />}
       </div>
 
+      {/* The URL that actually went out — templating and env vars resolved
+          (secrets scrubbed server-side). This is where "why did it 404" gets
+          answered without re-deriving the substitution by hand. */}
+      {response.resolvedUrl && (
+        <div className="flex items-center gap-1.5 border-b border-border bg-muted/30 px-3 py-1">
+          <span
+            className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground"
+            title={response.resolvedUrl}
+          >
+            {response.resolvedUrl}
+          </span>
+          <CopyButton value={response.resolvedUrl} />
+        </div>
+      )}
+
       {response.networkError ? (
         <div className="p-3">
           <p className="rounded-md bg-destructive/10 p-3 font-mono text-xs text-destructive">
