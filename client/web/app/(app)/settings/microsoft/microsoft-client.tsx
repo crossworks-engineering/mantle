@@ -90,7 +90,7 @@ export function MicrosoftClient() {
         </p>
       )}
       {error && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-ink">
           {error === 'not_configured'
             ? 'Microsoft integration isn’t configured yet — fill in the Azure app details below.'
             : error}
@@ -123,7 +123,7 @@ export function MicrosoftClient() {
                         <span
                           className={
                             needsReconnect
-                              ? 'rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive'
+                              ? 'rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive-ink'
                               : 'rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-900 dark:bg-green-950 dark:text-green-100'
                           }
                         >
@@ -136,7 +136,7 @@ export function MicrosoftClient() {
                         until {formatDateTime(r.tokenExpiresAt ?? null)}
                       </div>
                       {r.lastSyncError && (
-                        <div className="mt-0.5 truncate text-xs text-destructive">
+                        <div className="mt-0.5 truncate text-xs text-destructive-ink">
                           ⚠ {r.lastSyncError}
                         </div>
                       )}

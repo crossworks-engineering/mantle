@@ -103,7 +103,7 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
                   shared brain.
                 </>
               ) : (
-                <span className="text-destructive">
+                <span className="text-destructive-ink">
                   No enabled agent. Configure one at{' '}
                   <a href="/settings/agents" className="underline">
                     /settings/agents
@@ -137,7 +137,7 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
       {pinnedContext.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border bg-muted/30 px-6 py-1.5 text-xs text-muted-foreground">
           <span className="inline-flex min-w-0 items-center gap-1.5">
-            <MapPin className="size-3.5 shrink-0 text-primary" aria-hidden />
+            <MapPin className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
             <span className="truncate">
               Working on{' '}
               <span className="font-medium text-foreground">{pinnedContext[0]?.label}</span>
@@ -145,7 +145,7 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
           </span>
           {surfaceSelection && surfaceSelection.items.length > 0 && (
             <span className="inline-flex items-center gap-1.5">
-              <Highlighter className="size-3.5 shrink-0 text-primary" aria-hidden />
+              <Highlighter className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
               {surfaceSelection.items.length} {surfaceSelection.noun}
               {surfaceSelection.items.length === 1 ? '' : 's'} focused
             </span>

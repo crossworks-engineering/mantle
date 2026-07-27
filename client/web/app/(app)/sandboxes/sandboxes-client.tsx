@@ -116,7 +116,7 @@ function RemoveButton({ sandbox, onDone }: { sandbox: SandboxEntry; onDone: () =
   return (
     <AlertDialog onOpenChange={(open) => open && setPurge(false)}>
       <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="text-destructive" disabled={busy}>
+        <Button variant="ghost" size="sm" className="text-destructive-ink" disabled={busy}>
           Remove
         </Button>
       </AlertDialogTrigger>
@@ -199,7 +199,7 @@ function SandboxDetail({
 
   if (detailQuery.isError) {
     return (
-      <p className="p-6 text-sm text-destructive">
+      <p className="p-6 text-sm text-destructive-ink">
         {detailQuery.error instanceof Error ? detailQuery.error.message : 'Could not load sandbox.'}
       </p>
     );
@@ -252,11 +252,11 @@ function SandboxDetail({
                 <code className="block break-all font-mono text-xs">{c.command}</code>
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                   {c.timedOut ? (
-                    <span className="text-destructive">timed out</span>
+                    <span className="text-destructive-ink">timed out</span>
                   ) : c.exitCode == null ? (
                     <span>exit —</span>
                   ) : (
-                    <span className={cn(c.exitCode !== 0 && 'text-destructive')}>
+                    <span className={cn(c.exitCode !== 0 && 'text-destructive-ink')}>
                       exit {c.exitCode}
                     </span>
                   )}
@@ -264,7 +264,7 @@ function SandboxDetail({
                   <span className="ml-auto">{timeAgo(c.startedAt)}</span>
                   <a
                     href={`/traces?selected=${c.traceId}`}
-                    className="text-primary hover:underline"
+                    className="text-primary-ink hover:underline"
                   >
                     trace
                   </a>
@@ -309,7 +309,7 @@ export function SandboxesClient() {
 
   if (listQuery.isError) {
     return (
-      <p className="p-6 text-sm text-destructive">
+      <p className="p-6 text-sm text-destructive-ink">
         {listQuery.error instanceof Error ? listQuery.error.message : 'Could not load sandboxes.'}
       </p>
     );

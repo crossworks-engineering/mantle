@@ -72,7 +72,7 @@ function Issues({ issues }: { issues: string[] }) {
   return (
     <div className="flex flex-col gap-1 rounded-md border border-destructive/40 bg-destructive/5 p-2.5">
       {issues.map((i) => (
-        <div key={i} className="flex items-start gap-1.5 text-[13px] text-destructive">
+        <div key={i} className="flex items-start gap-1.5 text-[13px] text-destructive-ink">
           <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden />
           <span>{i}</span>
         </div>
@@ -145,7 +145,7 @@ function AgentInspector({
         <button
           type="button"
           onClick={() => setRaw((v) => !v)}
-          className="self-start text-[13px] font-medium text-primary hover:underline"
+          className="self-start text-[13px] font-medium text-primary-ink hover:underline"
         >
           {raw ? '← labeled view' : 'view raw assembled →'}
         </button>
@@ -260,7 +260,7 @@ function GroupInspector({ group }: { group: StudioToolGroupDetail }) {
       </Section>
       <p className="text-[13px] text-muted-foreground">
         Tool groups are capability bundles — edit their membership in{' '}
-        <a href="/settings/tool-groups" className="text-primary hover:underline">
+        <a href="/settings/tool-groups" className="text-primary-ink hover:underline">
           Settings → Tool groups
         </a>
         .
@@ -332,13 +332,13 @@ function HealthReport({ graph }: { graph: StudioGraph }) {
           {c.ok ? (
             <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-500" aria-hidden />
           ) : (
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" aria-hidden />
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive-ink" aria-hidden />
           )}
           <div className="flex flex-col">
             <span className="font-medium">{c.label}</span>
             <span className="text-muted-foreground">{c.detail}</span>
             {c.samples?.map((s) => (
-              <span key={s.id} className="mt-0.5 text-destructive">
+              <span key={s.id} className="mt-0.5 text-destructive-ink">
                 · {s.id}: {s.detail}
               </span>
             ))}
@@ -371,7 +371,7 @@ export function StudioClient() {
         <button
           type="button"
           onClick={() => studioQuery.refetch()}
-          className="font-medium text-primary hover:underline"
+          className="font-medium text-primary-ink hover:underline"
         >
           Retry
         </button>
@@ -490,7 +490,7 @@ export function StudioView({ graph }: { graph: StudioGraph }) {
           <button
             type="button"
             onClick={() => changeSelection('view:health')}
-            className="flex items-center gap-1.5 text-[13px] font-medium text-destructive hover:underline"
+            className="flex items-center gap-1.5 text-[13px] font-medium text-destructive-ink hover:underline"
           >
             <AlertTriangle className="size-3.5" aria-hidden /> {graph.report.problems} issue
             {graph.report.problems === 1 ? '' : 's'}

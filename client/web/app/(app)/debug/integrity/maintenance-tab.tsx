@@ -48,7 +48,7 @@ function CostBadge({ cost }: { cost: MaintenanceTaskInfo['cost'] }) {
       className={
         'rounded-sm border px-1.5 py-0.5 font-mono text-[11px] ' +
         (spend
-          ? 'border-destructive/30 bg-destructive/10 text-destructive'
+          ? 'border-destructive/30 bg-destructive/10 text-destructive-ink'
           : 'border-border bg-muted text-muted-foreground')
       }
       title={spend ? 'A live run spends real model calls' : 'Free — no model calls'}
@@ -61,10 +61,10 @@ function CostBadge({ cost }: { cost: MaintenanceTaskInfo['cost'] }) {
 function StatePill({ run }: { run: MaintenanceRunView }) {
   const cls =
     run.state === 'running'
-      ? 'bg-primary/10 text-primary border-primary/30'
+      ? 'bg-primary/10 text-primary-ink border-primary/30'
       : run.state === 'done'
-        ? 'bg-primary/10 text-primary border-primary/30'
-        : 'bg-destructive/10 text-destructive border-destructive/30';
+        ? 'bg-primary/10 text-primary-ink border-primary/30'
+        : 'bg-destructive/10 text-destructive-ink border-destructive/30';
   return (
     <span className={`rounded-sm border px-1.5 py-0.5 font-mono text-[11px] ${cls}`}>
       {run.state === 'running' ? 'running…' : `${run.state} (exit ${run.exitCode ?? '—'})`}
@@ -391,10 +391,10 @@ export function MaintenanceView() {
                       className={
                         'p-2 ' +
                         (h.state === 'done'
-                          ? 'text-primary'
+                          ? 'text-primary-ink'
                           : h.state === 'running'
                             ? 'text-muted-foreground'
-                            : 'text-destructive')
+                            : 'text-destructive-ink')
                       }
                     >
                       {h.state}

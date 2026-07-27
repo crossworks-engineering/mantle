@@ -139,7 +139,7 @@ export function ReadingPane({
                   href={assetUrl(`/api/attachments/${a.id}`)}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-primary underline-offset-2 hover:underline"
+                  className="text-primary-ink underline-offset-2 hover:underline"
                 >
                   {a.filename}
                 </a>

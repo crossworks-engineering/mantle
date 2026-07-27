@@ -276,7 +276,7 @@ export function DevToolsSidebar() {
               )}
               {mcp.status === 'error' && (
                 <div className="space-y-1 px-1.5">
-                  <p className="text-xs text-destructive">{mcp.error}</p>
+                  <p className="text-xs text-destructive-ink">{mcp.error}</p>
                   <Button
                     type="button"
                     variant="outline"
@@ -509,7 +509,7 @@ export function DevToolsSidebar() {
                     <span
                       className={cn(
                         'w-9 shrink-0 font-mono text-[10px] font-bold',
-                        h.ok ? 'text-chart-2' : 'text-destructive',
+                        h.ok ? 'text-chart-2' : 'text-destructive-ink',
                       )}
                     >
                       {h.status === 0 ? 'ERR' : h.status}

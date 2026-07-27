@@ -33,7 +33,7 @@ import type {
 const STATUS_TEXT: Record<DiffStatus, string> = {
   ok: 'text-muted-foreground',
   modified: 'text-amber-600 dark:text-amber-400',
-  missing: 'text-destructive',
+  missing: 'text-destructive-ink',
   extra: 'text-sky-700 dark:text-sky-300',
 };
 const STATUS_BORDER: Record<DiffStatus, string> = {
@@ -106,7 +106,7 @@ function DiffBody({ before, after }: { before: string; after: string }) {
               className={cn(
                 'whitespace-pre-wrap',
                 p.added && 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-                p.removed && 'bg-destructive/15 text-destructive',
+                p.removed && 'bg-destructive/15 text-destructive-ink',
                 !p.added && !p.removed && 'text-muted-foreground',
               )}
             >
@@ -142,7 +142,7 @@ function FieldRow({ field }: { field: FieldDiff }) {
               {field.removed.map((s) => (
                 <span
                   key={s}
-                  className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px] text-destructive"
+                  className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-[11px] text-destructive-ink"
                 >
                   − {s}
                 </span>

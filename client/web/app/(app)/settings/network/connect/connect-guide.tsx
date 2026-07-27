@@ -31,7 +31,7 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
     <li className="relative pl-9">
-      <span className="absolute left-0 top-0 flex size-6 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+      <span className="absolute left-0 top-0 flex size-6 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary-ink">
         {n}
       </span>
       <div className="space-y-2">

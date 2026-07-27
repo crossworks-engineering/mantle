@@ -31,7 +31,7 @@ export function TraceDetailView({ trace }: { trace: TraceDetailRow }) {
               trace.status === 'success'
                 ? 'rounded-md bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100'
                 : trace.status === 'error'
-                  ? 'rounded-md bg-destructive/20 px-2 py-0.5 text-xs text-destructive'
+                  ? 'rounded-md bg-destructive/20 px-2 py-0.5 text-xs text-destructive-ink'
                   : 'rounded-md bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-900/40 dark:text-amber-100'
             }
           >
@@ -51,7 +51,7 @@ export function TraceDetailView({ trace }: { trace: TraceDetailRow }) {
               value={
                 <Link
                   href={`/nodes/${trace.subjectId}/history`}
-                  className="text-primary hover:underline"
+                  className="text-primary-ink hover:underline"
                 >
                   node#{trace.subjectId.slice(0, 8)} →
                 </Link>
@@ -63,7 +63,7 @@ export function TraceDetailView({ trace }: { trace: TraceDetailRow }) {
               value={
                 <Link
                   href={`/heartbeats/${trace.subjectId}`}
-                  className="text-primary hover:underline"
+                  className="text-primary-ink hover:underline"
                 >
                   heartbeat#{trace.subjectId.slice(0, 8)} →
                 </Link>
@@ -91,7 +91,10 @@ export function TraceDetailView({ trace }: { trace: TraceDetailRow }) {
             <Field
               label="Parent trace"
               value={
-                <Link href={`/traces/${parentTraceId}`} className="text-primary hover:underline">
+                <Link
+                  href={`/traces/${parentTraceId}`}
+                  className="text-primary-ink hover:underline"
+                >
                   trace#{parentTraceId.slice(0, 8)} →
                 </Link>
               }
@@ -99,7 +102,7 @@ export function TraceDetailView({ trace }: { trace: TraceDetailRow }) {
           )}
         </dl>
         {trace.error && (
-          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-ink">
             {trace.error}
           </p>
         )}

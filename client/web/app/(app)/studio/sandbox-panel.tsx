@@ -128,7 +128,7 @@ export function SandboxPanel({ agentId, agentName }: { agentId: string; agentNam
         </div>
       )}
 
-      {error && <p className="text-[13px] text-destructive">{error}</p>}
+      {error && <p className="text-[13px] text-destructive-ink">{error}</p>}
 
       <div className="flex items-end gap-2">
         <Textarea

@@ -886,7 +886,7 @@ function TreeRow({
         <Button
           variant="ghost"
           size="icon"
-          className="size-7 text-muted-foreground hover:text-destructive"
+          className="size-7 text-muted-foreground hover:text-destructive-ink"
           onClick={onDelete}
           aria-label="Delete page"
         >
@@ -1050,7 +1050,7 @@ function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) 
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground hover:text-destructive"
+            className="text-muted-foreground hover:text-destructive-ink"
             onClick={onDelete}
             aria-label="Delete page"
           >

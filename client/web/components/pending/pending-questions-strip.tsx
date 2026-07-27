@@ -55,7 +55,7 @@ export function PendingQuestionsStrip() {
       </h2>
 
       {error && (
-        <p className="mb-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+        <p className="mb-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive-ink">
           {error}
         </p>
       )}

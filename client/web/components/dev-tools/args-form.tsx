@@ -118,7 +118,7 @@ export function ArgsForm({
         const label = (
           <Label htmlFor={`arg-${p.key}`} className="font-mono text-xs">
             {p.key}
-            {p.required && <span className="ml-0.5 text-destructive">*</span>}
+            {p.required && <span className="ml-0.5 text-destructive-ink">*</span>}
           </Label>
         );
 

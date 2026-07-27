@@ -200,7 +200,7 @@ export function InboxClient() {
   const listSlot = messagesQuery.isPending ? (
     <CenterSpinner />
   ) : messagesQuery.isError ? (
-    <p className="px-4 py-6 text-sm text-destructive">
+    <p className="px-4 py-6 text-sm text-destructive-ink">
       Couldn&apos;t load messages.{' '}
       <button type="button" onClick={() => messagesQuery.refetch()} className="underline">
         Retry
@@ -232,7 +232,7 @@ export function InboxClient() {
   ) : messageQuery.isPending ? (
     <CenterSpinner />
   ) : messageQuery.isError || !messageQuery.data ? (
-    <p className="px-6 py-6 text-sm text-destructive">
+    <p className="px-6 py-6 text-sm text-destructive-ink">
       Couldn&apos;t load this message.{' '}
       <button type="button" onClick={() => messageQuery.refetch()} className="underline">
         Retry

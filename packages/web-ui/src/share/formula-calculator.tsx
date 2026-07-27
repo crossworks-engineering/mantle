@@ -163,7 +163,7 @@ export function FormulaCalculator({
               ) : null}
             </p>
           ) : (
-            <p className="text-sm text-destructive">{result.error}</p>
+            <p className="text-sm text-destructive-ink">{result.error}</p>
           )}
           {result.trace && result.trace.length > 0 ? (
             <details className="mt-3">

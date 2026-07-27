@@ -327,7 +327,7 @@ function AppDetailView({ app }: { app: AppDetail }) {
             {buildErrors.length > 0 && (
               // shrink-0 + its own scroll so the flex-1 sandbox above can't
               // squeeze the errors to zero height in the non-scrolling column.
-              <div className="mt-3 max-h-48 shrink-0 overflow-y-auto rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+              <div className="mt-3 max-h-48 shrink-0 overflow-y-auto rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive-ink">
                 <p className="mb-1 font-medium">Build errors</p>
                 <ul className="flex flex-col gap-1">
                   {buildErrors.map((e, i) => (

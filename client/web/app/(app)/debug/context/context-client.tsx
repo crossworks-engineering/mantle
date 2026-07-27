@@ -73,7 +73,7 @@ function TurnRow({ turn }: { turn: ContextTurnRow }) {
         {turn.agentSlug && <span className="font-medium text-foreground">{turn.agentSlug}</span>}
         {turn.surface && <span>{turn.surface}</span>}
         {turn.model && <code className="font-mono">{turn.model}</code>}
-        {turn.status === 'error' && <span className="font-medium text-destructive">error</span>}
+        {turn.status === 'error' && <span className="font-medium text-destructive-ink">error</span>}
         <span className="ml-auto flex items-baseline gap-3">
           <span>{fmtRelative(turn.startedAt)}</span>
           <Link
@@ -110,7 +110,7 @@ function QuestionCell({ turn }: { turn: ContextTurnRow }) {
         </div>
       )}
       {snap && !snap.query.embedded && (
-        <p className="text-xs font-medium text-destructive">
+        <p className="text-xs font-medium text-destructive-ink">
           query was not embedded — retrieval ran without vector search
         </p>
       )}

@@ -124,7 +124,7 @@ export function AccountsClient() {
                     {r.provider === 'imap' && r.imapHost ? ` · ${r.imapHost}:${r.imapPort}` : ''}
                   </div>
                   {r.lastSyncError && (
-                    <div className="mt-0.5 truncate text-xs text-destructive">
+                    <div className="mt-0.5 truncate text-xs text-destructive-ink">
                       ⚠ {r.lastSyncError}
                     </div>
                   )}
@@ -146,7 +146,7 @@ export function AccountsClient() {
               </p>
             )}
             {error && (
-              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-ink">
                 {error}
               </p>
             )}
@@ -165,7 +165,7 @@ export function AccountsClient() {
               Microsoft 365 / Outlook.com mailbox? Connect it with OAuth on the{' '}
               <Link
                 href="/settings/microsoft"
-                className="text-primary underline-offset-2 hover:underline"
+                className="text-primary-ink underline-offset-2 hover:underline"
               >
                 Microsoft page
               </Link>{' '}
@@ -198,7 +198,7 @@ export function AccountsClient() {
                 Manage it (including the Outlook mail toggle) on the{' '}
                 <Link
                   href="/settings/microsoft"
-                  className="text-primary underline-offset-2 hover:underline"
+                  className="text-primary-ink underline-offset-2 hover:underline"
                 >
                   Microsoft page
                 </Link>
@@ -228,7 +228,10 @@ export function AccountsClient() {
               <h2 className="text-lg font-semibold">Folders to scan — {selected.address}</h2>
               <p className="text-sm text-muted-foreground">
                 Which IMAP folders Mantle scans. Mail is still only ingested from people in your{' '}
-                <Link href="/contacts" className="text-primary underline-offset-2 hover:underline">
+                <Link
+                  href="/contacts"
+                  className="text-primary-ink underline-offset-2 hover:underline"
+                >
                   contacts
                 </Link>
                 .
@@ -272,12 +275,12 @@ export function AccountsClient() {
 function FoldersError({ accountId, message }: { accountId: string; message: string }) {
   return (
     <div className="space-y-2">
-      <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+      <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive-ink">
         Couldn’t list folders: {message}
       </div>
       <Link
         href={`/settings/accounts?selected=${accountId}&mode=folders`}
-        className="text-sm text-primary underline-offset-2 hover:underline"
+        className="text-sm text-primary-ink underline-offset-2 hover:underline"
       >
         Retry
       </Link>
@@ -328,7 +331,7 @@ function AccountDetail({
       </div>
 
       {r.lastSyncError && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-ink">
           ⚠ {r.lastSyncError}
         </p>
       )}

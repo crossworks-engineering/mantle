@@ -258,7 +258,7 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="size-9 text-muted-foreground hover:text-destructive"
+                  className="size-9 text-muted-foreground hover:text-destructive-ink"
                   onClick={() => setDeleteTarget(selected)}
                   aria-label="Delete app"
                 >

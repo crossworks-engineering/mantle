@@ -80,7 +80,7 @@ export function PdfPasswordsClient() {
     <div className="mx-auto max-w-2xl space-y-6 p-6">
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <Lock className="size-5 text-primary" aria-hidden />
+          <Lock className="size-5 text-primary-ink" aria-hidden />
           <h2 className="text-lg font-semibold">PDF passwords</h2>
         </div>
         <p className="text-sm text-muted-foreground">
@@ -141,7 +141,7 @@ export function PdfPasswordsClient() {
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="size-7 text-muted-foreground hover:text-destructive"
+                className="size-7 text-muted-foreground hover:text-destructive-ink"
                 onClick={() => remove(r.id)}
                 aria-label="Delete"
               >

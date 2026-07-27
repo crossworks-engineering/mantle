@@ -13,7 +13,7 @@ const buttonVariants = cva(
         outline: 'border border-input bg-background hover:bg-accent hover:text-accent-foreground',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-        link: 'text-primary underline-offset-4 hover:underline',
+        link: 'text-primary-ink underline-offset-4 hover:underline',
         // Semantic approve/deny aliases — used by sender curation buttons.
         // Theme-aware: approve uses the primary action colour, deny the
         // destructive colour, so they recolour with the active theme instead

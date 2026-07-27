@@ -19,7 +19,7 @@ const ZONE_FILL: Record<CapacityZone, string> = {
 const ZONE_TEXT: Record<CapacityZone, string> = {
   green: 'text-muted-foreground',
   watch: 'text-amber-600 dark:text-amber-400',
-  split: 'text-destructive',
+  split: 'text-destructive-ink',
 };
 const ZONE_LABEL: Record<CapacityZone, string> = {
   green: 'green — no action',

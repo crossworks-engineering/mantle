@@ -282,7 +282,7 @@ export function RunnersClient({
                     )}
                   </div>
                   {r.error && (
-                    <div className="mt-0.5 truncate text-xs text-destructive">{r.error}</div>
+                    <div className="mt-0.5 truncate text-xs text-destructive-ink">{r.error}</div>
                   )}
                 </Link>
               ))
@@ -487,7 +487,7 @@ function RunDetail({
       )}
 
       {run.error && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-ink">
           {run.error}
         </div>
       )}
@@ -543,7 +543,7 @@ function RunDetail({
                 <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                   {formatDuration(s.durationMs ?? null)}
                 </span>
-                {s.error && <span className="shrink-0 text-xs text-destructive">error</span>}
+                {s.error && <span className="shrink-0 text-xs text-destructive-ink">error</span>}
               </li>
             ))}
           </ol>

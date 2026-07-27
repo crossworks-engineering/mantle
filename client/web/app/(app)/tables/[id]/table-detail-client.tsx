@@ -518,7 +518,7 @@ export function TableDetailClient({
           <Button
             size="icon"
             variant="ghost"
-            className="size-8 text-muted-foreground hover:text-destructive"
+            className="size-8 text-muted-foreground hover:text-destructive-ink"
             onClick={() => setConfirmDelete(true)}
             aria-label="Delete table"
           >
@@ -597,7 +597,7 @@ export function TableDetailClient({
         </div>
         {assistBusy && (
           <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm shadow-sm">
-            <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
+            <Loader2 className="size-4 shrink-0 animate-spin text-primary-ink" aria-hidden />
             <span className="font-medium text-foreground">Ledger is editing this table…</span>
           </div>
         )}
@@ -720,7 +720,7 @@ function TabBar({
                   <Pencil className="mr-2 size-3.5" /> Rename tab
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
+                  className="text-destructive-ink focus:text-destructive-ink"
                   disabled={tabs.length <= 1}
                   onClick={() => onDelete(t.id)}
                 >

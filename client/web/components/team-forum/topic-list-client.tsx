@@ -220,7 +220,7 @@ function NewTopicDialog() {
               brain&rsquo;s shared knowledge.
             </p>
           )}
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="text-sm text-destructive-ink">{error}</p>}
           <SubmitButton
             pending={submitting}
             onClick={() => void create()}
@@ -387,7 +387,7 @@ export function TopicListClient() {
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-6 py-4">
         <div className="mx-auto w-full max-w-4xl">
           {error ? (
-            <p className="py-10 text-center text-sm text-destructive">{error}</p>
+            <p className="py-10 text-center text-sm text-destructive-ink">{error}</p>
           ) : topics === null ? (
             <div className="flex items-center justify-center py-10 text-muted-foreground">
               <Loader2 className="size-4 animate-spin" aria-label="Loading topics" />

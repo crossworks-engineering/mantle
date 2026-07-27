@@ -156,7 +156,7 @@ export function WorkerGroupsClient() {
               Loading worker groups…
             </div>
           ) : dataQuery.isError ? (
-            <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
+            <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive-ink">
               <p>Couldn’t load worker groups: {dataQuery.error.message}</p>
               <Button type="button" variant="outline" size="sm" onClick={() => dataQuery.refetch()}>
                 Retry
@@ -216,7 +216,7 @@ export function WorkerGroupsClient() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="text-destructive hover:text-destructive"
+                  className="text-destructive-ink hover:text-destructive-ink"
                   onClick={() => setDeleteTarget(selected)}
                 >
                   <Trash2 /> Delete

@@ -82,7 +82,7 @@ export function TelegramClient({ page, query }: { page: number; query: string })
                         c.allowlistStatus === 'allowed'
                           ? 'text-emerald-700 dark:text-emerald-300'
                           : c.allowlistStatus === 'denied'
-                            ? 'text-destructive'
+                            ? 'text-destructive-ink'
                             : 'text-amber-700 dark:text-amber-300'
                       }
                     >

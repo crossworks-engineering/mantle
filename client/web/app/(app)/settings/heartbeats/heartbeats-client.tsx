@@ -546,7 +546,7 @@ export function HeartbeatsClient() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-destructive hover:text-destructive"
+                    className="text-destructive-ink hover:text-destructive-ink"
                     onClick={() => setDeleteTarget(editing.hb)}
                     disabled={pending}
                   >

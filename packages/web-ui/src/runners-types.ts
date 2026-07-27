@@ -167,7 +167,7 @@ export function runnerStatusText(status: string): string {
       return 'text-emerald-700 dark:text-emerald-300';
     case 'ERROR':
     case 'MAX_RECOVERY_ATTEMPTS_EXCEEDED':
-      return 'text-destructive';
+      return 'text-destructive-ink';
     case 'CANCELLED':
       return 'text-muted-foreground';
     case 'PENDING':

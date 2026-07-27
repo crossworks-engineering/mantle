@@ -43,10 +43,25 @@ in a component.
 | Subtle / muted | `muted`, `muted-foreground` |
 | Hover / highlight | `accent`, `accent-foreground` |
 | Danger | `destructive`, `destructive-foreground` |
+| Brand / danger AS TEXT | `primary-ink`, `destructive-ink` |
 | Lines / fields | `border`, `input`, `ring` |
 | Categorical data | `chart-1` … `chart-5` |
 
 Rules:
+- **A fill is not an ink. Use `text-primary-ink` / `text-destructive-ink` for
+  text.** `--primary` and `--destructive` are tuned to sit BEHIND their own
+  `-foreground`, which makes them dark/saturated — and frequently illegible when
+  used as text on a neutral surface. Measured across the presets on 2026-07-27:
+  47 such pairs below 2:1, one of them rendering a Delete label at 1.05:1 and one
+  theme whose text and surface were literally the same hex. A single token cannot
+  do both jobs — as a fill it wants to be dark, as ink on a dark surface it wants
+  to be light, and in dark mode those are irreconcilable (~25% of themes had no
+  solution). So the ink is its own token, free to differ, and it defaults to the
+  fill wherever the fill already clears AA. `themes.test.ts` asserts every
+  `-ink` token against every surface in every theme; `mantle/use-ink-for-text`
+  fails the build on a bare `text-primary` / `text-destructive`.
+  `bg-primary`+`text-primary-foreground` is unchanged — that pairing was never
+  the problem.
 - **Pair a fill with its OWN foreground — never mix pairs.** Each surface token
   has a guaranteed-contrast partner; use them together:
   `bg-primary`+`text-primary-foreground`, `bg-secondary`+`text-secondary-foreground`,

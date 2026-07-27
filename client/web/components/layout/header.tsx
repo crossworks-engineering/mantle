@@ -97,7 +97,7 @@ export function Header({
               />
             ) : (
               <span
-                className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary dark:hidden"
+                className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary-ink dark:hidden"
                 style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
               >
                 {siteName || 'mantle'}
@@ -121,7 +121,7 @@ export function Header({
              Font: the user-selectable wordmark var (Settings → Appearance → Fonts),
              defaulting to the next/font Bukhari when unset. */
           <span
-            className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary"
+            className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary-ink"
             style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
           >
             {siteName || 'mantle'}
@@ -177,7 +177,7 @@ export function Header({
             <DropdownMenuItem
               onClick={signOut}
               disabled={busy}
-              className="cursor-pointer text-destructive focus:text-destructive"
+              className="cursor-pointer text-destructive-ink focus:text-destructive-ink"
             >
               <LogOut className="size-4" /> {busy ? 'Signing out…' : 'Sign out'}
             </DropdownMenuItem>

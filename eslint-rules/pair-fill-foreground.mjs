@@ -151,4 +151,43 @@ export const rule = {
   },
 };
 
-export default { rules: { 'pair-fill-foreground': rule } };
+/** Fills whose text form is a separate token. */
+const INK_FILLS = ['primary', 'destructive'];
+
+export const inkRule = {
+  meta: {
+    type: 'problem',
+    docs: { description: 'Use the -ink token for text, not the fill.' },
+    fixable: 'code',
+    schema: [],
+    messages: {
+      useInk:
+        '`text-{{fill}}` is the FILL colour used as text. Use `text-{{fill}}-ink`, which is ' +
+        'contrast-guaranteed on every surface in every theme. The fill is tuned to sit behind ' +
+        '`text-{{fill}}-foreground` and is frequently illegible as ink — one preset rendered it ' +
+        'at 1.05:1.',
+    },
+  },
+  create(context) {
+    const check = (node) => {
+      for (const { node: strNode, value } of stringsFrom(node)) {
+        for (const tok of value.split(/\s+/).filter(Boolean)) {
+          const { base } = splitVariant(tok);
+          const m = /^text-([a-z-]+?)(\/\d+)?$/.exec(base);
+          if (!m || !INK_FILLS.includes(m[1])) continue;
+          context.report({ node: strNode, messageId: 'useInk', data: { fill: m[1] } });
+        }
+      }
+    };
+    return {
+      JSXAttribute(node) {
+        if (node.name?.name === 'className') check(node.value);
+      },
+      CallExpression(node) {
+        if (node.callee?.name === 'cn' || node.callee?.name === 'clsx') check(node);
+      },
+    };
+  },
+};
+
+export default { rules: { 'pair-fill-foreground': rule, 'use-ink-for-text': inkRule } };

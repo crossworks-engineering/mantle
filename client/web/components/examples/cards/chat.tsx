@@ -186,7 +186,7 @@ export function CardsChat() {
                       <p className="text-muted-foreground text-sm">{agent.role}</p>
                     </div>
                     {selectedAgents.includes(agent) ? (
-                      <CheckIcon className="text-primary ml-auto flex size-4" />
+                      <CheckIcon className="text-primary-ink ml-auto flex size-4" />
                     ) : null}
                   </CommandItem>
                 ))}

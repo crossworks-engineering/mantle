@@ -16,7 +16,7 @@ export default async function DiscoverPage() {
         <h1 className="text-lg font-semibold">Discover senders</h1>
         <p className="text-sm text-muted-foreground">
           Mantle only ingests mail from people in your{' '}
-          <Link href="/contacts" className="text-primary underline-offset-2 hover:underline">
+          <Link href="/contacts" className="text-primary-ink underline-offset-2 hover:underline">
             contacts
           </Link>
           . This is a live look at who else has recently written, so you can add the ones worth

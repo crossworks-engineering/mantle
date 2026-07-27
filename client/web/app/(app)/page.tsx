@@ -15,10 +15,10 @@ export default async function DashboardPage() {
       <SetPageTitle title="Dashboard" />
       <header className="flex flex-wrap items-center justify-end gap-2">
         <nav className="flex items-center gap-3 text-sm">
-          <Link href="/debug" className="text-primary underline-offset-2 hover:underline">
+          <Link href="/debug" className="text-primary-ink underline-offset-2 hover:underline">
             Operator view
           </Link>
-          <Link href="/traces" className="text-primary underline-offset-2 hover:underline">
+          <Link href="/traces" className="text-primary-ink underline-offset-2 hover:underline">
             Traces
           </Link>
         </nav>

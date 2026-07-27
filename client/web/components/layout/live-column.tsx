@@ -142,17 +142,20 @@ export function LiveColumn({ collapsed, onToggle }: { collapsed: boolean; onTogg
                     {failures.map((it) => (
                       <Row key={it.traceId} it={it}>
                         <div className="flex items-center gap-2">
-                          <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
+                          <AlertCircle
+                            className="size-3.5 shrink-0 text-destructive-ink"
+                            aria-hidden
+                          />
                           <ActionIcon
                             iconKey={it.iconKey}
-                            className="size-3.5 shrink-0 text-destructive"
+                            className="size-3.5 shrink-0 text-destructive-ink"
                           />
                           <span className="truncate text-sm font-medium">{it.label}</span>
                           <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                             {relativeTime(it.startedAt)}
                           </span>
                         </div>
-                        <div className="pl-5 text-xs text-destructive">failed</div>
+                        <div className="pl-5 text-xs text-destructive-ink">failed</div>
                       </Row>
                     ))}
                   </Section>
@@ -243,7 +246,7 @@ function CollapsedRail({
         count={failures}
         title={`${failures} failed`}
         onClick={onToggle}
-        icon={<AlertCircle className="size-4 text-destructive" aria-hidden />}
+        icon={<AlertCircle className="size-4 text-destructive-ink" aria-hidden />}
       />
       <StatusPip
         show={recent > 0}

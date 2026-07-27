@@ -20,13 +20,13 @@ export function AccountFoldersClient({ accountId }: { accountId: string }) {
   // payload reports ok:false (an IMAP-level error). Render both the same.
   const failure = (message: string) => (
     <div className="space-y-2">
-      <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+      <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive-ink">
         Couldn’t list folders: {message}
       </div>
       <button
         type="button"
         onClick={() => q.refetch()}
-        className="text-sm text-primary underline-offset-2 hover:underline"
+        className="text-sm text-primary-ink underline-offset-2 hover:underline"
       >
         Retry
       </button>

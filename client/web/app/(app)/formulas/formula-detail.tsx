@@ -149,7 +149,7 @@ function Notice({
       <AlertTriangle
         className={cn(
           'mt-0.5 size-4 shrink-0',
-          tone === 'destructive' ? 'text-destructive' : 'text-muted-foreground',
+          tone === 'destructive' ? 'text-destructive-ink' : 'text-muted-foreground',
         )}
       />
       <div className="min-w-0 space-y-1 text-xs">
@@ -644,7 +644,7 @@ export function FormulaDetail({
                 {result.ok ? (
                   <p className="font-mono text-lg text-foreground">{String(result.value)}</p>
                 ) : (
-                  <p className="text-xs text-destructive">{result.error}</p>
+                  <p className="text-xs text-destructive-ink">{result.error}</p>
                 )}
                 {result.trace.length > 0 ? (
                   <details className="text-xs">

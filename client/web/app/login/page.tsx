@@ -35,7 +35,7 @@ export default function LoginPage({
     <main className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-8">
         <div className="space-y-2 text-center">
-          <h1 className="font-logo text-5xl leading-none text-primary">mantle</h1>
+          <h1 className="font-logo text-5xl leading-none text-primary-ink">mantle</h1>
           <p className="text-sm text-muted-foreground">
             {firstRun ? 'Create your login to begin.' : 'Sign in to your tree.'}
           </p>

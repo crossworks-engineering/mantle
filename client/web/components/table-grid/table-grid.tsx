@@ -374,7 +374,7 @@ export function TableGrid({
               >
                 <td className="px-2 py-1 text-center align-middle text-xs text-muted-foreground">
                   <button
-                    className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+                    className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive-ink"
                     onClick={() => onChange(deleteRow(doc, row.id))}
                     aria-label="Delete row"
                     type="button"
@@ -539,7 +539,7 @@ function HeaderCell({
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
+              className="text-destructive-ink focus:text-destructive-ink"
               onClick={onDeleteLink}
             >
               <Unlink className="mr-2 size-3.5" /> Delete link
@@ -635,7 +635,10 @@ function HeaderCell({
           <DropdownMenuItem onClick={onInsertRight}>
             <ListPlus className="mr-2 size-3.5" /> Insert column right
           </DropdownMenuItem>
-          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDelete}>
+          <DropdownMenuItem
+            className="text-destructive-ink focus:text-destructive-ink"
+            onClick={onDelete}
+          >
             <Trash2 className="mr-2 size-3.5" /> Delete column
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -826,7 +829,7 @@ const CELL_INPUT =
 // saturated accent fill that hides the label), and keep the keyboard/hover
 // highlight neutral + readable. Theme tokens only.
 const MENU_RADIO_ITEM =
-  'focus:bg-muted focus:text-foreground data-[state=checked]:font-semibold data-[state=checked]:text-primary';
+  'focus:bg-muted focus:text-foreground data-[state=checked]:font-semibold data-[state=checked]:text-primary-ink';
 
 // The shared SubTrigger flips its background to accent on hover/open but (unlike
 // a regular Item) never flips the TEXT to accent-foreground, so the label can be
@@ -1230,7 +1233,7 @@ function ReferenceCell({
                 >
                   <span className="truncate">{v}</span>
                   {v === current && (
-                    <Check className="ml-auto size-3.5 shrink-0 text-primary" aria-hidden />
+                    <Check className="ml-auto size-3.5 shrink-0 text-primary-ink" aria-hidden />
                   )}
                 </button>
               ))}

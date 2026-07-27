@@ -269,7 +269,7 @@ export function TracesClient({
                     <span>{r.stepCount} steps</span>
                   </div>
                   {r.error ? (
-                    <div className="mt-0.5 truncate text-xs text-destructive">{r.error}</div>
+                    <div className="mt-0.5 truncate text-xs text-destructive-ink">{r.error}</div>
                   ) : r.agentName ? (
                     <div className="mt-0.5 truncate text-xs text-muted-foreground">
                       {r.agentName}
@@ -344,7 +344,7 @@ function statusDot(status: string): string {
 
 function statusTextClass(status: string): string {
   if (status === 'success') return 'text-emerald-700 dark:text-emerald-300';
-  if (status === 'error') return 'text-destructive';
+  if (status === 'error') return 'text-destructive-ink';
   if (status === 'skipped') return 'text-muted-foreground';
   return 'text-amber-700 dark:text-amber-300';
 }

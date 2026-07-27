@@ -89,7 +89,7 @@ export function PendingClient({ devMode = false }: { devMode?: boolean }) {
   return (
     <div className="space-y-6">
       {error && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-ink">
           {error}
         </p>
       )}
@@ -156,7 +156,7 @@ export function PendingClient({ devMode = false }: { devMode?: boolean }) {
                   </span>
                 </div>
                 {r.error && (
-                  <p className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+                  <p className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive-ink">
                     {r.error}
                   </p>
                 )}
@@ -195,7 +195,7 @@ function PendingCard({ row, decide, busy }: { row: PendingRow; decide: Decide; b
       {/* Bounced decision: the previous approve/reject reverted and must be
           re-made (settle-revert). Loud + first so it can't be missed. */}
       {row.error && (
-        <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+        <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive-ink">
           <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
           <span>
             <strong className="font-semibold">Previous decision bounced — decide again.</strong>{' '}

@@ -248,7 +248,7 @@ export function EventForm({
         />
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
 
       <div className="flex justify-end gap-2 border-t border-border pt-3">
         <Button type="button" variant="outline" onClick={onCancel}>

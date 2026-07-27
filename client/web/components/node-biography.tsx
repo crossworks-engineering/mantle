@@ -45,7 +45,7 @@ const STATUS_CHIP: Record<string, string> = {
   success:
     'rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300',
   error:
-    'rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-destructive',
+    'rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-destructive-ink',
   skipped:
     'rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300',
   running:
@@ -269,7 +269,7 @@ function TraceCard({ trace, index }: { trace: TraceDetail; index: number }) {
       {/* error traces — show the error message prominently */}
       {trace.error && trace.status === 'error' && (
         <div className="border-b border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
-          <div className="font-semibold text-destructive">Failed: {trace.error}</div>
+          <div className="font-semibold text-destructive-ink">Failed: {trace.error}</div>
         </div>
       )}
 
@@ -322,7 +322,7 @@ function StepRow({ step, index }: { step: TraceStepSummary; index: number }) {
         <span className="text-[11px] text-muted-foreground">{formatDuration(step.durationMs)}</span>
       </div>
       {step.error && (
-        <p className="mt-1 rounded bg-destructive/10 px-2 py-1 text-[11px] text-destructive">
+        <p className="mt-1 rounded bg-destructive/10 px-2 py-1 text-[11px] text-destructive-ink">
           {step.error}
         </p>
       )}

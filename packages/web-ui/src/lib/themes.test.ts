@@ -13,7 +13,7 @@ import { COLOR_THEMES } from './themes';
  *
  *   4.5:1  text pairs — a `-foreground` on its own fill, and the tokens that
  *          are used as INK on a surface (`text-muted-foreground` on `bg-card`,
- *          `text-primary`/`text-destructive` on `bg-background`, …). Note that
+ *          `text-primary-ink`/`text-destructive-ink` on `bg-background`, …). Note
  *          `--primary` therefore has to clear 4.5 in BOTH directions: white on
  *          it, and it on the background.
  *   3.0:1  non-text UI — the focus ring against the surface it rings.
@@ -141,20 +141,27 @@ const TEXT_PAIRS: Array<[string, string]> = [
   ['muted-foreground', 'card'],
   ['muted-foreground', 'popover'],
   ['muted-foreground', 'sidebar'],
-  ['primary', 'background'],
-  ['primary', 'card'],
-  ['primary', 'muted'],
-  ['primary', 'sidebar'],
-  ['destructive', 'background'],
-  ['destructive', 'card'],
-  ['destructive', 'muted'],
-  ['destructive', 'sidebar'],
+  // INK tokens, not the fills. `primary`/`destructive` are tuned to sit behind
+  // their own -foreground; as text on a neutral surface they are a different
+  // job, and `-ink` is the token that does it. See INK_SURFACES below.
+  ['primary-ink', 'background'],
+  ['primary-ink', 'card'],
+  ['primary-ink', 'muted'],
+  ['primary-ink', 'sidebar'],
+  ['destructive-ink', 'background'],
+  ['destructive-ink', 'card'],
+  ['destructive-ink', 'muted'],
+  ['destructive-ink', 'sidebar'],
   ['foreground', 'card'],
   ['foreground', 'popover'],
   ['foreground', 'muted'],
   ['foreground', 'secondary'],
   ['foreground', 'sidebar'],
 ];
+
+/** Tokens used as TEXT on an undeclared surface, and the surfaces they land on. */
+const INK_TOKENS = ['primary-ink', 'destructive-ink'] as const;
+const INK_SURFACES = ['background', 'card', 'muted', 'popover', 'sidebar'] as const;
 
 const UI_PAIRS: Array<[string, string]> = [
   ['ring', 'background'],
@@ -211,6 +218,33 @@ describe('every registered theme', () => {
             `would be unreadable. Move the LIGHTNESS of whichever of the two shifts least, ` +
             `keeping hue and chroma so the theme keeps its character.`,
         ).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+
+    for (const [mode, selector] of [
+      ['light', sels.light],
+      ['dark', sels.dark],
+    ] as const) {
+      it.each(INK_TOKENS)(`${theme.id} ${mode}: %s is legible on every surface`, (ink) => {
+        // THE POINT OF THE INK TOKENS. `text-primary-ink` / `text-destructive-ink`
+        // land on whatever surface they happen to sit on — there are ~330 such
+        // call sites and none of them declare a background. So unlike the fills,
+        // these have to clear AA against ALL of them, in every theme. That is a
+        // promise the fill could not keep: a fill must also stay dark enough for
+        // its own light -foreground, and in dark mode those pull opposite ways
+        // (measured: ~25% of themes had no solution). Splitting the ink out is
+        // what makes this assertion satisfiable at all.
+        const t = resolved(selector);
+        for (const surface of INK_SURFACES) {
+          if (!t[surface]) continue;
+          const ratio = contrast(t[ink]!, t[surface]!);
+          expect(
+            ratio,
+            `${theme.id} (${mode}): ${ink} ${t[ink]} on ${surface} ${t[surface]} is ${ratio.toFixed(2)}:1. ` +
+              `Move the LIGHTNESS of --${ink} — it is free to differ from --${ink.replace('-ink', '')}, ` +
+              `which stays as the theme author drew it.`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
       });
     }
 

@@ -274,7 +274,7 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-6">
       <div className="flex items-center gap-2">
-        <Network className="size-5 text-primary" aria-hidden />
+        <Network className="size-5 text-primary-ink" aria-hidden />
         <h2 className="text-lg font-semibold">Connect a Mantle</h2>
       </div>
       <p className="text-xs text-muted-foreground">
@@ -503,7 +503,7 @@ function PeerDetail({
           <Button
             variant="ghost"
             size="sm"
-            className="text-destructive hover:text-destructive"
+            className="text-destructive-ink hover:text-destructive-ink"
             onClick={() => setDeleteOpen(true)}
           >
             <Trash2 /> Delete
@@ -656,7 +656,7 @@ function PeerDetail({
                   type="button"
                   size="icon"
                   variant="ghost"
-                  className="size-7 text-muted-foreground hover:text-destructive"
+                  className="size-7 text-muted-foreground hover:text-destructive-ink"
                   onClick={() => revoke(s.nodeId)}
                   aria-label="Revoke"
                 >

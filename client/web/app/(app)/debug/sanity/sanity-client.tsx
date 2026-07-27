@@ -9,10 +9,10 @@ import type { SanityCheck, SanityReport, SanityStatus } from '@mantle/web-ui/typ
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
 const STATUS_STYLE: Record<SanityStatus, { badge: string; glyph: string; label: string }> = {
-  pass: { badge: 'bg-primary/10 text-primary border-primary/30', glyph: '✓', label: 'PASS' },
+  pass: { badge: 'bg-primary/10 text-primary-ink border-primary/30', glyph: '✓', label: 'PASS' },
   warn: { badge: 'bg-muted text-foreground border-border', glyph: '!', label: 'WARN' },
   fail: {
-    badge: 'bg-destructive/10 text-destructive border-destructive/30',
+    badge: 'bg-destructive/10 text-destructive-ink border-destructive/30',
     glyph: '✗',
     label: 'FAIL',
   },

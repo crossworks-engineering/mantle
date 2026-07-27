@@ -285,7 +285,7 @@ export function PersonaNotesEditor({
                         type="button"
                         onClick={() => retire(n)}
                         disabled={busy}
-                        className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive-ink"
                         aria-label="Retire note"
                       >
                         <X className="h-3.5 w-3.5" />

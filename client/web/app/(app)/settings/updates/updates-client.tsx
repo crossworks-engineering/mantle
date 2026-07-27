@@ -105,7 +105,7 @@ function ComposeLine({ compose }: { compose: ComposeStatus | null }) {
         ? 'Compose auto-refresh is not adopted on this box yet. Run scripts/compose-adopt.sh once from the stack dir; updates refresh it automatically after that.'
         : 'docker-compose.yml is from an older release (pristine, but the refresh has not run). Update via the updater to refresh it, or re-run scripts/compose-adopt.sh.';
   return (
-    <p className="mt-2 flex items-start gap-1.5 text-xs text-destructive">
+    <p className="mt-2 flex items-start gap-1.5 text-xs text-destructive-ink">
       <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
       <span>
         <span className="font-medium">
@@ -131,7 +131,7 @@ function UpdaterScriptLine({ compose }: { compose: ComposeStatus | null }) {
   return (
     <p
       className={`mt-2 flex items-start gap-1.5 text-xs ${
-        state === 'modified' ? 'text-destructive' : 'text-muted-foreground'
+        state === 'modified' ? 'text-destructive-ink' : 'text-muted-foreground'
       }`}
     >
       <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
@@ -442,7 +442,7 @@ function UpdatesView({
               automatically before the app restarts. Expect about a minute of downtime.
             </p>
             {status?.phase === 'error' && status.error && (
-              <p className="text-destructive">Last update failed: {status.error}</p>
+              <p className="text-destructive-ink">Last update failed: {status.error}</p>
             )}
             {status?.phase === 'done' && status.finishedAt && (
               <p>
