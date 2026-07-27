@@ -154,12 +154,26 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(funct
                 i === selected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
               )}
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-background">
+              {/* Selected-row children derive from accent-foreground — see the
+                  same note in slash-menu.tsx. */}
+              <span
+                className={cn(
+                  'flex size-7 shrink-0 items-center justify-center rounded-md border',
+                  i === selected
+                    ? 'border-accent-foreground/25 bg-accent-foreground/10'
+                    : 'border-border bg-background',
+                )}
+              >
                 <Icon className="size-3.5" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{item.label}</span>
-                <span className="block truncate text-xs capitalize text-muted-foreground">
+                <span
+                  className={cn(
+                    'block truncate text-xs capitalize',
+                    i === selected ? 'text-accent-foreground' : 'text-muted-foreground',
+                  )}
+                >
                   {item.kind}
                 </span>
               </span>
