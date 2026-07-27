@@ -432,15 +432,22 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
   // Inherit the live-stream identity from a parent trace (a delegated sub-agent
   // opens its own trace but should stream into the SAME turn). A trace is the
   // stream ROOT only when it introduces the turnId itself.
-  const parentTurnId = currentTrace()?.turnId ?? null;
+  const parent = currentTrace();
+  const parentTurnId = parent?.turnId ?? null;
   const turnId = init.turnId ?? parentTurnId;
   const isStreamRoot = !!init.turnId && !parentTurnId;
+  // Attribution inherits exactly like the turnId does: a nested trace that
+  // streams into the turn keeps the nearest labelled ancestor's name unless it
+  // brings its own (invoke-agent always does). Without this, any un-labelled
+  // trace opened INSIDE a delegated child would stream its steps bare —
+  // silently misattributed to the responder.
+  const streamLabel = init.streamLabel ?? parent?.streamLabel ?? null;
   const ctx: TraceContext = {
     id,
     ownerId: init.ownerId,
     turnId,
     isStreamRoot,
-    streamLabel: init.streamLabel ?? null,
+    streamLabel,
     startedAtMs: Date.now(),
     ordinalCounter: 0,
     childOrdinals: new Map(),

@@ -148,4 +148,47 @@ describe('live turn streaming — delegated child traces', () => {
       { name: 'page_block_update', agentLabel: 'Pages' },
     ]);
   });
+
+  it('attribution inherits like the turnId: an unlabelled nested trace keeps the nearest label', async () => {
+    // A trace opened INSIDE a delegated child without its own label streams
+    // into the same turn (inherited turnId) — so it must inherit the child's
+    // attribution too, or its steps would read as the RESPONDER's own work.
+    // An explicit label (a deeper invoke_agent) still overrides.
+    const events: Array<{ name: string; agentLabel?: string }> = [];
+    setStepObserver((e) => {
+      if (e.phase === 'start') events.push({ name: e.name, agentLabel: e.agentLabel });
+    });
+
+    await startTrace({ ownerId: 'o', kind: 'responder_turn', turnId: 'turn-3' }, async () => {
+      await startTrace(
+        { ownerId: 'o', kind: 'manual', subjectKind: 'child_agent', streamLabel: 'Appsmith' },
+        async () => {
+          // Unlabelled nested trace → inherits "Appsmith".
+          await startTrace({ ownerId: 'o', kind: 'manual' }, async () => {
+            await step({ name: 'helper_step', kind: 'compute', input: {} }, async () => ({
+              ok: true as const,
+            }));
+            return 'x';
+          });
+          // Deeper delegation with its OWN label → overrides.
+          await startTrace(
+            { ownerId: 'o', kind: 'manual', subjectKind: 'child_agent', streamLabel: 'Toolsmith' },
+            async () => {
+              await step({ name: 'api_tool_create', kind: 'compute', input: {} }, async () => ({
+                ok: true as const,
+              }));
+              return 'y';
+            },
+          );
+          return 'child-done';
+        },
+      );
+      return 'done';
+    });
+
+    expect(events).toEqual([
+      { name: 'helper_step', agentLabel: 'Appsmith' },
+      { name: 'api_tool_create', agentLabel: 'Toolsmith' },
+    ]);
+  });
 });
