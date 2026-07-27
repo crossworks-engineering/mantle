@@ -13,7 +13,9 @@ export type ColorTheme = {
   swatches: [string, string, string];
 };
 
-export { GENERATED_COLOR_THEMES as COLOR_THEMES } from './theme-registry.gen';
+import { GENERATED_COLOR_THEMES } from './theme-registry.gen';
+
+export const COLOR_THEMES: ColorTheme[] = GENERATED_COLOR_THEMES;
 
 export const DEFAULT_COLOR_THEME = 'clean-slate';
 // (No storage key for the theme itself: the choice lives on the anchor
