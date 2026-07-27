@@ -6,19 +6,26 @@ import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 import { apiUrl } from '@mantle/web-ui/api-fetch';
-import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
+import { isCrossOrigin } from '@mantle/web-ui/runtime-env';
 import { tokenStore } from '@mantle/web-ui/token-store';
 
 /**
  * Owner sign-in, both topologies:
  *
- *   same-origin (runtime apiBase empty — single-host deploys, local dev):
- *     cookie login exactly as the monolith (POST /api/auth/login with
- *     credentials) + the presence cookie for the client middleware.
+ *   same-origin (the client and the API share an origin — single-host
+ *     deploys, local dev): cookie login exactly as the monolith (POST
+ *     /api/auth/login with credentials) + the presence cookie for the client
+ *     middleware.
  *
- *   split (apiBase set): POST /api/auth/token — the response bearer goes to
- *     the token store (which also sets the presence cookie); no cross-origin
- *     cookies anywhere.
+ *   split (the API is on another origin): POST /api/auth/token — the response
+ *     bearer goes to the token store (which also sets the presence cookie); no
+ *     cross-origin cookies anywhere.
+ *
+ * The branch is a REAL origin comparison (`isCrossOrigin`), not the old
+ * `apiBase set ⇒ split` test — which was true on every same-origin box that
+ * configures a base, so owners on a one-domain deployment were signed in
+ * bearer-only and held no session cookie. Everything through `apiFetch` worked;
+ * the browser-native loaders that can only send a cookie did not.
  *
  * Signup (first-run) creates the account first, then enters the same branch —
  * in split mode that means an immediate token exchange with the same
@@ -45,7 +52,7 @@ export function LoginForm({
     setBusy(true);
     setError(undefined);
     try {
-      const split = runtimeApiBase() !== '';
+      const split = isCrossOrigin();
 
       if (isSignup) {
         const res = await fetch(apiUrl('/api/auth/signup'), {

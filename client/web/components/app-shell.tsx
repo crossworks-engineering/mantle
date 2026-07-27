@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { apiFetch, upgradeOwnerCookie } from '@mantle/web-ui/api-fetch';
 import { useColorTheme } from '@mantle/web-ui/color-theme-provider';
 import { useFonts } from '@mantle/web-ui/font-provider';
 import { COLOR_THEMES } from '@mantle/web-ui/lib/themes';
@@ -175,6 +175,16 @@ function ShellFrame({
   useEffect(() => {
     setAssetToken(shellQuery.data?.assetToken);
   }, [shellQuery.data?.assetToken]);
+
+  // Same-origin bearer→cookie upgrade, once per shell load. Owners signed in
+  // before the origin predicate was fixed hold ONLY a localStorage bearer, and
+  // same-origin <img>/<iframe>/download srcs authenticate by COOKIE — they
+  // can't carry a header. Fired here (not awaited) because the shell mounts
+  // before any asset-bearing screen. No-op cross-origin and for cookie
+  // sessions. See upgradeOwnerCookie.
+  useEffect(() => {
+    void upgradeOwnerCookie();
+  }, []);
 
   // Split-client bearer upkeep, piggybacked on the shell boot round-trip:
   // rotate the stored token when <7d from expiry. No-op same-origin (no
