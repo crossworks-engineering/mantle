@@ -33,6 +33,9 @@ import {
   folderByPath,
   upsertFile,
 } from '@mantle/files';
+import { setApiKey } from '@mantle/api-keys';
+import { and, eq } from 'drizzle-orm';
+import { db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
 import { randomUUID } from 'node:crypto';
 import { notFound } from './errors';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
@@ -469,6 +472,111 @@ const sandbox_export: BuiltinToolDef = {
   },
 };
 
+const sandbox_publish: BuiltinToolDef = {
+  slug: 'sandbox_publish',
+  name: 'Publish sandbox service',
+  description:
+    'Make a service running inside a sandbox callable by the brain: declares the port to the ' +
+    'supervisor proxy and creates/updates an integration tool group bound to it. Returns the ' +
+    'group slug and base URL. The service must already be listening (bind 0.0.0.0, background ' +
+    'it with `nohup … &` via `sandbox_exec`). Next steps: author endpoints into the group with ' +
+    '`api_tool_create` (relative paths join the base URL), grant with `agent_grant_tool_group`. ' +
+    'For one-off reads of files use `sandbox_export` instead.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      sandbox: { type: 'string', description: 'Sandbox name or id.' },
+      port: {
+        type: 'number',
+        minimum: 1,
+        maximum: 65535,
+        description: 'Port the service listens on inside the sandbox, e.g. 8000.',
+      },
+      group_slug: {
+        type: 'string',
+        description: 'Integration tool-group slug to create/update. Defaults to sbx-<sandbox>.',
+      },
+      description: {
+        type: 'string',
+        description: 'One line on what the service does, e.g. "python calculation API".',
+      },
+    },
+    required: ['sandbox', 'port'],
+    additionalProperties: false,
+  },
+  requiresConfirm: false,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
+    const row = await getSandboxByRef(ctx.ownerId, ref);
+    if (!row) return notFound('sandbox', ref, 'sandbox_list');
+    const port = Number(input.port);
+    const rawSlug =
+      typeof input.group_slug === 'string' && input.group_slug.trim()
+        ? input.group_slug.trim()
+        : `sbx-${row.name}`;
+    if (!/^[a-z0-9][a-z0-9_-]{1,47}$/.test(rawSlug)) {
+      return {
+        ok: false,
+        error: `group_slug '${rawSlug}' is invalid — lowercase letters/digits/dash/underscore, 2–48 chars.`,
+      };
+    }
+
+    const published = await sandboxd('POST', `/sandboxes/${row.id}/publish`, { port });
+    if (!published.ok) return published;
+    await touchSandbox(row.id);
+
+    // Vault the proxy token under a stable ref so the authored tools' auth
+    // template resolves through the normal secret machinery (the token is
+    // stripped by the proxy before reaching the sandbox service).
+    const token = process.env.SANDBOXD_TOKEN!;
+    await setApiKey(ctx.ownerId, 'sandboxd', 'proxy', token);
+
+    const baseUrl = `${process.env.SANDBOXD_URL}/svc/${row.id}/${port}`;
+    const integration: ToolGroupIntegration = {
+      service: `sandbox-${row.name}`,
+      baseUrl,
+      secretRef: 'sandboxd/proxy',
+      authTemplate: { headers: { Authorization: 'Bearer {{secret:sandboxd/proxy}}' } },
+    };
+    const description =
+      typeof input.description === 'string' && input.description.trim()
+        ? input.description.trim()
+        : `Service published from sandbox '${row.name}' (port ${port}), reached via the sandboxd proxy.`;
+
+    const [existing] = await db
+      .select({ id: toolGroups.id })
+      .from(toolGroups)
+      .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, rawSlug)))
+      .limit(1);
+    if (existing) {
+      await db
+        .update(toolGroups)
+        .set({ integration, description, updatedAt: new Date() })
+        .where(eq(toolGroups.id, existing.id));
+    } else {
+      await db.insert(toolGroups).values({
+        ownerId: ctx.ownerId,
+        slug: rawSlug,
+        name: `Sandbox: ${row.name}`,
+        description,
+        toolSlugs: [],
+        integration,
+      });
+    }
+    ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, port, group: rawSlug });
+    return {
+      ok: true,
+      output: {
+        sandbox: row.name,
+        port,
+        group: rawSlug,
+        baseUrl,
+        next: 'author endpoint tools into this group with api_tool_create (relative paths join baseUrl; auth is inherited from the group integration), then grant it to an agent with agent_grant_tool_group',
+      },
+    };
+  },
+};
+
 export const SANDBOX_TOOLS: BuiltinToolDef[] = [
   sandbox_create,
   sandbox_exec,
@@ -476,5 +584,6 @@ export const SANDBOX_TOOLS: BuiltinToolDef[] = [
   sandbox_stop,
   sandbox_rm,
   sandbox_export,
+  sandbox_publish,
 ];
 export const SANDBOX_TOOL_SLUGS = SANDBOX_TOOLS.map((t) => t.slug);

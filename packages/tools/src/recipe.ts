@@ -41,6 +41,7 @@ export const RECIPE_FORBIDDEN_SLUGS: ReadonlySet<string> = new Set([
   'sandbox_exec',
   'sandbox_stop',
   'sandbox_rm',
+  'sandbox_publish',
   // secrets + privilege
   'secret_create',
   'update_persona',

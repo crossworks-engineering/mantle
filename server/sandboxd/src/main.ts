@@ -27,9 +27,10 @@
  */
 
 import http from 'node:http';
+import net from 'node:net';
 import { execFile } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, rm, stat, unlink } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import * as docker from './docker';
@@ -140,6 +141,109 @@ async function ensureImage(image: string): Promise<void> {
   // Create-then-pull-on-404 would need a throwaway create; probing the pull
   // path directly is simpler and a no-op when the image is already local.
   await docker.pullImage(image);
+}
+
+/* ── published services ───────────────────────────────────────────────── */
+
+/** Ports explicitly published per sandbox, persisted beside (not inside) the
+ *  /files workspace at `<SANDBOXES_DIR>/<id>/services.json` so they survive a
+ *  sandboxd restart and die with a purge. The proxy serves ONLY these ports —
+ *  publish is the declaration step, not a firewall (the sandbox network
+ *  already isolates); it keeps "what the brain can call" an explicit, small,
+ *  listable set instead of every port every container happens to open. */
+const servicesPath = (id: string) => path.join(SANDBOXES_DIR, id, 'services.json');
+
+async function loadServices(id: string): Promise<number[]> {
+  try {
+    const parsed = JSON.parse(await readFile(servicesPath(id), 'utf8')) as { ports?: unknown };
+    return Array.isArray(parsed.ports) ? parsed.ports.filter((p) => Number.isInteger(p)) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveServices(id: string, ports: number[]): Promise<void> {
+  await writeFile(servicesPath(id), JSON.stringify({ ports }), 'utf8');
+}
+
+async function publishService(id: string, body: Record<string, unknown>) {
+  const port = Number(body.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new HttpError(400, 'port must be an integer 1–65535');
+  }
+  const c = await findContainer(id);
+  if (c.State !== 'running') await docker.startContainer(c.Id);
+  markActive(id);
+  const ip = await docker.containerIp(c.Id, SANDBOX_NETWORK);
+  if (!ip) throw new HttpError(502, 'sandbox container has no network address');
+
+  // The service must actually answer before we declare it callable.
+  const reachable = await new Promise<boolean>((resolve) => {
+    const sock = new net.Socket();
+    sock.setTimeout(3000);
+    sock.once('connect', () => (sock.destroy(), resolve(true)));
+    sock.once('timeout', () => (sock.destroy(), resolve(false)));
+    sock.once('error', () => resolve(false));
+    sock.connect(port, ip);
+  });
+  if (!reachable) {
+    throw new HttpError(
+      409,
+      `nothing is listening on port ${port} inside the sandbox — start the service first (bind 0.0.0.0, run it in the background with nohup … &), verify with sandbox_exec, then re-publish`,
+    );
+  }
+
+  const ports = await loadServices(id);
+  if (!ports.includes(port)) await saveServices(id, [...ports, port]);
+  return { port, proxyPath: `/svc/${id}/${port}` };
+}
+
+/** Stream-proxy an authored-tool request to a published sandbox service.
+ *  Data plane only: bearer-gated, published ports only, Authorization and
+ *  Host are stripped so the sandboxd token never enters the sandbox. */
+async function proxyToService(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  id: string,
+  port: number,
+  rest: string,
+): Promise<void> {
+  if (!(await loadServices(id)).includes(port)) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: `port ${port} is not published for this sandbox` }));
+    return;
+  }
+  const c = await findContainer(id);
+  if (c.State !== 'running') await docker.startContainer(c.Id);
+  markActive(id);
+  const ip = await docker.containerIp(c.Id, SANDBOX_NETWORK);
+  if (!ip) throw new HttpError(502, 'sandbox container has no network address');
+
+  const headers = { ...req.headers };
+  delete headers.authorization;
+  delete headers.host;
+  await new Promise<void>((resolve) => {
+    const upstream = http.request(
+      { host: ip, port, method: req.method, path: rest || '/', headers, timeout: 60_000 },
+      (up) => {
+        res.writeHead(up.statusCode ?? 502, up.headers);
+        up.pipe(res);
+        up.on('end', resolve);
+        up.on('error', () => (res.end(), resolve()));
+      },
+    );
+    upstream.on('timeout', () => upstream.destroy(new Error('upstream timeout')));
+    upstream.on('error', (e) => {
+      if (!res.headersSent) {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `sandbox service unreachable: ${e.message}` }));
+      } else {
+        res.end();
+      }
+      resolve();
+    });
+    req.pipe(upstream);
+  });
 }
 
 /* ── verbs ────────────────────────────────────────────────────────────── */
@@ -331,6 +435,12 @@ const server = http.createServer(async (req, res) => {
 
     if (!authed(req)) return send(401, { error: 'missing or invalid bearer token' });
 
+    // Data plane: /svc/:id/:port/* — stream-proxy to a published service.
+    if (seg[0] === 'svc' && seg[1] && ID_RE.test(seg[1]) && seg[2] && /^\d+$/.test(seg[2])) {
+      const rest = `/${seg.slice(3).join('/')}${url.search}`;
+      return void (await proxyToService(req, res, seg[1], Number(seg[2]), rest));
+    }
+
     if (req.method === 'GET' && url.pathname === '/sandboxes') {
       const [sandboxes, used] = await Promise.all([listSandboxes(), usedBytes().catch(() => null)]);
       return send(200, {
@@ -352,6 +462,9 @@ const server = http.createServer(async (req, res) => {
         if (c.State !== 'running') await docker.startContainer(c.Id);
         markActive(id);
         return send(200, { ok: true });
+      }
+      if (req.method === 'POST' && seg[2] === 'publish') {
+        return send(200, await publishService(id, await readBody(req)));
       }
       if (req.method === 'POST' && seg[2] === 'export') {
         const bytes = await exportSandbox(id, await readBody(req));

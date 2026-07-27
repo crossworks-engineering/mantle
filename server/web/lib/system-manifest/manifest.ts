@@ -724,6 +724,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'sandbox_stop',
       'sandbox_rm',
       'sandbox_export',
+      'sandbox_publish',
     ],
   },
   {

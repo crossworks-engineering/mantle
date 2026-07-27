@@ -74,6 +74,33 @@ export function isBlockedIp(ip: string): boolean {
   return true;
 }
 
+/**
+ * THE ONE DELIBERATE EXEMPTION: the sandboxd service proxy.
+ *
+ * Services built inside CLI sandboxes are reachable only through sandboxd's
+ * reverse proxy (`${SANDBOXD_URL}/svc/<sandbox-id>/<port>/…`), and sandboxd is
+ * by design a private-network host — so without a carve, sandbox-service
+ * integrations could never execute. The carve is the narrowest one that
+ * works, and BOTH bounds matter:
+ *   - origin must equal SANDBOXD_URL's origin EXACTLY (no other private host
+ *     inherits it — postgres/minio/web stay blocked);
+ *   - path must start with `/svc/` — sandboxd's CONTROL verbs (/sandboxes,
+ *     create/exec/rm) remain unreachable to model-driven fetches; only the
+ *     data-plane proxy is exposed, and it is itself bearer-token-gated and
+ *     restricted to explicitly published ports.
+ * Guarded by ssrf-guard.test.ts; if you widen this, you are re-deciding a
+ * security boundary — stop and take it to the owner first.
+ */
+function isSandboxProxyUrl(u: URL): boolean {
+  const base = process.env.SANDBOXD_URL;
+  if (!base) return false;
+  try {
+    return u.origin === new URL(base).origin && u.pathname.startsWith('/svc/');
+  } catch {
+    return false;
+  }
+}
+
 /** Throw if `rawUrl` is not an http(s) URL whose host resolves only to public
  *  addresses. Used before every fetch hop. */
 export async function assertFetchableUrl(rawUrl: string): Promise<void> {
@@ -86,6 +113,7 @@ export async function assertFetchableUrl(rawUrl: string): Promise<void> {
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
     throw new Error('only http(s) URLs are allowed');
   }
+  if (isSandboxProxyUrl(u)) return;
   let host = u.hostname;
   if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
 

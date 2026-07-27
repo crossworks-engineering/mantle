@@ -129,6 +129,19 @@ export const stopContainer = (id: string): Promise<void> =>
 export const removeContainer = (id: string): Promise<void> =>
   json('DELETE', `/containers/${id}?force=true`);
 
+/** The container's IP on `preferredNetwork`, falling back to its first
+ *  network with an address (local test rigs run plain `bridge`). */
+export async function containerIp(id: string, preferredNetwork: string): Promise<string | null> {
+  const info = await json<{
+    NetworkSettings?: { Networks?: Record<string, { IPAddress?: string }> };
+  }>('GET', `/containers/${id}/json`);
+  const nets = info.NetworkSettings?.Networks ?? {};
+  const preferred = nets[preferredNetwork]?.IPAddress;
+  if (preferred) return preferred;
+  for (const n of Object.values(nets)) if (n.IPAddress) return n.IPAddress;
+  return null;
+}
+
 /* ── exec ─────────────────────────────────────────────────────────────── */
 
 export type ExecResult = {
