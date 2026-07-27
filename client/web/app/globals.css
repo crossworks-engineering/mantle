@@ -246,7 +246,7 @@
 
 /* Pages inline marks: themed links + highlight. */
 .ProseMirror a {
-  color: var(--primary);
+  color: var(--primary-ink);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
@@ -328,7 +328,7 @@
 .ProseMirror .mention {
   border-radius: 0.3rem;
   background-color: color-mix(in oklab, var(--primary) 14%, transparent);
-  color: var(--primary);
+  color: var(--primary-ink);
   padding: 0.05em 0.3em;
   font-weight: 500;
   white-space: nowrap;
@@ -389,7 +389,7 @@
   color: var(--chart-5);
 }
 :is(.ProseMirror, .code-view) .hljs-deletion {
-  color: var(--destructive);
+  color: var(--destructive-ink);
 }
 :is(.ProseMirror, .code-view) .hljs-emphasis {
   font-style: italic;
@@ -576,7 +576,7 @@
 }
 .ProseMirror .diff-pill-discard:hover {
   border-color: var(--destructive);
-  color: var(--destructive);
+  color: var(--destructive-ink);
 }
 
 /* Removed-block ghost — a read-only card showing deleted content where it used
@@ -601,7 +601,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--destructive);
+  color: var(--destructive-ink);
 }
 .ProseMirror .diff-removed-ghost .diff-pill {
   position: static;
@@ -663,13 +663,13 @@
    text, but transparent glyph fill caused headaches with PDF export, editing,
    and general fragility — a flat colour is robust everywhere.) */
 .prose-accent h1 {
-  color: var(--primary);
+  color: var(--primary-ink);
   letter-spacing: -0.01em;
 }
 
 /* h2 — solid primary with a hairline divider for section structure. */
 .prose-accent h2 {
-  color: var(--primary);
+  color: var(--primary-ink);
   border-bottom: 1px solid var(--border);
   padding-bottom: 0.3em;
 }
@@ -686,7 +686,7 @@
 
 /* Links — brand colour, underline only on hover (themed, not prose blue). */
 .prose-accent a {
-  color: var(--primary);
+  color: var(--primary-ink);
   font-weight: 500;
   text-decoration: none;
 }
@@ -699,7 +699,7 @@
    and strip the backtick quotes Typography injects via ::before/::after. */
 .prose-accent :not(pre) > code {
   background-color: color-mix(in oklab, var(--primary) 12%, transparent);
-  color: var(--primary);
+  color: var(--primary-ink);
   padding: 0.15em 0.4em;
   border-radius: 0.35rem;
   font-weight: 500;
@@ -726,7 +726,7 @@
 /* List markers in the accent colour (bullets + ordered numbers). */
 .prose-accent ul > li::marker,
 .prose-accent ol > li::marker {
-  color: var(--primary);
+  color: var(--primary-ink);
 }
 
 /* hr — a soft accent-fading rule instead of a flat hairline. */
