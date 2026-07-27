@@ -167,10 +167,11 @@ const sandbox_create: BuiltinToolDef = {
       },
       network: {
         type: 'string',
-        enum: ['full', 'none'],
+        enum: ['full', 'balanced', 'none'],
         default: 'full',
         description:
-          'Egress tier: "full" = internet (never the brain\'s network), "none" = offline.',
+          'Egress tier: "full" = internet (never the brain\'s network); "balanced" = only ' +
+          'package registries, GitHub and apt mirrors via an allowlisting proxy; "none" = offline.',
       },
     },
     required: ['name'],
@@ -193,7 +194,8 @@ const sandbox_create: BuiltinToolDef = {
       };
     }
     const id = randomUUID();
-    const network = input.network === 'none' ? 'none' : 'full';
+    const network =
+      input.network === 'none' ? 'none' : input.network === 'balanced' ? 'balanced' : 'full';
     const image =
       typeof input.image === 'string' && input.image
         ? input.image

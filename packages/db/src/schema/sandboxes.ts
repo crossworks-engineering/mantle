@@ -14,11 +14,12 @@ import { index, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'driz
  * the durable record.
  *
  * `network` is the egress tier chosen at creation: 'full' (internet via the
- * isolated mantle_sandbox bridge — never the app network) or 'none'. The
- * Balanced allowlist tier arrives with the M3 egress proxy.
+ * isolated mantle_sandbox bridge — never the app network), 'balanced'
+ * (internal network; outbound only through sandboxd's allowlisting proxy —
+ * registries/GitHub/apt by default), or 'none' (offline).
  */
 export const sandboxStatus = pgEnum('sandbox_status', ['running', 'stopped']);
-export const sandboxNetwork = pgEnum('sandbox_network', ['full', 'none']);
+export const sandboxNetwork = pgEnum('sandbox_network', ['full', 'balanced', 'none']);
 
 export const sandboxes = pgTable(
   'sandboxes',

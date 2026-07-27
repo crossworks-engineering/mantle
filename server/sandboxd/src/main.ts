@@ -35,6 +35,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import * as docker from './docker';
 import * as mcp from './mcp';
+import { startEgressProxy } from './egress';
 
 const execFileP = promisify(execFile);
 
@@ -42,6 +43,13 @@ const PORT = Number(process.env.SANDBOXD_PORT || 8090);
 const TOKEN = process.env.SANDBOXD_TOKEN || '';
 const SANDBOXES_DIR = process.env.SANDBOXES_DIR || '/data/sandboxes';
 const SANDBOX_NETWORK = process.env.SANDBOX_NETWORK || 'mantle_sandbox';
+/** INTERNAL network for balanced-tier sandboxes: no NAT, so their only way
+ *  out is the allowlisting egress proxy below. */
+const RESTRICTED_NETWORK = process.env.SANDBOX_NETWORK_RESTRICTED || 'mantle_sandbox_restricted';
+const EGRESS_PROXY_PORT = Number(process.env.SANDBOX_EGRESS_PROXY_PORT || 8092);
+/** How balanced sandboxes address the proxy: the sandboxd container name in
+ *  prod (docker DNS on the shared network); an explicit IP on local rigs. */
+const EGRESS_PROXY_HOST = process.env.SANDBOX_EGRESS_PROXY_HOST || 'mantle_sandboxd';
 /** Batteries-included default (python3+libs, node22+pnpm, git, docker CLI,
  *  claude code — see infra/sandbox-image/Dockerfile). Pinned tag: updating
  *  the image is an explicit SANDBOX_DEFAULT_IMAGE change, never silent drift. */
@@ -252,7 +260,12 @@ async function proxyToService(
 
 /* ── verbs ────────────────────────────────────────────────────────────── */
 
-type CreateInput = { id: string; ownerId: string; image?: string; network?: 'full' | 'none' };
+type CreateInput = {
+  id: string;
+  ownerId: string;
+  image?: string;
+  network?: 'full' | 'balanced' | 'none';
+};
 
 async function createSandbox(input: CreateInput) {
   const { id, ownerId } = input;
@@ -260,7 +273,8 @@ async function createSandbox(input: CreateInput) {
   if (typeof ownerId !== 'string' || !ownerId) throw new HttpError(400, 'ownerId is required');
   const image = input.image ?? DEFAULT_IMAGE;
   if (!IMAGE_RE.test(image)) throw new HttpError(400, `image '${image}' is not a valid reference`);
-  const network = input.network === 'none' ? 'none' : 'full';
+  const network =
+    input.network === 'none' ? 'none' : input.network === 'balanced' ? 'balanced' : 'full';
 
   const existing = await docker.listContainers([`${LABEL}=true`]);
   if (existing.length >= MAX_SANDBOXES) {
@@ -284,7 +298,18 @@ async function createSandbox(input: CreateInput) {
     Image: image,
     Cmd: ['sleep', 'infinity'],
     WorkingDir: '/files',
-    Env: ['DEBIAN_FRONTEND=noninteractive', 'LANG=C.UTF-8', 'HOME=/root'],
+    Env: [
+      'DEBIAN_FRONTEND=noninteractive',
+      'LANG=C.UTF-8',
+      'HOME=/root',
+      // Balanced tier: the internal network has no NAT — proxy env is the
+      // only road out, and the proxy enforces the allowlist.
+      ...(network === 'balanced'
+        ? ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'].map(
+            (k) => `${k}=http://${EGRESS_PROXY_HOST}:${EGRESS_PROXY_PORT}`,
+          )
+        : []),
+    ],
     Labels: { [LABEL]: 'true', [`${LABEL}.id`]: id, [`${LABEL}.owner`]: ownerId },
     HostConfig: {
       // The work outlives the container: /files is the sandbox's host dir.
@@ -297,7 +322,8 @@ async function createSandbox(input: CreateInput) {
       NanoCpus: NANO_CPUS,
       PidsLimit: PIDS_LIMIT,
       Init: true, // reap zombies under the sleep-infinity PID 1
-      NetworkMode: network === 'none' ? 'none' : SANDBOX_NETWORK,
+      NetworkMode:
+        network === 'none' ? 'none' : network === 'balanced' ? RESTRICTED_NETWORK : SANDBOX_NETWORK,
       RestartPolicy: { Name: 'no' },
     },
   });
@@ -557,6 +583,9 @@ if (IDLE_STOP_MINUTES > 0) {
   };
   setInterval(tick, 5 * 60_000).unref();
 }
+
+startEgressProxy(EGRESS_PROXY_PORT);
+console.log(`[sandboxd] balanced-tier egress proxy on :${EGRESS_PROXY_PORT}`);
 
 server.listen(PORT, () => {
   console.log(

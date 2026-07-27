@@ -99,6 +99,13 @@ networks:
   sandbox:
     name: mantle_sandbox
     driver: bridge
+  # Balanced-tier sandboxes live HERE instead: `internal` = no NAT, no direct
+  # egress at all — their only road out is sandboxd's allowlisting proxy
+  # (proxy env is injected at create). Fail-closed by topology.
+  sandbox_restricted:
+    name: mantle_sandbox_restricted
+    driver: bridge
+    internal: true
 
 # Log rotation for every service — Docker's default json-file driver grows
 # unbounded, so a crash-looping worker or chatty extract run can fill the disk
@@ -662,12 +669,14 @@ services:
       SANDBOX_NETWORK: mantle_sandbox
       SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-titanwest/mantle-sandbox:24.04-v2}
       SANDBOX_MAX_COUNT: ${SANDBOX_MAX_COUNT:-3}
+      SANDBOX_EGRESS_ALLOW: ${SANDBOX_EGRESS_ALLOW:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}:${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}
     networks:
       - default
       - sandbox
+      - sandbox_restricted
     healthcheck:
       test:
         [
