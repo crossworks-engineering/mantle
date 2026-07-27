@@ -38,6 +38,14 @@ export default tseslint.config(
       // Sibling git worktrees live under .claude/ in the integrator clone
       // (gitignored). Each worktree lints itself; never lint them from here.
       '.claude/**',
+      // The pre-v0.202 tree (apps/web, apps/api, apps/mcp, apps/agent) was
+      // renamed to server/* + client/*. A leftover apps/ is untracked AND
+      // ungitignored, so `eslint .` walks it and parses its minified
+      // app-runtime bundles as source — 752 errors from a directory that is
+      // not part of the repo. That turned the pre-push gate into a wolf-cry
+      // (v0.206.3 had to be pushed from a worktree). Deleted 2026-07-27; this
+      // stays so a stale checkout can never re-break the gate.
+      'apps/**',
     ],
   },
   js.configs.recommended,
