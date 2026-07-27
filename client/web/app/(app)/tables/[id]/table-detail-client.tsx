@@ -391,7 +391,6 @@ export function TableDetailClient({
     }
   }, [reloadTab]);
   const { busy: assistBusy } = useSurfaceAssist({
-    surface: 'tables',
     node: { id: initial.id, kind: 'table', label: title || 'Untitled table' },
     onEdited: onTableEdited,
   });

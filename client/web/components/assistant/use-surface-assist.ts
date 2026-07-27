@@ -33,7 +33,6 @@ import {
  * specialist is mid-edit on.
  */
 export function useSurfaceAssist(opts: {
-  surface: 'pages' | 'tables' | 'apps';
   /** The open node (null while it's still loading — the hook no-ops until set). */
   node: { id: string; kind: ContextKind; label: string } | null;
   /** Focus directive to fold into the sent text, or null when nothing's focused. */

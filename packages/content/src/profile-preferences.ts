@@ -95,6 +95,14 @@ export type ProfilePreferences = {
   /** The logo's mime type, from the validated upload (svg/png/jpeg/webp
    *  allowlist — projectLogoType). The public serve route replays it. */
   logoType?: string;
+  /** Optional DARK-MODE logo variant — same storage/validation contract as
+   *  logoKey, uploaded via PUT /api/profile/logo?variant=dark. Renderers show
+   *  it when the UI is in dark mode and fall back to the base logo (then the
+   *  wordmark) when unset — so a light-on-transparent mark stays readable on
+   *  both themes without forcing every brain to upload two files. */
+  logoDarkKey?: string;
+  /** The dark variant's mime type (same allowlist as logoType). */
+  logoDarkType?: string;
   /** Free-text "what this brain is for" — captured at onboarding, editable in
    *  Settings → Profile. Injected as the "# Purpose of this brain" section of the
    *  always-on identity block (identity-context.ts), so every agent knows the
@@ -117,20 +125,6 @@ export type ProfilePreferences = {
    *  `route: 'azure'`, those rows are pinned to an Azure OpenAI endpoint via
    *  the `custom` provider (key stored under service `custom`). */
   onboardingModels?: OnboardingModelChoices;
-  /** Slug of the agent the `/pages` editor "Assist" panel delegates to. Unset →
-   *  the route falls back to the default `pages` specialist. Configured on the
-   *  /pages surface itself (the Assist panel agent picker), not a global setting. */
-  pagesAssistAgentSlug?: string;
-  /** Slug of the agent the `/tables` editor "Assist" panel delegates to. Unset →
-   *  the route falls back to the default `tables` (Ledger) specialist. Configured
-   *  on the /tables surface itself (the Assist panel agent picker). */
-  tablesAssistAgentSlug?: string;
-  /** Slug of the agent the `/apps` editor "Assist" panel delegates to. Unset →
-   *  the default `appsmith` specialist. Configured on the /apps surface. */
-  appsAssistAgentSlug?: string;
-  /** Slug of the agent the API Console (/dev-tools) "Assist" panel delegates
-   *  to. Unset → the default `toolsmith` specialist. */
-  devToolsAssistAgentSlug?: string;
   /** When true, tools an AGENT authors (via Toolsmith / api_tool_create) start
    *  confirm-gated: every call parks for operator approval until the operator
    *  clears "requires confirm" for that tool in Settings → Tools. Defaults
@@ -496,6 +490,8 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     fontTitle: projectFontKey(prefs.fontTitle),
     logoKey: projectLogoKey(prefs.logoKey),
     logoType: projectLogoType(prefs.logoType),
+    logoDarkKey: projectLogoKey(prefs.logoDarkKey),
+    logoDarkType: projectLogoType(prefs.logoDarkType),
     purpose:
       typeof prefs.purpose === 'string' && prefs.purpose.length > 0 ? prefs.purpose : undefined,
     purposeArchetype:
@@ -511,22 +507,6 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
         ? prefs.onboardingStep
         : undefined,
     onboardingModels: projectOnboardingModels(prefs.onboardingModels),
-    pagesAssistAgentSlug:
-      typeof prefs.pagesAssistAgentSlug === 'string' && prefs.pagesAssistAgentSlug.length > 0
-        ? prefs.pagesAssistAgentSlug
-        : undefined,
-    tablesAssistAgentSlug:
-      typeof prefs.tablesAssistAgentSlug === 'string' && prefs.tablesAssistAgentSlug.length > 0
-        ? prefs.tablesAssistAgentSlug
-        : undefined,
-    appsAssistAgentSlug:
-      typeof prefs.appsAssistAgentSlug === 'string' && prefs.appsAssistAgentSlug.length > 0
-        ? prefs.appsAssistAgentSlug
-        : undefined,
-    devToolsAssistAgentSlug:
-      typeof prefs.devToolsAssistAgentSlug === 'string' && prefs.devToolsAssistAgentSlug.length > 0
-        ? prefs.devToolsAssistAgentSlug
-        : undefined,
     toolsmithRequireApproval: prefs.toolsmithRequireApproval === true,
     heartbeatEgressGate: prefs.heartbeatEgressGate === true,
     // Default ON: only an explicit `false` disables (matches isStreamThoughtsEnabled).
@@ -695,15 +675,13 @@ export async function updateProfilePreferences(
     fontTitle: projectFontKey(merged.fontTitle),
     logoKey: projectLogoKey(merged.logoKey),
     logoType: projectLogoType(merged.logoType),
+    logoDarkKey: projectLogoKey(merged.logoDarkKey),
+    logoDarkType: projectLogoType(merged.logoDarkType),
     purpose: merged.purpose || undefined,
     purposeArchetype: merged.purposeArchetype || undefined,
     onboardedAt: merged.onboardedAt || undefined,
     onboardingStep: merged.onboardingStep || undefined,
     onboardingModels: projectOnboardingModels(merged.onboardingModels),
-    pagesAssistAgentSlug: merged.pagesAssistAgentSlug || undefined,
-    tablesAssistAgentSlug: merged.tablesAssistAgentSlug || undefined,
-    appsAssistAgentSlug: merged.appsAssistAgentSlug || undefined,
-    devToolsAssistAgentSlug: merged.devToolsAssistAgentSlug || undefined,
     toolsmithRequireApproval: merged.toolsmithRequireApproval === true,
     heartbeatEgressGate: merged.heartbeatEgressGate === true,
     streamThoughts: merged.streamThoughts !== false,
@@ -747,6 +725,8 @@ export const BRAIN_PREFERENCE_KEYS = [
   'fontTitle',
   'logoKey',
   'logoType',
+  'logoDarkKey',
+  'logoDarkType',
   'purpose',
   'purposeArchetype',
   // Onboarding is the BRAIN's, not a login's: a brain is set up once. Keying

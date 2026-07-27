@@ -24,7 +24,7 @@ import {
 import { Button } from '@mantle/web-ui/ui/button';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiSend, ApiError, apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
-import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
+import { isCrossOrigin } from '@mantle/web-ui/runtime-env';
 
 /**
  * Owner download link for a byte-serving /api/team-admin route. Same-origin:
@@ -32,10 +32,14 @@ import { runtimeApiBase } from '@mantle/web-ui/runtime-env';
  * a bare link can't carry the owner bearer, so fetch the bytes with it and
  * steer a synchronously-opened tab to the blob (popup blockers require the
  * open inside the click gesture).
+ *
+ * "Same-origin" is a real origin comparison, not "is an apiBase configured" —
+ * the old test sent one-domain boxes down the blob path, losing the browser's
+ * own inline preview and Save-As for no reason.
  */
 export function AdminDownloadLink({ path, children }: { path: string; children: ReactNode }) {
   const [busy, setBusy] = useState(false);
-  if (runtimeApiBase() === '') {
+  if (!isCrossOrigin()) {
     return (
       <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
         <a href={path} target="_blank" rel="noreferrer">

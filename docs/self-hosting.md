@@ -244,5 +244,17 @@ compose file itself; release notes call it out when it applies.
 
 ## What's deliberately NOT here
 
-- **Multi-user.** Mantle is one brain per install, one account. The second
-  user gets their own stack.
+- **Multi-tenancy.** Mantle is one brain per install. It takes more than one
+  **login** (Settings → Logins) — a second way *in*, not a second world: every
+  login is a peer with identical access to the same brain, the same data and
+  the same settings, distinguished only by the audit trail. Anyone who needs
+  their own content gets their own stack.
+
+  Worth stating plainly because assuming otherwise has produced real bugs:
+  treating a login as an account with its own world gave us per-login brand
+  preferences written to a row nothing read (v0.205.4), and per-login
+  onboarding that walked an added login into the first-run wizard (v0.205.5).
+  A new preference must answer "does this describe the BRAIN or the PERSON?" —
+  `BRAIN_PREFERENCE_KEYS` + `packages/content/src/brain-preferences.test.ts`
+  force the question. The trust boundary that DOES separate people is
+  contacts/members ([team-chat.md](team-chat.md)), not logins.

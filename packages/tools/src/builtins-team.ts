@@ -9,6 +9,14 @@
  * a request that masquerades as someone else or hides its origin. Worst-case
  * injection outcome: a clearly-labeled task in a human-reviewed queue.
  *
+ * `team_member_list` / `team_notify` — the member-to-member reach. A member
+ * could always ASK the responder to tell a colleague something, and it could
+ * only answer that it had no way to (a real Pinnacle forum topic, 2026-07-21).
+ * Same provenance discipline as above: the SENDER is the authenticated member,
+ * the forum topic/post is stamped from the surface, and a recipient is always
+ * an id from `team_member_list` re-verified against live membership — there is
+ * no free-text address, so the blast radius is the brain's own team.
+ *
  * `team_chat_list` / `team_chat_read` / `team_access_list` — OWNER-side admin
  * tools (granted via the `team-admin` group to the persona, never to the team
  * responder). They make team activity queryable by the brain: "what has Sam
@@ -17,14 +25,18 @@
 
 import {
   createTask,
+  listNotifiableMembers,
   listTeamAccess,
   listTeamMemberActivity,
   listTeamThread,
   nodeUrl,
+  notifyMembers,
+  MAX_NOTIFICATION_BODY,
+  MAX_NOTIFY_RECIPIENTS,
   type TaskPriority,
 } from '@mantle/content';
 import type { ToolPrecondition, BuiltinToolDef, ToolHandlerResult } from './types';
-import { str } from './coerce';
+import { str, strArr } from './coerce';
 
 const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   {
@@ -132,6 +144,123 @@ const team_request_create: BuiltinToolDef = {
           id: row.id,
           title: row.title,
           status: 'queued for specialist review',
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+/** Shared surface guard: these tools act AS the member currently talking, so
+ *  they only run where an authenticated member context exists. Returns the
+ *  member's identity, or a teaching error for the owner-side surfaces. */
+function memberSurfaceOf(
+  ctx: { surface?: { kind: string; contactId?: string; contactName?: string } },
+  slug: string,
+): { contactId: string; contactName?: string } | ToolHandlerResult {
+  const s = ctx.surface;
+  if ((s?.kind !== 'team' && s?.kind !== 'forum') || !s.contactId) {
+    return {
+      ok: false,
+      error: `${slug} only runs on the Team Chat / Team Forum surfaces — it acts on behalf of the member you are talking to, so there must be one.`,
+    };
+  }
+  return { contactId: s.contactId, ...(s.contactName ? { contactName: s.contactName } : {}) };
+}
+
+const team_member_list: BuiltinToolDef = {
+  slug: 'team_member_list',
+  name: 'List team members you can notify',
+  description:
+    "List this brain's team members — display name and id only — so you can resolve a name the member mentioned ('let Deepthi know') to a `team_notify` recipient. Call it when you need an id, not routinely. Names may be ambiguous or absent: if you can't match one confidently, ASK the member which colleague they meant rather than guessing. For the owner-side view of team activity use `team_chat_list` instead.",
+  inputSchema: { type: 'object', properties: {} },
+  handler: async (_input, ctx): Promise<ToolHandlerResult> => {
+    const who = memberSurfaceOf(ctx, 'team_member_list');
+    if ('ok' in who) return who;
+    const all = await listNotifiableMembers(ctx.ownerId);
+    // Drop the caller: "notify myself" is never the ask, and offering it back
+    // invites the model to resolve an ambiguous name to the person in front
+    // of it.
+    const members = all.filter((m) => m.id !== who.contactId);
+    ctx.step?.setMeta({ count: members.length });
+    return { ok: true, output: { members, count: members.length } };
+  },
+};
+
+const team_notify: BuiltinToolDef = {
+  slug: 'team_notify',
+  name: 'Notify a team member',
+  description:
+    "Send a short notification to one or more team members on behalf of the member you're talking to ('can you ask Deepthi to check this?'). It lands in the recipient's dash — where they can REPLY to it — and, if they've allowed browser notifications, as one of those too. Recipient ids come from `team_member_list`; there is no free-text address, and only live members of this brain can be reached. When you're in a forum topic the link back to it is attached automatically, so write the message about WHAT you need from them, not about where to find it. Tell the member who was notified — and name anyone who wasn't.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      recipient_ids: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: 1,
+        maxItems: MAX_NOTIFY_RECIPIENTS,
+        description: "Contact ids from `team_member_list`, e.g. ['a1b2c3d4-…'].",
+      },
+      body: {
+        type: 'string',
+        minLength: 1,
+        maxLength: MAX_NOTIFICATION_BODY,
+        description:
+          "What you need from them, in the requesting member's voice, e.g. 'Jaya asked if you could check the answer on the new-service question.'",
+      },
+    },
+    required: ['recipient_ids', 'body'],
+  },
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const who = memberSurfaceOf(ctx, 'team_notify');
+    if ('ok' in who) return who;
+
+    const body = str(input.body).trim();
+    if (!body) return { ok: false, error: 'body is required' };
+    const recipientIds = strArr(input.recipient_ids).filter(Boolean);
+    if (recipientIds.length === 0) {
+      return {
+        ok: false,
+        error: 'recipient_ids is required — get ids from `team_member_list` first.',
+      };
+    }
+
+    // Provenance from the authenticated surface, never the model — the same
+    // discipline as team_request_create. This is what makes "notify her about
+    // this" a link she can click.
+    const surface = ctx.surface!;
+    const topicId = surface.kind === 'forum' ? surface.topicId : null;
+    const postId = surface.kind === 'forum' ? (surface.inboundPostId ?? null) : null;
+
+    try {
+      const res = await notifyMembers(ctx.ownerId, {
+        recipientIds,
+        senderId: who.contactId,
+        senderName: who.contactName ?? null,
+        body,
+        topicId,
+        postId,
+      });
+      ctx.step?.setMeta({ delivered: res.delivered.length, rejected: res.rejected.length });
+      if (res.delivered.length === 0) {
+        return {
+          ok: false,
+          error:
+            'nobody was notified — none of those ids is a live team member of this brain. Re-run `team_member_list` and match the name again.',
+        };
+      }
+      return {
+        ok: true,
+        output: {
+          notified: res.delivered.length,
+          recipient_ids: res.delivered.map((d) => d.recipientId),
+          // Surfaced so the responder can tell the member who it could NOT
+          // reach — silently dropping a recipient reads as "done" and the
+          // colleague is never told.
+          not_notified: res.rejected,
+          ...(topicId ? { linked_topic: topicId } : {}),
         },
       };
     } catch (err) {
@@ -249,6 +378,8 @@ const team_access_list: BuiltinToolDef = {
 
 export const TEAM_TOOLS: BuiltinToolDef[] = [
   team_request_create,
+  team_member_list,
+  team_notify,
   team_chat_list,
   team_chat_read,
   team_access_list,

@@ -1146,6 +1146,31 @@ export async function commitPage(
   return result;
 }
 
+/** `commitPage` takes the doc to publish because its caller is the EDITOR,
+ *  which holds it. An agent doesn't: every agent body-write (page_update_draft,
+ *  the block tools, page_mention) lands in `draft_doc`, so what it needs is
+ *  "publish whatever is in the draft". Mirrors `commitTable(ownerId, id)`.
+ *
+ *  Reading `draft_rev` alongside the draft and passing it as `baseRev` is the
+ *  point, not a formality: an editor autosave landing between the read and the
+ *  commit surfaces as a typed conflict instead of silently publishing a doc
+ *  that is already stale. */
+export type CommitPageDraftResult = CommitPageResult | { ok: false; noDraft: true };
+
+export async function commitPageDraft(ownerId: string, id: string): Promise<CommitPageDraftResult> {
+  const [row] = await db
+    .select({ draftDoc: pages.draftDoc, draftRev: pages.draftRev })
+    .from(pages)
+    .innerJoin(nodes, eq(nodes.id, pages.nodeId))
+    .where(and(eq(pages.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
+    .limit(1);
+  if (!row) return { ok: false, missing: true };
+  if (!row.draftDoc) return { ok: false, noDraft: true };
+  return commitPage(ownerId, id, row.draftDoc as Record<string, unknown>, {
+    baseRev: row.draftRev,
+  });
+}
+
 export async function deletePage(ownerId: string, id: string): Promise<boolean> {
   const [row] = await db
     .select({ id: nodes.id })

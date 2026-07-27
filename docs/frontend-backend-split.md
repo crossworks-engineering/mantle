@@ -315,6 +315,23 @@ authenticated with cookies, and cookies don't cross origins. The member carve
   locked to a single `/s/` path segment, and an ABSENT `next` answers 204 +
   Set-Cookie — the silent bearer→cookie upgrade same-origin sessions minted
   in bearer mode need for the reader's cookie-authenticated subresources.
+- **The OWNER plane uses the same real-origin test** (v0.206). The member
+  surface was converted in v0.204; the owner call sites were deliberately left
+  on `runtimeApiBase() !== ''` because they form a coupled set — flipping any
+  one alone breaks owners whose sessions are bearer-only. Converted together:
+  `login-form` (same-origin signup/sign-in is cookie mode again),
+  `api-fetch`'s `withAuth` (cookies same-origin; the bearer now attaches
+  whenever one is stored, so sessions minted under the old predicate keep
+  working alongside the cookie), `asset-url` (same-origin `<img>`/`<iframe>`
+  srcs go back to bare paths — signing them put a short-lived `?at=` token in
+  history and access logs for no benefit), and the team-admin download anchor
+  (back to a plain link, which restores the browser's own inline preview and
+  Save-As). The bearer-only sessions those loaders would strand are covered by
+  `upgradeOwnerCookie()` → `POST /api/auth/sso`, the owner twin of the team
+  SSO upgrade: it verifies whatever credential the caller has and answers 204
+  + Set-Cookie. It grants nothing new — the bearer it accepts already
+  authorises every owner API call — and mints for the ACTOR, not the anchor,
+  so an added login's audit rows stay its own.
 - **The designated hub app stays first-class**: `AppSandbox` broker fetches
   happen in the parent page, so the client-origin hub passes an absolute
   `apiBase` + a bearer-attaching `fetcher`; the `/s` sub-paths a client-origin

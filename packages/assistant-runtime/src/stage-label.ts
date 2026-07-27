@@ -86,6 +86,12 @@ const ACTION_LABELS: Record<string, string> = {
   file_delete: 'Deleting a file…',
   file_rename: 'Renaming a file…',
   web_fetch: 'Reading a web page…',
+  // Draft commits/discards: no verb-fallback pattern matches `_commit` /
+  // `_discard_draft`, and "Working on it…" undersells the one moment content
+  // becomes visible (or a proposed edit is dropped).
+  page_commit: 'Publishing the page…',
+  page_discard_draft: 'Discarding the draft…',
+  table_commit: 'Publishing the table…',
   telegram_send: 'Sending a message…',
   email_send: 'Sending an email…',
   email_get: 'Reading an email…',

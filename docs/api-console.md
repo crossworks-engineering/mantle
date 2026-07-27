@@ -127,15 +127,23 @@ is an intentional SSRF-by-design for the single owner — the same power
 their `http` tools already have. Nothing new is network-exposed; the
 MCP bridge stays stdio.
 
-## 5. The Toolsmith Assist panel
+## 5. Tool-authoring assist (via the responder)
 
-The console's header has a **Toolsmith** button — an in-surface Assist
-panel (same pattern as /pages and /tables) backed by the Toolsmith
-specialist. Instead of building a request by hand, describe the
-integration ("read the API docs at <url> and build tools for X") and
-Toolsmith runs the whole loop: web_fetch the docs, set up the integration
-group (base URL + vault ref + auth placement), store the docs on it, author
-the templates against it, test against the live API, distil a usage skill,
-and grant. The same
-capability is exposed over MCP for Claude Code users. See
+The console's header **Assist** button opens the global assistant — the same
+one as everywhere else, keeping its full conversation context. Describe the
+integration ("read the API docs at <url> and build tools for X") and the
+responder hands it to the Toolsmith specialist via `invoke_agent`; Toolsmith
+runs the whole loop: web_fetch the docs, set up the integration group (base
+URL + vault ref + auth placement), store the docs on it, author the templates
+against it, test against the live API, distil a usage skill, and grant. The
+console's Agent-tools list refreshes when the turn settles.
+
+(Until v0.206 this was a docked in-surface panel that invoked Toolsmith
+DIRECTLY — the last surface with a pre-selected specialist. Switching into it
+discarded everything the responder knew, so it was removed along with the
+whole per-surface assist-agent machinery: `/api/assist/*`,
+`/api/profile/assist-agent`, the per-surface agent preferences and the
+`assistSurface` manifest field. No surface pre-selects an agent anymore.)
+
+The same capability is exposed over MCP for Claude Code users. See
 [`toolsmith.md`](./toolsmith.md).

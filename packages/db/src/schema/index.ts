@@ -5,6 +5,7 @@ export * from './mobile-tokens';
 export * from './contact-team-tokens';
 export * from './app-access-log';
 export * from './team-messages';
+export * from './team-notifications';
 export * from './team-access-log';
 export * from './team-read-cursors';
 export * from './forum-topics';

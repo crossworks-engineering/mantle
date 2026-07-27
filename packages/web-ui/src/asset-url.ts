@@ -12,7 +12,7 @@
  * the asset-path acceptance in middleware.ts).
  */
 
-import { runtimeApiBase } from './runtime-env';
+import { isCrossOrigin, runtimeApiBase } from './runtime-env';
 
 /** Resolved at call time (runtime config first) — see api-fetch.ts. */
 function apiBaseValue(): string {
@@ -29,7 +29,13 @@ export function setAssetToken(token: string | null | undefined): void {
 
 /** Resolve a raw-asset path to a loadable URL (see module comment). */
 export function assetUrl(path: string): string {
-  if (!apiBaseValue()) return path; // same-origin — cookie auth, path unchanged
+  // A real origin comparison, not "is a base configured": a same-origin box
+  // that sets a base is NOT split, and signing its own paths with `?at=` put
+  // a short-lived token in every <img> src (and so in history and logs) for
+  // no benefit. Same-origin returns the path unchanged and the session cookie
+  // authenticates — which is why the shell fires `upgradeOwnerCookie()` for
+  // bearer-only sessions before assets paint.
+  if (!isCrossOrigin()) return path;
   const base = `${apiBaseValue()}${path}`;
   if (!assetToken) return base; // token not loaded yet — will 401 until shell resolves
   return `${base}${path.includes('?') ? '&' : '?'}at=${encodeURIComponent(assetToken)}`;

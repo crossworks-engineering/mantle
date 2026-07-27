@@ -22,6 +22,8 @@ import {
   markdownToDoc,
   docToText,
   saveDraft,
+  discardDraft,
+  commitPageDraft,
   splitPage,
   extractSectionToChild,
   listBlocks,
@@ -392,6 +394,95 @@ const page_update_draft: BuiltinToolDef = {
           : {}),
       },
     };
+  },
+};
+
+const page_commit: BuiltinToolDef = {
+  slug: 'page_commit',
+  preconditions: PAGE_NODE_ID_PRE,
+  name: 'Commit a page draft',
+  description:
+    "Publish a page's pending draft as the canonical body and re-index it into the brain. Use after a batch of body edits when the user has confirmed they want the changes live (or asked you to 'save'/'publish'). No-op error if there's no draft. Usually you LEAVE the draft for the user to review + commit in the editor — only commit yourself when explicitly asked. Publishing is what makes the new body searchable and recallable; until then only the old one is.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The page's id (UUID) — from `page_list`." },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    try {
+      const result = await commitPageDraft(ctx.ownerId, id);
+      if (!result.ok) {
+        if ('missing' in result) return notFound('page', id, 'page_list / search_nodes');
+        if ('noDraft' in result) {
+          return {
+            ok: false,
+            error:
+              'no draft to commit — this page has no pending changes. The published body is already current.',
+          };
+        }
+        // An editor autosave landed between reading the draft and publishing
+        // it. Nothing was published: whatever is in the draft NOW is newer
+        // than what this call read, so re-read before deciding again.
+        return {
+          ok: false,
+          error: `the draft changed while committing (server rev ${result.rev}) — nothing was published. Re-read the page and retry if the change is still wanted.`,
+        };
+      }
+      const page = result.page;
+      ctx.step?.setOutput({ id, committed: true });
+      const snippet = docToText(page.doc);
+      void recordIngest({
+        source: 'page_commit',
+        ownerId: ctx.ownerId,
+        nodeId: page.id,
+        summary: `Page committed: ${page.title.slice(0, 80)}`,
+        payload: {
+          via: 'page_commit_tool',
+          title: page.title,
+          tags: page.tags,
+          textChars: snippet.length,
+          ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
+        },
+        snippet,
+      });
+      return {
+        ok: true,
+        output: { id, committed: true, url: nodeUrl(id), title: page.title },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const page_discard_draft: BuiltinToolDef = {
+  slug: 'page_discard_draft',
+  preconditions: PAGE_NODE_ID_PRE,
+  name: 'Discard a page draft',
+  description:
+    "Throw away a page's pending draft, leaving the published body and its brain index exactly as they are. Use when a body edit went wrong and you want to abandon it — otherwise the bad draft shadows the published page for every later block tool and for anyone who opens the editor. Idempotent. Only discard your OWN unwanted edits: a draft the user is still reviewing is theirs to keep or drop, and this cannot be undone.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The page's id (UUID) — from `page_list`." },
+    },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    try {
+      const ok = await discardDraft(ctx.ownerId, id);
+      if (!ok) return notFound('page', id, 'page_list / search_nodes');
+      ctx.step?.setOutput({ id, discarded: true });
+      return { ok: true, output: { id, discarded: true, url: nodeUrl(id) } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   },
 };
 
@@ -2051,6 +2142,8 @@ export const PAGE_TOOLS: BuiltinToolDef[] = [
   page_block_insert_after,
   page_block_delete,
   page_blocks_apply,
+  page_commit,
+  page_discard_draft,
   page_split,
   page_extract_section,
   page_move,

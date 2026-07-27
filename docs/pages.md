@@ -84,6 +84,15 @@ durable; commits make indexing deliberate. A 30-minute editing session is now
 
 - Code: `saveDraft()` / `commitPage()` in `packages/content/src/pages.ts`.
 - API: `PUT /api/pages/[id]/draft`, `POST /api/pages/[id]/commit`.
+- **Agents can finish a draft too** (v0.206+): `commitPageDraft(ownerId, id)`
+  is the agent-shaped commit — `commitPage` takes the doc to publish because
+  its caller is the editor, which holds it, whereas an agent needs "promote
+  whatever is in `draft_doc`". It reads `draft_doc` + `draft_rev` and passes
+  that rev as `baseRev`, so an autosave landing in between returns a typed
+  conflict instead of publishing a doc that is already stale. Surfaced as the
+  `page_commit` / `page_discard_draft` tools. Before this, an agent could edit
+  a page and then not finish: the draft shadowed the published doc for every
+  later block tool and `page_get` returned both.
 - The editor loads `draft ?? doc`, so you resume unsaved work; status shows
   Saving → Draft·uncommitted → Committed.
 - Title/tags/width save *live* (cheap metadata; never index).

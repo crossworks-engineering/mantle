@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronRight,
   KeyRound,
+  Loader2,
   Save,
   Send,
   Settings2,
@@ -41,6 +42,7 @@ import { buildVarMap, collectDraftParams } from '@/lib/dev-tools/client';
 import { genId } from '@/lib/dev-tools/storage';
 import type { AuthMode, BodyMode, Environment, HttpMethod } from '@/lib/dev-tools/types';
 import { useDevTools } from './context';
+import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { KvEditor } from './kv-editor';
 import { KindBadge } from './method-badge';
 import { SaveToolDialog } from './save-tool-dialog';
@@ -232,18 +234,9 @@ function SchemaPeek({ schema }: { schema: Record<string, unknown> }) {
 }
 
 export function RequestBuilder() {
-  const {
-    draft,
-    setDraft,
-    send,
-    cancel,
-    sending,
-    activeEnv,
-    saveDraftTo,
-    collections,
-    assistOpen,
-    setAssistOpen,
-  } = useDevTools();
+  const { draft, setDraft, send, cancel, sending, activeEnv, saveDraftTo, collections } =
+    useDevTools();
+  const { openAssistant, busy: assistantBusy } = useAssistantDock();
   const toast = useToast();
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
@@ -318,18 +311,34 @@ export function RequestBuilder() {
               <Wand2 /> Save as agent tool
             </Button>
           )}
-          {!assistOpen && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 text-xs max-md:hidden"
-              title="Open the Toolsmith assistant — it reads API docs and builds tools for you"
-              onClick={() => setAssistOpen(true)}
-            >
-              <Sparkles /> Toolsmith
-            </Button>
-          )}
+          {/* The console's stand-in for the pages/tables busy treatment: there is
+              no draft here to lock, so the affordance itself carries the state —
+              while a turn runs (a Toolsmith delegation included) the button
+              pulses "Working…", and opening it shows the live trail with the
+              specialist's named steps ("Toolsmith · Testing the API…"). The
+              Agent-tools list refreshes itself when the turn settles. */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs max-md:hidden"
+            title={
+              assistantBusy
+                ? 'The assistant is working — open the chat to watch its progress'
+                : 'Ask your assistant — it hands tool-building to the Toolsmith specialist without losing your conversation'
+            }
+            onClick={() => openAssistant()}
+          >
+            {assistantBusy ? (
+              <>
+                <Loader2 className="animate-spin" /> Working…
+              </>
+            ) : (
+              <>
+                <Sparkles /> Assist
+              </>
+            )}
+          </Button>
         </div>
       </div>
 

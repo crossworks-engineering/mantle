@@ -1,7 +1,7 @@
 /**
  * GET/PUT /api/profile — the preferences behind the /settings/profile form.
  * Holistic counterpart to the concern-specific /api/profile/reminder-channel
- * and /api/profile/assist-agent routes.
+ * route.
  *
  * GET returns the current preferences, the reminder-capable agent list (the
  * "reminders from" picker), the default-fallback prefs (placeholder text), and

@@ -37,7 +37,7 @@ export default function LoginPage({
         <div className="space-y-2 text-center">
           <h1 className="font-logo text-5xl leading-none text-primary">mantle</h1>
           <p className="text-sm text-muted-foreground">
-            {firstRun ? 'Create your account to begin.' : 'Sign in to your tree.'}
+            {firstRun ? 'Create your login to begin.' : 'Sign in to your tree.'}
           </p>
         </div>
         <LoginForm mode={firstRun ? 'signup' : 'login'} next={params.next} error={params.error} />

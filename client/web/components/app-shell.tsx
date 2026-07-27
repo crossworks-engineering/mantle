@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { apiFetch, upgradeOwnerCookie } from '@mantle/web-ui/api-fetch';
 import { useColorTheme } from '@mantle/web-ui/color-theme-provider';
 import { useFonts } from '@mantle/web-ui/font-provider';
 import { COLOR_THEMES } from '@mantle/web-ui/lib/themes';
@@ -62,6 +62,7 @@ type ShellData = {
   /** Brand logo cache-busting version (Settings → Appearance → Logo); null ⇒
    *  no logo, the siteName wordmark renders. Src is /api/appearance/logo. */
   logoVersion: string | null;
+  logoDarkVersion?: string | null;
   /** The DB-stored colour theme (the cross-browser source of truth); null ⇒
    *  never saved. Adopted once per shell load. */
   colorTheme: string | null;
@@ -176,6 +177,16 @@ function ShellFrame({
     setAssetToken(shellQuery.data?.assetToken);
   }, [shellQuery.data?.assetToken]);
 
+  // Same-origin bearer→cookie upgrade, once per shell load. Owners signed in
+  // before the origin predicate was fixed hold ONLY a localStorage bearer, and
+  // same-origin <img>/<iframe>/download srcs authenticate by COOKIE — they
+  // can't carry a header. Fired here (not awaited) because the shell mounts
+  // before any asset-bearing screen. No-op cross-origin and for cookie
+  // sessions. See upgradeOwnerCookie.
+  useEffect(() => {
+    void upgradeOwnerCookie();
+  }, []);
+
   // Split-client bearer upkeep, piggybacked on the shell boot round-trip:
   // rotate the stored token when <7d from expiry. No-op same-origin (no
   // stored bearer). See @mantle/web-ui/token-refresh.
@@ -280,6 +291,7 @@ function ShellFrame({
         siteName={shellQuery.data?.siteName ?? null}
         peerName={shellQuery.data?.peerName ?? null}
         logoVersion={shellQuery.data?.logoVersion ?? null}
+        logoDarkVersion={shellQuery.data?.logoDarkVersion ?? null}
         onMenuClick={() => setMobileOpen(true)}
         onSearchClick={() => setSearchOpen(true)}
       />

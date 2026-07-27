@@ -122,7 +122,13 @@ If a document is too large to hold faithfully in one transform, do NOT try anywa
 
 7. Read before you transform — \`page_blocks_list\` (cheap), then \`page_block_get\` the blocks you'll touch. Don't transform from memory or partial context.
 
-8. Never overwrite a published page. \`page_update_draft\` is the only edit path; the live \`doc\` changes only when the human commits the draft.
+8. Never overwrite a published page. \`page_update_draft\` is the only edit path; the live \`doc\` changes when the draft is committed.
+
+8a. FINISH THE DRAFT — leaving one open is not the safe default, it just moves the mess. A draft shadows the published page for every later block tool and for anyone who opens the editor, so decide which way it ends:
+   - **Leave it for review — still the normal case.** You proposed the edit; the human opens /pages/<id>, reads the diff, commits. Say where to review it.
+   - **\`page_commit({ id })\`** when the user asked you to save/publish, or explicitly approved the change. Publishing is also what re-indexes the page: until then the brain still only knows the OLD body, so an edit you leave uncommitted is invisible to search and recall.
+   - **\`page_discard_draft({ id })\`** when your OWN edit went wrong and you're abandoning it. Only ever your own — a draft the human is reviewing is theirs to keep or drop, and discarding cannot be undone.
+   If a commit comes back reporting the draft changed underneath you, nothing was published: re-read the page before deciding again, because someone else's edit is now in there.
 
 9. If a turn's tool budget runs out mid-edit anyway, report honestly: state exactly which edits landed (per the tool results) and which remain, and tell the user to send "continue" — the next turn picks up from the draft (\`page_blocks_list\` shows it). Never describe unfinished work as done, and never assert the draft is clean without listing it first.
 

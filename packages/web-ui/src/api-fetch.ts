@@ -13,7 +13,7 @@
  * TanStack Query surfaces it in `error` / `onError`.
  */
 
-import { runtimeApiBase } from './runtime-env';
+import { isCrossOrigin, runtimeApiBase } from './runtime-env';
 import { tokenStore } from './token-store';
 
 /** API base + bearer are GETTERS, not module constants: the split client
@@ -53,23 +53,66 @@ export function apiUrl(path: string): string {
   return `${apiBaseValue()}${path}`;
 }
 
-/** Build a `RequestInit` carrying same-origin cookie auth, plus the bearer +
- *  base-URL when detached. Exported for the raw-`fetch()` callers above; most
- *  code should use `apiFetch`/`apiSend` instead. */
+/** Build a `RequestInit` carrying the owner credential: cookies same-origin,
+ *  the bearer (no credentials) cross-origin. Exported for the raw-`fetch()`
+ *  callers above; most code should use `apiFetch`/`apiSend` instead.
+ *
+ *  The bearer attaches whenever one is stored, not only cross-origin: a
+ *  same-origin session that authenticated in bearer mode — minted while the
+ *  old `apiBase set ⇒ split` predicate misread the default one-domain
+ *  deployment — keeps working alongside the cookie, because the server
+ *  verifies both carriers with the same trust. Exact mirror of
+ *  team-fetch's `withTeamAuth`. */
 export function withAuth(init?: RequestInit): RequestInit {
   const headers = new Headers(init?.headers);
-  if (apiBaseValue() && apiTokenValue() && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${apiTokenValue()}`);
+  const token = apiTokenValue();
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
   }
   return {
-    // Same-origin: cookie auth. Detached (apiBaseValue() set): bearer-only, so send
-    // NO credentials — the middleware's CORS reflects the origin WITHOUT
-    // Allow-Credentials (by design; see corsOrigin), and the browser refuses a
-    // credentialed cross-origin response that lacks it.
-    credentials: apiBaseValue() ? 'omit' : 'include',
+    // Cross-origin is bearer-only, so send NO credentials — the middleware's
+    // CORS reflects the origin WITHOUT Allow-Credentials (by design; see
+    // corsOrigin), and the browser refuses a credentialed cross-origin
+    // response that lacks it. The test is a real origin comparison, NOT
+    // "is a base configured": a same-origin box that sets a base is not split.
+    credentials: isCrossOrigin() ? 'omit' : 'include',
     ...init,
     headers,
   };
+}
+
+// One upgrade attempt per page load, shared as a PROMISE — concurrent callers
+// (the shell mount, anything about to load a cookie-authenticated subresource)
+// all await the same in-flight request instead of double-firing.
+let cookieUpgrade: Promise<void> | null = null;
+
+/**
+ * Silent bearer→cookie upgrade for the OWNER surface, same-origin only.
+ *
+ * Owners who signed in while the split mis-detection was live hold ONLY the
+ * localStorage bearer. That is fine for `apiFetch`, which can set a header,
+ * and useless for the browser-native loaders — `<img>`, `<iframe>`, download
+ * anchors — which authenticate by cookie and cannot carry one. So the moment
+ * `assetUrl` goes back to same-origin paths, those sessions would 401 on every
+ * asset. POST /api/auth/sso verifies whatever credential they DO have and
+ * answers 204 with a fresh session cookie.
+ *
+ * Returns a promise that settles once the cookie is in place (or there was
+ * nothing to do): callers about to load cookie-dependent resources await it so
+ * the first paint doesn't race the Set-Cookie; the shell just fires it. A
+ * failed attempt clears the memo so a later caller retries.
+ */
+export function upgradeOwnerCookie(): Promise<void> {
+  cookieUpgrade ??= (async () => {
+    if (isCrossOrigin()) return; // split client — the bearer IS the credential
+    if (!tokenStore.get()) return; // cookie-mode session — nothing to upgrade
+    try {
+      await fetch(apiUrl('/api/auth/sso'), { method: 'POST', ...withAuth() });
+    } catch {
+      cookieUpgrade = null; // offline / transient — the next caller retries
+    }
+  })();
+  return cookieUpgrade;
 }
 
 /**

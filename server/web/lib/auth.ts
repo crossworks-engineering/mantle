@@ -127,10 +127,13 @@ export function buildInternalRenderCookie(userId: string, ttlSeconds = 300): str
   return `${SESSION_COOKIE_NAME}=${sign(payload)}`;
 }
 
-export function buildSessionCookie(userId: string): { value: string; maxAgeSec: number } {
-  const exp = Math.floor(Date.now() / 1000) + ONE_YEAR_SECONDS;
+export function buildSessionCookie(
+  userId: string,
+  ttlSeconds: number = ONE_YEAR_SECONDS,
+): { value: string; maxAgeSec: number } {
+  const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
   const payload = b64urlEncode(Buffer.from(JSON.stringify({ uid: userId, exp }), 'utf8'));
-  return { value: sign(payload), maxAgeSec: ONE_YEAR_SECONDS };
+  return { value: sign(payload), maxAgeSec: ttlSeconds };
 }
 
 // ── Mobile companion bearer tokens ───────────────────────────────────────────

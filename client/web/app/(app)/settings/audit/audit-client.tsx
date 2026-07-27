@@ -67,16 +67,16 @@ export function AuditClient({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex flex-wrap items-end gap-3 border-b border-border p-3">
         <div className="w-56 space-y-1.5">
-          <Label className="text-xs text-muted-foreground">User</Label>
+          <Label className="text-xs text-muted-foreground">Login</Label>
           <Select
             value={actor || ALL}
             onValueChange={(v) => go({ actor: v === ALL ? null : v, page: null })}
           >
             <SelectTrigger>
-              <SelectValue placeholder="All users" />
+              <SelectValue placeholder="All logins" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All users</SelectItem>
+              <SelectItem value={ALL}>All logins</SelectItem>
               {actorOptions.map((email) => (
                 <SelectItem key={email} value={email}>
                   {email}
@@ -141,7 +141,7 @@ export function AuditClient({
             <TableHeader>
               <TableRow>
                 <TableHead className="w-44">Time</TableHead>
-                <TableHead className="w-56">User</TableHead>
+                <TableHead className="w-56">Login</TableHead>
                 <TableHead className="w-44">Action</TableHead>
                 <TableHead>Request</TableHead>
                 <TableHead className="w-32">IP</TableHead>

@@ -78,6 +78,7 @@ export {
   saveDraft,
   discardDraft,
   commitPage,
+  commitPageDraft,
   deletePage,
   splitPage,
   NoSplitHeadingsError,
@@ -92,6 +93,8 @@ export {
   type SplitPageResult,
   type ExtractSectionResult,
   type AddMentionResult,
+  type CommitPageResult,
+  type CommitPageDraftResult,
 } from './pages';
 export {
   splitDocByHeading,
@@ -459,6 +462,24 @@ export {
   type UpdateTeamMessageOutcomeInput,
   type TeamMemberActivity,
 } from './team-messages';
+
+export {
+  listNotifiableMembers,
+  notifyMembers,
+  replyToNotification,
+  listNotifications,
+  readThread,
+  markThreadRead,
+  countUnreadNotifications,
+  MAX_NOTIFY_RECIPIENTS,
+  MAX_NOTIFICATION_BODY,
+  TEAM_NOTIFICATION_CHANNEL,
+  TEAM_NOTIFICATION_TYPE,
+  type NotifiableMember,
+  type TeamNotificationRow,
+  type NotifyInput,
+  type NotifyResult,
+} from './team-notifications';
 
 export {
   listTeamRequests,

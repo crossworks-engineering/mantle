@@ -40,7 +40,9 @@ export async function GET() {
     fontLogo: prefs.fontLogo ?? null,
     fontTitle: prefs.fontTitle ?? null,
     // Brand logo (replaces the wordmark when set) — src is the public
-    // /api/appearance/logo, this is the cache-busting version.
+    // /api/appearance/logo, these are the cache-busting versions. The dark
+    // variant is optional; renderers fall back dark → base → wordmark.
     logoVersion: logoVersion(prefs.logoKey),
+    logoDarkVersion: logoVersion(prefs.logoDarkKey),
   });
 }

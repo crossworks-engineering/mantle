@@ -10,7 +10,6 @@ import {
   KNOWN_TOOL_GROUP_SLUGS,
   DELEGATE_SLUGS,
   PERSONA_SLUG,
-  ASSIST_SURFACE_DEFAULTS,
   type ManifestAgent,
 } from './manifest';
 import {
@@ -97,15 +96,12 @@ describe('system manifest integrity', () => {
     }
   });
 
-  it('each assist surface maps to a unique agent', () => {
-    const surfaces = MANIFEST_AGENTS.filter((a) => a.assistSurface).map((a) => a.assistSurface);
-    expect(new Set(surfaces).size).toBe(surfaces.length);
-    expect(ASSIST_SURFACE_DEFAULTS.pages).toBeTruthy();
-    expect(ASSIST_SURFACE_DEFAULTS.tables).toBeTruthy();
-    // the surface's agent must hold its surface tools (via its groups)
-    const pagesAgent = MANIFEST_AGENTS.find((a) => a.slug === ASSIST_SURFACE_DEFAULTS.pages)!;
+  it('the surface specialists hold their surface tools (via their groups)', () => {
+    // No surface pre-selects an agent anymore (the responder delegates), but
+    // the delegation targets must still be able to do the work handed to them.
+    const pagesAgent = MANIFEST_AGENTS.find((a) => a.slug === 'pages')!;
     expect(effectiveTools(pagesAgent).has('page_create')).toBe(true);
-    const tablesAgent = MANIFEST_AGENTS.find((a) => a.slug === ASSIST_SURFACE_DEFAULTS.tables)!;
+    const tablesAgent = MANIFEST_AGENTS.find((a) => a.slug === 'tables')!;
     expect(effectiveTools(tablesAgent).has('table_from_text')).toBe(true);
   });
 
@@ -337,10 +333,9 @@ describe('system manifest integrity', () => {
     for (const g of worker!.toolGroupSlugs ?? []) {
       expect(KNOWN_TOOL_GROUP_SLUGS.has(g), `worker group '${g}' is a manifest group`).toBe(true);
     }
-    // Propose-don't-mutate: never a delegate, no persona, no assist surface.
+    // Propose-don't-mutate: never a delegate, no persona.
     expect(worker!.isDelegate ?? false).toBe(false);
     expect(worker!.isPersona ?? false).toBe(false);
-    expect(worker!.assistSurface).toBeUndefined();
     // Not a delegation target (workers are invoked by the run engine, never via
     // invoke_agent), so it must NOT appear in the persona's delegate set.
     expect(DELEGATE_SLUGS).not.toContain(DEFAULT_WORKER_SLUG);

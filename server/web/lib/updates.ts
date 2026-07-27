@@ -212,6 +212,7 @@ const RELEASE_COMPOSE_PATH =
   process.env.MANTLE_RELEASE_COMPOSE_PATH ?? '/app/release/docker-compose.yml';
 const RELEASE_CLIENT_COMPOSE_PATH =
   process.env.MANTLE_RELEASE_CLIENT_COMPOSE_PATH ?? '/app/release/docker-compose.client.yml';
+const RELEASE_UPDATER_PATH = process.env.MANTLE_RELEASE_UPDATER_PATH ?? '/app/release/updater.sh';
 
 export type ComposeState =
   | 'in-sync' // box compose == this release's canonical
@@ -219,6 +220,16 @@ export type ComposeState =
   | 'modified' // hand-edited canonical file — auto-refresh disabled, needs adoption
   | 'no-baseline' // pre-adoption box — run scripts/compose-adopt.sh once
   | 'unknown'; // no stack.json (old updater.sh / no sidecar / dev)
+
+/** The updater SCRIPT's own currency. Deliberately not `ComposeState`: the
+ *  script has no `no-baseline` standoff (it self-adopts, having no supported
+ *  box-local variation), so a missing baseline is not a state an operator can
+ *  act on — the only actionable state is `modified`. */
+export type UpdaterScriptState =
+  | 'in-sync' // box script == this release's canonical
+  | 'stale' // differs — self-refreshes on the next successful update
+  | 'modified' // differs from its baseline: hand-edited, refresh refused
+  | 'unknown'; // no stack.json, or a pre-v0.206 updater that reports no sha
 
 export type ComposeStatus = {
   state: ComposeState;
@@ -228,6 +239,11 @@ export type ComposeStatus = {
   /** The CLIENT stack's compose (v0.200 split). 'absent' state = a
    *  server-only box (no docker-compose.client.yml — nothing to drift). */
   client: { state: ComposeState | 'absent'; refresh: string | null };
+  /** The updater sidecar's own script (v0.206+). Before the self-refresh
+   *  landed this was the silent failure: a stale script rolled the server
+   *  stack, reported ok, and skipped the client stack with no error anywhere.
+   *  'unknown' on any box still running that script — it reports no sha. */
+  updater: { state: UpdaterScriptState; refresh: string | null };
   checkedAt: string | null;
 };
 
@@ -256,18 +272,35 @@ function classify(boxSha: string, baselineSha: string, canonical: string | null)
   return 'modified';
 }
 
+/** Same shape as classify(), minus 'no-baseline' — an absent baseline means
+ *  "not adopted yet", which the script resolves by itself, so it reads as the
+ *  plain 'stale' it functionally is. A baseline that EXISTS and disagrees is
+ *  the one case a human must resolve. */
+function classifyUpdater(
+  boxSha: string,
+  baselineSha: string,
+  canonical: string | null,
+): UpdaterScriptState {
+  if (!canonical || !boxSha) return 'unknown';
+  if (boxSha === canonical) return 'in-sync';
+  if (baselineSha && boxSha !== baselineSha) return 'modified';
+  return 'stale';
+}
+
 export async function readComposeStatus(): Promise<ComposeStatus> {
   const none = {
     state: 'unknown' as const,
     refresh: null,
     client: { state: 'unknown' as const, refresh: null },
+    updater: { state: 'unknown' as const, refresh: null },
     checkedAt: null,
   };
   try {
-    const [raw, canonical, clientCanonical] = await Promise.all([
+    const [raw, canonical, clientCanonical, updaterCanonical] = await Promise.all([
       fs.readFile(path.join(SIGNAL_DIR, 'stack.json'), 'utf8'),
       canonicalSha(RELEASE_COMPOSE_PATH),
       canonicalSha(RELEASE_CLIENT_COMPOSE_PATH),
+      canonicalSha(RELEASE_UPDATER_PATH),
     ]);
     const j = JSON.parse(raw) as Record<string, unknown>;
     const str = (k: string) => (typeof j[k] === 'string' ? (j[k] as string) : '');
@@ -284,7 +317,11 @@ export async function readComposeStatus(): Promise<ComposeStatus> {
             state: classify(str('client_compose_sha'), str('client_baseline_sha'), clientCanonical),
             refresh: clientRefresh,
           };
-    return { state, refresh, client, checkedAt };
+    const updater = {
+      state: classifyUpdater(str('updater_sha'), str('updater_baseline_sha'), updaterCanonical),
+      refresh: str('updater_refresh') || null,
+    };
+    return { state, refresh, client, updater, checkedAt };
   } catch {
     return none;
   }
