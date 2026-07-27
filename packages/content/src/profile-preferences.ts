@@ -117,20 +117,6 @@ export type ProfilePreferences = {
    *  `route: 'azure'`, those rows are pinned to an Azure OpenAI endpoint via
    *  the `custom` provider (key stored under service `custom`). */
   onboardingModels?: OnboardingModelChoices;
-  /** Slug of the agent the `/pages` editor "Assist" panel delegates to. Unset →
-   *  the route falls back to the default `pages` specialist. Configured on the
-   *  /pages surface itself (the Assist panel agent picker), not a global setting. */
-  pagesAssistAgentSlug?: string;
-  /** Slug of the agent the `/tables` editor "Assist" panel delegates to. Unset →
-   *  the route falls back to the default `tables` (Ledger) specialist. Configured
-   *  on the /tables surface itself (the Assist panel agent picker). */
-  tablesAssistAgentSlug?: string;
-  /** Slug of the agent the `/apps` editor "Assist" panel delegates to. Unset →
-   *  the default `appsmith` specialist. Configured on the /apps surface. */
-  appsAssistAgentSlug?: string;
-  /** Slug of the agent the API Console (/dev-tools) "Assist" panel delegates
-   *  to. Unset → the default `toolsmith` specialist. */
-  devToolsAssistAgentSlug?: string;
   /** When true, tools an AGENT authors (via Toolsmith / api_tool_create) start
    *  confirm-gated: every call parks for operator approval until the operator
    *  clears "requires confirm" for that tool in Settings → Tools. Defaults
@@ -511,22 +497,6 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
         ? prefs.onboardingStep
         : undefined,
     onboardingModels: projectOnboardingModels(prefs.onboardingModels),
-    pagesAssistAgentSlug:
-      typeof prefs.pagesAssistAgentSlug === 'string' && prefs.pagesAssistAgentSlug.length > 0
-        ? prefs.pagesAssistAgentSlug
-        : undefined,
-    tablesAssistAgentSlug:
-      typeof prefs.tablesAssistAgentSlug === 'string' && prefs.tablesAssistAgentSlug.length > 0
-        ? prefs.tablesAssistAgentSlug
-        : undefined,
-    appsAssistAgentSlug:
-      typeof prefs.appsAssistAgentSlug === 'string' && prefs.appsAssistAgentSlug.length > 0
-        ? prefs.appsAssistAgentSlug
-        : undefined,
-    devToolsAssistAgentSlug:
-      typeof prefs.devToolsAssistAgentSlug === 'string' && prefs.devToolsAssistAgentSlug.length > 0
-        ? prefs.devToolsAssistAgentSlug
-        : undefined,
     toolsmithRequireApproval: prefs.toolsmithRequireApproval === true,
     heartbeatEgressGate: prefs.heartbeatEgressGate === true,
     // Default ON: only an explicit `false` disables (matches isStreamThoughtsEnabled).
@@ -700,10 +670,6 @@ export async function updateProfilePreferences(
     onboardedAt: merged.onboardedAt || undefined,
     onboardingStep: merged.onboardingStep || undefined,
     onboardingModels: projectOnboardingModels(merged.onboardingModels),
-    pagesAssistAgentSlug: merged.pagesAssistAgentSlug || undefined,
-    tablesAssistAgentSlug: merged.tablesAssistAgentSlug || undefined,
-    appsAssistAgentSlug: merged.appsAssistAgentSlug || undefined,
-    devToolsAssistAgentSlug: merged.devToolsAssistAgentSlug || undefined,
     toolsmithRequireApproval: merged.toolsmithRequireApproval === true,
     heartbeatEgressGate: merged.heartbeatEgressGate === true,
     streamThoughts: merged.streamThoughts !== false,

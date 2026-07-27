@@ -70,13 +70,16 @@ a usage skill may contain a key.
 The owner sees and can correct all of it at **Settings → Tool groups** — service,
 base URL, credential, stored docs (view/replace), and a link to the usage skill.
 
-## 1. The three ways in
+## 1. The two ways in
 
 | Surface | Path | Who pays for the LLM |
 |---|---|---|
-| API Console Assist panel | /dev-tools → Toolsmith button | the agent's OpenRouter key |
-| Main assistant delegation | "ask Saskia to add a weather API" → invoke_agent | the agent's OpenRouter key |
+| Main assistant delegation | "add a weather API" (anywhere, incl. the /dev-tools Assist button) → invoke_agent | the agent's OpenRouter key |
 | **Claude Code / Desktop over MCP** | the same tool set registered on apps/mcp | **the user's Claude subscription** |
+
+(The old third way — the API Console's own docked panel invoking Toolsmith
+directly — was removed in v0.206: no surface pre-selects a specialist anymore;
+the responder keeps its context and delegates.)
 
 The MCP row is the power-user path: every `api_tool_*` / `api_docs_*` /
 `api_skill_set` / `tool_group_*` / `agent_*` / `web_fetch` / `api_key_refs` tool is

@@ -41,6 +41,7 @@ import { buildVarMap, collectDraftParams } from '@/lib/dev-tools/client';
 import { genId } from '@/lib/dev-tools/storage';
 import type { AuthMode, BodyMode, Environment, HttpMethod } from '@/lib/dev-tools/types';
 import { useDevTools } from './context';
+import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { KvEditor } from './kv-editor';
 import { KindBadge } from './method-badge';
 import { SaveToolDialog } from './save-tool-dialog';
@@ -232,18 +233,9 @@ function SchemaPeek({ schema }: { schema: Record<string, unknown> }) {
 }
 
 export function RequestBuilder() {
-  const {
-    draft,
-    setDraft,
-    send,
-    cancel,
-    sending,
-    activeEnv,
-    saveDraftTo,
-    collections,
-    assistOpen,
-    setAssistOpen,
-  } = useDevTools();
+  const { draft, setDraft, send, cancel, sending, activeEnv, saveDraftTo, collections } =
+    useDevTools();
+  const { openAssistant } = useAssistantDock();
   const toast = useToast();
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
@@ -318,18 +310,16 @@ export function RequestBuilder() {
               <Wand2 /> Save as agent tool
             </Button>
           )}
-          {!assistOpen && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 text-xs max-md:hidden"
-              title="Open the Toolsmith assistant — it reads API docs and builds tools for you"
-              onClick={() => setAssistOpen(true)}
-            >
-              <Sparkles /> Toolsmith
-            </Button>
-          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs max-md:hidden"
+            title="Ask your assistant — it hands tool-building to the Toolsmith specialist without losing your conversation"
+            onClick={() => openAssistant()}
+          >
+            <Sparkles /> Assist
+          </Button>
         </div>
       </div>
 

@@ -732,13 +732,6 @@ export const API_CATALOG: CatalogGroup[] = [
       d: 'The editor @-mention resolver.',
       q: [{ key: 'q' }],
     },
-    { n: 'Get assist-agent overrides', m: 'GET', p: '/api/profile/assist-agent' },
-    {
-      n: 'Set assist-agent override',
-      m: 'POST',
-      p: '/api/profile/assist-agent',
-      b: '{\n  "surface": "pages",\n  "agentSlug": "my-agent"\n}',
-    },
     { n: 'List PDF passwords', m: 'GET', p: '/api/pdf-passwords' },
     {
       n: 'Add PDF password',

@@ -712,7 +712,6 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
   const focusDirective = useMemo(() => (marks.length ? buildFocusDirective(marks) : null), [marks]);
   const onPagesEdited = useCallback(() => onAiChanged([]), [onAiChanged]);
   const { busy: aiPending } = useSurfaceAssist({
-    surface: 'pages',
     node: { id: initial.id, kind: 'page', label: title || 'Untitled page' },
     focusDirective,
     selection: assistSelection,

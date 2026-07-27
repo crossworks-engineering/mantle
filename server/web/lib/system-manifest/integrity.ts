@@ -11,7 +11,6 @@
 
 import { db, agents, skills, toolGroups, tools, eq, and, type AgentMemoryConfig } from '@mantle/db';
 import { listAiWorkers } from '@/lib/ai-workers';
-import { resolveAssistAgentSlug } from '@/lib/assist-agent';
 import type { SystemCheck, SystemReport, SystemSample } from '@mantle/web-ui/types/integrity';
 import {
   MANIFEST_AGENTS,
@@ -310,29 +309,9 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
     });
   }
 
-  // 9. Editor Assist binding — /pages + /tables panels must resolve to an agent.
-  {
-    const [pagesAssist, tablesAssist] = await Promise.all([
-      resolveAssistAgentSlug(ownerId, 'pages'),
-      resolveAssistAgentSlug(ownerId, 'tables'),
-    ]);
-    const samples: SystemSample[] = [];
-    if (!pagesAssist)
-      samples.push({ id: 'pages', detail: '/pages Assist resolves to no agent (409s)' });
-    if (!tablesAssist)
-      samples.push({ id: 'tables', detail: '/tables Assist resolves to no agent (409s)' });
-    checks.push({
-      key: 'assist',
-      label: 'Editor Assist binding',
-      severity: 'high',
-      ok: samples.length === 0,
-      detail:
-        samples.length === 0
-          ? `pages → ${pagesAssist} · tables → ${tablesAssist}`
-          : 'an editor Assist panel has no agent to invoke',
-      samples,
-    });
-  }
+  // (There is no per-surface Assist binding to check anymore: no surface
+  // pre-selects an agent — the responder delegates to the specialists via
+  // invoke_agent, and check 3's delegation wiring covers that path.)
 
   return {
     generatedAt: new Date().toISOString(),

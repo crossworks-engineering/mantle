@@ -31,6 +31,16 @@ describe('write/action tool labels', () => {
     ).toBe('Saving “Q3 plan” to your notes…');
   });
 
+  it('labels draft commits/discards — no verb pattern matches them, and the dock is now the only stage surface', () => {
+    // These moved here when the per-surface assist panels (and their own
+    // stage endpoint) were removed: the responder can call page_commit itself
+    // since v0.206, so the moment content becomes visible deserves better
+    // than the "Working on it…" fallback.
+    expect(stageLabelForStep('tool: page_commit')?.label).toBe('Publishing the page…');
+    expect(stageLabelForStep('tool: page_discard_draft')?.label).toBe('Discarding the draft…');
+    expect(stageLabelForStep('tool: table_commit')?.label).toBe('Publishing the table…');
+  });
+
   it('guesses a verb for unknown tools', () => {
     expect(stageLabelForStep('tool: widget_update')?.label).toBe('Updating that…');
     expect(stageLabelForStep('tool: mystery_tool')?.label).toBe('Working on it…');

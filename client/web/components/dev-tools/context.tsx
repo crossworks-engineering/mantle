@@ -79,10 +79,6 @@ type DevToolsContextValue = {
   /** Tool groups that carry an integration binding — the console groups the
    *  agent-tool catalog by them and offers them when saving a new tool. */
   integrationGroups: ToolGroupDTO[];
-
-  /** Toolsmith Assist panel visibility (toggled from the builder header). */
-  assistOpen: boolean;
-  setAssistOpen: (open: boolean) => void;
 };
 
 const Ctx = createContext<DevToolsContextValue | null>(null);
@@ -130,7 +126,6 @@ export function DevToolsProvider({
   const [agentTools, setAgentTools] = useState<AgentToolInfo[]>(
     Array.isArray(initialAgentTools) ? initialAgentTools : [],
   );
-  const [assistOpen, setAssistOpen] = useState(false);
   const [integrationGroups, setIntegrationGroups] = useState<ToolGroupDTO[]>([]);
 
   const activeEnv = useMemo(
@@ -361,8 +356,6 @@ export function DevToolsProvider({
     agentTools,
     refreshAgentTools,
     integrationGroups,
-    assistOpen,
-    setAssistOpen,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -109,8 +109,6 @@ export type ManifestAgent = {
   toolGroupSlugs?: string[];
   /** Does the persona delegate TO this agent (invoke_agent allowlist)? */
   isDelegate?: boolean;
-  /** Binds an in-surface "Assist" panel (/pages, /tables, /apps, /dev-tools) to this agent. */
-  assistSurface?: 'pages' | 'tables' | 'apps' | 'dev-tools';
   params: { temperature: number; max_tokens?: number };
   /** Persisted verbatim to agents.memory_config. Carries the persona's context
    *  budgets (history/digest/fact limits, inject_journal) and a specialist's
@@ -958,7 +956,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     ],
     skillSlugs: ['rich_writing', 'page_editing'],
     isDelegate: true,
-    assistSurface: 'pages',
     params: { temperature: 0.3, max_tokens: 32000 },
     // Real page work is tool-call heavy: a large restructure is read + N block
     // updates + M deletes, and the flat defaults (40/turn, 15/tool) sever it
@@ -982,7 +979,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     toolGroupSlugs: ['tables', 'files', 'memory-core', 'export'],
     skillSlugs: ['table_authoring'],
     isDelegate: true,
-    assistSurface: 'tables',
     params: { temperature: 0.3, max_tokens: 16000 },
     memoryConfig: { max_iterations: 30 },
     priority: 100,
@@ -1064,7 +1060,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     slug: 'toolsmith',
     name: 'Toolsmith',
     description:
-      'API integration specialist — reads service docs, authors + tests agent-callable HTTP tools; backs the API Console Assist panel.',
+      'API integration specialist — reads service docs, authors + tests agent-callable HTTP tools. Reached by delegation (invoke_agent) from the responder, like every specialist — no surface pre-selects it.',
     role: 'custom',
     model: 'anthropic/claude-sonnet-5',
     envModelVar: 'TOOLSMITH_MODEL',
@@ -1075,7 +1071,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     toolGroupSlugs: ['toolsmith', 'research'],
     skillSlugs: [],
     isDelegate: true,
-    assistSurface: 'dev-tools',
     // Doc-reading + author + test loops chew iterations; match Ledger's budget.
     params: { temperature: 0.2, max_tokens: 16000 },
     memoryConfig: { max_iterations: 30 },
@@ -1112,7 +1107,6 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     toolGroupSlugs: ['apps', 'app-admin', 'files', 'memory-core', 'delegation', 'research'],
     skillSlugs: ['app_authoring'],
     isDelegate: true,
-    assistSurface: 'apps',
     params: { temperature: 0.2, max_tokens: 32000 },
     // Codegen → build → read-errors → fix loops chew iterations. delegate_to
     // toolsmith: Appsmith doesn't author HTTP tools, it delegates that. This
@@ -1317,12 +1311,6 @@ export const PERSONA_TOOL_GROUP_SLUGS: readonly string[] = PERSONA_MANIFEST.tool
 export const DELEGATE_SLUGS: readonly string[] = MANIFEST_AGENTS.filter((a) => a.isDelegate).map(
   (a) => a.slug,
 );
-
-/** surface → default specialist slug, for the in-surface Assist panels. */
-export const ASSIST_SURFACE_DEFAULTS: Record<'pages' | 'tables' | 'apps' | 'dev-tools', string> =
-  Object.fromEntries(
-    MANIFEST_AGENTS.filter((a) => a.assistSurface).map((a) => [a.assistSurface!, a.slug]),
-  ) as Record<'pages' | 'tables' | 'apps' | 'dev-tools', string>;
 
 /**
  * Tool slugs that exist as real handlers but are registered OUTSIDE the static

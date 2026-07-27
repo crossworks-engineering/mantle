@@ -183,7 +183,6 @@ function AppDetailView({ app }: { app: AppDetail }) {
     setReloadKey((k) => k + 1);
   }, [queryClient, app.id]);
   useSurfaceAssist({
-    surface: 'apps',
     node: { id: app.id, kind: 'app', label: app.title },
     focusDirective,
     onEdited: onAppEdited,
