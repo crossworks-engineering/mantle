@@ -239,6 +239,13 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['mantle-ops']!,
   },
   {
+    slug: 'sandbox-work',
+    name: 'Sandbox work',
+    description:
+      'When and how to use CLI sandboxes: the terminal/sandbox trust boundary, /files persistence, exec vs toolbelt, egress tiers, publishing and export (for the coder agent).',
+    instructions: SKILL_INSTRUCTIONS['sandbox-work']!,
+  },
+  {
     slug: 'location_awareness',
     name: 'Location awareness',
     description:
@@ -1102,7 +1109,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // P6: `terminal` (unrestricted shell) + `sandboxes` (contained shell) +
     // `files` + `memory-core`.
     toolGroupSlugs: ['terminal', 'sandboxes', 'files', 'memory-core'],
-    skillSlugs: ['mantle-ops'],
+    skillSlugs: ['mantle-ops', 'sandbox-work'],
     isDelegate: true,
     params: { temperature: 0.2 },
     priority: 100,
