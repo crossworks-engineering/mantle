@@ -211,4 +211,3 @@ export function solvePair(fillCss, fgAnchorCss, { ratio = 4.5, fillWeight = 1.5 
   if (!best) throw new Error(`no feasible pair for fill ${fillCss}`);
   return best;
 }
-

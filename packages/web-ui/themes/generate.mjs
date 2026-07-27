@@ -43,7 +43,6 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { THEME_SEEDS } from './seeds.mjs';
 import {
-  contrast,
   cssToHex,
   deltaE,
   hueDistance,
@@ -118,7 +117,16 @@ export function generateMode(modeSeed, { mode }) {
 
   // 1. Neutral surfaces and decor — the theme's canvas, verbatim. These are
   //    what every text token is solved AGAINST; they never move.
-  for (const token of ['background', 'card', 'popover', 'muted', 'sidebar', 'border', 'input', 'sidebar-border']) {
+  for (const token of [
+    'background',
+    'card',
+    'popover',
+    'muted',
+    'sidebar',
+    'border',
+    'input',
+    'sidebar-border',
+  ]) {
     out[token] = s[token];
   }
 
@@ -207,7 +215,10 @@ export function generateMode(modeSeed, { mode }) {
     // a primary too close to a semantic code hue would make two token kinds
     // identical — push the fixed hue away, keyword keeps the brand.
     const h = hueDistance(hue, keywordHue) < 25 ? (hue + 40) % 360 : hue;
-    out[`code-${role}`] = solveText(toHex(oklchToSrgb([codeAnchorL, codeC, h])), neutralSurfaces).hex;
+    out[`code-${role}`] = solveText(
+      toHex(oklchToSrgb([codeAnchorL, codeC, h])),
+      neutralSurfaces,
+    ).hex;
   }
 
   // 7. Focus rings — non-text, 3:1 against what they ring. A ring the seed
@@ -229,9 +240,13 @@ export function generateMode(modeSeed, { mode }) {
     // from them — every further step only gains contrast, and the fixed ΔL
     // keeps the five steps tellable-apart (solving each independently used to
     // collapse chart-4 and chart-5 onto the same grey).
-    const floor = solveText(toHex(oklchToSrgb([dark ? 0.5 : 0.6, 0, 0])), [out.background, out.card], {
-      ratio: 3,
-    });
+    const floor = solveText(
+      toHex(oklchToSrgb([dark ? 0.5 : 0.6, 0, 0])),
+      [out.background, out.card],
+      {
+        ratio: 3,
+      },
+    );
     const floorL = parseOklch(floor.hex)[0];
     for (let i = 0; i < 5; i++) {
       const L = Math.min(0.97, Math.max(0.05, floorL + (dark ? 1 : -1) * i * 0.1));
@@ -463,7 +478,7 @@ if (!invokedDirectly) {
 } else main(process.argv[2]);
 
 function main(arg) {
-    if (arg === '--check') {
+  if (arg === '--check') {
     const cssOk = readFileSync(CSS_PATH, 'utf8') === generateCss();
     const regOk = readFileSync(REGISTRY_PATH, 'utf8') === generateRegistry();
     if (!cssOk || !regOk) {
@@ -509,7 +524,12 @@ function main(arg) {
           const d = deltaE(hex, authored[token]);
           if (d < 0.005) continue;
           moved++;
-          (buckets[token] ??= []).push({ id: `${t.id}/${mode}`, d, from: cssToHex(authored[token]), to: hex });
+          (buckets[token] ??= []).push({
+            id: `${t.id}/${mode}`,
+            d,
+            from: cssToHex(authored[token]),
+            to: hex,
+          });
         }
       }
     }

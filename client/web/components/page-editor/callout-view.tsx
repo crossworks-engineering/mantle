@@ -8,8 +8,16 @@ import { CALLOUT_VARIANTS, type CalloutVariant } from './callout';
 // Literal class strings (no dynamic construction) so Tailwind v4 picks them up.
 const VARIANT_STYLES: Record<CalloutVariant, { icon: LucideIcon; wrap: string; tint: string }> = {
   info: { icon: Info, wrap: 'border-info/30 bg-info/10', tint: 'text-info-ink' },
-  success: { icon: CheckCircle2, wrap: 'border-success/30 bg-success/10', tint: 'text-success-ink' },
-  warning: { icon: AlertTriangle, wrap: 'border-warning/30 bg-warning/10', tint: 'text-warning-ink' },
+  success: {
+    icon: CheckCircle2,
+    wrap: 'border-success/30 bg-success/10',
+    tint: 'text-success-ink',
+  },
+  warning: {
+    icon: AlertTriangle,
+    wrap: 'border-warning/30 bg-warning/10',
+    tint: 'text-warning-ink',
+  },
   danger: {
     icon: OctagonAlert,
     wrap: 'border-destructive/30 bg-destructive/10',

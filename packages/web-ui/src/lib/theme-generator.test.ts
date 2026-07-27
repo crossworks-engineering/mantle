@@ -26,8 +26,7 @@ import { THEME_SEEDS } from '../../themes/seeds.mjs';
  *     before the ladder was made sequential).
  */
 
-const read = (rel: string) =>
-  readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
 describe('drift', () => {
   it('styles/themes.css is exactly what the seeds generate', () => {

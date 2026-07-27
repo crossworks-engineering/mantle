@@ -1,0 +1,145 @@
+<!doctype html>
+<!-- Theme preview harness — renders the GENERATED themes.css with zero app
+     code, so a seeds/generator change can be eyeballed across all themes and
+     both modes before it ships. Serve the package directory statically
+     (e.g. `python3 -m http.server -d packages/web-ui 4173`) and open
+     /themes/preview.html. Nothing here ships to a browser in production. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mantle theme preview</title>
+<link rel="stylesheet" href="../styles/themes.css" />
+<style>
+  html { font-family: var(--font-sans, Inter, sans-serif); }
+  body { margin: 0; background: var(--background); color: var(--foreground); transition: background 0.15s; }
+  .bar { display: flex; gap: 0.75rem; align-items: center; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--card); z-index: 2; flex-wrap: wrap; }
+  main { padding: 1rem; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+  section { border: 1px solid var(--border); border-radius: var(--radius, 8px); background: var(--card); color: var(--card-foreground); padding: 1rem; }
+  h2 { margin: 0 0 0.6rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); }
+  .row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+  .btn { border: 0; border-radius: var(--radius, 8px); padding: 0.45rem 0.9rem; font-weight: 600; font-size: 0.85rem; }
+  .chip { border-radius: 999px; padding: 0.2rem 0.7rem; font-size: 0.75rem; font-weight: 600; }
+  .surface { border-radius: var(--radius, 8px); padding: 0.6rem 0.8rem; font-size: 0.85rem; }
+  pre { background: var(--muted); color: var(--foreground); border-radius: var(--radius, 8px); padding: 0.8rem 1rem; font-family: var(--font-mono, monospace); font-size: 0.8rem; line-height: 1.5; overflow-x: auto; }
+  .callout { border-left: 3px solid; border-radius: var(--radius, 8px); padding: 0.5rem 0.9rem; font-size: 0.85rem; margin-bottom: 0.5rem; }
+  .swatches { display: flex; height: 2rem; border-radius: var(--radius, 8px); overflow: hidden; }
+  .swatches div { flex: 1; }
+  .inks span { display: block; font-size: 0.85rem; padding: 0.1rem 0; }
+  select, .toggle { font: inherit; padding: 0.3rem 0.5rem; border-radius: 6px; border: 1px solid var(--border); background: var(--background); color: var(--foreground); }
+  a { color: var(--primary-ink); font-weight: 500; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <select id="theme"></select>
+  <button class="toggle" id="mode">dark ⇄ light</button>
+  <span id="label" style="font-size:0.8rem;color:var(--muted-foreground)"></span>
+</div>
+<main>
+  <section>
+    <h2>Fills + on-fill text</h2>
+    <div class="row">
+      <button class="btn" style="background:var(--primary);color:var(--primary-foreground)">Primary</button>
+      <button class="btn" style="background:var(--secondary);color:var(--secondary-foreground)">Secondary</button>
+      <button class="btn" style="background:var(--accent);color:var(--accent-foreground)">Accent</button>
+      <button class="btn" style="background:var(--destructive);color:var(--destructive-foreground)">Delete</button>
+    </div>
+    <div class="row">
+      <button class="btn" style="background:var(--success);color:var(--success-foreground)">Success</button>
+      <button class="btn" style="background:var(--warning);color:var(--warning-foreground)">Warning</button>
+      <button class="btn" style="background:var(--info);color:var(--info-foreground)">Info</button>
+    </div>
+    <h2>Inks on surfaces</h2>
+    <div class="row">
+      <div class="surface inks" style="background:var(--background);border:1px solid var(--border)">
+        <span style="color:var(--primary-ink)">primary-ink</span>
+        <span style="color:var(--destructive-ink)">destructive-ink</span>
+        <span style="color:var(--success-ink)">success-ink</span>
+        <span style="color:var(--warning-ink)">warning-ink</span>
+        <span style="color:var(--info-ink)">info-ink</span>
+        <span style="color:var(--muted-foreground)">muted-foreground</span>
+      </div>
+      <div class="surface inks" style="background:var(--muted)">
+        <span style="color:var(--primary-ink)">primary-ink</span>
+        <span style="color:var(--destructive-ink)">destructive-ink</span>
+        <span style="color:var(--success-ink)">success-ink</span>
+        <span style="color:var(--warning-ink)">warning-ink</span>
+        <span style="color:var(--info-ink)">info-ink</span>
+        <span style="color:var(--muted-foreground)">muted-foreground</span>
+      </div>
+      <div class="surface inks" style="background:var(--sidebar);color:var(--sidebar-foreground)">
+        <span>sidebar-foreground</span>
+        <span style="color:var(--primary-ink)">primary-ink</span>
+        <span style="color:var(--muted-foreground)">muted-foreground</span>
+      </div>
+    </div>
+  </section>
+  <section>
+    <h2>Code (the --code-* palette on --muted)</h2>
+    <pre><span style="color:var(--code-keyword)">export function</span> <span style="color:var(--code-title)">solveInk</span>(<span style="color:var(--code-variable)">anchor</span>, <span style="color:var(--code-variable)">surfaces</span>) {
+  <span style="color:var(--code-keyword)">const</span> <span style="color:var(--code-variable)">ratio</span> = <span style="color:var(--code-number)">4.5</span>; <span style="color:var(--muted-foreground);font-style:italic">// AA, measured on the emitted hex</span>
+  <span style="color:var(--code-keyword)">return</span> <span style="color:var(--code-title)">scan</span>(<span style="color:var(--code-string)">'lightness'</span>, <span style="color:var(--code-variable)">anchor</span>);
+}</pre>
+    <h2>Callouts</h2>
+    <div class="callout" style="border-color:var(--info);background:color-mix(in oklab, var(--info) 8%, transparent)">ℹ️ Info — border + 8% tint from <b>--info</b>.</div>
+    <div class="callout" style="border-color:var(--success);background:color-mix(in oklab, var(--success) 8%, transparent)">✅ Success — the role, not chart-4.</div>
+    <div class="callout" style="border-color:var(--warning);background:color-mix(in oklab, var(--warning) 8%, transparent)">⚠️ Warning — the role, not chart-5.</div>
+    <div class="callout" style="border-color:var(--destructive);background:color-mix(in oklab, var(--destructive) 8%, transparent)">🛑 Danger — destructive, as before.</div>
+  </section>
+  <section>
+    <h2>Charts (categorical)</h2>
+    <div class="swatches" id="charts"></div>
+    <h2>Prose accents</h2>
+    <div style="color:var(--primary-ink);font-size:1.3rem;font-weight:700">Heading (primary-ink)</div>
+    <div style="color:var(--info-ink);font-weight:600">h4 accent (info-ink)</div>
+    <p style="margin:0.4rem 0">Body text with <a href="#">a themed link</a> and a <span style="border-radius:0.3rem;background:color-mix(in oklab, var(--info) 16%, transparent);color:var(--info-ink);padding:0.05em 0.3em;font-weight:500">@node mention</span>.</p>
+    <h2>All themes</h2>
+    <div id="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:0.4rem"></div>
+  </section>
+</main>
+<script type="module">
+  // The registry is TS; scrape ids straight from the stylesheet instead so the
+  // harness has zero build steps.
+  const css = await (await fetch('../styles/themes.css')).text();
+  const ids = ['clean-slate', ...new Set([...css.matchAll(/^\[data-color-theme="([^"]+)"\]/gm)].map((m) => m[1]))];
+  const sel = document.getElementById('theme');
+  for (const id of ids) sel.add(new Option(id, id));
+  const apply = () => {
+    const id = sel.value;
+    const root = document.documentElement;
+    if (id === 'clean-slate') delete root.dataset.colorTheme;
+    else root.dataset.colorTheme = id;
+    document.getElementById('label').textContent =
+      `${id} — ${root.classList.contains('dark') ? 'dark' : 'light'}`;
+    const charts = document.getElementById('charts');
+    charts.innerHTML = '';
+    for (let n = 1; n <= 5; n++) {
+      const d = document.createElement('div');
+      d.style.background = `var(--chart-${n})`;
+      charts.appendChild(d);
+    }
+  };
+  sel.onchange = apply;
+  document.getElementById('mode').onclick = () => {
+    document.documentElement.classList.toggle('dark');
+    apply();
+  };
+  const grid = document.getElementById('grid');
+  for (const id of ids) {
+    const card = document.createElement('button');
+    card.style.cssText = 'border:1px solid var(--border);border-radius:6px;padding:0.3rem;background:var(--card);color:var(--card-foreground);cursor:pointer;font-size:0.65rem';
+    card.dataset.colorTheme = id === 'clean-slate' ? '' : id;
+    if (id !== 'clean-slate') card.setAttribute('data-color-theme', id);
+    card.innerHTML = `<div style="display:flex;height:1.1rem;border-radius:4px;overflow:hidden">
+      <div style="flex:1;background:var(--primary)"></div>
+      <div style="flex:1;background:var(--accent)"></div>
+      <div style="flex:1;background:var(--success)"></div>
+      <div style="flex:1;background:var(--warning)"></div>
+      <div style="flex:1;background:var(--info)"></div></div>${id}`;
+    card.onclick = () => { sel.value = id; apply(); };
+    grid.appendChild(card);
+  }
+  apply();
+</script>
+</body>
+</html>

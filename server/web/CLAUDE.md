@@ -13,8 +13,12 @@ Non-negotiables (full detail in the guide):
 
 - **shadcn-first** — compose from `components/ui/*`; avoid raw `<button>`/`<input>`/`<select>`.
 - **Theme tokens only** — `bg-background`, `text-foreground`, `text-muted-foreground`,
-  `bg-card`, `border-border`, `bg-primary`, `bg-accent`, `bg-destructive`, `chart-1..5`.
+  `bg-card`, `border-border`, `bg-primary`, `bg-accent`, `bg-destructive`; status =
+  `success`/`warning`/`info` (+`-ink` for text); `chart-1..5` = chart data ONLY (3:1,
+  not legible as text — use the `-ink` roles or `code-*` instead).
   **Never hardcode colors**; opacity via `/NN`. Hardcoded colors break the ~40 themes.
+  The theme CSS is GENERATED from `packages/web-ui/themes/seeds.mjs` (`pnpm themes:build`,
+  docs/themes.md) — never edit `themes.css` by hand.
   **Pair every fill with its OWN `-foreground`** (`bg-accent`+`text-accent-foreground`,
   `bg-primary`+`text-primary-foreground`, …) — never mix pairs like `bg-accent text-foreground`
   (no contrast guarantee; breaks on light-accent themes). Same for hover/active fills. On a
