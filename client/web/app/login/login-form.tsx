@@ -56,7 +56,7 @@ export function LoginForm({
         });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as { error?: string };
-          setError(data.error ?? 'Could not create your account.');
+          setError(data.error ?? 'Could not create your login.');
           return;
         }
       }
@@ -125,7 +125,7 @@ export function LoginForm({
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <SubmitButton pending={busy} className="w-full">
-        {isSignup ? 'Create account' : 'Sign in'}
+        {isSignup ? 'Create login' : 'Sign in'}
       </SubmitButton>
     </form>
   );
