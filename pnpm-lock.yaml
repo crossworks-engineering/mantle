@@ -1144,6 +1144,18 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  server/sandboxd:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
+      tsx:
+        specifier: ^4.23.1
+        version: 4.23.1
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   server/web:
     dependencies:
       '@aws-sdk/client-s3':

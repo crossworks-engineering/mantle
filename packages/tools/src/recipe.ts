@@ -37,6 +37,12 @@ export const MAX_RECIPE_DEPTH = 4;
 export const RECIPE_FORBIDDEN_SLUGS: ReadonlySet<string> = new Set([
   // shell-equivalent / host escape
   'run_terminal',
+  'sandbox_create',
+  'sandbox_exec',
+  'sandbox_stop',
+  'sandbox_rm',
+  'sandbox_publish',
+  'sandbox_mcp_call',
   // secrets + privilege
   'secret_create',
   'update_persona',

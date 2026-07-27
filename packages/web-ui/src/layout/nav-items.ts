@@ -8,6 +8,7 @@ import {
   Boxes,
   CalendarDays,
   CheckSquare,
+  Container,
   DatabaseBackup,
   ClipboardCheck,
   Contact,
@@ -136,6 +137,11 @@ export const NAV_GROUPS: NavGroup[] = [
       // (Studio/Runners/Traces/Debug) do the same. It sits next to Debug where
       // the run view used to live as a tab.
       { name: 'Runs', href: '/runs', icon: ListTree },
+      // CLI sandboxes (opt-in per box via the `sandboxes` compose profile).
+      // Ships always-visible like its gated sibling Runs — the nav is a static
+      // list with no per-item conditional-visibility mechanism; the page itself
+      // explains how to enable the feature when sandboxd is absent.
+      { name: 'Sandboxes', href: '/sandboxes', icon: Container },
       { name: 'Traces', href: '/traces', icon: Workflow },
       { name: 'Debug', href: '/debug', icon: Activity },
     ],
