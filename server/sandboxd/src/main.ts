@@ -41,7 +41,10 @@ const PORT = Number(process.env.SANDBOXD_PORT || 8090);
 const TOKEN = process.env.SANDBOXD_TOKEN || '';
 const SANDBOXES_DIR = process.env.SANDBOXES_DIR || '/data/sandboxes';
 const SANDBOX_NETWORK = process.env.SANDBOX_NETWORK || 'mantle_sandbox';
-const DEFAULT_IMAGE = process.env.SANDBOX_DEFAULT_IMAGE || 'ubuntu:24.04';
+/** Batteries-included default (python3+libs, node22+pnpm, git, docker CLI,
+ *  claude code — see infra/sandbox-image/Dockerfile). Pinned tag: updating
+ *  the image is an explicit SANDBOX_DEFAULT_IMAGE change, never silent drift. */
+const DEFAULT_IMAGE = process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v1';
 const MAX_SANDBOXES = Number(process.env.SANDBOX_MAX_COUNT || 3);
 const MEM_BYTES = Number(process.env.SANDBOX_MEM_BYTES || 1024 * 1024 * 1024);
 const NANO_CPUS = Number(process.env.SANDBOX_NANO_CPUS || 1e9); // 1 CPU
