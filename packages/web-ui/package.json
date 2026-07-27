@@ -107,7 +107,10 @@
     "./version": "./src/version.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "themes:build": "node themes/generate.mjs",
+    "themes:check": "node themes/generate.mjs --check",
+    "themes:report": "node themes/generate.mjs --report"
   },
   "peerDependencies": {
     "react": "^19.2.7",

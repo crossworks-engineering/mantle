@@ -28,7 +28,7 @@ export function GithubCard() {
       <CardContent>
         <div className="text-muted-foreground flex space-x-4 text-sm">
           <div className="flex items-center gap-1">
-            <Circle className="size-3 fill-chart-2 text-chart-2" />
+            <Circle className="size-3 fill-success-ink text-success-ink" />
             Agent tool
           </div>
           <div className="flex items-center gap-1">

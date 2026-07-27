@@ -63,7 +63,7 @@ type CommandEntry = {
 type SandboxDetailPayload = { sandbox: SandboxEntry; commands: CommandEntry[] };
 
 const STATUS_CLASS: Record<string, string> = {
-  running: 'text-chart-2',
+  running: 'text-success-ink',
   stopped: 'text-muted-foreground',
 };
 

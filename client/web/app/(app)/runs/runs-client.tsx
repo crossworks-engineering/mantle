@@ -100,11 +100,11 @@ type CompiledRun = {
 
 const STATE_CLASS: Record<string, string> = {
   queued: 'text-muted-foreground',
-  ready: 'text-chart-4',
-  running: 'text-chart-1',
-  paused: 'text-chart-4',
-  done: 'text-chart-2',
-  completed: 'text-chart-2',
+  ready: 'text-info-ink',
+  running: 'text-primary-ink',
+  paused: 'text-warning-ink',
+  done: 'text-success-ink',
+  completed: 'text-success-ink',
   failed: 'text-destructive-ink',
   cancelled: 'text-muted-foreground line-through',
   superseded: 'text-muted-foreground line-through',
@@ -275,7 +275,7 @@ function RunDetail({ runId }: { runId: string }) {
       {paused && (
         <Link
           href="/pending"
-          className="block rounded-md border border-chart-4/40 bg-chart-4/10 px-3 py-2 text-sm text-foreground hover:bg-chart-4/20"
+          className="block rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-foreground hover:bg-warning/20"
         >
           <strong className="font-semibold">Budget exhausted.</strong> This run is paused — raise
           the budget or cancel it in Pending approvals ↗
@@ -284,7 +284,7 @@ function RunDetail({ runId }: { runId: string }) {
       {waiting && (
         <Link
           href="/pending"
-          className="block rounded-md border border-chart-4/40 bg-chart-4/10 px-3 py-2 text-sm text-foreground hover:bg-chart-4/20"
+          className="block rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-foreground hover:bg-warning/20"
         >
           <strong className="font-semibold">Waiting on your answer.</strong> A step is blocked on a
           question — answer it in Pending approvals ↗

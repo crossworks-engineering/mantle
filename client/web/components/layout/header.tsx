@@ -131,7 +131,7 @@ export function Header({
 
       {peerName && (
         <span
-          className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-[2px] text-center text-lg font-bold leading-normal text-chart-2 md:block"
+          className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-[2px] text-center text-lg font-bold leading-normal text-primary-ink md:block"
           // Peer name in the user-selectable header-centre font (Settings →
           // Appearance → Fonts; unset ⇒ inherits the UI sans). Width is clipped
           // (overflow-x-clip, bounded by max-w) but the height overflows freely

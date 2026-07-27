@@ -509,7 +509,7 @@ export function DevToolsSidebar() {
                     <span
                       className={cn(
                         'w-9 shrink-0 font-mono text-[10px] font-bold',
-                        h.ok ? 'text-chart-2' : 'text-destructive-ink',
+                        h.ok ? 'text-success-ink' : 'text-destructive-ink',
                       )}
                     >
                       {h.status === 0 ? 'ERR' : h.status}

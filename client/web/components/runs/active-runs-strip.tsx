@@ -129,12 +129,12 @@ export function ActiveRunsStrip() {
             <div className="flex items-center gap-2">
               <span className="truncate text-sm font-medium">{r.title}</span>
               {r.status === 'paused' && (
-                <span className="shrink-0 rounded-sm bg-chart-4/20 px-1 text-[10px] uppercase tracking-wider text-chart-4">
+                <span className="shrink-0 rounded-sm bg-warning/20 px-1 text-[10px] uppercase tracking-wider text-warning-ink">
                   paused
                 </span>
               )}
               {r.waiting && (
-                <span className="shrink-0 rounded-sm bg-chart-4/20 px-1 text-[10px] uppercase tracking-wider text-chart-4">
+                <span className="shrink-0 rounded-sm bg-warning/20 px-1 text-[10px] uppercase tracking-wider text-warning-ink">
                   waiting
                 </span>
               )}

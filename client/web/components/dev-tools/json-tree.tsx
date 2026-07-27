@@ -21,11 +21,11 @@ function Primitive({ value }: { value: unknown }) {
   if (value === null) return <span className="italic text-muted-foreground">null</span>;
   switch (typeof value) {
     case 'string':
-      return <span className="text-chart-2 break-all">&quot;{value}&quot;</span>;
+      return <span className="text-code-string break-all">&quot;{value}&quot;</span>;
     case 'number':
-      return <span className="text-chart-3">{String(value)}</span>;
+      return <span className="text-code-number">{String(value)}</span>;
     case 'boolean':
-      return <span className="text-chart-4">{String(value)}</span>;
+      return <span className="text-code-keyword">{String(value)}</span>;
     default:
       return <span className="text-muted-foreground">{String(value)}</span>;
   }
@@ -63,7 +63,7 @@ function Node({
   };
 
   const keyLabel =
-    nodeKey !== null ? <span className="text-chart-1">&quot;{nodeKey}&quot;</span> : null;
+    nodeKey !== null ? <span className="text-code-title">&quot;{nodeKey}&quot;</span> : null;
 
   if (!isObject) {
     return (

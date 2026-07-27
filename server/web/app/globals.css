@@ -330,20 +330,22 @@
   white-space: nowrap;
 }
 .ProseMirror .mention[data-ref='node'] {
-  background-color: color-mix(in oklab, var(--chart-2) 16%, transparent);
-  color: var(--chart-2);
+  background-color: color-mix(in oklab, var(--info) 16%, transparent);
+  color: var(--info-ink);
   cursor: pointer;
 }
 .ProseMirror .mention[data-ref='node']:hover {
-  background-color: color-mix(in oklab, var(--chart-2) 26%, transparent);
+  background-color: color-mix(in oklab, var(--info) 26%, transparent);
   text-decoration: underline;
 }
 
 /* Code-block syntax highlighting (CodeBlockLowlight / highlight.js). Token
-   classes map onto theme tokens so highlighting tracks the active theme +
-   light/dark instead of shipping a fixed hljs colour scheme. Scoped to
-   .ProseMirror (Pages editor + assistant rich renderer) and .code-view (the
-   Apps source viewer). Unhighlighted code falls back to the foreground. */
+   classes map onto the DERIVED code palette (--code-*), which is solved per
+   theme to stay legible on every neutral surface — chart tokens are data ink
+   at a 3:1 bar and rendered function names invisible here (1.02:1 on `claude`
+   dark) before the split. Scoped to .ProseMirror (Pages editor + assistant
+   rich renderer) and .code-view (the Apps source viewer). Unhighlighted code
+   falls back to the foreground. */
 :is(.ProseMirror, .code-view) .hljs-comment,
 :is(.ProseMirror, .code-view) .hljs-quote {
   color: var(--muted-foreground);
@@ -354,14 +356,14 @@
 :is(.ProseMirror, .code-view) .hljs-built_in,
 :is(.ProseMirror, .code-view) .hljs-name,
 :is(.ProseMirror, .code-view) .hljs-tag {
-  color: var(--chart-1);
+  color: var(--code-keyword);
 }
 :is(.ProseMirror, .code-view) .hljs-string,
 :is(.ProseMirror, .code-view) .hljs-attr,
 :is(.ProseMirror, .code-view) .hljs-regexp,
 :is(.ProseMirror, .code-view) .hljs-addition,
 :is(.ProseMirror, .code-view) .hljs-meta-string {
-  color: var(--chart-4);
+  color: var(--code-string);
 }
 :is(.ProseMirror, .code-view) .hljs-number,
 :is(.ProseMirror, .code-view) .hljs-literal,
@@ -369,20 +371,20 @@
 :is(.ProseMirror, .code-view) .hljs-symbol,
 :is(.ProseMirror, .code-view) .hljs-bullet,
 :is(.ProseMirror, .code-view) .hljs-link {
-  color: var(--chart-2);
+  color: var(--code-number);
 }
 :is(.ProseMirror, .code-view) .hljs-title,
 :is(.ProseMirror, .code-view) .hljs-section,
 :is(.ProseMirror, .code-view) .hljs-function .hljs-title,
 :is(.ProseMirror, .code-view) .hljs-class .hljs-title {
-  color: var(--chart-3);
+  color: var(--code-title);
 }
 :is(.ProseMirror, .code-view) .hljs-attribute,
 :is(.ProseMirror, .code-view) .hljs-variable,
 :is(.ProseMirror, .code-view) .hljs-template-variable,
 :is(.ProseMirror, .code-view) .hljs-params,
 :is(.ProseMirror, .code-view) .hljs-meta {
-  color: var(--chart-5);
+  color: var(--code-variable);
 }
 :is(.ProseMirror, .code-view) .hljs-deletion {
   color: var(--destructive-ink);
@@ -432,9 +434,9 @@
    variant (matching the in-app icon colours). */
 .ProseMirror [data-callout] {
   margin-block: 0.75rem;
-  border-left: 3px solid var(--chart-2);
+  border-left: 3px solid var(--info);
   border-radius: var(--radius);
-  background-color: color-mix(in oklab, var(--chart-2) 8%, transparent);
+  background-color: color-mix(in oklab, var(--info) 8%, transparent);
   padding: 0.5rem 0.9rem;
 }
 .ProseMirror [data-callout] > :first-child {
@@ -444,12 +446,12 @@
   margin-bottom: 0;
 }
 .ProseMirror [data-callout][data-variant='success'] {
-  border-left-color: var(--chart-4);
-  background-color: color-mix(in oklab, var(--chart-4) 8%, transparent);
+  border-left-color: var(--success);
+  background-color: color-mix(in oklab, var(--success) 8%, transparent);
 }
 .ProseMirror [data-callout][data-variant='warning'] {
-  border-left-color: var(--chart-5);
-  background-color: color-mix(in oklab, var(--chart-5) 8%, transparent);
+  border-left-color: var(--warning);
+  background-color: color-mix(in oklab, var(--warning) 8%, transparent);
 }
 .ProseMirror [data-callout][data-variant='danger'] {
   border-left-color: var(--destructive);
@@ -509,20 +511,20 @@
 }
 
 /* Edited (green) — blocks Pages changed in the current draft. Same shape as the
-   marked highlight, distinct colour (chart-4, the theme's success/green), so a
-   post-run page reads as "this is what moved" at a glance. Cleared on commit. */
+   marked highlight, distinct colour (the success role), so a post-run page
+   reads as "this is what moved" at a glance. Cleared on commit. */
 .ProseMirror .is-edited {
   position: relative;
   border-radius: var(--radius);
-  background-color: color-mix(in oklab, var(--chart-4) 12%, transparent);
-  box-shadow: inset 3px 0 0 0 var(--chart-4);
+  background-color: color-mix(in oklab, var(--success) 12%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--success);
   margin-left: -0.75rem;
   padding-left: 0.75rem;
   padding-right: 0.4rem;
 }
 
 /* ── Visual diff (review mode, Phase 3a Pass 2) ────────────────────────────
-   Added blocks (green / chart-4) and changed blocks (amber / chart-5) get a
+   Added blocks (success) and changed blocks (warning) get a
    left accent bar + faint tint. Each carries a hover-reveal "Discard" pill
    (placed as a widget at the block's start, absolutely positioned). Removed
    blocks aren't in the doc — they render as struck "ghost" widget cards. All
@@ -536,12 +538,12 @@
   padding-right: 0.4rem;
 }
 .ProseMirror .is-diff-added {
-  background-color: color-mix(in oklab, var(--chart-4) 12%, transparent);
-  box-shadow: inset 3px 0 0 0 var(--chart-4);
+  background-color: color-mix(in oklab, var(--success) 12%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--success);
 }
 .ProseMirror .is-diff-changed {
-  background-color: color-mix(in oklab, var(--chart-5) 12%, transparent);
-  box-shadow: inset 3px 0 0 0 var(--chart-5);
+  background-color: color-mix(in oklab, var(--warning) 12%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--warning);
 }
 
 /* The per-block action pill (Discard / Restore). Lives inside a positioned diff
@@ -604,8 +606,8 @@
   opacity: 1;
 }
 .ProseMirror .diff-pill-restore:hover {
-  border-color: var(--chart-4);
-  color: var(--chart-4);
+  border-color: var(--success);
+  color: var(--success-ink);
 }
 .ProseMirror .diff-removed-body {
   margin-top: 0.2rem;
@@ -670,14 +672,17 @@
   padding-bottom: 0.3em;
 }
 
-/* h3 — primary nudged toward the body colour so the hierarchy still reads. */
+/* h3 — the primary ink (AA by construction; the old color-mix() of primary
+   toward foreground measured below AA in 52 of 164 theme surfaces, and being a
+   computed value it hid from the ink audit). Hierarchy vs h2 reads from size. */
 .prose-accent h3 {
-  color: color-mix(in oklab, var(--primary) 82%, var(--foreground));
+  color: var(--primary-ink);
 }
 
-/* h4 — a distinct chart accent so a fourth level doesn't fall back to grey. */
+/* h4 — a distinct accent so a fourth level doesn't fall back to grey; the
+   info ink is AA-safe everywhere and reads as documentation. */
 .prose-accent h4 {
-  color: var(--chart-4);
+  color: var(--info-ink);
 }
 
 /* Links — brand colour, underline only on hover (themed, not prose blue). */
