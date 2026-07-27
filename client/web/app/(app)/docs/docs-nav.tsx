@@ -137,12 +137,14 @@ export function DocsNav({ nav }: { nav: ReaderNav }) {
   // Content itself is read from disk per navigation, so this isn't load-bearing.
   useRealtime(['documentation'], () => router.refresh());
 
-  // Collapsed section/folder ids. Empty = all expanded. Persists while the nav
-  // stays mounted (across in-/docs navigation, since it lives in the layout).
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const isOpen = (id: string) => !collapsed.has(id);
+  // EXPANDED section/folder ids — empty means everything is closed, which is
+  // the default: several hundred files across the collections is far too much
+  // tree to unfold at once. Persists while the nav stays mounted (across
+  // in-/docs navigation, since it lives in the layout).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const isOpen = (id: string) => expanded.has(id);
   const toggle = (id: string) =>
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -165,10 +167,14 @@ export function DocsNav({ nav }: { nav: ReaderNav }) {
       acc = acc ? `${acc}/${seg}` : seg;
       ancestors.add(`${collKey}::${acc}`);
     }
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       let changed = false;
       const next = new Set(prev);
-      for (const a of ancestors) if (next.delete(a)) changed = true;
+      for (const a of ancestors)
+        if (!next.has(a)) {
+          next.add(a);
+          changed = true;
+        }
       return changed ? next : prev;
     });
   }, [pathname]);

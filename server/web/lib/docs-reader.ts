@@ -101,9 +101,13 @@ export async function getReaderNav(ownerId: string): Promise<ReaderNav> {
     });
   }
   // User-authored collections (the User Guide) first; the built-in `system`
-  // dev docs last. Alphabetical within each group.
-  const rank = (origin: string) => (origin === 'system' ? 1 : 0);
-  out.sort((a, b) => rank(a.origin) - rank(b.origin) || a.label.localeCompare(b.label));
+  // dev docs after them; the Changelog dead last. Alphabetical within each
+  // group. The changelog is the biggest collection and the one you visit
+  // deliberately, so it sits at the bottom rather than above "System docs",
+  // where plain alphabetical order used to put it.
+  const rank = (c: ReaderCollection) =>
+    c.key === CHANGELOG_COLLECTION_KEY ? 2 : c.origin === 'system' ? 1 : 0;
+  out.sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label));
   return out;
 }
 
