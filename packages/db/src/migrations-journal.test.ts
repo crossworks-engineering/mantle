@@ -51,4 +51,46 @@ describe('migrations journal', () => {
       );
     }
   });
+
+  it('no two migrations claim the same number', () => {
+    // The migration number is a GLOBAL COUNTER claimed by sessions that cannot
+    // see each other — and worktrees make parallel sessions the norm. Two lines
+    // of work both reached for 0138: the v0.206.0 merge had to renumber
+    // team_notifications 0138 -> 0140 by hand, and its `when` had to be stamped
+    // after 0139 because the runner gates on `when` and the workstation dev DB
+    // already carried the sandboxes stamps. Nothing caught the clash; a human
+    // noticed. This is that check — it fires at merge time, in `pnpm verify`.
+    const byNumber = new Map<string, string[]>();
+    for (const f of files) {
+      const n = f.slice(0, 4);
+      byNumber.set(n, [...(byNumber.get(n) ?? []), f]);
+    }
+    const clashes = [...byNumber.entries()].filter(([, fs]) => fs.length > 1);
+    expect(
+      clashes,
+      clashes.length
+        ? `two migrations share a number — rename the later one to the next free ` +
+            `number and stamp its journal \`when\` AFTER its new predecessor (the ` +
+            `migrator gates on when, so a lower stamp is silently skipped): ` +
+            clashes.map(([n, fs]) => `${n} -> ${fs.join(' + ')}`).join('; ')
+        : '',
+    ).toEqual([]);
+  });
+
+  it('every journal idx matches the number in its tag', () => {
+    // A renumber touches two places: the .sql filename and the journal entry.
+    // Doing one and not the other leaves a journal that looks internally
+    // consistent — idx unique, sequential, `when` increasing — while pointing
+    // at a differently-numbered file. That is exactly the state a badly
+    // resolved _journal.json merge conflict produces, and the add/add conflict
+    // in this file is a known recurring one.
+    const mismatched = journal.entries
+      .filter((e) => Number(e.tag.slice(0, 4)) !== e.idx)
+      .map((e) => `idx ${e.idx} <-> ${e.tag}`);
+    expect(
+      mismatched,
+      `journal idx and filename number disagree — a half-finished renumber, or a ` +
+        `mis-resolved _journal.json merge: ${mismatched.join('; ')}`,
+    ).toEqual([]);
+  });
 });
