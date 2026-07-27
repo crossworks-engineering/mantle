@@ -399,12 +399,28 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(function Sl
                 i === selected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
               )}
             >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background">
+              {/* On the selected row every child must derive from
+                  accent-foreground — a `bg-background` tile or a
+                  `text-muted-foreground` line is paired with the WRONG surface
+                  and washes out on themes whose accent is light. */}
+              <span
+                className={cn(
+                  'flex size-9 shrink-0 items-center justify-center rounded-md border',
+                  i === selected
+                    ? 'border-accent-foreground/25 bg-accent-foreground/10'
+                    : 'border-border bg-background',
+                )}
+              >
                 <Icon className="size-4" aria-hidden />
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-medium leading-tight">{item.title}</span>
-                <span className="block truncate text-xs text-muted-foreground">
+                <span
+                  className={cn(
+                    'block truncate text-xs',
+                    i === selected ? 'text-accent-foreground' : 'text-muted-foreground',
+                  )}
+                >
                   {item.description}
                 </span>
               </span>
