@@ -90,7 +90,7 @@ export function TokenGate({
           autoComplete="off"
           autoFocus
         />
-        {error ? <p className="mt-2 text-sm text-destructive">{error}</p> : null}
+        {error ? <p className="mt-2 text-sm text-destructive-ink">{error}</p> : null}
         <Button className="mt-4 w-full" onClick={submit} disabled={pending || !token.trim()}>
           {pending ? 'Checking…' : 'Continue'}
         </Button>

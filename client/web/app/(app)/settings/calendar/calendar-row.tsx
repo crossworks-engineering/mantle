@@ -55,7 +55,7 @@ export function CalendarRow({ account }: { account: CalendarAccountDTO }) {
             : ' · off'}
         </div>
         {account.lastSyncError && (
-          <div className="truncate text-xs text-destructive">⚠ {account.lastSyncError}</div>
+          <div className="truncate text-xs text-destructive-ink">⚠ {account.lastSyncError}</div>
         )}
       </div>
 
@@ -71,7 +71,7 @@ export function CalendarRow({ account }: { account: CalendarAccountDTO }) {
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground hover:text-destructive"
+            className="text-muted-foreground hover:text-destructive-ink"
           >
             <Trash2 />
           </Button>

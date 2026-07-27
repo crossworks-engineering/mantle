@@ -317,7 +317,7 @@ function MenuItem({
       className={cn(
         'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors',
         destructive
-          ? 'text-destructive hover:bg-destructive/10'
+          ? 'text-destructive-ink hover:bg-destructive/10'
           : 'text-foreground hover:bg-accent hover:text-accent-foreground',
       )}
     >

@@ -156,7 +156,7 @@ function VariantControl({
         <img src={shownSrc} alt={wordmark} className="h-10 w-auto max-w-full object-contain" />
       ) : (
         <span
-          className="text-2xl text-primary"
+          className="text-2xl text-primary-ink"
           style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
         >
           {wordmark}

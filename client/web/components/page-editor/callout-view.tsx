@@ -13,7 +13,7 @@ const VARIANT_STYLES: Record<CalloutVariant, { icon: LucideIcon; wrap: string; t
   danger: {
     icon: OctagonAlert,
     wrap: 'border-destructive/30 bg-destructive/10',
-    tint: 'text-destructive',
+    tint: 'text-destructive-ink',
   },
 };
 

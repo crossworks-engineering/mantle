@@ -146,7 +146,7 @@ export function SharedLinksPanel({ initial }: { initial: SharedLinkRow[] }) {
             <Button
               size="icon"
               variant="ghost"
-              className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+              className="size-8 shrink-0 text-muted-foreground hover:text-destructive-ink"
               onClick={() => setConfirmRevoke(row)}
               aria-label="Revoke link"
             >

@@ -79,7 +79,7 @@ export function TeamTokenPrompt({ shareToken, title }: { shareToken: string; tit
               className="text-center font-mono tracking-widest"
               aria-invalid={!!error}
             />
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && <p className="text-xs text-destructive-ink">{error}</p>}
           </div>
           <Button type="submit" className="w-full" disabled={pending || !token.trim()}>
             {pending ? 'Checking…' : 'Continue'}

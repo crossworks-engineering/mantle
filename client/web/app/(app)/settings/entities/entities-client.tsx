@@ -135,7 +135,7 @@ function EntitiesView({ initial }: { initial: Candidate[] }) {
     <div className="mx-auto max-w-7xl space-y-6 p-6">
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <Network className="size-5 text-primary" aria-hidden />
+          <Network className="size-5 text-primary-ink" aria-hidden />
           <h2 className="text-lg font-semibold">Duplicate entities</h2>
         </div>
         <p className="text-sm text-muted-foreground">
@@ -147,8 +147,8 @@ function EntitiesView({ initial }: { initial: Candidate[] }) {
 
       {rows.length === 0 ? (
         <div className="flex items-center gap-2 rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-sm text-muted-foreground">
-          <Check className="size-4 text-primary" /> No duplicate candidates — your entity graph is
-          clean.
+          <Check className="size-4 text-primary-ink" /> No duplicate candidates — your entity graph
+          is clean.
         </div>
       ) : (
         <>

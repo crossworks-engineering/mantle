@@ -384,7 +384,7 @@ function FilesView({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 text-destructive hover:text-destructive"
+                    className="h-7 text-destructive-ink hover:text-destructive-ink"
                     onClick={() => setDeleteFolderOpen(true)}
                     disabled={busy}
                   >
@@ -475,7 +475,7 @@ function FilesView({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="ml-auto text-destructive hover:text-destructive"
+                  className="ml-auto text-destructive-ink hover:text-destructive-ink"
                   onClick={() => setBulkDeleteOpen(true)}
                 >
                   <Trash2 /> Delete {selectedFileIds.size}
@@ -486,7 +486,7 @@ function FilesView({
             {/* Grid */}
             <div className="relative flex-1 overflow-y-auto">
               {dragOver && (
-                <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-primary/50 bg-primary/5 text-sm font-medium text-primary">
+                <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-primary/50 bg-primary/5 text-sm font-medium text-primary-ink">
                   Drop to upload to <code className="ml-1 font-mono">{currentPath}</code>
                 </div>
               )}
@@ -553,7 +553,7 @@ function FilesView({
                             {f.summary && (
                               <span
                                 title="Indexed — summary ready"
-                                className="inline-flex items-center text-primary"
+                                className="inline-flex items-center text-primary-ink"
                               >
                                 <ChevronsRight className="size-3.5 shrink-0" />
                               </span>
@@ -1043,7 +1043,7 @@ function FolderTreeRail({
               className={
                 'flex items-center gap-1.5 rounded px-1.5 py-1 ' +
                 (f.path === currentPath
-                  ? 'bg-primary/10 font-semibold text-primary'
+                  ? 'bg-primary/10 font-semibold text-primary-ink'
                   : 'hover:bg-muted/40')
               }
               title={f.description || undefined}

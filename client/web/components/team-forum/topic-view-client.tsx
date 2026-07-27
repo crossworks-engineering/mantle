@@ -149,7 +149,7 @@ function PostRow({
     // Members see agent failures as a clean note (details stay owner-side).
     if (post.authorKind !== 'agent') return null;
     return (
-      <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+      <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive-ink">
         That post couldn&rsquo;t be answered. Ask again, or let the brain admin know.
       </div>
     );
@@ -820,7 +820,7 @@ export function TopicViewClient({
 
       <div className={`border-t border-border/60 ${COMPOSER_BAND_GRADIENT} px-6 py-4`}>
         <div className="mx-auto w-full max-w-3xl">
-          {sendError ? <p className="mb-2 text-sm text-destructive">{sendError}</p> : null}
+          {sendError ? <p className="mb-2 text-sm text-destructive-ink">{sendError}</p> : null}
           {topic.status === 'closed' ? (
             <p className="py-2 text-center text-sm text-muted-foreground">This topic is closed.</p>
           ) : (

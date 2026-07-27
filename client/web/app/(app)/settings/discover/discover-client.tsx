@@ -136,7 +136,7 @@ export function DiscoverClient() {
           <Loader2 className="size-4 animate-spin" aria-hidden /> Scanning your mailbox…
         </div>
       ) : scanQuery.isError ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive-ink">
           {scanQuery.error instanceof Error ? scanQuery.error.message : 'Scan failed.'}
         </div>
       ) : senders.length === 0 ? (

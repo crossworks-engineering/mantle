@@ -275,7 +275,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
           <DropdownMenuItem>Make a copy</DropdownMenuItem>
           <DropdownMenuItem>Favorite</DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem className="text-destructive focus:text-destructive">
+          <DropdownMenuItem className="text-destructive-ink focus:text-destructive-ink">
             Delete
           </DropdownMenuItem>
         </DropdownMenuContent>

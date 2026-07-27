@@ -322,7 +322,7 @@ export function FormulaEditor({
                 className="min-h-[60vh] font-mono text-xs"
               />
               {yamlError ? (
-                <p className="text-xs text-destructive">{yamlError}</p>
+                <p className="text-xs text-destructive-ink">{yamlError}</p>
               ) : (
                 <p className="text-[11px] text-muted-foreground">
                   Edits parse straight into the form. Comments are yours to keep here, but are not
@@ -972,7 +972,7 @@ export function FormulaEditor({
             {valid ? (
               <Check className="size-4 text-muted-foreground" />
             ) : (
-              <AlertTriangle className="size-4 text-destructive" />
+              <AlertTriangle className="size-4 text-destructive-ink" />
             )}
             <h3 className="text-sm font-semibold text-foreground">Validation</h3>
           </div>

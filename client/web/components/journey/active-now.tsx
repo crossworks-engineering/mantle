@@ -91,7 +91,7 @@ export function ActiveNow() {
         <div className="flex items-center gap-2">
           <AlertCircle
             className={
-              'size-4 ' + (failures.length > 0 ? 'text-destructive' : 'text-muted-foreground')
+              'size-4 ' + (failures.length > 0 ? 'text-destructive-ink' : 'text-muted-foreground')
             }
             aria-hidden
           />
@@ -112,7 +112,10 @@ export function ActiveNow() {
                   href={`/debug/journey/${it.traceId}`}
                   className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm transition-colors hover:bg-destructive/10"
                 >
-                  <ActionIcon iconKey={it.iconKey} className="size-3.5 shrink-0 text-destructive" />
+                  <ActionIcon
+                    iconKey={it.iconKey}
+                    className="size-3.5 shrink-0 text-destructive-ink"
+                  />
                   <span className="truncate">{it.label}</span>
                   {it.title && (
                     <span className="truncate text-xs text-muted-foreground">— {it.title}</span>

@@ -31,7 +31,7 @@ export type { TaskRow };
 const PRIORITY_BADGE: Record<Priority, string> = {
   low: 'bg-muted text-muted-foreground',
   normal: 'bg-muted text-foreground',
-  high: 'bg-destructive/15 text-destructive',
+  high: 'bg-destructive/15 text-destructive-ink',
 };
 
 /**
@@ -107,7 +107,7 @@ export function TaskDetail({
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-destructive hover:text-destructive"
+                className="text-destructive-ink hover:text-destructive-ink"
                 onClick={() => setDeleteOpen(true)}
               >
                 <Trash2 /> Delete
@@ -127,7 +127,9 @@ export function TaskDetail({
             <span className="text-muted-foreground">{done ? 'Done' : 'Open'}</span>
             {task.dueAt && (
               <span
-                className={cn(overdue ? 'font-medium text-destructive' : 'text-muted-foreground')}
+                className={cn(
+                  overdue ? 'font-medium text-destructive-ink' : 'text-muted-foreground',
+                )}
               >
                 · due {formatDateTime(task.dueAt)}
                 {overdue && ' · overdue'}

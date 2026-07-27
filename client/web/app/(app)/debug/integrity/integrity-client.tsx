@@ -58,9 +58,9 @@ const TYPE_LABELS: Record<string, string> = {
 function CheckPill({ check }: { check: CheckResult }) {
   const cls =
     check.status === 'pass'
-      ? 'bg-primary/10 text-primary border-primary/30'
+      ? 'bg-primary/10 text-primary-ink border-primary/30'
       : check.status === 'fail'
-        ? 'bg-destructive/10 text-destructive border-destructive/30'
+        ? 'bg-destructive/10 text-destructive-ink border-destructive/30'
         : 'bg-muted text-muted-foreground border-border';
   const glyph = check.status === 'pass' ? '✓' : check.status === 'fail' ? '✗' : 'i';
   return (
@@ -102,7 +102,7 @@ function CapabilitiesPanel({ caps }: { caps: Capabilities }) {
       {order.map((k) => {
         const c = caps[k];
         const cls = c.available
-          ? 'bg-primary/10 text-primary border-primary/30'
+          ? 'bg-primary/10 text-primary-ink border-primary/30'
           : 'bg-muted text-muted-foreground border-border';
         return (
           <span
@@ -126,9 +126,9 @@ const LANDED_STATE_STYLE: Record<LandedState, { label: string; cls: string }> = 
     label: 'INDEXING',
     cls: 'bg-muted text-muted-foreground border-border animate-pulse',
   },
-  ok: { label: 'OK', cls: 'bg-primary/10 text-primary border-primary/30' },
+  ok: { label: 'OK', cls: 'bg-primary/10 text-primary-ink border-primary/30' },
   skipped: { label: 'SKIPPED', cls: 'bg-muted text-muted-foreground border-border' },
-  fail: { label: 'FAIL', cls: 'bg-destructive/10 text-destructive border-destructive/30' },
+  fail: { label: 'FAIL', cls: 'bg-destructive/10 text-destructive-ink border-destructive/30' },
   stalled: { label: 'STALLED', cls: 'bg-muted text-foreground border-border' },
 };
 
@@ -195,7 +195,7 @@ function LandedRow({
               variant="ghost"
               size="sm"
               disabled={deleting}
-              className="shrink-0 text-muted-foreground hover:text-destructive"
+              className="shrink-0 text-muted-foreground hover:text-destructive-ink"
             >
               {deleting ? '…' : '⌫'}
             </Button>
@@ -436,7 +436,7 @@ function LiveView() {
 // ─── corpus audit (unchanged) ───────────────────────────────────────────────
 
 const SEVERITY_STYLE: Record<AuditSeverity, string> = {
-  high: 'bg-destructive/10 text-destructive border-destructive/30',
+  high: 'bg-destructive/10 text-destructive-ink border-destructive/30',
   medium: 'bg-muted text-foreground border-border',
   low: 'bg-muted text-muted-foreground border-border',
 };
@@ -455,9 +455,9 @@ function AuditRow({ check }: { check: AuditCheck }) {
   const [open, setOpen] = useState(false);
   const span = spanMeta(check);
   const countCls = check.ok
-    ? 'bg-primary/10 text-primary border-primary/30'
+    ? 'bg-primary/10 text-primary-ink border-primary/30'
     : check.severity === 'high'
-      ? 'bg-destructive/10 text-destructive border-destructive/30'
+      ? 'bg-destructive/10 text-destructive-ink border-destructive/30'
       : 'bg-muted text-foreground border-border';
   return (
     <li className="px-3 py-2.5">
@@ -479,7 +479,7 @@ function AuditRow({ check }: { check: AuditCheck }) {
         </span>
         {span && (
           <span
-            className={`rounded-sm border px-1.5 py-0.5 text-[11px] tabular-nums ${span.recent ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-muted text-muted-foreground'}`}
+            className={`rounded-sm border px-1.5 py-0.5 text-[11px] tabular-nums ${span.recent ? 'border-primary/40 bg-primary/10 text-primary-ink' : 'border-border bg-muted text-muted-foreground'}`}
             title={
               span.recent
                 ? 'Newest violation is recent — the live pipeline may still be producing these'
@@ -596,9 +596,9 @@ function AuditView() {
 function SystemRow({ check }: { check: SystemCheck }) {
   const [open, setOpen] = useState(false);
   const badgeCls = check.ok
-    ? 'bg-primary/10 text-primary border-primary/30'
+    ? 'bg-primary/10 text-primary-ink border-primary/30'
     : check.severity === 'high'
-      ? 'bg-destructive/10 text-destructive border-destructive/30'
+      ? 'bg-destructive/10 text-destructive-ink border-destructive/30'
       : 'bg-muted text-foreground border-border';
   const hasDetail = Boolean(check.detail) || (check.samples?.length ?? 0) > 0;
   return (

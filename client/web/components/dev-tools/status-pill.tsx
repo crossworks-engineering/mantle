@@ -9,7 +9,7 @@ export function StatusPill({ status, statusText }: { status: number; statusText:
         ? 'bg-chart-2/15 text-chart-2'
         : status < 500
           ? 'bg-chart-3/15 text-chart-3'
-          : 'bg-destructive/15 text-destructive';
+          : 'bg-destructive/15 text-destructive-ink';
   return (
     <span className={cn('rounded-md px-2 py-0.5 font-mono text-xs font-semibold', cls)}>
       {status === 0 ? 'ERR' : status} {statusText}

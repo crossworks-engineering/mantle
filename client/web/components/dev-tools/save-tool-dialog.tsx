@@ -326,7 +326,7 @@ export function SaveToolDialog({
                 </p>
               )}
               {bakedCredentials.length > 0 && (
-                <p className="text-[11px] text-destructive">
+                <p className="text-[11px] text-destructive-ink">
                   {bakedCredentials.join(', ')} carr{bakedCredentials.length === 1 ? 'ies' : 'y'} a
                   literal credential that will be stored in the tool. Use{' '}
                   <code className="font-mono">{'{{secret:service/label}}'}</code> instead so the

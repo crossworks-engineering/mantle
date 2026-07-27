@@ -176,11 +176,11 @@ export function UploadDock() {
         aria-label={collapsed ? 'Expand uploads' : 'Collapse uploads'}
       >
         {active ? (
-          <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
+          <Loader2 className="size-4 shrink-0 animate-spin text-primary-ink" aria-hidden />
         ) : failed > 0 ? (
-          <AlertCircle className="size-4 shrink-0 text-destructive" aria-hidden />
+          <AlertCircle className="size-4 shrink-0 text-destructive-ink" aria-hidden />
         ) : (
-          <CheckCircle2 className="size-4 shrink-0 text-primary" aria-hidden />
+          <CheckCircle2 className="size-4 shrink-0 text-primary-ink" aria-hidden />
         )}
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{heading}</span>
         <ChevronDown
@@ -204,11 +204,11 @@ export function UploadDock() {
           {tasks.map((t) => (
             <li key={t.id} className="flex items-center gap-2 px-3 py-1.5 text-xs">
               {t.status === 'uploading' ? (
-                <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" aria-hidden />
+                <Loader2 className="size-3.5 shrink-0 animate-spin text-primary-ink" aria-hidden />
               ) : t.status === 'done' ? (
-                <CheckCircle2 className="size-3.5 shrink-0 text-primary" aria-hidden />
+                <CheckCircle2 className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
               ) : t.status === 'error' ? (
-                <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
+                <AlertCircle className="size-3.5 shrink-0 text-destructive-ink" aria-hidden />
               ) : (
                 <UploadCloud className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
               )}
@@ -216,7 +216,7 @@ export function UploadDock() {
                 {t.name}
               </span>
               {t.status === 'error' && (
-                <span className="shrink-0 text-destructive" title={t.error}>
+                <span className="shrink-0 text-destructive-ink" title={t.error}>
                   failed
                 </span>
               )}

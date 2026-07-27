@@ -183,7 +183,7 @@ export function StructureEditor({
         <ChevronDown className="size-3.5" aria-hidden /> Structure
         {busy && <Loader2 className="size-3 animate-spin" aria-hidden />}
       </button>
-      {error && <p className="text-[13px] text-destructive">{error}</p>}
+      {error && <p className="text-[13px] text-destructive-ink">{error}</p>}
 
       <div className="flex flex-col gap-1">
         <p className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/80">
@@ -293,7 +293,7 @@ export function StructureEditor({
             <Button
               size="sm"
               variant="ghost"
-              className="self-start text-[13px] text-destructive hover:text-destructive"
+              className="self-start text-[13px] text-destructive-ink hover:text-destructive-ink"
               disabled={busy}
             >
               <RotateCcw className="size-3" /> Reset to default

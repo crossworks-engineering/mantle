@@ -359,7 +359,7 @@ function ActivityPost({ post }: { post: ForumMemberPost }) {
         ) : post.reply.status === 'pending' ? (
           <p className="text-xs italic text-muted-foreground">answering…</p>
         ) : post.reply.status === 'failed' ? (
-          <p className="text-xs text-destructive">
+          <p className="text-xs text-destructive-ink">
             Turn failed: {post.reply.error ?? 'unknown error'}
           </p>
         ) : (
@@ -433,7 +433,7 @@ function MemberRequestList({ requests }: { requests: TeamRequest[] }) {
                 'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs',
                 r.status === 'done'
                   ? 'bg-muted text-muted-foreground'
-                  : 'bg-primary/10 text-primary',
+                  : 'bg-primary/10 text-primary-ink',
               )}
             >
               {r.status === 'done' ? <CheckCircle2 className="size-3" /> : null}
@@ -477,7 +477,7 @@ function ChatArchive({ thread, count }: { thread: ArchiveMessage[]; count: numbe
           ) : (
             <div key={m.id} className="mr-auto w-full max-w-[85%] rounded-lg bg-muted/40 px-3 py-2">
               {m.status === 'failed' ? (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-destructive-ink">
                   Turn failed: {m.error ?? 'unknown error'}
                 </p>
               ) : (
@@ -825,7 +825,7 @@ function TopicsTab({ topic, q: query, page }: { topic?: string; q?: string; page
                         ) : null}
                       </div>
                       {p.status === 'failed' ? (
-                        <p className="text-sm text-destructive">
+                        <p className="text-sm text-destructive-ink">
                           Turn failed: {p.error ?? 'unknown error'}
                         </p>
                       ) : p.status === 'pending' ? (
@@ -949,7 +949,7 @@ function RequestsTab() {
                       'inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs',
                       r.status === 'done'
                         ? 'bg-muted text-muted-foreground'
-                        : 'bg-primary/10 text-primary',
+                        : 'bg-primary/10 text-primary-ink',
                     )}
                   >
                     {r.status === 'done' ? <CheckCircle2 className="size-3" /> : null}

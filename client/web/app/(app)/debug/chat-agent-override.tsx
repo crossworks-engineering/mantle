@@ -65,7 +65,7 @@ export function ChatAgentOverride({
           </option>
         ))}
       </select>
-      {error && <span className="text-[10px] text-destructive">{error}</span>}
+      {error && <span className="text-[10px] text-destructive-ink">{error}</span>}
     </div>
   );
 }

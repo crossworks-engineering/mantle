@@ -152,7 +152,7 @@ export function TelegramBotSection({ agentId }: { agentId: string }) {
             </span>
           )}
           {binding.lastPollError && (
-            <span className="truncate text-xs text-destructive" title={binding.lastPollError}>
+            <span className="truncate text-xs text-destructive-ink" title={binding.lastPollError}>
               {binding.lastPollError}
             </span>
           )}

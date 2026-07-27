@@ -345,7 +345,7 @@ export function TeamSection({
         {/* A later fetch failed (params changed, session hiccup) — the list
             below is the last successful load, say so instead of going silent. */}
         {failed && (
-          <p className="border-b border-border bg-destructive/5 px-3 py-1.5 text-xs text-destructive">
+          <p className="border-b border-border bg-destructive/5 px-3 py-1.5 text-xs text-destructive-ink">
             Couldn&rsquo;t refresh — showing the last loaded results.
           </p>
         )}

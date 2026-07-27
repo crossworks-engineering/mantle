@@ -535,7 +535,7 @@ function KeyDetail({
           type="button"
           variant="ghost"
           size="sm"
-          className="shrink-0 text-destructive hover:text-destructive"
+          className="shrink-0 text-destructive-ink hover:text-destructive-ink"
           onClick={onDelete}
         >
           <Trash2 /> Delete

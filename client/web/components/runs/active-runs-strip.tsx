@@ -52,7 +52,7 @@ function CancelActiveRun({ runId, onCancelled }: { runId: string; onCancelled: (
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+          className="h-7 px-2 text-xs text-destructive-ink hover:text-destructive-ink"
           disabled={busy}
         >
           Cancel
@@ -152,7 +152,7 @@ export function ActiveRunsStrip() {
             <div className="flex items-center gap-1">
               <Link
                 href={`/runs?run=${r.id}`}
-                className="text-xs text-primary underline-offset-2 hover:underline"
+                className="text-xs text-primary-ink underline-offset-2 hover:underline"
               >
                 Open
               </Link>

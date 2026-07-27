@@ -556,11 +556,11 @@ function RouteFields({
           </span>
         )}
         {probe && 'error' in probe && (
-          <span className="text-sm text-destructive">✗ {probe.error}</span>
+          <span className="text-sm text-destructive-ink">✗ {probe.error}</span>
         )}
       </div>
       {dimWarn && (
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive-ink">
           {dimWarn}
         </p>
       )}

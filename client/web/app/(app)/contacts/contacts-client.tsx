@@ -398,7 +398,7 @@ function ContactForm({ contact }: { contact: ContactRow }) {
           <Button
             variant="ghost"
             size="sm"
-            className="text-destructive hover:text-destructive"
+            className="text-destructive-ink hover:text-destructive-ink"
             onClick={() => setConfirmDelete(true)}
           >
             <Trash2 aria-hidden /> Delete

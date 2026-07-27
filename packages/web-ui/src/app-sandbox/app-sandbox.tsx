@@ -517,7 +517,7 @@ export function AppSandbox({
       )}
       {status === 'error' && (
         <div
-          className={`flex items-center justify-center p-6 text-center text-sm text-destructive ${isViewport ? 'h-full' : 'h-40'}`}
+          className={`flex items-center justify-center p-6 text-center text-sm text-destructive-ink ${isViewport ? 'h-full' : 'h-40'}`}
         >
           {isViewport ? 'Couldn’t load the app.' : 'Couldn’t load the app preview.'}
         </div>

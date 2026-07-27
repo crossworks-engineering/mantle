@@ -93,7 +93,7 @@ export function TableControls({ editor }: { editor: Editor }) {
   const btn =
     'fixed z-30 flex size-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground';
   const delBtn =
-    'fixed z-30 flex size-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-destructive/10 hover:text-destructive';
+    'fixed z-30 flex size-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-destructive/10 hover:text-destructive-ink';
 
   // Delete the current row/column; if that leaves the table with no content at
   // all, drop the whole table rather than stranding a blank grid.

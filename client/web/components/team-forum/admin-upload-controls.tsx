@@ -124,7 +124,12 @@ export function UploadReviewActions({
       </Button>
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="text-destructive" disabled={busy !== null}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive-ink"
+            disabled={busy !== null}
+          >
             {busy === 'dismiss' ? <Loader2 className="animate-spin" /> : <Trash2 />}
             Dismiss
           </Button>

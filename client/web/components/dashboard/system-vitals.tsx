@@ -160,7 +160,7 @@ function Pill({ ok, label, title }: { ok: boolean | null; label: string; title?:
       ? 'bg-muted text-muted-foreground'
       : ok
         ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-        : 'bg-destructive/15 text-destructive';
+        : 'bg-destructive/15 text-destructive-ink';
   return (
     <span
       className={cn(

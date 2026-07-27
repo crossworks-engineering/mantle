@@ -464,9 +464,9 @@ function Wizard({
                     {infra.map((c) => (
                       <div key={c.label} className="flex items-start gap-2 text-sm">
                         {c.ok ? (
-                          <Check className="mt-0.5 size-4 shrink-0 text-primary" />
+                          <Check className="mt-0.5 size-4 shrink-0 text-primary-ink" />
                         ) : (
-                          <X className="mt-0.5 size-4 shrink-0 text-destructive" />
+                          <X className="mt-0.5 size-4 shrink-0 text-destructive-ink" />
                         )}
                         <span>
                           <span className="font-medium">{c.label}</span>{' '}
@@ -475,7 +475,7 @@ function Wizard({
                       </div>
                     ))}
                     {infraDown && (
-                      <p className="pt-1 text-sm text-destructive">
+                      <p className="pt-1 text-sm text-destructive-ink">
                         Some services aren’t running — there’s no point continuing until the stack
                         is healthy. On the server, run <code>scripts/sanity.sh</code> (or{' '}
                         <code>docker compose ps</code>) to see what’s down, then Re-check.
@@ -619,7 +619,7 @@ function Wizard({
               )}
 
               {modelsSaved && (
-                <p className="flex items-center gap-2 text-sm text-primary">
+                <p className="flex items-center gap-2 text-sm text-primary-ink">
                   <Check className="size-4" /> Model choices saved — applied when your assistant is
                   set up.
                 </p>
@@ -757,7 +757,7 @@ function Wizard({
                 </Button>
                 {!saved.has(embProvider) && (
                   <a
-                    className="ml-auto flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+                    className="ml-auto flex items-center gap-1 text-xs text-primary-ink underline-offset-2 hover:underline"
                     href={
                       embProvider === 'openrouter'
                         ? 'https://openrouter.ai/keys'
@@ -775,7 +775,7 @@ function Wizard({
                 <p
                   className={
                     'flex items-center gap-2 text-sm ' +
-                    (embConfigured ? 'text-primary' : 'text-destructive')
+                    (embConfigured ? 'text-primary-ink' : 'text-destructive-ink')
                   }
                 >
                   {embConfigured ? <Check className="size-4" /> : <X className="size-4" />}
@@ -807,13 +807,13 @@ function Wizard({
                 <ul className="space-y-1.5">
                   {provision.createdAgent && (
                     <li className="flex items-center gap-2">
-                      <Check className="size-4 text-primary" /> Assistant “
+                      <Check className="size-4 text-primary-ink" /> Assistant “
                       {provision.createdAgent.name}” created
                     </li>
                   )}
                   {provision.createdWorkers.map((w) => (
                     <li key={w.kind} className="flex items-center gap-2">
-                      <Check className="size-4 text-primary" /> {w.name}{' '}
+                      <Check className="size-4 text-primary-ink" /> {w.name}{' '}
                       <span className="text-muted-foreground">
                         ({w.provider} · {w.model})
                       </span>
@@ -821,7 +821,7 @@ function Wizard({
                   ))}
                   {provision.seededSpecialists.length > 0 && (
                     <li className="flex items-center gap-2">
-                      <Check className="size-4 text-primary" /> Specialists wired up:{' '}
+                      <Check className="size-4 text-primary-ink" /> Specialists wired up:{' '}
                       <span className="text-muted-foreground">
                         {provision.seededSpecialists.join(' · ')}
                       </span>
@@ -860,9 +860,9 @@ function Wizard({
                 {sanity.map((c) => (
                   <div key={c.label} className="flex items-start gap-2 text-sm">
                     {c.ok ? (
-                      <Check className="mt-0.5 size-4 shrink-0 text-primary" />
+                      <Check className="mt-0.5 size-4 shrink-0 text-primary-ink" />
                     ) : (
-                      <X className="mt-0.5 size-4 shrink-0 text-destructive" />
+                      <X className="mt-0.5 size-4 shrink-0 text-destructive-ink" />
                     )}
                     <span>
                       <span className="font-medium">{c.label}</span>{' '}
@@ -1018,7 +1018,7 @@ function Wizard({
               <li>
                 In Telegram, message{' '}
                 <a
-                  className="text-primary underline-offset-2 hover:underline"
+                  className="text-primary-ink underline-offset-2 hover:underline"
                   href="https://t.me/BotFather"
                   target="_blank"
                   rel="noreferrer"
@@ -1198,7 +1198,7 @@ function Header({ index }: { index: number }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="font-logo text-3xl leading-none text-primary">mantle</span>
+        <span className="font-logo text-3xl leading-none text-primary-ink">mantle</span>
         <span className="text-xs text-muted-foreground">
           Step {index + 1} of {STEPS.length} · {STEPS[index]!.title}
         </span>
@@ -1302,7 +1302,7 @@ function KeyFields({
           </Button>
         )}
         <a
-          className="ml-auto flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+          className="ml-auto flex items-center gap-1 text-xs text-primary-ink underline-offset-2 hover:underline"
           href={link}
           target="_blank"
           rel="noreferrer"
@@ -1313,7 +1313,8 @@ function KeyFields({
       {result && (
         <p
           className={
-            'flex items-center gap-2 text-sm ' + (result.ok ? 'text-primary' : 'text-destructive')
+            'flex items-center gap-2 text-sm ' +
+            (result.ok ? 'text-primary-ink' : 'text-destructive-ink')
           }
         >
           {result.ok ? <Check className="size-4" /> : <X className="size-4" />}

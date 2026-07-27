@@ -105,7 +105,7 @@ const STATE_CLASS: Record<string, string> = {
   paused: 'text-chart-4',
   done: 'text-chart-2',
   completed: 'text-chart-2',
-  failed: 'text-destructive',
+  failed: 'text-destructive-ink',
   cancelled: 'text-muted-foreground line-through',
   superseded: 'text-muted-foreground line-through',
 };
@@ -149,7 +149,7 @@ function ItemNode({ item, depth }: { item: CompiledItem; depth: number }) {
           </span>
         )}
         {item.sideEffecting && (
-          <span className="rounded bg-destructive/10 px-1 text-xs text-destructive">
+          <span className="rounded bg-destructive/10 px-1 text-xs text-destructive-ink">
             side-effecting
           </span>
         )}
@@ -159,7 +159,7 @@ function ItemNode({ item, depth }: { item: CompiledItem; depth: number }) {
         {item.traceRef && (
           <a
             href={`/traces?selected=${item.traceRef}`}
-            className="text-xs text-primary hover:underline"
+            className="text-xs text-primary-ink hover:underline"
           >
             trace
           </a>
@@ -185,7 +185,7 @@ function CancelRunButton({ runId, onCancelled }: { runId: string; onCancelled: (
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="text-destructive" disabled={busy}>
+        <Button variant="ghost" size="sm" className="text-destructive-ink" disabled={busy}>
           Cancel run
         </Button>
       </AlertDialogTrigger>
@@ -234,7 +234,7 @@ function RunDetail({ runId }: { runId: string }) {
 
   if (detailQuery.isError) {
     return (
-      <p className="p-6 text-sm text-destructive">
+      <p className="p-6 text-sm text-destructive-ink">
         {detailQuery.error instanceof Error ? detailQuery.error.message : 'Could not load run.'}
       </p>
     );
@@ -332,7 +332,7 @@ export function RunsClient() {
 
   if (listQuery.isError) {
     return (
-      <p className="p-6 text-sm text-destructive">
+      <p className="p-6 text-sm text-destructive-ink">
         {listQuery.error instanceof Error ? listQuery.error.message : 'Could not load runs.'}
       </p>
     );

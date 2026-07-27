@@ -7,7 +7,7 @@ const METHOD_CLASSES: Record<HttpMethod, string> = {
   POST: 'text-chart-3',
   PUT: 'text-chart-1',
   PATCH: 'text-chart-4',
-  DELETE: 'text-destructive',
+  DELETE: 'text-destructive-ink',
 };
 
 export function MethodBadge({ method, className }: { method: HttpMethod; className?: string }) {

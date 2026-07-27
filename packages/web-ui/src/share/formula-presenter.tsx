@@ -200,7 +200,7 @@ export function FormulaPresenter({
                 </div>
                 <Equation latex={e.latex} expression={e.expression} />
                 {e.unverified ? (
-                  <p className="text-xs text-destructive">Unverified — {e.unverified}</p>
+                  <p className="text-xs text-destructive-ink">Unverified — {e.unverified}</p>
                 ) : null}
                 {e.note ? <p className="text-xs text-muted-foreground">{e.note}</p> : null}
               </div>

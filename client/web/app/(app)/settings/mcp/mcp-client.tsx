@@ -106,7 +106,7 @@ export function McpSettingsClient() {
     );
   }
   if (query.isError || !query.data) {
-    return <div className="p-6 text-sm text-destructive">Could not load MCP settings.</div>;
+    return <div className="p-6 text-sm text-destructive-ink">Could not load MCP settings.</div>;
   }
 
   const { enabled, connectorUrl, clients } = query.data;
@@ -170,7 +170,7 @@ export function McpSettingsClient() {
                   <span
                     className={cn(
                       'inline-flex items-center gap-1.5 text-sm',
-                      check.ok ? 'text-foreground' : 'text-destructive',
+                      check.ok ? 'text-foreground' : 'text-destructive-ink',
                     )}
                   >
                     {check.ok ? <Check className="size-4" /> : <TriangleAlert className="size-4" />}
@@ -220,7 +220,7 @@ export function McpSettingsClient() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-muted-foreground hover:text-destructive"
+                        className="text-muted-foreground hover:text-destructive-ink"
                         disabled={disconnecting === c.id}
                       >
                         {disconnecting === c.id ? <Loader2 className="animate-spin" /> : <Trash2 />}

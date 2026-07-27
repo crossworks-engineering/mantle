@@ -1,7 +1,7 @@
 import { RuleTester } from 'eslint';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — plain-JS rule module, no types shipped.
-import { findMismatches, rule } from './pair-fill-foreground.mjs';
+import { findMismatches, rule, inkRule } from './pair-fill-foreground.mjs';
 
 /**
  * The rule's whole value is its PRECISION. A pairing rule that fires on the
@@ -64,6 +64,34 @@ describe('findMismatches', () => {
 
   it("catches one fill wearing another fill's foreground", () => {
     expect(flags('bg-primary text-card-foreground')).toEqual(['primary/card-foreground']);
+  });
+});
+
+describe('use-ink-for-text', () => {
+  it('rejects the fill used as text, accepts the ink token', () => {
+    const ruleTester = new RuleTester({
+      languageOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        parserOptions: { ecmaFeatures: { jsx: true } },
+      },
+    });
+    ruleTester.run('use-ink-for-text', inkRule, {
+      valid: [
+        // The ink token — contrast-guaranteed on every surface.
+        { code: '<p className="text-primary-ink" />' },
+        { code: '<p className="text-destructive-ink" />' },
+        // The FILL pairing was never the problem and must keep working.
+        { code: '<button className="bg-primary text-primary-foreground" />' },
+        { code: '<span className="border-destructive bg-destructive/10" />' },
+      ],
+      invalid: [
+        { code: '<p className="text-primary" />', errors: [{ messageId: 'useInk' }] },
+        { code: '<p className="hover:text-destructive" />', errors: [{ messageId: 'useInk' }] },
+        { code: '<p className="text-destructive/70" />', errors: [{ messageId: 'useInk' }] },
+        { code: 'cn("text-primary")', errors: [{ messageId: 'useInk' }] },
+      ],
+    });
   });
 });
 

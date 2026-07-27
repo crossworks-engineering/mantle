@@ -71,7 +71,7 @@ export function DrivesList({ accountId }: { accountId: string }) {
           <Spinner />
         </div>
       ) : drivesQuery.isError ? (
-        <p className="px-1 py-3 text-xs text-destructive">
+        <p className="px-1 py-3 text-xs text-destructive-ink">
           {drivesQuery.error instanceof Error
             ? drivesQuery.error.message
             : 'Failed to load drives.'}

@@ -161,7 +161,7 @@ export function DriveScopeDialog({
               <Spinner />
             </div>
           ) : childrenQuery.isError ? (
-            <p className="p-4 text-sm text-destructive">
+            <p className="p-4 text-sm text-destructive-ink">
               {childrenQuery.error instanceof Error
                 ? childrenQuery.error.message
                 : 'Failed to list the folder.'}

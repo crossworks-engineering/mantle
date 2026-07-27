@@ -689,7 +689,7 @@ export function WorkerForm({
                 </p>
               )}
               {discovery.filtered && discovery.available.length === 0 && (
-                <p className="text-xs text-destructive">
+                <p className="text-xs text-destructive-ink">
                   This key doesn't have access to any {kind === 'tts' ? 'TTS' : 'transcription'}{' '}
                   models. Check the key's project at platform.openai.com.
                 </p>
@@ -997,7 +997,7 @@ export function WorkerForm({
 
       {/* ── Footer ──────────────────────────────────────────────── */}
       {error && (
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive-ink">
           {error}
         </p>
       )}
@@ -1198,7 +1198,7 @@ function KeyValidityHint({
 
   if (discovery.filtered && discovery.available.length === 0) {
     return (
-      <p className="text-xs text-destructive">
+      <p className="text-xs text-destructive-ink">
         ⚠ This key has no access to any <code>{capability}</code> models. Check the key's
         scope/project at the provider.
       </p>
@@ -1945,7 +1945,7 @@ function EmbeddingFields({
         <dd className="flex items-center gap-2">
           <span className="font-mono tabular-nums">
             {dim !== null ? (
-              <span className={mismatched ? 'text-destructive' : 'text-foreground'}>{dim}</span>
+              <span className={mismatched ? 'text-destructive-ink' : 'text-foreground'}>{dim}</span>
             ) : slug ? (
               <span className="text-muted-foreground">untested</span>
             ) : (
@@ -1992,13 +1992,13 @@ function EmbeddingFields({
         </p>
       )}
       {mismatched && (
-        <div className="space-y-1 rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+        <div className="space-y-1 rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive-ink">
           <p>
             <strong>Dimension mismatch.</strong> This model emits {dim}-dim vectors; the brain's
             column is {COLUMN_DIMS}. Save is blocked — switching would crash ingest on the first
             call.
           </p>
-          <p className="text-destructive/80">
+          <p className="text-destructive-ink/80">
             To use a non-{COLUMN_DIMS}-dim model you'd need a schema migration on every{' '}
             <code className="font-mono">vector({COLUMN_DIMS})</code> column (nodes, entities, facts,
             content_chunks) plus a full re-embed. Not a button — drop into{' '}
@@ -2057,7 +2057,7 @@ function EmbeddingFields({
         </p>
       )}
       {lastRebuild && !lastRebuild.ok && (
-        <p className="text-xs text-destructive">Rebuild failed: {lastRebuild.error}</p>
+        <p className="text-xs text-destructive-ink">Rebuild failed: {lastRebuild.error}</p>
       )}
     </div>
   );

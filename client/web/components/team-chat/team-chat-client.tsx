@@ -137,7 +137,7 @@ function PromptCard({ message }: { message: TeamMessage }) {
 function ThinkingBubble({ label }: { label: string | null }) {
   return (
     // Soft primary tint with INHERITED foreground for the dots/label — never
-    // text-primary over a primary tint (unpaired fill: light-primary themes
+    // text-primary-ink over a primary tint (unpaired fill: light-primary themes
     // would wash the dots out; see apps/web/CLAUDE.md §2 and the assistant's
     // accent-soft bubble, which also renders content in currentColor).
     <div className="inline-flex items-center gap-2 rounded-2xl bg-primary/10 px-3.5 py-3 text-foreground">
@@ -514,7 +514,7 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
                           )
                         ) : turn.response ? (
                           turn.response.status === 'failed' ? (
-                            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive-ink">
                               <span>
                                 That message couldn&rsquo;t be answered. Try again, or let the brain
                                 admin know.
@@ -594,7 +594,7 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
       {archive ? null : (
         <div className={`border-t border-border/60 ${COMPOSER_BAND_GRADIENT} px-6 py-4`}>
           <div className="mx-auto w-full max-w-5xl">
-            {sendError ? <p className="mb-2 text-sm text-destructive">{sendError}</p> : null}
+            {sendError ? <p className="mb-2 text-sm text-destructive-ink">{sendError}</p> : null}
             {file ? (
               <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
                 <Paperclip className="size-4" />

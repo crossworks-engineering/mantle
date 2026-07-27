@@ -121,7 +121,9 @@ export function ToolValidationClient() {
                     <td className="px-3 py-2 text-right tabular-nums">{t.withUnknownKeys}</td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {t.withViolations > 0 ? (
-                        <span className="font-semibold text-destructive">{t.withViolations}</span>
+                        <span className="font-semibold text-destructive-ink">
+                          {t.withViolations}
+                        </span>
                       ) : (
                         t.withViolations
                       )}
@@ -183,7 +185,7 @@ export function ToolValidationClient() {
                 {(e.violations.length > 0 || e.unknownKeys.length > 0 || e.repairs.length > 0) && (
                   <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                     {e.violations.map((v, i) => (
-                      <p key={`v${i}`} className="text-destructive">
+                      <p key={`v${i}`} className="text-destructive-ink">
                         {v}
                       </p>
                     ))}

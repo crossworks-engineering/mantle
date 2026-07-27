@@ -72,7 +72,7 @@ export function ResponseViewer() {
 
       {response.networkError ? (
         <div className="p-3">
-          <p className="rounded-md bg-destructive/10 p-3 font-mono text-xs text-destructive">
+          <p className="rounded-md bg-destructive/10 p-3 font-mono text-xs text-destructive-ink">
             {response.networkError}
           </p>
         </div>

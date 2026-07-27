@@ -45,7 +45,7 @@ function DiffView({ from, to }: { from: string; to: string }) {
             l.type === 'add'
               ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
               : l.type === 'del'
-                ? 'bg-destructive/10 text-destructive'
+                ? 'bg-destructive/10 text-destructive-ink'
                 : 'text-muted-foreground'
           }
         >
@@ -141,7 +141,7 @@ export function ProseEditor({
           placeholder="What changed / why? (optional note)"
           className="text-sm"
         />
-        {error && <p className="text-[13px] text-destructive">{error}</p>}
+        {error && <p className="text-[13px] text-destructive-ink">{error}</p>}
         <div className="flex gap-2">
           <Button size="sm" onClick={save} disabled={busy}>
             <Save /> Save version
@@ -183,7 +183,7 @@ export function ProseEditor({
             <X /> Close
           </Button>
         </div>
-        {error && <p className="text-[13px] text-destructive">{error}</p>}
+        {error && <p className="text-[13px] text-destructive-ink">{error}</p>}
         {versions === null ? (
           <p className="text-[13px] text-muted-foreground">Loading…</p>
         ) : versions.length === 0 ? (

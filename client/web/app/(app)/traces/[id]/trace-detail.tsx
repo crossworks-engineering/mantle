@@ -150,7 +150,7 @@ function StepNodeLabel({ step }: { step: TraceStepSummary }) {
           <span
             className={
               step.status === 'error'
-                ? 'text-destructive'
+                ? 'text-destructive-ink'
                 : step.status === 'skipped'
                   ? 'text-muted-foreground/70'
                   : 'text-amber-700 dark:text-amber-300'
@@ -223,7 +223,7 @@ function StepPanel({ step }: { step: TraceStepSummary }) {
       {childTraceId && (
         <Link
           href={`/traces/${childTraceId}`}
-          className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"
+          className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-1.5 text-xs font-medium text-primary-ink hover:bg-primary/10"
         >
           ↳ Open delegated agent trace (trace#{childTraceId.slice(0, 8)}) →
         </Link>
@@ -231,7 +231,7 @@ function StepPanel({ step }: { step: TraceStepSummary }) {
 
       {step.error && (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs">
-          <div className="text-[10px] uppercase tracking-wider text-destructive">error</div>
+          <div className="text-[10px] uppercase tracking-wider text-destructive-ink">error</div>
           <pre className="mt-1 whitespace-pre-wrap font-mono text-xs">{step.error}</pre>
         </div>
       )}

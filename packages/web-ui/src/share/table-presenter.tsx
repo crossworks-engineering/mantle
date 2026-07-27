@@ -208,7 +208,7 @@ function Cell({ value, type }: { value: CellValue; type: string }) {
         href={href}
         target="_blank"
         rel="noreferrer"
-        className="text-primary underline underline-offset-2"
+        className="text-primary-ink underline underline-offset-2"
       >
         {value}
       </a>

@@ -271,11 +271,11 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
 
       {/* Error from either intent. */}
       {!pending && submit.isError && (
-        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-ink">
           <X className="mt-0.5 size-4 shrink-0" aria-hidden />
           <div>
             <p className="font-medium">{lastIntent === 'test' ? 'Test failed' : 'Save failed'}</p>
-            <p className="text-destructive/90">
+            <p className="text-destructive-ink/90">
               {submit.error instanceof Error ? submit.error.message : String(submit.error)}
             </p>
           </div>

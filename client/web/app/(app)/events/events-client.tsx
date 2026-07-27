@@ -190,7 +190,7 @@ export function EventsClient() {
           <span
             className={cn(
               'ml-auto shrink-0 text-xs tabular-nums',
-              live ? 'font-medium text-primary' : 'text-muted-foreground',
+              live ? 'font-medium text-primary-ink' : 'text-muted-foreground',
             )}
           >
             {now ? (live ? 'now' : formatRelativeShort(e.startsAt, now)) : ''}
@@ -317,7 +317,7 @@ export function EventsClient() {
           // detail/form doesn't sprawl across wide screens.
           <div className="mx-auto max-w-2xl space-y-4 p-6">
             <div className="flex items-center gap-2">
-              <CalendarClock className="size-5 text-primary" aria-hidden />
+              <CalendarClock className="size-5 text-primary-ink" aria-hidden />
               <h2 className="text-lg font-semibold">New event</h2>
             </div>
             <p className="text-xs text-muted-foreground">

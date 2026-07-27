@@ -92,7 +92,7 @@ export function FooterBar({
           wordmark font or site name. Shown with the sidebar (md+). */}
       <div className="mx-1 hidden h-5 w-px bg-border md:block" aria-hidden />
       <span
-        className="hidden select-none px-0.5 text-xl leading-none text-primary md:inline-block"
+        className="hidden select-none px-0.5 text-xl leading-none text-primary-ink md:inline-block"
         style={{ fontFamily: 'var(--font-logo)' }}
       >
         mantle

@@ -159,7 +159,7 @@ export function QuestionnaireCard({
       {/* A bounced decision (settle-revert): the previous answer did NOT take
           effect and must be re-made. Loud + first so it can't be missed. */}
       {row.error && (
-        <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+        <p className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive-ink">
           <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
           <span>
             <strong className="font-semibold">Previous decision bounced — decide again.</strong>{' '}
@@ -169,7 +169,7 @@ export function QuestionnaireCard({
       )}
 
       <div className="flex items-start gap-2">
-        <Icon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+        <Icon className="mt-0.5 size-4 shrink-0 text-primary-ink" aria-hidden />
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-sm font-medium leading-snug text-foreground">
             {question ?? (isBudget ? 'A run is paused on its budget.' : 'A run needs an answer.')}

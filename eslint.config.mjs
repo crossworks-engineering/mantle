@@ -105,7 +105,7 @@ export default tseslint.config(
       'packages/web-ui/**/*.{ts,tsx}',
     ],
     plugins: { mantle: mantlePlugin },
-    rules: { 'mantle/pair-fill-foreground': 'error' },
+    rules: { 'mantle/pair-fill-foreground': 'error', 'mantle/use-ink-for-text': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

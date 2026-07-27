@@ -253,7 +253,7 @@ export function EventDetail({
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-destructive hover:text-destructive"
+                className="text-destructive-ink hover:text-destructive-ink"
                 onClick={() => setDeleteOpen(true)}
               >
                 <Trash2 /> Delete

@@ -1114,7 +1114,7 @@ export function AssistantClient({
                           {turn.response ? (
                             turn.response.status === 'failed' ? (
                               // Durable failed turn (reloaded after an error).
-                              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive-ink">
                                 <span>{turn.response.error || 'This turn failed.'}</span>
                               </div>
                             ) : turn.response.status === 'pending' ? (
@@ -1177,7 +1177,7 @@ export function AssistantClient({
                                       // ledger says some calls failed, and the reply may not
                                       // admit it. Tooltip lists the failed slugs + errors.
                                       <p
-                                        className="mt-1.5 text-[10px] text-destructive"
+                                        className="mt-1.5 text-[10px] text-destructive-ink"
                                         title={turn.response.toolStats.failures
                                           .map((f) => `${f.slug}: ${f.error}`)
                                           .join('\n')}
@@ -1378,7 +1378,7 @@ export function AssistantClient({
                       }
                     >
                       {pinned ? (
-                        <MapPin className="size-3.5 shrink-0 text-primary" aria-hidden />
+                        <MapPin className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
                       ) : (
                         <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                       )}
@@ -1404,7 +1404,7 @@ export function AssistantClient({
                     }
                     title={`Focused ${surfaceSelection.noun} — the assistant will work on exactly what you marked`}
                   >
-                    <Highlighter className="size-3.5 shrink-0 text-primary" aria-hidden />
+                    <Highlighter className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
                     <span className="truncate font-medium">{s.label}</span>
                     {surfaceSelection.onRemove && (
                       <button
@@ -1565,7 +1565,7 @@ export function AssistantClient({
                 </button>
               )}
             </div>
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && <p className="text-xs text-destructive-ink">{error}</p>}
           </div>
         </div>
       </form>

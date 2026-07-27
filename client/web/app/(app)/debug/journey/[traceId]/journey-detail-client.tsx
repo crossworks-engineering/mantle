@@ -107,7 +107,7 @@ export function JourneyDetailClient({ traceId }: { traceId: string }) {
             <span
               className={
                 j.status === 'error'
-                  ? 'font-medium text-destructive'
+                  ? 'font-medium text-destructive-ink'
                   : j.status === 'running'
                     ? 'font-medium text-amber-600 dark:text-amber-400'
                     : 'font-medium text-emerald-600 dark:text-emerald-400'
@@ -125,7 +125,7 @@ export function JourneyDetailClient({ traceId }: { traceId: string }) {
             )}
           </p>
           {j.error && (
-            <p className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+            <p className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive-ink">
               {j.error}
             </p>
           )}
@@ -173,13 +173,13 @@ export function JourneyDetailClient({ traceId }: { traceId: string }) {
                       {formatDuration(s.durationMs)}
                     </span>
                     {s.status === 'error' && (
-                      <span className="text-[11px] font-medium text-destructive">failed</span>
+                      <span className="text-[11px] font-medium text-destructive-ink">failed</span>
                     )}
                     {s.status === 'skipped' && (
                       <span className="text-[11px] text-muted-foreground">skipped</span>
                     )}
                   </div>
-                  {s.error && <p className="mt-1 text-xs text-destructive">{s.error}</p>}
+                  {s.error && <p className="mt-1 text-xs text-destructive-ink">{s.error}</p>}
                   {(out || meta) && (
                     <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
                       {JSON.stringify(out ?? meta)}

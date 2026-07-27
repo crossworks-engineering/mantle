@@ -254,7 +254,7 @@ export function OverviewClient() {
           <ul className="divide-y divide-border rounded-md border border-border">
             {errors7d.map((e) => (
               <li key={e.message} className="flex items-baseline gap-3 px-3 py-2 text-sm">
-                <span className="rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                <span className="rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive-ink">
                   ×{e.count}
                 </span>
                 <span className="flex-1 truncate">{e.message}</span>
@@ -284,7 +284,7 @@ export function OverviewClient() {
                 </span>
                 <Link
                   href={`/traces/${f.id}`}
-                  className="flex-1 truncate text-destructive hover:underline"
+                  className="flex-1 truncate text-destructive-ink hover:underline"
                 >
                   {f.error.slice(0, 120)}
                 </Link>

@@ -19,7 +19,7 @@ function rel(iso: string | null): string {
 
 function syncTone(status: string): string {
   if (status === 'ok') return 'text-emerald-600 dark:text-emerald-400';
-  if (status === 'error') return 'text-destructive';
+  if (status === 'error') return 'text-destructive-ink';
   if (status === 'running') return 'text-blue-600 dark:text-blue-400';
   return 'text-muted-foreground';
 }
@@ -47,7 +47,7 @@ export function OpsPanels({
           </CardTitle>
           <Link
             href="/settings/accounts"
-            className="text-xs text-primary underline-offset-2 hover:underline"
+            className="text-xs text-primary-ink underline-offset-2 hover:underline"
           >
             Accounts
           </Link>
@@ -121,7 +121,7 @@ export function OpsPanels({
           </CardTitle>
           <Link
             href="/settings/heartbeats"
-            className="text-xs text-primary underline-offset-2 hover:underline"
+            className="text-xs text-primary-ink underline-offset-2 hover:underline"
           >
             Manage
           </Link>
@@ -159,7 +159,10 @@ export function OpsPanels({
           <CardTitle className="flex items-center gap-1.5 text-base">
             <AlertTriangle className="size-4 text-muted-foreground" aria-hidden /> Recent failures
           </CardTitle>
-          <Link href="/debug" className="text-xs text-primary underline-offset-2 hover:underline">
+          <Link
+            href="/debug"
+            className="text-xs text-primary-ink underline-offset-2 hover:underline"
+          >
             Debug
           </Link>
         </CardHeader>
@@ -177,7 +180,7 @@ export function OpsPanels({
                   >
                     {e.message}
                   </Link>
-                  <Badge variant="outline" className="shrink-0 text-destructive">
+                  <Badge variant="outline" className="shrink-0 text-destructive-ink">
                     ×{e.count}
                   </Badge>
                 </li>

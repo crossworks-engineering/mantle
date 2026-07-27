@@ -318,7 +318,7 @@ export function ToolsClient() {
               Loading tools…
             </div>
           ) : toolsQuery.isError ? (
-            <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive">
+            <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-6 text-center text-sm text-destructive-ink">
               <p>Couldn’t load tools: {toolsQuery.error.message}</p>
               <Button
                 type="button"
@@ -475,7 +475,7 @@ export function ToolsClient() {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="text-destructive hover:text-destructive"
+                    className="text-destructive-ink hover:text-destructive-ink"
                     onClick={() => setDeleteTarget(editing.tool)}
                   >
                     <Trash2 /> Delete
@@ -777,7 +777,7 @@ function ToolCard({
         )}
         {tool.requiresConfirm && (
           <span
-            className="shrink-0 rounded-sm bg-destructive/15 px-1 text-[10px] uppercase tracking-wider text-destructive"
+            className="shrink-0 rounded-sm bg-destructive/15 px-1 text-[10px] uppercase tracking-wider text-destructive-ink"
             title="Requires operator confirm"
           >
             confirm

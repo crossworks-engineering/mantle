@@ -378,7 +378,7 @@ export function TablesShell() {
                       e.stopPropagation();
                       setDeleteTarget(t);
                     }}
-                    className="shrink-0 self-center p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    className="shrink-0 self-center p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive-ink group-hover:opacity-100"
                     aria-label={`Delete ${t.title}`}
                     title="Delete table"
                   >

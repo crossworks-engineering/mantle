@@ -213,7 +213,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
                   />
                 ) : (
                   <span
-                    className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary dark:hidden"
+                    className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary-ink dark:hidden"
                     style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
                   >
                     {data.siteName || 'mantle'}
@@ -232,7 +232,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
               /* Script/display faces overshoot the em box — clip only the WIDTH
                  and let the height overflow, same as the owner header. */
               <span
-                className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary"
+                className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary-ink"
                 style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
               >
                 {data.siteName || 'mantle'}

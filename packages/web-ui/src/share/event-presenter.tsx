@@ -19,7 +19,7 @@ export function EventPresenter({ view }: { view: EventView }) {
     <div className="mx-auto max-w-2xl px-6 py-12 md:py-16">
       <div className="rounded-xl border border-border bg-card p-6">
         <div className="flex items-start gap-3">
-          <CalendarDays className="mt-1 size-6 shrink-0 text-primary" aria-hidden />
+          <CalendarDays className="mt-1 size-6 shrink-0 text-primary-ink" aria-hidden />
           <h1 className="text-2xl font-bold tracking-tight text-balance">{view.title}</h1>
         </div>
 

@@ -272,7 +272,7 @@ function SupersededBadge({
         e.stopPropagation();
         go(`/n/${succ.id}`);
       }}
-      className="shrink-0 rounded border border-destructive/40 px-1.5 py-0.5 text-[10px] text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground"
+      className="shrink-0 rounded border border-destructive/40 px-1.5 py-0.5 text-[10px] text-destructive-ink transition-colors hover:bg-destructive hover:text-destructive-foreground"
     >
       Superseded
     </button>

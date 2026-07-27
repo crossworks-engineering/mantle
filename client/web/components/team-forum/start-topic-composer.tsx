@@ -86,7 +86,7 @@ export function StartTopicComposer() {
           brain&rsquo;s shared knowledge.
         </p>
       )}
-      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+      {error && <p className="mt-2 text-sm text-destructive-ink">{error}</p>}
     </div>
   );
 }

@@ -232,7 +232,7 @@ function UserDetail({
             type="button"
             size="icon"
             variant="ghost"
-            className="shrink-0 text-muted-foreground hover:text-destructive"
+            className="shrink-0 text-muted-foreground hover:text-destructive-ink"
             onClick={onRequestDelete}
             aria-label="Delete user"
           >

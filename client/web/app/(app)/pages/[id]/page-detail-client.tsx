@@ -838,7 +838,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
             <Button
               size="sm"
               variant="ghost"
-              className="text-muted-foreground hover:text-destructive"
+              className="text-muted-foreground hover:text-destructive-ink"
               onClick={() => void revertDraft()}
               disabled={reverting}
               title="Revert the entire draft to the last commit (Pages' edits and any unsaved typing)"
@@ -860,7 +860,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
           <Button
             size="sm"
             variant="ghost"
-            className="text-muted-foreground hover:text-destructive"
+            className="text-muted-foreground hover:text-destructive-ink"
             onClick={() => setDeleteOpen(true)}
             title="Delete page"
           >
@@ -949,7 +949,10 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
                 />
                 {aiPending && (
                   <div className="mt-3 flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm shadow-sm">
-                    <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
+                    <Loader2
+                      className="size-4 shrink-0 animate-spin text-primary-ink"
+                      aria-hidden
+                    />
                     <span className="font-medium text-foreground">Pages is editing your page…</span>
                     <span className="text-muted-foreground">— your changes are safe</span>
                   </div>

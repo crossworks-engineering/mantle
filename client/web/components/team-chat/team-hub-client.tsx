@@ -388,7 +388,7 @@ export function TeamHubShell() {
                   >
                     <f.icon className="size-4.5" aria-hidden />
                   </span>
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary-ink">
                     New
                   </span>
                 </div>
@@ -464,7 +464,7 @@ export function TeamHubShell() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5">
-                      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary-ink">
                         <AppWindow className="size-4" aria-hidden />
                       </span>
                       <h3 className="font-medium">{a.title}</h3>

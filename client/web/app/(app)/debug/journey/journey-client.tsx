@@ -26,7 +26,7 @@ const CATEGORY_DOT: Record<ActionCategory, string> = {
 
 function statusPill(status: string): string {
   if (status === 'success') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
-  if (status === 'error') return 'bg-destructive/15 text-destructive';
+  if (status === 'error') return 'bg-destructive/15 text-destructive-ink';
   if (status === 'running') return 'bg-amber-500/15 text-amber-700 dark:text-amber-300';
   return 'bg-muted text-muted-foreground';
 }

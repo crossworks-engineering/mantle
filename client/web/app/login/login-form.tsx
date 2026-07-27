@@ -130,7 +130,7 @@ export function LoginForm({
           onChange={(e) => setPassword(e.target.value)}
         />
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive-ink">{error}</p>}
       <SubmitButton pending={busy} className="w-full">
         {isSignup ? 'Create login' : 'Sign in'}
       </SubmitButton>

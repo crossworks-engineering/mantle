@@ -326,7 +326,7 @@ export function TasksClient() {
                         <span
                           className={cn(
                             'ml-auto shrink-0 text-xs tabular-nums',
-                            overdue ? 'font-medium text-destructive' : 'text-muted-foreground',
+                            overdue ? 'font-medium text-destructive-ink' : 'text-muted-foreground',
                           )}
                         >
                           {dueLabel(t.dueAt)}
@@ -370,7 +370,7 @@ export function TasksClient() {
         {sel?.mode === 'create' ? (
           <div className="space-y-4 p-6">
             <div className="flex items-center gap-2">
-              <ListTodo className="size-5 text-primary" aria-hidden />
+              <ListTodo className="size-5 text-primary-ink" aria-hidden />
               <h2 className="text-lg font-semibold">New task</h2>
             </div>
             <TaskForm

@@ -36,7 +36,11 @@ export function DisconnectButton({ accountId, upn }: { accountId: string; upn: s
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-destructive-ink"
+        >
           <Trash2 /> Disconnect
         </Button>
       </AlertDialogTrigger>

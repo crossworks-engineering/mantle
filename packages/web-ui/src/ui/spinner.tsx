@@ -3,7 +3,7 @@ import { cn } from '../lib/utils';
 /**
  * Mantle spinner — a smooth indeterminate arc that both rotates and breathes
  * (the dash grows/shrinks), so it reads as alive rather than a flat rotating
- * ring. Themed via `currentColor` (defaults to `text-primary`); honours
+ * ring. Themed via `currentColor` (defaults to `text-primary-ink`); honours
  * `prefers-reduced-motion`. The keyframes live in globals.css (`mantle-spin*`).
  *
  * Use for any indeterminate wait — list loads (TanStack Query `isPending`),
@@ -19,7 +19,11 @@ export function Spinner({
   label?: string;
 }) {
   return (
-    <span role="status" aria-label={label} className={cn('inline-flex text-primary', className)}>
+    <span
+      role="status"
+      aria-label={label}
+      className={cn('inline-flex text-primary-ink', className)}
+    >
       <svg
         className="mantle-spinner"
         width={size}

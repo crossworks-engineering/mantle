@@ -104,7 +104,7 @@ export function FontPicker({
                   {f.label}
                 </span>
               </span>
-              {active && <Check className="size-4 shrink-0 text-primary" aria-hidden />}
+              {active && <Check className="size-4 shrink-0 text-primary-ink" aria-hidden />}
             </button>
           );
         })}
