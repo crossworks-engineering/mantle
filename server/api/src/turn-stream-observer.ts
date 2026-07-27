@@ -136,17 +136,27 @@ export function installTurnStreamObserver(): void {
 
     const stepId = String(e.seq); // unique per step-start within a turn
 
+    // A delegated child's steps stream into the SAME turn (inherited turnId)
+    // and carry the specialist's display name — prefix them so the trail reads
+    // "Pages · Editing the page…" instead of an anonymous line
+    // indistinguishable from the responder's own work. The root turn's steps
+    // have no label and stay bare.
+    const attributed = (label: string) => (e.agentLabel ? `${e.agentLabel} · ${label}` : label);
+
     // 1) Grounded line, published INSTANTLY so the trail never waits on the LLM.
     //    publishTurnEvent never throws (a dropped status is cosmetic).
-    void publishTurnEvent(e.ownerId, statusEvent(e, stage.label, stage, stepId));
+    void publishTurnEvent(e.ownerId, statusEvent(e, attributed(stage.label), stage, stepId));
 
     // 2) Narrated upgrade — Step 2. Only for tool actions (skip 'thinking' to
     //    save spend), strictly OFF the critical path (not awaited), gated by the
     //    narration flag. On success it replaces line `stepId` in the trail; on
-    //    failure the grounded line simply stays.
+    //    failure the grounded line simply stays. Narration sees the BARE label
+    //    (the prefix is attribution, not content) and the prefix is re-applied
+    //    to its output, so the speaker can't be paraphrased away.
     if (isTurnNarrationEnabled() && stage.kind !== 'thinking') {
       void narrateStatus(e.ownerId, stage.label).then((narrated) => {
-        if (narrated) void publishTurnEvent(e.ownerId, statusEvent(e, narrated, stage, stepId));
+        if (narrated)
+          void publishTurnEvent(e.ownerId, statusEvent(e, attributed(narrated), stage, stepId));
       });
     }
   });

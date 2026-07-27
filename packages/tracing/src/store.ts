@@ -43,6 +43,10 @@ export type StartTraceInit = {
   subjectId?: string;
   subjectKind?: string;
   agentId?: string | null;
+  /** Display name stamped onto this trace's live step events ("Pages"), so a
+   *  delegated child's status lines carry WHO is working. Streamed turns only;
+   *  omit for the root turn — the responder's own steps stay unprefixed. */
+  streamLabel?: string;
   data?: Record<string, unknown>;
 };
 
@@ -76,6 +80,10 @@ export type StepObserverEvent = {
   ok: boolean;
   /** The step's input args — carried on `start` only, for label enrichment. */
   input?: Record<string, unknown>;
+  /** Display name of the DELEGATED agent this step belongs to ("Pages"), when
+   *  the step ran inside a child trace opened with a `streamLabel`. Absent for
+   *  the root turn's own steps — the consumer prefixes only labelled ones. */
+  agentLabel?: string;
 };
 
 export type StepObserver = (e: StepObserverEvent) => void;
@@ -99,6 +107,9 @@ export type TraceContext = {
    *  stream is gated to the root so a sub-agent's output never pollutes the
    *  visible reply — children still surface their STATUS in the trail. */
   readonly isStreamRoot: boolean;
+  /** Who this trace's streamed steps should be attributed to (the delegated
+   *  agent's display name), or null for the root turn's own steps. */
+  readonly streamLabel: string | null;
   startedAtMs: number;
   ordinalCounter: number; // next root-step ordinal
   childOrdinals: Map<string, number>; // parent step id -> next child ordinal
@@ -251,6 +262,7 @@ function notifyStepObserver(
       phase: e.phase,
       ok: e.ok,
       input: e.input,
+      ...(trace.streamLabel ? { agentLabel: trace.streamLabel } : {}),
     });
   } catch (err) {
     logErr('step observer', err);
@@ -428,6 +440,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
     ownerId: init.ownerId,
     turnId,
     isStreamRoot,
+    streamLabel: init.streamLabel ?? null,
     startedAtMs: Date.now(),
     ordinalCounter: 0,
     childOrdinals: new Map(),

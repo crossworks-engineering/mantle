@@ -156,6 +156,12 @@ export const invokeAgent: AgentInvoker = async ({
       subjectKind: 'child_agent',
       subjectId: target.id,
       agentId: target.id,
+      // Attribute the child's live status lines to the specialist by name
+      // ("Pages · Editing the page…"). The child's steps have streamed into
+      // the parent turn since v0.79 (turnId inherits, notifyStepObserver);
+      // what was missing is WHO — anonymous lines interleaved with the
+      // parent's own read as one confusing actor during a 400s delegation.
+      streamLabel: target.name,
       data: {
         parent_trace_id: parentTraceId,
         delegated_agent_slug: agentSlug,
