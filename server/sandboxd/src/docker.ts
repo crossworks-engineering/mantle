@@ -142,6 +142,58 @@ export async function containerIp(id: string, preferredNetwork: string): Promise
   return null;
 }
 
+/* ── interactive exec (hijacked stream) ───────────────────────────────── */
+
+export type HijackedExec = {
+  /** Raw bidirectional socket. Write = the process's stdin. Reads are
+   *  multiplexed frames (same 8-byte headers as execInContainer). */
+  socket: import('node:net').Socket;
+  execId: string;
+};
+
+/**
+ * Start a long-lived process in a container with stdin attached, returning
+ * the hijacked duplex socket. Docker answers the exec/start with HTTP 101
+ * and hands the TCP stream over; the caller owns framing (stdout/stderr
+ * demux) and lifecycle (destroy the socket to end the session — the process
+ * then sees EOF on stdin).
+ */
+export async function execInteractive(containerId: string, cmd: string[]): Promise<HijackedExec> {
+  const { Id: execId } = await json<{ Id: string }>('POST', `/containers/${containerId}/exec`, {
+    AttachStdin: true,
+    AttachStdout: true,
+    AttachStderr: true,
+    Tty: false,
+    WorkingDir: '/files',
+    Cmd: cmd,
+  });
+  const socket = await new Promise<import('node:net').Socket>((resolve, reject) => {
+    const req = http.request({
+      socketPath: SOCK,
+      method: 'POST',
+      path: `${API}/exec/${execId}/start`,
+      headers: {
+        'Content-Type': 'application/json',
+        Connection: 'Upgrade',
+        Upgrade: 'tcp',
+      },
+      timeout: 0,
+    });
+    req.on('upgrade', (_res, sock) => resolve(sock));
+    req.on('response', (res) => {
+      // No upgrade means docker refused (bad exec state) — surface it.
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () =>
+        reject(new DockerError(res.statusCode ?? 0, Buffer.concat(chunks).toString('utf8').trim())),
+      );
+    });
+    req.on('error', reject);
+    req.end(JSON.stringify({ Detach: false, Tty: false }));
+  });
+  return { socket, execId };
+}
+
 /* ── exec ─────────────────────────────────────────────────────────────── */
 
 export type ExecResult = {

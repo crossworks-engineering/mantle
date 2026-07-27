@@ -725,6 +725,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'sandbox_rm',
       'sandbox_export',
       'sandbox_publish',
+      'sandbox_mcp_tools',
+      'sandbox_mcp_call',
     ],
   },
   {

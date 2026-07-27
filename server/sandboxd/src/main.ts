@@ -34,6 +34,7 @@ import { mkdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import * as docker from './docker';
+import * as mcp from './mcp';
 
 const execFileP = promisify(execFile);
 
@@ -391,6 +392,7 @@ async function listSandboxes() {
 }
 
 async function rmSandbox(id: string, purge: boolean) {
+  mcp.dropSession(id);
   try {
     const c = await findContainer(id);
     try {
@@ -469,6 +471,36 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST' && seg[2] === 'publish') {
         return send(200, await publishService(id, await readBody(req)));
       }
+      // MCP bridge: forward tools/list + tools/call to the sandbox's
+      // persistent `claude mcp serve` session (spawned on first use).
+      if (req.method === 'POST' && seg[2] === 'mcp') {
+        const body = await readBody(req);
+        const method = typeof body.method === 'string' ? body.method : '';
+        if (!mcp.isAllowedMethod(method)) {
+          return send(400, {
+            error: `mcp method '${method}' is not bridged — only tools/list and tools/call are`,
+          });
+        }
+        const c = await findContainer(id);
+        if (c.State !== 'running') await docker.startContainer(c.Id);
+        markActive(id);
+        const timeoutMs = Math.min(
+          MAX_TIMEOUT_S * 1000,
+          Math.max(1000, Number(body.timeoutSeconds || 120) * 1000),
+        );
+        const session = await mcp.ensureSession(id, c.Id);
+        const result = await session
+          .request(method, body.params ?? {}, timeoutMs)
+          .catch((e: Error) => ({ __bridgeError: e.message }));
+        if (
+          result &&
+          typeof result === 'object' &&
+          '__bridgeError' in (result as Record<string, unknown>)
+        ) {
+          return send(502, { error: String((result as Record<string, unknown>).__bridgeError) });
+        }
+        return send(200, { result });
+      }
       if (req.method === 'POST' && seg[2] === 'export') {
         const bytes = await exportSandbox(id, await readBody(req));
         res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': bytes.length });
@@ -477,6 +509,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST' && seg[2] === 'stop') {
         const c = await findContainer(id);
         if (c.State === 'running') {
+          mcp.dropSession(id);
           await chownFiles(c.Id); // hand /files back before the container sleeps
           await docker.stopContainer(c.Id);
         }
@@ -512,6 +545,7 @@ if (IDLE_STOP_MINUTES > 0) {
           markActive(id); // post-restart seed: grant one full idle period
         } else if (seen < cutoff) {
           console.log(`[sandboxd] idle-stopping ${id} (no activity for ${IDLE_STOP_MINUTES}m)`);
+          mcp.dropSession(id);
           await chownFiles(c.Id);
           await docker.stopContainer(c.Id);
           lastActivity.delete(id);
