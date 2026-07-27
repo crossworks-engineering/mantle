@@ -1,11 +1,12 @@
 /**
- * run_terminal feeds child stdout/stderr straight to the model, so the child's
- * env must never carry the at-rest encryption key or other secrets — otherwise
- * a single `env` call exfiltrates them. sanitizedEnv is that filter.
+ * run_terminal and shell-kind tools feed child stdout/stderr straight to the
+ * model, so the child's env must never carry the at-rest encryption key or
+ * other secrets — otherwise a single `env` call exfiltrates them. sanitizedEnv
+ * is that filter (shared with dispatchShell — see dispatch.test.ts).
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { sanitizedEnv } from './builtins-terminal';
+import { sanitizedEnv } from './sanitized-env';
 
 const TOUCHED = [
   'MANTLE_MASTER_KEY',

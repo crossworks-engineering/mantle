@@ -23,6 +23,7 @@ import {
   resolveTemplateValue,
   type RecipeScope,
 } from './recipe';
+import { sanitizedEnv } from './sanitized-env';
 import { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 
@@ -195,6 +196,9 @@ async function dispatchShell(
         timeout: SHELL_TIMEOUT_MS,
         maxBuffer: SHELL_OUTPUT_CAP,
         shell: '/bin/sh',
+        // Same scrub as run_terminal: stdout goes back to the model, so the
+        // child must never see MANTLE_MASTER_KEY & co (see sanitized-env.ts).
+        env: sanitizedEnv(),
       },
       (err, stdout, stderr) => {
         const out = String(stdout).slice(0, SHELL_OUTPUT_CAP);
