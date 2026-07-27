@@ -1,5 +1,9 @@
-[
-  { "label": "dev", "url": "https://dev.example.internal" },
-  { "label": "prod", "url": "https://prod.example.internal" },
-  { "label": "client-a", "url": "https://a.example.internal" }
-]
+{
+  "boxes": [
+    { "label": "dev", "url": "https://dev.example.internal" },
+    { "label": "prod", "url": "https://prod.example.internal" }
+  ],
+  "peers": [
+    { "label": "workstation", "ssh": "user@host.example.internal", "path": "Projects/mantle" }
+  ]
+}
