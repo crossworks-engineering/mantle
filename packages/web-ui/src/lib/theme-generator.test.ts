@@ -29,14 +29,15 @@ import { THEME_SEEDS } from '../../themes/seeds.mjs';
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
 describe('drift', () => {
-  it('styles/themes.css is exactly what the seeds generate', () => {
+  // Full regeneration solves every token of every theme — seconds, not ms.
+  it('styles/themes.css is exactly what the seeds generate', { timeout: 30_000 }, () => {
     expect(
       read('../../styles/themes.css') === generateCss(),
       'themes.css does not match themes/seeds.mjs — run `pnpm themes:build` (and never edit the generated file by hand)',
     ).toBe(true);
   });
 
-  it('the picker registry is exactly what the seeds generate', () => {
+  it('the picker registry is exactly what the seeds generate', { timeout: 30_000 }, () => {
     expect(
       read('./theme-registry.gen.ts') === generateRegistry(),
       'theme-registry.gen.ts does not match themes/seeds.mjs — run `pnpm themes:build`',

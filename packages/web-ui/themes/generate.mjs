@@ -109,8 +109,21 @@ export function resolveSeed(mode) {
   return t;
 }
 
+/** Pure-function memo: seeds are immutable module data, and the CSS, the
+ *  registry and the test suites all re-derive the same modes — solving each
+ *  (seed, mode) once keeps the whole pipeline O(themes), not O(callers). */
+const MODE_MEMO = new WeakMap();
+
 /** Generate the full token map for one theme mode. */
 export function generateMode(modeSeed, { mode }) {
+  const hit = MODE_MEMO.get(modeSeed);
+  if (hit?.[mode]) return { ...hit[mode] };
+  const out = generateModeUncached(modeSeed, { mode });
+  MODE_MEMO.set(modeSeed, { ...hit, [mode]: out });
+  return { ...out };
+}
+
+function generateModeUncached(modeSeed, { mode }) {
   const s = resolveSeed(modeSeed);
   const out = {};
   const dark = mode === 'dark';
