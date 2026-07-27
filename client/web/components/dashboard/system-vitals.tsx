@@ -62,7 +62,7 @@ export function SystemVitals() {
 
   if (!data) return <SystemVitalsSkeleton />;
 
-  const { host, postgres, storage, tika, browser, embedder, network } = data;
+  const { host, postgres, storage, tika, browser, embedder, network, sandboxes } = data;
   const memValue = host.mem
     ? `${formatBytes(host.mem.usedBytes)} / ${formatBytes(host.mem.totalBytes)}`
     : '—';
@@ -83,6 +83,20 @@ export function SystemVitals() {
             ok={embedder.up}
             label={embedder.scope ? `Embedder · ${embedder.scope}` : 'Embedder'}
             title={embedder.detail ?? undefined}
+          />
+          <Pill
+            ok={sandboxes.up}
+            label="Sandboxes"
+            title={
+              sandboxes.up
+                ? `${sandboxes.running ?? 0}/${sandboxes.total ?? 0} running` +
+                  (sandboxes.disk?.usedBytes != null
+                    ? ` · ${formatBytes(sandboxes.disk.usedBytes)} of ${formatBytes(sandboxes.disk.budgetBytes)}`
+                    : '')
+                : sandboxes.up === false
+                  ? 'sandboxd unreachable'
+                  : 'not enabled on this box (compose profile `sandboxes`)'
+            }
           />
           <Pill ok={network.up} label="Tailnet" title={network.detail ?? undefined} />
           <Badge variant="outline" className="text-[10px] uppercase tracking-wide">

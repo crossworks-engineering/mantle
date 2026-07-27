@@ -4,6 +4,25 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — CLI Sandboxes (branch feat/cli-sandboxes)
+
+**The coder agent gets a computer that isn't the brain's.** Persistent
+isolated Ubuntu sandboxes managed by a new `sandboxd` supervisor (the third
+docker-socket holder, fixed-verb by construction), opt-in per box behind the
+`sandboxes` compose profile: clone and explain a repository, evaluate
+untrusted code, build a service — with the work in a `/files` host dir that
+outlives the container. Services published from a sandbox become normal
+integration tool groups through a bearer-gated proxy (the SSRF guard's one
+deliberate, test-pinned exemption); a keyless in-sandbox Claude Code MCP
+toolbelt gives structured Read/Edit/Grep/Bash; three egress tiers (`full` /
+`balanced` allowlist-proxy / `none`); a batteries-included
+`titanwest/mantle-sandbox` base image (~5 s create-to-toolchain); a
+`/sandboxes` master-detail surface; and the `sandbox-work` skill so the
+grant arrives with its doctrine. Migrations 0138–0139; verified on the
+workstation via four tool-layer batteries plus an 8/8 compose-profile demo
+([full entry](docs/_changelog/unreleased-cli-sandboxes.md),
+[feature doc](docs/sandboxes.md)). Version assigned at the release cut.
+
 ## v0.204.0 — 2026-07-26
 
 **The team workspace reads inline — and the split mis-detection is fixed.**

@@ -1,0 +1,16 @@
+{
+  "name": "@mantle/sandboxd",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --watch --env-file-if-exists=../web/.env.local src/main.ts",
+    "start": "tsx --env-file-if-exists=../web/.env.local src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5.7.2"
+  }
+}

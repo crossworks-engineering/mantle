@@ -3,6 +3,7 @@ import { statfs } from 'node:fs/promises';
 import si from 'systeminformation';
 import { db, sql } from '@mantle/db';
 import { filesRoot, tikaVersion } from '@mantle/files';
+import { sandboxdHealth } from './sandboxd';
 import { bucketReachable } from '@mantle/storage';
 import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
 import { attachmentBytes } from './dashboard';
@@ -78,6 +79,17 @@ export type SystemHealth = {
     /** Where the embedder runs: a self-hosted server ('local') or a cloud
      *  provider ('remote'). Shown on the dashboard pill label. */
     scope: 'remote' | 'local' | null;
+  };
+  /** CLI sandboxes supervisor (sandboxd) — profile-gated like the tailnet,
+   *  so `up: null` (muted pill) is the resting state on a box without the
+   *  `sandboxes` compose profile. `up: true` requires sandboxd answering
+   *  (its own /healthz additionally verifies docker); counts and the disk
+   *  budget come from its live listing. */
+  sandboxes: {
+    up: boolean | null;
+    total: number | null;
+    running: number | null;
+    disk: { usedBytes: number | null; budgetBytes: number } | null;
   };
   /** Tailscale / local network — the optional tailnet that lets a cloud VPS
    *  reach a LAN model box by MagicDNS name. Profile-gated and off by default
@@ -273,26 +285,30 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     }
   }
 
-  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, browserH, emb, net] = await Promise.all([
-    probe('host.cpu', () => si.currentLoad()),
-    probe('host.mem', () => si.mem()),
-    probe('host.disk', () => filesDisk()),
-    probe('postgres', () => pgHealth()),
-    probe('storage.attachments', () => attachmentBytes(userId)),
-    probe('storage.minio', () => bucketReachable()),
-    // tikaVersion is itself never-throws (returns null on any failure),
-    // so the probe wrapper is mostly belt-and-braces here — the timeout
-    // still applies if the wrapper hangs longer than expected.
-    probe('tika', () => tikaVersion(1_500)),
-    // browserHealth (PDF sidecar) is likewise never-throws; wrapper bounds it.
-    probe('browser', () => browserHealth(1_500)),
-    // embedderHealth is likewise never-throws; the wrapper just bounds it. A
-    // cold remote probe is a real API round-trip, so it gets a longer leash
-    // (cached 5 min after — see remoteEmbedCache).
-    probe('embedder', () => embedderHealth(userId), 6_000),
-    // networkHealth (tailnet) also never-throws; the wrapper just bounds it.
-    probe('network', () => networkHealth()),
-  ]);
+  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, browserH, emb, net, sbx] =
+    await Promise.all([
+      probe('host.cpu', () => si.currentLoad()),
+      probe('host.mem', () => si.mem()),
+      probe('host.disk', () => filesDisk()),
+      probe('postgres', () => pgHealth()),
+      probe('storage.attachments', () => attachmentBytes(userId)),
+      probe('storage.minio', () => bucketReachable()),
+      // tikaVersion is itself never-throws (returns null on any failure),
+      // so the probe wrapper is mostly belt-and-braces here — the timeout
+      // still applies if the wrapper hangs longer than expected.
+      probe('tika', () => tikaVersion(1_500)),
+      // browserHealth (PDF sidecar) is likewise never-throws; wrapper bounds it.
+      probe('browser', () => browserHealth(1_500)),
+      // embedderHealth is likewise never-throws; the wrapper just bounds it. A
+      // cold remote probe is a real API round-trip, so it gets a longer leash
+      // (cached 5 min after — see remoteEmbedCache).
+      probe('embedder', () => embedderHealth(userId), 6_000),
+      // networkHealth (tailnet) also never-throws; the wrapper just bounds it.
+      probe('network', () => networkHealth()),
+      // sandboxdHealth never-throws (profile off ⇒ up:null; unreachable ⇒
+      // up:false); the wrapper bounds a hung listing.
+      probe('sandboxes', () => sandboxdHealth()),
+    ]);
 
   const memInfo = mem
     ? {
@@ -338,6 +354,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     // (BROWSER_WS_ENDPOINT unset is reported by browserHealth itself as up:null).
     browser: browserH ?? { up: false, version: null },
     embedder: emb ?? { up: null, provider: null, model: null, detail: null, scope: null },
+    sandboxes: sbx ?? { up: null, total: null, running: null, disk: null },
     network: net ?? { up: null, detail: null },
     degraded,
   };

@@ -237,6 +237,13 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['mantle-ops']!,
   },
   {
+    slug: 'sandbox-work',
+    name: 'Sandbox work',
+    description:
+      'When and how to use CLI sandboxes: the terminal/sandbox trust boundary, /files persistence, exec vs toolbelt, egress tiers, publishing and export (for the coder agent).',
+    instructions: SKILL_INSTRUCTIONS['sandbox-work']!,
+  },
+  {
     slug: 'location_awareness',
     name: 'Location awareness',
     description:
@@ -711,6 +718,25 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['run_terminal'],
   },
   {
+    slug: 'sandboxes',
+    name: 'Sandboxes',
+    description:
+      'Isolated CLI sandboxes (sandboxd sidecar, compose profile `sandboxes`): create persistent ' +
+      'Ubuntu containers on the egress-only network, run commands, manage lifecycle. Untrusted / ' +
+      'project code runs here; the server shell stays `terminal`. Coder only.',
+    toolSlugs: [
+      'sandbox_create',
+      'sandbox_exec',
+      'sandbox_list',
+      'sandbox_stop',
+      'sandbox_rm',
+      'sandbox_export',
+      'sandbox_publish',
+      'sandbox_mcp_tools',
+      'sandbox_mcp_call',
+    ],
+  },
+  {
     slug: 'brain-health',
     name: 'Brain health',
     description:
@@ -1084,9 +1110,10 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-opus-4.7',
     envModelVar: 'CODER_MODEL',
     systemPrompt: AGENT_PROMPTS['coder']!,
-    // P6: `terminal` (unrestricted shell) + `files` + `memory-core`.
-    toolGroupSlugs: ['terminal', 'files', 'memory-core'],
-    skillSlugs: ['mantle-ops'],
+    // P6: `terminal` (unrestricted shell) + `sandboxes` (contained shell) +
+    // `files` + `memory-core`.
+    toolGroupSlugs: ['terminal', 'sandboxes', 'files', 'memory-core'],
+    skillSlugs: ['mantle-ops', 'sandbox-work'],
     isDelegate: true,
     params: { temperature: 0.2 },
     priority: 100,

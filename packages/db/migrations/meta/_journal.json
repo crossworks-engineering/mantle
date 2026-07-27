@@ -972,7 +972,21 @@
       "idx": 138,
       "version": "7",
       "when": 1786234200000,
-      "tag": "0138_team_notifications",
+      "tag": "0138_sandboxes",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1786234300000,
+      "tag": "0139_sandbox_network_balanced",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1786234400000,
+      "tag": "0140_team_notifications",
       "breakpoints": true
     }
   ]

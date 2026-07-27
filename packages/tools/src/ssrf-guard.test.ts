@@ -57,6 +57,49 @@ describe('assertFetchableUrl', () => {
     await expect(assertFetchableUrl('http://localhost:3000/')).rejects.toThrow();
   });
 
+  describe('the sandboxd proxy exemption (the ONE deliberate carve)', () => {
+    const base = 'http://sandboxd:8090';
+    const withEnv = async (value: string | undefined, fn: () => Promise<void>) => {
+      const prev = process.env.SANDBOXD_URL;
+      if (value === undefined) delete process.env.SANDBOXD_URL;
+      else process.env.SANDBOXD_URL = value;
+      try {
+        await fn();
+      } finally {
+        if (prev === undefined) delete process.env.SANDBOXD_URL;
+        else process.env.SANDBOXD_URL = prev;
+      }
+    };
+
+    it('allows the data-plane proxy path on the exact sandboxd origin', async () => {
+      await withEnv(base, async () => {
+        await expect(
+          assertFetchableUrl(`${base}/svc/11111111-2222-4333-8444-555555555555/8000/calc`),
+        ).resolves.toBeUndefined();
+      });
+    });
+
+    it("does NOT expose sandboxd's control plane (/sandboxes)", async () => {
+      await withEnv(base, async () => {
+        await expect(assertFetchableUrl(`${base}/sandboxes`)).rejects.toThrow();
+        await expect(assertFetchableUrl(`${base}/healthz`)).rejects.toThrow();
+      });
+    });
+
+    it('does NOT leak to other private hosts, even with /svc/ paths', async () => {
+      await withEnv(base, async () => {
+        await expect(assertFetchableUrl('http://postgres:5432/svc/x')).rejects.toThrow();
+        await expect(assertFetchableUrl('http://127.0.0.1:8090/svc/x')).rejects.toThrow();
+      });
+    });
+
+    it('is inert when SANDBOXD_URL is unset', async () => {
+      await withEnv(undefined, async () => {
+        await expect(assertFetchableUrl(`${base}/svc/x/8000/`)).rejects.toThrow();
+      });
+    });
+  });
+
   it('allows a public literal IP', async () => {
     await expect(assertFetchableUrl('https://1.1.1.1/')).resolves.toBeUndefined();
   });
