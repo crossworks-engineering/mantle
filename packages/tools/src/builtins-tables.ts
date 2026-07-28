@@ -1702,7 +1702,8 @@ const table_rows_add: BuiltinToolDef = {
     const tableId = str(input.table_id).trim();
     if (!tableId) return { ok: false, error: 'table_id is required' };
     const rowsIn = Array.isArray(input.rows) ? input.rows : null;
-    if (!rowsIn?.length) return { ok: false, error: 'rows must be a non-empty array of cell objects' };
+    if (!rowsIn?.length)
+      return { ok: false, error: 'rows must be a non-empty array of cell objects' };
     if (rowsIn.length > ROWS_ADD_MAX) {
       return {
         ok: false,
@@ -1791,7 +1792,8 @@ const table_rows_upsert: BuiltinToolDef = {
       .filter(Boolean);
     if (!keyRefs.length) return { ok: false, error: 'key is required — the column(s) to match on' };
     const rowsIn = Array.isArray(input.rows) ? input.rows : null;
-    if (!rowsIn?.length) return { ok: false, error: 'rows must be a non-empty array of cell objects' };
+    if (!rowsIn?.length)
+      return { ok: false, error: 'rows must be a non-empty array of cell objects' };
     if (rowsIn.length > ROWS_ADD_MAX) {
       return {
         ok: false,
@@ -1877,7 +1879,10 @@ const table_rows_upsert: BuiltinToolDef = {
     // Existing key → row map from the DRAFT-first workbook (falls back to the
     // in-memory doc for legacy JSONB tables). Ambiguity (a key matching >1
     // existing row) is per-key: those incoming rows are skipped and reported.
-    const existing = new Map<string, { rowId: string; cells: Record<string, CellValue>; n: number }>();
+    const existing = new Map<
+      string,
+      { rowId: string; cells: Record<string, CellValue>; n: number }
+    >();
     const indexRow = (id: string, cells: Record<string, CellValue>) => {
       const key = keyOf(cells);
       if (key === null) return;

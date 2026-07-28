@@ -136,10 +136,7 @@ describe('table_rows_add', () => {
 
   it('surfaces a draft-rev conflict as a retryable error', async () => {
     vi.mocked(applyTableOps).mockResolvedValue({ ok: false, conflict: true, currentRev: 5 });
-    const res = await rowsAdd.handler(
-      { table_id: TABLE_ID, rows: [{ 'Service Name': 'A' }] },
-      ctx,
-    );
+    const res = await rowsAdd.handler({ table_id: TABLE_ID, rows: [{ 'Service Name': 'A' }] }, ctx);
     expect(res.ok).toBe(false);
     expect((res as { error: string }).error).toContain('retry');
   });
