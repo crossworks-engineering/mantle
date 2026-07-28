@@ -448,7 +448,7 @@ const table_from_text: BuiltinToolDef = {
   slug: 'table_from_text',
   name: 'Create a table from pasted tabular text',
   description:
-    'Build a typed grid from a block of tabular text in ONE call — CSV, TSV, or a markdown pipe table. **This is the right tool for "make a table from these results / this data" when the rows are in the conversation.** Do NOT create an empty table and add rows one at a time with table_row_add — that\'s slow and capped at a handful of rows per turn; this ingests the whole block at once. The header row becomes columns and types are inferred (numbers, dates from xlsx, text). The table is created + indexed immediately. `title` is optional.',
+    'Build a NEW typed grid from a block of tabular text in ONE call — CSV, TSV, or a markdown pipe table. **This is the right tool for "make a table from these results / this data" when the rows are in the conversation.** It always CREATES a new table — to add rows to an EXISTING table use `table_rows_add` (bulk) or `table_row_add` (single), never this. Do NOT create an empty table and add rows one at a time either — `table_rows_add` ingests a whole batch at once. The header row becomes columns and types are inferred (numbers, dates from xlsx, text). The table is created + indexed immediately. `title` is optional.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1607,7 +1607,9 @@ const table_row_add: BuiltinToolDef = {
   preconditions: TABLE_ID_PRE,
   name: 'Add a row',
   description:
-    'Append a new row (or insert after `after_row_id`). Returns the new row id. Writes to DRAFT.',
+    'Append a new row (or insert after `after_row_id`). Returns the new row id. Writes to DRAFT. ' +
+    'For more than a couple of rows use `table_rows_add` — one atomic call, and it does not eat ' +
+    'the per-turn tool-call budget row by row.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1651,6 +1653,85 @@ const table_row_add: BuiltinToolDef = {
           table_id: tableId,
           row_id: rowId,
           ...(unknown.length ? { ignored_columns: unknown } : {}),
+          draft_saved: true,
+          hint: DRAFT_REVIEW_HINT(tableId),
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+// Bulk twin of table_row_add. Born from a real incident (NATREF 2026-07-28):
+// appending 101 rows one call at a time ran into the tool-loop's same-tool cap,
+// took 6 delegation retries and ~18 minutes, and the cap guidance pushed the
+// agent into table_from_text — which CREATES a table — leaving a stray import.
+// One call, one atomic applyTableOps batch, one draft rev.
+const ROWS_ADD_MAX = 200;
+
+const table_rows_add: BuiltinToolDef = {
+  slug: 'table_rows_add',
+  preconditions: TABLE_ID_PRE,
+  name: 'Add many rows',
+  description:
+    `Append MANY rows to an EXISTING table in ONE call — the bulk twin of \`table_row_add\`. ` +
+    `Always prefer this over repeated \`table_row_add\` calls for more than a couple of rows: ` +
+    `the whole batch lands atomically on the DRAFT (one revision), and it sidesteps the ` +
+    `per-turn tool-call caps that cut row-at-a-time appends short. Up to ${ROWS_ADD_MAX} rows ` +
+    `per call — for larger loads, call it again with the next batch. Rows append at the end ` +
+    `in the order given (no insert-after; use \`table_row_add\` for positioned single inserts). ` +
+    `To build a NEW table from bulk data use \`table_from_text\`/\`table_from_file\` instead.`,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      table_id: { type: 'string', description: "The table's id (UUID) — from `table_list`." },
+      rows: {
+        type: 'array',
+        description: `Rows to append, in order. Each item: ${CELLS_HINT}`,
+        items: { type: 'object', additionalProperties: true },
+        minItems: 1,
+        maxItems: ROWS_ADD_MAX,
+      },
+      tab: { type: 'string', description: TAB_HINT },
+    },
+    required: ['table_id', 'rows'],
+  },
+  handler: async (input, ctx) => {
+    const tableId = str(input.table_id).trim();
+    if (!tableId) return { ok: false, error: 'table_id is required' };
+    const rowsIn = Array.isArray(input.rows) ? input.rows : null;
+    if (!rowsIn?.length) return { ok: false, error: 'rows must be a non-empty array of cell objects' };
+    if (rowsIn.length > ROWS_ADD_MAX) {
+      return {
+        ok: false,
+        error: `${rowsIn.length} rows exceeds the ${ROWS_ADD_MAX}-row cap — split into batches of ${ROWS_ADD_MAX} and call again`,
+      };
+    }
+    const loaded = await loadTab(ctx.ownerId, tableId, input.tab);
+    if ('error' in loaded) return { ok: false, error: loaded.error };
+    const { doc, tabId } = loaded;
+    const unknownAll = new Set<string>();
+    const ops = rowsIn.map((r) => {
+      const cellsIn = (r && typeof r === 'object' ? r : {}) as Record<string, unknown>;
+      const { cells, unknown } = resolveCells(doc, cellsIn);
+      for (const u of unknown) unknownAll.add(u);
+      return { op: 'row_add' as const, cells, afterRowId: null, ...(tabId ? { tabId } : {}) };
+    });
+    try {
+      const applied = await applyTableOps(ctx.ownerId, tableId, ops);
+      if (!applied) return notFound('table', tableId, 'table_list');
+      if (!applied.ok) return { ok: false, error: 'draft changed concurrently — retry' };
+      const rowIds = applied.createdIds.filter((id): id is string => !!id);
+      ctx.step?.setOutput({ table_id: tableId, rows_added: rowIds.length });
+      return {
+        ok: true,
+        output: {
+          table_id: tableId,
+          rows_added: rowIds.length,
+          // Full id list only for small batches — 200 UUIDs is context bloat.
+          ...(rowIds.length <= 20 ? { row_ids: rowIds } : { first_row_id: rowIds[0] }),
+          ...(unknownAll.size ? { ignored_columns: [...unknownAll] } : {}),
           draft_saved: true,
           hint: DRAFT_REVIEW_HINT(tableId),
         },
@@ -2196,6 +2277,7 @@ export const TABLE_TOOLS: BuiltinToolDef[] = [
   table_query,
   table_aggregate,
   table_row_add,
+  table_rows_add,
   table_row_update,
   table_row_delete,
   table_cell_set,

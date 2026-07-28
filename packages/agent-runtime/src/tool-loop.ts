@@ -972,7 +972,10 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           'tool_repeat_limit',
           `You've called '${slug}' ${perToolCounts.get(slug) ?? priorAtBatchStart} times this turn ` +
             `(limit ${maxCallsPerToolPerTurn}); further '${slug}' calls are blocked. ` +
-            `Stop repeating it — answer, or take a different approach.`,
+            `If you were partway through a multi-item job, stop NOW and report exactly ` +
+            `what completed and what remains, so your caller can continue it — a bulk/batch ` +
+            `variant of this tool, if one exists, does the whole job in one call next time. ` +
+            `Do NOT improvise with a different tool to force the same change through.`,
         );
         continue;
       }

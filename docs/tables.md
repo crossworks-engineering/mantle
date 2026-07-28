@@ -223,7 +223,9 @@ lookups with parity-gated SQL pushdown; aggregates over the full matched set),
 `table_aggregate` (GROUP BY).
 
 Edits (→ the draft, atomic op batches, review hint): `table_row_add`/`update`/
-`delete`, `table_cell_set`, `table_column_add`/`update`/`delete` (add/update take
+`delete`, **`table_rows_add`** (bulk append — up to 200 rows in ONE atomic
+call; the right tool whenever an agent has more than a couple of rows to add,
+instead of burning the per-turn tool budget row by row), `table_cell_set`, `table_column_add`/`update`/`delete` (add/update take
 `reference: {tab, column}` for linked columns),
 `table_set_aggregate`,
 `table_set_view`, and the tab CRUD — **`table_tab_add` / `table_tab_rename` /

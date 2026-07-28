@@ -1006,7 +1006,13 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     skillSlugs: ['table_authoring'],
     isDelegate: true,
     params: { temperature: 0.3, max_tokens: 16000 },
-    memoryConfig: { max_iterations: 30 },
+    // Grid work is tool-call heavy the same way page work is: a data load is a
+    // read + N row writes, and the flat defaults (40/turn, 15/tool) cut it
+    // short (NATREF 2026-07-28 — a 101-row append needed 6 delegation retries
+    // and wasted 128 capped calls). table_rows_add is the primary fix; these
+    // caps are the belt-and-braces so a legitimately call-heavy edit still
+    // fits in one turn. Mirrors the Pages budget; runtime hard-caps at 200/100.
+    memoryConfig: { max_iterations: 30, max_tool_calls: 100, max_calls_per_tool: 40 },
     priority: 100,
   },
   {
