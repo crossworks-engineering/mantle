@@ -22,14 +22,10 @@ import { useColorTheme } from '@mantle/web-ui/color-theme-provider';
 const VARIANTS = new Set<string>(AVATAR_STYLE_IDS);
 
 /** Clean-slate (default theme) --chart-1..5, used until we can read the live
- *  tokens on the client — keeps the default theme flash-free. */
-const FALLBACK_PALETTE = [
-  'oklch(0.5854 0.2041 277.1173)',
-  'oklch(0.5106 0.2301 276.9656)',
-  'oklch(0.4568 0.2146 277.0229)',
-  'oklch(0.3984 0.1773 277.3662)',
-  'oklch(0.3588 0.1354 278.6973)',
-];
+ *  tokens on the client — keeps the default theme flash-free. Values are the
+ *  GENERATED light-mode ramp (themes/seeds.mjs → pnpm themes:build); if the
+ *  generator's ramp recipe changes, refresh these from :root in themes.css. */
+const FALLBACK_PALETTE = ['#666ed1', '#ae467f', '#ad5700', '#4b830f', '#00889b'];
 
 function readChartColors(): string[] {
   if (typeof document === 'undefined') return FALLBACK_PALETTE;

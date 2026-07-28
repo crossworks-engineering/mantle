@@ -131,6 +131,29 @@ describe('generated palette distinguishability', () => {
   }
 });
 
+describe('infeasible seeds fail loudly', () => {
+  it('a mid-luminance surface pair aborts generation instead of emitting a failing ink', () => {
+    // One surface needs light text, the other dark — no single ink clears
+    // 4.5:1 on both. The generator must throw a seed-naming error, not emit a
+    // value for CI to trip over three artifacts downstream.
+    const seed = {
+      background: '#8a8a8a', // mid-luminance: kills dark inks
+      card: '#3a5a6a', //      dark-mid: kills light inks
+      foreground: '#1e293b',
+      primary: '#6366f1',
+      'primary-foreground': '#ffffff',
+      secondary: '#e5e7eb',
+      muted: '#8a8a8a',
+      'muted-foreground': '#3d4451',
+      accent: '#e0e7ff',
+      destructive: '#df3236',
+      'destructive-foreground': '#ffffff',
+      border: '#d1d5db',
+    };
+    expect(() => generateMode(seed, { mode: 'light' })).toThrow(/no feasible ink/);
+  });
+});
+
 describe('seeds hygiene', () => {
   it('ids are unique and clean-slate is the baseline', () => {
     const ids = THEME_SEEDS.map((t) => t.id);
