@@ -9,7 +9,15 @@
  * credentials use secret_create; for file-shaped content use file_create.
  */
 
-import { createNote, getNote, getPage, docToMarkdown, listNotes, nodeUrl } from '@mantle/content';
+import {
+  createNote,
+  getNote,
+  getPage,
+  docToMarkdown,
+  listNotes,
+  nodeUrl,
+  updateNote,
+} from '@mantle/content';
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
@@ -151,6 +159,92 @@ const note_get: BuiltinToolDef = {
       if (!row) return notFound('note', id, 'note_list / search_nodes');
       ctx.step?.setOutput({ id: row.id, title: row.title });
       return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+// Edit-in-place was a real gap: with only note_create, "add today's entries to
+// the work log" forced a duplicate note or a copy-paste handoff (NATREF
+// 2026-07-18 — the responder flagged it herself). `append` covers the recurring
+// log-style flow in one call without re-emitting the whole body.
+const note_update: BuiltinToolDef = {
+  slug: 'note_update',
+  name: 'Update a note',
+  description:
+    'Edit an EXISTING note in place. Pass only what changes: `title`/`tags` (metadata), ' +
+    '`content` (REPLACES the whole markdown body — read it with `note_get` first and re-emit ' +
+    'the full body), or `append` (adds a block to the END of the current body — the right mode ' +
+    'for log/journal-style notes; never combine with `content`). The note re-indexes into the ' +
+    'brain on any body change. This edits in place — do NOT create a duplicate note with ' +
+    '`note_create` when the user means an existing one.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',
+        description: "The note's id (UUID) — from `note_list` / `search_nodes`.",
+      },
+      title: { type: 'string', description: 'new title (replaces the current one)' },
+      content: {
+        type: 'string',
+        description: 'replacement markdown body — the FULL new body, not a fragment',
+      },
+      append: {
+        type: 'string',
+        description:
+          'markdown to add at the end of the current body (a blank line is inserted between). ' +
+          'Mutually exclusive with `content`.',
+      },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'replacement tag set (replaces all current tags)',
+      },
+    },
+    required: ['id'],
+  },
+  preconditions: NOTE_ID_PRE,
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    const title = strOpt(input.title);
+    const content = typeof input.content === 'string' ? input.content : undefined;
+    const append = typeof input.append === 'string' ? input.append : undefined;
+    const tags = Array.isArray(input.tags)
+      ? (input.tags as unknown[]).filter((t): t is string => typeof t === 'string')
+      : undefined;
+    if (content !== undefined && append !== undefined) {
+      return { ok: false, error: 'pass content OR append, not both' };
+    }
+    if (title === undefined && content === undefined && append === undefined && !tags) {
+      return { ok: false, error: 'nothing to change — pass title, content, append, or tags' };
+    }
+    try {
+      let body = content;
+      if (append !== undefined) {
+        const current = await getNote(ctx.ownerId, id);
+        if (!current) return notFound('note', id, 'note_list / search_nodes');
+        const existing = current.content;
+        body = existing.trim() ? `${existing.replace(/\s+$/, '')}\n\n${append}` : append;
+      }
+      const row = await updateNote(ctx.ownerId, id, {
+        ...(title !== undefined ? { title } : {}),
+        ...(body !== undefined ? { content: body } : {}),
+        ...(tags !== undefined ? { tags } : {}),
+      });
+      if (!row) return notFound('note', id, 'note_list / search_nodes');
+      ctx.step?.setOutput({ id: row.id, title: row.title });
+      return {
+        ok: true,
+        output: {
+          id: row.id,
+          title: row.title,
+          ...(append !== undefined ? { appended: true } : {}),
+          url: nodeUrl(row.id),
+        },
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -327,6 +421,7 @@ const note_from_page: BuiltinToolDef = {
 
 export const NOTE_TOOLS: BuiltinToolDef[] = [
   note_create,
+  note_update,
   note_list,
   note_get,
   note_from_file,

@@ -90,6 +90,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     notes: 'Already scheduled via the db-dump.sh backup path — not for the cron worker.',
   },
 
+  {
+    slug: 'traces-reap',
+    title: 'Reap abandoned traces (all owners)',
+    description:
+      "Closes traces stuck 'running' past the abandon threshold (MANTLE_EXTRACT_EXPIRE_MIN + 15) — the cron twin of the owner-scoped reaper the live-activity view runs on poll. On a box nobody browses, crashed runs otherwise sit as \"active\" for days and skew every running-count rollup. Marks status=error 'abandoned…' with duration_ms NULL (the true duration is unknowable).",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/traces-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Idempotent; a no-op once clean. The /debug/integrity abandoned_traces audit check surfaces the same rows read-only.',
+  },
   // ── Remedies (monitored one-shots) ───────────────────────────────────────
   {
     slug: 'dedupe-edges',

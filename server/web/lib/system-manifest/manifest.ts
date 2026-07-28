@@ -433,8 +433,17 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'notes',
     name: 'Notes',
-    description: 'Create/list/read notes + import a file or page as a note.',
-    toolSlugs: ['note_create', 'note_list', 'note_get', 'note_from_file', 'note_from_page'],
+    description:
+      'Create/edit/list/read notes + import a file or page as a note. note_update covers the ' +
+      'recurring append-to-a-log flow (NATREF 2026-07-18 gap); note_delete stays out — deliberate.',
+    toolSlugs: [
+      'note_create',
+      'note_update',
+      'note_list',
+      'note_get',
+      'note_from_file',
+      'note_from_page',
+    ],
   },
   {
     slug: 'events',

@@ -204,7 +204,12 @@ export async function reapAbandonedTraces(userId: string): Promise<number> {
       status: 'error',
       error: `abandoned — no completion after ${ABANDON_AFTER_MIN} min (the process likely restarted or crashed mid-run)`,
       finishedAt: new Date(),
-      durationMs: sql`(extract(epoch from (now() - ${traces.startedAt})) * 1000)::int`,
+      // Honest unknown: the process died at some unrecorded moment, so
+      // stamping "now - startedAt" fabricated absurd durations (a trace
+      // reaped on the next UI visit 41h later read as a 41-hour run —
+      // NATREF 2026-07-18) and skewed every duration rollup. Null says
+      // "we don't know", which is the truth.
+      durationMs: null,
     })
     .where(
       and(eq(traces.ownerId, userId), eq(traces.status, 'running'), lt(traces.startedAt, cutoff)),

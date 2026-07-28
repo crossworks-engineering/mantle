@@ -32,11 +32,11 @@ describe('stageLabelForStep', () => {
     ).toBe('Saving “Q3 plan” to your notes…');
   });
 
-  it('falls back to a verb guess for unknown tools, generic for spill', () => {
-    expect(stageLabelForStep('tool: widget_delete')).toBe('Removing that…');
-    expect(stageLabelForStep('tool: gizmo_send')).toBe('Sending that…');
-    expect(stageLabelForStep('tool: mystery_tool')).toBe('Working on it…');
-    expect(stageLabelForStep('spill_result: web_search')).toBe('Working on it…');
+  it('falls back to a verb guess naming the tool noun, result paging for spill', () => {
+    expect(stageLabelForStep('tool: widget_delete')).toBe('Removing widget…');
+    expect(stageLabelForStep('tool: gizmo_send')).toBe('Sending gizmo…');
+    expect(stageLabelForStep('tool: mystery_tool')).toBe('Using mystery tool…');
+    expect(stageLabelForStep('spill_result: web_search')).toBe('Reading more results…');
   });
 
   it('does not mistake web_search for a brain search', () => {

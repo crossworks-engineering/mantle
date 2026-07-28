@@ -41,9 +41,16 @@ describe('write/action tool labels', () => {
     expect(stageLabelForStep('tool: table_commit')?.label).toBe('Publishing the table…');
   });
 
-  it('guesses a verb for unknown tools', () => {
-    expect(stageLabelForStep('tool: widget_update')?.label).toBe('Updating that…');
-    expect(stageLabelForStep('tool: mystery_tool')?.label).toBe('Working on it…');
+  it('guesses a verb for unknown tools, naming the tool noun (never a bare "that")', () => {
+    expect(stageLabelForStep('tool: widget_update')?.label).toBe('Updating widget…');
+    expect(stageLabelForStep('tool: mystery_tool')?.label).toBe('Using mystery tool…');
+    // A safe subject enriches the fallback the same way it does mapped tools.
+    expect(
+      stageLabelForStep('tool: widget_update', {
+        slug: 'widget_update',
+        args: { title: 'Pump P-101' },
+      })?.label,
+    ).toBe('Updating widget “Pump P-101”…');
   });
 
   it('buckets each action under a fitting icon kind', () => {

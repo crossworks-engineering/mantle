@@ -1222,6 +1222,47 @@ describe('runToolLoop — tool-volume guards', () => {
     expect(result.reply).toBe('done');
   });
 
+  it('a fully-skipped batch (≥3 calls) force-finals immediately instead of iterating on', async () => {
+    // NATREF 2026-07-28 shape: after the fixation cap trips, the model mass
+    // re-emits blocked calls round after round. The loop must stop paying for
+    // rounds the guards will nullify: one fully-skipped batch → forced final.
+    const tool = fakeTool({ slug: 'row_add' });
+    const batch = (n: number, prefix: string) =>
+      Array.from({ length: n }, (_, i) => ({
+        id: `${prefix}_${i}`,
+        type: 'function' as const,
+        function: { name: 'row_add', arguments: `{"i":"${prefix}${i}"}` },
+      }));
+    const { adapter, calls } = makeFakeAdapter([
+      { type: 'toolCalls', toolCalls: batch(18, 'r1') }, // executes fully (starts under cap 15)
+      { type: 'toolCalls', toolCalls: batch(5, 'r2') }, // starts at 18 ≥ 15 → ALL skipped
+      { type: 'text', text: 'honest partial report' }, // consumed by the force-final pass
+      { type: 'toolCalls', toolCalls: batch(5, 'r3') }, // must never be requested
+    ]);
+    dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'append all the rows' }],
+      tools: [tool],
+      maxIterations: 10,
+    });
+
+    // Exactly 3 adapter calls: round 1, the fully-skipped round 2, force-final.
+    expect(calls).toHaveLength(3);
+    expect(dispatchToolCalls).toHaveLength(18);
+    expect(result.reply).toBe('honest partial report');
+    // The nudge names the blockage so the forced answer reports honestly.
+    const nudge = result.messages.find(
+      (m) => m.role === 'user' && String(m.content).includes('was blocked'),
+    );
+    expect(String(nudge?.content)).toContain('(5 of them)');
+  });
+
   it('turn budget never severs a batch: a batch that starts under 40 completes, then force-final', async () => {
     // The SOP-restructure regression shape: rounds of edits approach the budget,
     // then a WRITE batch (10 deletes) begins just under it. Old behavior cut

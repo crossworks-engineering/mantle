@@ -48,6 +48,7 @@
     "backfill:block-ids": "tsx --env-file-if-exists=./.env.local scripts/backfill-block-ids.ts",
     "backfill:conversation": "tsx --env-file-if-exists=./.env.local scripts/backfill-conversation.ts",
     "dedupe:edges": "tsx --env-file-if-exists=./.env.local scripts/dedupe-edges.ts",
+    "traces:reap": "tsx --env-file-if-exists=./.env.local scripts/traces-reap.ts",
     "regenerate:digests": "tsx --env-file-if-exists=./.env.local scripts/regenerate-digests.ts",
     "backfill:digest-embeddings": "tsx --env-file-if-exists=./.env.local scripts/backfill-digest-embeddings.ts",
     "re-embed": "tsx --env-file-if-exists=./.env.local scripts/re-embed.ts",

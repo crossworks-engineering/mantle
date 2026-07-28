@@ -168,14 +168,35 @@ function toolStage(slug: string, args?: Record<string, unknown>): StageLabel {
   const specific = ACTION_LABELS[slug];
   if (specific) return { label: specific, kind };
 
-  // Verb fallback for any other tool — still better than a bare "Working on it".
-  if (/(_update$|^update_|_edit$|^edit_|_rename$)/.test(slug))
-    return { label: 'Updating that…', kind };
-  if (/(_delete$|^delete_|_remove$|^remove_)/.test(slug)) return { label: 'Removing that…', kind };
-  if (/(_send$|^send_)/.test(slug)) return { label: 'Sending that…', kind };
+  // Verb fallback for any other tool. The old subject-less forms ("Updating
+  // that…", "Working on it…") told the operator nothing — every unmapped tool
+  // read identically. Name the tool's noun (slug minus its verb affix,
+  // underscores → spaces) and the subject when a safe one is present, so the
+  // trail says "Updating table row “Pump P-101”…" instead of "Updating that…".
+  const noun = slugNoun(slug);
+  const subject = pickString(args, TITLE_KEYS);
+  const tail = subject ? `${noun} “${subject}”` : noun;
+  if (/(_update$|^update_|_edit$|^edit_|_rename$|_set$)/.test(slug))
+    return { label: `Updating ${tail}…`, kind };
+  if (/(_add$)/.test(slug)) return { label: `Adding ${tail}…`, kind };
+  if (/(_delete$|^delete_|_remove$|^remove_)/.test(slug))
+    return { label: `Removing ${tail}…`, kind };
+  if (/(_send$|^send_)/.test(slug)) return { label: `Sending ${tail}…`, kind };
   if (/(_read$|_get$|_list$|^read_|^get_|^list_)/.test(slug))
-    return { label: 'Looking that up…', kind };
-  return { label: 'Working on it…', kind: 'tool' };
+    return { label: `Looking up ${tail}…`, kind };
+  return { label: `Using ${slugNoun(slug, { keepVerb: true })}…`, kind: 'tool' };
+}
+
+/** Human noun for a tool slug: strip a leading/trailing verb affix, swap
+ *  underscores for spaces — `table_rows_add` → "table rows", `page_split` →
+ *  "page split" (keepVerb). Always non-empty (falls back to the full slug). */
+function slugNoun(slug: string, opts: { keepVerb?: boolean } = {}): string {
+  const stripped = opts.keepVerb
+    ? slug
+    : slug
+        .replace(/_(update|edit|rename|set|add|delete|remove|send|read|get|list|create)$/, '')
+        .replace(/^(update|edit|delete|remove|send|read|get|list|create)_/, '');
+  return (stripped || slug).replace(/_/g, ' ');
 }
 
 export function stageLabelForStep(
@@ -192,6 +213,6 @@ export function stageLabelForStep(
   const tool = /^tool:\s*(.+)$/.exec(name);
   if (tool) return toolStage(tool[1]!.trim(), toolArgs(input));
 
-  if (/^spill_result:/.test(name)) return { label: 'Working on it…', kind: 'tool' };
+  if (/^spill_result:/.test(name)) return { label: 'Reading more results…', kind: 'tool' };
   return null;
 }

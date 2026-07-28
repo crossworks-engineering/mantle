@@ -575,6 +575,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const exactFailureCounts = new Map<string, number>();
   const identicalResults = new Map<string, { hash: string; count: number }>();
   let budgetExhausted = false;
+  // A response whose tool calls were ALL guard-skipped (≥3 of them) forces the
+  // final answer — see the batch-boundary check below.
+  let batchFullySkipped = false;
 
   // Skip a tool call WITHOUT executing it, still emitting the synthetic
   // tool_result the provider protocol requires (every tool_call needs a paired
@@ -870,6 +873,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     // constants' comment — a half-applied write batch is worse than a bounded
     // overshoot; MAX_TOOL_CALLS_PER_RESPONSE bounds the overshoot).
     const perToolCountsAtBatchStart = new Map(perToolCounts);
+    let dispatchedThisBatch = 0; // calls that made it past every guard
     for (const call of calls) {
       // Stop mid-batch: nothing new starts. Each remaining call still gets a
       // paired synthetic result (providers reject an unpaired tool_use on any
@@ -1044,6 +1048,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       }
       perToolCounts.set(slug, (perToolCounts.get(slug) ?? 0) + 1);
       totalToolCalls += 1;
+      dispatchedThisBatch += 1;
 
       // Redact sensitive input fields BEFORE they're written to
       // `trace_steps.input`. The `redactedInput` is what we log; the
@@ -1322,6 +1327,27 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     // the transcript (the tool_calls assistant message pushed above) — don't
     // push it twice.
     if (turnAborted()) return stoppedResult(result.text, iter, { pushAssistantMessage: false });
+    // A sizeable batch whose calls were ALL guard-skipped did zero work — a
+    // model that mass re-emits into a wall it was just told about is flailing,
+    // not adapting (NATREF 2026-07-28: a capped child re-issued 47 blocked
+    // row-adds across two more rounds before giving up). Force the final
+    // answer now instead of paying LLM rounds for more of the same. The ≥3
+    // floor leaves room for genuine adaptation after a single skipped call
+    // (a lone duplicate or a one-off cap graze is normal traffic).
+    if (calls.length >= 3 && dispatchedThisBatch === 0) {
+      batchFullySkipped = true;
+      messages.push({
+        role: 'user',
+        content:
+          `[system] Every tool call in your last response (${calls.length} of them) was blocked ` +
+          `by this turn's guards — none ran, and re-issuing them will not run either. ` +
+          `${formatOutcomeSummary(summarizeToolOutcomes(toolCalls))} ` +
+          `Give your final answer now: state plainly what completed (per the record above) and ` +
+          `what remains, so your caller or the user can continue from there. Do not claim ` +
+          `unfinished work is done.`,
+      });
+      break;
+    }
     // Per-turn tool budget check at the BATCH boundary (never mid-batch —
     // see the snapshot above). Budget spent → stop looping; the force-final
     // pass below produces the answer. The explicit nudge tells the model the
@@ -1350,7 +1376,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // Max-iters path only (the budget path pushed its own nudge above): give
   // the model the deterministic outcome ledger so its forced answer reports
   // what ACTUALLY completed rather than what it remembers attempting.
-  if (!budgetExhausted && toolCalls.length > 0) {
+  if (!budgetExhausted && !batchFullySkipped && toolCalls.length > 0) {
     messages.push({
       role: 'user',
       content:
@@ -1370,7 +1396,11 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       input: {
         model: active.model,
         provider: active.adapter.providerId,
-        reason: budgetExhausted ? 'tool_budget_reached' : 'max_iters_reached',
+        reason: budgetExhausted
+          ? 'tool_budget_reached'
+          : batchFullySkipped
+            ? 'batch_fully_skipped'
+            : 'max_iters_reached',
         ...(failedOver ? { failed_over: true } : {}),
       },
     },

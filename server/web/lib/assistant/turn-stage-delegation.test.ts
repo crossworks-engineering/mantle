@@ -68,7 +68,7 @@ describe('currentTurnStageLabel — delegation follow', () => {
       ACTIVE_CHILD_STEP,
     );
 
-    expect(await currentTurnStageLabel('o1')).toBe('Pages · Updating that…');
+    expect(await currentTurnStageLabel('o1')).toBe('Pages · Updating page block…');
   });
 
   it('keeps narrating PAST the 2-min own-label window while the child is provably active', async () => {
@@ -82,7 +82,7 @@ describe('currentTurnStageLabel — delegation follow', () => {
       ACTIVE_CHILD_STEP,
     );
 
-    expect(await currentTurnStageLabel('o1')).toBe('Pages · Updating that…');
+    expect(await currentTurnStageLabel('o1')).toBe('Pages · Updating page block…');
   });
 
   it('an OLD turn with a stale child (no recent step) stays dark — the zombie discipline holds', async () => {

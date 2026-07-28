@@ -479,11 +479,17 @@ EDIT; table_query to ANSWER.**
   **Never create an empty table and add rows one at a time with table_row_add
   for bulk data** — that's slow and you'll hit your iteration cap; \`table_from_text\`
   ingests it all at once. Use table_row_add only for a row or two by hand.
-- **Bulk rows into an EXISTING table** (an append, a merge, a data load) →
+- **Bulk rows into an EXISTING table** (a pure append, new rows only) →
   \`table_rows_add({ table_id, rows })\` — up to 200 rows per call, the whole
   batch lands atomically on the draft. NOT \`table_from_text\` (that always
   CREATES a new table) and NOT a table_row_add loop (you'll hit the per-turn
   tool cap partway through).
+- **Sync/refresh an EXISTING table from fresh data** (an export, a re-import,
+  "update the table with these changes") → \`table_rows_upsert({ table_id,
+  key, rows })\` — rows are matched on the \`key\` column(s): new keys are
+  added, changed rows patched, identical rows counted unchanged. Do NOT
+  hand-compute the diff with table_sql and replay it row by row — the upsert
+  IS the diff.
 - **A spreadsheet file** (.xlsx / .xls / .csv) → \`table_from_file({ file_id })\`:
   bytes go server-side, types inferred, one table per sheet. Never \`file_read\` a
   spreadsheet and retype it.
