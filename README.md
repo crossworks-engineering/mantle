@@ -170,11 +170,21 @@ configured in the interface:
 curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh | bash
 ```
 
-Open http://localhost, create your account, and the onboarding wizard takes
-it from there: model keys, your assistant's personality, who you are.
-Updating is `docker compose pull && docker compose up -d --wait`. Full guide
+With a domain (automatic HTTPS — point the A record at the box first):
+
+```bash
+MANTLE_DOMAIN=mantle.example.com bash -c "$(curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh)"
+```
+
+Open http://localhost (or your domain), create your account, and the
+onboarding wizard takes it from there: model keys, your assistant's
+personality, who you are. Updating is
+`docker compose pull && docker compose up -d --wait`. Full guide
 (domains/HTTPS, pinned versions, backups, rollback):
 **[docs/self-hosting.md](./docs/self-hosting.md)**
+
+Letting an AI agent install it for you? Point it at the machine-oriented
+runbook: **https://mantle-ai.tech/ai-install.md**
 
 Hack on it — dev checkout with hot reload. Prereqs: **Node 26+**, **pnpm**,
 and **Docker** running (`pnpm start` boots Postgres/MinIO/Tika in containers):

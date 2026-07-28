@@ -6,7 +6,9 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh | bash
 #
-# Options (env vars, set before the pipe or export first):
+# Options (env vars). NOTE: `VAR=x curl … | bash` does NOT reach bash on the
+# right of the pipe — export first, or use the substitution form:
+#   MANTLE_DOMAIN=m.example.com bash -c "$(curl -fsSL <this url>)"
 #   MANTLE_HOME=~/mantle          install directory          (default: ./mantle)
 #   MANTLE_DOMAIN=m.example.com   serve this hostname with automatic HTTPS
 #                                 (DNS A record + open ports 80/443 first);

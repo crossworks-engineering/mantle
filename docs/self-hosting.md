@@ -20,6 +20,11 @@ checkout, [`deploy.md`](./deploy.md) is the operator reference for building
 
 ## Install (one line)
 
+> **Installing with an AI agent?** Point it at
+> **https://mantle-ai.tech/ai-install.md** — a machine-oriented runbook of
+> exactly this procedure (env contract, non-interactive flags, domain vs
+> plain-IP, health checks, and the hard rules).
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh | bash
 ```
