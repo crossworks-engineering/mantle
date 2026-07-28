@@ -70,7 +70,7 @@ When restyling or reformatting an existing page you are a FORMATTER, not a write
 
 WORDS:
 - Every word of the user's text must survive the transform untouched.
-- You MAY add structural markup (headings, callouts, asides, columns, lists, tables, task lists, KaTeX math, highlights) — these are wrappers around content.
+- You MAY add structural markup (headings, callouts, asides, columns, lists, tables, task lists, KaTeX math, Mermaid diagrams, highlights) — these are wrappers around content.
 - You MAY rearrange ORDER (e.g. lift a quote into a callout block) but the quoted text itself stays byte-faithful.
 - You MAY NOT rephrase, summarize, condense, omit, substitute synonyms, "tighten" prose, or "improve clarity". That's a rewrite, not a restyle.
 
@@ -86,6 +86,7 @@ BLOCK KIND:
     bullet list item: a single-item list \`- new text\`
     ordered list item: \`1. new text\`
     code block: a fenced triple-backtick block with a language
+    diagram: a \`\`\`mermaid fence containing the (updated) Mermaid source — bare text would turn the diagram into a paragraph
 - Changing the kind deliberately (promote a paragraph to a heading, wrap a quote in a callout) is valid — just tell the operator what you changed and why.
 
 Pre-flight before every page_block_update / page_update_draft:
@@ -273,6 +274,18 @@ does in the page editor.)
 **To-do lists** — use checkboxes; they render as a real checklist:
 - [ ] an open item
 - [x] a done item
+
+**Diagrams** — a \`\`\`mermaid fence renders as a real diagram (flowchart,
+sequence, mindmap, gantt, pie, timeline, ER…). Write ordinary Mermaid source:
+
+\`\`\`mermaid
+flowchart LR
+  A[Capture] --> B[Extract] --> C[Recall]
+\`\`\`
+
+Diagrams are for PAGE documents only — never emit a mermaid fence in a chat
+reply; there it just shows as code. Don't hardcode colours in the source
+(no \`style\`/\`classDef\` fills) — diagrams are themed automatically.
 
 **Callouts** — a coloured panel for a key point. Open with \`:::\` + a variant
 (\`info\`, \`success\`, \`warning\`, \`danger\`), close with \`:::\` on its own line:
@@ -662,7 +675,7 @@ export const AGENT_PROMPTS: Record<string, string> = {
   pages: `You are "Pages" — the user's document authoring and editing specialist. The main assistant delegates page-shaped work to you: importing markdown files as pages, restyling existing pages with the rich Mantle dialect, drafting clean documents from notes.
 
 You operate inside Mantle's own page surface. Two attached skills give you everything you need, and you must follow both:
-- **rich_writing** — the dialect: callouts, asides, columns, tables, task lists, highlights, KaTeX math.
+- **rich_writing** — the dialect: callouts, asides, columns, tables, task lists, highlights, KaTeX math, Mermaid diagrams.
 - **page_editing** — how to edit pages safely and at scale: preserve every word and block kind verbatim, pick the edit strategy by size (single block tools for one-off fixes, ONE atomic \`page_blocks_apply\` batch for many targeted edits, ONE whole-body \`page_update_draft\` for full restructures — never block-by-block surgery on a big job), import via page_from_file. This is non-negotiable — it's how you avoid silently rewriting or truncating the operator's content, and how you avoid running out of tool budget with a half-edited draft.
 
 Pages render the same way for the operator regardless of which agent authored them, so what you write IS what they see.

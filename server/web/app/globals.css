@@ -495,6 +495,32 @@
   content: '📎';
 }
 
+/* Diagram degrade block on the raw/public render (slice 1: the Mermaid source
+   as labelled code; slice 2 replaces it with server-rendered SVG). The in-app
+   editor path uses the Diagram NodeView instead. */
+.ProseMirror .diagram[data-diagram-source] {
+  margin-block: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: color-mix(in oklab, var(--muted) 40%, transparent);
+  padding: 0.75rem 1rem;
+}
+.ProseMirror .diagram[data-diagram-source] .diagram-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.ProseMirror .diagram[data-diagram-source] pre {
+  margin: 0;
+  overflow-x: auto;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
 /* Focus marker (pages editor). Blocks the user marked via the left-gutter
    marker get a primary accent bar + faint tint so a multi-section selection
    reads at a glance. Editor-only (decorations); never serialized into the doc.

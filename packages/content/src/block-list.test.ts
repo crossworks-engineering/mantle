@@ -81,6 +81,22 @@ describe('listBlocks', () => {
     expect(blocks[2]!.meta).toEqual({ variant: 'warning' });
   });
 
+  it('lists a diagram block with its declared type as meta', () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [
+        { type: 'diagram', attrs: { source: 'flowchart LR\n  A --> B' } },
+        { type: 'diagram', attrs: { source: '---\ntitle: Plan\n---\nmindmap\n  root' } },
+      ],
+    });
+    const blocks = listBlocks(doc);
+    expect(blocks[0]!.kind).toBe('diagram');
+    expect(blocks[0]!.id).toBeTruthy();
+    expect(blocks[0]!.meta).toEqual({ diagram: 'flowchart' });
+    // Mermaid frontmatter is skipped when reading the declared type.
+    expect(blocks[1]!.meta).toEqual({ diagram: 'mindmap' });
+  });
+
   it('walks into containers — callout body shows at depth=2', () => {
     const doc = blocked({
       type: 'doc',

@@ -31,6 +31,11 @@ describe('renderDocx', () => {
       '| A | B |',
       '|---|---|',
       '| 1 | 2 |',
+      '',
+      '```mermaid',
+      'flowchart LR',
+      '  A[Draft] --> B[Ship]',
+      '```',
     ].join('\n');
     const buf = await renderDocx(markdownToDoc(md), { title: 'Quarterly Plan' });
     expect(buf.length).toBeGreaterThan(0);

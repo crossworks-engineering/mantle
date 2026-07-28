@@ -158,6 +158,14 @@ function blockMeta(kind: string, node: AnyNode): Record<string, unknown> | null 
     case 'image':
     case 'pageImage':
       return typeof attrs.alt === 'string' && attrs.alt ? { alt: attrs.alt } : null;
+    case 'diagram': {
+      // Surface the declared diagram type (flowchart, sequenceDiagram, mindmap…)
+      // — the first word of the source after any ---frontmatter--- block.
+      if (typeof attrs.source !== 'string') return null;
+      const body = attrs.source.replace(/^\s*---[\s\S]*?---\s*/, '');
+      const word = body.trim().split(/[\s:;{]/, 1)[0];
+      return word ? { diagram: word } : null;
+    }
     default:
       return null;
   }

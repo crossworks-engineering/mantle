@@ -54,6 +54,7 @@ key off `data-*` attributes.
 | Columns | `:::columns` … `+++` … `:::` (2+ parts) | `columnList` ⊃ `column` |
 | Image | `![alt](url)` | `image` node (block, by URL) |
 | Math | `$inline$` / `$$block$$` | `inlineMath` / `blockMath` (KaTeX) |
+| Diagram | ` ```mermaid ` fence (source verbatim) | `diagram` node + NodeView (client-rendered Mermaid SVG; server surfaces show the source until the slice-2 SVG pipeline) |
 
 ```
 :::warning

@@ -198,6 +198,15 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       const name = esc(str(node.attrs?.filename) || 'file');
       return `<a class="file-embed" href="${escAttr(href || '#')}" target="_blank" rel="noopener">${name}</a>`;
     }
+    case 'diagram': {
+      // Slice-1 degrade: the diagram's Mermaid source as an escaped code block
+      // (never a blank). Slice 2 swaps this for cached, sanitized server-rendered
+      // SVG; until then no markup from the source can pass through.
+      const source = str(node.attrs?.source);
+      const id = str(node.attrs?.id);
+      const idAttr = id ? ` id="${escAttr(id)}"` : '';
+      return `<div class="diagram" data-diagram-source${idAttr}><span class="diagram-label">Diagram</span><pre><code>${esc(source)}</code></pre></div>`;
+    }
     case 'childPage': {
       // Sub-pages aren't part of a shared subtree (Phase 4a) — render the card
       // as an inert label, not a link into a private child page. The block id

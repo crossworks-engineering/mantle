@@ -87,6 +87,21 @@ describe('renderPageEmail', () => {
     expect(html).not.toContain('katex');
   });
 
+  it('degrades a diagram to its escaped Mermaid source', () => {
+    const { html } = renderPageEmail({
+      type: 'doc',
+      content: [
+        {
+          type: 'diagram',
+          attrs: { source: 'flowchart LR\n  A["<img src=x onerror=alert(1)>"] --> B' },
+        },
+      ],
+    });
+    expect(html).toContain('flowchart LR');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).not.toContain('<img src=x');
+  });
+
   it('neutralises unsafe link protocols and escapes text', () => {
     const { html } = renderPageEmail({
       type: 'doc',

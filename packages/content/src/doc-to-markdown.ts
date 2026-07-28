@@ -246,6 +246,14 @@ function blockToMd(node: PMNode): string {
       const latex = s(node.attrs?.latex);
       return latex.includes('\n') ? `$$\n${latex}\n$$` : `$$${latex}$$`;
     }
+    case 'diagram': {
+      const source = s(node.attrs?.source);
+      const runs = source.match(/`+/g);
+      const fence = '`'.repeat(
+        Math.max(3, (runs ? Math.max(...runs.map((r) => r.length)) : 0) + 1),
+      );
+      return `${fence}mermaid\n${source}\n${fence}`;
+    }
     default:
       // Unknown / future node: keep its text content if any.
       if (node.content) return blocksToMd(node.content);

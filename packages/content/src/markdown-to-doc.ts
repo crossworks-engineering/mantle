@@ -316,6 +316,11 @@ function blocks(tokens: Tok[] | undefined): PMNode[] {
         break;
       case 'code': {
         const codeText = t.text ?? '';
+        // A ```mermaid fence is a diagram node (source kept verbatim), not a code block.
+        if ((t.lang ?? '').trim().toLowerCase() === 'mermaid') {
+          out.push({ type: 'diagram', attrs: { source: codeText } });
+          break;
+        }
         out.push({
           type: 'codeBlock',
           attrs: { language: t.lang ? t.lang : null },

@@ -182,6 +182,9 @@ function renderBlock(node: PMNode, images: string[]): string {
       return '<hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0">';
     case 'blockMath':
       return `<div style="margin:0 0 16px;text-align:center"><code style="font-family:ui-monospace,Menlo,monospace">${esc(str(node.attrs?.latex))}</code></div>`;
+    case 'diagram':
+      // Slice-1 degrade: Mermaid source as a code block (slice 2 attaches a cid: PNG).
+      return `<pre style="margin:0 0 16px;padding:14px 16px;background-color:#f6f8fa;border-radius:6px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word"><code>${esc(str(node.attrs?.source))}</code></pre>`;
     case 'callout': {
       const variant = (['info', 'success', 'warning', 'danger'] as const).includes(
         str(node.attrs?.variant) as keyof typeof CALLOUT_STYLES,

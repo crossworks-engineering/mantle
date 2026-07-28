@@ -118,6 +118,22 @@ describe('markdownToDoc', () => {
     expect(code?.content?.[0]?.text).toContain('const x = 1;');
   });
 
+  it('maps a ```mermaid fence to a diagram node with the source verbatim', () => {
+    const source = 'flowchart LR\n  A[Start] --> B[End]';
+    const d = find('```mermaid\n' + source + '\n```', 'diagram');
+    expect(d?.attrs?.source).toBe(source);
+    expect(d?.content).toBeUndefined();
+    // Case-insensitive language tag; other languages stay code blocks.
+    expect(find('```Mermaid\ngraph TD\n```', 'diagram')).toBeTruthy();
+    expect(find('```mermaidjs\nx\n```', 'diagram')).toBeUndefined();
+    expect(find('```mermaidjs\nx\n```', 'codeBlock')).toBeTruthy();
+  });
+
+  it('maps a mermaid fence inside a callout to a nested diagram node', () => {
+    const callout = find(':::info\n```mermaid\npie\n  "a": 1\n```\n:::', 'callout');
+    expect(callout?.content?.some((n) => n.type === 'diagram')).toBe(true);
+  });
+
   it('maps a GFM table to table/tableRow/tableHeader/tableCell', () => {
     const t = find('| A | B |\n|---|---|\n| 1 | 2 |', 'table')!;
     expect(t.content?.[0]?.content?.[0]?.type).toBe('tableHeader');

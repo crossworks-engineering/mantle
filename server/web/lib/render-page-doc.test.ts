@@ -202,6 +202,22 @@ describe('renderPageDoc', () => {
     expect(html).not.toContain('<a');
   });
 
+  it('renders a diagram as its escaped source — no markup pass-through', () => {
+    const html = renderPageDoc(
+      doc([
+        {
+          type: 'diagram',
+          attrs: { id: 'blk1', source: 'flowchart LR\n  A["<img src=x onerror=alert(1)>"] --> B' },
+        },
+      ]),
+      opts,
+    );
+    expect(html).toContain('data-diagram-source');
+    expect(html).toContain('id="blk1"');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).not.toContain('<img src=x');
+  });
+
   it('neutralizes dangerous link protocols', () => {
     const html = renderPageDoc(
       doc([

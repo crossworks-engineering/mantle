@@ -65,6 +65,7 @@ const BLOCK_TYPES = new Set([
   'pageImage',
   'fileEmbed',
   'blockMath',
+  'diagram',
   // Sub-page link card (Phase 4a) — addressable so block tools can move/remove it
   'childPage',
 ]);

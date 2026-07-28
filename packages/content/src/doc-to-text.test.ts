@@ -64,6 +64,22 @@ describe('docToText', () => {
     expect(out).toContain('gantry diagram');
   });
 
+  it('surfaces diagram source so the brain can index/recall it', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'The pipeline:' }] },
+        { type: 'diagram', attrs: { source: 'flowchart LR\n  A[Ingest] --> B[Recall]' } },
+        { type: 'paragraph', content: [{ type: 'text', text: 'after' }] },
+      ],
+    };
+    const out = docToText(doc);
+    expect(out).toContain('A[Ingest] --> B[Recall]');
+    // Block separation: the diagram doesn't run into the neighbouring text.
+    expect(out).toContain('The pipeline:\n');
+    expect(out).toContain(']\nafter');
+  });
+
   it('renders callout contents', () => {
     const doc = {
       type: 'doc',

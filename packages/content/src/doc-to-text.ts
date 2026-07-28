@@ -56,12 +56,15 @@ const BLOCK_TYPES = new Set([
   // LABEL_KEYS; this just gives it a trailing newline so adjacent cards'
   // titles don't run together in the indexed plaintext.
   'childPage',
+  // Mermaid diagram atom — its `source` attr is surfaced via LABEL_KEYS.
+  'diagram',
 ]);
 
 /** Attribute keys, in priority order, that carry a human-readable label on
  *  childless atom nodes (mentions, images, file chips, math, emoji). `latex`
- *  surfaces formula source so the brain can index/recall equations. */
-const LABEL_KEYS = ['label', 'title', 'alt', 'text', 'name', 'filename', 'latex'];
+ *  surfaces formula source so the brain can index/recall equations; `source`
+ *  does the same for Mermaid diagrams (label-dense, so usefully recallable). */
+const LABEL_KEYS = ['label', 'title', 'alt', 'text', 'name', 'filename', 'latex', 'source'];
 
 function render(node: PMNode | null | undefined): string {
   if (!node || typeof node !== 'object') return '';

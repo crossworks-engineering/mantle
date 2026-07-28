@@ -108,6 +108,20 @@ describe('docToMarkdown — round-trip stability', () => {
     roundTrips('Inline $E=mc^2$ here.\n\n$$\n\\int_0^1 x\\,dx\n$$');
   });
 
+  it('diagrams (```mermaid fence)', () => {
+    roundTrips('```mermaid\nflowchart LR\n  A[Ingest] --> B{Extract}\n  B --> C[Recall]\n```');
+  });
+
+  it('diagram source containing backtick runs widens the fence', () => {
+    const source = 'flowchart LR\n  A["uses ``` inside"] --> B[ok]';
+    const doc = { type: 'doc', content: [{ type: 'diagram', attrs: { source } }] };
+    const md = docToMarkdown(doc);
+    expect(md.startsWith('````mermaid\n')).toBe(true);
+    const back = markdownToDoc(md) as N;
+    expect(back.content?.[0]?.type).toBe('diagram');
+    expect(back.content?.[0]?.attrs?.source).toBe(source);
+  });
+
   it('text that LOOKS like markdown stays literal', () => {
     roundTrips('A line with a literal * star and _under_score_ and [brackets] and # hash.');
   });

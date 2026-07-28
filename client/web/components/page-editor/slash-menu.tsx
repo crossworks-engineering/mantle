@@ -31,6 +31,7 @@ import {
   Table as TableIcon,
   TextQuote,
   Type,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
@@ -233,6 +234,23 @@ const ITEMS: SlashItem[] = [
         .focus()
         .deleteRange(range)
         .insertContent({ type: 'blockMath', attrs: { latex: 'E = mc^2' } })
+        .run(),
+  },
+  {
+    group: 'Blocks',
+    title: 'Diagram',
+    description: 'A Mermaid diagram (flowchart, mind map, sequence…).',
+    icon: Workflow,
+    keywords: ['diagram', 'mermaid', 'flowchart', 'mindmap', 'chart', 'graph', 'sequence', 'gantt'],
+    command: ({ editor, range }) =>
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: 'diagram',
+          attrs: { source: 'flowchart LR\n  A[Start] --> B{Decide}\n  B -->|yes| C[Ship]\n  B -->|no| D[Iterate]\n  D --> B' },
+        })
         .run(),
   },
   {

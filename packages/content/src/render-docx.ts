@@ -311,6 +311,18 @@ function renderBlock(node: PMNode, ctx: DocxCtx): DocxBlock[] {
           children: [new TextRun({ text: str(node.attrs?.latex), font: 'Consolas' })],
         }),
       ];
+    case 'diagram': {
+      // Slice-1 degrade: Mermaid source as a code block (slice 2 rasterizes to PNG).
+      const source = str(node.attrs?.source);
+      return source.split('\n').map(
+        (line, i) =>
+          new Paragraph({
+            shading: { type: ShadingType.CLEAR, fill: 'F6F8FA' },
+            spacing: { before: i === 0 ? 80 : 0, after: 0 },
+            children: [new TextRun({ text: line, font: 'Consolas', size: 20 })],
+          }),
+      );
+    }
     case 'callout': {
       const variant = str(node.attrs?.variant);
       const fill = CALLOUT_FILL[variant] ?? CALLOUT_FILL.info!;

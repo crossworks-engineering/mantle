@@ -126,6 +126,7 @@ strategy throughout: **reuse libraries, write only what they don't provide.**
 | Aside | — | custom `aside` node + NodeView; themed gradient (selected `chart-N` + angle) painted from one shared helper (`aside-style.ts`) so editor/public/email match; ✨ swatch reshuffles |
 | Code highlighting | `@tiptap/extension-code-block-lowlight` + `lowlight` | `.hljs-*` mapped to theme tokens (CSS) |
 | Math | `@tiptap/extension-mathematics` + `katex` | `$…$` / `$$…$$`; `latex` surfaced in `docToText` |
+| Diagrams | `mermaid` (lazy-loaded in the NodeView, exact-pinned) | custom `diagram` node + NodeView (```mermaid fence; dual-mode source panel with live preview; theme-token `themeVariables`, `securityLevel: 'strict'` + `htmlLabels: false`; `source` surfaced in `docToText`; server surfaces degrade to the source until the slice-2 SVG pipeline) |
 | Image / file embeds | — | custom `image` + `fileEmbed` nodes; upload via the files pipeline; slash + drag/paste |
 
 **Agent authoring:** an agent can now create/update pages too — `markdownToDoc`

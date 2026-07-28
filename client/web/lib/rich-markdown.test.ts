@@ -71,6 +71,15 @@ describe('richMarkdownToHtml', () => {
     expect(richMarkdownToHtml('```ts\nconst x = 1;\n```')).toContain('language-ts');
   });
 
+  it('keeps a ```mermaid fence as a plain code block — chat never renders diagrams', () => {
+    // Deliberate scope rule: the diagram node is a PAGES construct. The chat
+    // surface shows the source as code, exactly like any other fence.
+    const html = richMarkdownToHtml('```mermaid\nflowchart LR\n  A --> B\n```');
+    expect(html).toContain('language-mermaid');
+    expect(html).toContain('flowchart LR');
+    expect(html).not.toContain('data-diagram');
+  });
+
   it('renders GFM tables', () => {
     const html = richMarkdownToHtml('| A | B |\n|---|---|\n| 1 | 2 |');
     expect(html).toContain('<table>');
