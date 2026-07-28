@@ -123,6 +123,22 @@ export function generateMode(modeSeed, { mode }) {
   return { ...out };
 }
 
+/** solveText, but refusing to emit an unmeetable contract. Infeasibility means
+ *  the surfaces span mid-luminance in a way NO single ink can clear (one
+ *  surface needs light text, another dark) — a seed problem, and the author
+ *  should hear it as a generator error naming the surfaces, not as a cryptic
+ *  contrast-test failure three artifacts downstream. */
+function mustSolve(anchorCss, against, opts) {
+  const r = solveText(anchorCss, against, opts);
+  if (!r.feasible) {
+    throw new Error(
+      `no feasible ink: anchor ${anchorCss} cannot clear ${opts?.ratio ?? 4.5}:1 against ` +
+        `[${against.join(', ')}] — the surfaces demand light AND dark text at once; fix the seed`,
+    );
+  }
+  return r;
+}
+
 function generateModeUncached(modeSeed, { mode }) {
   const s = resolveSeed(modeSeed);
   const out = {};
@@ -160,22 +176,22 @@ function generateModeUncached(modeSeed, { mode }) {
   }
 
   // 3. Text on the neutral canvas — anchored on the authored value.
-  out.foreground = solveText(
+  out.foreground = mustSolve(
     s.foreground,
     NEUTRALS.map((n) => out[n]),
   ).hex;
-  out['card-foreground'] = solveText(s['card-foreground'], [out.card]).hex;
-  out['popover-foreground'] = solveText(s['popover-foreground'], [out.popover]).hex;
-  out['sidebar-foreground'] = solveText(s['sidebar-foreground'], [out.sidebar]).hex;
-  out['muted-foreground'] = solveText(
+  out['card-foreground'] = mustSolve(s['card-foreground'], [out.card]).hex;
+  out['popover-foreground'] = mustSolve(s['popover-foreground'], [out.popover]).hex;
+  out['sidebar-foreground'] = mustSolve(s['sidebar-foreground'], [out.sidebar]).hex;
+  out['muted-foreground'] = mustSolve(
     s['muted-foreground'],
     NEUTRALS.map((n) => out[n]),
   ).hex;
 
   // 4. Inks — the fill's colour, at whatever lightness survives every surface.
   const neutralSurfaces = NEUTRALS.map((n) => out[n]);
-  out['primary-ink'] = solveText(out.primary, neutralSurfaces).hex;
-  out['destructive-ink'] = solveText(out.destructive, neutralSurfaces).hex;
+  out['primary-ink'] = mustSolve(out.primary, neutralSurfaces).hex;
+  out['destructive-ink'] = mustSolve(out.destructive, neutralSurfaces).hex;
 
   // 5. Semantic roles — global hue, the theme's own chroma and weight, and
   //    the SAME on-fill text convention as their sibling `destructive` (a
@@ -213,7 +229,7 @@ function generateModeUncached(modeSeed, { mode }) {
     }
     out[role] = pair.fill;
     out[`${role}-foreground`] = pair.fg;
-    out[`${role}-ink`] = solveText(pair.fill, neutralSurfaces).hex;
+    out[`${role}-ink`] = mustSolve(pair.fill, neutralSurfaces).hex;
   }
 
   // 6. Code palette — inks by contract (code sits on --muted, but like every
@@ -223,12 +239,12 @@ function generateModeUncached(modeSeed, { mode }) {
   const keywordHue = pC >= 0.02 ? parseOklch(out.primary)[2] : 300;
   const codeC = clampC(Math.max(pC, dC), 0.05, 0.14);
   const codeAnchorL = dark ? 0.75 : 0.5;
-  out['code-keyword'] = solveText(out['primary-ink'], neutralSurfaces).hex;
+  out['code-keyword'] = mustSolve(out['primary-ink'], neutralSurfaces).hex;
   for (const [role, hue] of Object.entries(CODE_HUES)) {
     // a primary too close to a semantic code hue would make two token kinds
     // identical — push the fixed hue away, keyword keeps the brand.
     const h = hueDistance(hue, keywordHue) < 25 ? (hue + 40) % 360 : hue;
-    out[`code-${role}`] = solveText(
+    out[`code-${role}`] = mustSolve(
       toHex(oklchToSrgb([codeAnchorL, codeC, h])),
       neutralSurfaces,
     ).hex;
@@ -236,10 +252,10 @@ function generateModeUncached(modeSeed, { mode }) {
 
   // 7. Focus rings — non-text, 3:1 against what they ring. A ring the seed
   //    left defaulted follows the SOLVED fill, not the authored one.
-  out.ring = solveText(modeSeed.ring ?? out.primary, [out.background, out.card], {
+  out.ring = mustSolve(modeSeed.ring ?? out.primary, [out.background, out.card], {
     ratio: 3,
   }).hex;
-  out['sidebar-ring'] = solveText(modeSeed['sidebar-ring'] ?? out.ring, [out.sidebar], {
+  out['sidebar-ring'] = mustSolve(modeSeed['sidebar-ring'] ?? out.ring, [out.sidebar], {
     ratio: 3,
   }).hex;
 
@@ -253,7 +269,7 @@ function generateModeUncached(modeSeed, { mode }) {
     // from them — every further step only gains contrast, and the fixed ΔL
     // keeps the five steps tellable-apart (solving each independently used to
     // collapse chart-4 and chart-5 onto the same grey).
-    const floor = solveText(
+    const floor = mustSolve(
       toHex(oklchToSrgb([dark ? 0.5 : 0.6, 0, 0])),
       [out.background, out.card],
       {
@@ -272,7 +288,7 @@ function generateModeUncached(modeSeed, { mode }) {
       const hue = (keywordHue + step) % 360;
       // chart-1 keeps the brand affinity most authored ramps had: it anchors
       // at the primary's own lightness, so it reads as "the theme's colour".
-      out[`chart-${i + 1}`] = solveText(
+      out[`chart-${i + 1}`] = mustSolve(
         toHex(oklchToSrgb([i === 0 ? pL : baseL, chartC, hue])),
         [out.background, out.card],
         { ratio: 3 },

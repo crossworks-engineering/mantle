@@ -98,6 +98,36 @@ distinguishable hues anchored on the brand (achromatic themes get a lightness
 ramp). A seed may pin an authored brand ramp (`charts:` — pinnacle), which is
 identity, not data ink, and exempt from the 3:1 bar.
 
+## Deliberate limits (audited 2026-07-28 — measured, accepted, documented)
+
+- **`secondary` demands its own foreground.** `foreground` on `secondary` is
+  NOT in the contract (15 of 82 blocks measure below AA, worst 1.68:1) —
+  including it would wreck body text in themes with strong secondaries. Text
+  on `bg-secondary` must be `text-secondary-foreground`; the pairing lint
+  catches every provable case, and today zero call sites put plain text on it
+  (slider track + icon button only).
+- **Pinnacle's light-mode brand ramp genuinely fails 3:1** (worst 1.64) —
+  that's what the seed `charts:` override exempts, deliberately: authored
+  brand identity over data-ink contrast, the client's call.
+- **Roles may coincide with the brand** — on a blue-primary theme `info` ≈
+  `primary` (twitter: ΔE 0.002); on a green theme `success` ≈ `primary`.
+  Intrinsic to "info is blue everywhere" and accepted: the safety-critical
+  distinctions (each role vs `destructive` and vs its siblings) are the ones
+  the generator enforces.
+- **User colour marks (`{color=chart-N}`, highlights, asides) stay on chart
+  tokens** — user-chosen decoration at the 3:1 data-ink bar, not AA text. The
+  generated ramps actually improved them: the old mono-ramps could sit at
+  ~1:1 on some themes.
+- **An unmeetable contract aborts generation** (`mustSolve`): if a seed's
+  neutral surfaces span mid-luminance such that no single ink clears them
+  all, `themes:build` fails naming the anchor and surfaces instead of
+  emitting a value for CI to trip over downstream.
+- **Cross-platform determinism is empirical, not guaranteed** — the drift
+  test passes byte-identically on macOS/arm64 and Linux/x64 today; a
+  last-ulp `Math.cbrt`/`**` divergence could in principle flip one 8-bit
+  rounding. If that ever fires, the fix is to quantise solver candidates in
+  the generator, not to loosen the drift test.
+
 ## History
 
 Decided 2026-07-27 (dev brain: "Handover — colour roles, derived inks, and the
