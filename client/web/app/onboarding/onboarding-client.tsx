@@ -2,7 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Check, ExternalLink, Loader2, Sparkles, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Contact,
+  ExternalLink,
+  FolderTree,
+  Loader2,
+  MessagesSquare,
+  Sparkles,
+  X,
+} from 'lucide-react';
 // Import the browser-safe LEAVES directly, NOT the @mantle/content barrel —
 // the barrel pulls identity-context → @mantle/db (postgres) into the client
 // bundle. Same discipline as contacts-format / journal-options.
@@ -1048,10 +1059,24 @@ function Wizard({
         )}
 
         {step === 'done' && (
-          <StepShell
-            title="You’re all set 🌿"
-            blurb="Your assistant knows who you are and is ready to remember everything you give it. Say hello."
-          >
+          <StepShell title="You’re all set 🌿" blurb="Three things worth knowing before you start.">
+            <ul className="space-y-3">
+              <NextStep icon={FolderTree} title="Feed it files">
+                Drop documents into <strong className="font-medium text-foreground">Files</strong>.
+                Each one is read, summarised and indexed as it arrives — so you can ask about it
+                straight away. Large files take a minute to finish.
+              </NextStep>
+              <NextStep icon={Contact} title="Email needs contacts first">
+                Mail is only taken in when the sender is on your{' '}
+                <strong className="font-medium text-foreground">Contacts</strong> list. No contacts
+                means an empty inbox — that&apos;s deliberate, so you never ingest mail you
+                didn&apos;t ask for. Your own mail always comes in.
+              </NextStep>
+              <NextStep icon={MessagesSquare} title="Then just ask">
+                Notes, tasks, pages and reminders all happen by asking in chat. If you gave it
+                something, you can ask about it.
+              </NextStep>
+            </ul>
             <Button onClick={onFinish} disabled={busy}>
               {busy ? <Loader2 className="animate-spin" /> : <Sparkles />} Talk to your assistant
             </Button>
@@ -1234,6 +1259,31 @@ function StepShell({
       </div>
       {children}
     </section>
+  );
+}
+
+/** One line of the closing orientation list — icon, a short label, and the
+ *  detail underneath. Deliberately three items and no more: this is the last
+ *  screen before the assistant, and nobody reads a manual here. */
+function NextStep({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <li className="flex gap-3">
+      <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
+        <Icon className="size-4" />
+      </span>
+      <div className="space-y-0.5">
+        <p className="text-sm font-medium">{title}</p>
+        <p className="text-sm text-muted-foreground">{children}</p>
+      </div>
+    </li>
   );
 }
 
