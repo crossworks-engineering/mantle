@@ -820,6 +820,56 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
     router.push('/pages');
   };
 
+  // Header band — page chrome (name + tags). A themed strip with a bottom
+  // border so the title reads as a label ABOUT the page, not as the document's
+  // first line. Full-width bg; content stays centred. Rendered identically by
+  // both pane layouts (rich-editor scroller and the flat markdown pane).
+  const headerBand = (
+    <header className="border-b border-border bg-muted/40">
+      <div
+        className={cn('mx-auto w-full px-6 py-3', width !== 'wide' ? 'max-w-3xl' : 'max-w-none')}
+      >
+        {/* Icon + title on one left-aligned row. The icon is still the
+            picker trigger (click to pick or remove); saves with the
+            title/tags metadata and reflects to the tree/list/share via
+            rowOf. */}
+        <div className="flex items-center gap-2">
+          <EmojiPicker
+            value={icon}
+            onSelect={setIcon}
+            onClear={() => setIcon(null)}
+            align="start"
+            trigger={
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Change page icon"
+                title="Change icon"
+                className="size-10 shrink-0 rounded-lg p-0 text-2xl leading-none hover:bg-accent"
+              >
+                {icon ?? '📄'}
+              </Button>
+            }
+          />
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={onTitleKeyDown}
+            placeholder="New page"
+            aria-label="Page title"
+            // No box — only a bottom underline that appears (primary) while
+            // editing. A 2px transparent bottom border is always reserved so
+            // focusing doesn't shift the layout.
+            className="h-auto min-w-0 flex-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-2xl font-bold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-2xl"
+          />
+        </div>
+        <div className="mt-2">
+          <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />
+        </div>
+      </div>
+    </header>
+  );
+
   return (
     // `h-full` (not min-h-full) is required so the side-by-side flex
     // container below can give each pane a definite height — without it,
@@ -949,79 +999,47 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
           per ui-style-guide.md so it doesn't hijack the page scroll. Pages-assist
           now lives in the global assistant overlay (auto-armed for this page). */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          {/* Header band — page chrome (name + tags). A themed strip with a
-              bottom border so the title reads as a label ABOUT the page, not as
-              the document's first line. Full-width bg; content stays centred. */}
-          <header className="border-b border-border bg-muted/40">
-            <div
-              className={cn(
-                'mx-auto w-full px-6 py-3',
-                width !== 'wide' ? 'max-w-3xl' : 'max-w-none',
-              )}
-            >
-              {/* Icon + title on one left-aligned row. The icon is still the
-                  picker trigger (click to pick or remove); saves with the
-                  title/tags metadata and reflects to the tree/list/share via
-                  rowOf. */}
-              <div className="flex items-center gap-2">
-                <EmojiPicker
-                  value={icon}
-                  onSelect={setIcon}
-                  onClear={() => setIcon(null)}
-                  align="start"
-                  trigger={
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      aria-label="Change page icon"
-                      title="Change icon"
-                      className="size-10 shrink-0 rounded-lg p-0 text-2xl leading-none hover:bg-accent"
-                    >
-                      {icon ?? '📄'}
-                    </Button>
-                  }
-                />
-                <Input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  onKeyDown={onTitleKeyDown}
-                  placeholder="New page"
-                  aria-label="Page title"
-                  // No box — only a bottom underline that appears (primary) while
-                  // editing. A 2px transparent bottom border is always reserved so
-                  // focusing doesn't shift the layout.
-                  className="h-auto min-w-0 flex-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-2xl font-bold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-2xl"
-                />
+        {mdMode ? (
+          /* Markdown mode is a flat, full-pane source view: header band pinned
+             on top, the textarea filling the remaining height edge-to-edge with
+             its own internal scroll. The width preference deliberately doesn't
+             apply here, and backlinks stay hidden until the user toggles back. */
+          <>
+            {headerBand}
+            {aiPending && (
+              <div className="flex items-center gap-2 border-b border-border bg-primary/10 px-6 py-2 text-sm">
+                <Loader2 className="size-4 shrink-0 animate-spin text-primary-ink" aria-hidden />
+                <span className="font-medium text-foreground">Pages is editing your page…</span>
+                <span className="text-muted-foreground">— your changes are safe</span>
               </div>
-              <div className="mt-2">
-                <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />
-              </div>
-            </div>
-          </header>
-
-          {/* Document body — outline rail (left, wide screens) + centred content. */}
-          <div className="flex w-full gap-6 px-6 py-8">
-            {!mdMode && toc.length > 0 && (
-              <aside className="hidden w-56 shrink-0 xl:block">
-                <div className="sticky top-6 max-h-[calc(100vh-9rem)] overflow-y-auto scrollbar-thin">
-                  <PageOutline entries={toc} onJump={jumpToBlock} />
-                </div>
-              </aside>
             )}
-            <div className="min-w-0 flex-1">
-              <div className={cn('mx-auto w-full', width !== 'wide' ? 'max-w-3xl' : 'max-w-none')}>
-                {mdMode ? (
-                  <textarea
-                    value={mdText}
-                    autoFocus
-                    spellCheck={false}
-                    aria-label="Page markdown source"
-                    onChange={(e) => onMdChange(e.target.value)}
-                    onBlur={() => applyMd(mdText)}
-                    className="min-h-[60vh] w-full resize-y rounded-md border border-border bg-muted/30 p-4 font-mono text-sm leading-relaxed text-foreground outline-none focus:border-ring"
-                  />
-                ) : (
+            <textarea
+              value={mdText}
+              autoFocus
+              spellCheck={false}
+              aria-label="Page markdown source"
+              onChange={(e) => onMdChange(e.target.value)}
+              onBlur={() => applyMd(mdText)}
+              className="min-h-0 w-full flex-1 resize-none bg-transparent px-6 py-5 font-mono text-sm leading-relaxed text-foreground outline-none"
+            />
+          </>
+        ) : (
+          <div className="min-w-0 flex-1 overflow-y-auto">
+            {headerBand}
+
+            {/* Document body — outline rail (left, wide screens) + centred content. */}
+            <div className="flex w-full gap-6 px-6 py-8">
+              {toc.length > 0 && (
+                <aside className="hidden w-56 shrink-0 xl:block">
+                  <div className="sticky top-6 max-h-[calc(100vh-9rem)] overflow-y-auto scrollbar-thin">
+                    <PageOutline entries={toc} onJump={jumpToBlock} />
+                  </div>
+                </aside>
+              )}
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn('mx-auto w-full', width !== 'wide' ? 'max-w-3xl' : 'max-w-none')}
+                >
                   <PageEditor
                     key={editorKey}
                     content={seedDoc ?? initialDoc}
@@ -1036,30 +1054,32 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
                     onEditorReady={onEditorReady}
                     editable={!aiPending}
                   />
-                )}
-                {aiPending && (
-                  <div className="mt-3 flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm shadow-sm">
-                    <Loader2
-                      className="size-4 shrink-0 animate-spin text-primary-ink"
-                      aria-hidden
-                    />
-                    <span className="font-medium text-foreground">Pages is editing your page…</span>
-                    <span className="text-muted-foreground">— your changes are safe</span>
-                  </div>
-                )}
-                {markerMode && !aiPending && (
-                  <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
-                    Marker on — drag down the left gutter to mark sections (click a marked row to
-                    unmark)
-                    {marks.length > 0 ? `; ${marks.length} marked` : ''}. Then ask Pages in the
-                    assistant (⌘I) what to do with them.
-                  </p>
-                )}
-                <PageBacklinks backlinks={backlinks} />
+                  {aiPending && (
+                    <div className="mt-3 flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm shadow-sm">
+                      <Loader2
+                        className="size-4 shrink-0 animate-spin text-primary-ink"
+                        aria-hidden
+                      />
+                      <span className="font-medium text-foreground">
+                        Pages is editing your page…
+                      </span>
+                      <span className="text-muted-foreground">— your changes are safe</span>
+                    </div>
+                  )}
+                  {markerMode && !aiPending && (
+                    <p className="mt-3 pl-10 text-xs italic text-muted-foreground">
+                      Marker on — drag down the left gutter to mark sections (click a marked row to
+                      unmark)
+                      {marks.length > 0 ? `; ${marks.length} marked` : ''}. Then ask Pages in the
+                      assistant (⌘I) what to do with them.
+                    </p>
+                  )}
+                  <PageBacklinks backlinks={backlinks} />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
