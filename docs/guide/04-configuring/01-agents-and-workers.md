@@ -33,6 +33,16 @@ Each agent is a configured assistant. The common settings:
 You start with a **responder** (Telegram) and an **assistant** (web). You can add
 more, including specialised agents that others delegate to.
 
+### The Models tab — switch many agents at once
+
+The **Models** tab on the same screen is a matrix of every agent's provider,
+model and API key. Pick a new set for one agent and every other row grows a
+one-click "apply that same set" button — so moving five agents to a new model is
+one full pick plus four clicks. Changes are **staged**, shown as before → after
+on each row, and nothing is saved until you press **Apply all** (a per-row ✕
+un-stages; leaving the tab discards the lot). Only the primary chat route is
+touched — backup routes, prompts, tools and voices stay as they are.
+
 ### The specialist agents
 
 These ship as delegation targets the front-door assistant can call:
