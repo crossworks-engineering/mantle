@@ -163,14 +163,28 @@ hd "Removing the stack"
 COMPOSE_BASE=(docker compose --project-directory "$STACK_DIR")
 [[ -f "$ENV_FILE" ]] && COMPOSE_BASE+=(--env-file "$ENV_FILE")
 
+# Ad-hoc SANDBOX containers first. They are sandboxd's children, not compose
+# services (created via the docker socket, selected by the mantle.sandbox
+# label), so no `down` ever sees them — and while one is attached, the fixed-
+# name sandbox networks below refuse to delete. Their /files work dirs live
+# under MANTLE_SANDBOXES_HOST_DIR and are deliberately NOT touched here — the
+# data section owns data decisions.
+SBX="$(docker ps -aq --filter "label=mantle.sandbox=true" 2>/dev/null || true)"
+if [[ -n "$SBX" ]]; then
+  # shellcheck disable=SC2086
+  docker rm -f $SBX >/dev/null 2>&1 && ok "Sandbox containers removed (their /files dirs are kept)"
+fi
+
 # The client is its OWN compose project; the server's `down` doesn't touch it,
 # and the shared network won't delete while its containers are still attached.
 if [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then
   "${COMPOSE_BASE[@]}" -f "$STACK_DIR/docker-compose.client.yml" down -v --remove-orphans >/dev/null 2>&1 \
     && ok "Owner UI stack removed" || warn "Owner UI stack: nothing to remove (or already gone)"
 fi
-# --profile local-embedder so an opted-in Ollama is included; harmless otherwise.
-"${COMPOSE_BASE[@]}" --profile local-embedder down -v --remove-orphans >/dev/null 2>&1 \
+# Explicit profiles so opted-in services are included regardless of whether
+# .env (and its COMPOSE_PROFILES line) still exists by the time this runs:
+# local-embedder covers Ollama, sandboxes covers sandboxd. Harmless otherwise.
+"${COMPOSE_BASE[@]}" --profile local-embedder --profile sandboxes down -v --remove-orphans >/dev/null 2>&1 \
   && ok "Server stack removed" || warn "Server stack: nothing to remove (or already gone)"
 
 # Anything left behind by an older layout or a hand-run container.
@@ -182,7 +196,11 @@ STRAGGLERS="$( { docker ps -aq --filter "label=com.docker.compose.project=$SERVE
 if [[ -n "$STRAGGLERS" ]]; then
   docker rm -f $STRAGGLERS >/dev/null 2>&1 && ok "Removed leftover containers"
 fi
-for net in "${SERVER_PROJECT}_default" "${CLIENT_PROJECT}_default"; do
+# The sandbox networks carry FIXED names (not ${project}_default), so they
+# need naming here explicitly; with the sandbox containers already gone they
+# delete cleanly (compose's own down usually gets them first — this is the
+# backstop for a half-torn state).
+for net in "${SERVER_PROJECT}_default" "${CLIENT_PROJECT}_default" mantle_sandbox mantle_sandbox_restricted; do
   docker network rm "$net" >/dev/null 2>&1 && ok "Network $net removed" || true
 done
 
