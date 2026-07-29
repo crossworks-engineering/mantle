@@ -39,5 +39,26 @@ export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
   },
 });
 
+/**
+ * End the pooled connections so a short-lived process can exit.
+ *
+ * Long-lived servers never call this — the pool is meant to outlive any single
+ * request. One-shot CLI scripts MUST, because `postgres()` holds open sockets:
+ * once the work is done the event loop still has a live handle and node never
+ * exits. That failure is silent and expensive — the app-db and table-workbook
+ * backup scripts finished their snapshots, printed their summary, then hung
+ * forever; `db-dump.sh` runs `snapshot && tar` inside ONE `docker exec`, so the
+ * tar was never reached and every archive landed 0 bytes while the run looked
+ * clean. Any script that touches `db` and is expected to terminate needs this.
+ *
+ * Idempotent, and safe to call when the pool was never opened.
+ */
+export async function closeDb(): Promise<void> {
+  const sql = globalThis.__mantleSql;
+  globalThis.__mantleSql = undefined;
+  globalThis.__mantleDb = undefined;
+  if (sql) await sql.end();
+}
+
 export type Db = PostgresJsDatabase<typeof schema>;
 export { schema };

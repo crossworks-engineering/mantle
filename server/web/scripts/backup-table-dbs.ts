@@ -10,6 +10,7 @@
  * Exit codes: 0 all good · 1 usage/crash · 2 one or more snapshots failed
  * (loud — a backup must never silently skip a workbook).
  */
+import { closeDb } from '@mantle/db';
 import { snapshotAllTableDatabases } from '@mantle/content/table-storage';
 
 async function main() {
@@ -30,7 +31,12 @@ async function main() {
   if (r.failed.length > 0) process.exitCode = 2;
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// The pool must be closed or the process never exits — see closeDb(). Set
+// exitCode rather than process.exit() so the summary above is flushed and the
+// 0/1/2 contract above survives.
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  })
+  .finally(closeDb);
