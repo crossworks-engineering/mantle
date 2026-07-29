@@ -249,7 +249,10 @@ const ITEMS: SlashItem[] = [
         .deleteRange(range)
         .insertContent({
           type: 'diagram',
-          attrs: { source: 'flowchart LR\n  A[Start] --> B{Decide}\n  B -->|yes| C[Ship]\n  B -->|no| D[Iterate]\n  D --> B' },
+          attrs: {
+            source:
+              'flowchart LR\n  A[Start] --> B{Decide}\n  B -->|yes| C[Ship]\n  B -->|no| D[Iterate]\n  D --> B',
+          },
         })
         .run(),
   },
