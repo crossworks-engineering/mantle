@@ -582,14 +582,37 @@ services:
     # but never bound.
     ports:
       - "127.0.0.1:${MANTLE_WEB_DEBUG_PORT:-3000}:3000"
-    # Liveness: is the Next.js server actually answering HTTP? `fetch` rejects
-    # ONLY on a network error (connection refused / not listening), so any
-    # response — including the 401 this owner-gated route returns when
-    # unauthenticated — means the app is up. Uses node (curl is purged from the
-    # final image). Makes `up -d --wait` and Caddy's depends_on gate on a
-    # working app instead of just a started container.
+    # Liveness, in two parts — and the first part exists because the second
+    # one lied.
+    #
+    # 1. Does this container have a NETWORK? When a published port can't bind,
+    #    Docker abandons the container's whole network setup and the process
+    #    still runs: attached to nothing, unable to resolve postgres, and
+    #    unreachable by Caddy. Every HTTP-only check passes in that state,
+    #    because 127.0.0.1 inside the container works perfectly. A brain was
+    #    reported "23 services healthy, app serving" while sitting like this.
+    #    `os.networkInterfaces()` is the honest signal: no non-internal
+    #    interface means no network, full stop.
+    #
+    #    Deliberately NOT a probe of postgres. Reaching a peer would fold that
+    #    peer's health into ours — a routine database restart would take the
+    #    front door down with it, since Caddy gates on this check. Asking
+    #    whether we have an interface answers the real question and depends on
+    #    nobody.
+    #
+    # 2. Is the server answering HTTP? `fetch` rejects ONLY on a network error
+    #    (connection refused / not listening), so any response — including the
+    #    401 this owner-gated route returns when unauthenticated — means the
+    #    app is up.
+    #
+    # Uses node (curl is purged from the final image). Makes `up -d --wait` and
+    # Caddy's depends_on gate on a working app, not just a started container.
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
+      test:
+        - CMD
+        - node
+        - -e
+        - "const os=require('os');const wired=Object.entries(os.networkInterfaces()).some(([n,a])=>n!=='lo'&&(a||[]).some(x=>!x.internal));if(!wired){console.error('no network interface — container networking failed');process.exit(1)}fetch('http://127.0.0.1:3000/api/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 12
