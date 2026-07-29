@@ -26,6 +26,7 @@ import { ShareControl } from '@/components/share-control';
 import { ExportMenu } from '@/components/export/export-menu';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
+import { MarkdownDialog } from '@/components/page-editor/markdown-dialog';
 import { PageOutline } from '@mantle/web-ui/page-outline';
 import { PageBacklinks } from '@/components/page-editor/page-backlinks';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
@@ -855,6 +856,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
           >
             <StretchHorizontal /> Full width
           </Button>
+          <MarkdownDialog getDoc={() => docRef.current} />
           <ExportMenu nodeId={initial.id} />
           <ShareControl nodeId={initial.id} beforeEnable={commit} teamMode allowCascade />
           <Button
