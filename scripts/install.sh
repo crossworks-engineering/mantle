@@ -80,6 +80,16 @@ port_busy() { # $1 = port → 0 when something is already listening on it
   elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
   else return 1; fi   # can't tell → assume free; compose will report the truth
 }
+port_ours() { # $1 = port → 0 when THIS install already publishes it
+  docker ps --filter "label=com.docker.compose.project=$COMPOSE_PROJECT" \
+    --format '{{.Ports}}' 2>/dev/null | grep -q ":$1->"
+}
+# The question that actually matters is "is this port unavailable TO US", not
+# "is anything listening". Re-running the installer on a healthy box — the
+# supported way to add a domain later — would otherwise find its OWN Caddy on
+# :80, call it taken, and move a working front door to :8080 for no reason.
+# Our own container is about to be recreated, so its port is ours to keep.
+port_taken() { port_busy "$1" && ! port_ours "$1"; }
 confirm() { # $1 = prompt, $2 = default y|n → 0 when yes
   local __cf_d="${2:-y}" __cf_a=""
   if [[ $INTERACTIVE -eq 0 ]]; then [[ "$__cf_d" == y ]]; return; fi
@@ -155,12 +165,17 @@ while [[ $# -gt 0 ]]; do case "$1" in
 esac; done
 
 ENV_FILE="$STACK_DIR/.env"
+# Compose derives the project name from the stack directory unless told
+# otherwise, lowercasing it and dropping characters it won't accept. Needed to
+# tell OUR containers' ports apart from a stranger's — so it has to match what
+# compose will actually use, not just the directory name.
+COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$STACK_DIR" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')}"
 # Prompt only when there is someone to answer AND they didn't ask us not to.
 # (`if`, not `[[ … ]] && …` — under `set -e` a false one-liner ends the script.)
 if [[ $ASSUME_YES -eq 0 && $TTY_IN -eq 1 ]]; then INTERACTIVE=1; fi
 
 # ── sanity-only shortcut ─────────────────────────────────────────────────────
-if [[ $SANITY_ONLY -eq 1 ]]; then exec bash "$(dirname "$0")/sanity.sh"; fi
+if [[ $SANITY_ONLY -eq 1 ]]; then MANTLE_ENV_FILE="$ENV_FILE" MANTLE_COMPOSE_PROJECT="$COMPOSE_PROJECT" exec bash "$(dirname "$0")/sanity.sh"; fi
 
 banner
 
@@ -270,7 +285,16 @@ dns_verdict() { # $1 = host → sets DNS_VERDICT (match|mismatch|none) + DNS_SEE
 
 PUBLIC_IP="$(detect_public_ip)"
 LOCAL_IPS="$(hostname -I 2>/dev/null || true)"
-LAN_IP="$(printf '%s' "$LOCAL_IPS" | awk '{print $1}')"
+# The address to advertise. `hostname -I` lists every interface in no
+# guaranteed order, and a box with Docker has several bridge addresses in it —
+# taking the first blindly can advertise 172.17.0.1 as the place to open, and
+# bake it into MANTLE_SERVER_ORIGIN, which the browser uses as its API base.
+# Prefer a real IPv4; fall back to any if that's all there is (a genuine
+# 172.16/12 LAN).
+LAN_IP="$(printf '%s\n' $LOCAL_IPS | grep -E '^[0-9]+\.' | grep -vE '^(127\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[01])\.)' | head -1 || true)"
+if [[ -z "$LAN_IP" ]]; then
+  LAN_IP="$(printf '%s\n' $LOCAL_IPS | grep -E '^[0-9]+\.' | grep -vE '^(127\.|169\.254\.)' | head -1 || true)"
+fi
 if [[ -n "$PUBLIC_IP" ]]; then inf "This server looks like ${B}$PUBLIC_IP${RS} from the internet"; fi
 
 # Pick the shape. Passing --site-address skips all of this deliberately.
@@ -364,22 +388,31 @@ fi
 free_port_from() { # $1 = first candidate, $2 = last → echoes a free one
   local p
   for p in $(seq "$1" "$2"); do
-    if ! port_busy "$p"; then printf '%s' "$p"; return 0; fi
+    if ! port_taken "$p"; then printf '%s' "$p"; return 0; fi
   done
   return 1
 }
 HTTP_PORT=80; HTTPS_PORT=443
-if port_busy 80 || port_busy 443; then
-  busy_list=""
-  if port_busy 80;  then busy_list="80"; fi
-  if port_busy 443; then busy_list="${busy_list:+$busy_list and }443"; fi
+# "Will Caddy try to get a certificate?" — not "did they pass --domain".
+# A hostname in --site-address means auto-HTTPS just as surely, and moving the
+# ports under it would produce the same never-issues-a-certificate install that
+# domain mode refuses to build.
+WANTS_CERT=0
+if [[ "$ACCESS_MODE" == domain ]]; then WANTS_CERT=1; fi
+if [[ -z "$ACCESS_MODE" && -n "$SITE_ADDRESS" && "$SITE_ADDRESS" != :* ]]; then WANTS_CERT=1; fi
+CERT_HOST="${DOMAIN:-$SITE_ADDRESS}"
 
-  if [[ "$ACCESS_MODE" == domain ]]; then
+if port_taken 80 || port_taken 443; then
+  busy_list=""
+  if port_taken 80;  then busy_list="80"; fi
+  if port_taken 443; then busy_list="${busy_list:+$busy_list and }443"; fi
+
+  if [[ $WANTS_CERT -eq 1 ]]; then
     bad "Port $busy_list already in use — and a certificate can only be issued on 80 and 443."
     inf "   ${DIM}Let's Encrypt answers the challenge on those exact ports; moving them means no HTTPS.${RS}"
     inf "   ${DIM}Usually this is an existing nginx or apache already serving the box.${RS}"
     if [[ $INTERACTIVE -eq 0 ]]; then
-      die "Free port $busy_list and re-run, or install behind your existing proxy: scripts/install.sh --behind-proxy --domain $DOMAIN"
+      die "Free port $busy_list and re-run, or install behind your existing proxy: scripts/install.sh --behind-proxy --domain $CERT_HOST"
     fi
     printf '\n    %s1%s  Re-check — I'"'"'m freeing the port now\n' "$B$CYN" "$RS"
     printf '    %s2%s  Run behind the existing proxy %s(plain HTTP on a spare port; your proxy terminates TLS)%s\n' "$B$CYN" "$RS" "$DIM" "$RS"
@@ -387,7 +420,7 @@ if port_busy 80 || port_busy 443; then
     while :; do
       ask p80 "Choice" "1"
       case "$p80" in
-        1) if port_busy 80 || port_busy 443; then warn "Still in use."; else ok "Ports 80 and 443 are free."; break; fi ;;
+        1) if port_taken 80 || port_taken 443; then warn "Still in use."; else ok "Ports 80 and 443 are free."; break; fi ;;
         2) ACCESS_MODE="proxy"; break ;;
         3) die "Nothing changed. Free port $busy_list, then run this again." ;;
         *) warn "Pick 1, 2 or 3." ;;
@@ -395,15 +428,18 @@ if port_busy 80 || port_busy 443; then
     done
   fi
 
-  # Not issuing a certificate (or explicitly behind a proxy) → just move.
-  if [[ "$ACCESS_MODE" != domain ]]; then
-    if port_busy 80; then
+  # No certificate to issue (or deliberately behind someone else's proxy) →
+  # the port number doesn't matter, so just move.
+  if [[ $WANTS_CERT -eq 0 || "$ACCESS_MODE" == proxy ]]; then
+    if port_taken 80; then
       HTTP_PORT="$(free_port_from 8080 8099)" || die "Ports 80 and 8080-8099 are all in use — free one and re-run."
     fi
-    if port_busy 443; then
+    if port_taken 443; then
       HTTPS_PORT="$(free_port_from 8443 8462)" || die "Ports 443 and 8443-8462 are all in use — free one and re-run."
     fi
-    warn "Port $busy_list already in use — serving on ${B}$HTTP_PORT${RS} instead."
+    if [[ "$ACCESS_MODE" != proxy ]]; then
+      warn "Port $busy_list already in use — serving on ${B}$HTTP_PORT${RS} instead."
+    fi
   fi
 fi
 
@@ -524,10 +560,10 @@ upsert MANTLE_IMAGE_TAG    "$IMAGE_TAG"
 # leftover stack or a `next dev` on :3000 is enough. So pick a free port here
 # rather than hand the user an opaque bind error (or a silently dead app).
 DEBUG_PORT="$(getval MANTLE_WEB_DEBUG_PORT)"; DEBUG_PORT="${DEBUG_PORT:-3000}"
-if port_busy "$DEBUG_PORT"; then
+if port_taken "$DEBUG_PORT"; then
   free_port=""
   for p in $(seq 3000 3020); do
-    if ! port_busy "$p"; then free_port="$p"; break; fi
+    if ! port_taken "$p"; then free_port="$p"; break; fi
   done
   if [[ -n "$free_port" ]]; then
     warn "Port $DEBUG_PORT is already in use — using ${B}$free_port${RS} for the local debug tunnel instead."
@@ -568,11 +604,8 @@ ok "Wrote ${B}$ENV_FILE${RS} ${DIM}(chmod 600)${RS}"
 
 if [[ $SKIP_UP -eq 1 ]]; then hd "Done (--skip-up)"; inf "Config written; stack not started. Bring it up with: ${B}docker compose up -d --wait${RS}"; exit 0; fi
 
-# Port 80 was checked with the access mode above, where the advice can be
-# specific. 443 only matters once there's a certificate to serve.
-if [[ "$ACCESS_MODE" == domain ]] && port_busy 443; then
-  warn "Port 443 is already in use — Caddy needs it to serve HTTPS."
-fi
+# 80 and 443 were both settled with the access mode above, where the advice can
+# be specific and the port can still be changed.
 
 # ── 3b. front door: route BOTH apps on one domain ────────────────────────────
 # Since v0.200 Mantle is two images — the server (API + share/print surfaces)
@@ -644,7 +677,7 @@ fi
 # check is how a dead install came to be reported as a working one — and a
 # scripted deploy needs the exit code to say so too.
 SANITY_RC=0
-bash "$(dirname "$0")/sanity.sh" || SANITY_RC=$?
+MANTLE_ENV_FILE="$ENV_FILE" MANTLE_COMPOSE_PROJECT="$COMPOSE_PROJECT" bash "$(dirname "$0")/sanity.sh" || SANITY_RC=$?
 
 if [[ $SANITY_RC -ne 0 ]]; then
   hd "Installation incomplete"
