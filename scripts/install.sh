@@ -120,7 +120,9 @@ ${B}Options${RS}
   --behind-proxy         You already run nginx/apache on 80/443. Caddy serves plain
                          HTTP on 127.0.0.1:8080 (or the next free port) and your
                          proxy terminates TLS. Combine with --domain for links.
-  --site-address <addr>  Set MANTLE_SITE_ADDRESS verbatim (advanced; overrides above)
+  --site-address <addr>  Set MANTLE_SITE_ADDRESS verbatim (advanced; overrides above).
+                         A hostname here means auto-HTTPS just as --domain does, so
+                         ports 80 and 443 must be free for the certificate to issue.
   --data-dir <path>      MANTLE_DATA_DIR (default: ./data) — all data binds here
   --stack-dir <path>     MANTLE_STACK_DIR (default: this dir) — used by the updater
   --image-tag <tag>      MANTLE_IMAGE_TAG (default: latest)
