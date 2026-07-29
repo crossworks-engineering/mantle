@@ -11,6 +11,15 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 PROJECT="${MANTLE_COMPOSE_PROJECT:-mantle}"
+CLIENT_PROJECT="${MANTLE_CLIENT_PROJECT:-mantle-client}"
+# Resolved once, up here: both the missing-service check and the endpoint probe
+# need the stack dir and its .env.
+# Overridable for the same reason MANTLE_ENV_FILE is: with `--stack-dir`, the
+# install being checked is not the one this script happens to live beside, and
+# reading the wrong compose file would compare against the wrong service list.
+STACK_DIR="${MANTLE_STACK_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P)}"
+ENV_FILE="${MANTLE_ENV_FILE:-$STACK_DIR/.env}"
+envval() { [[ -f "$ENV_FILE" ]] && grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
   B=$'\033[1m'; DIM=$'\033[2m'; RS=$'\033[0m'
@@ -39,11 +48,45 @@ fi
 # docker-compose.client.yml) since the v0.200 split. Fold its container in so
 # a brain with a perfectly healthy backend and NO usable interface can't pass
 # a sanity check — the exact shape of a broken fresh install.
-mapfile -t CLIENT_NAMES < <(docker ps -a --filter "label=com.docker.compose.project=mantle-client" --format '{{.Names}}' | sort)
+mapfile -t CLIENT_NAMES < <(docker ps -a --filter "label=com.docker.compose.project=$CLIENT_PROJECT" --format '{{.Names}}' | sort)
 NAMES+=("${CLIENT_NAMES[@]}")
 if [[ ${#NAMES[@]} -eq 0 ]]; then bad "No containers found for compose project 'mantle' (or 'mantle-dev'). Is the stack up?"; exit 1; fi
 
 fail=0; up=0
+
+# ── services that should exist and don't ─────────────────────────────────────
+# Everything below can only judge containers that EXIST. A service that failed
+# to be CREATED leaves nothing to inspect, so it drops out of the report
+# entirely — and a stack missing its web container reads as "all good" over the
+# ones that did start. So ask compose what this install is meant to run.
+#
+# The list honours COMPOSE_PROFILES from .env, which is the whole reason this
+# is safe to do: an opted-out local embedder is not reported missing, and
+# sandboxd IS expected once sandboxes are on. Skipped for the dev project,
+# which is a different compose file, and skipped silently if compose can't
+# render the config — a check that can't be computed must not invent failures.
+if [[ "$PROJECT" != "mantle-dev" && -f "$ENV_FILE" && -f "$STACK_DIR/docker-compose.yml" ]]; then
+  expected="$( {
+    docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" config --services 2>/dev/null
+    if [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then
+      docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
+        -f "$STACK_DIR/docker-compose.client.yml" config --services 2>/dev/null
+    fi
+  } | grep -v '^$' | sort -u )"
+  if [[ -n "$expected" ]]; then
+    # One query per project: repeating a label filter with the SAME key ANDs
+    # them, so asking for both projects at once matches nothing.
+    actual="$( {
+      docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Label "com.docker.compose.service"}}'
+      docker ps -a --filter "label=com.docker.compose.project=$CLIENT_PROJECT" --format '{{.Label "com.docker.compose.service"}}'
+    } | grep -v '^$' | sort -u )"
+    while read -r svc; do
+      [[ -z "$svc" ]] && continue
+      bad "$svc — no container at all (compose expects it; it was never created)"
+      fail=$((fail + 1))
+    done < <(comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual"))
+  fi
+fi
 # A published port Docker could not program. When a host port is already taken,
 # Docker aborts the container's ENTIRE network setup — it can end up `running`
 # and `healthy` (the healthcheck only probes 127.0.0.1 INSIDE the container)
@@ -101,9 +144,6 @@ done
 #      indistinguishable by code alone. /api/auth/bootstrap-state is public,
 #      Mantle-specific and touches the DB, so its body is real evidence.
 hd "App endpoint"
-STACK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P)"
-ENV_FILE="${MANTLE_ENV_FILE:-$STACK_DIR/.env}"
-envval() { [[ -f "$ENV_FILE" ]] && grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
 SITE_ADDRESS="$(envval MANTLE_SITE_ADDRESS)"
 DEBUG_PORT="$(envval MANTLE_WEB_DEBUG_PORT)"; DEBUG_PORT="${DEBUG_PORT:-3000}"
 # The front door isn't always on 80/443: an install sharing the box with an

@@ -200,7 +200,7 @@ COMPOSE_PROJECT="${COMPOSE_PROJECT:-$(basename "$STACK_DIR" | tr '[:upper:]' '[:
 if [[ $ASSUME_YES -eq 0 && $TTY_IN -eq 1 ]]; then INTERACTIVE=1; fi
 
 # ── sanity-only shortcut ─────────────────────────────────────────────────────
-if [[ $SANITY_ONLY -eq 1 ]]; then MANTLE_ENV_FILE="$ENV_FILE" MANTLE_COMPOSE_PROJECT="$COMPOSE_PROJECT" exec bash "$(dirname "$0")/sanity.sh"; fi
+if [[ $SANITY_ONLY -eq 1 ]]; then MANTLE_ENV_FILE="$ENV_FILE" MANTLE_STACK_DIR="$STACK_DIR" MANTLE_COMPOSE_PROJECT="$COMPOSE_PROJECT" exec bash "$(dirname "$0")/sanity.sh"; fi
 
 banner
 
@@ -752,7 +752,7 @@ fi
 # check is how a dead install came to be reported as a working one — and a
 # scripted deploy needs the exit code to say so too.
 SANITY_RC=0
-MANTLE_ENV_FILE="$ENV_FILE" MANTLE_COMPOSE_PROJECT="$COMPOSE_PROJECT" bash "$(dirname "$0")/sanity.sh" || SANITY_RC=$?
+MANTLE_ENV_FILE="$ENV_FILE" MANTLE_STACK_DIR="$STACK_DIR" MANTLE_COMPOSE_PROJECT="$COMPOSE_PROJECT" bash "$(dirname "$0")/sanity.sh" || SANITY_RC=$?
 
 if [[ $SANITY_RC -ne 0 ]]; then
   hd "Installation incomplete"
