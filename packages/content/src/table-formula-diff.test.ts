@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { create, all, type FactoryFunctionMap } from 'mathjs';
 import { evalFormula } from './table-formula';
 import { evalFormulaMath } from './table-formula-mathjs';
 import type { Row, TableDoc } from './table-model';
@@ -129,11 +130,13 @@ describe('table formula engines — differential', () => {
  * checking while every other test stayed green.
  */
 describe('unit integrity — the reason for the migration', () => {
-  const raw = (expr: string): unknown => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { create, all } = require('mathjs');
-    return create(all).evaluate(expr);
-  };
+  // mathjs is 18MB and costs ~400ms to load even idle. Imported at module
+  // scope on purpose: inside the helper, that load lands inside the test's own
+  // timeout, and on a busy many-core box it blew the budget — a green test
+  // failing for reasons that had nothing to do with what it asserts.
+  // `all as FactoryFunctionMap` mirrors table-formula-mathjs.ts: the ESM types
+  // declare `all` as possibly undefined, which the old `require` form hid.
+  const raw = (expr: string): unknown => create(all as FactoryFunctionMap).evaluate(expr);
 
   it('still adds like quantities', () => {
     expect(String(raw('1 ft + 2 ft'))).toBe('3 ft');
