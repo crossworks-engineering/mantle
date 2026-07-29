@@ -2,7 +2,8 @@
 
 Every executable in the repo that isn't application code: the dev-stack
 bring-up, the backup/restore pair, the installer, the maintenance and backfill
-runners, the code generators, the git hooks and CI.
+runners, the code generators, the git hooks and CI — plus the raw
+`docker compose` commands those wrappers sit on ([§2](#2-docker-and-compose)).
 
 The rule of thumb for **where a thing lives**:
 
@@ -101,7 +102,156 @@ source tree.
 
 ---
 
-## 2. Worktrees
+## 2. Docker and compose
+
+The `pnpm` aliases above are thin wrappers over `docker compose`. When something
+is wedged, or you need one service rather than the stack, you drop to these.
+
+### The four compose projects
+
+Each compose file pins its project with a `name:` key, so the project is the
+same no matter which directory you run it from:
+
+| File | Project | Containers | What it is |
+|---|---|---|---|
+| `docker-compose.dev.yml` | `mantle-dev` | `mantle_dev_pg`, `mantle_dev_minio`, `mantle_dev_tika`, `mantle_dev_browser` | Local dev **infra only** — the app runs on your host under `pnpm dev` |
+| `docker-compose.yml` | `mantle` | `mantle_pg`, `mantle_minio`, `mantle_tika`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the *same* image differing only by `command:` |
+| `docker-compose.client.yml` | `mantle-client` | `mantle_client_web`, `mantle_client_caddy` | The zero-secret owner UI (split out at v0.200) |
+| `e2e/stack/docker-compose.yml` | `mantle-e2e` | `mantle_e2e_pg`, `mantle_e2e_minio`, `mantle_e2e_browser` | Throwaway stack for the Playwright suite |
+
+> **`-p` does not isolate a second stack.** Every service sets an explicit
+> `container_name:`, so running the same file under a different project name
+> collides on those names rather than creating a parallel stack. Dev and prod
+> can coexist on one host only because they use *different* container names.
+
+### Dev stack (`docker-compose.dev.yml`)
+
+```bash
+pnpm infra:up                                    # up -d --wait
+pnpm infra:down                                  # stop + remove
+pnpm infra:logs                                  # follow all services
+pnpm infra:psql                                  # psql inside the container
+```
+
+The equivalents, plus what has no alias:
+
+```bash
+docker compose -f docker-compose.dev.yml ps
+docker compose -f docker-compose.dev.yml restart postgres
+docker compose -f docker-compose.dev.yml logs -f --tail=100 minio
+docker compose -f docker-compose.dev.yml stop                    # keep containers
+docker compose -f docker-compose.dev.yml start                   # bring them back
+docker compose -f docker-compose.dev.yml down -v                 # + named volumes
+```
+
+Ports (all bound to `127.0.0.1`): Postgres `54323`, MinIO `9000` (API) and
+`9001` (console), Tika `9998`, headless Chromium `9222`.
+
+`down -v` is safe for data: since v0.103 Postgres and MinIO are **bind mounts**
+under `MANTLE_DATA_DIR`, not named volumes — which is exactly why `reset.sh` has
+to delete those directories explicitly.
+
+### Deployed stack (`docker-compose.yml`)
+
+Run from the stack dir (`~/mantle`), where `.env` lives:
+
+```bash
+docker compose pull                              # fetch the configured tag
+docker compose up -d --wait                      # start / converge, wait for health
+docker compose ps                                # state + health of every service
+docker compose logs -f --tail=200 web            # follow one service
+docker compose restart worker_email              # restart one service
+docker compose down                              # stop the stack (data untouched)
+docker compose up -d --remove-orphans            # converge after a compose change
+```
+
+Root aliases exist for the common three: `pnpm prod:up`, `pnpm prod:down`,
+`pnpm prod:logs`.
+
+Useful specifics:
+
+```bash
+docker compose up -d --force-recreate web        # recreate one service
+docker compose run --rm migrate                  # re-run migrations by hand
+docker compose exec postgres psql -U postgres -d postgres
+docker compose exec web sh                       # shell in the app container
+docker compose config                            # the merged file, overrides applied
+docker compose --profile local-embedder up -d    # one-off profile activation
+```
+
+Ports: Caddy publishes `${MANTLE_BIND_ADDR:-0.0.0.0}` on `${MANTLE_HTTP_PORT:-80}`
+and `${MANTLE_HTTPS_PORT:-443}` (TCP + UDP for HTTP/3); the app itself is
+reachable only on `127.0.0.1:${MANTLE_WEB_DEBUG_PORT:-3000}`
+for debugging. Postgres and MinIO publish **nothing** — which is why
+`prod-db-tunnel.sh` resolves container IPs instead of a host port.
+
+`migrate` (migrations + `pgboss:init` + API provisioning), `createbuckets` and
+`ollama_pull` are **one-shots**: `exited (0)` is success, not a failure — which
+is why `sanity.sh` treats them separately.
+
+Two services are opt-in via `COMPOSE_PROFILES` in `.env` (set by
+`scripts/install.sh --local-embedder` / `--sandboxes`, so every later
+`pull`/`up` — including the updater's — keeps them):
+
+| Profile | Brings up |
+|---|---|
+| `local-embedder` | `ollama` + the `ollama_pull` one-shot (EmbeddingGemma) |
+| `sandboxes` | `sandboxd` and the isolated `mantle_sandbox` / `mantle_sandbox_restricted` networks |
+
+### Client stack (`docker-compose.client.yml`)
+
+A separate project, so it needs both flags — `--project-directory .` makes it
+read the same `.env`:
+
+```bash
+docker compose -f docker-compose.client.yml --project-directory . pull
+docker compose -f docker-compose.client.yml --project-directory . up -d --wait
+docker compose -f docker-compose.client.yml --project-directory . logs -f
+docker compose -f docker-compose.client.yml down
+```
+
+Forgetting it is a real failure mode: the backend updates, the owner UI silently
+stays on the old image. `sanity.sh` folds this project in for that reason.
+
+### Health, disk and cleanup
+
+```bash
+bash scripts/sanity.sh                           # the verdict, not the raw list
+docker ps --format '{{.Names}}\t{{.Status}}\t{{.Ports}}'
+docker stats --no-stream                         # live CPU / memory per container
+docker inspect --format '{{json .State.Health}}' mantle_web | jq
+docker system df                                 # where the disk went
+docker image prune -f                            # reclaim superseded image layers
+```
+
+`autoheal` restarts any container that opts in with `autoheal=true` and goes
+unhealthy — but nothing restarts autoheal itself (that would be circular), so an
+unhealthy `mantle_autoheal` in `docker ps` means **you** are the actuator.
+
+Log growth is capped at 3×10 MB per container by a shared `logging:` anchor —
+Docker's default `json-file` driver is unbounded, and a crash-looping worker
+filling the disk takes Postgres, and the brain, down with it.
+
+Safe to prune: images. **Not** something to reach for: `docker volume prune` —
+it won't touch your data (it's all bind-mounted under `MANTLE_DATA_DIR`,
+including Caddy's ACME certs, deliberately, so redeploys never risk a Let's
+Encrypt rate limit), but the one named volume in the prod stack is a live
+tailscaled IPC socket.
+
+### Before starting anything
+
+Never start a second instance — another session, another worktree, or a stale
+watcher may already be serving:
+
+```bash
+docker ps --format '{{.Names}}\t{{.Status}}\t{{.Ports}}'; lsof -iTCP -sTCP:LISTEN -P -n | grep -E ':(3000|3100|3900|54323)'
+```
+
+On Linux the second half is `ss -ltnp | grep -E ':(3000|3100|3900|54323)'`.
+
+---
+
+## 3. Worktrees
 
 Parallel sessions must not share the original checkout — see the
 [repo guidance](../CLAUDE.md#worktrees-are-the-default-for-parallel-work) for
@@ -130,7 +280,7 @@ Refuses when the tree is dirty unless you pass `-f`.
 
 ---
 
-## 3. Database: dump, restore, tunnel
+## 4. Database: dump, restore, tunnel
 
 ### `pnpm db:dump` → `scripts/db-dump.sh`
 
@@ -199,7 +349,7 @@ on your tailnet (scope with ACLs); `reset` removes it.
 
 ---
 
-## 4. Install, update, uninstall
+## 5. Install, update, uninstall
 
 ### `install.sh` (repo root) — the one-liner
 
@@ -321,7 +471,7 @@ via passwordless sudo or a docker `chown` helper.
 
 ---
 
-## 5. Diagnostics
+## 6. Diagnostics
 
 ### `pnpm status` → `scripts/status.mjs`
 
@@ -356,7 +506,7 @@ Read-only. With no id it lists the 10 newest nodes. Companion doc:
 
 ---
 
-## 6. Brain data: maintenance, seeds, backfills, evals
+## 7. Brain data: maintenance, seeds, backfills, evals
 
 All of these live in `server/web/scripts/*.ts` and run under `tsx` with
 `--env-file-if-exists=./.env.local`.
@@ -437,7 +587,7 @@ Case files live in `server/web/scripts/eval/`.
 
 ---
 
-## 7. Code generation
+## 8. Code generation
 
 These write files that are committed or built; you rarely invoke them directly
 because they're wired into `predev` / `prebuild` / `pretypecheck`.
@@ -455,7 +605,7 @@ because they're wired into `predev` / `prebuild` / `pretypecheck`.
 
 ---
 
-## 8. Release
+## 9. Release
 
 ### `pnpm version:bump <patch|minor|major|x.y.z>` → `scripts/bump-version.mjs`
 
@@ -505,7 +655,7 @@ Release needs the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets.
 
 ---
 
-## 9. End-to-end tests
+## 10. End-to-end tests
 
 ### `pnpm e2e` → `e2e/scripts/run-local.sh`
 
@@ -527,7 +677,7 @@ Playwright projects against an already-running stack.
 
 ---
 
-## 10. Adding a script
+## 11. Adding a script
 
 - **Put it where its blast radius is.** Host/repo operations go in `scripts/`;
   anything that reads or writes brain data goes in `server/web/scripts/` and
