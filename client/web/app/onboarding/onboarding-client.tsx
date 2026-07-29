@@ -1059,12 +1059,15 @@ function Wizard({
         )}
 
         {step === 'done' && (
-          <StepShell title="You’re all set 🌿" blurb="Three things worth knowing before you start.">
+          <StepShell
+            title="You’re all set 🌿"
+            blurb="Mantle takes in whatever you give it and indexes it automatically — there’s nothing to tell it to learn or remember. Three things worth knowing:"
+          >
             <ul className="space-y-3">
               <NextStep icon={FolderTree} title="Feed it files">
                 Drop documents into <strong className="font-medium text-foreground">Files</strong>.
-                Each one is read, summarised and indexed as it arrives — so you can ask about it
-                straight away. Large files take a minute to finish.
+                You can ask about one the moment it lands — large files take a minute to finish
+                indexing.
               </NextStep>
               <NextStep icon={Contact} title="Email needs contacts first">
                 Mail is only taken in when the sender is on your{' '}
