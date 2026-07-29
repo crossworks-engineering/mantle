@@ -94,7 +94,11 @@ fetch scripts/db-restore.sh              scripts/db-restore.sh
 fetch scripts/install.sh                 scripts/install.sh
 fetch scripts/sanity.sh                  scripts/sanity.sh
 fetch scripts/compose-adopt.sh           scripts/compose-adopt.sh
-chmod +x scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh scripts/compose-adopt.sh
+# The uninstaller ships WITH the install. Leaving it out doesn't stop anyone
+# removing Mantle — it just means they improvise it, and the improvised version
+# is the one that takes the data directory with it.
+fetch scripts/uninstall.sh               scripts/uninstall.sh
+chmod +x scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh scripts/compose-adopt.sh scripts/uninstall.sh
 ok "deploy bundle fetched"
 
 # ── 3. configure + start + verify — ONE code path ────────────────────────────
