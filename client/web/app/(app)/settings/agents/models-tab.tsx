@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Check, Pencil, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
@@ -48,6 +48,16 @@ function sameTriple(a: Triple, b: Triple): boolean {
   return a.provider === b.provider && a.model === b.model && a.apiKeyId === b.apiKeyId;
 }
 
+/** Stable matrix order — role tiers then name. The API list is sorted by
+ *  `updatedAt desc`, which reshuffles rows right after Apply all (every PATCH
+ *  bumps updatedAt); a bulk-editing surface needs rows that stay put. */
+const ROLE_RANK: Record<string, number> = { assistant: 0, responder: 1, custom: 2 };
+function sortForMatrix(agents: AgentDTO[]): AgentDTO[] {
+  return [...agents].sort(
+    (a, b) => (ROLE_RANK[a.role] ?? 3) - (ROLE_RANK[b.role] ?? 3) || a.name.localeCompare(b.name),
+  );
+}
+
 /**
  * Models tab — the model matrix of every agent, with STAGED bulk switching.
  *
@@ -58,7 +68,17 @@ function sameTriple(a: Triple, b: Triple): boolean {
  * The staged map is deliberately memory-only — leaving the tab discards it,
  * and the footer says so instead of a beforeunload nag.
  */
-export function ModelsTab({ agents, apiKeys }: { agents: AgentDTO[]; apiKeys: ApiKeyOption[] }) {
+export function ModelsTab({
+  agents,
+  apiKeys,
+  onBusyChange,
+}: {
+  agents: AgentDTO[];
+  apiKeys: ApiKeyOption[];
+  /** Reports the sequential apply's busy state so the parent can lock the tab
+   *  switcher — leaving mid-apply would drop the "failures stay staged" view. */
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const queryClient = useQueryClient();
   const toast = useToast();
 
@@ -74,9 +94,19 @@ export function ModelsTab({ agents, apiKeys }: { agents: AgentDTO[]; apiKeys: Ap
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
 
   const keysById = useMemo(() => new Map(apiKeys.map((k) => [k.id, k])), [apiKeys]);
+  const rows = useMemo(() => sortForMatrix(agents), [agents]);
+
+  useEffect(() => {
+    onBusyChange?.(applying);
+    return () => onBusyChange?.(false);
+  }, [applying, onBusyChange]);
+
+  /** Row objects captured in closures (picker, quick-apply) can be stale after
+   *  a refetch — always resolve against the freshest list before comparing. */
+  const freshAgent = (a: AgentDTO): AgentDTO => agents.find((x) => x.id === a.id) ?? a;
 
   const stage = (agent: AgentDTO, next: Triple) => {
-    const prev = tripleOf(agent);
+    const prev = tripleOf(freshAgent(agent));
     setErrors((m) => {
       if (!m.has(agent.id)) return m;
       const copy = new Map(m);
@@ -160,8 +190,13 @@ export function ModelsTab({ agents, apiKeys }: { agents: AgentDTO[]; apiKeys: Ap
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+        {rows.length === 0 && (
+          <p className="m-4 rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+            No agents yet — create one on the <strong>Agents</strong> tab first.
+          </p>
+        )}
         <Table>
-          <TableHeader>
+          <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background">
             <TableRow>
               <TableHead>Agent</TableHead>
               <TableHead>Provider</TableHead>
@@ -173,7 +208,7 @@ export function ModelsTab({ agents, apiKeys }: { agents: AgentDTO[]; apiKeys: Ap
             </TableRow>
           </TableHeader>
           <TableBody>
-            {agents.map((agent) => {
+            {rows.map((agent) => {
               const change = staged.get(agent.id) ?? null;
               const current = tripleOf(agent);
               const error = errors.get(agent.id);
@@ -210,8 +245,18 @@ export function ModelsTab({ agents, apiKeys }: { agents: AgentDTO[]; apiKeys: Ap
                             </span>
                           )}
                         </div>
-                        <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                          {agent.role}
+                        <span className="flex items-center gap-1">
+                          <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                            {agent.role}
+                          </span>
+                          {agent.manifestManaged && (
+                            <span
+                              className="rounded-sm bg-info/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-info-ink"
+                              title="This agent's model, prompt and params re-sync to the system default on upgrades — a model change here will be reverted at the next update."
+                            >
+                              system
+                            </span>
+                          )}
                         </span>
                       </div>
                     </div>
@@ -225,6 +270,14 @@ export function ModelsTab({ agents, apiKeys }: { agents: AgentDTO[]; apiKeys: Ap
                           : null
                       }
                     />
+                    {agent.backupEnabled && agent.backupModel && (
+                      <p
+                        className="mt-0.5 text-[10px] text-muted-foreground"
+                        title="This agent has a failover route, which this tab never changes — after a primary switch it still falls back to this model."
+                      >
+                        failover: {agent.backupProvider ?? 'openrouter'}/{agent.backupModel}
+                      </p>
+                    )}
                   </TableCell>
                   <TableCell>
                     <BeforeAfter
@@ -327,8 +380,8 @@ export function ModelsTab({ agents, apiKeys }: { agents: AgentDTO[]; apiKeys: Ap
 
       {pickerFor && (
         <ModelSetPicker
-          agent={pickerFor}
-          initial={staged.get(pickerFor.id)?.next ?? tripleOf(pickerFor)}
+          agent={freshAgent(pickerFor)}
+          initial={staged.get(pickerFor.id)?.next ?? tripleOf(freshAgent(pickerFor))}
           apiKeys={apiKeys}
           onStage={(next) => {
             stage(pickerFor, next);
@@ -390,9 +443,17 @@ function ModelSetPicker({
   const [provider, setProvider] = useState(initial.provider || 'openrouter');
   const [model, setModel] = useState(initial.model);
   const [apiKeyId, setApiKeyId] = useState(initial.apiKeyId ?? '');
+  const [modelMissing, setModelMissing] = useState(false);
 
   const chatProviders = providersForCapability('chat');
   const eligibleKeys = apiKeys.filter((k) => k.service === provider);
+  // `local`/`custom` routes need a per-route Base URL (+ optional tailnet
+  // flag) that this compact picker deliberately doesn't edit — switching INTO
+  // one of them here leaves the route half-configured (`custom` refuses to run
+  // without a Base URL; `local` silently falls back to the env/localhost
+  // default). Point at the full editor instead of hiding the option.
+  const needsRouteHost =
+    (provider === 'local' || provider === 'custom') && provider !== agent.provider;
 
   const catalogQuery = useQuery({
     queryKey: ['models', provider],
@@ -417,7 +478,12 @@ function ModelSetPicker({
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!model.trim()) return;
+    // ModelSelect's `required` is not a native constraint (the trigger is a
+    // button), so surface the miss instead of silently ignoring the submit.
+    if (!model.trim()) {
+      setModelMissing(true);
+      return;
+    }
     onStage({
       provider: provider.trim() || 'openrouter',
       model: model.trim(),
@@ -435,6 +501,13 @@ function ModelSetPicker({
             Apply all.
           </DialogDescription>
         </DialogHeader>
+        {agent.manifestManaged && (
+          <p className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-ink">
+            <strong>{agent.name}</strong> is a system agent: its model re-syncs to the system
+            default on each upgrade, so a change staged here will be <strong>reverted</strong> at
+            the next update. It holds until then.
+          </p>
+        )}
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="picker-provider">Provider</Label>
@@ -458,6 +531,21 @@ function ModelSetPicker({
                 first turn until one ships.
               </p>
             )}
+            {needsRouteHost && (
+              <p className="text-xs text-warning-ink">
+                <code>{provider}</code> routes need a Base URL
+                {provider === 'local' ? ' (and possibly the tailnet flag)' : ''}, which this picker
+                can&apos;t set —{' '}
+                {provider === 'custom'
+                  ? 'the route won’t run without one'
+                  : 'it would fall back to the localhost default'}
+                . Configure it in the{' '}
+                <a href={`/settings/agents?selected=${agent.id}`} className="underline">
+                  full agent editor
+                </a>{' '}
+                instead.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -465,7 +553,10 @@ function ModelSetPicker({
             <ModelSelect
               id="picker-model"
               value={model}
-              onValueChange={setModel}
+              onValueChange={(next) => {
+                setModel(next);
+                if (next.trim()) setModelMissing(false);
+              }}
               models={catalog}
               loading={catalogQuery.isPending}
               error={
@@ -479,6 +570,9 @@ function ModelSetPicker({
               emptyMessage="No matching models in the catalog."
               required
             />
+            {modelMissing && (
+              <p className="text-xs text-destructive-ink">Pick a model before staging.</p>
+            )}
             {!catalogQuery.isPending && model.trim() && !catalog.some((m) => m.id === model) && (
               <p className="text-xs text-warning-ink">
                 <code>{model}</code> isn&apos;t in <code>{provider}</code>&apos;s catalog — direct

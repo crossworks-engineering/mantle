@@ -294,6 +294,11 @@ export interface AgentDTO {
   personaNotes: PersonaNoteDTO[];
   priority: number;
   enabled: boolean;
+  /** True when this agent's prompt/model/params are DEF-SYNCED from the system
+   *  manifest on upgrade (`syncSpecialistDefs`) — an operator model change on
+   *  such an agent is reverted at the next version's boot reconcile. Drives
+   *  the "system-managed" badge/warnings on the agents screens. */
+  manifestManaged: boolean;
   lastUsedAt: string | null;
   usageCount: number;
   createdAt: string;

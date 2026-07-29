@@ -13,6 +13,7 @@ import {
   type AgentParams,
   type PersonaNote,
 } from '@mantle/db';
+import { MANIFEST_AGENTS } from './system-manifest/manifest';
 
 /**
  * Server-side CRUD wrapper for the `agents` table. Every call is owner-scoped
@@ -27,6 +28,14 @@ import {
  * stops compiling. Dates are ISO strings (see `toSummary`).
  */
 export type AgentSummary = AgentDTO;
+
+/** Slugs whose prompt/model/params the boot reconcile force-syncs back to the
+ *  manifest on upgrade (`syncSpecialistDefs` — specialists with a manifest
+ *  prompt; the persona is operator-owned). Surfaced on the DTO so the UI can
+ *  warn that an operator model change on these agents will be reverted. */
+const DEF_SYNCED_SLUGS = new Set(
+  MANIFEST_AGENTS.filter((a) => !a.isPersona && a.systemPrompt).map((a) => a.slug),
+);
 
 function toSummary(a: Agent): AgentSummary {
   return {
@@ -56,6 +65,7 @@ function toSummary(a: Agent): AgentSummary {
     personaNotes: (a.personaNotes ?? []) as PersonaNote[],
     priority: a.priority,
     enabled: a.enabled,
+    manifestManaged: DEF_SYNCED_SLUGS.has(a.slug),
     lastUsedAt: a.lastUsedAt?.toISOString() ?? null,
     usageCount: a.usageCount ?? 0,
     createdAt: a.createdAt.toISOString(),

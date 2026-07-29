@@ -664,10 +664,15 @@ export function AgentsClient() {
   // Models matrix is linkable. Staged changes over there are memory-only —
   // switching tabs discards them by design.
   const tab = searchParams.get('tab') === 'models' ? 'models' : 'agents';
-  const onTabChange = (next: string) =>
+  // While the Models tab is mid-apply the switcher locks: unmounting it would
+  // hide per-row progress and silently drop still-staged failures.
+  const [modelsBusy, setModelsBusy] = useState(false);
+  const onTabChange = (next: string) => {
+    if (modelsBusy) return;
     router.replace(next === 'models' ? '/settings/agents?tab=models' : '/settings/agents', {
       scroll: false,
     });
+  };
   const requestedAgentRef = useRef(searchParams.get('selected'));
   useEffect(() => {
     const want = requestedAgentRef.current?.trim();
@@ -912,14 +917,16 @@ export function AgentsClient() {
       <div className="shrink-0 border-b border-border px-4 py-2">
         <Tabs value={tab} onValueChange={onTabChange}>
           <TabsList>
-            <TabsTrigger value="agents">Agents</TabsTrigger>
+            <TabsTrigger value="agents" disabled={modelsBusy}>
+              Agents
+            </TabsTrigger>
             <TabsTrigger value="models">Models</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
       {tab === 'models' ? (
-        <ModelsTab agents={agents} apiKeys={apiKeys} />
+        <ModelsTab agents={agents} apiKeys={apiKeys} onBusyChange={setModelsBusy} />
       ) : (
         <>
           {/* Active responder banner */}
@@ -1267,6 +1274,13 @@ export function AgentsClient() {
                         required
                       />
                       <ContextWindowHint model={form.model} limits={contextLimits} />
+                      {editing.mode === 'edit' && editing.agent.manifestManaged && (
+                        <p className="text-xs text-warning-ink">
+                          System agent: the model (with prompt and params) re-syncs to the system
+                          default on each upgrade, so a change here holds only until the next
+                          update. Duplicate the agent to make a permanent variant.
+                        </p>
+                      )}
                       {(() => {
                         // Subtle hint when the typed slug doesn't appear in the
                         // current provider's catalog AND discovery has settled.
