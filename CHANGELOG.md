@@ -4,6 +4,25 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — Onboarding: orientation before the first message (branch feat/onboarding-tutorial)
+
+**The last screen said "you're all set" and handed you to the assistant.** It
+now says what to do with it, in four lines total.
+
+The lead carries the thing that makes the rest cohere and that nobody guesses:
+Mantle takes in whatever you give it and indexes it automatically — there is
+nothing to tell it to learn or remember. People arriving from chat assistants
+go looking for a "remember this" step, and since no builtin exposes that verb,
+the search ends in doubt about whether anything was stored at all.
+
+Then three items, and deliberately no more. Files are indexed on arrival, so a
+document can be asked about the moment it lands (large ones take a minute —
+extraction is a concurrency-capped queue, not an instant embed, and the copy
+says so rather than promising magic). Email is gated on the contacts list: no
+contacts means nothing inbound is ingested, which is indistinguishable from a
+broken mail setup unless you're told it's deliberate — with the real carve-out,
+that your own mail always comes in. And everything else happens by asking.
+
 ## Unreleased — Installer: guided setup, honest health checks (branch feat/install-probe)
 
 **An install can no longer report itself healthy when it isn't.** A host port
