@@ -4,6 +4,46 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — The rest of the "all good" over a dead brain (branches feat/healthcheck, feat/sanity-services, feat/test-timeouts)
+
+**Four layers now have to agree before an install calls itself healthy.** The
+installer work closed the reporting side; this closes the two places that were
+still capable of staying quiet.
+
+**The web container's healthcheck notices it has no network.** When a published
+port can't bind, Docker abandons that container's whole network setup and the
+process keeps running — attached to nothing, unable to resolve postgres,
+unreachable by Caddy. Every HTTP-only check passes there, because 127.0.0.1
+_inside_ the container works perfectly. It now asks `os.networkInterfaces()`
+for a non-internal interface before asking whether the server answers.
+Deliberately not a probe of postgres: Caddy gates on this check, so folding a
+peer's health into it would let a routine database restart take the front door
+down. "Do I have an interface" answers the real question and depends on nobody.
+
+**The health check names services that were never created.** Everything else
+can only judge containers that exist, so a service that failed to be created
+dropped out of the report entirely. Removing `tika` from a live stack used to
+read "All good — 23 healthy"; it now names it and exits non-zero. Safe because
+the expected list honours `COMPOSE_PROFILES` from the install's own `.env` — an
+opted-out embedder isn't reported missing, `sandboxd` is expected once
+sandboxes are on.
+
+Two bugs surfaced while building it. Repeating a label filter with the **same
+key ANDs the terms**, so a query for two compose projects at once matches
+nothing — the straggler cleanup in `uninstall.sh` was built on the opposite
+assumption and was a silent no-op. And `sanity.sh` derived the stack directory
+from its own location while accepting an env-file override, so `--stack-dir`
+could read one install's `.env` against another's compose file; it honours
+`MANTLE_STACK_DIR` now, and the installer passes it.
+
+**Test timeouts, separately.** Two tests failed the pre-push gate on a green
+tree, passed alone in 1.7s, and never failed on macOS. Both load modules
+_inside_ the test body, so module resolution and the esbuild transform are
+billed against the 5s `testTimeout` — and vitest runs about one worker per
+core, so on a 24-core box under real load a `require('mathjs')` costing 411ms
+idle sails past five seconds. `testTimeout` is now 15s, and mathjs moved to a
+module-scope import so 18MB leaves the per-test budget entirely.
+
 ## Unreleased — An uninstaller, and a project-name bug it exposed (branch feat/uninstall)
 
 **`scripts/uninstall.sh`** — there was no supported way to remove Mantle, so

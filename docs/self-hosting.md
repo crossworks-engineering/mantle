@@ -254,9 +254,18 @@ check is misleading:
   is a `307` to `/login`, so a status code cannot tell them apart.
 - It fails a container that is running but **attached to no network**, or one
   whose **published port never bound**. Docker abandons a container's entire
-  network setup when it can't program a published port; the container keeps
-  running and keeps reporting healthy — its healthcheck only probes inside
-  itself — while being unable to reach postgres or be reached by Caddy.
+  network setup when it can't program a published port, and the container keeps
+  running while being unable to reach postgres or be reached by Caddy. The web
+  container's own healthcheck now catches this too — it asks whether it has a
+  network interface before asking whether it answers HTTP — so `docker ps` and
+  this check agree instead of disagreeing silently.
+- It names services that were **never created at all**. Everything above can
+  only judge containers that exist, so a service that failed to be created used
+  to vanish from the report — and a stack missing its web container read as
+  "all good" over the ones that did start. The expected list comes from compose
+  using your own `.env`, so `COMPOSE_PROFILES` is honoured: an opted-out local
+  embedder isn't reported missing, and `sandboxd` is expected once sandboxes
+  are on.
 
 ## Uninstalling
 
