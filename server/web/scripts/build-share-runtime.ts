@@ -61,4 +61,10 @@ mkdirSync(join(outDir, 'katex'), { recursive: true });
 cpSync(katexCss, join(outDir, 'katex/katex.min.css'));
 cpSync(join(katexDist, 'fonts'), join(outDir, 'katex/fonts'), { recursive: true });
 
-console.log(`share-runtime: styles.css + islands.js + katex → ${outDir}`);
+// ── 4. Mermaid IIFE bundle (diagram nodes on /print → PDF) ──────────────────
+// The print surface upgrades diagram degrade blocks to real SVG inside the PDF
+// sidecar's Chromium (server/pages/print.ts); self-hosted like KaTeX — no CDN.
+// The dist sets `globalThis.mermaid`.
+cpSync(require.resolve('mermaid/dist/mermaid.min.js'), join(outDir, 'mermaid.min.js'));
+
+console.log(`share-runtime: styles.css + islands.js + katex + mermaid → ${outDir}`);

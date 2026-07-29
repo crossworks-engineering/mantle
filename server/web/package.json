@@ -155,6 +155,7 @@
     "lucide-react": "^1.25.0",
     "marked": "^18.0.7",
     "mcp-handler": "^1.1.0",
+    "mermaid": "11.16.0",
     "pdf-to-png-converter": "^4.1.1",
     "pg-boss": "^12.26.1",
     "postgres": "^3.4.5",

@@ -93,10 +93,17 @@ async function renderMermaid(source: string): Promise<string> {
     // Agent/user-supplied source: strict disables click handlers + script-ish
     // directives; htmlLabels off keeps output plain SVG (no foreignObject),
     // matching the house SVG policy and the slice-2 server sanitizer.
+    // BOTH htmlLabels levels: v11's flowchart only honours the top-level flag
+    // (verified empirically — flowchart:{htmlLabels:false} alone still emits
+    // foreignObject labels).
     securityLevel: 'strict',
     theme: 'base',
     themeVariables: mermaidThemeVariables(),
+    htmlLabels: false,
     flowchart: { htmlLabels: false },
+    // Never inject mermaid's bomb/"Syntax error" graphic into the document —
+    // the NodeView shows errors in its own strip and keeps the last good SVG.
+    suppressErrorRendering: true,
   });
   const id = `mantle-diagram-${++renderSeq}`;
   try {

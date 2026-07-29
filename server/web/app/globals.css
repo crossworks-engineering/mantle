@@ -521,6 +521,19 @@
   line-height: 1.5;
 }
 
+/* A diagram upgraded to real SVG (the /print surface renders Mermaid
+   client-side in the PDF sidecar's Chromium; slice 2 will inline cached SVG
+   on /s the same shape). */
+.ProseMirror .diagram-render {
+  display: flex;
+  justify-content: center;
+  margin-block: 0.75rem;
+}
+.ProseMirror .diagram-render svg {
+  max-width: 100%;
+  height: auto;
+}
+
 /* Focus marker (pages editor). Blocks the user marked via the left-gutter
    marker get a primary accent bar + faint tint so a multi-section selection
    reads at a glance. Editor-only (decorations); never serialized into the doc.

@@ -6,6 +6,89 @@ import { htmlPage } from './template';
 import { loadAppearanceAttrs } from './appearance';
 
 /**
+ * Upgrades diagram degrade blocks to real Mermaid SVG *inside the PDF
+ * sidecar's Chromium* — the print page is already a real browser, so it does
+ * the render itself; no second pipeline, and nothing is stored or inlined
+ * server-side (the SVG becomes pixels in the PDF).
+ *
+ * Static script, no interpolated user data: each block's source is read back
+ * from the degrade markup's <pre><code> textContent (the DOM un-escapes it).
+ * Theme comes from the page's own resolved CSS tokens — fills use chart-1..5,
+ * label text uses foreground roles, matching the in-editor NodeView. On any
+ * failure the source block simply stays. `data-diagrams-ready` on <html> is
+ * the completion signal lib/render-pdf.ts waits for; it is set on success,
+ * failure, and the no-mermaid path alike so the PDF wait can never hang.
+ */
+const DIAGRAM_PRINT_SCRIPT = `
+(async () => {
+  const done = () => document.documentElement.setAttribute('data-diagrams-ready', '1');
+  try {
+    const blocks = Array.from(document.querySelectorAll('.diagram[data-diagram-source]'));
+    if (!blocks.length || typeof mermaid === 'undefined') return done();
+    const cs = getComputedStyle(document.documentElement);
+    const t = (n, f) => (cs.getPropertyValue(n) || '').trim() || f;
+    const charts = [1, 2, 3, 4, 5].map((i) =>
+      t('--chart-' + i, ['#666ed1', '#ae467f', '#ad5700', '#4b830f', '#00889b'][i - 1]),
+    );
+    const fg = t('--foreground', '#1f2328');
+    const vars = {
+      fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+      background: t('--background', '#ffffff'),
+      mainBkg: t('--muted', '#f6f8fa'),
+      primaryColor: t('--muted', '#f6f8fa'),
+      primaryTextColor: fg,
+      primaryBorderColor: t('--border', '#d1d9e0'),
+      secondaryColor: t('--card', '#ffffff'),
+      secondaryTextColor: fg,
+      secondaryBorderColor: t('--border', '#d1d9e0'),
+      tertiaryColor: t('--background', '#ffffff'),
+      tertiaryTextColor: fg,
+      tertiaryBorderColor: t('--border', '#d1d9e0'),
+      lineColor: t('--muted-foreground', '#59636e'),
+      textColor: fg,
+      noteBkgColor: t('--muted', '#f6f8fa'),
+      noteTextColor: fg,
+      noteBorderColor: t('--border', '#d1d9e0'),
+    };
+    charts.forEach((c, i) => {
+      vars['pie' + (i + 1)] = c;
+      vars['cScale' + i] = c;
+      vars['git' + i] = c;
+    });
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'base',
+      themeVariables: vars,
+      // BOTH levels: v11 flowchart only honours the top-level flag.
+      htmlLabels: false,
+      flowchart: { htmlLabels: false },
+      // Invalid source keeps its labelled source block — never mermaid's
+      // injected bomb/"Syntax error" graphic in the PDF.
+      suppressErrorRendering: true,
+    });
+    let seq = 0;
+    for (const el of blocks) {
+      const code = el.querySelector('pre code');
+      const src = ((code && code.textContent) || '').trim();
+      if (!src) continue;
+      try {
+        const { svg } = await mermaid.render('print-diagram-' + ++seq, src);
+        const host = document.createElement('div');
+        host.className = 'diagram-render';
+        host.innerHTML = svg;
+        el.replaceWith(host);
+      } catch (e) {
+        /* invalid source: the labelled source block stays in the PDF */
+      }
+    }
+  } finally {
+    done();
+  }
+})();
+`;
+
+/**
  * Owner-only print surface for a Page (port of app/print/pages/[id]) — no app
  * chrome, just the content in the shared `.ProseMirror .prose` container so it
  * reuses the editor CSS from the compiled share-runtime stylesheet. Headless
@@ -25,6 +108,13 @@ export function mountPrint(app: Hono): void {
     });
     const widthClass = page.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl';
 
+    // Diagram blocks render client-side in the sidecar's Chromium (script
+    // above). The script tag carries data-diagram-print so render-pdf can tell
+    // "no diagrams on this page" from "diagrams still rendering".
+    const diagramScripts = html.includes('data-diagram-source')
+      ? `<script src="/share-runtime/mermaid.min.js"></script><script data-diagram-print>${DIAGRAM_PRINT_SCRIPT}</script>`
+      : '';
+
     return c.html(
       htmlPage(
         {
@@ -42,7 +132,7 @@ export function mountPrint(app: Hono): void {
         },
         // WYSIWYG: render only the page content — no injected page-name
         // heading, matching the public share surface and the Markdown export.
-        `<article class="ProseMirror prose prose-accent mx-auto ${widthClass} px-10 py-8"><div>${html}</div></article>`,
+        `<article class="ProseMirror prose prose-accent mx-auto ${widthClass} px-10 py-8"><div>${html}</div></article>${diagramScripts}`,
       ),
     );
   });

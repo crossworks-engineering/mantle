@@ -110,6 +110,19 @@ export async function renderUrlToPdf(url: string, cookie: string): Promise<Buffe
     const page = await browser.newPage();
     if (cookie) await page.setExtraHTTPHeaders({ cookie });
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 30_000 });
+    // Diagram blocks render client-side after load (print.ts injects a script
+    // tagged data-diagram-print that sets data-diagrams-ready on completion —
+    // success or failure). Pages without diagrams have no such script and pass
+    // immediately; a hung render degrades to the source blocks, never a
+    // failed export.
+    await page
+      .waitForFunction(
+        () =>
+          !document.querySelector('script[data-diagram-print]') ||
+          document.documentElement.hasAttribute('data-diagrams-ready'),
+        { timeout: 15_000 },
+      )
+      .catch(() => {});
     const bytes = await page.pdf({
       format: 'A4',
       printBackground: true,
