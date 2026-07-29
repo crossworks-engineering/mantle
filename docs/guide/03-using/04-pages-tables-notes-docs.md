@@ -34,7 +34,9 @@ The assistant can add entries for you, too: "log that I started a new job today,
 
 **Pages** are Notion-style documents for real writing: headings, **callouts**,
 **asides** (gradient note boxes), multi-**column** layouts, tables, to-do lists,
-code blocks, even math and images.
+code blocks, math, images — and **diagrams**: a `/diagram` block (or a
+```` ```mermaid ```` fence) renders flowcharts, mind maps, sequence diagrams,
+pies, timelines and more from plain Mermaid text, themed to match your palette.
 The editor has a slash menu (`/`) for inserting blocks and a drag handle for moving
 them. Moving from Notion? **Copy a page as Markdown and paste it straight in** —
 headings, callouts, columns, tables and Notion's `<aside>` callouts all convert
@@ -56,6 +58,11 @@ A few things worth knowing:
   [sharing] below).
 - **Deep search.** Long pages are indexed in sections, so the assistant can find the
   *specific passage* you need, not just the whole document.
+- **Markdown mode.** The **Markdown** button in the page header swaps the
+  formatted view for the page's raw markdown — edit it directly and toggle
+  back; everything (including mentions, images, file chips, sub-pages and
+  diagrams) survives the round-trip. The same markdown is what the **Markdown
+  export** downloads.
 
 The assistant can also create and update pages from chat — "turn this thread into a
 polished page" — and the result renders identically to one you wrote by hand.
