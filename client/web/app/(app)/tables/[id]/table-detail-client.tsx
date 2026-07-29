@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from '@mantle/web-ui/ui/dropdown-menu';
 import { ExportMenu } from '@/components/export/export-menu';
+import { EmojiPicker } from '@/components/emoji-picker';
 import { ShareControl } from '@/components/share-control';
 import { TableGrid } from '@/components/table-grid/table-grid';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
@@ -466,13 +467,22 @@ export function TableDetailClient({
             narrow master-detail pane it WRAPS to a second row (flex-wrap) rather
             than squeezing the name to a couple of characters. */}
         <div className="flex min-w-[12rem] flex-1 items-center gap-1">
-          <input
-            value={icon}
-            onChange={(e) => setIcon(e.target.value.slice(0, 8))}
-            placeholder="📊"
-            className="h-8 w-9 shrink-0 rounded-md text-center text-lg outline-none transition-colors hover:bg-muted/50 focus:bg-muted/50"
-            aria-label="Table icon (emoji)"
-            title="Pick an emoji — on Mac press ⌃⌘Space"
+          <EmojiPicker
+            value={icon || null}
+            onSelect={setIcon}
+            onClear={() => setIcon('')}
+            align="start"
+            trigger={
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Change table icon"
+                title="Change icon"
+                className="h-8 w-9 shrink-0 rounded-md p-0 text-lg leading-none hover:bg-accent"
+              >
+                {icon || '📊'}
+              </Button>
+            }
           />
           <Input
             value={title}
