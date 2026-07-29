@@ -2,13 +2,20 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Mantle installer — smooth first-run setup for a self-hosted box.
 #
+#   • Asks how the brain should be reached — a domain with HTTPS, this machine
+#     only, or this machine's network — and settles every consequence of that
+#     choice (listen address, origins, what to open at the end) in one place.
+#   • For a domain, proves the DNS points HERE before enabling TLS, comparing
+#     every A/AAAA record against this box's public and local addresses. Caddy
+#     only attempts a Let's Encrypt cert when it can succeed, so a typo costs
+#     nothing instead of burning that name's issuance limit.
 #   • Generates the secrets you'd otherwise hand-edit (MANTLE_MASTER_KEY,
 #     SESSION_SECRET, S3 creds) — but only the ones that are MISSING, so a
 #     re-run never rotates your master key and orphans sealed secrets.
-#   • Asks whether you have a domain pointing at this server and, if so, checks
-#     that it actually resolves here BEFORE enabling TLS — so Caddy only attempts
-#     a Let's Encrypt cert when it can succeed (no wasted issuance / rate-limit).
-#   • Brings the stack up and runs a post-install sanity check.
+#   • Checks disk, memory and the ports it needs BEFORE the ~2 GB pull, shows
+#     what it's about to do, then brings the stack up.
+#   • Ends on the sanity check's verdict — and exits non-zero when it fails,
+#     rather than printing "complete" over a broken install.
 #
 # Interactive by default; fully scriptable via flags (see --help) for automated
 # deploys. Safe to re-run (idempotent).
@@ -34,9 +41,57 @@ banner() {
   printf '   │   %smantle%s%s   ·   installer                 │\n' "$RS$B" "$RS$B$CYN" "$CYN"
   printf '   └──────────────────────────────────────────┘%s\n' "$RS"
 }
+step() { printf '  %s%s%s\n' "$DIM" "$*" "$RS"; }
+
+# ── interaction ──────────────────────────────────────────────────────────────
+# A piped install (`curl -fsSL … | bash`) has no stdin of its own: a bare
+# `read` returns instantly with an empty string, so EVERY prompt would answer
+# itself with the default and the operator would never see a question they were
+# meant to answer — silently choosing "no domain" on a box that has one. Read
+# from the controlling terminal instead, and when there genuinely isn't one,
+# say so and take the defaults in the open.
+TTY_IN=0
+if [[ -r /dev/tty ]] && exec 3</dev/tty 2>/dev/null; then TTY_IN=1; fi
+INTERACTIVE=0   # decided once the args are parsed
+# Local names here are deliberately obscure: these helpers assign to a variable
+# named by the CALLER, so an ordinary name like `__a` would shadow the caller's
+# own and silently swallow every answer.
+getline() { # $1 = destination var; returns non-zero at end of input
+  local __gl_ans="" __gl_rc=0
+  if [[ $TTY_IN -eq 1 ]]; then read -r __gl_ans <&3 || __gl_rc=1
+  else                         read -r __gl_ans    || __gl_rc=1; fi
+  printf -v "$1" '%s' "$__gl_ans"
+  return $__gl_rc
+}
+ask() { # $1 = var, $2 = prompt, $3 = default
+  local __ask_d="${3:-}" __ask_a=""
+  if [[ $INTERACTIVE -eq 0 ]]; then printf -v "$1" '%s' "$__ask_d"; return 0; fi
+  printf '  %s%s%s%s ' "$B" "$2" "$RS" "${__ask_d:+ ${DIM}[$__ask_d]${RS}}"
+  if ! getline __ask_a; then
+    # Input ended (a closed pipe, a detached terminal). Never keep re-asking a
+    # question nothing can answer — say so once and fall back to defaults.
+    printf '\n'; warn "Input ended — continuing with defaults."
+    INTERACTIVE=0
+  fi
+  printf -v "$1" '%s' "${__ask_a:-$__ask_d}"
+}
+port_busy() { # $1 = port → 0 when something is already listening on it
+  if command -v ss >/dev/null 2>&1; then ss -ltnH "( sport = :$1 )" 2>/dev/null | grep -q ":$1"
+  elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  else return 1; fi   # can't tell → assume free; compose will report the truth
+}
+confirm() { # $1 = prompt, $2 = default y|n → 0 when yes
+  local __cf_d="${2:-y}" __cf_a=""
+  if [[ $INTERACTIVE -eq 0 ]]; then [[ "$__cf_d" == y ]]; return; fi
+  printf '  %s%s%s %s ' "$B" "$1" "$RS" "$([[ $__cf_d == y ]] && printf '[Y/n]' || printf '[y/N]')"
+  if ! getline __cf_a; then printf '\n'; warn "Input ended — continuing with defaults."; INTERACTIVE=0; fi
+  __cf_a="${__cf_a:-$__cf_d}"
+  [[ "$__cf_a" =~ ^[Yy] ]]
+}
 
 # ── args ─────────────────────────────────────────────────────────────────────
-DOMAIN="${MANTLE_DOMAIN:-}"; NO_DOMAIN=0; SITE_ADDRESS="${MANTLE_SITE_ADDRESS:-}"
+DOMAIN="${MANTLE_DOMAIN:-}"; SITE_ADDRESS="${MANTLE_SITE_ADDRESS:-}"
+ACCESS_MODE=""   # domain | localhost | lan — resolved interactively when unset
 DATA_DIR="${MANTLE_DATA_DIR:-./data}"; STACK_DIR="${MANTLE_STACK_DIR:-$STACK_DIR_DEFAULT}"
 IMAGE_TAG="${MANTLE_IMAGE_TAG:-latest}"; ASSUME_YES=0; SKIP_UP=0; SANITY_ONLY=0
 # Local embedder (bundled Ollama): 1=enable, 0=disable, empty=keep .env as-is.
@@ -49,7 +104,9 @@ ${B}Mantle installer${RS}
 
 ${B}Options${RS}
   --domain <host>        Use this domain (enables HTTPS via Caddy/Let's Encrypt)
-  --no-domain            HTTP only on :80 (no domain / no TLS)
+  --localhost            This machine only — HTTP on 127.0.0.1:80, not on the network
+  --lan                  HTTP on :80, reachable on this machine's network (no TLS)
+  --no-domain            Alias for --lan (kept for existing scripts)
   --site-address <addr>  Set MANTLE_SITE_ADDRESS verbatim (advanced; overrides above)
   --data-dir <path>      MANTLE_DATA_DIR (default: ./data) — all data binds here
   --stack-dir <path>     MANTLE_STACK_DIR (default: this dir) — used by the updater
@@ -69,13 +126,15 @@ ${B}Options${RS}
 ${B}Examples${RS}
   scripts/install.sh                              # interactive
   scripts/install.sh --domain brain.acme.com -y   # scripted, HTTPS
-  scripts/install.sh --no-domain -y               # scripted, HTTP only
+  scripts/install.sh --localhost -y               # scripted, laptop / loopback only
+  scripts/install.sh --lan -y                     # scripted, HTTP on the network
   scripts/install.sh --check                       # health check an existing install
 EOF
 }
 while [[ $# -gt 0 ]]; do case "$1" in
-  --domain) DOMAIN="${2:-}"; shift 2 ;;
-  --no-domain) NO_DOMAIN=1; shift ;;
+  --domain) DOMAIN="${2:-}"; ACCESS_MODE="domain"; shift 2 ;;
+  --localhost) ACCESS_MODE="localhost"; shift ;;
+  --lan|--no-domain) ACCESS_MODE="lan"; shift ;;
   --site-address) SITE_ADDRESS="${2:-}"; shift 2 ;;
   --data-dir) DATA_DIR="${2:-}"; shift 2 ;;
   --stack-dir) STACK_DIR="${2:-}"; shift 2 ;;
@@ -90,6 +149,9 @@ while [[ $# -gt 0 ]]; do case "$1" in
 esac; done
 
 ENV_FILE="$STACK_DIR/.env"
+# Prompt only when there is someone to answer AND they didn't ask us not to.
+# (`if`, not `[[ … ]] && …` — under `set -e` a false one-liner ends the script.)
+if [[ $ASSUME_YES -eq 0 && $TTY_IN -eq 1 ]]; then INTERACTIVE=1; fi
 
 # ── sanity-only shortcut ─────────────────────────────────────────────────────
 if [[ $SANITY_ONLY -eq 1 ]]; then exec bash "$(dirname "$0")/sanity.sh"; fi
@@ -102,58 +164,212 @@ command -v docker >/dev/null 2>&1 || die "Docker isn't installed. Install Docker
 docker info >/dev/null 2>&1 || die "Docker daemon isn't running. Start it, then re-run."
 docker compose version >/dev/null 2>&1 || die "The Docker Compose plugin isn't available (need 'docker compose')."
 command -v openssl >/dev/null 2>&1 || die "openssl isn't installed — it's needed to generate the master key + secrets."
+command -v curl >/dev/null 2>&1 || die "curl isn't installed — it's needed to detect this server's address and to health-check the install."
 [[ -f "$STACK_DIR/docker-compose.yml" ]] || die "No docker-compose.yml in $STACK_DIR — run this from the stack directory (or pass --stack-dir)."
-ok "Docker + Compose ready"
+ok "Docker + Compose ready ${DIM}($(docker compose version --short 2>/dev/null || echo v2))${RS}"
+
+# Resources. Checked BEFORE the ~2 GB pull, because running out of disk
+# halfway through leaves a half-populated image store and a confusing error;
+# and a box that can't hold the working set will limp rather than fail, which
+# is harder to diagnose than being told up front.
+mkdir -p "$DATA_DIR" 2>/dev/null || true
+avail_kb="$(df -Pk "$DATA_DIR" 2>/dev/null | awk 'NR==2{print $4}')"
+if [[ -n "${avail_kb:-}" ]]; then
+  avail_gb=$((avail_kb / 1024 / 1024))
+  if   [[ $avail_gb -lt 5  ]]; then die "Only ${avail_gb}GB free on $DATA_DIR — the images alone need ~5GB. Free some space and re-run."
+  elif [[ $avail_gb -lt 20 ]]; then warn "${avail_gb}GB free on $DATA_DIR — enough to install, but documents and backups grow into this. 20GB+ is comfortable."
+  else ok "Disk: ${B}${avail_gb}GB${RS} free on $DATA_DIR"; fi
+fi
+mem_mb="$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo 2>/dev/null || true)"
+if [[ -n "${mem_mb:-}" ]]; then
+  if   [[ $mem_mb -lt 3500 ]]; then warn "RAM: ${mem_mb}MB — below the 4GB the stack wants. Expect the workers to be killed under load."
+  else ok "RAM: ${B}$((mem_mb / 1024))GB${RS}"; fi
+fi
+[[ -w "$STACK_DIR" ]] || warn "$STACK_DIR is not writable by $(id -un) — writing .env will fail."
 inf "Stack dir: ${B}$STACK_DIR${RS}"
 inf "Data dir:  ${B}$DATA_DIR${RS}  ${DIM}(all volumes bind here)${RS}"
+if [[ $INTERACTIVE -eq 0 && $ASSUME_YES -eq 0 ]]; then
+  warn "No terminal to prompt on — taking defaults. Pass --domain/--localhost/--lan to choose deliberately."
+fi
 
-# ── 2. domain / TLS ──────────────────────────────────────────────────────────
-hd "Domain & HTTPS"
-detect_ip() {
-  local ip
+# ── 2. how will people reach this brain? ─────────────────────────────────────
+hd "Access"
+detect_public_ip() {
+  local ip=""
   ip=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null) \
     || ip=$(curl -fsS --max-time 5 https://ifconfig.me 2>/dev/null) \
-    || ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    || ip=""
   printf '%s' "$ip"
 }
-resolve_ip() { # $1 = host → first A record (getent is always present on Linux)
-  getent ahostsv4 "$1" 2>/dev/null | awk 'NR==1{print $1}'
-}
-PUBLIC_IP="$(detect_ip)"
-[[ -n "$PUBLIC_IP" ]] && inf "This server's public IP looks like ${B}$PUBLIC_IP${RS}"
-
-# Resolve the site address unless one was passed verbatim.
-if [[ -z "$SITE_ADDRESS" ]]; then
-  if [[ $NO_DOMAIN -eq 0 && -z "$DOMAIN" && $ASSUME_YES -eq 0 ]]; then
-    printf '  %sDo you have a domain pointing to this server?%s (needed for HTTPS) [y/N] ' "$B" "$RS"
-    read -r reply || reply=""
-    if [[ "$reply" =~ ^[Yy] ]]; then
-      printf '  %sDomain%s (e.g. brain.example.com): ' "$B" "$RS"; read -r DOMAIN || DOMAIN=""
-    else NO_DOMAIN=1; fi
+# ALL A/AAAA records, not just the first. Round-robin DNS and dual-stack
+# records legitimately carry several addresses, and comparing only the first
+# reports a confident false mismatch on a perfectly good setup.
+# getent first (it honours the system's full resolution path), then dig/host as
+# a fallback — getent answers through nsswitch, which a broken mDNS or an
+# unusual hosts config can silence for one name while plain DNS works fine.
+# Getting this wrong tells someone their DNS is broken when it isn't.
+resolve_a() {
+  local out=""
+  # Loopback and link-local are never a certificate target — and an mDNS
+  # answer will happily return a screenful of them.
+  out="$(getent ahostsv4 "$1" 2>/dev/null | awk '{print $1}' | grep -vE '^(127\.|169\.254\.)' | sort -u)"
+  if [[ -z "$out" ]] && command -v dig >/dev/null 2>&1; then
+    out="$(dig +short +time=3 +tries=1 "$1" A 2>/dev/null | grep -E '^[0-9.]+$' | sort -u)"
   fi
-  if [[ -n "$DOMAIN" ]]; then
-    RESOLVED="$(resolve_ip "$DOMAIN")"
-    if [[ -z "$RESOLVED" ]]; then
-      warn "$DOMAIN doesn't resolve yet. Caddy can't get a certificate until it points here."
-    elif [[ -n "$PUBLIC_IP" && "$RESOLVED" != "$PUBLIC_IP" ]]; then
-      warn "$DOMAIN resolves to ${B}$RESOLVED${RS}, not this server (${B}$PUBLIC_IP${RS})."
-      warn "Caddy will keep failing to get a cert until DNS points here."
-    else
-      ok "$DOMAIN resolves to this server — Caddy will get a certificate on boot."
-    fi
-    if [[ -n "$RESOLVED" && -n "$PUBLIC_IP" && "$RESOLVED" != "$PUBLIC_IP" && $ASSUME_YES -eq 0 ]]; then
-      printf '  Proceed anyway (HTTP until DNS is fixed)? [y/N] '; read -r go || go=""
-      [[ "$go" =~ ^[Yy] ]] || die "Fix the DNS A record ($DOMAIN → $PUBLIC_IP), then re-run."
-      SITE_ADDRESS=":80"; warn "Using HTTP (:80) for now — re-run with --domain once DNS is live."
-    else
-      SITE_ADDRESS="$DOMAIN"
-    fi
+  if [[ -z "$out" ]] && command -v host >/dev/null 2>&1; then
+    out="$(host -t A "$1" 2>/dev/null | awk '/has address/{print $NF}' | sort -u)"
+  fi
+  printf '%s' "$out"
+}
+resolve_aaaa() {
+  local out=""
+  out="$(getent ahostsv6 "$1" 2>/dev/null | awk '{print $1}' | grep -vE '^(::ffff:|fe80:|::1$)' | sort -u)"
+  if [[ -z "$out" ]] && command -v dig >/dev/null 2>&1; then
+    out="$(dig +short +time=3 +tries=1 "$1" AAAA 2>/dev/null | grep -E '^[0-9a-fA-F:]+$' | sort -u)"
+  fi
+  printf '%s' "$out"
+}
+# Take what people actually paste — https://brain.acme.com/, BRAIN.Acme.com,
+# brain.acme.com:443, a trailing dot — and hand Caddy a bare hostname. A
+# scheme or slash reaching the Caddyfile produces a site block that silently
+# never matches.
+normalize_host() {
+  local h="$1"
+  h="${h#*://}"; h="${h%%/*}"; h="${h%%\?*}"; h="${h%%:*}"; h="${h%.}"
+  printf '%s' "$h" | tr '[:upper:]' '[:lower:]'
+}
+valid_host() {
+  [[ "$1" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ ]]
+}
+DNS_SEEN=""; DNS_VERDICT=""
+# Sets globals rather than echoing a result: a `$(…)` call runs in a subshell,
+# so the addresses collected there would never reach the caller and the
+# "it resolves to …" line would come out blank exactly when it matters most.
+dns_verdict() { # $1 = host → sets DNS_VERDICT (match|mismatch|none) + DNS_SEEN
+  local ip l found="" n=0
+  DNS_SEEN=""
+  for ip in $(resolve_a "$1") $(resolve_aaaa "$1"); do
+    n=$((n + 1))
+    # Every address is compared; only the first few are printed. A round-robin
+    # record can carry dozens, and a wall of them buries the actual answer.
+    if   [[ $n -le 4 ]]; then DNS_SEEN+="${DNS_SEEN:+, }$ip"
+    elif [[ $n -eq 5 ]]; then DNS_SEEN+=", …"; fi
+    if [[ -n "$PUBLIC_IP" && "$ip" == "$PUBLIC_IP" ]]; then found=1; fi
+    for l in $LOCAL_IPS; do if [[ "$ip" == "$l" ]]; then found=1; fi; done
+  done
+  if   [[ -z "$DNS_SEEN" ]]; then DNS_VERDICT="none"
+  elif [[ -n "$found"   ]]; then DNS_VERDICT="match"
+  else                            DNS_VERDICT="mismatch"; fi
+}
+
+PUBLIC_IP="$(detect_public_ip)"
+LOCAL_IPS="$(hostname -I 2>/dev/null || true)"
+LAN_IP="$(printf '%s' "$LOCAL_IPS" | awk '{print $1}')"
+if [[ -n "$PUBLIC_IP" ]]; then inf "This server looks like ${B}$PUBLIC_IP${RS} from the internet"; fi
+
+# Pick the shape. Passing --site-address skips all of this deliberately.
+if [[ -z "$SITE_ADDRESS" && -z "$ACCESS_MODE" ]]; then
+  if [[ $INTERACTIVE -eq 1 ]]; then
+    printf '\n  %sHow should people reach this brain?%s\n\n' "$B" "$RS"
+    printf '    %s1%s  A domain, with HTTPS       %sbrain.example.com — a real server; the certificate issues itself%s\n' "$B$CYN" "$RS" "$DIM" "$RS"
+    printf '    %s2%s  This machine only          %shttp://localhost — a laptop, or a box you tunnel into%s\n' "$B$CYN" "$RS" "$DIM" "$RS"
+    printf "    %s3%s  This machine's network     %shttp://%s — LAN or VPN, no certificate%s\n" "$B$CYN" "$RS" "$DIM" "${LAN_IP:-<ip>}" "$RS"
+    printf '\n'
+    while :; do
+      ask choice "Choice" "1"
+      case "$choice" in
+        1) ACCESS_MODE=domain;    break ;;
+        2) ACCESS_MODE=localhost; break ;;
+        3) ACCESS_MODE=lan;       break ;;
+        *) warn "Pick 1, 2 or 3." ;;
+      esac
+    done
   else
-    SITE_ADDRESS=":80"
-    inf "No domain — serving HTTP on :80. Reach it at ${B}http://${PUBLIC_IP:-<server-ip>}${RS} (or via SSH tunnel / Tailscale). Add a domain later by re-running."
+    ACCESS_MODE=lan   # what a non-interactive run has always done
   fi
 fi
-[[ "$SITE_ADDRESS" == ":80" ]] && ok "Site address: HTTP :80" || ok "Site address: ${B}$SITE_ADDRESS${RS} (auto-HTTPS)"
+
+# A domain is the only shape that can fail LATER and expensively — a wrong DNS
+# record means Caddy hammers Let's Encrypt, fails, and counts against the
+# rate limit for that name. So prove the record points here BEFORE we commit.
+if [[ "$ACCESS_MODE" == domain && -z "$SITE_ADDRESS" ]]; then
+  while :; do
+    if [[ -z "$DOMAIN" ]]; then ask DOMAIN "Domain (e.g. brain.example.com):" ""; fi
+    DOMAIN="$(normalize_host "$DOMAIN")"
+    if [[ -z "$DOMAIN" ]] || ! valid_host "$DOMAIN"; then
+      warn "That doesn't look like a hostname."
+      DOMAIN=""
+      if [[ $INTERACTIVE -eq 1 ]]; then continue; fi
+      die "Pass a valid --domain, or use --localhost / --lan."
+    fi
+    step "Checking where $DOMAIN points…"
+    dns_verdict "$DOMAIN"
+    if [[ "$DNS_VERDICT" == match ]]; then
+      ok "$DOMAIN → ${B}$DNS_SEEN${RS} — that's this server. Caddy will get a certificate on boot."
+      SITE_ADDRESS="$DOMAIN"; break
+    fi
+
+    if [[ "$DNS_VERDICT" == none ]]; then
+      bad "$DOMAIN doesn't resolve yet — no A or AAAA record."
+    else
+      bad "$DOMAIN points somewhere else."
+      inf "   it resolves to  ${B}$DNS_SEEN${RS}"
+      # Docker's own bridge gateways (172.x.0.1) are in `hostname -I` and are
+      # pure noise here — still compared against, just not worth printing.
+      shown="$(printf '%s\n' $LOCAL_IPS | grep -vE '^172\.(1[6-9]|2[0-9]|3[01])\.0\.1$' | paste -sd' ' - || true)"
+      inf "   this server is  ${B}${PUBLIC_IP:-unknown}${RS}${shown:+ ${DIM}(local: $shown)${RS}}"
+    fi
+    inf "   ${DIM}A certificate cannot be issued until it points here, and failed attempts count against Let's Encrypt's limit for this name.${RS}"
+
+    # Never proceed into a doomed certificate request unattended. The old
+    # behaviour warned and then used the domain anyway.
+    if [[ $INTERACTIVE -eq 0 ]]; then
+      warn "Falling back to plain HTTP on :80. Fix the DNS and re-run with --domain $DOMAIN."
+      ACCESS_MODE=lan; DOMAIN=""; break
+    fi
+    printf '\n    %s1%s  Re-check — I'"'"'m fixing the DNS now\n' "$B$CYN" "$RS"
+    printf '    %s2%s  Start on plain HTTP for now %s(re-run with --domain once DNS is live)%s\n' "$B$CYN" "$RS" "$DIM" "$RS"
+    printf '    %s3%s  Use a different domain\n' "$B$CYN" "$RS"
+    printf '    %s4%s  Stop here\n\n' "$B$CYN" "$RS"
+    ask what "Choice" "1"
+    case "$what" in
+      2) warn "Starting on HTTP :80 — re-run with --domain $DOMAIN once DNS is live."
+         ACCESS_MODE=lan; DOMAIN=""; break ;;
+      3) DOMAIN="" ;;
+      4) die "Nothing changed. Point $DOMAIN at ${PUBLIC_IP:-this server} and run this again." ;;
+      *) : ;;   # 1 / anything → loop and re-resolve
+    esac
+  done
+fi
+
+# HTTP-01 answers on port 80: if something else holds it, the certificate
+# cannot issue no matter how correct the DNS is. Worth knowing now, not in
+# Caddy's logs in ten minutes.
+if port_busy 80; then
+  if [[ "$ACCESS_MODE" == domain ]]; then
+    warn "Port 80 is already in use — Caddy needs it both to serve and to answer the certificate challenge."
+  else
+    warn "Port 80 is already in use — Caddy needs it to serve the app."
+  fi
+  warn "Stop whatever holds it (often an existing nginx or apache), or this install won't be reachable."
+fi
+
+# Settle the three derived values every later step reads.
+BIND_ADDR="0.0.0.0"
+case "$ACCESS_MODE" in
+  domain)    SITE_ADDRESS="$DOMAIN";  OPEN_URL="https://$DOMAIN" ;;
+  localhost) SITE_ADDRESS=":80"; BIND_ADDR="127.0.0.1"; OPEN_URL="http://localhost" ;;
+  lan)       SITE_ADDRESS=":80";  OPEN_URL="http://${LAN_IP:-${PUBLIC_IP:-<server-ip>}}" ;;
+  *)         OPEN_URL="" ;;   # --site-address passed verbatim
+esac
+if [[ -z "${OPEN_URL:-}" ]]; then
+  if [[ "$SITE_ADDRESS" == :* ]]; then OPEN_URL="http://${LAN_IP:-localhost}"; else OPEN_URL="https://$SITE_ADDRESS"; fi
+fi
+case "$ACCESS_MODE" in
+  domain)    ok "Site address: ${B}$SITE_ADDRESS${RS} ${DIM}(auto-HTTPS)${RS}" ;;
+  localhost) ok "Site address: ${B}http://localhost${RS} ${DIM}(bound to 127.0.0.1 — not reachable from the network)${RS}" ;;
+  *)         ok "Site address: ${B}$OPEN_URL${RS} ${DIM}(HTTP :80, no certificate)${RS}" ;;
+esac
 
 # ── 3. secrets + .env ────────────────────────────────────────────────────────
 hd "Configuration (.env)"
@@ -195,6 +411,11 @@ else
   warn "S3 keys not set but a minio data dir exists — leaving them on the compose defaults (matches how the object store was initialised)."
 fi
 upsert MANTLE_SITE_ADDRESS "$SITE_ADDRESS"
+# Which interface the front door listens on. 127.0.0.1 for a "this machine
+# only" install — a published Docker port bypasses the host firewall (Docker
+# writes its own DNAT rules), so binding loopback is the only thing that
+# actually keeps a laptop brain off the network.
+upsert MANTLE_BIND_ADDR "$BIND_ADDR"
 # Public origin for share/email links + the onboarding Domain check. Only
 # meaningful when a real hostname is set; on :80 (no domain) links would embed
 # an address that may change, so it stays unset until a domain is added.
@@ -223,11 +444,6 @@ upsert MANTLE_IMAGE_TAG    "$IMAGE_TAG"
 # all — no postgres, no service discovery — while still reporting healthy. A
 # leftover stack or a `next dev` on :3000 is enough. So pick a free port here
 # rather than hand the user an opaque bind error (or a silently dead app).
-port_busy() { # $1 = port → 0 if something is listening on it
-  if command -v ss >/dev/null 2>&1; then ss -ltnH "( sport = :$1 )" 2>/dev/null | grep -q ":$1"
-  elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
-  else return 1; fi   # can't tell → assume free, compose will report
-}
 DEBUG_PORT="$(getval MANTLE_WEB_DEBUG_PORT)"; DEBUG_PORT="${DEBUG_PORT:-3000}"
 if port_busy "$DEBUG_PORT"; then
   free_port=""
@@ -273,14 +489,10 @@ ok "Wrote ${B}$ENV_FILE${RS} ${DIM}(chmod 600)${RS}"
 
 if [[ $SKIP_UP -eq 1 ]]; then hd "Done (--skip-up)"; inf "Config written; stack not started. Bring it up with: ${B}docker compose up -d --wait${RS}"; exit 0; fi
 
-# Caddy needs 80/443 (80 also serves the HTTP-01 certificate challenge) — a
-# busy port otherwise surfaces only as an opaque bind error minutes later.
-if command -v ss >/dev/null 2>&1; then
-  for p in 80 443; do
-    if ss -ltnH "( sport = :$p )" 2>/dev/null | grep -q ":$p"; then
-      warn "Port $p is already in use — Caddy needs 80 and 443 to serve (and to obtain certificates)."
-    fi
-  done
+# Port 80 was checked with the access mode above, where the advice can be
+# specific. 443 only matters once there's a certificate to serve.
+if [[ "$ACCESS_MODE" == domain ]] && port_busy 443; then
+  warn "Port 443 is already in use — Caddy needs it to serve HTTPS."
 fi
 
 # ── 3b. front door: route BOTH apps on one domain ────────────────────────────
@@ -295,8 +507,32 @@ else
   warn "infra/caddy/Caddyfile.same-origin missing — the front door may not route the owner UI. Re-download the deploy bundle."
 fi
 
+# ── 3c. review ───────────────────────────────────────────────────────────────
+# The last cheap moment to catch a wrong answer. After this we pull ~2 GB and
+# initialise a database whose credentials are baked in at first start.
+hd "Review"
+row() { printf '  %s%-16s%s %s\n' "$DIM" "$1" "$RS" "$2"; }
+case "$ACCESS_MODE" in
+  domain)    row "Reachable at" "${B}https://$DOMAIN${RS}  ${DIM}certificate issues on first boot${RS}" ;;
+  localhost) row "Reachable at" "${B}http://localhost${RS}  ${DIM}this machine only${RS}" ;;
+  *)         row "Reachable at" "${B}$OPEN_URL${RS}  ${DIM}HTTP, no certificate${RS}" ;;
+esac
+row "Data"        "$DATA_DIR  ${DIM}(documents, database, backups)${RS}"
+row "Stack"       "$STACK_DIR"
+row "Version"     "$IMAGE_TAG"
+row "Embedder"    "$(if [[ "$(getval COMPOSE_PROFILES)" == *local-embedder* ]]; then printf 'bundled (local)'; else printf 'online — chosen during onboarding'; fi)"
+if [[ "$DEBUG_PORT" != 3000 ]]; then row "Debug port" "127.0.0.1:$DEBUG_PORT  ${DIM}(3000 was taken)${RS}"; fi
+existing="$(docker ps -aq --filter "label=com.docker.compose.project=mantle" 2>/dev/null | head -1)"
+if [[ -n "$existing" ]]; then
+  row "Existing stack" "${YLW}found — this is an update, not a fresh install${RS}"
+  inf "${DIM}Your data and master key are kept; containers are recreated.${RS}"
+fi
+printf '\n'
+if ! confirm "Go ahead?" y; then die "Stopped. $ENV_FILE is written — re-run when you're ready, or use --skip-up."; fi
+
 # ── 4. bring the stack up ────────────────────────────────────────────────────
 hd "Starting the stack"
+STARTED_AT=$SECONDS
 COMPOSE=(docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR")
 CLIENT_COMPOSE=(docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" -f "$STACK_DIR/docker-compose.client.yml")
 inf "Pulling images (tag: ${B}$IMAGE_TAG${RS}) — a first install downloads ~2 GB…"
@@ -321,11 +557,29 @@ else
 fi
 
 # ── 5. sanity check ──────────────────────────────────────────────────────────
-bash "$(dirname "$0")/sanity.sh" || true
+# Its verdict is THE verdict. Printing a cheerful "complete" over a failed
+# check is how a dead install came to be reported as a working one — and a
+# scripted deploy needs the exit code to say so too.
+SANITY_RC=0
+bash "$(dirname "$0")/sanity.sh" || SANITY_RC=$?
+
+if [[ $SANITY_RC -ne 0 ]]; then
+  hd "Installation incomplete"
+  bad "The checks above didn't pass — don't expect $OPEN_URL to answer yet."
+  inf "Most of it is usually up; fix what's flagged and re-check:"
+  inf "  ${B}scripts/install.sh --check${RS}"
+  inf "  ${B}docker compose logs --tail 50 web caddy${RS}"
+  printf '  %s•%s Took %ss.\n' "$BLU" "$RS" "$((SECONDS - STARTED_AT))"
+  exit 1
+fi
 
 hd "Installation complete"
-if [[ "$SITE_ADDRESS" == ":80" ]]; then
-  inf "Open ${B}http://${PUBLIC_IP:-<server-ip>}${RS} and finish onboarding."
-else
-  inf "Open ${B}https://$SITE_ADDRESS${RS} and finish onboarding."
+inf "Open ${B}$OPEN_URL${RS} and create your account — onboarding starts there."
+if [[ "$ACCESS_MODE" == domain ]]; then
+  inf "${DIM}The certificate is issued on the first request; the first load can take a few seconds.${RS}"
+elif [[ "$ACCESS_MODE" == localhost ]]; then
+  inf "${DIM}Bound to 127.0.0.1 — from another machine, tunnel in: ssh -L 8080:localhost:80 $(id -un)@<this-host>${RS}"
 fi
+inf "Data lives in ${B}$DATA_DIR${RS} — that directory is the backup."
+inf "Re-check health any time: ${B}scripts/install.sh --check${RS}"
+printf '  %s•%s Took %ss.\n' "$BLU" "$RS" "$((SECONDS - STARTED_AT))"

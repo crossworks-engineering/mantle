@@ -607,10 +607,16 @@ services:
     mem_limit: 256m
     depends_on:
       web: { condition: service_healthy }
+    # MANTLE_BIND_ADDR is the interface the front door listens on. It defaults
+    # to every interface — the right thing for a server. install.sh sets it to
+    # 127.0.0.1 for a "this machine only" install, so a laptop brain is
+    # genuinely not on the network rather than merely undocumented: a published
+    # port bypasses the host firewall (Docker writes its own DNAT rules), so
+    # "nobody knows the IP" is not a boundary. Loopback is.
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp" # HTTP/3 (QUIC)
+      - "${MANTLE_BIND_ADDR:-0.0.0.0}:80:80"
+      - "${MANTLE_BIND_ADDR:-0.0.0.0}:443:443"
+      - "${MANTLE_BIND_ADDR:-0.0.0.0}:443:443/udp" # HTTP/3 (QUIC)
     environment:
       # Drives the Caddyfile site block. Hostname → auto-TLS; ":80" → HTTP only.
       MANTLE_SITE_ADDRESS: ${MANTLE_SITE_ADDRESS:-:80}
