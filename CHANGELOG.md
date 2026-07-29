@@ -4,6 +4,37 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — An uninstaller, and a project-name bug it exposed (branch feat/uninstall)
+
+**`scripts/uninstall.sh`** — there was no supported way to remove Mantle, so
+everyone improvised, and the improvised version is the one that eats a
+database. It splits the operation in two, because only one half is reversible.
+
+The default removes containers, networks and named volumes and **keeps your
+data**: postgres, the object store, files and backups are bind-mounted into
+`MANTLE_DATA_DIR`, and the only named volumes are a tailscale socket and
+Caddy's cert cache — so a re-install brings the same brain back with the same
+keys. `--purge` additionally deletes the data directory and `.env`, which is
+the brain plus `MANTLE_MASTER_KEY`; without that key a vault cannot be
+decrypted even from a later backup, so it asks you to type `PURGE` rather than
+press `y`. `--dry-run` prints the blast radius and changes nothing, `--images`
+reclaims the ~4 GB of pulled images, and the whole thing refuses to run against
+the `mantle-dev` development stack or without a terminal to confirm on.
+Root-owned data (containers create it as root) is removed via sudo where
+available and otherwise through a throwaway container — no password needed.
+
+Writing it surfaced a bug in the installer merged earlier this cycle: port
+ownership was keyed on a project name derived from the stack **directory**, but
+both compose files set `name:` explicitly, and that wins. On any box not
+installed into a directory literally called `mantle`, ownership detection
+would have failed and every re-run would have relocated a working front door to
+:8080. Now read from the compose file, with compose's own precedence.
+
+Also fixed in both scripts: probing for a controlling terminal leaked
+`/dev/tty: No such device or address` onto stderr in a piped or detached run —
+redirections apply left to right, so the failure printed before `2>/dev/null`
+took effect.
+
 ## Unreleased — Onboarding: orientation before the first message (branch feat/onboarding-tutorial)
 
 **The last screen said "you're all set" and handed you to the assistant.** It

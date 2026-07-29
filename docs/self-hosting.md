@@ -258,6 +258,34 @@ check is misleading:
   running and keeps reporting healthy — its healthcheck only probes inside
   itself — while being unable to reach postgres or be reached by Caddy.
 
+## Uninstalling
+
+```bash
+bash scripts/uninstall.sh              # remove the stack, keep the brain
+bash scripts/uninstall.sh --dry-run    # show exactly what that would touch
+bash scripts/uninstall.sh --purge      # erase everything, including the data
+```
+
+Two deliberately separate operations, because only one of them is reversible.
+
+**The default removes containers, networks and named volumes and leaves your
+data alone** — `scripts/install.sh` afterwards brings the same brain back, same
+keys and all. Nothing of value is in what it removes: postgres, the object
+store, files and backups are all bind-mounted into `MANTLE_DATA_DIR`, and the
+only named volumes are a tailscale socket and Caddy's certificate cache.
+
+**`--purge` additionally deletes the data directory and `.env`.** That is the
+brain itself, plus `MANTLE_MASTER_KEY` — and without that key the API keys and
+mailbox passwords in your vault cannot be decrypted, *including from a backup
+taken later*. It asks you to type `PURGE` rather than press `y`, and `--dry-run`
+prints the blast radius (paths, sizes, container counts) without touching
+anything. `--images` also drops the pulled images, freeing ~4 GB.
+
+The data directory is read from `.env`, never guessed. Directories the
+containers created are root-owned, so it removes them via `sudo` where
+available, and otherwise through a throwaway container — which needs no
+password and works on a box where you don't have one.
+
 ## Adding HTTPS later
 
 Started without a domain and want one? Point DNS at the box, open 80/443,
