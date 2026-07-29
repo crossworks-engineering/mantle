@@ -1275,10 +1275,11 @@ export function AgentsClient() {
                       />
                       <ContextWindowHint model={form.model} limits={contextLimits} />
                       {editing.mode === 'edit' && editing.agent.manifestManaged && (
-                        <p className="text-xs text-warning-ink">
-                          System agent: the model (with prompt and params) re-syncs to the system
-                          default on each upgrade, so a change here holds only until the next
-                          update. Duplicate the agent to make a permanent variant.
+                        <p className="text-xs text-muted-foreground">
+                          System agent — your provider, model and prompt choices are permanent
+                          across upgrades; only tuning params re-sync to the system default.
+                          Studio&apos;s reset-to-default pulls the shipped configuration back if you
+                          want it.
                         </p>
                       )}
                       {(() => {

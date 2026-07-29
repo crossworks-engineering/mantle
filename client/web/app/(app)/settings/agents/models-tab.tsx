@@ -252,7 +252,7 @@ export function ModelsTab({
                           {agent.manifestManaged && (
                             <span
                               className="rounded-sm bg-info/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-info-ink"
-                              title="This agent's model, prompt and params re-sync to the system default on upgrades — a model change here will be reverted at the next update."
+                              title="Ships with Mantle (system manifest). Provider, model and prompt are yours and survive upgrades; only tuning params re-sync."
                             >
                               system
                             </span>
@@ -501,13 +501,6 @@ function ModelSetPicker({
             Apply all.
           </DialogDescription>
         </DialogHeader>
-        {agent.manifestManaged && (
-          <p className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-ink">
-            <strong>{agent.name}</strong> is a system agent: its model re-syncs to the system
-            default on each upgrade, so a change staged here will be <strong>reverted</strong> at
-            the next update. It holds until then.
-          </p>
-        )}
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="picker-provider">Provider</Label>

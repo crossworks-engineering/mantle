@@ -201,21 +201,24 @@ async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
 }
 
 /**
- * Force-sync each EXISTING manifest specialist's PRODUCT-OWNED definition —
- * systemPrompt + model + params + memoryConfig — to the manifest, mirroring the
- * skill-body force-sync in step 2. A shipped specialist prompt FIX (e.g. the
- * Appsmith build→declare→call ordering that fixes invented tool slugs, v0.34.1)
- * lives in the AGENT prompt, which gap-fill deliberately never overwrites — so
- * without this it reaches only fresh installs, never an already-provisioned
- * brain. A specialist's prompt is product-owned the same way a manifest skill
- * body is; ditto its memoryConfig knobs (max_iterations / max_tool_calls /
- * history limits) — EXCEPT `delegate_to`, which the additive delegation grants
- * own (operator-added delegates must survive), so the live delegate_to is
- * always preserved verbatim. The PERSONA is never touched (its prompt is
- * operator-owned); tool groups, skills, and delegation are left to the additive
- * grants so operator ADDITIONS survive; a disabled specialist is skipped
- * (opt-out). Model honours the same per-agent env override the seed uses.
- * Returns the slugs whose def changed.
+ * Sync each EXISTING manifest specialist's TUNING — params + memoryConfig — to
+ * the manifest. The `delegate_to` key is excepted: the additive delegation
+ * grants own it (operator-added delegates must survive), so the live
+ * delegate_to is always preserved verbatim.
+ *
+ * ⚠ Deliberately NOT synced (decision 2026-07-29): **systemPrompt, model,
+ * provider, apiKeyId**. The route and the prompt/persona are OPERATOR-OWNED on
+ * every agent — a model switch (e.g. via the Models tab) or a prompt edit must
+ * survive upgrades. Pre-v0.212.0 this function force-synced prompt + model,
+ * which silently reverted operator model changes AND could strand an
+ * incoherent triple (it restored `model` but never `provider`). Shipped
+ * prompt/model improvements now reach existing brains only through the
+ * operator's own pull — Studio's reset-to-default — while fresh installs and
+ * newly provisioned specialists get them via seed/gap-fill as before.
+ *
+ * The PERSONA is never touched at all; tool groups, skills, and delegation are
+ * left to the additive grants so operator ADDITIONS survive; a disabled
+ * specialist is skipped (opt-out). Returns the slugs whose tuning changed.
  */
 async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
   const rows = await db
@@ -223,8 +226,6 @@ async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
       id: agents.id,
       slug: agents.slug,
       enabled: agents.enabled,
-      systemPrompt: agents.systemPrompt,
-      model: agents.model,
       params: agents.params,
       memoryConfig: agents.memoryConfig,
     })
@@ -241,20 +242,15 @@ async function syncSpecialistDefs(ownerId: string): Promise<string[]> {
     if (a.isPersona || !a.systemPrompt) continue;
     const row = bySlug.get(a.slug);
     if (!row || !row.enabled) continue;
-    const model = (a.envModelVar ? process.env[a.envModelVar] : undefined) || a.model;
-    const promptChanged = (row.systemPrompt ?? '') !== a.systemPrompt;
-    const modelChanged = row.model !== model;
     const paramsChanged = JSON.stringify(row.params ?? {}) !== JSON.stringify(a.params);
     const mcChanged =
       JSON.stringify(mcForCompare(row.memoryConfig)) !==
       JSON.stringify(mcForCompare(a.memoryConfig));
-    if (!promptChanged && !modelChanged && !paramsChanged && !mcChanged) continue;
+    if (!paramsChanged && !mcChanged) continue;
     const liveDelegateTo = ((row.memoryConfig ?? {}) as { delegate_to?: string[] }).delegate_to;
     await db
       .update(agents)
       .set({
-        systemPrompt: a.systemPrompt,
-        model,
         params: a.params as AgentParams,
         memoryConfig: {
           ...((a.memoryConfig ?? {}) as Record<string, unknown>),

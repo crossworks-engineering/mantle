@@ -296,11 +296,12 @@ function diffSpecialist(a: ManifestAgent, live: LiveConfig, _m: ManifestSlices):
     fields.push(deleg);
     severity = maxSeverity(severity, 'medium');
   }
+  // Specialist model + prompt: operator-owned since 2026-07-29 (the reconcile
+  // no longer force-syncs them), so a difference is a legitimate customisation
+  // — surfaced as informational only (not weighted).
   if (a.model && row.model && a.model !== row.model) {
-    fields.push({ field: 'model', manifest: a.model, live: row.model });
-    severity = maxSeverity(severity, 'medium');
+    fields.push({ field: 'model', manifest: a.model, live: row.model, info: true });
   }
-  // Specialist prompt: surfaced as informational only (not weighted).
   if (a.systemPrompt && (row.systemPrompt ?? '') !== a.systemPrompt) {
     fields.push({
       field: 'systemPrompt',

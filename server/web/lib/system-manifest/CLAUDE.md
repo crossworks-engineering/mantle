@@ -42,11 +42,17 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 | New **specialist** agent | ✅ create + wire delegation | `provisionMissingSpecialists` |
 | Specialist tool groups | ✅ union (add-only) | `grantSpecialistCapabilities` |
 | Specialist skill links | ✅ **converge** — add new + **drop a retired** manifest skill; operator skills kept | `grantSpecialistCapabilities` |
-| Specialist prompt / model / params | ✅ overwrite | `syncSpecialistDefs` |
+| Specialist **params / memoryConfig tuning** (max_iterations, limits; `delegate_to` excepted) | ✅ overwrite | `syncSpecialistDefs` |
 | New **required** worker | ✅ create | `seedManifestWorkers({requiredOnly})` |
 
 **Deliberately NOT auto-propagated** (operator-owned / overlay):
 - Persona **prompt / model / params** — operator-owned; never touched.
+- **Any agent's prompt / model / provider / key** (decision 2026-07-29): the
+  route and the prompt are operator-owned on specialists too — a model switch
+  (Models tab) or prompt edit survives upgrades. Shipped prompt/model
+  improvements reach existing brains only via the operator's own pull
+  (Studio reset-to-default); fresh installs still seed the manifest defaults.
+  (Pre-v0.212.0 `syncSpecialistDefs` force-synced prompt+model.)
 - An existing **worker's model/provider** — operator cost choice; never overwritten.
 - New **optional** workers — fresh onboarding only.
 - **Removals** — mostly additive, with ONE exception: an agent's **skill links**
@@ -74,8 +80,10 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
   reference case). Leave the `MANIFEST_SKILLS` entry if another agent still uses it
   (e.g. `rich_writing` stays for Pages). Operator-authored links are never touched.
 - **Add/change a specialist:** edit its `MANIFEST_AGENTS` entry (+ `AGENT_PROMPTS`).
-  Prompt/model/params force-sync; groups + skills union; a brand-new specialist is
-  auto-provisioned with delegation wired.
+  Params/memoryConfig tuning syncs; groups + skills union; a brand-new specialist
+  is auto-provisioned with delegation wired. Prompt/model changes reach only
+  fresh installs and new provisions — existing brains keep the operator's
+  prompt/route (Studio reset-to-default is the manual pull).
 - **Tool group:** edit `MANIFEST_TOOL_GROUPS` (membership overwrite-syncs). Grant
   it by adding the slug to an agent's `toolGroupSlugs`.
 - **Worker:** edit `MANIFEST_WORKERS` (provider / model / params / optional xAI
