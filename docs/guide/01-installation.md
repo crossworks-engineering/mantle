@@ -54,13 +54,18 @@ they're part of the Docker stack the installer brings up.
 On the server, run:
 
 ```bash
-# Plain HTTP on the server's IP (quickest):
+# Plain HTTP, served on the server's network (quickest):
 curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh | bash
 
 # …or with automatic HTTPS for a domain (point its DNS A record here + open 80/443 first):
 MANTLE_DOMAIN=mantle.example.com \
-  curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh | bash
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh)"
 ```
+
+> **Use the `bash -c "$(curl …)"` form for the domain.** In
+> `MANTLE_DOMAIN=… curl … | bash`, the variable is set for `curl`, not for the
+> `bash` on the right of the pipe — the script never sees it and installs on
+> plain HTTP without a word of complaint.
 
 The installer does everything: checks Docker, fetches the deploy bundle
 (`docker-compose.yml`, the Caddy + Postgres init files, the updater script),
@@ -70,12 +75,62 @@ in-app updater works, pulls the images, and starts the stack. Migrations run
 automatically before the app comes up. (The optional local embedding model — the
 `local-embedder` compose profile — only downloads its ~300 MB model if you enable it.)
 
+Before the ~2 GB pull it checks the things that break an install late and
+expensively: free disk and memory, whether ports 80/443 are already taken, and —
+for a domain — whether DNS actually points at this box. It ends on a
+per-service health check, and if that check fails it says **"Installation
+incomplete"** and exits non-zero rather than printing a URL that won't answer.
+
 > ⚠ **Back up the generated `.env`.** `MANTLE_MASTER_KEY` encrypts your stored API
 > keys, mailbox passwords, and secrets at rest — lose it and that vault is
 > unrecoverable.
 
 When it finishes it prints your URL. Open it and continue at
 [First run](#first-run-create-your-account) below.
+
+### How the brain is reached
+
+The one-line command above is deliberately non-interactive, and without
+`MANTLE_DOMAIN` it serves **plain HTTP on port 80 across the server's
+network** — open `http://<server-ip>`. (On your own laptop that's
+`http://localhost`; on a VPS it is not.)
+
+Run the bundled configurator directly — on a fresh box, or again later to
+change your mind — and it asks instead:
+
+```bash
+cd mantle && bash scripts/install.sh
+```
+
+```
+  How should people reach this brain?
+
+    1  A domain, with HTTPS       brain.example.com — the certificate issues itself
+    2  This machine only          http://localhost — a laptop, or a box you tunnel into
+    3  This machine's network     http://192.168.1.20 — LAN or VPN, no certificate
+```
+
+Each choice has a flag, for scripted installs:
+
+| Choice | Flag | What it does |
+|---|---|---|
+| Domain + HTTPS | `--domain <host>` | Caddy obtains a Let's Encrypt certificate |
+| This machine only | `--localhost` | binds the front door to `127.0.0.1` |
+| This machine's network | `--lan` (or `--no-domain`) | HTTP on `:80`, every interface |
+
+**"This machine only" genuinely means it.** It sets `MANTLE_BIND_ADDR=127.0.0.1`
+so Caddy listens on loopback alone. This matters more than it sounds: a
+published Docker port bypasses the host firewall — Docker writes its own DNAT
+rules ahead of it — so on a laptop or a shared box, binding loopback is the
+only thing that actually keeps the brain off the network.
+
+Choosing a domain checks it **before** any certificate is requested: every A
+and AAAA record is compared against this machine's public and local addresses.
+If it doesn't point here you get a choice — re-check after fixing DNS, start on
+plain HTTP for now, try a different domain, or stop — instead of Caddy
+retrying a request that cannot succeed and burning that hostname's Let's
+Encrypt rate limit. Unattended (`-y`), a record that doesn't point here falls
+back to plain HTTP rather than proceeding into a doomed certificate request.
 
 ### Manual install (no installer script)
 
@@ -96,6 +151,13 @@ Fill in:
 - `MANTLE_PUBLIC_URL` — your public origin, e.g. `https://mantle.example.com`
 - `MANTLE_SITE_ADDRESS` — your domain (Caddy fetches the TLS cert for it), or `:80`
   for plain HTTP
+- `MANTLE_BIND_ADDR` — which interface the front door listens on. Defaults to
+  `0.0.0.0` (every interface); set `127.0.0.1` for a this-machine-only install
+- `MANTLE_WEB_DEBUG_PORT` — host port for the loopback debug tunnel to the web
+  container (default `3000`). Only for on-host debugging; Caddy never uses it.
+  Change it if something already holds 3000 — Docker drops a container's whole
+  network when it can't publish a requested port, which leaves the app running
+  but unreachable and unable to see the database
 - `MANTLE_DATA_DIR` — where state is bind-mounted on disk (e.g. `/opt/mantle/data`)
 - **`MANTLE_STACK_DIR`** — the **host-absolute path of this directory** (the one
   holding `docker-compose.yml` + `.env`): `MANTLE_STACK_DIR=$(pwd -P)`. The installer

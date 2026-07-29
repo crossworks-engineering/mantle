@@ -12,7 +12,10 @@
 #   MANTLE_HOME=~/mantle          install directory          (default: ./mantle)
 #   MANTLE_DOMAIN=m.example.com   serve this hostname with automatic HTTPS
 #                                 (DNS A record + open ports 80/443 first);
-#                                 omit for http://localhost
+#                                 omit for plain HTTP on :80 across this
+#                                 machine's network — http://<server-ip>. For
+#                                 loopback only, run scripts/install.sh
+#                                 --localhost from the bundle afterwards.
 #   MANTLE_CHANNEL=main           git ref to fetch the deploy bundle from
 #                                 (default: main; a release tag like v0.108.0
 #                                 pins compose+infra to that release)
@@ -116,13 +119,13 @@ if [ -n "$SKIP_START" ]; then
 fi
 
 # ── 7. done ──────────────────────────────────────────────────────────────────
-URL="${DOMAIN:+https://$DOMAIN}"; URL="${URL:-http://localhost}"
-ok "Mantle is up."
+# scripts/install.sh has already printed the address to open — it's the only
+# thing that knows which shape was installed. Repeating a guess here is how a
+# LAN install came to be advertised as http://localhost.
 cat <<EOF
 
-  1. Open ${URL} and create your account (first visit → sign up).
-  2. The onboarding wizard takes it from there: assistant, API keys,
-     email, Telegram — all configured in the interface.
+  The onboarding wizard takes it from there: assistant, API keys,
+  email, Telegram — all configured in the interface.
 
   Your data lives in $(pwd)/data — back it up and it IS your brain.
   Update later:   cd $(pwd) && docker compose pull && docker compose up -d --wait
