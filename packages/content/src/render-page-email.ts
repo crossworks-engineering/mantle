@@ -183,8 +183,10 @@ function renderBlock(node: PMNode, images: string[]): string {
     case 'blockMath':
       return `<div style="margin:0 0 16px;text-align:center"><code style="font-family:ui-monospace,Menlo,monospace">${esc(str(node.attrs?.latex))}</code></div>`;
     case 'diagram':
-      // Slice-1 degrade: Mermaid source as a code block (slice 2 attaches a cid: PNG).
-      return `<pre style="margin:0 0 16px;padding:14px 16px;background-color:#f6f8fa;border-radius:6px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word"><code>${esc(str(node.attrs?.source))}</code></pre>`;
+      // Slice-1 degrade: labelled Mermaid source (slice 2 attaches a cid: PNG).
+      // The label matches the web degrade so a diagram is distinguishable from
+      // an ordinary code block in the mail client.
+      return `<div style="margin:0 0 16px"><div style="margin:0 0 4px;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#6b7280">Diagram</div><pre style="margin:0;padding:14px 16px;background-color:#f6f8fa;border-radius:6px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word"><code>${esc(str(node.attrs?.source))}</code></pre></div>`;
     case 'callout': {
       const variant = (['info', 'success', 'warning', 'danger'] as const).includes(
         str(node.attrs?.variant) as keyof typeof CALLOUT_STYLES,

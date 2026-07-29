@@ -316,8 +316,12 @@ function blocks(tokens: Tok[] | undefined): PMNode[] {
         break;
       case 'code': {
         const codeText = t.text ?? '';
-        // A ```mermaid fence is a diagram node (source kept verbatim), not a code block.
-        if ((t.lang ?? '').trim().toLowerCase() === 'mermaid') {
+        // A ```mermaid fence is a diagram node (source kept verbatim), not a
+        // code block. marked's `lang` carries the FULL info string, so match
+        // on its first word — '```mermaid title=x' is still a diagram (the
+        // rest of the info string carries no meaning for us and is dropped).
+        const fenceLang = (t.lang ?? '').trim().split(/\s+/, 1)[0]?.toLowerCase();
+        if (fenceLang === 'mermaid') {
           out.push({ type: 'diagram', attrs: { source: codeText } });
           break;
         }

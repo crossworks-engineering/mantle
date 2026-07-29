@@ -18,7 +18,14 @@ const DEBOUNCE_MS = 300;
 // no CDN, matching the KaTeX precedent).
 let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
 function loadMermaid() {
-  mermaidPromise ??= import('mermaid').then((m) => m.default);
+  // On failure (offline dev, deploy skew 404ing the chunk) clear the cache so
+  // the next render retries the import instead of replaying the rejection.
+  mermaidPromise ??= import('mermaid')
+    .then((m) => m.default)
+    .catch((err: unknown) => {
+      mermaidPromise = null;
+      throw err;
+    });
   return mermaidPromise;
 }
 
@@ -118,7 +125,10 @@ export function DiagramView({ node, updateAttributes, editor, selected }: NodeVi
   const [draft, setDraft] = useState(source);
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(() => editor.isEditable && !source.trim());
+  // Never auto-open on mount: an empty diagram in a loading doc must not steal
+  // focus (the draft watcher remounts the whole editor, which would re-fire
+  // it). Editing opens only from a user click, so autoFocus is always wanted.
+  const [editing, setEditing] = useState(false);
   const [themeEpoch, setThemeEpoch] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runRef = useRef(0);
@@ -177,15 +187,26 @@ export function DiagramView({ node, updateAttributes, editor, selected }: NodeVi
     },
     [node.attrs.source, updateAttributes],
   );
-  useEffect(() => () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-  });
+  // Unmount-only ([]): a per-render cleanup would cancel the pending commit on
+  // every keystroke's re-render and source edits would never persist.
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    },
+    [],
+  );
 
-  const closeEditor = useCallback(() => {
+  // Write the draft to the node NOW (blur, Done, Escape) — the debounce is
+  // only for keystroke batching, never the thing persistence depends on.
+  const flush = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (draft !== node.attrs.source) updateAttributes({ source: draft });
-    setEditing(false);
   }, [draft, node.attrs.source, updateAttributes]);
+
+  const closeEditor = useCallback(() => {
+    flush();
+    setEditing(false);
+  }, [flush]);
 
   return (
     <NodeViewWrapper className="my-3" data-drag-handle>
@@ -220,12 +241,17 @@ export function DiagramView({ node, updateAttributes, editor, selected }: NodeVi
                 setDraft(e.target.value);
                 commit(e.target.value);
               }}
+              onBlur={flush}
+              // Only Escape is intercepted (close the panel, keep it from PM).
+              // Everything else must bubble: TipTap already ignores keys
+              // targeting a TEXTAREA, and the page's window-level shortcuts
+              // (⌘S commit, ⌘K palette) need the event to reach them.
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   e.preventDefault();
+                  e.stopPropagation();
                   closeEditor();
                 }
-                e.stopPropagation();
               }}
             />
             <div className="mt-2 flex justify-end">
@@ -253,9 +279,17 @@ export function DiagramView({ node, updateAttributes, editor, selected }: NodeVi
         ) : !error && text.trim() ? (
           <div className="py-6 text-center text-sm text-muted-foreground">Rendering diagram…</div>
         ) : !text.trim() && !editing ? (
-          <div className="py-6 text-center text-sm text-muted-foreground">
-            Empty diagram{editor.isEditable ? ' — click the pencil to add Mermaid source' : ''}
-          </div>
+          editor.isEditable ? (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="w-full rounded-md py-6 text-center text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              Empty diagram — click to add Mermaid source
+            </button>
+          ) : (
+            <div className="py-6 text-center text-sm text-muted-foreground">Empty diagram</div>
+          )
         ) : null}
       </div>
     </NodeViewWrapper>

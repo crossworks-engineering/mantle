@@ -127,6 +127,9 @@ describe('markdownToDoc', () => {
     expect(find('```Mermaid\ngraph TD\n```', 'diagram')).toBeTruthy();
     expect(find('```mermaidjs\nx\n```', 'diagram')).toBeUndefined();
     expect(find('```mermaidjs\nx\n```', 'codeBlock')).toBeTruthy();
+    // marked's `lang` is the FULL info string — match on its first word, so
+    // '```mermaid title=x' still lands as a diagram.
+    expect(find('```mermaid title=x\ngraph TD\n```', 'diagram')).toBeTruthy();
   });
 
   it('maps a mermaid fence inside a callout to a nested diagram node', () => {

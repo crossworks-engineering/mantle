@@ -97,6 +97,21 @@ describe('listBlocks', () => {
     expect(blocks[1]!.meta).toEqual({ diagram: 'mindmap' });
   });
 
+  it('diagram meta skips %% directives and yields none for unclosed frontmatter', () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [
+        { type: 'diagram', attrs: { source: '%%{init: {"theme":"base"}}%%\nflowchart TD\n  A' } },
+        { type: 'diagram', attrs: { source: '---\ntitle: Broken\nmindmap\n  root' } },
+        { type: 'diagram', attrs: { source: '' } },
+      ],
+    });
+    const blocks = listBlocks(doc);
+    expect(blocks[0]!.meta).toEqual({ diagram: 'flowchart' });
+    expect(blocks[1]!.meta).toBeUndefined();
+    expect(blocks[2]!.meta).toBeUndefined();
+  });
+
   it('walks into containers — callout body shows at depth=2', () => {
     const doc = blocked({
       type: 'doc',
