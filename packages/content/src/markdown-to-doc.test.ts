@@ -149,6 +149,27 @@ describe('markdownToDoc', () => {
     expect(img?.attrs?.alt).toBe('arch');
   });
 
+  it('maps reference-link schemes to their app nodes', () => {
+    const mention = top('hi [Sarah](mention:entity:n-1)')
+      .find((n) => n.type === 'paragraph')!
+      .content!.find((c) => c.type === 'mention');
+    expect(mention?.attrs).toMatchObject({ id: 'n-1', label: 'Sarah', ref: 'entity' });
+    expect(find('![gantry](media:f-1)', 'image')?.attrs?.nodeId).toBe('f-1');
+    expect(find('[spec.pdf](media:f-2)', 'fileEmbed')?.attrs).toMatchObject({
+      nodeId: 'f-2',
+      filename: 'spec.pdf',
+    });
+    expect(find('[Sub plan](page:p-9)', 'childPage')?.attrs).toMatchObject({
+      pageId: 'p-9',
+      title: 'Sub plan',
+    });
+    // Inline (mixed with prose) media:/page: links stay plain links.
+    expect(find('see [spec.pdf](media:f-2) here', 'fileEmbed')).toBeUndefined();
+    // Ordinary links are untouched.
+    expect(find('[site](https://x.io)', 'fileEmbed')).toBeUndefined();
+    expect(find('[site](https://x.io)', 'childPage')).toBeUndefined();
+  });
+
   it('maps $…$ to inline math and $$…$$ to block math', () => {
     const p = top('Inline $E=mc^2$ here').find((n) => n.type === 'paragraph')!;
     expect((p.content ?? []).some((c) => c.type === 'inlineMath')).toBe(true);

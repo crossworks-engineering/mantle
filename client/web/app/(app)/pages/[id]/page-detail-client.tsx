@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  FileCode2,
   GitCommitHorizontal,
   GitCompareArrows,
   Highlighter,
@@ -26,7 +27,8 @@ import { ShareControl } from '@/components/share-control';
 import { ExportMenu } from '@/components/export/export-menu';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
-import { MarkdownDialog } from '@/components/page-editor/markdown-dialog';
+import { docToMarkdown } from '@mantle/content/doc-to-markdown';
+import { markdownToDoc } from '@mantle/content/markdown';
 import { PageOutline } from '@mantle/web-ui/page-outline';
 import { PageBacklinks } from '@/components/page-editor/page-backlinks';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
@@ -447,6 +449,64 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
   };
 
   const [editorKey, setEditorKey] = useState(0);
+  // Set when leaving markdown mode (and cleared by the draft watcher): the
+  // remounted PageEditor must seed on the locally-parsed doc, not the
+  // props-derived `initialDoc`, which only updates on a server refetch.
+  const [seedDoc, setSeedDoc] = useState<JSONContent | null>(null);
+
+  // ── Markdown mode ───────────────────────────────────────────────────
+  // The Markdown button swaps the formatted editor for a raw-markdown textarea
+  // over the SAME draft machinery: edits parse through markdownToDoc into
+  // docRef on a debounce (autosave, ⌘S commit, and the unmount flush all keep
+  // working), and toggling back remounts PageEditor seeded on the parsed doc.
+  // Round-trip note: block ids regenerate on every parse (markdown carries no
+  // ids) — heading anchors re-mint, marks/diff overlays don't apply here.
+  const [mdMode, setMdMode] = useState(false);
+  const [mdText, setMdText] = useState('');
+  const mdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mirrored into a ref so the draft watcher (whose deps must stay
+  // props-only) can ask "is the user in markdown mode right now".
+  const mdModeRef = useRef(false);
+  useEffect(() => {
+    mdModeRef.current = mdMode;
+  }, [mdMode]);
+  const applyMd = useCallback(
+    (text: string) => {
+      if (mdTimer.current) clearTimeout(mdTimer.current);
+      mdTimer.current = null;
+      onDocChange(markdownToDoc(text) as JSONContent);
+    },
+    [onDocChange],
+  );
+  const onMdChange = useCallback(
+    (text: string) => {
+      setMdText(text);
+      if (mdTimer.current) clearTimeout(mdTimer.current);
+      mdTimer.current = setTimeout(() => applyMd(text), 250);
+    },
+    [applyMd],
+  );
+  const toggleMarkdown = useCallback(() => {
+    if (!mdMode) {
+      setMdText(docToMarkdown(docRef.current));
+      setMarkerMode(false);
+      setMdMode(true);
+      return;
+    }
+    applyMd(mdText);
+    setSeedDoc(docRef.current);
+    setEditorKey((k) => k + 1);
+    setMdMode(false);
+  }, [mdMode, mdText, applyMd]);
+  // Persistence in md mode leans on the debounced parse + the textarea's
+  // onBlur flush (focus always leaves the textarea before navigation unmounts
+  // us, mirroring the editor's own blur-flush). Unmount just drops the timer.
+  useEffect(
+    () => () => {
+      if (mdTimer.current) clearTimeout(mdTimer.current);
+    },
+    [],
+  );
 
   // ── Focus marker ────────────────────────────────────────────────────
   // `markerMode` turns the editor's left gutter into a section-marking strip;
@@ -686,6 +746,11 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
       // Editor is reseeding on server truth — lift the post-409 autosave pause.
       conflictRef.current = false;
       setDocDirty(nextStr !== committedRef.current);
+      // Server truth supersedes any markdown-exit seed; and if the user is IN
+      // markdown mode, refresh the textarea to the adopted draft so their next
+      // keystroke can't clobber the foreign change with stale text.
+      setSeedDoc(null);
+      setMdText((prev) => (mdModeRef.current ? docToMarkdown(next) : prev));
       setEditorKey((k) => k + 1);
     }
   }, [initial.draft, initial.doc, initial.draftRev]);
@@ -856,7 +921,16 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
           >
             <StretchHorizontal /> Full width
           </Button>
-          <MarkdownDialog getDoc={() => docRef.current} />
+          <Button
+            size="sm"
+            variant={mdMode ? 'default' : 'outline'}
+            onClick={toggleMarkdown}
+            aria-pressed={mdMode}
+            disabled={aiPending}
+            title="Edit the page as raw markdown"
+          >
+            <FileCode2 /> Markdown
+          </Button>
           <ExportMenu nodeId={initial.id} />
           <ShareControl nodeId={initial.id} beforeEnable={commit} teamMode allowCascade />
           <Button
@@ -926,7 +1000,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
 
           {/* Document body — outline rail (left, wide screens) + centred content. */}
           <div className="flex w-full gap-6 px-6 py-8">
-            {toc.length > 0 && (
+            {!mdMode && toc.length > 0 && (
               <aside className="hidden w-56 shrink-0 xl:block">
                 <div className="sticky top-6 max-h-[calc(100vh-9rem)] overflow-y-auto scrollbar-thin">
                   <PageOutline entries={toc} onJump={jumpToBlock} />
@@ -935,20 +1009,32 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
             )}
             <div className="min-w-0 flex-1">
               <div className={cn('mx-auto w-full', width !== 'wide' ? 'max-w-3xl' : 'max-w-none')}>
-                <PageEditor
-                  key={editorKey}
-                  content={initialDoc}
-                  pageId={initial.id}
-                  markerMode={markerMode}
-                  marks={marks}
-                  diff={reviewMode ? diffOverlay : null}
-                  onDiffAction={onDiffAction}
-                  onMarksChange={setMarks}
-                  onChange={onDocChange}
-                  onBlur={onEditorBlur}
-                  onEditorReady={onEditorReady}
-                  editable={!aiPending}
-                />
+                {mdMode ? (
+                  <textarea
+                    value={mdText}
+                    autoFocus
+                    spellCheck={false}
+                    aria-label="Page markdown source"
+                    onChange={(e) => onMdChange(e.target.value)}
+                    onBlur={() => applyMd(mdText)}
+                    className="min-h-[60vh] w-full resize-y rounded-md border border-border bg-muted/30 p-4 font-mono text-sm leading-relaxed text-foreground outline-none focus:border-ring"
+                  />
+                ) : (
+                  <PageEditor
+                    key={editorKey}
+                    content={seedDoc ?? initialDoc}
+                    pageId={initial.id}
+                    markerMode={markerMode}
+                    marks={marks}
+                    diff={reviewMode ? diffOverlay : null}
+                    onDiffAction={onDiffAction}
+                    onMarksChange={setMarks}
+                    onChange={onDocChange}
+                    onBlur={onEditorBlur}
+                    onEditorReady={onEditorReady}
+                    editable={!aiPending}
+                  />
+                )}
                 {aiPending && (
                   <div className="mt-3 flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm shadow-sm">
                     <Loader2

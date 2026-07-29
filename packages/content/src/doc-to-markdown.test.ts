@@ -108,6 +108,19 @@ describe('docToMarkdown — round-trip stability', () => {
     roundTrips('Inline $E=mc^2$ here.\n\n$$\n\\int_0^1 x\\,dx\n$$');
   });
 
+  it('reference links: mention, uploaded image, file embed, sub-page card', () => {
+    roundTrips(
+      'ping [Sarah](mention:entity:n-1) about [the plan](mention:node:p-2)\n\n' +
+        '![gantry](media:f-1)\n\n[spec.pdf](media:f-2)\n\n[Sub plan](page:p-9)',
+    );
+  });
+
+  it('an inline media:/page: link inside prose stays a plain link (block forms are standalone lines)', () => {
+    roundTrips('see [spec.pdf](media:f-2) inline here');
+    const doc = markdownToDoc('see [spec.pdf](media:f-2) inline here') as N;
+    expect(doc.content?.[0]?.type).toBe('paragraph');
+  });
+
   it('diagrams (```mermaid fence)', () => {
     roundTrips('```mermaid\nflowchart LR\n  A[Ingest] --> B{Extract}\n  B --> C[Recall]\n```');
   });

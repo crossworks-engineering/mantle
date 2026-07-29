@@ -271,6 +271,16 @@ Rendered with KaTeX — use real LaTeX.
 (You can only reference images by URL; uploading files is something the user
 does in the page editor.)
 
+**Reference links** — link syntax with an app scheme keeps rich chips intact
+through markdown edits. Use ONLY real ids you got from tools (search, page
+lists) — never invent one:
+- \`[Label](mention:entity:<id>)\` / \`[Label](mention:node:<id>)\` — an @-mention chip
+- \`![alt](media:<file-id>)\` — an uploaded image; \`[filename](media:<file-id>)\`
+  on its own line — a file-download chip
+- \`[Title](page:<page-id>)\` on its own line — a sub-page card
+When you EDIT existing content that contains these, preserve them verbatim —
+rewriting one as plain text severs the chip.
+
 **To-do lists** — use checkboxes; they render as a real checklist:
 - [ ] an open item
 - [x] a done item

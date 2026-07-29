@@ -195,11 +195,22 @@ function inline(tokens: Tok[] | undefined, marks: PMMark[] = []): PMNode[] {
         if (text) out.push({ type: 'text', text, marks: withMark(marks, { type: 'code' }) });
         break;
       }
-      case 'link':
+      case 'link': {
+        // [label](mention:<ref>:<id>) → a mention chip (the round-trip form
+        // docToMarkdown emits). Anything else stays an ordinary link mark.
+        const m = MENTION_HREF.exec(t.href ?? '');
+        if (m) {
+          out.push({
+            type: 'mention',
+            attrs: { id: m[2]!, label: t.text ?? m[2]!, ref: m[1] ?? 'entity', kind: null },
+          });
+          break;
+        }
         out.push(
           ...inline(t.tokens, withMark(marks, { type: 'link', attrs: { href: t.href ?? '' } })),
         );
         break;
+      }
       case 'inlineMath':
         out.push({ type: 'inlineMath', attrs: { latex: t.latex ?? t.text ?? '' } });
         break;
@@ -241,13 +252,65 @@ function paragraphAndImages(tokens: Tok[] | undefined): PMNode[] {
   for (const t of tokens ?? []) {
     if (t.type === 'image') {
       flush();
-      out.push({ type: 'image', attrs: { src: t.href ?? '', alt: t.text ?? null } });
+      // ![alt](media:<fileId>) → an uploaded (nodeId-backed) image; anything
+      // else is a plain URL image.
+      const media = MEDIA_HREF.exec(t.href ?? '');
+      out.push(
+        media
+          ? { type: 'image', attrs: { src: null, alt: t.text ?? null, nodeId: media[1]! } }
+          : { type: 'image', attrs: { src: t.href ?? '', alt: t.text ?? null } },
+      );
     } else {
       buf.push(t);
     }
   }
   flush();
   return out;
+}
+
+/** Reference-link schemes (the round-trip forms docToMarkdown emits for
+ *  app-native nodes — see rich-writing.md §2). */
+const MENTION_HREF = /^mention:(?:(node|entity):)?([^\s]+)$/;
+const MEDIA_HREF = /^media:([^\s]+)$/;
+const PAGE_HREF = /^page:([^\s]+)$/;
+
+/** A paragraph consisting solely of one link (whitespace allowed around it)
+ *  returns that link token; used to lift [file](media:…) and [Title](page:…)
+ *  standalone lines into their block nodes (fileEmbed / childPage). */
+function soleLink(tokens: Tok[] | undefined): Tok | null {
+  let link: Tok | null = null;
+  for (const t of tokens ?? []) {
+    if (t.type === 'link') {
+      if (link) return null;
+      link = t;
+    } else if (t.type === 'text' || t.type === 'escape') {
+      if ((t.text ?? '').trim() !== '') return null;
+    } else {
+      return null;
+    }
+  }
+  return link;
+}
+
+/** Lift a standalone media:/page: link paragraph into its block node, else null. */
+function blockRefNode(tokens: Tok[] | undefined): PMNode | null {
+  const link = soleLink(tokens);
+  if (!link) return null;
+  const media = MEDIA_HREF.exec(link.href ?? '');
+  if (media) {
+    return {
+      type: 'fileEmbed',
+      attrs: { nodeId: media[1]!, filename: link.text || 'file' },
+    };
+  }
+  const page = PAGE_HREF.exec(link.href ?? '');
+  if (page) {
+    return {
+      type: 'childPage',
+      attrs: { pageId: page[1]!, title: link.text || 'Untitled page', icon: null },
+    };
+  }
+  return null;
 }
 
 /** Block content must be non-empty for listItem/blockquote/cell/etc. */
@@ -301,11 +364,21 @@ function blocks(tokens: Tok[] | undefined): PMNode[] {
         });
         break;
       case 'paragraph': {
+        const ref = blockRefNode(t.tokens);
+        if (ref) {
+          out.push(ref);
+          break;
+        }
         const parts = paragraphAndImages(t.tokens);
         if (parts.length) out.push(...parts);
         break;
       }
       case 'text': {
+        const ref = blockRefNode(t.tokens);
+        if (ref) {
+          out.push(ref);
+          break;
+        }
         const parts = paragraphAndImages(t.tokens);
         if (parts.length) out.push(...parts);
         else if (t.text) out.push(paragraph(undefined, t.text));

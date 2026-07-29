@@ -136,6 +136,13 @@ wrap the CRUD. See [`rich-writing.md`](./rich-writing.md). `markdownToDoc` also
 imports Notion's `<aside>…</aside>` callout export as real aside blocks
 (colour/angle cycled for variety).
 
+**Markdown mode:** the detail header's **Markdown** button swaps the formatted
+editor for a raw-markdown textarea over the same draft machinery (debounced
+`markdownToDoc` into the autosave path; toggling back remounts the editor on
+the parsed doc). Lossless because every app-native node has a reference-link
+form (`mention:`/`media:`/`page:` — see [`rich-writing.md`](./rich-writing.md)
+§2); block ids regenerate on each parse.
+
 **Paste-to-convert:** pasting a markdown document straight into the editor
 converts it to real blocks (callouts, asides, columns, tables, headings, …) via
 the same `markdownToDoc` — so a Notion "Copy as Markdown" lands as a perfect

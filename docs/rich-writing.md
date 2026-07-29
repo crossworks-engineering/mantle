@@ -55,6 +55,10 @@ key off `data-*` attributes.
 | Image | `![alt](url)` | `image` node (block, by URL) |
 | Math | `$inline$` / `$$block$$` | `inlineMath` / `blockMath` (KaTeX) |
 | Diagram | ` ```mermaid ` fence (source verbatim) | `diagram` node + NodeView (client-rendered Mermaid SVG; server surfaces show the source until the slice-2 SVG pipeline) |
+| Mention | `[Label](mention:<ref>:<id>)` (`ref` = `entity` \| `node`; `kind` regenerates as null) | `mention` chip |
+| Uploaded image | `![alt](media:<file-id>)` | `image` node (nodeId-backed; URL images keep `![alt](url)`) |
+| File embed | `[filename](media:<file-id>)` **standalone line** (inline stays a plain link) | `fileEmbed` chip |
+| Sub-page card | `[Title](page:<page-id>)` **standalone line** (title/icon are display caches the NodeView refreshes) | `childPage` card |
 
 ```
 :::warning
