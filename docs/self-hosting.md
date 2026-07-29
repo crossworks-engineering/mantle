@@ -47,6 +47,57 @@ HTTPS**, then `docker compose pull && docker compose up -d --wait` and a
 First boot downloads ~4 GB of images and runs DB migrations (the one-shot
 `migrate` service gates every app service).
 
+Before the pull it also checks free disk and memory and whether ports 80/443
+are already held — the failures that otherwise surface halfway through a 2 GB
+download. And the health check's verdict is the installer's verdict: when it
+fails you get **"Installation incomplete"** and a non-zero exit, not a URL that
+won't answer.
+
+### Where it serves
+
+The one-line command is non-interactive. Without `MANTLE_DOMAIN` it serves
+**plain HTTP on :80 across the machine's network** — reach it at
+`http://<server-ip>`. Run the configurator directly and it asks instead:
+
+```bash
+cd mantle && bash scripts/install.sh
+```
+
+```
+  How should people reach this brain?
+
+    1  A domain, with HTTPS       brain.example.com — the certificate issues itself
+    2  This machine only          http://localhost — a laptop, or a box you tunnel into
+    3  This machine's network     http://192.168.1.20 — LAN or VPN, no certificate
+```
+
+Same three choices as flags: `--domain <host>`, `--localhost`, `--lan`
+(`--no-domain` remains an alias for the last), plus `--behind-proxy` for a box
+that already runs a web server. **`--localhost` binds the front door to
+`127.0.0.1`** via `MANTLE_BIND_ADDR` — worth knowing that this is the only
+thing that actually keeps a brain off the network, because a published Docker
+port bypasses the host firewall (Docker installs its own DNAT rules ahead of
+it).
+
+**If ports 80/443 are already taken**, what happens depends on whether a
+certificate is involved. Without one (`--localhost`, `--lan`) the front door
+just moves — 8080, 8081, … — and every address it prints carries the port. With
+a domain it stops instead: Let's Encrypt answers HTTP-01 on port **80** and
+TLS-ALPN-01 on **443**, so on any other port a certificate can never be issued,
+and quietly moving would build an install that only looks finished. You're
+offered a re-check after freeing the port, or `--behind-proxy` — Caddy on a
+loopback port with your existing nginx/apache keeping :443 and forwarding to
+`http://127.0.0.1:8080`. Both ports are overridable directly as
+`MANTLE_HTTP_PORT` / `MANTLE_HTTPS_PORT`; Caddy always listens on 80/443 inside
+its container, so nothing in the Caddyfile changes.
+
+A domain is checked before TLS is enabled: every A **and** AAAA record is
+compared against the box's public and local addresses (a NAT'd VPS legitimately
+answers on a private one). If it doesn't point here you're offered a re-check,
+plain HTTP for now, a different domain, or a clean stop — and under `-y` it
+falls back to HTTP rather than letting Caddy burn that hostname's Let's Encrypt
+rate limit on a request that cannot succeed.
+
 Mantle runs as **two stacks**: the server (API, agent, workers, share/print
 surfaces) and the owner UI — a separate zero-secret app. The installer brings
 up both and points Caddy at them on ONE domain, path-routed, so there is
@@ -55,7 +106,9 @@ everything else — including sign-up — goes to the UI. You'd only split them
 across two hostnames deliberately; see
 [`upgrading-to-v0.202.md`](./upgrading-to-v0.202.md).
 
-Then open `http://localhost` (or your domain), **create your account**, and
+Then open the URL the installer prints when it finishes — `http://<server-ip>`
+for the default one-liner, `http://localhost` for a `--localhost` install, or
+your domain — **create your account**, and
 let the onboarding wizard do the rest — it starts with its own system-status
 check, then walks you through your API key, model choices, voice, and
 memory-search (embeddings) setup. Everything is configured in the
@@ -97,8 +150,10 @@ Grab the `mantle-deploy-<version>.tar.gz` bundle from the
 unpack it, and run the bundled configurator:
 
 ```bash
-bash scripts/install.sh              # interactive (asks about a domain)
-bash scripts/install.sh --domain mantle.example.com -y   # scripted
+bash scripts/install.sh              # interactive (asks how it should be reached)
+bash scripts/install.sh --domain mantle.example.com -y   # scripted, HTTPS
+bash scripts/install.sh --localhost -y                   # scripted, loopback only
+bash scripts/install.sh --lan -y                         # scripted, HTTP on the network
 bash scripts/install.sh --check     # health-check an existing install
 ```
 
@@ -180,9 +235,60 @@ forward-only, so rolling back across a migration means restoring the
 pre-update dump (`scripts/db-restore.sh`, see [`deploy.md`](./deploy.md)
 §3b–c). This is why the dump-first habit matters.
 
+## Checking an install
+
+```bash
+bash scripts/install.sh --check
+```
+
+Reports every container in both stacks, then proves the app is actually
+serving. Worth knowing what that means, because the obvious version of this
+check is misleading:
+
+- It probes the **front door** — the address you'd actually open — not the
+  loopback debug port. An install whose Caddy serves nothing can otherwise pass
+  on a port only reachable from the box itself.
+- It confirms **Mantle** is what answered, by reading `/api/auth/bootstrap-state`
+  rather than trusting a status code. A leftover container or a stray dev server
+  on the same port answers a bare probe happily — and Mantle's own root response
+  is a `307` to `/login`, so a status code cannot tell them apart.
+- It fails a container that is running but **attached to no network**, or one
+  whose **published port never bound**. Docker abandons a container's entire
+  network setup when it can't program a published port; the container keeps
+  running and keeps reporting healthy — its healthcheck only probes inside
+  itself — while being unable to reach postgres or be reached by Caddy.
+
+## Uninstalling
+
+```bash
+bash scripts/uninstall.sh              # remove the stack, keep the brain
+bash scripts/uninstall.sh --dry-run    # show exactly what that would touch
+bash scripts/uninstall.sh --purge      # erase everything, including the data
+```
+
+Two deliberately separate operations, because only one of them is reversible.
+
+**The default removes containers, networks and named volumes and leaves your
+data alone** — `scripts/install.sh` afterwards brings the same brain back, same
+keys and all. Nothing of value is in what it removes: postgres, the object
+store, files and backups are all bind-mounted into `MANTLE_DATA_DIR`, and the
+only named volumes are a tailscale socket and Caddy's certificate cache.
+
+**`--purge` additionally deletes the data directory and `.env`.** That is the
+brain itself, plus `MANTLE_MASTER_KEY` — and without that key the API keys and
+mailbox passwords in your vault cannot be decrypted, *including from a backup
+taken later*. It asks you to type `PURGE` rather than press `y`, and `--dry-run`
+prints the blast radius (paths, sizes, container counts) without touching
+anything. `--images` also drops the pulled images, freeing ~4 GB.
+
+The data directory is read from `.env`, never guessed. Directories the
+containers created are root-owned, so it removes them via `sudo` where
+available, and otherwise through a throwaway container — which needs no
+password and works on a box where you don't have one.
+
 ## Adding HTTPS later
 
-Started on localhost and want a domain? Point DNS at the box, open 80/443,
+Started without a domain and want one? Point DNS at the box, open 80/443,
 then re-run the configurator with the domain:
 
 ```bash
@@ -190,11 +296,14 @@ cd mantle
 bash scripts/install.sh --domain mantle.example.com -y
 ```
 
-It verifies the A record actually points at this server **before** letting
+It verifies the records actually point at this server **before** letting
 Caddy request a certificate (so a DNS typo can't burn Let's Encrypt
 attempts), sets `MANTLE_SITE_ADDRESS` + `MANTLE_PUBLIC_URL`, restarts what
 changed, and re-runs the sanity check. Your secrets are untouched — re-runs
 never rotate an existing key.
+
+Going the other way — a domain back to loopback, say for a box you'll only
+tunnel into — is the same command with `--localhost`.
 
 <details><summary>Manual alternative (edit .env by hand)</summary>
 

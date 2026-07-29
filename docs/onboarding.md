@@ -69,7 +69,7 @@ replaced the older `actions.ts`); the stepper is `onboarding-client.tsx`.
 | 8 | **Purpose** | what this brain is for: an archetype + free-text description → `savePurpose` writes `preferences.purpose`/`purposeArchetype`; injected into the always-on identity block (`buildIdentityContext`) |
 | 9 | **Personality** | preset bank × gender (voice) + name + creativity slider → `savePersonaAgent` |
 | 10 | **Telegram** | optional/skippable — BotFather instructions + token via the shared `<TelegramBotSection>` (`connectAgentTelegram`) bound to the assistant agent. **Identical to the `/settings/agents` flow** (same component), so it can be done here or any time later in Settings → Agents. Needs the assistant to exist (step 6) first |
-| 11 | **Done** | marks `preferences.onboardedAt` and drops you into the app |
+| 11 | **Done** | marks `preferences.onboardedAt` and drops you into the app. Leads with the governing principle — ingestion is automatic, there is no "remember this" to issue — then a three-item orientation: add files (indexed on arrival), email needs contacts first (the gate in [`email-ingest.md`](./email-ingest.md) — no contacts means an empty inbox), then just ask. Deliberately three and no more — it's the last screen before the assistant |
 
 **Hybrid routing — why.** OpenRouter covers chat, memory indexing, image reading
 (vision), image generation, AND voice (via the `openrouter-{tts,stt}` adapters,

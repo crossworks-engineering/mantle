@@ -4,6 +4,101 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — An uninstaller, and a project-name bug it exposed (branch feat/uninstall)
+
+**`scripts/uninstall.sh`** — there was no supported way to remove Mantle, so
+everyone improvised, and the improvised version is the one that eats a
+database. It splits the operation in two, because only one half is reversible.
+
+The default removes containers, networks and named volumes and **keeps your
+data**: postgres, the object store, files and backups are bind-mounted into
+`MANTLE_DATA_DIR`, and the only named volumes are a tailscale socket and
+Caddy's cert cache — so a re-install brings the same brain back with the same
+keys. `--purge` additionally deletes the data directory and `.env`, which is
+the brain plus `MANTLE_MASTER_KEY`; without that key a vault cannot be
+decrypted even from a later backup, so it asks you to type `PURGE` rather than
+press `y`. `--dry-run` prints the blast radius and changes nothing, `--images`
+reclaims the ~4 GB of pulled images, and the whole thing refuses to run against
+the `mantle-dev` development stack or without a terminal to confirm on.
+Root-owned data (containers create it as root) is removed via sudo where
+available and otherwise through a throwaway container — no password needed.
+
+Writing it surfaced a bug in the installer merged earlier this cycle: port
+ownership was keyed on a project name derived from the stack **directory**, but
+both compose files set `name:` explicitly, and that wins. On any box not
+installed into a directory literally called `mantle`, ownership detection
+would have failed and every re-run would have relocated a working front door to
+:8080. Now read from the compose file, with compose's own precedence.
+
+Also fixed in both scripts: probing for a controlling terminal leaked
+`/dev/tty: No such device or address` onto stderr in a piped or detached run —
+redirections apply left to right, so the failure printed before `2>/dev/null`
+took effect.
+
+## Unreleased — Onboarding: orientation before the first message (branch feat/onboarding-tutorial)
+
+**The last screen said "you're all set" and handed you to the assistant.** It
+now says what to do with it, in four lines total.
+
+The lead carries the thing that makes the rest cohere and that nobody guesses:
+Mantle takes in whatever you give it and indexes it automatically — there is
+nothing to tell it to learn or remember. People arriving from chat assistants
+go looking for a "remember this" step, and since no builtin exposes that verb,
+the search ends in doubt about whether anything was stored at all.
+
+Then three items, and deliberately no more. Files are indexed on arrival, so a
+document can be asked about the moment it lands (large ones take a minute —
+extraction is a concurrency-capped queue, not an instant embed, and the copy
+says so rather than promising magic). Email is gated on the contacts list: no
+contacts means nothing inbound is ingested, which is indistinguishable from a
+broken mail setup unless you're told it's deliberate — with the real carve-out,
+that your own mail always comes in. And everything else happens by asking.
+
+## Unreleased — Installer: guided setup, honest health checks (branch feat/install-probe)
+
+**An install can no longer report itself healthy when it isn't.** A host port
+already holding `:3000` made Docker abandon the web container's entire network
+setup; it stayed `running` and `healthy` — its healthcheck only probes inside
+itself — with no network, no postgres, and unreachable by Caddy. The sanity
+check then confirmed the illusion: it probed `http://localhost:3000` first and
+accepted any 2xx–4xx, so the squatter on that very port answered with Mantle's
+own `307 → /login`. "All good — 23 services healthy" over a dead brain.
+
+Now: the web container's debug port is configurable (`MANTLE_WEB_DEBUG_PORT`)
+and the installer picks a free one; the health check probes the **front door**
+and proves Mantle answered via `/api/auth/bootstrap-state` instead of trusting a
+status code; a container running with no network or an unbound published port
+fails loudly; and the check's verdict is the installer's verdict — a failure
+ends in "Installation incomplete" and a non-zero exit.
+
+The front door's host ports moved the same way (`MANTLE_HTTP_PORT` /
+`MANTLE_HTTPS_PORT`), because a busy :80 killed a container that matters far
+more than the debug tunnel. Without a certificate the installer just moves to
+8080 and prints the address with its port; with a domain it refuses to move and
+says why — HTTP-01 is answered on 80 and TLS-ALPN-01 on 443, so any other port
+means no certificate, ever. `--behind-proxy` covers the box that already runs
+nginx: Caddy on loopback:8080, the existing proxy keeps :443.
+
+That also fixed a live bug in `MANTLE_SERVER_ORIGIN`, which the client app
+serves to the browser as `apiBase`: it was hardcoded to `http://localhost` for
+every non-domain install, so a `--lan` box sent every remote browser's API call
+to its OWN machine. It now tracks the address the installer actually tells you
+to open, port included.
+
+The installer also asks the question that shapes the install — a domain with
+HTTPS, this machine only, or this machine's network — instead of one yes/no
+about a domain. `--localhost` binds the front door to loopback
+(`MANTLE_BIND_ADDR`), which is the only thing that genuinely keeps a brain off
+the network given a published Docker port bypasses the host firewall. A domain
+is verified before TLS is enabled — every A **and** AAAA record against the
+box's public and local addresses, via getent then dig/host — and a mismatch
+offers a re-check, plain HTTP, another domain, or a clean stop rather than
+letting Caddy burn that hostname's Let's Encrypt limit; unattended, it falls
+back to HTTP instead of proceeding into a doomed request. Prompts read from
+`/dev/tty`, so `curl … | bash` can ask real questions instead of answering them
+all from an empty stdin. Disk, memory and ports 80/443 are checked before the
+~2 GB pull.
+
 ## Unreleased — CLI Sandboxes (branch feat/cli-sandboxes)
 
 **The coder agent gets a computer that isn't the brain's.** Persistent
