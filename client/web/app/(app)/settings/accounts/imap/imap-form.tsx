@@ -9,6 +9,7 @@ import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 import { apiSend } from '@mantle/web-ui/api-fetch';
+import { ContactsGateNotice } from '../contacts-gate-notice';
 
 /** Probe result from a successful `intent: 'test'` (saves navigate instead). */
 type TestOk = { ok: true; foldersFound: number; folderSample: string[]; serverName?: string };
@@ -96,6 +97,7 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
+      <ContactsGateNotice />
       {isEdit && <input type="hidden" name="accountId" value={account.id} />}
       <div className="space-y-2">
         <Label htmlFor="address">Email address</Label>
