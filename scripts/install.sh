@@ -51,7 +51,7 @@ step() { printf '  %s%s%s\n' "$DIM" "$*" "$RS"; }
 # from the controlling terminal instead, and when there genuinely isn't one,
 # say so and take the defaults in the open.
 TTY_IN=0
-if [[ -r /dev/tty ]] && exec 3</dev/tty 2>/dev/null; then TTY_IN=1; fi
+if [[ -r /dev/tty ]] && { exec 3</dev/tty; } 2>/dev/null; then TTY_IN=1; fi
 INTERACTIVE=0   # decided once the args are parsed
 # Local names here are deliberately obscure: these helpers assign to a variable
 # named by the CALLER, so an ordinary name like `__a` would shadow the caller's
@@ -171,7 +171,17 @@ ENV_FILE="$STACK_DIR/.env"
 # otherwise, lowercasing it and dropping characters it won't accept. Needed to
 # tell OUR containers' ports apart from a stranger's — so it has to match what
 # compose will actually use, not just the directory name.
-COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$STACK_DIR" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')}"
+# Precedence is compose's own: COMPOSE_PROJECT_NAME, then the `name:` key in
+# the compose file, and only then the directory. Reading the file matters — our
+# docker-compose.yml sets `name: mantle`, so an install in ~/brain is still the
+# `mantle` project. Deriving from the directory alone was wrong everywhere the
+# stack dir isn't literally called "mantle", which would make port ownership
+# detection silently fail and relocate a working front door on every re-run.
+COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-}"
+if [[ -z "$COMPOSE_PROJECT" ]]; then
+  COMPOSE_PROJECT="$(awk '/^name:[[:space:]]/{print $2; exit}' "$STACK_DIR/docker-compose.yml" 2>/dev/null || true)"
+fi
+COMPOSE_PROJECT="${COMPOSE_PROJECT:-$(basename "$STACK_DIR" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')}"
 # Prompt only when there is someone to answer AND they didn't ask us not to.
 # (`if`, not `[[ … ]] && …` — under `set -e` a false one-liner ends the script.)
 if [[ $ASSUME_YES -eq 0 && $TTY_IN -eq 1 ]]; then INTERACTIVE=1; fi
