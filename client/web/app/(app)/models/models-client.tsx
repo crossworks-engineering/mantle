@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Boxes, Copy, ExternalLink, KeyRound, Loader2, RefreshCw, Search } from 'lucide-react';
 import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
@@ -145,8 +145,16 @@ function ModelsView({ data }: { data: ExploreBundle }) {
     );
   }, [rows]);
 
-  // Keep the search box in sync if the URL q changes from elsewhere.
-  useEffect(() => setSearchInput(q), [q]);
+  // Keep the search box in sync if the URL q changes from elsewhere (provider
+  // switch clears it, back/forward restores it) — but NEVER while the user is
+  // typing in it. Each debounced commit round-trips through the router, and its
+  // echo lands after further keystrokes: syncing unconditionally rewound
+  // "chatg" to the in-flight "cha" unless you typed slower than the server.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (document.activeElement === searchRef.current) return;
+    setSearchInput(q);
+  }, [q]);
 
   // Debounced URL-driven search (no client-side filtering of the loaded list).
   useEffect(() => {
@@ -215,6 +223,7 @@ function ModelsView({ data }: { data: ExploreBundle }) {
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              ref={searchRef}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search models…"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import YAML from 'yaml';
@@ -82,7 +82,14 @@ export function FormulasClient() {
   }, [urlId]);
 
   const [searchInput, setSearchInput] = useState(query);
-  useEffect(() => setSearchInput(query), [query]);
+  // Sync from the URL only while the user is NOT typing — the debounced
+  // commit's router echo lands after further keystrokes and would rewind the
+  // input to the in-flight value (same fix as /models).
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (document.activeElement === searchRef.current) return;
+    setSearchInput(query);
+  }, [query]);
 
   // Debounce the search box into the URL, which stays the source of truth.
   useEffect(() => {
@@ -260,6 +267,7 @@ export function FormulasClient() {
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
+                ref={searchRef}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Search formulas…"
