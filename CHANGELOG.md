@@ -4,6 +4,51 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — Installer: guided setup, honest health checks (branch feat/install-probe)
+
+**An install can no longer report itself healthy when it isn't.** A host port
+already holding `:3000` made Docker abandon the web container's entire network
+setup; it stayed `running` and `healthy` — its healthcheck only probes inside
+itself — with no network, no postgres, and unreachable by Caddy. The sanity
+check then confirmed the illusion: it probed `http://localhost:3000` first and
+accepted any 2xx–4xx, so the squatter on that very port answered with Mantle's
+own `307 → /login`. "All good — 23 services healthy" over a dead brain.
+
+Now: the web container's debug port is configurable (`MANTLE_WEB_DEBUG_PORT`)
+and the installer picks a free one; the health check probes the **front door**
+and proves Mantle answered via `/api/auth/bootstrap-state` instead of trusting a
+status code; a container running with no network or an unbound published port
+fails loudly; and the check's verdict is the installer's verdict — a failure
+ends in "Installation incomplete" and a non-zero exit.
+
+The front door's host ports moved the same way (`MANTLE_HTTP_PORT` /
+`MANTLE_HTTPS_PORT`), because a busy :80 killed a container that matters far
+more than the debug tunnel. Without a certificate the installer just moves to
+8080 and prints the address with its port; with a domain it refuses to move and
+says why — HTTP-01 is answered on 80 and TLS-ALPN-01 on 443, so any other port
+means no certificate, ever. `--behind-proxy` covers the box that already runs
+nginx: Caddy on loopback:8080, the existing proxy keeps :443.
+
+That also fixed a live bug in `MANTLE_SERVER_ORIGIN`, which the client app
+serves to the browser as `apiBase`: it was hardcoded to `http://localhost` for
+every non-domain install, so a `--lan` box sent every remote browser's API call
+to its OWN machine. It now tracks the address the installer actually tells you
+to open, port included.
+
+The installer also asks the question that shapes the install — a domain with
+HTTPS, this machine only, or this machine's network — instead of one yes/no
+about a domain. `--localhost` binds the front door to loopback
+(`MANTLE_BIND_ADDR`), which is the only thing that genuinely keeps a brain off
+the network given a published Docker port bypasses the host firewall. A domain
+is verified before TLS is enabled — every A **and** AAAA record against the
+box's public and local addresses, via getent then dig/host — and a mismatch
+offers a re-check, plain HTTP, another domain, or a clean stop rather than
+letting Caddy burn that hostname's Let's Encrypt limit; unattended, it falls
+back to HTTP instead of proceeding into a doomed request. Prompts read from
+`/dev/tty`, so `curl … | bash` can ask real questions instead of answering them
+all from an empty stdin. Disk, memory and ports 80/443 are checked before the
+~2 GB pull.
+
 ## Unreleased — CLI Sandboxes (branch feat/cli-sandboxes)
 
 **The coder agent gets a computer that isn't the brain's.** Persistent

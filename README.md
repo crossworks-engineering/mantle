@@ -176,9 +176,11 @@ With a domain (automatic HTTPS — point the A record at the box first):
 MANTLE_DOMAIN=mantle.example.com bash -c "$(curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh)"
 ```
 
-Open http://localhost (or your domain), create your account, and the
+The one-liner serves plain HTTP on the machine's network, so open
+`http://<server-ip>` — or your domain — create your account, and the
 onboarding wizard takes it from there: model keys, your assistant's
-personality, who you are. Updating is
+personality, who you are. (Want it on loopback only? Run the bundled
+`scripts/install.sh` and pick "this machine only".) Updating is
 `docker compose pull && docker compose up -d --wait`. Full guide
 (domains/HTTPS, pinned versions, backups, rollback):
 **[docs/self-hosting.md](./docs/self-hosting.md)**
