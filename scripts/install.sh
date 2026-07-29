@@ -215,6 +215,35 @@ fi
 upsert MANTLE_DATA_DIR     "$DATA_DIR"
 upsert MANTLE_STACK_DIR    "$STACK_DIR"
 upsert MANTLE_IMAGE_TAG    "$IMAGE_TAG"
+# ── web debug port ───────────────────────────────────────────────────────────
+# The web container publishes 127.0.0.1:<port>:3000 purely for on-host
+# debugging — Caddy reaches the app over the internal network and never needs
+# it. But a busy host port is NOT a cosmetic loss: Docker aborts the whole
+# network setup for that container, and it comes up attached to no network at
+# all — no postgres, no service discovery — while still reporting healthy. A
+# leftover stack or a `next dev` on :3000 is enough. So pick a free port here
+# rather than hand the user an opaque bind error (or a silently dead app).
+port_busy() { # $1 = port → 0 if something is listening on it
+  if command -v ss >/dev/null 2>&1; then ss -ltnH "( sport = :$1 )" 2>/dev/null | grep -q ":$1"
+  elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  else return 1; fi   # can't tell → assume free, compose will report
+}
+DEBUG_PORT="$(getval MANTLE_WEB_DEBUG_PORT)"; DEBUG_PORT="${DEBUG_PORT:-3000}"
+if port_busy "$DEBUG_PORT"; then
+  free_port=""
+  for p in $(seq 3000 3020); do
+    if ! port_busy "$p"; then free_port="$p"; break; fi
+  done
+  if [[ -n "$free_port" ]]; then
+    warn "Port $DEBUG_PORT is already in use — using ${B}$free_port${RS} for the local debug tunnel instead."
+    inf "Nothing is lost: the app is served by Caddy, not this port. Reach it on-host at ${B}http://127.0.0.1:$free_port${RS}."
+    DEBUG_PORT="$free_port"
+  else
+    warn "Ports 3000-3020 are all in use — the web container's debug port cannot be published."
+    warn "Free one and re-run: an unpublishable port makes Docker drop the container's network entirely."
+  fi
+fi
+upsert MANTLE_WEB_DEBUG_PORT "$DEBUG_PORT"
 # ── Local embedder (bundled Ollama + EmbeddingGemma, ~3.3GB image+model) ─────
 # OPT-IN via the `local-embedder` compose profile, persisted in
 # COMPOSE_PROFILES so every later `docker compose pull/up` — the updater

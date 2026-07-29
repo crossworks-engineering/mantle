@@ -570,8 +570,18 @@ services:
     # No public port: Caddy fronts the app and reaches it at web:3000 on the
     # internal network. Bound to localhost only for on-host debugging / ssh
     # tunnels — not reachable from the internet.
+    #
+    # The host port is configurable because a busy :3000 doesn't just lose you
+    # the debug tunnel — Docker aborts the container's ENTIRE network setup when
+    # it can't program a published port, and the container then comes up
+    # attached to NO network: no published port, no service discovery, no
+    # postgres. It still reports healthy (the healthcheck only probes
+    # 127.0.0.1 inside the container), so the failure is silent. A dev server or
+    # an older stack on :3000 is enough to trigger it. install.sh picks a free
+    # port here automatically; sanity.sh fails loudly if a publish was requested
+    # but never bound.
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${MANTLE_WEB_DEBUG_PORT:-3000}:3000"
     # Liveness: is the Next.js server actually answering HTTP? `fetch` rejects
     # ONLY on a network error (connection refused / not listening), so any
     # response — including the 401 this owner-gated route returns when
