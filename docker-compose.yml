@@ -570,8 +570,18 @@ services:
     # No public port: Caddy fronts the app and reaches it at web:3000 on the
     # internal network. Bound to localhost only for on-host debugging / ssh
     # tunnels — not reachable from the internet.
+    #
+    # The host port is configurable because a busy :3000 doesn't just lose you
+    # the debug tunnel — Docker aborts the container's ENTIRE network setup when
+    # it can't program a published port, and the container then comes up
+    # attached to NO network: no published port, no service discovery, no
+    # postgres. It still reports healthy (the healthcheck only probes
+    # 127.0.0.1 inside the container), so the failure is silent. A dev server or
+    # an older stack on :3000 is enough to trigger it. install.sh picks a free
+    # port here automatically; sanity.sh fails loudly if a publish was requested
+    # but never bound.
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${MANTLE_WEB_DEBUG_PORT:-3000}:3000"
     # Liveness: is the Next.js server actually answering HTTP? `fetch` rejects
     # ONLY on a network error (connection refused / not listening), so any
     # response — including the 401 this owner-gated route returns when
@@ -597,10 +607,24 @@ services:
     mem_limit: 256m
     depends_on:
       web: { condition: service_healthy }
+    # MANTLE_BIND_ADDR is the interface the front door listens on. It defaults
+    # to every interface — the right thing for a server. install.sh sets it to
+    # 127.0.0.1 for a "this machine only" install, so a laptop brain is
+    # genuinely not on the network rather than merely undocumented: a published
+    # port bypasses the host firewall (Docker writes its own DNAT rules), so
+    # "nobody knows the IP" is not a boundary. Loopback is.
+    # HOST ports only — Caddy always listens on 80/443 INSIDE the container, so
+    # moving these needs no Caddyfile change. They exist because a box that
+    # already runs nginx/apache would otherwise fail to start the front door at
+    # all (Docker drops the container's whole network when a published port
+    # can't bind). Note that automatic HTTPS requires the real 80 and 443:
+    # Let's Encrypt answers HTTP-01 on 80 and TLS-ALPN-01 on 443, so a moved
+    # port means no certificate — install.sh only moves these for installs that
+    # aren't issuing one.
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp" # HTTP/3 (QUIC)
+      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTP_PORT:-80}:80"
+      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443"
+      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443/udp" # HTTP/3 (QUIC)
     environment:
       # Drives the Caddyfile site block. Hostname → auto-TLS; ":80" → HTTP only.
       MANTLE_SITE_ADDRESS: ${MANTLE_SITE_ADDRESS:-:80}
