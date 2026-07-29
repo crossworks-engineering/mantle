@@ -72,11 +72,24 @@ cd mantle && bash scripts/install.sh
 ```
 
 Same three choices as flags: `--domain <host>`, `--localhost`, `--lan`
-(`--no-domain` remains an alias for the last). **`--localhost` binds the front
-door to `127.0.0.1`** via `MANTLE_BIND_ADDR` — worth knowing that this is the
-only thing that actually keeps a brain off the network, because a published
-Docker port bypasses the host firewall (Docker installs its own DNAT rules
-ahead of it).
+(`--no-domain` remains an alias for the last), plus `--behind-proxy` for a box
+that already runs a web server. **`--localhost` binds the front door to
+`127.0.0.1`** via `MANTLE_BIND_ADDR` — worth knowing that this is the only
+thing that actually keeps a brain off the network, because a published Docker
+port bypasses the host firewall (Docker installs its own DNAT rules ahead of
+it).
+
+**If ports 80/443 are already taken**, what happens depends on whether a
+certificate is involved. Without one (`--localhost`, `--lan`) the front door
+just moves — 8080, 8081, … — and every address it prints carries the port. With
+a domain it stops instead: Let's Encrypt answers HTTP-01 on port **80** and
+TLS-ALPN-01 on **443**, so on any other port a certificate can never be issued,
+and quietly moving would build an install that only looks finished. You're
+offered a re-check after freeing the port, or `--behind-proxy` — Caddy on a
+loopback port with your existing nginx/apache keeping :443 and forwarding to
+`http://127.0.0.1:8080`. Both ports are overridable directly as
+`MANTLE_HTTP_PORT` / `MANTLE_HTTPS_PORT`; Caddy always listens on 80/443 inside
+its container, so nothing in the Caddyfile changes.
 
 A domain is checked before TLS is enabled: every A **and** AAAA record is
 compared against the box's public and local addresses (a NAT'd VPS legitimately

@@ -117,6 +117,29 @@ Each choice has a flag, for scripted installs:
 | Domain + HTTPS | `--domain <host>` | Caddy obtains a Let's Encrypt certificate |
 | This machine only | `--localhost` | binds the front door to `127.0.0.1` |
 | This machine's network | `--lan` (or `--no-domain`) | HTTP on `:80`, every interface |
+| Behind an existing proxy | `--behind-proxy` | plain HTTP on `127.0.0.1:8080`; your nginx/apache terminates TLS |
+
+### If port 80 is already taken
+
+Caddy needs its host ports, and a port it can't bind is not a small problem:
+Docker abandons the container's whole network setup, so the front door comes up
+with no network and serves nothing.
+
+What the installer does depends on whether a certificate is involved:
+
+- **No certificate** (`--localhost`, `--lan`): it moves on — 8080, then 8081,
+  and so on — and tells you the address including the port. Nothing is lost;
+  you just open `http://…:8080`.
+- **A domain with HTTPS**: it stops, because moving is not survivable here.
+  Let's Encrypt answers HTTP-01 on port **80** and TLS-ALPN-01 on **443**, both
+  fixed by the ACME spec — on any other port no certificate can ever be issued.
+  Interactively you're offered a re-check after freeing the port, or
+  `--behind-proxy`; unattended it exits rather than building an install that
+  will never get a certificate.
+
+`--behind-proxy` is the answer when the box already runs nginx or apache:
+Caddy serves plain HTTP on a loopback port and the existing proxy keeps :443.
+Point it at `http://127.0.0.1:8080` and forward the `Host` header.
 
 **"This machine only" genuinely means it.** It sets `MANTLE_BIND_ADDR=127.0.0.1`
 so Caddy listens on loopback alone. This matters more than it sounds: a

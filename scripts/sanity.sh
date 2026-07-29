@@ -106,6 +106,13 @@ ENV_FILE="${MANTLE_ENV_FILE:-$STACK_DIR/.env}"
 envval() { [[ -f "$ENV_FILE" ]] && grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
 SITE_ADDRESS="$(envval MANTLE_SITE_ADDRESS)"
 DEBUG_PORT="$(envval MANTLE_WEB_DEBUG_PORT)"; DEBUG_PORT="${DEBUG_PORT:-3000}"
+# The front door isn't always on 80/443: an install sharing the box with an
+# existing nginx publishes Caddy somewhere else. Probing the default ports there
+# would report a healthy install as dead.
+HTTP_PORT="$(envval MANTLE_HTTP_PORT)";   HTTP_PORT="${HTTP_PORT:-80}"
+HTTPS_PORT="$(envval MANTLE_HTTPS_PORT)"; HTTPS_PORT="${HTTPS_PORT:-443}"
+http_at()  { if [[ "$HTTP_PORT"  == 80  ]]; then printf 'http://%s' "$1";  else printf 'http://%s:%s' "$1" "$HTTP_PORT"; fi; }
+https_at() { if [[ "$HTTPS_PORT" == 443 ]]; then printf 'https://%s' "$1"; else printf 'https://%s:%s' "$1" "$HTTPS_PORT"; fi; }
 
 P_CODE=""; P_BODY=""
 probe() { # $1 = base url, $2 = extra curl args (unquoted, may be empty)
@@ -120,9 +127,10 @@ is_mantle() { [[ "$P_BODY" == *'"firstRun"'* ]]; }
 # Caddy routes on the hostname, so probing bare `localhost` would miss the
 # vhost and 404 on a perfectly working install.
 CANDIDATES=()
-[[ -n "$SITE_ADDRESS" && "$SITE_ADDRESS" != :* ]] \
-  && CANDIDATES+=("https://$SITE_ADDRESS|--resolve $SITE_ADDRESS:443:127.0.0.1")
-CANDIDATES+=("https://localhost|" "http://localhost|")
+if [[ -n "$SITE_ADDRESS" && "$SITE_ADDRESS" != :* ]]; then
+  CANDIDATES+=("$(https_at "$SITE_ADDRESS")|--resolve $SITE_ADDRESS:$HTTPS_PORT:127.0.0.1")
+fi
+CANDIDATES+=("$(https_at localhost)|" "$(http_at localhost)|")
 
 reached=""
 for cand in "${CANDIDATES[@]}"; do

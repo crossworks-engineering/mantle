@@ -21,6 +21,20 @@ status code; a container running with no network or an unbound published port
 fails loudly; and the check's verdict is the installer's verdict — a failure
 ends in "Installation incomplete" and a non-zero exit.
 
+The front door's host ports moved the same way (`MANTLE_HTTP_PORT` /
+`MANTLE_HTTPS_PORT`), because a busy :80 killed a container that matters far
+more than the debug tunnel. Without a certificate the installer just moves to
+8080 and prints the address with its port; with a domain it refuses to move and
+says why — HTTP-01 is answered on 80 and TLS-ALPN-01 on 443, so any other port
+means no certificate, ever. `--behind-proxy` covers the box that already runs
+nginx: Caddy on loopback:8080, the existing proxy keeps :443.
+
+That also fixed a live bug in `MANTLE_SERVER_ORIGIN`, which the client app
+serves to the browser as `apiBase`: it was hardcoded to `http://localhost` for
+every non-domain install, so a `--lan` box sent every remote browser's API call
+to its OWN machine. It now tracks the address the installer actually tells you
+to open, port included.
+
 The installer also asks the question that shapes the install — a domain with
 HTTPS, this machine only, or this machine's network — instead of one yes/no
 about a domain. `--localhost` binds the front door to loopback

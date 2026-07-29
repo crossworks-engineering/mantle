@@ -107,6 +107,9 @@ ${B}Options${RS}
   --localhost            This machine only — HTTP on 127.0.0.1:80, not on the network
   --lan                  HTTP on :80, reachable on this machine's network (no TLS)
   --no-domain            Alias for --lan (kept for existing scripts)
+  --behind-proxy         You already run nginx/apache on 80/443. Caddy serves plain
+                         HTTP on 127.0.0.1:8080 (or the next free port) and your
+                         proxy terminates TLS. Combine with --domain for links.
   --site-address <addr>  Set MANTLE_SITE_ADDRESS verbatim (advanced; overrides above)
   --data-dir <path>      MANTLE_DATA_DIR (default: ./data) — all data binds here
   --stack-dir <path>     MANTLE_STACK_DIR (default: this dir) — used by the updater
@@ -132,9 +135,12 @@ ${B}Examples${RS}
 EOF
 }
 while [[ $# -gt 0 ]]; do case "$1" in
-  --domain) DOMAIN="${2:-}"; ACCESS_MODE="domain"; shift 2 ;;
+  # --domain names the host; it only IMPLIES the mode. An explicit
+  # --behind-proxy must survive being written either side of it.
+  --domain) DOMAIN="${2:-}"; if [[ -z "$ACCESS_MODE" ]]; then ACCESS_MODE="domain"; fi; shift 2 ;;
   --localhost) ACCESS_MODE="localhost"; shift ;;
   --lan|--no-domain) ACCESS_MODE="lan"; shift ;;
+  --behind-proxy) ACCESS_MODE="proxy"; shift ;;
   --site-address) SITE_ADDRESS="${2:-}"; shift 2 ;;
   --data-dir) DATA_DIR="${2:-}"; shift 2 ;;
   --stack-dir) STACK_DIR="${2:-}"; shift 2 ;;
@@ -345,30 +351,96 @@ fi
 # HTTP-01 answers on port 80: if something else holds it, the certificate
 # cannot issue no matter how correct the DNS is. Worth knowing now, not in
 # Caddy's logs in ten minutes.
-if port_busy 80; then
+# ── the front door's host ports ───────────────────────────────────────────────
+# A busy :80 is not a warning you can shrug off: Docker abandons a container's
+# entire network setup when a published port won't bind, so the front door
+# doesn't just lose the port — it comes up with no network and serves nothing.
+#
+# Whether we can move it depends on the mode. Without a certificate, any port
+# works; you just open a different one. WITH a certificate we cannot move:
+# Let's Encrypt answers HTTP-01 on port 80 and TLS-ALPN-01 on 443, both fixed
+# by the ACME spec. Quietly shifting a domain install to 8080 would produce an
+# install that can never get a certificate — success on screen, broken in fact.
+free_port_from() { # $1 = first candidate, $2 = last → echoes a free one
+  local p
+  for p in $(seq "$1" "$2"); do
+    if ! port_busy "$p"; then printf '%s' "$p"; return 0; fi
+  done
+  return 1
+}
+HTTP_PORT=80; HTTPS_PORT=443
+if port_busy 80 || port_busy 443; then
+  busy_list=""
+  if port_busy 80;  then busy_list="80"; fi
+  if port_busy 443; then busy_list="${busy_list:+$busy_list and }443"; fi
+
   if [[ "$ACCESS_MODE" == domain ]]; then
-    warn "Port 80 is already in use — Caddy needs it both to serve and to answer the certificate challenge."
-  else
-    warn "Port 80 is already in use — Caddy needs it to serve the app."
+    bad "Port $busy_list already in use — and a certificate can only be issued on 80 and 443."
+    inf "   ${DIM}Let's Encrypt answers the challenge on those exact ports; moving them means no HTTPS.${RS}"
+    inf "   ${DIM}Usually this is an existing nginx or apache already serving the box.${RS}"
+    if [[ $INTERACTIVE -eq 0 ]]; then
+      die "Free port $busy_list and re-run, or install behind your existing proxy: scripts/install.sh --behind-proxy --domain $DOMAIN"
+    fi
+    printf '\n    %s1%s  Re-check — I'"'"'m freeing the port now\n' "$B$CYN" "$RS"
+    printf '    %s2%s  Run behind the existing proxy %s(plain HTTP on a spare port; your proxy terminates TLS)%s\n' "$B$CYN" "$RS" "$DIM" "$RS"
+    printf '    %s3%s  Stop here\n\n' "$B$CYN" "$RS"
+    while :; do
+      ask p80 "Choice" "1"
+      case "$p80" in
+        1) if port_busy 80 || port_busy 443; then warn "Still in use."; else ok "Ports 80 and 443 are free."; break; fi ;;
+        2) ACCESS_MODE="proxy"; break ;;
+        3) die "Nothing changed. Free port $busy_list, then run this again." ;;
+        *) warn "Pick 1, 2 or 3." ;;
+      esac
+    done
   fi
-  warn "Stop whatever holds it (often an existing nginx or apache), or this install won't be reachable."
+
+  # Not issuing a certificate (or explicitly behind a proxy) → just move.
+  if [[ "$ACCESS_MODE" != domain ]]; then
+    if port_busy 80; then
+      HTTP_PORT="$(free_port_from 8080 8099)" || die "Ports 80 and 8080-8099 are all in use — free one and re-run."
+    fi
+    if port_busy 443; then
+      HTTPS_PORT="$(free_port_from 8443 8462)" || die "Ports 443 and 8443-8462 are all in use — free one and re-run."
+    fi
+    warn "Port $busy_list already in use — serving on ${B}$HTTP_PORT${RS} instead."
+  fi
 fi
 
 # Settle the three derived values every later step reads.
+# Behind an existing proxy, :80 is the one port we must NOT take — that proxy
+# owns it (or is about to). Move off it even when it happens to be free now.
+if [[ "$ACCESS_MODE" == proxy && "$HTTP_PORT" == 80 ]]; then
+  HTTP_PORT="$(free_port_from 8080 8099)" || die "Ports 8080-8099 are all in use — free one and re-run."
+fi
+if [[ "$ACCESS_MODE" == proxy && "$HTTPS_PORT" == 443 ]]; then
+  HTTPS_PORT="$(free_port_from 8443 8462)" || die "Ports 8443-8462 are all in use — free one and re-run."
+fi
+
+# SITE_ADDRESS is what CADDY listens on inside its container — always :80 when
+# there's no certificate to serve, whatever host port we publish it on.
 BIND_ADDR="0.0.0.0"
+PORT_SUFFIX=""
+if [[ "$HTTP_PORT" != 80 ]]; then PORT_SUFFIX=":$HTTP_PORT"; fi
+HOST_ADDR="${LAN_IP:-${PUBLIC_IP:-localhost}}"
 case "$ACCESS_MODE" in
   domain)    SITE_ADDRESS="$DOMAIN";  OPEN_URL="https://$DOMAIN" ;;
-  localhost) SITE_ADDRESS=":80"; BIND_ADDR="127.0.0.1"; OPEN_URL="http://localhost" ;;
-  lan)       SITE_ADDRESS=":80";  OPEN_URL="http://${LAN_IP:-${PUBLIC_IP:-<server-ip>}}" ;;
+  proxy)     SITE_ADDRESS=":80"; BIND_ADDR="127.0.0.1"
+             OPEN_URL="${DOMAIN:+https://$DOMAIN}"; OPEN_URL="${OPEN_URL:-http://127.0.0.1$PORT_SUFFIX}" ;;
+  localhost) SITE_ADDRESS=":80"; BIND_ADDR="127.0.0.1"; OPEN_URL="http://localhost$PORT_SUFFIX" ;;
+  lan)       SITE_ADDRESS=":80";  OPEN_URL="http://$HOST_ADDR$PORT_SUFFIX" ;;
   *)         OPEN_URL="" ;;   # --site-address passed verbatim
 esac
 if [[ -z "${OPEN_URL:-}" ]]; then
-  if [[ "$SITE_ADDRESS" == :* ]]; then OPEN_URL="http://${LAN_IP:-localhost}"; else OPEN_URL="https://$SITE_ADDRESS"; fi
+  if [[ "$SITE_ADDRESS" == :* ]]; then OPEN_URL="http://$HOST_ADDR$PORT_SUFFIX"; else OPEN_URL="https://$SITE_ADDRESS"; fi
 fi
 case "$ACCESS_MODE" in
   domain)    ok "Site address: ${B}$SITE_ADDRESS${RS} ${DIM}(auto-HTTPS)${RS}" ;;
-  localhost) ok "Site address: ${B}http://localhost${RS} ${DIM}(bound to 127.0.0.1 — not reachable from the network)${RS}" ;;
-  *)         ok "Site address: ${B}$OPEN_URL${RS} ${DIM}(HTTP :80, no certificate)${RS}" ;;
+  proxy)     ok "Behind your proxy: Caddy serves plain HTTP on ${B}127.0.0.1:$HTTP_PORT${RS}"
+             inf "Point the proxy that owns :443 at it, e.g. ${B}proxy_pass http://127.0.0.1:$HTTP_PORT;${RS}"
+             inf "${DIM}Forward the Host header — the app builds links from it. Public address: $OPEN_URL${RS}" ;;
+  localhost) ok "Site address: ${B}$OPEN_URL${RS} ${DIM}(bound to 127.0.0.1 — not reachable from the network)${RS}" ;;
+  *)         ok "Site address: ${B}$OPEN_URL${RS} ${DIM}(HTTP, no certificate)${RS}" ;;
 esac
 
 # ── 3. secrets + .env ────────────────────────────────────────────────────────
@@ -416,10 +488,14 @@ upsert MANTLE_SITE_ADDRESS "$SITE_ADDRESS"
 # writes its own DNAT rules), so binding loopback is the only thing that
 # actually keeps a laptop brain off the network.
 upsert MANTLE_BIND_ADDR "$BIND_ADDR"
+upsert MANTLE_HTTP_PORT  "$HTTP_PORT"
+upsert MANTLE_HTTPS_PORT "$HTTPS_PORT"
 # Public origin for share/email links + the onboarding Domain check. Only
-# meaningful when a real hostname is set; on :80 (no domain) links would embed
-# an address that may change, so it stays unset until a domain is added.
-if [[ "$SITE_ADDRESS" != :* ]]; then
+# meaningful when a real hostname is set; without one, links would embed an
+# address that may change, so it stays unset until a domain is added.
+if [[ "$ACCESS_MODE" == domain || "$ACCESS_MODE" == proxy ]]; then
+  upsert MANTLE_PUBLIC_URL "https://$DOMAIN"
+elif [[ "$SITE_ADDRESS" != :* ]]; then
   upsert MANTLE_PUBLIC_URL "https://$SITE_ADDRESS"
 fi
 # The owner UI is its OWN app since the v0.200 split, and it reaches the API
@@ -428,11 +504,14 @@ fi
 # render does not). Without this a fresh install comes up with the server
 # stack only and the visitor lands on a "this has moved" card, unable to sign
 # up at all — signup lives in the client app.
-if [[ "$SITE_ADDRESS" == :* ]]; then
-  upsert MANTLE_SERVER_ORIGIN "http://localhost"
-else
-  upsert MANTLE_SERVER_ORIGIN "https://$SITE_ADDRESS"
-fi
+#
+# It must be the origin THE BROWSER can reach: the client app serves this value
+# to the page as `apiBase` (client/web/app/env.js), so every API call the
+# browser makes is built from it. A hardcoded "http://localhost" is right only
+# when you're browsing from the box itself — on a network install it sends a
+# remote browser to its OWN machine. So it tracks the address we actually tell
+# people to open, port and all.
+upsert MANTLE_SERVER_ORIGIN "$OPEN_URL"
 upsert MANTLE_DATA_DIR     "$DATA_DIR"
 upsert MANTLE_STACK_DIR    "$STACK_DIR"
 upsert MANTLE_IMAGE_TAG    "$IMAGE_TAG"
@@ -514,9 +593,13 @@ hd "Review"
 row() { printf '  %s%-16s%s %s\n' "$DIM" "$1" "$RS" "$2"; }
 case "$ACCESS_MODE" in
   domain)    row "Reachable at" "${B}https://$DOMAIN${RS}  ${DIM}certificate issues on first boot${RS}" ;;
-  localhost) row "Reachable at" "${B}http://localhost${RS}  ${DIM}this machine only${RS}" ;;
+  proxy)     row "Reachable at" "${B}$OPEN_URL${RS}  ${DIM}via your proxy → 127.0.0.1:$HTTP_PORT${RS}" ;;
+  localhost) row "Reachable at" "${B}$OPEN_URL${RS}  ${DIM}this machine only${RS}" ;;
   *)         row "Reachable at" "${B}$OPEN_URL${RS}  ${DIM}HTTP, no certificate${RS}" ;;
 esac
+if [[ "$HTTP_PORT" != 80 ]]; then
+  row "Front door" "host ${B}$HTTP_PORT${RS} → :80  ${DIM}(80 was taken)${RS}"
+fi
 row "Data"        "$DATA_DIR  ${DIM}(documents, database, backups)${RS}"
 row "Stack"       "$STACK_DIR"
 row "Version"     "$IMAGE_TAG"

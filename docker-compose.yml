@@ -613,10 +613,18 @@ services:
     # genuinely not on the network rather than merely undocumented: a published
     # port bypasses the host firewall (Docker writes its own DNAT rules), so
     # "nobody knows the IP" is not a boundary. Loopback is.
+    # HOST ports only — Caddy always listens on 80/443 INSIDE the container, so
+    # moving these needs no Caddyfile change. They exist because a box that
+    # already runs nginx/apache would otherwise fail to start the front door at
+    # all (Docker drops the container's whole network when a published port
+    # can't bind). Note that automatic HTTPS requires the real 80 and 443:
+    # Let's Encrypt answers HTTP-01 on 80 and TLS-ALPN-01 on 443, so a moved
+    # port means no certificate — install.sh only moves these for installs that
+    # aren't issuing one.
     ports:
-      - "${MANTLE_BIND_ADDR:-0.0.0.0}:80:80"
-      - "${MANTLE_BIND_ADDR:-0.0.0.0}:443:443"
-      - "${MANTLE_BIND_ADDR:-0.0.0.0}:443:443/udp" # HTTP/3 (QUIC)
+      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTP_PORT:-80}:80"
+      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443"
+      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443/udp" # HTTP/3 (QUIC)
     environment:
       # Drives the Caddyfile site block. Hostname → auto-TLS; ":80" → HTTP only.
       MANTLE_SITE_ADDRESS: ${MANTLE_SITE_ADDRESS:-:80}
