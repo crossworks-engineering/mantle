@@ -19,6 +19,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@mantle/web-ui/ui/tabs
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
+import { EmojiPicker } from '@/components/emoji-picker';
 import { ShareControl } from '@/components/share-control';
 import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
 import { AppAccessLog } from '@mantle/web-ui/app-sandbox/access-log';
@@ -78,6 +79,22 @@ export function AppDetailClient({ id }: { id: string }) {
 function AppDetailView({ app }: { app: AppDetail }) {
   const toast = useToast();
   const queryClient = useQueryClient();
+
+  // Icon edits are optimistic-local + a fire-and-forget PATCH. Deliberately NO
+  // query invalidation: reloading the app here re-syncs the source tree and
+  // would drop unsaved editor changes for a cosmetic write.
+  const [icon, setIcon] = useState<string | null>(app.icon);
+  useEffect(() => setIcon(app.icon), [app.icon]);
+  const saveIcon = async (next: string) => {
+    const prev = icon;
+    setIcon(next || null);
+    try {
+      await apiSend(`/api/apps/${app.id}`, 'PATCH', { icon: next });
+    } catch (err) {
+      setIcon(prev);
+      toast.error(err instanceof Error ? err.message : 'Could not save the icon');
+    }
+  };
 
   const source = app.draft ?? app.source;
   // Editable working copy of the source tree. Re-synced from the server on every
@@ -231,7 +248,23 @@ function AppDetailView({ app }: { app: AppDetail }) {
         <div className="flex items-center gap-3">
           <BackLink href="/apps">Apps</BackLink>
           <span className="flex items-center gap-2 font-semibold">
-            <span aria-hidden>{app.icon ?? '🧩'}</span>
+            <EmojiPicker
+              value={icon || null}
+              onSelect={(e) => void saveIcon(e)}
+              onClear={() => void saveIcon('')}
+              align="start"
+              trigger={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-label="Change app icon"
+                  title="Change icon"
+                  className="size-8 shrink-0 rounded-md p-0 text-lg leading-none hover:bg-accent"
+                >
+                  {icon || '🧩'}
+                </Button>
+              }
+            />
             {app.title}
             {app.hasDraft && <Badge variant="secondary">unpublished draft</Badge>}
           </span>

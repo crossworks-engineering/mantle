@@ -96,6 +96,14 @@ function wrapMarks(raw: string, marks: PMMark[]): string {
 
 const markSig = (marks?: PMMark[]) => JSON.stringify(marks ?? []);
 
+/** An image node: uploaded (nodeId-backed) images serialize as a `media:`
+ *  reference so they survive markdown round-trips; URL images keep their src. */
+function imageToMd(node: PMNode): string {
+  const alt = s(node.attrs?.alt).replace(/[[\]]/g, '\\$&');
+  const nodeId = s(node.attrs?.nodeId);
+  return `![${alt}](${nodeId ? `media:${nodeId}` : s(node.attrs?.src)})`;
+}
+
 /** Serialize a run of inline nodes (text + atoms) to a markdown string. */
 function inlineNodes(nodes: PMNode[] | undefined): string {
   const list = nodes ?? [];
@@ -125,11 +133,22 @@ function inlineNodes(nodes: PMNode[] | undefined): string {
         out += `$${s(n.attrs?.latex)}$`;
         break;
       case 'image':
-        out += `![${s(n.attrs?.alt).replace(/[[\]]/g, '\\$&')}](${s(n.attrs?.src)})`;
+        out += imageToMd(n);
         break;
-      case 'mention':
-        out += escapeInline(s(n.attrs?.label ?? n.attrs?.id));
+      case 'mention': {
+        // Round-trip syntax: [label](mention:<ref>:<id>) — the chip survives a
+        // markdown edit instead of flattening to its label. `ref` ('node' |
+        // 'entity') rides in the scheme so the extractor edge kind is kept.
+        const id = s(n.attrs?.id);
+        const label = s(n.attrs?.label ?? n.attrs?.id).replace(/[[\]]/g, '\\$&');
+        if (id) {
+          const ref = s(n.attrs?.ref) || 'entity';
+          out += `[${label}](mention:${ref}:${id})`;
+        } else {
+          out += escapeInline(s(n.attrs?.label ?? ''));
+        }
         break;
+      }
       default:
         if (n.text) out += escapeInline(s(n.text));
         else if (n.content) out += inlineNodes(n.content);
@@ -241,7 +260,22 @@ function blockToMd(node: PMNode): string {
       return `:::columns\n${cols.join('\n+++\n')}\n:::`;
     }
     case 'image':
-      return `![${s(node.attrs?.alt).replace(/[[\]]/g, '\\$&')}](${s(node.attrs?.src)})`;
+    case 'pageImage':
+      return imageToMd(node);
+    case 'fileEmbed': {
+      // Round-trip syntax: a standalone-line [filename](media:<fileId>) link.
+      // Without it the chip VANISHES from any markdown-mediated rewrite.
+      const name = (s(node.attrs?.filename) || 'file').replace(/[[\]]/g, '\\$&');
+      const target = s(node.attrs?.nodeId) ? `media:${s(node.attrs?.nodeId)}` : s(node.attrs?.href);
+      return `[${name}](${target})`;
+    }
+    case 'childPage': {
+      // Round-trip syntax: a standalone-line [Title](page:<pageId>) link. The
+      // title is a display cache (the NodeView refreshes it on mount); the id
+      // is the payload. The icon attr regenerates the same way.
+      const title = (s(node.attrs?.title) || 'Untitled page').replace(/[[\]]/g, '\\$&');
+      return `[${title}](page:${s(node.attrs?.pageId)})`;
+    }
     case 'blockMath': {
       const latex = s(node.attrs?.latex);
       return latex.includes('\n') ? `$$\n${latex}\n$$` : `$$${latex}$$`;

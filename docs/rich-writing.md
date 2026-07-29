@@ -17,16 +17,18 @@
 
 Two independent pieces, deliberately:
 
-1. **The skill** (`apps/web/scripts/seed-rich-writing-skill.ts`) — teaches
-   Saskia *what* to write. It's a normal Mantle skill: instructions appended to
-   the agent's system prompt by `composeSystemPromptWithSkills`
-   ([`lib/skills.ts`](../apps/web/lib/skills.ts)), attached via
-   `agents.skill_slugs[]`. Pure data through the existing seam — no pipeline
-   code. Toggle/edit it at `/settings/skills`.
+1. **The skill** — teaches the agent *what* to write. Its body lives in the
+   system manifest (`SKILL_INSTRUCTIONS['rich_writing']` in
+   [`server/web/lib/system-manifest/prompts.ts`](../server/web/lib/system-manifest/prompts.ts) —
+   the single source of truth; `server/web/scripts/seed-rich-writing-skill.ts`
+   force-pushes it to one brain). Instructions are appended to the agent's
+   system prompt by `composeSystemPromptWithSkills`
+   ([`lib/skills.ts`](../server/web/lib/skills.ts)), attached via skill links.
+   Toggle/edit it at `/settings/skills`.
 2. **The renderer** — makes the chat *show* it. `richMarkdownToHtml`
-   ([`lib/rich-markdown.ts`](../apps/web/lib/rich-markdown.ts)) converts her
+   ([`lib/rich-markdown.ts`](../client/web/lib/rich-markdown.ts)) converts the
    dialect to HTML; `<RichText>`
-   ([`components/assistant/rich-text.tsx`](../apps/web/components/assistant/rich-text.tsx))
+   ([`components/assistant/rich-text.tsx`](../client/web/components/assistant/rich-text.tsx))
    feeds it to a read-only TipTap editor built on the **shared `pageExtensions`
    schema**, so chat output renders identically to a page and reuses the
    ProseMirror CSS in `globals.css`.
@@ -54,7 +56,11 @@ key off `data-*` attributes.
 | Columns | `:::columns` … `+++` … `:::` (2+ parts) | `columnList` ⊃ `column` |
 | Image | `![alt](url)` | `image` node (block, by URL) |
 | Math | `$inline$` / `$$block$$` | `inlineMath` / `blockMath` (KaTeX) |
-| Diagram | ` ```mermaid ` fence (source verbatim) | `diagram` node + NodeView (client-rendered Mermaid SVG; server surfaces show the source until the slice-2 SVG pipeline) |
+| Diagram | ` ```mermaid ` fence (source verbatim) | `diagram` node + NodeView (client-rendered Mermaid SVG; PDF export renders real SVG in the print sidecar; /s, team reader, docx and email still show the labelled source until the SVG cache pipeline) |
+| Mention | `[Label](mention:<ref>:<id>)` (`ref` = `entity` \| `node`; `kind` regenerates as null) | `mention` chip |
+| Uploaded image | `![alt](media:<file-id>)` | `image` node (nodeId-backed; URL images keep `![alt](url)`) |
+| File embed | `[filename](media:<file-id>)` **standalone line** (inline stays a plain link) | `fileEmbed` chip |
+| Sub-page card | `[Title](page:<page-id>)` **standalone line** (title/icon are display caches the NodeView refreshes) | `childPage` card |
 
 ```
 :::warning
@@ -98,7 +104,7 @@ to the model); the richness is purely a *rendering* of that text.
 ## 4. The document layout
 
 The `/assistant` page is a **document canvas**, not a chat transcript
-([`assistant-client.tsx`](../apps/web/app/(app)/assistant/assistant-client.tsx)):
+([`assistant-client.tsx`](../client/web/app/(app)/assistant/assistant-client.tsx)):
 
 - Messages are grouped into **turns** (`prompt` + `response`).
 - Each turn is a grid row: Saskia's response is the wide reading column (the
@@ -151,9 +157,12 @@ the table per turn.
 
 ## 7. Known edges / deferred
 
-- **Mentions** (`@entity` / `@page` chips) aren't emitted by Saskia yet — they
-  need real node/entity ids. The schema renders them if present; authoring them
-  is a follow-up (would let her cite the brain inline).
+- **Mentions are now authorable** via the reference-link form
+  (`[Label](mention:<ref>:<id>)`, §2) — the skill requires REAL ids from tools
+  (search, page lists), never invented ones. The chat parser renders the
+  reference schemes (`mention:`/`media:`/`page:`) and ` ```mermaid ` fences as
+  plain links / code — they become rich chips and diagrams only on the Pages
+  parser, by design.
 - **One TipTap editor per Saskia turn.** Fine for normal threads; if very long
   histories feel heavy, switch `<RichText>` to a static `generateHTML` pass +
   callout CSS (loses the live NodeView, gains speed).

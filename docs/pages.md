@@ -126,7 +126,7 @@ strategy throughout: **reuse libraries, write only what they don't provide.**
 | Aside | — | custom `aside` node + NodeView; themed gradient (selected `chart-N` + angle) painted from one shared helper (`aside-style.ts`) so editor/public/email match; ✨ swatch reshuffles |
 | Code highlighting | `@tiptap/extension-code-block-lowlight` + `lowlight` | `.hljs-*` mapped to theme tokens (CSS) |
 | Math | `@tiptap/extension-mathematics` + `katex` | `$…$` / `$$…$$`; `latex` surfaced in `docToText` |
-| Diagrams | `mermaid` (lazy-loaded in the NodeView, exact-pinned) | custom `diagram` node + NodeView (```mermaid fence; dual-mode source panel with live preview; theme-token `themeVariables`, `securityLevel: 'strict'` + `htmlLabels: false`; `source` surfaced in `docToText`; server surfaces degrade to the source until the slice-2 SVG pipeline) |
+| Diagrams | `mermaid` (lazy-loaded in the NodeView, exact-pinned) | custom `diagram` node + NodeView (```mermaid fence; dual-mode source panel with live preview; theme-token `themeVariables`, `securityLevel: 'strict'` + `htmlLabels: false`; `source` surfaced in `docToText`; PDF export renders real SVG in the print sidecar's Chromium; /s, team reader, docx and email show the labelled source until the SVG cache pipeline) |
 | Image / file embeds | — | custom `image` + `fileEmbed` nodes; upload via the files pipeline; slash + drag/paste |
 
 **Agent authoring:** an agent can now create/update pages too — `markdownToDoc`
@@ -135,6 +135,13 @@ converts a rich-markdown dialect into this schema's JSON, and the `page_*` tools
 wrap the CRUD. See [`rich-writing.md`](./rich-writing.md). `markdownToDoc` also
 imports Notion's `<aside>…</aside>` callout export as real aside blocks
 (colour/angle cycled for variety).
+
+**Markdown mode:** the detail header's **Markdown** button swaps the formatted
+editor for a raw-markdown textarea over the same draft machinery (debounced
+`markdownToDoc` into the autosave path; toggling back remounts the editor on
+the parsed doc). Lossless because every app-native node has a reference-link
+form (`mention:`/`media:`/`page:` — see [`rich-writing.md`](./rich-writing.md)
+§2); block ids regenerate on each parse.
 
 **Paste-to-convert:** pasting a markdown document straight into the editor
 converts it to real blocks (callouts, asides, columns, tables, headings, …) via
@@ -145,7 +152,7 @@ parser) that's **multi-line with strong block-markdown signals** (heading,
 `<aside>`, `:::` fence, code fence, table, image, task list); ordinary text paste
 is untouched. One ⌘Z reverts to raw text.
 
-Components live in [`apps/web/components/page-editor/`](../apps/web/components/page-editor/):
+Components live in [`client/web/components/page-editor/`](../client/web/components/page-editor/):
 
 - `extensions.ts` — the shared schema (used by both the live editor and the
   read-only renderer, so they render identically).
@@ -161,7 +168,7 @@ Components live in [`apps/web/components/page-editor/`](../apps/web/components/p
 - `callout.ts`/`callout-view.tsx`, `aside.ts`/`aside-view.tsx`/`aside-style.ts`
   (the gradient cousin of callout), `column.ts`, `mention.ts`/`mention-list.tsx`.
 
-Editor route: [`apps/web/app/(app)/pages/[id]`](../apps/web/app/(app)/pages);
+Editor route: [`client/web/app/(app)/pages/[id]`](../client/web/app/(app)/pages);
 list (master-detail) at `/pages`. The page body uses base `prose` (16px).
 
 ### Custom-node pattern
@@ -388,7 +395,7 @@ cache + `extract_cost_cap_micro_usd`.
     TOP-LEVEL removed blocks with the text + anchor to ghost them. Pure +
     tested; recomputed client-side on every draft change so it always matches
     "what Commit will publish".
-  - `DiffReview` ([`diff-review.ts`](../apps/web/components/page-editor/diff-review.ts))
+  - `DiffReview` ([`diff-review.ts`](../client/web/components/page-editor/diff-review.ts))
     is the editor overlay (same meta-driven decoration pattern as `focus-marks`):
     node borders for added (green/chart-4) + changed (amber/chart-5), and
     **widget "ghost" cards** for removed blocks (red, struck-through) rendered
@@ -521,7 +528,7 @@ cache + `extract_cost_cap_micro_usd`.
     Two surfaces: the agent tool `page_extract_section({ page_id,
     heading_block_id })` (in the `pages` group), and a **drag-handle
     "Extract to sub-page"** action shown on top-level headings
-    ([`drag-handle.tsx`](../apps/web/components/page-editor/drag-handle.tsx)) —
+    ([`drag-handle.tsx`](../client/web/components/page-editor/drag-handle.tsx)) —
     client-side mirror that reuses the same `extractSection`, creates the
     child via `POST /api/pages` (with its body), and swaps the section for a
     `childPage` card (autosaved to draft like any edit).
@@ -552,9 +559,9 @@ cache + `extract_cost_cap_micro_usd`.
 1. `packages/db/src/schema/pages.ts` + `content-chunks.ts` — the storage.
 2. `packages/content/src/pages.ts` — CRUD + draft/commit.
 3. `packages/content/src/doc-to-text.ts` + `chunk.ts` — the brain serializers.
-4. `apps/web/components/page-editor/extensions.ts` — the editor schema; follow
+4. `client/web/components/page-editor/extensions.ts` — the editor schema; follow
    imports for each feature.
-5. `apps/web/app/(app)/pages/[id]/page-detail-client.tsx` — the autosave/commit
+5. `client/web/app/(app)/pages/[id]/page-detail-client.tsx` — the autosave/commit
    state machine.
 6. `apps/agent/src/extractor.ts` `write_chunks` + `reconcile_entities` steps —
    how a page reaches the brain.

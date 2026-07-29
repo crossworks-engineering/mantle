@@ -13,8 +13,9 @@ no source tree needed on the VPS.
 
 > **Box:** `ssh mantle-prod` (`cwe@jason.crossworks.network`), install dir
 > `~/mantle`, serves https://jason.crossworks.network. Its `.env` pins
-> `MANTLE_IMAGE_NAMESPACE=titanwest` + `MANTLE_IMAGE_TAG=latest`. See deploy.md §0
-> for the full topology.
+> `MANTLE_IMAGE_NAMESPACE=titanwest` + `MANTLE_IMAGE_TAG=<exact version tag>`
+> (e.g. `v0.210.0` — NOT `:latest`; bump it as part of every update, step 2
+> below). See deploy.md §0 for the full topology.
 
 ## What a release + update does
 
