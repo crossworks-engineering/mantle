@@ -652,9 +652,10 @@ services:
   # only, NO route to postgres/minio/web. Each sandbox's /files is a host dir
   # under MANTLE_SANDBOXES_HOST_DIR, mounted here at the SAME path (the updater's
   # trick) so the paths sandboxd mkdirs and the bind sources it hands the host
-  # daemon are identical. Enabling on a box = set SANDBOXD_TOKEN +
-  # MANTLE_SANDBOXES_HOST_DIR (host-absolute) in .env and add
-  # COMPOSE_PROFILES=sandboxes. Boxes that don't opt in don't run the feature.
+  # daemon are identical. Fresh installs enable this by default (install.sh
+  # writes SANDBOXD_TOKEN + MANTLE_SANDBOXES_HOST_DIR + the profile into .env);
+  # existing boxes opt in via `install.sh --sandboxes` or the same .env edits
+  # by hand. Boxes without the profile don't run any of it.
   sandboxd:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
     command: ["pnpm", "-C", "server/sandboxd", "start"]

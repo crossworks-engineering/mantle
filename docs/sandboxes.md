@@ -16,10 +16,22 @@ explicitly purged, is handed back to uid 1000 on stop/rm so the owner can
 copy or delete it without root, and can be snapshotted into the Files
 workspace with `sandbox_export`.
 
-## Enabling (per box, opt-in)
+## Enabling
 
-The whole feature sits behind the `sandboxes` compose profile — a box that
-has not opted in does not run any of it. In `.env`:
+The whole feature sits behind the `sandboxes` compose profile.
+
+**Fresh installs: ON by default.** `scripts/install.sh` treats sandboxes as
+part of the system on a genuinely fresh box (same freshness rule as the
+generated DB secrets): it adds the profile to `COMPOSE_PROFILES`, generates
+`SANDBOXD_TOKEN`, points `MANTLE_SANDBOXES_HOST_DIR` at
+`<data-dir>/sandboxes`, and pre-pulls the sandbox base image so the coder
+agent's first `sandbox_create` doesn't stall on a download. Install without it
+via `--no-sandboxes`.
+
+**Existing boxes: still opt-in.** An installer re-run never flips the choice
+implicitly — updates keep whatever the box has. Enable with
+`scripts/install.sh --sandboxes` (idempotent; does the same three `.env`
+writes + pre-pull), or by hand in `.env`:
 
 ```
 COMPOSE_PROFILES=sandboxes

@@ -41,6 +41,9 @@ DATA_DIR="${MANTLE_DATA_DIR:-./data}"; STACK_DIR="${MANTLE_STACK_DIR:-$STACK_DIR
 IMAGE_TAG="${MANTLE_IMAGE_TAG:-latest}"; ASSUME_YES=0; SKIP_UP=0; SANITY_ONLY=0
 # Local embedder (bundled Ollama): 1=enable, 0=disable, empty=keep .env as-is.
 LOCAL_EMBEDDER="${MANTLE_LOCAL_EMBEDDER:-}"
+# CLI sandboxes (sandboxd): 1=enable, 0=disable, empty=default (ON for a FRESH
+# box, keep .env as-is on a re-run — existing boxes never flip implicitly).
+SANDBOXES="${MANTLE_SANDBOXES:-}"
 usage() {
   cat <<EOF
 ${B}Mantle installer${RS}
@@ -61,6 +64,14 @@ ${B}Options${RS}
                          multi-file ingest) — see docs/self-hosting.md.
   --no-local-embedder    Disable it again (stops the services; images stay until
                          you 'docker image prune' or 'docker rmi ollama/ollama')
+  --sandboxes            Enable CLI sandboxes (sandboxd + isolated networks for
+                         the coder agent — docs/sandboxes.md). ON by default for
+                         a FRESH install; this flag also enables it on an
+                         existing box. Persists via COMPOSE_PROFILES in .env,
+                         generates SANDBOXD_TOKEN, sets the sandboxes dir under
+                         the data dir, and pre-pulls the sandbox base image.
+  --no-sandboxes         Install without CLI sandboxes (or disable them again;
+                         sandbox /files dirs are never touched)
   -y, --yes              Non-interactive: accept defaults, never prompt
   --skip-up              Write .env only; don't bring the stack up
   --sanity, --check      Only run the post-install sanity check, then exit
@@ -82,6 +93,8 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --image-tag) IMAGE_TAG="${2:-}"; shift 2 ;;
   --local-embedder) LOCAL_EMBEDDER=1; shift ;;
   --no-local-embedder) LOCAL_EMBEDDER=0; shift ;;
+  --sandboxes) SANDBOXES=1; shift ;;
+  --no-sandboxes) SANDBOXES=0; shift ;;
   -y|--yes|--non-interactive) ASSUME_YES=1; shift ;;
   --skip-up) SKIP_UP=1; shift ;;
   --sanity|--check) SANITY_ONLY=1; shift ;;
@@ -162,7 +175,9 @@ upsert() { # KEY VALUE — replace-in-place or append; preserves other lines
   local k="$1" v="$2" tmp
   touch "$ENV_FILE"
   if grep -qE "^${k}=" "$ENV_FILE" 2>/dev/null; then
-    tmp="$(mktemp)"; grep -vE "^${k}=" "$ENV_FILE" > "$tmp"; printf '%s=%s\n' "$k" "$v" >> "$tmp"; mv "$tmp" "$ENV_FILE"
+    # `|| true`: grep -v exits 1 when the key is the ONLY line — not an error.
+    tmp="$(mktemp)"; grep -vE "^${k}=" "$ENV_FILE" > "$tmp" || true
+    printf '%s=%s\n' "$k" "$v" >> "$tmp"; mv "$tmp" "$ENV_FILE"
   else printf '%s=%s\n' "$k" "$v" >> "$ENV_FILE"; fi
 }
 gen_key()    { openssl rand -base64 32 | tr '+/' '-_' | tr -d '='; }  # 43-char base64url
@@ -239,6 +254,42 @@ if [[ -n "$LOCAL_EMBEDDER" ]]; then
     ok "Local embedder OFF — ollama will not be pulled or started"
   fi
 fi
+# ── CLI sandboxes (sandboxd + isolated sandbox networks) ─────────────────────
+# Part of the system on NEW boxes: defaults ON for a genuinely fresh install
+# (same freshness rule as the generated DB secrets — no postgres data dir yet).
+# A re-run on an existing box never flips the choice implicitly; enable there
+# with --sandboxes, opt out anywhere with --no-sandboxes. Persisted via
+# COMPOSE_PROFILES exactly like the embedder, so the updater keeps it running.
+if [[ -z "$SANDBOXES" && ! -d "$DATA_DIR/postgres" && ! -d "$STACK_DIR/data/postgres" ]]; then
+  SANDBOXES=1
+  inf "Fresh install — CLI sandboxes default ON (skip with --no-sandboxes)"
+fi
+if [[ -n "$SANDBOXES" ]]; then
+  rest="$(getval COMPOSE_PROFILES | tr ',' '\n' | grep -vx 'sandboxes' | grep -v '^$' | paste -sd, -)" || rest=""
+  if [[ "$SANDBOXES" == 1 ]]; then
+    upsert COMPOSE_PROFILES "${rest:+$rest,}sandboxes"
+    ensure SANDBOXD_TOKEN "gen_hex 32"    # bearer between web/api and sandboxd; never rotated on re-run
+    if [[ -z "$(getval MANTLE_SANDBOXES_HOST_DIR)" ]]; then
+      # HOST-absolute is a hard requirement: sandboxd hands this path to the
+      # host docker daemon as a bind source (and is itself mounted at the same
+      # path). Resolve a relative data dir against the stack dir.
+      SBX_DIR="$DATA_DIR"
+      [[ "$SBX_DIR" != /* ]] && SBX_DIR="$STACK_DIR/${SBX_DIR#./}"
+      upsert MANTLE_SANDBOXES_HOST_DIR "$SBX_DIR/sandboxes"
+    fi
+    ok "CLI sandboxes ON — sandboxd starts with the stack (coder agent, docs/sandboxes.md)"
+  else
+    if [[ -n "$rest" ]]; then
+      upsert COMPOSE_PROFILES "$rest"
+    elif grep -qE '^COMPOSE_PROFILES=' "$ENV_FILE" 2>/dev/null; then
+      tmp="$(mktemp)"; grep -vE '^COMPOSE_PROFILES=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
+    fi
+    # Best-effort: stop + remove sandboxd (sandbox /files dirs stay untouched).
+    docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
+      --profile sandboxes rm -sf sandboxd >/dev/null 2>&1 || true
+    ok "CLI sandboxes OFF — sandboxd will not start"
+  fi
+fi
 chmod 600 "$ENV_FILE" 2>/dev/null || true
 ok "Wrote ${B}$ENV_FILE${RS} ${DIM}(chmod 600)${RS}"
 
@@ -273,6 +324,18 @@ CLIENT_COMPOSE=(docker compose --env-file "$ENV_FILE" --project-directory "$STAC
 inf "Pulling images (tag: ${B}$IMAGE_TAG${RS}) — a first install downloads ~2 GB…"
 "${COMPOSE[@]}" pull -q 2>&1 | sed 's/^/    /' \
   || warn "Image pull failed. If the image is private, run 'docker login <registry>' and re-run. Continuing so the sanity check can report."
+
+# Pre-pull the sandbox BASE image when the profile is on. It's not a compose
+# service (sandboxd creates sandboxes from it ad hoc), so `compose pull` never
+# fetches it — without this the coder agent's first sandbox_create stalls on a
+# multi-hundred-MB download.
+if getval COMPOSE_PROFILES | tr ',' '\n' | grep -qx 'sandboxes'; then
+  SBX_IMAGE="$(getval SANDBOX_DEFAULT_IMAGE)"
+  SBX_IMAGE="${SBX_IMAGE:-titanwest/mantle-sandbox:24.04-v2}"
+  inf "Pre-pulling the sandbox base image (${B}$SBX_IMAGE${RS})…"
+  docker pull -q "$SBX_IMAGE" 2>&1 | sed 's/^/    /' \
+    || warn "Sandbox base image pull failed — the first sandbox_create will pull it instead."
+fi
 inf "Bringing services up (waits for migrate + health)…"
 "${COMPOSE[@]}" up -d --wait || warn "up --wait returned non-zero — the sanity check below will show what's wrong."
 
