@@ -115,7 +115,11 @@ fi
 if [[ -d "$DATA_DIR" ]]; then
   # A bare "0" next to "WILL BE DELETED" reads as "there's nothing here" — the
   # opposite of what a confirmation should convey if du just can't measure it.
-  SIZE="$(du -sh "$DATA_DIR" 2>/dev/null | awk '{print $1}')"
+  # `|| true`: on a real deploy the postgres/minio subdirs are root-owned, so
+  # du prints a partial total but EXITS NONZERO — under pipefail + set -e that
+  # killed the whole uninstall right after the summary (found on the first
+  # non-root --purge run). The partial size is still worth showing.
+  SIZE="$(du -sh "$DATA_DIR" 2>/dev/null | awk '{print $1}' || true)"
   case "$SIZE" in ''|0) SIZE='size unknown' ;; esac
   if [[ $PURGE -eq 1 ]]; then
     row "Data" "${RED}$DATA_DIR ($SIZE) — WILL BE DELETED${RS}"
