@@ -174,7 +174,11 @@ fi
   && ok "Server stack removed" || warn "Server stack: nothing to remove (or already gone)"
 
 # Anything left behind by an older layout or a hand-run container.
-STRAGGLERS="$(docker ps -aq --filter "label=com.docker.compose.project=$SERVER_PROJECT" --filter "label=com.docker.compose.project=$CLIENT_PROJECT" 2>/dev/null || true)"
+# One query per project: repeating a label filter with the SAME key ANDs them,
+# so asking for project=mantle AND project=mantle-client matches nothing at all
+# and this cleanup silently did nothing.
+STRAGGLERS="$( { docker ps -aq --filter "label=com.docker.compose.project=$SERVER_PROJECT" 2>/dev/null
+                 docker ps -aq --filter "label=com.docker.compose.project=$CLIENT_PROJECT" 2>/dev/null; } | sort -u || true)"
 if [[ -n "$STRAGGLERS" ]]; then
   docker rm -f $STRAGGLERS >/dev/null 2>&1 && ok "Removed leftover containers"
 fi
