@@ -252,6 +252,7 @@ Full walkthrough (local dev, email, Telegram, production deploy):
 - [`rich-writing.md`](./docs/rich-writing.md) — how the assistant authors real documents.
 
 **Operations & trust**
+- [`scripts.md`](./docs/scripts.md) — every script in the repo: dev stack, worktrees, dump/restore, install/update, maintenance + seeds, codegen, hooks, CI.
 - [`backups.md`](./docs/backups.md) — built-in scheduled backups + the restore drill.
 - [`observability.md`](./docs/observability.md) / [`data-flow-tracing.md`](./docs/data-flow-tracing.md) — the trace model + verifying ingest by hand.
 - [`system-integrity.md`](./docs/system-integrity.md) — the declarative manifest + standing integrity checks.
