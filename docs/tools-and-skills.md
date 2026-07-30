@@ -423,3 +423,53 @@ rows — authored per brain by Toolsmith, never seeded, never reconciled;
 extras. `api_skill_set` can only write the skill of the integration it names, and
 refuses a row it doesn't already own, so an agent cannot reach a persona or
 product skill.
+
+## House style — the owner's prose layer (v0.214.0)
+
+Skills teach *how to do something well*; they ship with the product and speak
+with the product's voice. What they cannot carry is the **owner's own taste** —
+"never use em dashes", "don't say 'delve'" — without either editing a manifest
+skill (permanent drift against `/settings/config`) or authoring and attaching a
+custom skill to every agent that writes.
+
+The `houseStyle` preference (Settings → Profile) is that layer: free text,
+brain-level (`BRAIN_PREFERENCE_KEYS` — one brain writes one way, whichever
+admin edits it), appended by `composeSystemPromptWithSkills` as a final
+`## House style` block **after** the skill blocks, so the owner outranks
+shipped writing guidance by recency.
+
+### Why not the existing layers
+
+| Layer | Authored by | Reaches | Misses |
+|---|---|---|---|
+| Skill (`chat_writing`, `rich_writing`…) | product (manifest) or owner | the agents it's attached to | every agent it isn't; editing manifest skills = permanent config drift |
+| Persona note (`update_persona`, kind `style`) | the agent, from conversation | the responder turn only (`renderPersonaBlock`) | **delegated specialists** — `invoke-agent` composes a child's prompt from its own `skillSlugs` and never sees the parent's notes. A style note on the assistant never reached Pages or Tables, precisely the agents that author documents |
+| **House style** | owner, as a setting | **every composition path** (below) | — |
+
+### Reach
+
+`composeSystemPromptWithSkills` is the single composition seam, so the block
+rides every path: the shared responder assembly (`assembleResponderTurn` —
+web, mobile, Telegram, team, forum, sim/`respond_as_agent`, durable-runner
+resume), delegated specialists (`invoke-agent`, which loads the owner's
+preferences itself and soft-fails so a preferences blip never sinks a
+delegation), heartbeat firing, the Studio sandbox, and Studio's
+composed-prompt preview — a preview that omitted it would be exactly the
+hidden prompt Studio exists to prevent.
+
+### Contracts
+
+- **Unset emits nothing.** The composed prompt is byte-identical to a brain
+  that predates the feature; prompt caches are undisturbed until an owner
+  actually sets a style. Pinned by test in `skills.test.ts` and (per call
+  site) `assemble-turn.test.ts`.
+- **Verbatim carve-out.** The block instructs that it governs prose the agent
+  *authors*, never quoted text, retrieved content, code, or a document being
+  reproduced or edited verbatim — an agent "fixing" source material to satisfy
+  a style preference is a correctness bug, not a style fix.
+- **Capped** at `HOUSE_STYLE_MAX` (2000 chars, ~500 tokens): it rides in the
+  cached prefix of every turn on every agent, so the same context-cost logic
+  that keeps integration skills short applies here.
+- **Trust tier**: injected un-fenced because only an authenticated admin can
+  write it (`savePreferencesFor` lands it on the anchor row) — the same tier
+  as the agent system prompts owners already edit.
