@@ -26,6 +26,7 @@
     "./hooks/use-mobile": "./src/hooks/use-mobile.tsx",
     "./journey-format": "./src/journey-format.ts",
     "./layout/back-link": "./src/layout/back-link.tsx",
+    "./layout/help-topics": "./src/layout/help-topics.ts",
     "./layout/list-pager": "./src/layout/list-pager.tsx",
     "./layout/nav-items": "./src/layout/nav-items.ts",
     "./lib/composer-style": "./src/lib/composer-style.ts",

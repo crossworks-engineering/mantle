@@ -18,6 +18,7 @@ import { Avatar, AvatarFallback } from '@mantle/web-ui/ui/avatar';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { ThemeToggle } from '@mantle/web-ui/theme-toggle';
 import { RandomThemeToggle } from '@/components/random-theme-toggle';
+import { HelpButton } from '@/components/help/help-button';
 import { serverUrl } from '@mantle/web-ui/runtime-env';
 
 export function Header({
@@ -144,6 +145,9 @@ export function Header({
       )}
 
       <div className="ml-auto flex items-center gap-1">
+        {/* Per-screen help. Renders nothing on routes without a topic, and
+            pulls in the panel + its markdown only once clicked. */}
+        <HelpButton />
         <Button variant="ghost" size="icon" onClick={onSearchClick} aria-label="Search">
           <Search className="size-5" />
         </Button>
