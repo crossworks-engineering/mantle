@@ -7,6 +7,7 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import type { MsConfigStatus } from '@mantle/microsoft';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 
@@ -102,7 +103,11 @@ export function MsConfigForm({
             onChange={(e) => setClientId(e.target.value)}
             placeholder="00000000-0000-0000-0000-000000000000"
             required
+            aria-describedby={hintId('clientId')}
           />
+          <FieldHint id="clientId">
+            From your app registration in the Azure portal — the Application (client) ID.
+          </FieldHint>
         </div>
 
         <div className="space-y-2">
@@ -129,9 +134,9 @@ export function MsConfigForm({
               {showSecret ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <FieldHint id="clientSecret">
             Use the secret <em>value</em> (not the secret ID). Azure only shows it once.
-          </p>
+          </FieldHint>
         </div>
 
         <div className="space-y-2">
@@ -142,10 +147,10 @@ export function MsConfigForm({
             onChange={(e) => setTenant(e.target.value)}
             placeholder="common"
           />
-          <p className="text-xs text-muted-foreground">
+          <FieldHint id="tenant">
             <code className="font-mono">common</code> (any org + personal),{' '}
             <code className="font-mono">organizations</code>, or a specific tenant ID.
-          </p>
+          </FieldHint>
         </div>
 
         <div className="space-y-2">
@@ -156,10 +161,13 @@ export function MsConfigForm({
             onChange={(e) => setRedirectUri(e.target.value)}
             required
           />
-          <p className="text-xs text-muted-foreground">
+          <FieldHint
+            id="redirectUri"
+            warn="A single character off and sign-in fails with a redirect mismatch."
+          >
             Add this <strong>exact</strong> URI to the app&apos;s Authentication → Web → Redirect
             URIs.
-          </p>
+          </FieldHint>
         </div>
 
         {error && (

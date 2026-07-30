@@ -81,6 +81,7 @@
     "./ui/date-time-picker": "./src/ui/date-time-picker.tsx",
     "./ui/dialog": "./src/ui/dialog.tsx",
     "./ui/dropdown-menu": "./src/ui/dropdown-menu.tsx",
+    "./ui/field-hint": "./src/ui/field-hint.tsx",
     "./ui/input": "./src/ui/input.tsx",
     "./ui/label": "./src/ui/label.tsx",
     "./ui/popover": "./src/ui/popover.tsx",

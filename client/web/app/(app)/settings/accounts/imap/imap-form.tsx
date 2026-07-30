@@ -8,6 +8,7 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 import { ContactsGateNotice } from '../contacts-gate-notice';
 
@@ -126,7 +127,11 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
           placeholder="Personal"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
+          aria-describedby={hintId('displayName')}
         />
+        <FieldHint id="displayName">
+          How this mailbox is listed. Falls back to the address when blank.
+        </FieldHint>
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div className="col-span-2 space-y-2">
@@ -138,7 +143,11 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
             required
             value={host}
             onChange={(e) => setHost(e.target.value)}
+            aria-describedby={hintId('host')}
           />
+          <FieldHint id="host">
+            Your provider&apos;s incoming-mail server — where messages are read from.
+          </FieldHint>
         </div>
         <div className="space-y-2">
           <Label htmlFor="port">Port</Label>
@@ -151,7 +160,9 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
             required
             value={port}
             onChange={(e) => setPort(Number(e.target.value) || 0)}
+            aria-describedby={hintId('port')}
           />
+          <FieldHint id="port">993 for TLS.</FieldHint>
         </div>
       </div>
       <div className="flex items-center gap-2 rounded-md border border-input bg-muted/30 px-3 py-2 text-sm">
@@ -214,7 +225,11 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
               placeholder="smtp.fastmail.com"
               value={smtpHost}
               onChange={(e) => setSmtpHost(e.target.value)}
+              aria-describedby={hintId('smtpHost')}
             />
+            <FieldHint id="smtpHost">
+              The outgoing server. Usually the same domain as the IMAP host.
+            </FieldHint>
           </div>
           <div className="space-y-2">
             <Label htmlFor="smtpPort">Port</Label>
@@ -262,13 +277,16 @@ export function ImapForm({ account }: { account?: ImapFormAccount }) {
           value={firstScanDays}
           onChange={(e) => setFirstScanDays(Number(e.target.value) || 0)}
         />
-        <p className="text-xs text-muted-foreground">
+        <FieldHint
+          id="firstScanDays"
+          warn="A long history makes the first sync slow and pulls in a lot of mail."
+        >
           How far back to scan headers on the first sync (e.g. 30 for the last month, 365 for a
           year).
           {isEdit
             ? ' Applies to folders not yet scanned — lowering it later won’t delete already-synced mail.'
             : ''}
-        </p>
+        </FieldHint>
       </div>
 
       {/* Error from either intent. */}

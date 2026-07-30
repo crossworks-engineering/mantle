@@ -61,6 +61,7 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { Switch } from '@mantle/web-ui/ui/switch';
 import { ModelSelect } from '@/components/ui/model-select';
 import { useToast } from '@mantle/web-ui/ui/toast';
@@ -547,10 +548,11 @@ export function WorkerForm({
             defaultValue={worker?.name ?? ''}
             placeholder="e.g. Saskia's voice"
             required
+            aria-describedby={hintId('name')}
           />
-          <p className="text-xs text-muted-foreground">
+          <FieldHint id="name">
             Display label only. The system uses the auto-generated slug for lookups.
-          </p>
+          </FieldHint>
         </div>
 
         {/* Provider + key side by side; the model picker gets its own
@@ -634,6 +636,9 @@ export function WorkerForm({
                 </option>
               ))}
             </select>
+            <FieldHint id="apiKeyId">
+              Which saved key pays for this worker. Picking one switches the provider to match.
+            </FieldHint>
             <KeyValidityHint
               kind={kind}
               capability={capability}
@@ -793,6 +798,9 @@ export function WorkerForm({
                       </option>
                     ))}
                   </select>
+                  <FieldHint id="backup_provider">
+                    Who serves this worker when the primary is unreachable.
+                  </FieldHint>
                   {!isProviderWired(backupProvider, capability) && (
                     <p className="text-xs text-amber-600 dark:text-amber-400">
                       No adapter registered for <code>{backupProvider}</code> — failover to it will
@@ -921,10 +929,11 @@ export function WorkerForm({
             type="number"
             defaultValue={worker?.priority ?? 100}
             className="w-32"
+            aria-describedby={hintId('priority')}
           />
-          <p className="text-xs text-muted-foreground">
+          <FieldHint id="priority">
             Higher wins when no default is set and several workers of this kind are enabled.
-          </p>
+          </FieldHint>
         </div>
       </section>
 
@@ -1544,6 +1553,10 @@ function TtsFields({
             <option value="wav">wav</option>
             <option value="flac">flac</option>
           </select>
+          <FieldHint id="format">
+            Audio container for the reply. Keep <code className="font-mono">opus</code> for Telegram
+            — anything else arrives as a file attachment, not a playable voice note.
+          </FieldHint>
         </div>
       </div>
     </div>
@@ -1639,10 +1652,11 @@ function VisionFields({
           type="number"
           defaultValue={(params.max_tokens as number) ?? 2000}
           className="w-32"
+          aria-describedby={hintId('max_tokens')}
         />
-        <p className="text-xs text-muted-foreground">
+        <FieldHint id="max_tokens" warn="Set it short and a dense page stops half-read.">
           Caps cost on long transcripts. 2000 covers ~3 pages of dense handwriting.
-        </p>
+        </FieldHint>
       </div>
     </div>
   );
@@ -1705,11 +1719,12 @@ function DocumentFields({
           type="number"
           defaultValue={(params.max_tokens as number) ?? 8000}
           className="w-32"
+          aria-describedby={hintId('max_tokens')}
         />
-        <p className="text-xs text-muted-foreground">
+        <FieldHint id="max_tokens">
           The whole document transcribes in one call, so keep this generous — 8000 covers a
           multi-page invoice. Long docs need more than the per-image vision default.
-        </p>
+        </FieldHint>
       </div>
       <label className="flex items-start gap-2 text-sm">
         <input
@@ -1742,7 +1757,11 @@ function ImageGenFields({ params }: { params: Record<string, unknown> }) {
             name="size"
             defaultValue={(params.size as string) ?? '1024x1024'}
             placeholder="1024x1024"
+            aria-describedby={hintId('size')}
           />
+          <FieldHint id="size" warn="Larger sizes cost more per image and take longer.">
+            Output dimensions. Must be a size the chosen model accepts.
+          </FieldHint>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="quality">Quality</Label>
@@ -1755,6 +1774,9 @@ function ImageGenFields({ params }: { params: Record<string, unknown> }) {
             <option value="standard">standard</option>
             <option value="hd">hd</option>
           </select>
+          <FieldHint id="quality" warn="`hd` roughly doubles the per-image price.">
+            Detail level the model renders at.
+          </FieldHint>
         </div>
       </div>
       <div className="space-y-1.5">
@@ -1768,6 +1790,11 @@ function ImageGenFields({ params }: { params: Record<string, unknown> }) {
           <option value="natural">natural</option>
           <option value="vivid">vivid</option>
         </select>
+        <FieldHint id="style">
+          <code className="font-mono">vivid</code> pushes for dramatic, saturated images;{' '}
+          <code className="font-mono">natural</code> stays closer to the prompt. Ignored by
+          non-DALL-E models.
+        </FieldHint>
       </div>
     </div>
   );
@@ -2116,7 +2143,14 @@ function LlmWorkerFields({
             min="0"
             max="2"
             defaultValue={(params.temperature as number) ?? 0.2}
+            aria-describedby={hintId('temperature')}
           />
+          <FieldHint
+            id="temperature"
+            warn="Background workers want low — high invites invented detail."
+          >
+            How much the model improvises. 0.2 keeps it factual.
+          </FieldHint>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="max_tokens">Max tokens</Label>
@@ -2125,7 +2159,11 @@ function LlmWorkerFields({
             name="max_tokens"
             type="number"
             defaultValue={(params.max_tokens as number) ?? 1500}
+            aria-describedby={hintId('max_tokens')}
           />
+          <FieldHint id="max_tokens" warn="Too low truncates the output mid-way.">
+            Ceiling on each run&apos;s output. 1500 suits a summary or a note.
+          </FieldHint>
         </div>
       </div>
       {kind === 'reflector' && (
@@ -2137,10 +2175,14 @@ function LlmWorkerFields({
               name="window_size"
               type="number"
               defaultValue={(params.window_size as number) ?? 50}
+              aria-describedby={hintId('window_size')}
             />
-            <p className="text-xs text-muted-foreground">
+            <FieldHint
+              id="window_size"
+              warn="A wide window makes every run a bigger, pricier prompt."
+            >
               How many recent turns the reflector reviews per run.
-            </p>
+            </FieldHint>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="max_notes_per_run">Max notes per run</Label>
@@ -2149,7 +2191,11 @@ function LlmWorkerFields({
               name="max_notes_per_run"
               type="number"
               defaultValue={(params.max_notes_per_run as number) ?? 10}
+              aria-describedby={hintId('max_notes_per_run')}
             />
+            <FieldHint id="max_notes_per_run" warn="Raise it and the persona fills with trivia.">
+              Ceiling on persona notes written per run. Default 10.
+            </FieldHint>
           </div>
         </div>
       )}
@@ -2166,7 +2212,11 @@ function LlmWorkerFields({
                   : ''
               }
               placeholder="note, * (* = all non-skip types)"
+              aria-describedby={hintId('target_types')}
             />
+            <FieldHint id="target_types" warn="`*` means every ingested node gets an LLM pass.">
+              Which node types this extractor runs on.
+            </FieldHint>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <label className="flex items-center gap-2 text-sm">
@@ -2185,7 +2235,14 @@ function LlmWorkerFields({
                 type="number"
                 defaultValue={(params.extract_cost_cap_micro_usd as number | undefined) ?? ''}
                 placeholder="blank = no cap"
+                aria-describedby={hintId('extract_cost_cap_micro_usd')}
               />
+              <FieldHint
+                id="extract_cost_cap_micro_usd"
+                warn="Blank means a bulk import extracts with no ceiling."
+              >
+                Spend allowed on a single node before extraction gives up.
+              </FieldHint>
             </div>
           </div>
         </>
@@ -2199,10 +2256,14 @@ function LlmWorkerFields({
               name="summarize_threshold"
               type="number"
               defaultValue={(params.summarize_threshold as number) ?? 30}
+              aria-describedby={hintId('summarize_threshold')}
             />
-            <p className="text-xs text-muted-foreground">
+            <FieldHint
+              id="summarize_threshold"
+              warn="Set it low and the summarizer fires constantly."
+            >
               Min undigested turns before we attempt a rollup.
-            </p>
+            </FieldHint>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="summarize_batch">Batch (turns)</Label>
@@ -2211,8 +2272,14 @@ function LlmWorkerFields({
               name="summarize_batch"
               type="number"
               defaultValue={(params.summarize_batch as number) ?? 20}
+              aria-describedby={hintId('summarize_batch')}
             />
-            <p className="text-xs text-muted-foreground">Max turns folded per digest.</p>
+            <FieldHint
+              id="summarize_batch"
+              warn="Fold in too many at once and the digest turns vague."
+            >
+              Max turns folded per digest.
+            </FieldHint>
           </div>
         </div>
       )}

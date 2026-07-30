@@ -22,6 +22,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { slugify } from '@mantle/web-ui/slugify';
@@ -335,7 +336,9 @@ export function SkillsClient() {
                     onChange={(e) => onName(e.target.value)}
                     required
                     autoFocus
+                    aria-describedby={hintId('name')}
                   />
+                  <FieldHint id="name">What this skill is called in the list.</FieldHint>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="slug">Slug</Label>
@@ -349,7 +352,11 @@ export function SkillsClient() {
                     pattern="[a-z0-9_\-]+"
                     required
                     disabled={editing?.mode === 'edit'}
+                    aria-describedby={hintId('slug')}
                   />
+                  <FieldHint id="slug">
+                    How agents and heartbeats reference it. Fixed once saved.
+                  </FieldHint>
                 </div>
               </div>
 
@@ -363,7 +370,11 @@ export function SkillsClient() {
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                   placeholder="Triage an inbox: classify each email + draft a brief reply"
                   required
+                  aria-describedby={hintId('description')}
                 />
+                <FieldHint id="description">
+                  How an agent decides this skill is the right one to apply.
+                </FieldHint>
               </div>
 
               <div className="space-y-1.5">
@@ -378,10 +389,13 @@ export function SkillsClient() {
                     'Step 1: list pending emails with email_list.\nStep 2: for each, draft a reply with file_create under files/drafts/.\n...'
                   }
                 />
-                <p className="text-xs text-muted-foreground">
+                <FieldHint
+                  id="instructions"
+                  warn="It rides along on every turn of every agent that has it — keep it tight."
+                >
                   Appended verbatim to the system prompt of any agent this skill is attached to.
                   Reference tools by their slug; the agent will see them in its tool list.
-                </p>
+                </FieldHint>
               </div>
 
               <div className="space-y-1.5">
@@ -396,7 +410,7 @@ export function SkillsClient() {
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
                   placeholder={'{\n  "answered": [],\n  "expecting_reply": false\n}'}
                 />
-                <p className="text-xs text-muted-foreground">
+                <FieldHint id="defaultState">
                   Heartbeats created against this skill copy this as their initial{' '}
                   <code>state</code>. Once a heartbeat exists, its own state is the source of truth
                   — edits here don&apos;t propagate. Leave empty for <code>{'{}'}</code>. See
@@ -410,7 +424,7 @@ export function SkillsClient() {
                     docs/heartbeats.md §10
                   </a>
                   .
-                </p>
+                </FieldHint>
               </div>
 
               <div className="flex justify-end gap-2 border-t border-border pt-3">
