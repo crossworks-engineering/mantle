@@ -1,0 +1,49 @@
+{
+  "$comment": "Volume targets for the generated demo brain. Derived 2026-07-30 from shape surveys of three real brains (numbers only — see README.md provenance). 'target' guides the generator (P2); 'min' is asserted by the layer-2 seed-integration tests — a seed run below a min is a FAILED run, which is exactly the v1 failure mode (37 nodes, silently).",
+  "version": 1,
+
+  "survey": {
+    "$comment": "What the donors actually looked like, for calibration honesty. dev = documentation-heavy dev brain; client = production client brain (heavy assistant usage); personal = email-bearing personal brain.",
+    "dev":      { "nodes": 730,  "chunks": 1686, "chunks_per_node": 2.41, "facts": 1901, "entities": 630, "entity_edges": 1842, "traces": 5428, "steps_per_trace": 7.9,  "assistant_messages": 40,  "span_days": 28 },
+    "client":   { "nodes": 503,  "chunks": 1792, "chunks_per_node": 5.38, "facts": 1036, "entities": 720, "entity_edges": 2317, "traces": 8108, "steps_per_trace": 9.4,  "assistant_messages": 627, "nested_pages": 32, "span_days": 37 },
+    "personal": { "emails": 235, "events": 10, "runs": 2 }
+  },
+
+  "nodes": {
+    "note":          { "target": 130, "min": 90,  "notes": "site-visit series, technical queries, minutes, personal notes" },
+    "journal":       { "target": 100, "min": 70,  "notes": "work + LATHE + TRAILRUN with mood; first-person" },
+    "task":          { "target": 90,  "min": 60,  "notes": "≥15 open at seed time, ≥5 due in the future window" },
+    "page":          { "target": 70,  "min": 50,  "notes": "≥10 in nested sub-trees; ≥3 procedure revision families (supersession)" },
+    "file":          { "target": 110, "min": 70,  "notes": "mix: pdf drawings/references, docx, xlsx budgets, png site/lathe photos" },
+    "event":         { "target": 45,  "min": 30,  "notes": "recurring standups + runs; ≥6 AFTER seed time so the dashboard shows a future" },
+    "contact":       { "target": 16,  "min": 15,  "notes": "exactly the world.json cast (16 incl. owner); the email allowlist" },
+    "table":         { "target": 14,  "min": 10,  "notes": "≥2 with formula columns, ≥2 with aggregates, 1 currency+select pipeline" },
+    "documentation": { "target": 40,  "min": 25,  "notes": "HANDBOOK collection as on-disk markdown" },
+    "formula":       { "target": 5,   "min": 3 },
+    "secret":        { "target": 3,   "min": 2,   "notes": "obviously-fake values; proves the screen renders" },
+    "branch":        { "target": 24,  "min": 16,  "notes": "the tree: work/<project>, personal/<project>, studio/" }
+  },
+
+  "emails": { "target": 320, "min": 200, "notes": "threaded; every sender in the contact cast; PUMPHOUSE lead-time saga + STOREFRONT snag dispute + ISLAND data requests" },
+
+  "derived": {
+    "$comment": "Produced by the real ingest pipeline (P3), never inserted directly. Mins prove ingest actually ran — the 'generator ran fine, produced zero facts' tripwire.",
+    "content_chunks": { "min": 1500, "notes": "expect ~3-5/node on long docs (client donor: 5.38 avg, max 126)" },
+    "facts":          { "min": 800 },
+    "entities":       { "min": 250, "notes": "cast + companies + projects + recurring terms" },
+    "entity_edges":   { "min": 900 }
+  },
+
+  "behavioural": {
+    "$comment": "Produced by REAL scripted turns and worker runs (P4), never hand-written rows.",
+    "traces":             { "min": 250, "notes": "donor avg 8-9 steps/trace; script turns that exercise search, delegation, table queries, page edits (rejected as read-only in serve mode, fine at seed time)" },
+    "trace_steps_avg":    { "min": 6 },
+    "assistant_messages": { "min": 300, "notes": "across ≥3 agents so Studio + per-agent threads look alive" },
+    "runs":               { "min": 12, "notes": "mix of finished/failed so /runs shows texture" },
+    "maintenance_runs":   { "min": 3 },
+    "heartbeats":         { "min": 2 },
+    "audit_log":          { "min": 200 }
+  },
+
+  "span_days": { "target": 180, "notes": "offsets -180..+21; ~40% of dated artifacts in the last 30 days" }
+}

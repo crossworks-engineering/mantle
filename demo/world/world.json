@@ -1,0 +1,195 @@
+{
+  "$comment": "The world bible. Every generated artifact references only what is defined here — see README.md. All domains RFC 2606. All people, companies and projects are fictional.",
+  "version": 1,
+
+  "owner": {
+    "id": "alex-carter",
+    "name": "Alex Carter",
+    "pronouns": "they/them",
+    "email": "alex@harbourlabs.example.com",
+    "role": "Principal engineer & founder, Harbour Labs",
+    "voice": "practical, dry humour, writes tight bullet-point notes, long-form only in journals"
+  },
+
+  "companies": [
+    {
+      "id": "harbour-labs",
+      "name": "Harbour Labs",
+      "domain": "harbourlabs.example.com",
+      "kind": "own-studio",
+      "blurb": "Five-person engineering-design studio: controls, mechanical, and interior-technical fit-out work."
+    },
+    {
+      "id": "meridian",
+      "name": "Meridian Waterworks",
+      "domain": "meridianww.example.org",
+      "kind": "client",
+      "blurb": "Municipal water utility. Procedure-driven, revision-controlled documentation culture."
+    },
+    {
+      "id": "vantage",
+      "name": "Vantage Retail",
+      "domain": "vantageretail.example.net",
+      "kind": "client",
+      "blurb": "Regional retail chain running a multi-store fit-out programme."
+    },
+    {
+      "id": "copperline",
+      "name": "Copperline Energy",
+      "domain": "copperline.example.org",
+      "kind": "client",
+      "blurb": "Renewables developer exploring an island-able campus microgrid."
+    },
+    {
+      "id": "brightpath",
+      "name": "Brightpath Components",
+      "domain": "brightpath.example.net",
+      "kind": "supplier",
+      "blurb": "Panel-builder and instrumentation supplier; long lead times are a running theme."
+    }
+  ],
+
+  "people": [
+    { "id": "rowan-mercer",    "name": "Rowan Mercer",    "pronouns": "he/him",   "email": "rowan@harbourlabs.example.com",   "company": "harbour-labs", "role": "Senior mechanical engineer; authors the PUMPHOUSE procedure revisions" },
+    { "id": "tessa-okafor",    "name": "Tessa Okafor",    "pronouns": "she/her",  "email": "tessa@harbourlabs.example.com",   "company": "harbour-labs", "role": "Controls & telemetry engineer; owns the SCADA changeover" },
+    { "id": "dana-whitfield",  "name": "Dana Whitfield",  "pronouns": "they/them","email": "dana@harbourlabs.example.com",    "company": "harbour-labs", "role": "Design lead; STOREFRONT drawings and finishes schedules" },
+    { "id": "felix-arendse",   "name": "Felix Arendse",   "pronouns": "he/him",   "email": "felix@harbourlabs.example.com",   "company": "harbour-labs", "role": "Operations & finance; keeper of the budget tables" },
+    { "id": "june-castellanos","name": "June Castellanos","pronouns": "she/her",  "email": "june@harbourlabs.example.com",    "company": "harbour-labs", "role": "Project coordinator; minutes, snag lists, chasing actions" },
+    { "id": "gordon-bekker",   "name": "Gordon Bekker",   "pronouns": "he/him",   "email": "g.bekker@meridianww.example.org", "company": "meridian",     "role": "Plant superintendent, Pump Station 3; approves every procedure revision" },
+    { "id": "lena-marsh",      "name": "Lena Marsh",      "pronouns": "she/her",  "email": "l.marsh@meridianww.example.org",  "company": "meridian",     "role": "SCADA technician; raises most of the technical queries" },
+    { "id": "harold-venn",     "name": "Harold Venn",     "pronouns": "he/him",   "email": "h.venn@meridianww.example.org",   "company": "meridian",     "role": "Procurement officer; purchase orders and delivery disputes" },
+    { "id": "nadia-flores",    "name": "Nadia Flores",    "pronouns": "she/her",  "email": "nflores@vantageretail.example.net","company": "vantage",     "role": "Fit-out programme manager; owns the store pipeline" },
+    { "id": "marcus-bell",     "name": "Marcus Bell",     "pronouns": "he/him",   "email": "mbell@vantageretail.example.net", "company": "vantage",      "role": "Regional facilities lead; site-access arrangements" },
+    { "id": "ingrid-solberg",  "name": "Ingrid Solberg",  "pronouns": "she/her",  "email": "ingrid@copperline.example.org",   "company": "copperline",   "role": "Development director; commissioned the ISLAND study" },
+    { "id": "theo-mokoena",    "name": "Theo Mokoena",    "pronouns": "he/him",   "email": "theo@copperline.example.org",     "company": "copperline",   "role": "Site engineer; source of the load-profile data" },
+    { "id": "sam-pruitt",      "name": "Sam Pruitt",      "pronouns": "they/them","email": "s.pruitt@brightpath.example.net", "company": "brightpath",   "role": "Account manager; bearer of lead-time news" },
+    { "id": "jamie-carter",    "name": "Jamie Carter",    "pronouns": "she/her",  "email": "jamie.carter@example.net",        "company": null,           "role": "Alex's partner; appears in personal events, journals, and the lathe project" },
+    { "id": "wren-adler",      "name": "Wren Adler",      "pronouns": "they/them","email": "wren.adler@example.net",          "company": null,           "role": "Running-club friend; TRAILRUN training partner and book-club instigator" }
+  ],
+
+  "projects": [
+    {
+      "id": "pumphouse",
+      "codename": "PUMPHOUSE",
+      "title": "Pump Station 3 telemetry retrofit",
+      "client": "meridian",
+      "kind": "work",
+      "summary": "Replace the failing PS3 telemetry with a modern SCADA changeover: new RTU, instrument loop checks, commissioning, and revision-controlled procedures throughout.",
+      "vocabulary": ["telemetry", "commissioning", "changeover", "RTU", "loop check", "PS3", "snag list", "rev B"],
+      "genres": ["procedure-family", "commissioning-plan", "site-visit-report", "technical-query", "snag-table", "minutes"],
+      "arc": "kickoff at -150d; procedure rev A -120d, rev B -45d, rev C -10d; commissioning window opens +7d; the demo catches the project at its busiest."
+    },
+    {
+      "id": "storefront",
+      "codename": "STOREFRONT",
+      "title": "Vantage fit-out programme, tranche 2",
+      "client": "vantage",
+      "kind": "work",
+      "summary": "Eight-store fit-out pipeline: surveys, drawings, procurement, install. Lives in tables — pipeline with currency and status columns, budget with a sum aggregate.",
+      "vocabulary": ["fit-out", "pipeline", "tranche", "finishes schedule", "practical completion", "store 214"],
+      "genres": ["pipeline-table", "budget-file", "drawing-file", "minutes", "schedule-events"],
+      "arc": "tranche 2 running -90d to +60d; two stores at practical completion, one in a snag dispute, five mid-flight."
+    },
+    {
+      "id": "island",
+      "codename": "ISLAND",
+      "title": "Copperline campus microgrid feasibility",
+      "client": "copperline",
+      "kind": "work",
+      "summary": "Desk study: can the campus island for four hours? Load profiles, storage sizing, islanding scheme options, and a final report due shortly after seed time.",
+      "vocabulary": ["microgrid", "islanding", "load profile", "storage sizing", "feasibility", "peak shaving"],
+      "genres": ["research-page", "data-table-with-formulas", "reference-file", "technical-query"],
+      "arc": "started -60d; draft findings page in review now; final report due +14d — a live deadline the demo's tasks and chat turns can point at."
+    },
+    {
+      "id": "handbook",
+      "codename": "HANDBOOK",
+      "title": "Harbour Labs studio handbook",
+      "client": "harbour-labs",
+      "kind": "internal",
+      "summary": "The studio's operating manual as nested pages: how projects run, review gates, templates, leave, kit lists. The sub-page tree the pages UI shows off.",
+      "vocabulary": ["review gate", "handbook", "template", "onboarding"],
+      "genres": ["nested-pages", "documentation"],
+      "arc": "long-lived; edited in small commits across the whole timeline."
+    },
+    {
+      "id": "lathe",
+      "codename": "LATHE",
+      "title": "Workshop lathe restoration",
+      "client": null,
+      "kind": "personal",
+      "summary": "Restoring a 1968 bench lathe with Jamie: teardown notes, parts hunt, before/after photos, a parts-and-costs table.",
+      "vocabulary": ["lathe", "headstock", "spindle", "ways", "backgear", "parts hunt"],
+      "genres": ["journal", "note", "photo-file", "parts-table"],
+      "arc": "weekend cadence across the timeline; headstock bearing saga resolves around -20d."
+    },
+    {
+      "id": "trailrun",
+      "codename": "TRAILRUN",
+      "title": "Coastal Trail Half training",
+      "client": null,
+      "kind": "personal",
+      "summary": "Twelve-week block with Wren toward the Coastal Trail Half at +21d: training events, journal entries with mood, one rolled ankle scare.",
+      "vocabulary": ["long run", "taper", "trail half", "splits", "ankle"],
+      "genres": ["schedule-events", "journal", "note"],
+      "arc": "3 runs/week; ankle scare -30d; taper begins +7d; race day +21d — a future event the dashboard can show."
+    }
+  ],
+
+  "vocabulary": [
+    { "term": "commissioning",  "spread": ["page", "task", "email", "journal", "chat"], "project": "pumphouse" },
+    { "term": "telemetry",      "spread": ["page", "note", "email", "chat"],            "project": "pumphouse" },
+    { "term": "snag list",      "spread": ["table", "task", "email", "minutes"],        "project": "pumphouse" },
+    { "term": "changeover",     "spread": ["page", "event", "email", "journal"],        "project": "pumphouse" },
+    { "term": "loop check",     "spread": ["page", "task", "note"],                     "project": "pumphouse" },
+    { "term": "fit-out",        "spread": ["table", "email", "event", "chat"],          "project": "storefront" },
+    { "term": "practical completion", "spread": ["table", "email", "task"],             "project": "storefront" },
+    { "term": "islanding",      "spread": ["page", "table", "note", "chat"],            "project": "island" },
+    { "term": "load profile",   "spread": ["table", "page", "email"],                   "project": "island" },
+    { "term": "feasibility",    "spread": ["page", "task", "journal", "chat"],          "project": "island" },
+    { "term": "review gate",    "spread": ["page", "task", "minutes"],                  "project": "handbook" },
+    { "term": "headstock",      "spread": ["journal", "note", "table", "chat"],         "project": "lathe" },
+    { "term": "taper",          "spread": ["event", "journal", "note"],                 "project": "trailrun" },
+    { "term": "lead time",      "spread": ["email", "task", "table", "minutes"],        "project": "pumphouse" }
+  ],
+
+  "genres": [
+    { "id": "procedure-family",  "node": "page",  "features": ["supersession chain rev A→B→C", "content-currency annotation"], "note": "The signature genre: procedures exist as revision families so retrieval demonstrably prefers the living revision." },
+    { "id": "nested-pages",      "node": "page",  "features": ["sub-page tree ≥3 deep"] },
+    { "id": "commissioning-plan","node": "page",  "features": ["long doc → many chunks"] },
+    { "id": "research-page",     "node": "page",  "features": ["cross-references", "mermaid diagram"] },
+    { "id": "site-visit-report", "node": "note",  "features": ["dated series"] },
+    { "id": "technical-query",   "node": "note",  "features": ["question→answer pairs", "email follow-ups"] },
+    { "id": "minutes",           "node": "note",  "features": ["recurring series", "action items feeding tasks"] },
+    { "id": "pipeline-table",    "node": "table", "features": ["currency column", "select column", "sum aggregate"] },
+    { "id": "parts-table",       "node": "table", "features": ["formula column"] },
+    { "id": "data-table-with-formulas", "node": "table", "features": ["formula columns", "aggregate"] },
+    { "id": "budget-file",       "node": "file",  "features": ["xlsx → table import path"] },
+    { "id": "drawing-file",      "node": "file",  "features": ["pdf"] },
+    { "id": "reference-file",    "node": "file",  "features": ["pdf", "docx"] },
+    { "id": "photo-file",        "node": "file",  "features": ["png/jpg"] },
+    { "id": "schedule-events",   "node": "event", "features": ["recurring", "future events past seed time"] },
+    { "id": "journal",           "node": "journal", "features": ["mood", "first-person"] },
+    { "id": "documentation",     "node": "documentation", "features": ["on-disk collection, retrieval-only"] }
+  ],
+
+  "timeline": {
+    "unit": "days_from_seed",
+    "span": [-180, 21],
+    "anchors": [
+      { "at": -150, "what": "PUMPHOUSE kickoff meeting" },
+      { "at": -120, "what": "PS3 changeover procedure rev A issued" },
+      { "at": -90,  "what": "STOREFRONT tranche 2 starts" },
+      { "at": -60,  "what": "ISLAND study commissioned" },
+      { "at": -45,  "what": "procedure rev B supersedes rev A (scope change after Bekker review)" },
+      { "at": -30,  "what": "TRAILRUN ankle scare" },
+      { "at": -20,  "what": "LATHE headstock bearing finally sourced via Brightpath" },
+      { "at": -10,  "what": "procedure rev C supersedes rev B (loop-check order corrected per Marsh)" },
+      { "at": -3,   "what": "STOREFRONT store 214 snag dispute flares" },
+      { "at": 7,    "what": "PUMPHOUSE commissioning window opens; TRAILRUN taper begins" },
+      { "at": 14,   "what": "ISLAND final report due" },
+      { "at": 21,   "what": "Coastal Trail Half race day" }
+    ],
+    "density": "activity ramps toward seed time: ~40% of dated artifacts in the last 30 days"
+  }
+}
