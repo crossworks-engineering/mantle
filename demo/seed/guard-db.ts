@@ -28,15 +28,13 @@ const SURFACES: Array<{ label: string; query: () => Promise<Row[]> }> = [
   { label: 'nodes.data.summary (LLM-written)', query: () => sql`
       select id::text as id, data->>'summary' as text from nodes where data ? 'summary'` },
   { label: 'facts (LLM-extracted)', query: () => sql`
-      select id::text as id,
-             coalesce(subject,'') || ' ' || coalesce(predicate,'') || ' ' || coalesce(object,'') as text
-      from facts` },
+      select id::text as id, coalesce(content,'') || ' ' || coalesce(data::text,'') as text from facts` },
   { label: 'entities (LLM-extracted)', query: () => sql`
       select id::text as id, coalesce(name,'') || ' ' || coalesce(kind,'') as text from entities` },
   { label: 'content_chunks (indexed passages)', query: () => sql`
       select id::text as id, text from content_chunks` },
   { label: 'assistant_messages (model output)', query: () => sql`
-      select id::text as id, content as text from assistant_messages where content is not null` },
+      select id::text as id, text from assistant_messages where text is not null` },
   { label: 'nodes.title', query: () => sql`select id::text as id, title as text from nodes` },
   { label: 'emails', query: () => sql`
       select id::text as id,
@@ -51,6 +49,7 @@ const SURFACES: Array<{ label: string; query: () => Promise<Row[]> }> = [
 async function main() {
   console.log(`\npublish guard — seeded database\n  ${DB.replace(/:[^:@/]*@/, ':***@')}\n`);
   const all: Finding[] = [];
+  const empty: string[] = [];
   let scanned = 0;
 
   for (const surface of SURFACES) {
@@ -62,12 +61,25 @@ async function main() {
       scanned++;
       scanText(text, `${surface.label}#${String(r.id).slice(0, 8)}`, findings);
     }
-    const mark = findings.length ? `✗ ${findings.length}` : 'clean';
+    // A surface that returns ZERO rows has not been checked, it has been
+    // missed — usually a wrong column name. Reporting that as "clean" is how a
+    // safety gate passes over data it never read.
+    const mark = findings.length ? `✗ ${findings.length}` : rows.length === 0 ? '⚠ NO ROWS' : 'clean';
+    if (rows.length === 0) empty.push(surface.label);
     console.log(`  ${surface.label.padEnd(38)} ${String(rows.length).padStart(6)} rows   ${mark}`);
     all.push(...findings);
   }
 
   console.log(`\n  ${scanned} text values scanned`);
+  if (empty.length) {
+    console.error(
+      `\n✗ ${empty.length} surface(s) returned NO ROWS — unread, not clean:\n` +
+        empty.map((e) => `  - ${e}`).join('\n') +
+        '\n\nUsually a wrong column name. A guard that scans nothing passes everything.',
+    );
+    await sql.end();
+    process.exit(1);
+  }
   if (all.length) {
     console.error(`\n✗ ${all.length} finding(s) — NOT publishable:\n`);
     for (const f of all.slice(0, 40)) console.error(`  [${f.kind}] ${f.value}  ← ${f.where}`);
