@@ -46,6 +46,17 @@ fi
 echo "→ demo stack"
 "$DEMO/scripts/stack-up.sh" >/dev/null
 
+# REGENERATE FIRST. out/ is gitignored, so whatever is on disk is from whenever
+# the last seed ran — which silently replayed a stale, much smaller turn set
+# and reported success. The turns module emits no nodes, so regenerating here
+# cannot desync the already-seeded brain; it only refreshes the turn list.
+echo "→ regenerate (turn list must match this checkout, not the last seed)"
+node "$DEMO/generator/gen.mjs" >/dev/null
+node -e "
+  const j = require('./$DEMO/generator/out/manifest.json');
+  console.log('  ' + j.turns.length + ' turns in the manifest');
+"
+
 echo "→ server/web on :$WEB_PORT"
 ( setsid pnpm -C server/web dev >"$web_log" 2>&1 & echo $! >"$web_pid_file" )
 for i in $(seq 1 120); do
