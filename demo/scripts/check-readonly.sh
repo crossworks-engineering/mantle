@@ -59,7 +59,9 @@ else
 fi
 
 # And that origin must actually return data, not just a 200.
-total=$(curl -s --max-time 20 "$BASE/api/dashboard" | grep -oE '"nodesTotal":[0-9]+' | cut -d: -f2)
+# head -1: the key appears more than once in the payload, and two lines in a
+# numeric test is a silent error, not a comparison.
+total=$(curl -s --max-time 20 "$BASE/api/dashboard" | grep -oE '"nodesTotal":[0-9]+' | head -1 | cut -d: -f2)
 if [ -n "$total" ] && [ "$total" -gt 0 ] 2>/dev/null; then
   say "content behind that origin" "$total nodes"
 else
