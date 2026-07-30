@@ -89,6 +89,24 @@ echo "→ running turns"
 DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
   pnpm -C server/web exec tsx ../../demo/seed/turns.ts "$@"
 
+# The cleanup trap kills the runs worker the moment this script ends, so
+# without an explicit drain every run is frozen mid-flight and /runs shows a
+# wall of perpetually "running" jobs — which reads as broken, not busy.
+if [ "${MANTLE_RUNS:-}" = "1" ]; then
+  echo "→ draining runs (terminal states: done | failed | cancelled)"
+  drain_deadline=$(( $(date +%s) + ${DEMO_RUN_DRAIN_S:-900} ))
+  while [ "$(date +%s)" -lt "$drain_deadline" ]; do
+    active=$(docker exec mantle_demo_pg psql -U postgres -d postgres -At \
+      -c "select count(*) from runs where status not in ('done','failed','cancelled')" 2>/dev/null || echo 0)
+    total=$(docker exec mantle_demo_pg psql -U postgres -d postgres -At \
+      -c "select count(*) from runs" 2>/dev/null || echo 0)
+    echo "  $((total - active))/$total settled"
+    [ "$active" = "0" ] && break
+    sleep 20
+  done
+  [ "${active:-1}" = "0" ] || echo "  ⚠ drain timed out — some runs remain in flight"
+fi
+
 echo "→ maintenance runs (populate maintenance_runs, and are honest work anyway)"
 # NOTE: bare `pnpm maintain` only LISTS the registry — it runs nothing. Each
 # task needs its slug. These four are read-only or idempotent and are genuine

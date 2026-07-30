@@ -138,6 +138,12 @@ export function generate(rngRoot) {
     'Set up a background job to summarise the lead-time situation across every supplier we deal with.',
     'Run a background review of the risk register against what the projects actually show.',
     'Work through the journals in the background and pull out a month-by-month picture of the year.',
+    'Plan a background run to cross-check the finishes schedule against what each store actually ordered.',
+    'In the background, read every set of minutes and produce a list of decisions we have taken this year.',
+    'Set a background job to review the documentation collection and flag guides with no worked example.',
+    'Kick off a run to walk the contacts list and summarise what each person is currently involved in.',
+    'Plan a background review of every event in the calendar and tell me where the crunch weeks are.',
+    'Work through the tables in the background and report any row that looks stale or contradictory.',
   ];
   RUN_WORK.forEach((prompt, i) => {
     turns.push({
