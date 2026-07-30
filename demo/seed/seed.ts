@@ -254,7 +254,7 @@ async function seedOddments(m: Manifest) {
     const r = (await post('/api/formulas', {
       title: n.title,
       tags: n.tags,
-      spec: { expression: String(n.meta.expr ?? ''), description: n.body },
+      spec: n.meta.spec,
     })) as { formula?: { id?: string }; id?: string };
     const id = r.formula?.id ?? r.id;
     if (id) created.set(n.id, id);

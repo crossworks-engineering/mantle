@@ -33,7 +33,7 @@ export interface GenNode {
     company?: string | null;
     role?: string;
     value?: string;
-    expr?: string;
+    spec?: Record<string, unknown>;
     path?: string;
   };
 }

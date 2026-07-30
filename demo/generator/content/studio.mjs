@@ -40,15 +40,37 @@ export function generate(rngRoot) {
     nodes.push({ id, kind: 'secret', branch: 'studio.ops', title, body: 'Demo placeholder credential — not a real secret.', offset: -100 + i * 20, tags: [], meta: { value } }));
 
   // ── Formulas ──────────────────────────────────────────────────────────────
+  // A formula is a structured spec (id + typed variables), not a bare string —
+  // inputs and constants declared, the answer a `derived` expression over them.
   const formulas = [
-    ['formula-vat', 'VAT inclusive', 'amount * 1.15', 'Add VAT at the standard rate.'],
-    ['formula-margin', 'Project margin %', '(value - cost) / value * 100', 'Gross margin on a fixed-price job.'],
-    ['formula-utilisation', 'Utilisation %', 'billable_hours / available_hours * 100', 'Studio utilisation for the month.'],
-    ['formula-pace', 'Run pace (min/km)', 'minutes / km', 'Training pace from a logged run.'],
-    ['formula-ride-through', 'Ride-through hours', 'kwh_usable / kw_load', 'Storage ride-through at a given load.'],
+    ['formula-vat', 'VAT inclusive', 'Add VAT at the standard rate.',
+      [['amount', 'input'], ['rate', 'constant', null, 1.15], ['total', 'derived', 'amount * rate']]],
+    ['formula-margin', 'Project margin %', 'Gross margin on a fixed-price job.',
+      [['value', 'input'], ['cost', 'input'], ['margin', 'derived', '(value - cost) / value * 100']]],
+    ['formula-utilisation', 'Utilisation %', 'Studio utilisation for the month.',
+      [['billable_hours', 'input'], ['available_hours', 'input'], ['utilisation', 'derived', 'billable_hours / available_hours * 100']]],
+    ['formula-pace', 'Run pace (min/km)', 'Training pace from a logged run.',
+      [['minutes', 'input'], ['km', 'input'], ['pace', 'derived', 'minutes / km']]],
+    ['formula-ride-through', 'Ride-through hours', 'Storage ride-through at a given load.',
+      [['kwh_usable', 'input'], ['kw_load', 'input'], ['hours', 'derived', 'kwh_usable / kw_load']]],
   ];
-  formulas.forEach(([id, title, expr, desc], i) =>
-    nodes.push({ id, kind: 'formula', branch: 'studio.ops', title, body: desc, offset: -90 + i * 15, tags: [], meta: { expr } }));
+  formulas.forEach(([id, title, desc, vars], i) =>
+    nodes.push({
+      id, kind: 'formula', branch: 'studio.ops', title, body: desc,
+      offset: -90 + i * 15, tags: [],
+      meta: {
+        spec: {
+          id: String(id).replace(/^formula-/, ''),
+          title,
+          description: desc,
+          variables: vars.map(([symbol, role, expression, value]) => ({
+            symbol, role,
+            ...(expression ? { expression } : {}),
+            ...(value != null ? { value } : {}),
+          })),
+        },
+      },
+    }));
 
   // ── Ops notes ─────────────────────────────────────────────────────────────
   const ops = [
