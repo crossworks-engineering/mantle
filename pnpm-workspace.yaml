@@ -19,6 +19,8 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
+  # electron-builder's Windows packaging helper (fetches prebuilt tooling).
+  electron-winstaller: true
 
 # Single pdfjs-dist across the tree. pdfjs compares API and Worker version
 # strings EXACTLY and fails the load on any mismatch, and its worker config is

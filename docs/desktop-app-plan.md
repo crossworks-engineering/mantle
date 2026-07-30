@@ -191,10 +191,16 @@ session.
 the four Next-server replacements above; CORS decision (A/B) implemented
 server-side; version-skew gate.
 
-**Phase 2 — being a desktop app.** `mantle://` deep links, native
-notifications (realtime SSE → OS notifications), tray + badge, auto-update,
-packaging matrix (Linux AppImage/deb, macOS dmg + notarisation, Windows nsis)
-in CI beside the image builds.
+**Phase 2 — being a desktop app.** Built 2026-07-30: `mantle://` deep links
+(cold start + running, all three OS activation paths), OS notifications via
+the `DesktopBridge` component in `client/web` (assistant outbound pings →
+notification while hidden; badge API exposed, not yet wired), tray,
+auto-update (electron-updater on GitHub releases — background download,
+notify, install on quit), and electron-builder packaging (Linux
+AppImage/deb, mac dmg/zip, win nsis) with `desktop.yml` publishing to a
+draft release on the same `v*` tags as the images. Known gaps: macOS builds
+unsigned (no notarisation creds in CI yet → no mac self-update), and the
+mac/win CI legs are untested until the first tag build.
 
 **Phase 3 — optional slimming.** Static export + `app://` scheme (drop the
 embedded Node server); Microsoft OAuth desktop flow; `safeStorage` token

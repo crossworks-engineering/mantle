@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -9,11 +9,15 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeImage,
   net,
+  Notification,
   session,
   shell,
+  Tray,
   utilityProcess,
 } from 'electron';
+import { autoUpdater } from 'electron-updater';
 
 /**
  * Mantle Desktop — shell around the owner UI.
@@ -96,7 +100,18 @@ async function probeBrain(origin: string): Promise<string> {
 
 // ── Embedded UI server ───────────────────────────────────────────────────────
 
-const UI_DIR = join(__dirname, '../../ui');
+// Packaged, the ui/ tree is asar-UNPACKED (a utilityProcess needs real files
+// on disk); unpackaged it sits beside out/.
+const UI_DIR = (() => {
+  const plain = join(__dirname, '../../ui');
+  const unpacked = plain.replace('app.asar', 'app.asar.unpacked');
+  return unpacked !== plain && existsSync(unpacked) ? unpacked : plain;
+})();
+
+const ICON_PATH = join(__dirname, '../../resources/icon.png').replace(
+  'app.asar',
+  'app.asar.unpacked',
+);
 
 function portIsFree(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -222,6 +237,57 @@ function fenceBrainSession(
 // ── Windows ───────────────────────────────────────────────────────────────────
 
 let connectWindow: BrowserWindow | null = null;
+/** Most recent app window + the URL it serves — deep links and notification
+ *  clicks land here. */
+let appWindow: BrowserWindow | null = null;
+let appRendererUrl: string | null = null;
+
+function focusOrOpen(): void {
+  if (appWindow && !appWindow.isDestroyed()) {
+    if (appWindow.isMinimized()) appWindow.restore();
+    appWindow.show();
+    appWindow.focus();
+    return;
+  }
+  const lastUsed = loadProfiles()
+    .filter((p) => p.lastUsedAt)
+    .sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0))[0];
+  if (lastUsed) openAppWindow(lastUsed).catch(reportWindowError);
+  else openConnectWindow();
+}
+
+// ── Deep links (mantle://) ────────────────────────────────────────────────────
+//
+// mantle://n/<id> (the canonical type-agnostic permalink responders embed)
+// maps to the in-app /n/<id> route; any mantle://<path> maps the same way.
+// The link names no brain — it lands in the current (or last-used) one.
+
+let pendingDeepLinkPath: string | null = null;
+
+function deepLinkToPath(link: string): string | null {
+  try {
+    const url = new URL(link);
+    if (url.protocol !== 'mantle:') return null;
+    return `/${url.host}${url.pathname}${url.search}`.replace(/\/+$/, '') || '/';
+  } catch {
+    return null;
+  }
+}
+
+function handleDeepLink(link: string): void {
+  const path = deepLinkToPath(link);
+  if (!path) return;
+  if (appWindow && !appWindow.isDestroyed() && appRendererUrl) {
+    appWindow.show();
+    appWindow.focus();
+    void appWindow.loadURL(new URL(path, appRendererUrl).toString());
+  } else {
+    pendingDeepLinkPath = path;
+    focusOrOpen();
+  }
+}
+
+const deepLinkInArgv = (argv: string[]) => argv.find((a) => a.startsWith('mantle://'));
 
 function openConnectWindow(): void {
   if (connectWindow && !connectWindow.isDestroyed()) {
@@ -293,7 +359,18 @@ async function openAppWindow(profile: Profile): Promise<void> {
     win.close();
   });
 
-  void win.loadURL(rendererUrl);
+  appWindow = win;
+  appRendererUrl = rendererUrl;
+  win.on('closed', () => {
+    if (appWindow === win) {
+      appWindow = null;
+      appRendererUrl = null;
+    }
+  });
+
+  const initialPath = pendingDeepLinkPath ?? '/';
+  pendingDeepLinkPath = null;
+  void win.loadURL(new URL(initialPath, rendererUrl).toString());
 }
 
 function reportWindowError(error: unknown): void {
@@ -307,6 +384,22 @@ type AddResult = { ok: true; profile: Profile } | { ok: false; error: string };
 
 function registerIpc(): void {
   ipcMain.handle('shell:info', () => ({ version: app.getVersion() }));
+
+  // Fired by the UI's DesktopBridge (client/web/components/desktop) — only
+  // while its window is hidden, so a notification is a "come back" signal.
+  ipcMain.on('desktop:notify', (_event, payload: { title?: unknown; body?: unknown }) => {
+    const title = typeof payload?.title === 'string' ? payload.title.slice(0, 120) : 'Mantle';
+    const body = typeof payload?.body === 'string' ? payload.body.slice(0, 300) : undefined;
+    const notification = new Notification({ title, body, icon: ICON_PATH });
+    notification.on('click', focusOrOpen);
+    notification.show();
+  });
+
+  ipcMain.on('desktop:badge', (_event, count: unknown) => {
+    if (typeof count === 'number' && Number.isFinite(count)) {
+      app.setBadgeCount(Math.max(0, Math.floor(count)));
+    }
+  });
 
   ipcMain.handle('profiles:list', () => loadProfiles());
 
@@ -383,24 +476,75 @@ function buildMenu(): void {
   );
 }
 
+let tray: Tray | null = null;
+
+function setupTray(): void {
+  const icon = nativeImage.createFromPath(ICON_PATH).resize({ width: 22, height: 22 });
+  tray = new Tray(icon);
+  tray.setToolTip('Mantle Desktop');
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open Mantle', click: focusOrOpen },
+      { label: 'Switch Brain…', click: () => openConnectWindow() },
+      { type: 'separator' },
+      { label: 'Quit', click: () => app.quit() },
+    ]),
+  );
+  tray.on('click', focusOrOpen);
+}
+
+/** Updates ride GitHub releases (the repo's tag-push publish flow). Download
+ *  in the background, notify once, install on QUIT — never a surprise
+ *  restart. Packaged builds only; on macOS electron-updater additionally
+ *  requires a signed app before it will apply anything. */
+function setupAutoUpdate(): void {
+  if (!app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-downloaded', (info) => {
+    const notification = new Notification({
+      title: 'Mantle Desktop update ready',
+      body: `v${info.version} installs when you quit the app.`,
+      icon: ICON_PATH,
+    });
+    notification.show();
+  });
+  autoUpdater.on('error', () => {
+    /* offline / no release yet — silent; next interval retries */
+  });
+  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  void check();
+  setInterval(check, 4 * 60 * 60 * 1000);
+}
+
 // One instance only — the embedded UI server's sticky port is a single
 // resource, and a second instance would steal it (logging the first one out).
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    const win = BrowserWindow.getAllWindows()[0];
-    if (win) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
-    } else {
-      openConnectWindow();
-    }
+  app.on('second-instance', (_event, argv) => {
+    // On Linux/Windows a mantle:// activation arrives as a second instance.
+    const link = deepLinkInArgv(argv);
+    if (link) handleDeepLink(link);
+    else focusOrOpen();
+  });
+
+  // macOS delivers deep links as open-url events instead.
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    handleDeepLink(url);
   });
 
   void app.whenReady().then(() => {
+    if (app.isPackaged) app.setAsDefaultProtocolClient('mantle');
     registerIpc();
     buildMenu();
+    setupTray();
+    setupAutoUpdate();
+
+    // A cold start via deep link carries the URL in argv (Linux/Windows).
+    const link = deepLinkInArgv(process.argv);
+    if (link) pendingDeepLinkPath = deepLinkToPath(link);
 
     // Relaunch lands you back in the brain you were using; the persisted
     // partition still holds the bearer, so no re-login.
@@ -411,7 +555,7 @@ if (!app.requestSingleInstanceLock()) {
     else openConnectWindow();
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) openConnectWindow();
+      if (BrowserWindow.getAllWindows().length === 0) focusOrOpen();
     });
   });
 
