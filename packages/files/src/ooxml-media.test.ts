@@ -138,11 +138,17 @@ describe('extractOoxmlImages — xlsx', () => {
 
   it('returns nothing for a workbook with no drawings', async () => {
     const zip = new JSZip();
-    zip.file('xl/workbook.xml', `<workbook><sheets><sheet name="S" r:id="rIdA"/></sheets></workbook>`);
+    zip.file(
+      'xl/workbook.xml',
+      `<workbook><sheets><sheet name="S" r:id="rIdA"/></sheets></workbook>`,
+    );
     zip.file('xl/_rels/workbook.xml.rels', rels([['rIdA', 'worksheets/sheet1.xml']]));
     zip.file('xl/worksheets/sheet1.xml', `<worksheet><sheetData/></worksheet>`);
     expect(
-      await extractOoxmlImages(Buffer.from(await zip.generateAsync({ type: 'uint8array' })), 'xlsx'),
+      await extractOoxmlImages(
+        Buffer.from(await zip.generateAsync({ type: 'uint8array' })),
+        'xlsx',
+      ),
     ).toEqual([]);
   });
 });
@@ -159,7 +165,9 @@ describe('extractOdfImages', () => {
     );
     zip.file('Pictures/second.png', png(21));
     zip.file('Pictures/first.png', png(22));
-    const images = await extractOdfImages(Buffer.from(await zip.generateAsync({ type: 'uint8array' })));
+    const images = await extractOdfImages(
+      Buffer.from(await zip.generateAsync({ type: 'uint8array' })),
+    );
     // Document order, NOT the alphabetical order of the Pictures folder.
     expect(images.map((i) => i.bytes.readUInt32BE(1_000))).toEqual([21, 22]);
   });

@@ -514,9 +514,8 @@ async function maybeExtractEmbeddedImages(
   const loaded = await loadFileBytes(node);
   if (!loaded) return;
 
-  const { extractEmbeddedImages, buildImageTitles, buildImageFilename } = await import(
-    '@mantle/files/embedded-images'
-  );
+  const { extractEmbeddedImages, buildImageTitles, buildImageFilename } =
+    await import('@mantle/files/embedded-images');
   const result = await extractEmbeddedImages(loaded.bytes, loaded.ext);
   if (result.images.length === 0) {
     // Still worth a step when there WERE candidates: "this manual produced no

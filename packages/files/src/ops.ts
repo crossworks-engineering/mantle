@@ -564,7 +564,8 @@ export async function upsertFile(args: {
     // filename here used to erase a caller's title on every re-upsert.
     const existingTitle = typeof existing.title === 'string' ? existing.title : '';
     const nextTitle =
-      args.title?.trim() || (existingTitle && existingTitle !== filename ? existingTitle : filename);
+      args.title?.trim() ||
+      (existingTitle && existingTitle !== filename ? existingTitle : filename);
     const [updated] = await db
       .update(nodes)
       .set({

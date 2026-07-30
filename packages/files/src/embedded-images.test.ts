@@ -118,7 +118,10 @@ describe('buildImageTitles', () => {
 
   it('ignores Office’s default shape names and falls through the cascade', () => {
     for (const junk of ['Picture 1', 'image1.png', 'Content Placeholder 2', 'Rectangle', '7']) {
-      const titles = buildImageTitles([img({ altText: junk, heading: 'Step 3 — Add an APN' })], 'M.docx');
+      const titles = buildImageTitles(
+        [img({ altText: junk, heading: 'Step 3 — Add an APN' })],
+        'M.docx',
+      );
       expect(titles[0], `alt text ${junk} should be rejected`).toBe('M — Step 3 — Add an APN');
     }
   });
@@ -145,7 +148,11 @@ describe('buildImageTitles', () => {
 
   it('disambiguates several images sharing one heading', () => {
     const titles = buildImageTitles(
-      [img({ ordinal: 1, heading: 'Step 3' }), img({ ordinal: 2, heading: 'Step 3' }), img({ ordinal: 3, heading: 'Step 3' })],
+      [
+        img({ ordinal: 1, heading: 'Step 3' }),
+        img({ ordinal: 2, heading: 'Step 3' }),
+        img({ ordinal: 3, heading: 'Step 3' }),
+      ],
       'M.docx',
     );
     expect(new Set(titles).size).toBe(3);

@@ -43,8 +43,7 @@ type MammothNode = {
 };
 
 type FlatItem =
-  | { kind: 'paragraph'; style: string; text: string }
-  | { kind: 'image'; node: MammothNode };
+  { kind: 'paragraph'; style: string; text: string } | { kind: 'image'; node: MammothNode };
 
 /** Word style for a heading is either the id ("Heading2") or the human name
  *  ("heading 2"), depending on how the document was authored — check both.
@@ -132,17 +131,14 @@ const EXT_BY_CONTENT_TYPE: Record<string, string> = {
  */
 export async function extractDocxImages(buf: Buffer): Promise<EmbeddedImage[]> {
   const items: FlatItem[] = [];
-  await mammoth.convertToHtml(
-    { buffer: buf },
-    {
-      // Read-only visit: mammoth requires the document back unchanged.
-      transformDocument: (doc: MammothNode) => {
-        flatten(doc, items);
-        return doc;
-      },
-      convertImage: mammoth.images.imgElement(() => Promise.resolve({ src: '' })),
-    } as Parameters<typeof mammoth.convertToHtml>[1],
-  );
+  await mammoth.convertToHtml({ buffer: buf }, {
+    // Read-only visit: mammoth requires the document back unchanged.
+    transformDocument: (doc: MammothNode) => {
+      flatten(doc, items);
+      return doc;
+    },
+    convertImage: mammoth.images.imgElement(() => Promise.resolve({ src: '' })),
+  } as Parameters<typeof mammoth.convertToHtml>[1]);
 
   // First pass: pair each image with its surrounding context. Bytes are
   // read afterwards — `transformDocument` is synchronous, and mammoth keeps

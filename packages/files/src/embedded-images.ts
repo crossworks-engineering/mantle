@@ -116,11 +116,7 @@ export const SKIPPED_IMAGE_EXTS = new Set(['emf', 'wmf', 'emz', 'wmz']);
 /** Why an image was dropped — surfaced on the trace so "this manual produced
  *  no images" is always explainable rather than mysterious. */
 export type GateRejection =
-  | 'metafile'
-  | 'unrenderable'
-  | 'too_small'
-  | 'too_few_bytes'
-  | 'duplicate';
+  'metafile' | 'unrenderable' | 'too_small' | 'too_few_bytes' | 'duplicate';
 
 export type GateResult = { keep: true } | { keep: false; reason: GateRejection };
 
@@ -308,11 +304,7 @@ export function buildImageTitles(images: EmbeddedImage[], sourceTitle: string): 
  * in here: a caption reworded between two parses of the same document would
  * otherwise change the path and orphan the old bytes.
  */
-export function buildImageFilename(
-  img: EmbeddedImage,
-  sourceSlug: string,
-  ext = img.ext,
-): string {
+export function buildImageFilename(img: EmbeddedImage, sourceSlug: string, ext = img.ext): string {
   const ordinal = String(img.ordinal).padStart(3, '0');
   const where =
     img.location?.page != null

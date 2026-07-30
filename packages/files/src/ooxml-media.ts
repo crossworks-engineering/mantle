@@ -31,7 +31,11 @@
  * the patterns.
  */
 
-import { describeImageBytes, type EmbeddedImage, type EmbeddedImageLocation } from './embedded-images';
+import {
+  describeImageBytes,
+  type EmbeddedImage,
+  type EmbeddedImageLocation,
+} from './embedded-images';
 
 type Zip = Awaited<ReturnType<typeof loadZip>>;
 

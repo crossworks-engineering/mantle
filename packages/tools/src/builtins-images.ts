@@ -109,15 +109,10 @@ const show_image: BuiltinToolDef = {
       try {
         const account = await accountForChat(ctx.surface.telegramChatId);
         if (account) {
-          telegramMessageId = await sendPhoto(
-            account,
-            ctx.surface.telegramChatId,
-            fetched.bytes,
-            {
-              replyTo: ctx.surface.replyToTelegramMessageId,
-              ...(caption ? { caption } : {}),
-            },
-          );
+          telegramMessageId = await sendPhoto(account, ctx.surface.telegramChatId, fetched.bytes, {
+            replyTo: ctx.surface.replyToTelegramMessageId,
+            ...(caption ? { caption } : {}),
+          });
         }
       } catch (err) {
         // Mirrors generate_image: a delivery failure is surfaced on the trace
