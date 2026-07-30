@@ -29,12 +29,18 @@ done
 echo
 
 # ── The landing page must contain real content, not an empty shell or a login
+# Match a login FORM, not the substring "login" — the nav has a "Logins" item
+# (the secrets screen), which made a naive match cry wolf on a working page.
 html=$(curl -s --max-time 20 "$BASE/" | tr -d '\0')
-case "$html" in
-  *ogin*|*ign\ in*) say "landing page" "✗ shows a LOGIN — cookie injection is not reaching the UI"; fail=1 ;;
-  "")               say "landing page" "✗ empty body"; fail=1 ;;
-  *)                say "landing page" "renders (${#html} bytes)" ;;
-esac
+if [ -z "$html" ]; then
+  say "landing page" "✗ empty body"; fail=1
+elif printf '%s' "$html" | grep -qiE 'type="password"|Sign in to|name="password"'; then
+  say "landing page" "✗ a LOGIN FORM — cookie injection is not reaching the UI"; fail=1
+elif [ "${#html}" -lt 20000 ]; then
+  say "landing page" "✗ only ${#html} bytes — looks like an empty shell"; fail=1
+else
+  say "landing page" "renders (${#html} bytes)"
+fi
 echo
 
 # ── Reads must work, and must be authenticated by the injected cookie ────────
