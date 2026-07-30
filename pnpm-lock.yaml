@@ -248,6 +248,9 @@ importers:
       '@mantle/api-keys':
         specifier: workspace:*
         version: link:../api-keys
+      '@mantle/content':
+        specifier: workspace:*
+        version: link:../content
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
