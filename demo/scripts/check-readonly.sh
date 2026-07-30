@@ -41,6 +41,28 @@ elif [ "${#html}" -lt 20000 ]; then
 else
   say "landing page" "renders (${#html} bytes)"
 fi
+
+# ── The UI must be a PRODUCTION build ────────────────────────────────────────
+# Byte count cannot prove a page has content here: the nav shell alone is
+# ~103KB, so a screen with a completely empty <main> sails past any floor. The
+# failure that actually happened is invisible to curl — `next dev` behind the
+# edge serves complete, correct HTML and then refuses its own dev resources as
+# cross-origin (the edge's port is not the dev server's), so the client never
+# hydrates and every <main> stays an unresolved React placeholder. The API is
+# fine, the HTML is fine, and the visitor gets a nav and nothing else.
+# Detect the CAUSE, which curl can see, rather than the symptom, which it
+# cannot: a production build never references HMR. Whether each screen renders
+# is P6b's job, in a real browser.
+# The markers are verified BOTH ways against captured dev and prod HTML — the
+# first pattern written here ("webpack-hmr") matched neither, because the dev
+# chunk names are percent-encoded, and it would have passed a dev build
+# silently. Re-check both directions if you ever touch this.
+if printf '%s' "$html" | grep -qiE 'hmr|next-devtools|_browser_dev'; then
+  say "UI build mode" "✗ DEV build behind the edge — the client will not hydrate; run without DEMO_UI_MODE=dev"
+  fail=1
+else
+  say "UI build mode" "production"
+fi
 echo
 
 # ── The BROWSER's data path, which is what actually decides whether a visitor

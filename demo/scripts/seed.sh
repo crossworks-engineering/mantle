@@ -26,6 +26,11 @@ export TIKA_URL="http://127.0.0.1:56998"
 # and the app indexes it in place, so the docs root points straight at the
 # generator's output. Absolute, and shared by every process that reads docs.
 export MANTLE_DOCS_ROOT="$(cd "$(dirname "$0")/../.." && pwd)/demo/generator/out/docs"
+# Must match serve.sh exactly — see the note there. The default resolves to
+# whichever checkout runs the script, so seeding in a worktree and serving from
+# the clone silently produces a registry pointing at workbooks that are not
+# where the server looks.
+export TABLE_DB_DIR="${DEMO_TABLE_DB_DIR:-$(cd "$(dirname "$0")/../.." && pwd)/demo/.run/table-dbs}"
 export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
 # Must base64-decode to EXACTLY 32 bytes or onboarding 500s ("must decode to
 # 32 bytes"). This is 'demo-master-key-0123456789abcdef' — a fixed dummy, so a

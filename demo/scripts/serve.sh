@@ -23,6 +23,15 @@ export S3_ENDPOINT="http://127.0.0.1:56900"
 export S3_REGION="us-east-1"; export S3_ACCESS_KEY="minio"; export S3_SECRET_KEY="minio12345"; export S3_BUCKET="mantle"
 export TIKA_URL="http://127.0.0.1:56998"
 export MANTLE_DOCS_ROOT="$(pwd)/demo/generator/out/docs"
+# Table workbooks are SQLite files on disk, and Postgres only holds the
+# registry that points at them. Left to its default the path resolves to the
+# workspace root's .table-dbs — which is the CHECKOUT you happen to be in, so
+# seeding from the worktree and serving from the clone put the registry and the
+# workbooks in different directories and every table 500s with
+# TableFileMissingError. Pin it to one demo-owned path so seed and serve can
+# never disagree. NOTE for P7: this directory is seeded data and must ship with
+# the pg dump — a deploy that carries only the database gets hollow tables.
+export TABLE_DB_DIR="${DEMO_TABLE_DB_DIR:-$(pwd)/demo/.run/table-dbs}"
 export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
 export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
 export MANTLE_LOCAL_EMBEDDING_URL="${MANTLE_LOCAL_EMBEDDING_URL:-http://127.0.0.1:56434/v1}"
@@ -80,8 +89,29 @@ echo "→ UI (client/web) on :$UI_PORT — this is where the 94 screens live"
 # screen spins forever behind a 401 while the pages themselves render fine.
 # One origin is the whole design — /api/* and the UI share a host so there is
 # no CORS and the edge can authenticate every call.
+#
+# PRODUCTION build, not `next dev` — the demo is served from behind the edge on
+# a DIFFERENT port to the one Next itself listens on, and `next dev` treats that
+# as cross-origin: it refuses its own dev resources ("Blocked cross-origin
+# request to Next.js dev resource /_next/webpack-hmr"), the client never
+# hydrates, and every screen renders the nav shell with an EMPTY <main> holding
+# an unresolved React placeholder. The API is fine and the HTML is complete —
+# it just never becomes an app, which is precisely v1's blank-screen failure.
+# The documented dev workaround (allowedDevOrigins) lives in client/web's
+# next.config and would break the demo/-only invariant. Production mode needs
+# no app change AND is what the site box runs, so the gate measures what a
+# visitor gets rather than a dev-server artefact.
+UI_MODE="${DEMO_UI_MODE:-prod}"
+if [ "$UI_MODE" = "prod" ]; then
+  echo "  building (production — set DEMO_UI_MODE=dev to skip, but see the note above)"
+  MANTLE_SERVER_ORIGIN="http://127.0.0.1:$EDGE_PORT" pnpm -C client/web build >"$ui_log" 2>&1 \
+    || { echo "✗ client/web build failed:"; tail -25 "$ui_log"; exit 1; }
+  ui_cmd=start
+else
+  ui_cmd=dev
+fi
 ( setsid env PORT="$UI_PORT" MANTLE_SERVER_ORIGIN="http://127.0.0.1:$EDGE_PORT" \
-    pnpm -C client/web dev >"$ui_log" 2>&1 & echo $! >"$ui_pid_file" )
+    pnpm -C client/web "$ui_cmd" >>"$ui_log" 2>&1 & echo $! >"$ui_pid_file" )
 for i in $(seq 1 180); do
   curl -sf "http://127.0.0.1:$UI_PORT/env.js" >/dev/null 2>&1 && break
   sleep 1; [ "$i" = 180 ] && { echo "✗ UI not ready:"; tail -25 "$ui_log"; exit 1; }
