@@ -22,6 +22,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ToolPicker, type ToolOption } from '@/components/tool-picker';
 import {
@@ -325,7 +326,9 @@ export function ToolGroupsClient() {
                     onChange={(e) => onName(e.target.value)}
                     required
                     autoFocus
+                    aria-describedby={hintId('name')}
                   />
+                  <FieldHint id="name">What this bundle is called in the list.</FieldHint>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="slug">Slug</Label>
@@ -339,7 +342,11 @@ export function ToolGroupsClient() {
                     pattern="[a-z0-9_\-]+"
                     required
                     disabled={editing?.mode === 'edit'}
+                    aria-describedby={hintId('slug')}
                   />
+                  <FieldHint id="slug">
+                    How an agent grants this bundle. Fixed once saved.
+                  </FieldHint>
                 </div>
               </div>
 
@@ -350,7 +357,11 @@ export function ToolGroupsClient() {
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                   placeholder="Calendar — event CRUD"
+                  aria-describedby={hintId('description')}
                 />
+                <FieldHint id="description">
+                  What the tools in here have in common — helps you pick the right bundle to grant.
+                </FieldHint>
               </div>
 
               {editing.mode === 'edit' ? (
@@ -367,6 +378,9 @@ export function ToolGroupsClient() {
 
               <div className="space-y-1.5">
                 <Label>Tools in this group</Label>
+                <FieldHint warn="Granting this bundle grants every tool in it.">
+                  Everything an agent gets when you give it this group.
+                </FieldHint>
                 {toolsQuery.isError ? (
                   <p className="flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">
                     <AlertTriangle className="size-3.5 shrink-0" aria-hidden />

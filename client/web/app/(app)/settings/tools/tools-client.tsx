@@ -22,6 +22,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { slugify } from '@mantle/web-ui/slugify';
@@ -396,11 +397,15 @@ export function ToolsClient() {
                 <Label htmlFor="require-approval" className="text-xs font-medium">
                   Require my approval for agent-built tools
                 </Label>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                <FieldHint
+                  id="require-approval"
+                  className="mt-1 leading-relaxed"
+                  warn="Off, a tool the agent wrote itself runs unseen on its first call."
+                >
                   When on, a tool an agent builds (via Toolsmith) parks each call for your approval
                   until you clear <span className="font-medium">requires confirm</span> for it. Turn
                   on if an agent that reads email or the web can author tools.
-                </p>
+                </FieldHint>
               </div>
               <Switch
                 id="require-approval"
@@ -418,12 +423,16 @@ export function ToolsClient() {
                 <Label htmlFor="egress-gate" className="text-xs font-medium">
                   Approve email &amp; web during unattended heartbeats
                 </Label>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                <FieldHint
+                  id="egress-gate"
+                  className="mt-1 leading-relaxed"
+                  warn="Off, an unattended heartbeat can send mail or fetch the web with nobody watching."
+                >
                   When on, a heartbeat that fires while you&apos;re away parks any{' '}
                   <span className="font-medium">email or web</span> call for your approval instead
                   of running it inline. You can clear it from the Telegram card on your phone. The
                   heartbeat&apos;s own message reply is unaffected.
-                </p>
+                </FieldHint>
               </div>
               <Switch
                 id="egress-gate"
@@ -503,7 +512,9 @@ export function ToolsClient() {
                     required
                     autoFocus
                     disabled={isReadOnly}
+                    aria-describedby={hintId('name')}
                   />
+                  <FieldHint id="name">Human-readable label for this list.</FieldHint>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="slug">Slug</Label>
@@ -517,7 +528,11 @@ export function ToolsClient() {
                     pattern="[a-z0-9_\-]+"
                     required
                     disabled={editing.mode === 'edit'}
+                    aria-describedby={hintId('slug')}
                   />
+                  <FieldHint id="slug">
+                    The name the model calls this tool by. Fixed once created.
+                  </FieldHint>
                 </div>
               </div>
 
@@ -530,7 +545,14 @@ export function ToolsClient() {
                   placeholder="What this tool does, when to use it"
                   required
                   disabled={isReadOnly}
+                  aria-describedby={hintId('description')}
                 />
+                <FieldHint
+                  id="description"
+                  warn="Vague wording here is the usual reason a tool never gets picked."
+                >
+                  This is how the model decides when to reach for this tool.
+                </FieldHint>
               </div>
 
               {isReadOnly && editTool ? (
@@ -580,6 +602,12 @@ export function ToolsClient() {
                       <option value="http">HTTP — fire a request</option>
                       <option value="shell">Shell — run a command (auto-confirms required)</option>
                     </select>
+                    <FieldHint
+                      id="kind"
+                      warn="Shell runs on the brain itself, so it always asks before firing."
+                    >
+                      How this tool does its work. Fixed once created.
+                    </FieldHint>
                   </div>
 
                   {form.kind === 'http' ? (
@@ -593,7 +621,12 @@ export function ToolsClient() {
                             onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
                             placeholder="https://api.example.com/route/{origin}/{destination}"
                             required
+                            aria-describedby={hintId('url')}
                           />
+                          <FieldHint id="url">
+                            Where the request goes. <code>{'{param}'}</code> slots fill from the
+                            model&apos;s input.
+                          </FieldHint>
                         </div>
                         <div className="space-y-1.5">
                           <Label htmlFor="method">Method</Label>
@@ -614,6 +647,7 @@ export function ToolsClient() {
                             <option>PATCH</option>
                             <option>DELETE</option>
                           </select>
+                          <FieldHint id="method">HTTP verb for the call.</FieldHint>
                         </div>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
@@ -630,7 +664,14 @@ export function ToolsClient() {
                             placeholder={
                               '{\n  "authorization": "Bearer {{secret:mapbox/default}}"\n}'
                             }
+                            aria-describedby={hintId('http-headers')}
                           />
+                          <FieldHint
+                            id="http-headers"
+                            warn="Never paste a raw key here — use a secret reference."
+                          >
+                            Sent with every call.
+                          </FieldHint>
                         </div>
                         <div className="space-y-1.5">
                           <Label htmlFor="http-query">Query params (JSON object, optional)</Label>
@@ -641,7 +682,11 @@ export function ToolsClient() {
                             rows={3}
                             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
                             placeholder={'{\n  "access_token": "{{secret:mapbox/default}}"\n}'}
+                            aria-describedby={hintId('http-query')}
                           />
+                          <FieldHint id="http-query">
+                            Appended to the URL as <code>?key=value</code>.
+                          </FieldHint>
                         </div>
                       </div>
                       <div className="space-y-1.5">
@@ -654,13 +699,13 @@ export function ToolsClient() {
                           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
                           placeholder={'{"query": {q}, "limit": {limit}}'}
                         />
-                        <p className="text-xs text-muted-foreground">
+                        <FieldHint id="http-body">
                           <code>{'{param}'}</code> placeholders fill from the model&apos;s input
                           (URL-encoded in the URL, JSON-encoded in the body);{' '}
                           <code>{'{{secret:service/label}}'}</code> pulls from the API-key vault at
                           call time. No body template → non-GET calls send the whole input as JSON.
                           Tip: the API Console (System → API Console) builds these visually.
-                        </p>
+                        </FieldHint>
                       </div>
                     </>
                   ) : (
@@ -675,10 +720,13 @@ export function ToolsClient() {
                         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
                         placeholder={'echo "hello ${input.name}"'}
                       />
-                      <p className="text-xs text-muted-foreground">
+                      <FieldHint
+                        id="cmd"
+                        warn="This runs on the brain itself — keep it to something you'd type yourself."
+                      >
                         Use <code>{'${input.<field>}'}</code> placeholders. Values are shell-escaped
                         before substitution. 30s timeout, 10KB output cap.
-                      </p>
+                      </FieldHint>
                     </div>
                   )}
                 </>
@@ -697,11 +745,11 @@ export function ToolsClient() {
                     isReadOnly ? 'bg-muted/40 text-muted-foreground' : 'bg-background',
                   )}
                 />
-                <p className="text-xs text-muted-foreground">
+                <FieldHint id="schema">
                   {isReadOnly
                     ? 'What the model passes to this tool (read-only).'
                     : 'Sent verbatim to the model so it knows what to pass.'}
-                </p>
+                </FieldHint>
               </div>
 
               <label className="flex items-center gap-2 text-sm">

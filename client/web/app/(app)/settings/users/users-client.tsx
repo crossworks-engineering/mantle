@@ -27,6 +27,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { useToast } from '@mantle/web-ui/ui/toast';
@@ -266,7 +267,11 @@ function UserDetail({
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="e.g. Ronnie van Zyl"
+            aria-describedby={hintId('display-name')}
           />
+          <FieldHint id="display-name">
+            How this person appears in the app. Changing it doesn&apos;t affect their login.
+          </FieldHint>
         </div>
         <SubmitButton pending={saving}>Save user</SubmitButton>
       </form>
@@ -348,7 +353,11 @@ function AddUserDialog({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@company.com"
               autoComplete="off"
+              aria-describedby={hintId('new-user-email')}
             />
+            <FieldHint id="new-user-email">
+              Their login. It can&apos;t be changed afterwards.
+            </FieldHint>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="new-user-password">Starting password</Label>
@@ -361,7 +370,14 @@ function AddUserDialog({
               onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 8 characters"
               autoComplete="off"
+              aria-describedby={hintId('new-user-password')}
             />
+            <FieldHint
+              id="new-user-password"
+              warn="You'll need to pass this to them yourself — it isn't emailed."
+            >
+              What they sign in with the first time.
+            </FieldHint>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="new-user-display-name">Display name (optional)</Label>
@@ -370,7 +386,11 @@ function AddUserDialog({
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="e.g. Ronnie van Zyl"
+              aria-describedby={hintId('new-user-display-name')}
             />
+            <FieldHint id="new-user-display-name">
+              Falls back to the email address when blank.
+            </FieldHint>
           </div>
           <div className="flex justify-end pt-1">
             <SubmitButton pending={pending}>Add login</SubmitButton>
@@ -431,7 +451,14 @@ function ResetPasswordDialog({
               onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 8 characters"
               autoComplete="off"
+              aria-describedby={hintId('reset-password-value')}
             />
+            <FieldHint
+              id="reset-password-value"
+              warn="Their old password stops working the moment you save."
+            >
+              What they&apos;ll sign in with from now on.
+            </FieldHint>
           </div>
           <div className="flex justify-end pt-1">
             <SubmitButton pending={pending}>Reset password</SubmitButton>

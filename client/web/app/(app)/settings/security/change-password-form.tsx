@@ -5,6 +5,7 @@ import { apiUrl, withAuth } from '@mantle/web-ui/api-fetch';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 
 export function ChangePasswordForm() {
   const [oldPassword, setOldPassword] = useState('');
@@ -80,9 +81,9 @@ export function ChangePasswordForm() {
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
         />
-        <p className="text-xs text-muted-foreground">
+        <FieldHint id="new-password">
           At least 8 characters. A passphrase or password-manager-generated string is fine.
-        </p>
+        </FieldHint>
       </div>
 
       <div className="space-y-2">
@@ -95,7 +96,9 @@ export function ChangePasswordForm() {
           required
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
+          aria-describedby={hintId('confirm-password')}
         />
+        <FieldHint id="confirm-password">Type it once more to catch a typo.</FieldHint>
       </div>
 
       {error && (

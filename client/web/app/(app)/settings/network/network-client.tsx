@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mant
 import { CopyButton } from '@mantle/web-ui/ui/copy-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
@@ -246,7 +247,11 @@ function ActivateCard({
                 placeholder="mantle"
                 value={hostname}
                 onChange={(e) => setHostname(e.target.value)}
+                aria-describedby={hintId('ts-hostname')}
               />
+              <FieldHint id="ts-hostname">
+                What this brain is called on your tailnet — other devices reach it by this name.
+              </FieldHint>
             </div>
             <div className="flex gap-2">
               <Button

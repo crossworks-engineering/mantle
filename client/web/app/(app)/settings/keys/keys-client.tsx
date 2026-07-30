@@ -29,6 +29,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { SUPPORTED_PROVIDERS, wiredCapabilitiesFor } from '@mantle/voice/client';
@@ -314,12 +315,12 @@ export function KeysClient() {
                         autoFocus
                         required
                       />
-                      <p className="text-xs text-muted-foreground">
+                      <FieldHint id="custom-service">
                         Service name for a non-LLM API your API-console tools call (lowercase
                         letters, numbers, dashes). Reference it in a tool as{' '}
                         <code>{`{{secret:${effectiveService || 'service'}/${label.trim() || 'default'}}}`}</code>
                         .
-                      </p>
+                      </FieldHint>
                     </>
                   )}
                   {provider &&
@@ -364,10 +365,10 @@ export function KeysClient() {
                     onChange={(e) => setLabel(e.target.value)}
                     placeholder="default"
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <FieldHint id="label">
                     Disambiguates multiple keys for one service (e.g. <code>personal</code>,{' '}
                     <code>agent</code>).
-                  </p>
+                  </FieldHint>
                 </div>
               </div>
 
@@ -382,7 +383,14 @@ export function KeysClient() {
                   placeholder="sk-…"
                   required
                   autoFocus
+                  aria-describedby={hintId('plaintext')}
                 />
+                <FieldHint
+                  id="plaintext"
+                  warn="Shown only now — after saving you'll see the masked form."
+                >
+                  Pasted straight from the provider. Stored encrypted.
+                </FieldHint>
               </div>
 
               <div className="flex justify-end gap-2 border-t border-border pt-3">

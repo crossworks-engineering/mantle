@@ -7,6 +7,7 @@ import { apiSend } from '@mantle/web-ui/api-fetch';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 
 /** Subscribe to an iCalendar feed. On success the form resets so the next feed
  *  can be added immediately, and the ['calendar'] list is invalidated. */
@@ -54,7 +55,16 @@ export function AddFeedForm() {
       </div>
       <div className="space-y-2">
         <Label htmlFor="displayName">Name</Label>
-        <Input id="displayName" name="displayName" placeholder="Work calendar" required />
+        <Input
+          id="displayName"
+          name="displayName"
+          placeholder="Work calendar"
+          required
+          aria-describedby={hintId('displayName')}
+        />
+        <FieldHint id="displayName">
+          What this calendar is called when its events show up.
+        </FieldHint>
       </div>
       <div className="space-y-2">
         <Label htmlFor="url">iCal URL</Label>
@@ -64,7 +74,11 @@ export function AddFeedForm() {
           type="url"
           placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
           required
+          aria-describedby={hintId('url')}
         />
+        <FieldHint id="url" warn="A secret iCal link is readable by anyone who has it.">
+          The private .ics feed from your calendar provider. Read-only — nothing is written back.
+        </FieldHint>
       </div>
       {error && (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive-ink">

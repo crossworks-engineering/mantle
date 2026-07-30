@@ -1475,6 +1475,9 @@ export function AgentsClient() {
                                         );
                                       })}
                                     </select>
+                                    <FieldHint id="backupProvider">
+                                      Who answers when the primary route is down.
+                                    </FieldHint>
                                     {!isProviderWired(form.backupProvider, 'chat') && (
                                       <p className="text-xs text-amber-600 dark:text-amber-400">
                                         No chat adapter registered for{' '}

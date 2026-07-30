@@ -636,6 +636,9 @@ export function WorkerForm({
                 </option>
               ))}
             </select>
+            <FieldHint id="apiKeyId">
+              Which saved key pays for this worker. Picking one switches the provider to match.
+            </FieldHint>
             <KeyValidityHint
               kind={kind}
               capability={capability}
@@ -795,6 +798,9 @@ export function WorkerForm({
                       </option>
                     ))}
                   </select>
+                  <FieldHint id="backup_provider">
+                    Who serves this worker when the primary is unreachable.
+                  </FieldHint>
                   {!isProviderWired(backupProvider, capability) && (
                     <p className="text-xs text-amber-600 dark:text-amber-400">
                       No adapter registered for <code>{backupProvider}</code> — failover to it will
