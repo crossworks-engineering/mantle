@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# P4 — run the scripted turns against an ALREADY-SEEDED demo brain.
+#
+# Split from seed.sh on purpose: seeding and conversing fail for different
+# reasons and cost different amounts, and you want to re-run the turns
+# without re-seeding (or vice versa).
+#
+#   demo/scripts/turns.sh [--limit N]
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+DEMO="demo"; ART="$DEMO/.run"; mkdir -p "$ART"
+
+WEB_PORT=3902
+export DATABASE_URL="postgres://postgres:postgres@127.0.0.1:56432/postgres"
+export S3_ENDPOINT="http://127.0.0.1:56900"
+export S3_REGION="us-east-1"; export S3_ACCESS_KEY="minio"; export S3_SECRET_KEY="minio12345"; export S3_BUCKET="mantle"
+export TIKA_URL="http://127.0.0.1:56998"
+export MANTLE_DOCS_ROOT="$(pwd)/demo/generator/out/docs"
+export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
+export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
+export MANTLE_LOCAL_EMBEDDING_URL="${MANTLE_LOCAL_EMBEDDING_URL:-http://127.0.0.1:56434/v1}"
+export MANTLE_RATE_LIMIT_SCALE="${MANTLE_RATE_LIMIT_SCALE:-50}"
+export PORT="$WEB_PORT"
+unset MANTLE_DETACHED_DEV NEXT_PUBLIC_MANTLE_API_BASE NEXT_PUBLIC_MANTLE_API_TOKEN MANTLE_DEMO || true
+
+web_pid_file="$ART/turns-web.pid"; web_log="$ART/turns-web.log"
+api_pid_file="$ART/turns-api.pid"; api_log="$ART/turns-api.log"
+cleanup() {
+  for f in "$web_pid_file" "$api_pid_file"; do
+    [ -f "$f" ] || continue
+    pgid=$(ps -o pgid= -p "$(cat "$f")" 2>/dev/null | tr -d ' ' || true)
+    [ -n "${pgid:-}" ] && kill -TERM -"$pgid" 2>/dev/null || true
+    rm -f "$f"
+  done
+}
+trap cleanup EXIT
+
+if [ -d /proc ]; then
+  for pid in $(pgrep -f 'next dev' 2>/dev/null || true); do
+    case "$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)" in
+      */server/web) echo "✗ a 'next dev' already holds server/web (PID $pid) — stop it yourself." >&2; exit 1 ;;
+    esac
+  done
+fi
+
+echo "→ demo stack"
+"$DEMO/scripts/stack-up.sh" >/dev/null
+
+echo "→ server/web on :$WEB_PORT"
+( setsid pnpm -C server/web dev >"$web_log" 2>&1 & echo $! >"$web_pid_file" )
+for i in $(seq 1 120); do
+  curl -sf "http://127.0.0.1:$WEB_PORT/api/version" >/dev/null 2>&1 && break
+  sleep 1; [ "$i" = 120 ] && { echo "✗ web not ready"; tail -20 "$web_log"; exit 1; }
+done
+echo "  ready"
+
+echo "→ server/api (traces + tool execution live here)"
+( setsid pnpm -C server/api start >"$api_log" 2>&1 & echo $! >"$api_pid_file" )
+sleep 8
+
+echo "→ running turns"
+DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
+  pnpm -C server/web exec tsx ../../demo/seed/turns.ts "$@"
+
+echo "→ maintenance runs (populate maintenance_runs, and are honest work anyway)"
+# Real maintenance tasks over the freshly seeded brain — the same registry the
+# nightly cron drives. Non-fatal: a demo is still publishable if a maintenance
+# task has nothing to do.
+pnpm maintain 2>&1 | tail -6 || echo "  (maintenance reported nothing to do)"
