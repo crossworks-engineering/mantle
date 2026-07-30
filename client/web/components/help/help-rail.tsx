@@ -36,21 +36,41 @@ export function HelpRail() {
   return (
     <div
       className={cn(
-        'fixed inset-x-0 bottom-[var(--footer-h)] top-16 z-20 flex flex-col border-border bg-background transition-[left,right,width] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w))]',
+        'fixed inset-x-0 bottom-[var(--footer-h)] top-16 z-20 flex flex-col border-border transition-[left,right,width] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w))]',
         'lg:left-auto lg:w-[var(--help-w)] lg:border-l',
+        // The wash: same family as the header's, so the column reads as shell
+        // chrome rather than content. Built from `primary`, so it re-tints with
+        // every theme instead of pinning a colour.
+        'isolate bg-background bg-gradient-to-b from-primary/10 via-background to-background',
         !open && 'hidden',
       )}
       aria-hidden={!open}
       role="complementary"
       aria-label="About this screen"
     >
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2">
+      {/* A fine grid that dissolves downward into the wash. Ruled with
+          `--border` (a theme var, never a literal) and masked to fade out, so on
+          a dark theme it reads as a faint blueprint and on a light one as barely
+          -there paper. Decorative only — hidden from the accessibility tree. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-72 opacity-60"
+        style={{
+          backgroundImage:
+            'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)',
+          backgroundSize: '22px 22px',
+          maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.55), transparent)',
+          WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.55), transparent)',
+        }}
+      />
+
+      <div className="relative flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-4 py-2">
         <h2 className="truncate text-sm font-semibold">About this screen</h2>
         <Button variant="ghost" size="icon" className="size-7" onClick={close} aria-label="Close">
           <X className="size-4" />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-4 py-4">
+      <div className="relative min-h-0 flex-1 overflow-y-auto scrollbar-thin px-4 py-4">
         <HelpRailBody topic={topic} />
       </div>
     </div>

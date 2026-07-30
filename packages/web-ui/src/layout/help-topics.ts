@@ -20,6 +20,13 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/notes', 'notes'],
   ['/files', 'files'],
   ['/assistant', 'assistant'],
+  ['/journal', 'journal'],
+  ['/tasks', 'tasks'],
+  ['/events', 'events'],
+  ['/contacts', 'contacts'],
+  ['/secrets', 'secrets'],
+  // The mail screen lives at /inbox; the topic keeps the user-facing name.
+  ['/inbox', 'inbox'],
 ];
 
 const SORTED = [...ROUTE_TOPICS].sort((a, b) => b[0].length - a[0].length);
