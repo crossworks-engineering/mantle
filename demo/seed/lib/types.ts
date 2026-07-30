@@ -86,7 +86,7 @@ export interface Manifest {
   emails: GenEmail[];
   files: GenFile[];
   docs: Array<{ collection: string; relpath: string; title: string }>;
-  turns: Array<{ id: string; agent: string; offset: number; prompt: string }>;
+  turns: Array<{ id: string; agent: string; offset: number; prompt: string; wantsRun?: boolean; followUp?: boolean }>;
 }
 
 /** The slice of the `postgres` tagged-template client this seeder touches. */

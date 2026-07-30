@@ -31,6 +31,10 @@ const argOf = (flag: string, dflt: number) => {
   return i === -1 ? dflt : Number(process.argv[i + 1]);
 };
 const LIMIT = argOf('--limit', Infinity);
+// Re-running the whole set costs real time and real spend, so allow targeting
+// the subset a phase actually needs (e.g. only the run-seeking turns once the
+// conversation is already seeded).
+const ONLY_RUNS = process.argv.includes('--only-runs');
 // Kept low on purpose: a burst of concurrent turns is exactly the storm the
 // extractor queue was built to avoid, and the provider rate-limits it.
 const CONCURRENCY = argOf('--concurrency', 2);
@@ -80,7 +84,9 @@ async function main() {
     process.exit(1);
   }
 
-  const turns = manifest.turns.slice(0, LIMIT === Infinity ? undefined : LIMIT);
+  const pool = ONLY_RUNS ? manifest.turns.filter((t) => t.wantsRun) : manifest.turns;
+  const turns = pool.slice(0, LIMIT === Infinity ? undefined : LIMIT);
+  if (ONLY_RUNS) console.log(`  (--only-runs: ${turns.length} of ${manifest.turns.length} turns)`);
   console.log(`\ndemo turns — ${turns.length} scripted turns, concurrency ${CONCURRENCY}\n  server ${SERVER}\n`);
   await login();
 
@@ -107,7 +113,11 @@ async function main() {
   // transcript that all happened in one afternoon reads like a script — which
   // it is, and the demo should not advertise that.
   console.log('\n· backdating the conversation');
-  const rows = await sql`select id from assistant_messages order by created_at asc`;
+  // Only the messages this invocation created — a subset run must not
+  // renumber timestamps that a previous run already placed correctly.
+  const rows = await sql`
+    select id from assistant_messages where created_at >= ${new Date(SEED_TIME).toISOString()}
+    order by created_at asc`;
   let moved = 0;
   for (let k = 0; k < rows.length; k++) {
     const t = turns[Math.min(Math.floor(k / 2), turns.length - 1)];
