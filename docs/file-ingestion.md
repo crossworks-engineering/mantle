@@ -146,10 +146,17 @@ and a reworded caption can't orphan bytes.
 **The cost gate runs before any model does.** Pulling bytes out is free and
 always happens; only survivors of the deterministic filters earn a vision call:
 
-- container must be renderable (PNG/JPEG/GIF/WebP/BMP) — **EMF/WMF are dropped**
-  (no browser renders them, so the node could never be shown), and **SVG is not
-  accepted yet** (it's the one image type that can carry script)
-- both edges ≥ 200 px — this is the real filter; icons and bullets die here
+- container must be renderable (PNG/JPEG/GIF/WebP/BMP/**SVG**) — **EMF/WMF are
+  dropped** (no browser renders them, so the node could never be shown)
+- both edges ≥ 200 px — this is the real filter; icons and bullets die here.
+  SVG is measured on its `width`/`height`, else its `viewBox`, so a vector icon
+  is filtered on the same rule as a raster one
+- SVG is safe on both display paths: `safeDownloadHeaders` serves it under a
+  `sandbox`ed `default-src 'none'` CSP (inert even on direct navigation), and
+  Pages + chat both embed via `<img>`, where SVG scripts never run. Office
+  stores an inserted SVG behind a raster fallback (`<a:blip>` + an
+  `<asvg:svgBlip>` extension), so the OOXML walk **prefers the svgBlip** —
+  without that, an EMF fallback would be dropped and the diagram lost
 - ≥ 1 KB. Deliberately LOW: flat line art compresses to ~2 KB, and an initial
   8 KB floor rejected exactly the diagrams this feature exists for
 - sha256 dedupe collapses the logo repeated on every slide

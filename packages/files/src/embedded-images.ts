@@ -138,10 +138,18 @@ export function passesGate(
   if (seenHashes.has(img.sha256)) return { keep: false, reason: 'duplicate' };
 
   const probed = sniffImage(img.bytes);
-  // Unknown container. SVG lands here too, and is deliberately not accepted
-  // yet: it's the one image type that can carry script, and letting document
-  // innards through to a render surface deserves its own decision rather
-  // than riding in on this change.
+  // Unknown container — EMF/WMF that slipped the extension check, TIFF, or
+  // something we simply can't identify. If a browser won't render it, storing
+  // it produces a node that can never be shown.
+  //
+  // SVG IS accepted. It's the one image type that can carry script, but every
+  // surface that displays a stored file already defends against exactly that:
+  // `safeDownloadHeaders` (@mantle/web-ui/lib/safe-download) serves SVG bytes
+  // under a `sandbox`ed, `default-src 'none'` CSP so even direct navigation to
+  // the raw URL renders it inert, and both display paths embed via `<img>`
+  // (Pages through the asset route, chat through a `data:` artifact), where
+  // SVG scripts never execute regardless. Rejecting it here would only lose
+  // the crispest diagrams — vector is the BEST case for a technical figure.
   if (!probed) return { keep: false, reason: 'unrenderable' };
 
   // Dimensions are the real filter — icons, bullets and rule lines all fail
@@ -152,7 +160,9 @@ export function passesGate(
       : { keep: true };
   }
   // Recognised container, unreadable dimensions (an exotic WebP shape, a
-  // truncated header). Judge on size alone rather than dropping it.
+  // truncated header, a fluid SVG with no viewBox). Judge on size alone
+  // rather than dropping it. Rare in practice — almost every SVG carries a
+  // viewBox, so vector diagrams are filtered on their real proportions.
   return img.bytes.length < MIN_IMAGE_BYTES_WITHOUT_DIMENSIONS
     ? { keep: false, reason: 'too_few_bytes' }
     : { keep: true };

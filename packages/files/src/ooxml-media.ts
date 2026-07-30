@@ -83,15 +83,30 @@ async function relationshipsFor(zip: Zip, partPath: string): Promise<Map<string,
   return out;
 }
 
-/** Picture-name/description elements and blip references, matched together so
- *  a single ordered pass can pair each image with the alt text declared just
- *  above it inside the same picture element. */
-const PIC_SCAN_RE = /<\w+:cNvPr\b[^>]*\/?>|<a:blip\b[^>]*\/?>/g;
+/** Picture-name/description elements, blip references, and the SVG extension
+ *  that can override the blip — matched together so a single ordered pass can
+ *  pair each image with the alt text declared just above it and with the
+ *  vector original declared just below it. */
+const PIC_SCAN_RE = /<\w+:cNvPr\b[^>]*\/?>|<a:blip\b[^>]*\/?>|<\w*:?svgBlip\b[^>]*\/?>/g;
 
 type BlipRef = { rId: string; altText?: string };
 
 /** Every image reference in one part, in source order, each carrying the
- *  author's alt text when the picture declared any. */
+ *  author's alt text when the picture declared any.
+ *
+ * **SVG pictures arrive as a pair.** When Office embeds an SVG it writes a
+ * raster fallback as the blip and hangs the real vector off an extension:
+ * `<a:blip r:embed="rIdPng"><a:extLst>…<asvg:svgBlip r:embed="rIdSvg"/>…`.
+ * Reading `r:embed` alone therefore yields only the fallback — and when that
+ * fallback is an EMF (which Office also emits) it is dropped by the gate and
+ * the picture is lost entirely. So a `svgBlip` immediately following a blip
+ * REPLACES it: vector is the better asset for a technical diagram, and it's
+ * the one the author actually inserted.
+ *
+ * Spec-derived (ECMA-376 + the MS 2016 SVG extension) rather than fixture-
+ * verified — no SVG-bearing deck was available to test against. The pairing
+ * is matched loosely on the local name so a differing namespace prefix still
+ * resolves. */
 function blipRefsInOrder(xml: string): BlipRef[] {
   const out: BlipRef[] = [];
   let pendingAlt: string | undefined;
@@ -100,6 +115,12 @@ function blipRefsInOrder(xml: string): BlipRef[] {
       const rId = ATTR(tag, 'r:embed') ?? ATTR(tag, 'r:link');
       if (rId) out.push({ rId, altText: pendingAlt });
       pendingAlt = undefined;
+      continue;
+    }
+    if (/svgBlip/i.test(tag)) {
+      const rId = ATTR(tag, 'r:embed') ?? ATTR(tag, 'r:link');
+      // Only ever upgrades the blip we just recorded — never invents one.
+      if (rId && out.length > 0) out[out.length - 1]!.rId = rId;
       continue;
     }
     // cNvPr — `descr` is the Alt Text field; `name` is the shape name, which

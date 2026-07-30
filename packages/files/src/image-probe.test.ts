@@ -71,13 +71,56 @@ describe('sniffImage', () => {
     expect(sniffImage(b)).toEqual({ ext: 'bmp', width: 200, height: 100 });
   });
 
-  it('returns null for containers it cannot render — EMF, SVG, junk', () => {
+  it('returns null for containers it cannot render — EMF, junk', () => {
     // EMF record header: type 1, then a size field.
     const emf = Buffer.alloc(16);
     emf.writeUInt32LE(1, 0);
     expect(sniffImage(emf)).toBeNull();
-    expect(sniffImage(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBeNull();
     expect(sniffImage(Buffer.from('not an image at all'))).toBeNull();
     expect(sniffImage(Buffer.alloc(2))).toBeNull();
+  });
+});
+
+describe('sniffImage — SVG', () => {
+  it('reads absolute width/height off the root element', () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="260"></svg>';
+    expect(sniffImage(Buffer.from(svg))).toEqual({ ext: 'svg', width: 600, height: 260 });
+  });
+
+  it('accepts px units and single quotes', () => {
+    const svg = "<svg xmlns='http://www.w3.org/2000/svg' width='640px' height='480px'/>";
+    expect(sniffImage(Buffer.from(svg))).toEqual({ ext: 'svg', width: 640, height: 480 });
+  });
+
+  it('falls back to the viewBox when the size is fluid', () => {
+    // A percentage width is the common authoring-tool output; the viewBox is
+    // what actually describes the drawing's proportions.
+    const svg = '<svg width="100%" height="100%" viewBox="0 0 800 450"></svg>';
+    expect(sniffImage(Buffer.from(svg))).toEqual({ ext: 'svg', width: 800, height: 450 });
+  });
+
+  it('handles a comma-separated viewBox and a non-zero origin', () => {
+    const svg = '<svg viewBox="10,20,300,150"></svg>';
+    expect(sniffImage(Buffer.from(svg))).toEqual({ ext: 'svg', width: 300, height: 150 });
+  });
+
+  it('skips the XML prologue, doctype and comments', () => {
+    const svg =
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n' +
+      '<!-- exported by a drawing tool -->\n' +
+      '<svg viewBox="0 0 400 400"></svg>';
+    expect(sniffImage(Buffer.from(svg))).toEqual({ ext: 'svg', width: 400, height: 400 });
+  });
+
+  it('reports the type even when neither dimension source is present', () => {
+    expect(sniffImage(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'))).toEqual({
+      ext: 'svg',
+    });
+  });
+
+  it('does not mistake an HTML page containing an inline icon for an image', () => {
+    const html = '<!DOCTYPE html><html><body><svg viewBox="0 0 16 16"></svg></body></html>';
+    expect(sniffImage(Buffer.from(html))).toBeNull();
   });
 });

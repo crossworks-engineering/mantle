@@ -59,11 +59,28 @@ describe('passesGate', () => {
     });
   });
 
-  it('drops containers it cannot identify, including SVG', () => {
-    const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg">${'x'.repeat(2000)}</svg>`);
-    expect(passesGate(gateInput(svg, 'svg'), new Set())).toEqual({
+  it('drops containers it cannot identify', () => {
+    const tiff = Buffer.concat([Buffer.from([0x49, 0x49, 0x2a, 0x00]), Buffer.alloc(4_000)]);
+    expect(passesGate(gateInput(tiff, 'tiff'), new Set())).toEqual({
       keep: false,
       reason: 'unrenderable',
+    });
+  });
+
+  it('keeps a vector diagram — every display path embeds SVG via <img>', () => {
+    const svg = Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450"><!--${'x'.repeat(2000)}--></svg>`,
+    );
+    expect(passesGate(gateInput(svg, 'svg'), new Set())).toEqual({ keep: true });
+  });
+
+  it('still drops a vector ICON on its viewBox proportions', () => {
+    const icon = Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><!--${'x'.repeat(2000)}--></svg>`,
+    );
+    expect(passesGate(gateInput(icon, 'svg'), new Set())).toEqual({
+      keep: false,
+      reason: 'too_small',
     });
   });
 

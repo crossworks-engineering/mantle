@@ -88,6 +88,39 @@ describe('extractOoxmlImages — pptx', () => {
     expect(images[0]!.bytes.readUInt32BE(1_000)).toBe(7);
   });
 
+  it('prefers the SVG original over the raster fallback Office pairs with it', async () => {
+    const zip = new JSZip();
+    // How Office stores an inserted SVG: the blip is a fallback (often EMF,
+    // which the gate drops), and the real vector hangs off an extension.
+    zip.file(
+      'ppt/slides/slide1.xml',
+      `<p:sld><p:pic><p:nvPicPr><p:cNvPr id="2" name="Picture 2" descr="Network topology"/></p:nvPicPr>
+         <p:blipFill><a:blip r:embed="rIdFallback"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}">
+           <asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="rIdSvg"/>
+         </a:ext></a:extLst></a:blip></p:blipFill></p:pic></p:sld>`,
+    );
+    zip.file(
+      'ppt/slides/_rels/slide1.xml.rels',
+      rels([
+        ['rIdFallback', '../media/image1.emf'],
+        ['rIdSvg', '../media/image1.svg'],
+      ]),
+    );
+    zip.file('ppt/media/image1.emf', Buffer.alloc(3_000));
+    zip.file('ppt/media/image1.svg', Buffer.from('<svg viewBox="0 0 900 600"></svg>'));
+
+    const images = await extractOoxmlImages(
+      Buffer.from(await zip.generateAsync({ type: 'uint8array' })),
+      'pptx',
+    );
+    expect(images).toHaveLength(1);
+    expect(images[0]!.ext).toBe('svg');
+    expect(images[0]!.altText).toBe('Network topology');
+    // Without the svgBlip upgrade this would be the EMF — which the gate
+    // drops as unrenderable, losing the diagram entirely.
+    expect(images[0]!.bytes.toString()).toContain('<svg');
+  });
+
   it('skips external (linked) relationships, which point outside the archive', async () => {
     const zip = new JSZip();
     zip.file('ppt/slides/slide1.xml', `<p:sld>${pic('rId1')}</p:sld>`);

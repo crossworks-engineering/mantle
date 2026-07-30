@@ -9,18 +9,22 @@
  * the front of each container instead. Nothing here allocates beyond the
  * input buffer and nothing here can be slow.
  *
- * Covers the formats Office and PDF actually embed: PNG, JPEG, GIF, WebP,
- * BMP. Anything else returns `null` — the caller treats an unknown container
- * as "can't judge it", which the gate resolves conservatively (see
- * `passesSizeGate`). We deliberately do NOT cover EMF/WMF: those are Windows
+ * Covers the formats Office and PDF actually embed: PNG, JPEG, GIF, WebP, BMP
+ * and SVG. Anything else returns `null` — the caller treats an unknown
+ * container as "can't judge it", which the gate resolves conservatively (see
+ * `passesGate`). We deliberately do NOT cover EMF/WMF: those are Windows
  * metafiles, browsers can't render them, and they're dropped upstream.
+ *
+ * SVG is the one non-binary entry, and the one whose "dimensions" are a
+ * convention rather than a header field — see `probeSvg`.
  */
 
 export type ProbedImage = {
   /** Canonical extension for the container we recognised. */
-  ext: 'png' | 'jpg' | 'gif' | 'webp' | 'bmp';
+  ext: 'png' | 'jpg' | 'gif' | 'webp' | 'bmp' | 'svg';
   /** Pixel width, or undefined when the container is recognised but the
-   *  dimensions sit behind a variant we don't parse (rare WebP shapes). */
+   *  dimensions sit behind a variant we don't parse (rare WebP shapes, an
+   *  SVG with neither absolute dimensions nor a viewBox). */
   width?: number;
   height?: number;
 };
@@ -121,11 +125,61 @@ function probeBmp(b: Buffer): ProbedImage | null {
   return { ext: 'bmp', width: Math.abs(b.readInt32LE(18)), height: Math.abs(b.readInt32LE(22)) };
 }
 
+/** Leading noise permitted before an SVG's root element: a BOM (escaped, not
+ *  literal — an invisible U+FEFF in source is a lint error and a debugging
+ *  trap), whitespace, the XML declaration, a DOCTYPE, and comments. */
+const SVG_PROLOGUE = /^(?:\uFEFF|\s|<\?xml[^>]*\?>|<!DOCTYPE[^>]*>|<!--[\s\S]*?-->)*/;
+
+/** One length attribute, in user units. Percentages and physical units
+ *  (`mm`, `pt`) return undefined so the viewBox is consulted instead. */
+function svgLength(tag: string, name: string): number | undefined {
+  const m =
+    new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, 'i').exec(tag) ??
+    new RegExp(`\\b${name}\\s*=\\s*'([^']*)'`, 'i').exec(tag);
+  if (!m) return undefined;
+  const n = /^\s*([0-9]*\.?[0-9]+)\s*(?:px)?\s*$/i.exec(m[1]!);
+  return n ? Math.round(parseFloat(n[1]!)) : undefined;
+}
+
+/**
+ * SVG: a text format, so there is no magic number — we look for the root
+ * element after any prologue. Requiring `<svg>` to be the FIRST element
+ * (rather than merely present) keeps an HTML page with an inline icon from
+ * being mistaken for an image.
+ *
+ * Dimensions come from `width`/`height` when they're absolute, else from the
+ * `viewBox`, which is what most authoring tools emit. Both absent — a
+ * fluid-sized SVG — leaves them undefined, and the caller falls back to size.
+ */
+function probeSvg(b: Buffer): ProbedImage | null {
+  // The root element lives at the front; never stringify a whole document.
+  const head = b.subarray(0, 4096).toString('utf8');
+  const body = head.slice(SVG_PROLOGUE.exec(head)?.[0].length ?? 0);
+  if (!/^<svg[\s>]/i.test(body)) return null;
+  const tag = /<svg\b[^>]*>/i.exec(body)?.[0] ?? '';
+
+  let width = svgLength(tag, 'width');
+  let height = svgLength(tag, 'height');
+  if (width == null || height == null) {
+    const vb =
+      /\bviewBox\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? /\bviewBox\s*=\s*'([^']*)'/i.exec(tag)?.[1];
+    const parts = vb
+      ?.trim()
+      .split(/[\s,]+/)
+      .map(Number);
+    if (parts?.length === 4 && parts.every((n) => Number.isFinite(n))) {
+      width ??= Math.round(parts[2]!);
+      height ??= Math.round(parts[3]!);
+    }
+  }
+  return { ext: 'svg', ...(width != null ? { width } : {}), ...(height != null ? { height } : {}) };
+}
+
 /**
  * Identify an image container and read its dimensions from the header.
- * Returns `null` for anything we don't recognise — including EMF/WMF, SVG and
- * TIFF — so the caller can decide what "unknown" should mean rather than
- * having a guess baked in here.
+ * Returns `null` for anything we don't recognise — notably EMF/WMF and TIFF —
+ * so the caller can decide what "unknown" should mean rather than having a
+ * guess baked in here.
  */
 export function sniffImage(bytes: Buffer): ProbedImage | null {
   if (bytes.length < 4) return null;
@@ -135,6 +189,7 @@ export function sniffImage(bytes: Buffer): ProbedImage | null {
     probeGif(bytes) ??
     probeWebp(bytes) ??
     probeBmp(bytes) ??
+    probeSvg(bytes) ??
     null
   );
 }
