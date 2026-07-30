@@ -11,6 +11,7 @@ import {
   AssistantDockToggle,
   HighlightButton,
 } from '@/components/assistant/assistant-dock';
+import { HelpLauncher } from '@/components/help/help-launcher';
 
 /** Compact icon toggle styled to match the footer's quick-menu links. */
 function ToggleButton({
@@ -129,6 +130,10 @@ export function FooterBar({
 
       {/* End: the two launchers, then the activity-rail collapse (rail is lg+). */}
       <div className="ml-auto flex items-center gap-1">
+        {/* Per-screen help — left of the content launchers, so the three
+            column-openers read as one group. Renders nothing on a route
+            without a help topic. */}
+        <HelpLauncher />
         <HighlightButton />
         <AssistantButton />
         {/* Full-display ⇄ side-column toggle — only while the assistant is open. */}

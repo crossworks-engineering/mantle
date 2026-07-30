@@ -20,6 +20,8 @@ import { PageTitleProvider } from '@/components/layout/page-title';
 import { UploadProvider, UploadDock } from '@/components/uploads/upload-provider';
 import { AssistantDockProvider, useAssistantDock } from '@/components/assistant/assistant-dock';
 import { AssistantPanel } from '@/components/assistant/assistant-panel';
+import { HelpRailProvider, useHelpRail } from '@/components/help/help-rail-context';
+import { HelpRail } from '@/components/help/help-rail';
 import { PendingQuestionWatcher } from '@/components/pending/question-watcher';
 import { DesktopBridge } from '@/components/desktop/desktop-bridge';
 import { PickMode } from '@/components/assistant/pick-mode';
@@ -84,14 +86,16 @@ export function AppShell(props: {
   children: React.ReactNode;
 }) {
   // Providers only — the frame itself lives in <ShellFrame/>, which sits INSIDE
-  // AssistantDockProvider so it can read the dock state (the docked assistant
-  // column publishes its width to the frame's CSS vars).
+  // AssistantDockProvider and HelpRailProvider so it can read both dock states
+  // (each open column publishes its width to the frame's CSS vars).
   return (
     <ToastProvider>
       <PageTitleProvider>
         <UploadProvider>
           <AssistantDockProvider>
-            <ShellFrame {...props} />
+            <HelpRailProvider>
+              <ShellFrame {...props} />
+            </HelpRailProvider>
           </AssistantDockProvider>
         </UploadProvider>
       </PageTitleProvider>
@@ -124,6 +128,10 @@ function ShellFrame({
   // the panel is minimised/closed or rendering as a full overlay.
   const { panel: assistantPanel, docked: assistantDocked } = useAssistantDock();
   const assistantW = assistantPanel === 'open' && assistantDocked ? '30rem' : '0rem';
+  // The help column's width, published as `--help-w` so <main> shrinks beside it
+  // exactly as it does for the assistant. 0 whenever the rail is closed.
+  const { open: helpOpen } = useHelpRail();
+  const helpW = helpOpen ? '22rem' : '0rem';
 
   // Shell chrome — avatar, pending-approvals badge, onboarding gate — fetched
   // client-side so the layout stays data-free. Until it lands the avatar falls
@@ -282,6 +290,7 @@ function ShellFrame({
           '--nav-w': navCollapsed ? '3.5rem' : '16rem',
           '--activity-w': activityCollapsed ? '3.5rem' : '20rem',
           '--assistant-w': assistantW,
+          '--help-w': helpW,
           '--footer-h': '2.75rem',
         } as React.CSSProperties
       }
@@ -329,13 +338,14 @@ function ShellFrame({
             is slow enough to stream). Containing it here, below the header, keeps
             the header's tree-context symmetric. Same rationale as UsageCard's
             boundary in layout.tsx. */}
-      <main className="fixed inset-0 top-16 bottom-[var(--footer-h)] overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w))]">
+      <main className="fixed inset-0 top-16 bottom-[var(--footer-h)] overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w)+var(--help-w))]">
         <Suspense fallback={null}>{children}</Suspense>
       </main>
 
       {/* The full assistant as a content-area overlay — fills the same box as
             <main>, above every route, summoned from anywhere by the bubble/⌘I. */}
       <AssistantPanel />
+      <HelpRail />
 
       {/* Marker pick mode — highlights markable rows + intercepts their clicks
             while picking; renders nothing otherwise. */}
