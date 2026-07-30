@@ -74,7 +74,13 @@ echo "  ready"
 # limit matches by CWD, and this worktree's client/web is a different directory
 # with its own .next (see the repo CLAUDE.md on worktrees).
 echo "→ UI (client/web) on :$UI_PORT — this is where the 94 screens live"
-( setsid env PORT="$UI_PORT" MANTLE_SERVER_ORIGIN="http://127.0.0.1:$API_PORT" \
+# MANTLE_SERVER_ORIGIN is baked into env.js and tells the BROWSER where to
+# send its fetches. It must be the EDGE, not the API: point it at the API and
+# the browser bypasses Caddy entirely, gets no injected cookie, and every
+# screen spins forever behind a 401 while the pages themselves render fine.
+# One origin is the whole design — /api/* and the UI share a host so there is
+# no CORS and the edge can authenticate every call.
+( setsid env PORT="$UI_PORT" MANTLE_SERVER_ORIGIN="http://127.0.0.1:$EDGE_PORT" \
     pnpm -C client/web dev >"$ui_log" 2>&1 & echo $! >"$ui_pid_file" )
 for i in $(seq 1 180); do
   curl -sf "http://127.0.0.1:$UI_PORT/env.js" >/dev/null 2>&1 && break
