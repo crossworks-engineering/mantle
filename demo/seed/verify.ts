@@ -38,6 +38,20 @@ async function snapshot() {
     facts: await one(sql`select count(*)::int n from facts`),
     entities: await one(sql`select count(*)::int n from entities`),
     edges: await one(sql`select count(*)::int n from entity_edges`),
+    // Long-form genres MUST split into multiple chunks or passage retrieval
+    // has nothing to retrieve. This is the check a raw total was standing in
+    // for, and unlike a total it does not move with corpus composition.
+    longformRatio: Number(
+      (
+        await sql`select round(count(c.id)::numeric / greatest(count(distinct n.id), 1), 2) n
+                  from nodes n join content_chunks c on c.node_id = n.id
+                  where n.type in ('page', 'table')`
+      )[0]?.n ?? 0,
+    ),
+    // Every extracted node should yield at least one chunk.
+    chunkedNodes: await one(
+      sql`select count(distinct node_id)::int n from content_chunks`,
+    ),
     // A node counts as extracted once the extractor stamps its completion
     // marker — the same marker its own already_extracted guard keys on.
     extracted: await one(
@@ -81,6 +95,8 @@ async function main() {
 
   const checks: Array<[string, number, number]> = [
     ['content_chunks', s.chunks, targets.derived.content_chunks.min],
+    ['chunks/longform node', s.longformRatio, targets.derived.chunks_per_longform_node.min],
+    ['nodes with a chunk', s.chunkedNodes, Math.round(s.extracted * 0.95)],
     ['facts', s.facts, targets.derived.facts.min],
     ['entities', s.entities, targets.derived.entities.min],
     ['entity_edges', s.edges, targets.derived.entity_edges.min],

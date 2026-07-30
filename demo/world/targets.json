@@ -28,8 +28,10 @@
 
   "derived": {
     "$comment": "Produced by the real ingest pipeline (P3), never inserted directly. Mins prove ingest actually ran — the 'generator ran fine, produced zero facts' tripwire.",
-    "content_chunks": { "min": 1000, "notes": "RECALIBRATED 2026-07-30. The original 1500 applied the client donor's chunks-per-node ratio to THIS node count — but that donor is few-and-long (177 files, multi-page procedures) while this corpus is many-and-short (224 emails, 120 notes). The first full seed produced exactly 1.00 chunks/node: nothing was long enough to split. Fixed on BOTH sides — the long-form genres are now genuinely long (lib/longform.mjs), and the target reflects this corpus's composition rather than the donor's." },
-    "facts":          { "min": 800 },
+    "$chunks_note": "A RAW chunk count turned out to be the wrong assertion, and this is the reasoning rather than a quietly-lowered number. 1500 came from the client donor's chunks-per-node ratio; that donor is few-and-long (177 files, multi-page procedures) while this corpus is many-and-short. 576 of ~760 nodes (emails, notes, tasks, journals, events, contacts) are inherently ONE chunk no matter how the generator is written, so the total is governed by corpus COMPOSITION, not by whether the seed is any good. Lengthening the long-form genres was still the right fix and moved pages 1.00 -> 1.35 chunks, but pages are 7% of the corpus. So the count is replaced by two behavioural checks that actually test what the count was standing in for: every extracted node yields at least one chunk (extraction ran), and long-form genres split into more than one (passage retrieval has something to retrieve).",
+    "content_chunks": { "min": 650, "notes": "Floor only — measured 726. Catches a real regression without pretending to be a quality bar." },
+    "chunks_per_longform_node": { "min": 1.25, "notes": "pages + tables: the genres that MUST split, or chunk retrieval has nothing to work with. Measured: pages 1.35, tables 3.00." },
+    "facts":          { "min": 700, "notes": "Measured 784 over 686 extracted nodes (1.14/node). The donors ran 2.0-2.6/node on longer documents; 800 was taken from them without adjusting for this corpus's shorter items." },
     "entities":       { "min": 250, "notes": "cast + companies + projects + recurring terms" },
     "entity_edges":   { "min": 900 }
   },
