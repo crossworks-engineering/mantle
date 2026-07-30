@@ -12,7 +12,11 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 DEMO="demo"; ART="$DEMO/.run"; mkdir -p "$ART"
 
-WEB_PORT=3903          # the app itself (not public)
+# TWO apps. server/web is the API and has ZERO pages; ALL 94 screens live in
+# client/web. Pointing the edge at server/web alone yields a working /api/* and
+# a 404 for every actual page — which is exactly what happened the first time.
+API_PORT=3903          # server/web — the API
+UI_PORT=3904           # client/web — the 94 screens a visitor sees
 EDGE_PORT=56080        # Caddy — this is what a visitor would hit
 export DATABASE_URL="postgres://demo_reader:demo_reader_not_a_secret@127.0.0.1:56432/postgres"
 export S3_ENDPOINT="http://127.0.0.1:56900"
@@ -22,12 +26,18 @@ export MANTLE_DOCS_ROOT="$(pwd)/demo/generator/out/docs"
 export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
 export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
 export MANTLE_LOCAL_EMBEDDING_URL="${MANTLE_LOCAL_EMBEDDING_URL:-http://127.0.0.1:56434/v1}"
-export PORT="$WEB_PORT"
+export PORT="$API_PORT"
 unset MANTLE_DETACHED_DEV NEXT_PUBLIC_MANTLE_API_BASE NEXT_PUBLIC_MANTLE_API_TOKEN MANTLE_DEMO MANTLE_RUNS || true
 
 web_pid_file="$ART/serve-web.pid"; web_log="$ART/serve-web.log"
+ui_pid_file="$ART/serve-ui.pid";   ui_log="$ART/serve-ui.log"
 cleanup() {
-  [ -f "$web_pid_file" ] && { pgid=$(ps -o pgid= -p "$(cat "$web_pid_file")" 2>/dev/null | tr -d ' '); [ -n "${pgid:-}" ] && kill -TERM -"$pgid" 2>/dev/null; rm -f "$web_pid_file"; }
+  for f in "$web_pid_file" "$ui_pid_file"; do
+    [ -f "$f" ] || continue
+    pgid=$(ps -o pgid= -p "$(cat "$f")" 2>/dev/null | tr -d ' ')
+    [ -n "${pgid:-}" ] && kill -TERM -"$pgid" 2>/dev/null
+    rm -f "$f"
+  done
   docker rm -f mantle_demo_edge >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -47,16 +57,28 @@ echo "  minted (${#SESSION} chars, never printed)"
 echo "→ render the edge config"
 mkdir -p "$ART/edge"
 sed -e "s|__DEMO_SESSION__|$SESSION|" \
-    -e "s|__DEMO_WEB__|host.docker.internal:$WEB_PORT|" \
-    -e "s|__DEMO_API__|host.docker.internal:$WEB_PORT|" \
+    -e "s|__DEMO_WEB__|host.docker.internal:$UI_PORT|" \
+    -e "s|__DEMO_API__|host.docker.internal:$API_PORT|" \
     -e "s|^demo\.mantle-ai\.tech {|:80 {|" \
     "$DEMO/deploy/Caddyfile.demo" > "$ART/edge/Caddyfile"
 
-echo "→ app on :$WEB_PORT (as demo_reader)"
+echo "→ API (server/web) on :$API_PORT (as demo_reader)"
 ( setsid pnpm -C server/web dev >"$web_log" 2>&1 & echo $! >"$web_pid_file" )
 for i in $(seq 1 120); do
-  curl -sf "http://127.0.0.1:$WEB_PORT/api/version" >/dev/null 2>&1 && break
-  sleep 1; [ "$i" = 120 ] && { echo "✗ app not ready:"; tail -25 "$web_log"; exit 1; }
+  curl -sf "http://127.0.0.1:$API_PORT/api/version" >/dev/null 2>&1 && break
+  sleep 1; [ "$i" = 120 ] && { echo "✗ API not ready:"; tail -25 "$web_log"; exit 1; }
+done
+echo "  ready"
+
+# Safe alongside Jason's dev stack: Next's one-dev-server-per-project-DIRECTORY
+# limit matches by CWD, and this worktree's client/web is a different directory
+# with its own .next (see the repo CLAUDE.md on worktrees).
+echo "→ UI (client/web) on :$UI_PORT — this is where the 94 screens live"
+( setsid env PORT="$UI_PORT" MANTLE_SERVER_ORIGIN="http://127.0.0.1:$API_PORT" \
+    pnpm -C client/web dev >"$ui_log" 2>&1 & echo $! >"$ui_pid_file" )
+for i in $(seq 1 180); do
+  curl -sf "http://127.0.0.1:$UI_PORT/env.js" >/dev/null 2>&1 && break
+  sleep 1; [ "$i" = 180 ] && { echo "✗ UI not ready:"; tail -25 "$ui_log"; exit 1; }
 done
 echo "  ready"
 
@@ -83,5 +105,6 @@ echo "demo serving at http://127.0.0.1:$EDGE_PORT  (ctrl-c to stop)"
 # so it is not a job of this shell and the script would exit at once — taking
 # the EXIT trap's teardown with it, or (with the trap removed) leaving a stack
 # nobody is watching. Poll the app instead, and tear down when it goes away.
-while kill -0 "$(cat "$web_pid_file" 2>/dev/null)" 2>/dev/null; do sleep 5; done
+while kill -0 "$(cat "$web_pid_file" 2>/dev/null)" 2>/dev/null \
+   && kill -0 "$(cat "$ui_pid_file" 2>/dev/null)" 2>/dev/null; do sleep 5; done
 echo "app exited — tearing down the edge"

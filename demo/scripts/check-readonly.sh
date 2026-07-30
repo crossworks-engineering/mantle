@@ -17,6 +17,26 @@ code() { curl -s -o /dev/null -w '%{http_code}' -X "$1" "$BASE$2" ${3:+-H "conte
 echo "read-only edge check → $BASE"
 echo
 
+# ── PAGES must render. This check originally tested only /api/*, so it passed
+# green while every actual screen 404'd — the edge was pointed at server/web,
+# which has ZERO pages (all 94 live in client/web). A visitor does not fetch
+# /api/version; they open a page. Test what a visitor does.
+for path in / /pages /tasks /notes /tables /assistant /debug/integrity /settings/agents; do
+  c=$(code GET "$path")
+  if [ "$c" = "200" ]; then say "GET $path" "200 renders"
+  else say "GET $path" "$c  ✗ EXPECTED 200 — is the UI upstream wired?"; fail=1; fi
+done
+echo
+
+# ── The landing page must contain real content, not an empty shell or a login
+html=$(curl -s --max-time 20 "$BASE/" | tr -d '\0')
+case "$html" in
+  *ogin*|*ign\ in*) say "landing page" "✗ shows a LOGIN — cookie injection is not reaching the UI"; fail=1 ;;
+  "")               say "landing page" "✗ empty body"; fail=1 ;;
+  *)                say "landing page" "renders (${#html} bytes)" ;;
+esac
+echo
+
 # ── Reads must work, and must be authenticated by the injected cookie ────────
 for path in /api/version /api/shell /api/dashboard /api/notes /api/pages /api/tasks; do
   c=$(code GET "$path")
