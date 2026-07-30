@@ -241,6 +241,61 @@ export async function ensureDatedUploadFolder(args: {
   return `${topLtree}.${dashToLtree(dateSlug)}`;
 }
 
+/**
+ * Ensure `files/extracted-images/<source-doc>/` exists and return its ltree
+ * path.
+ *
+ * One folder per source document rather than one shared bucket: a single
+ * 40-image manual would otherwise bury every other document's pictures, and
+ * the per-document folder makes "everything that came out of this file"
+ * answerable by browsing as well as by search.
+ *
+ * The folder slug is derived from the source document's own slug, so
+ * re-ingesting the same file lands in the same place. Idempotent — a
+ * concurrent create loses the race harmlessly, same as
+ * {@link ensureDatedUploadFolder}.
+ */
+export async function ensureExtractedImagesFolder(args: {
+  ownerId: string;
+  sourceSlug: string;
+  sourceTitle: string;
+}): Promise<string> {
+  const docSlug = slugifyFolder(args.sourceSlug) ?? 'document';
+  const topLtree = `files.${dashToLtree(EXTRACTED_IMAGES_SLUG)}`;
+  for (const [parent, slug, description] of [
+    [
+      'files',
+      EXTRACTED_IMAGES_SLUG,
+      'Pictures pulled out of documents — diagrams, screenshots and charts that the text of a file cannot convey.',
+    ],
+    [topLtree, docSlug, `Images extracted from ${args.sourceTitle}.`],
+  ] as const) {
+    const childPath = `${parent}.${dashToLtree(slug)}`;
+    const [exists] = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, args.ownerId),
+          eq(nodes.type, 'branch'),
+          sql`${nodes.path}::text = ${childPath}`,
+        ),
+      )
+      .limit(1);
+    if (!exists) {
+      try {
+        await createFolder({ ownerId: args.ownerId, parentPath: parent, slug, description });
+      } catch (err) {
+        if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
+      }
+    }
+  }
+  return `${topLtree}.${dashToLtree(docSlug)}`;
+}
+
+/** Top-level folder holding every document's extracted pictures. */
+export const EXTRACTED_IMAGES_SLUG = 'extracted-images';
+
 export async function updateFolderDescription(args: {
   ownerId: string;
   folderId: string;
@@ -404,6 +459,24 @@ export async function upsertFile(args: {
   filename: string;
   bytes: Buffer;
   overwrite?: boolean;
+  /** Display title, when it should differ from the filename.
+   *
+   *  Filenames here are mechanical by design — sanitised, lowercased,
+   *  sortable — which is right for a path and wrong for something a person
+   *  or an agent reads in a search result. Extracted document images are the
+   *  first caller to need the split: the file is `007-apn-manual-p12.png`
+   *  while the node is "APN Manual — Step 3: Add a new APN (p12)".
+   *
+   *  Set once on insert and PRESERVED on later upserts of unchanged content
+   *  — without that, every re-ingest would quietly reset the title back to
+   *  the filename and the naming work would evaporate on the second upload. */
+  title?: string;
+  /** Extra `data` keys to merge onto the node — provenance for derived
+   *  files (which document an image came from, where in it, at what
+   *  position). Merged under the storage fields, which always win. */
+  data?: Record<string, unknown>;
+  /** Extra tags beyond the base `file` tag. Deduped. */
+  tags?: string[];
 }): Promise<FileRow> {
   if (!isFilesPath(args.parentPath)) {
     throw new Error(`upsertFile: parent '${args.parentPath}' is outside the files root`);
@@ -461,6 +534,7 @@ export async function upsertFile(args: {
     isText && args.bytes.byteLength <= TEXT_BYTE_CAP ? args.bytes.toString('utf8') : null;
 
   const newData: Record<string, unknown> = {
+    ...(args.data ?? {}),
     filename,
     extension: ext,
     mime_type: mime,
@@ -484,10 +558,17 @@ export async function upsertFile(args: {
           entities: oldData.entities,
         }
       : {};
+    // Title: an explicit one wins; otherwise keep whatever the node already
+    // carries when it differs from the filename (something deliberately
+    // named it), and fall back to the filename. Blindly resetting to the
+    // filename here used to erase a caller's title on every re-upsert.
+    const existingTitle = typeof existing.title === 'string' ? existing.title : '';
+    const nextTitle =
+      args.title?.trim() || (existingTitle && existingTitle !== filename ? existingTitle : filename);
     const [updated] = await db
       .update(nodes)
       .set({
-        title: filename,
+        title: nextTitle,
         data: { ...preserved, ...newData },
         updatedAt: new Date(),
         ...(sameContent ? {} : { embedding: null }),
@@ -506,11 +587,11 @@ export async function upsertFile(args: {
       .values({
         ownerId: args.ownerId,
         type: 'file',
-        title: filename,
+        title: args.title?.trim() || filename,
         slug: filename,
         path: args.parentPath,
         data: newData,
-        tags: ['file'],
+        tags: [...new Set(['file', ...(args.tags ?? [])])],
       })
       .returning();
     if (!inserted) throw new Error('upsertFile: insert returned no row');
