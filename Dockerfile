@@ -43,6 +43,7 @@ COPY server/api/package.json server/api/package.json
 COPY server/mcp/package.json server/mcp/package.json
 COPY server/sandboxd/package.json server/sandboxd/package.json
 COPY server/web/package.json server/web/package.json
+COPY client/desktop/package.json client/desktop/package.json
 COPY client/web/package.json client/web/package.json
 COPY e2e/package.json e2e/package.json
 COPY packages/agent-runtime/package.json packages/agent-runtime/package.json
@@ -80,7 +81,10 @@ COPY packages/web-ui/package.json packages/web-ui/package.json
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 build-essential ca-certificates \
     && npm install -g pnpm@11.1.2 \
-    && pnpm install --frozen-lockfile \
+    # ELECTRON_SKIP_BINARY_DOWNLOAD: client/desktop is a workspace member, so
+    # its electron dep installs here too — skip the ~100MB binary download the
+    # images never run (the desktop app is built by desktop.yml, not here).
+    && ELECTRON_SKIP_BINARY_DOWNLOAD=1 pnpm install --frozen-lockfile \
     && apt-get purge -y python3 build-essential && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* /root/.npm /root/.local/share/pnpm/store /root/.cache
 

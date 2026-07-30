@@ -6,7 +6,8 @@ notes, conversations, contacts, and calendar into one structured memory you
 *own*, running on your hardware — and then works on its own, in the
 background, so things happen without you asking.
 
-You talk to it on the web or Telegram (text or voice). You connect Claude to
+You talk to it on the web, the [desktop app](docs/desktop.md), or Telegram
+(text or voice). You connect Claude to
 it over MCP. You drop a PDF in chat and it's indexed before you've finished
 your sentence. But the part you can't get anywhere else: while you sleep, it
 reads your inbox, files the receipts, surfaces the thing you forgot, and texts
