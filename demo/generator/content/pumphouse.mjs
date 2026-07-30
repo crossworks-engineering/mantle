@@ -3,6 +3,7 @@
 // site-visit series, technical queries, minutes, the snag table, the
 // lead-time email saga.
 import { first } from '../lib/world.mjs';
+import { procedureSections } from '../lib/longform.mjs';
 
 const SIGNALS = ['inlet pressure', 'discharge pressure', 'flow (delivery)', 'sump level', 'motor winding temp', 'bearing vibration', 'valve position', 'wet-well level'];
 const AREAS = ['RTU panel', 'motor control centre', 'valve chamber', 'wet well', 'instrument rack', 'comms cabinet', 'standby generator bay', 'chlorine room interface'];
@@ -83,6 +84,7 @@ function procedureBody(rng, famDef, rev) {
     '## Safety', 'PS3 remains a live water asset throughout. No safety interlock is ever transferred to software. If any step fails twice, stop and invoke the rollback procedure — do not improvise on site.', '',
     '## Steps', ...steps, '',
     '## Verification', 'The changeover is complete only when one full pump cycle has run under control-room command with all telemetry healthy, and the commissioning file holds a signed loop-check record for every point.', '',
+    ...procedureSections(rng, { signals: SIGNALS, areas: AREAS }), '',
     '## Revision history', `- Rev ${rev}: ${famDef.revNotes[rev]}`,
   ].join('\n');
 }

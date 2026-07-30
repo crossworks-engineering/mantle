@@ -1,5 +1,7 @@
 // HANDBOOK — the studio's operating manual as a nested page tree, plus the
 // documentation collection (on-disk markdown guides, retrieval-only depth).
+import { guideSections } from '../lib/longform.mjs';
+
 export function generate(rngRoot) {
   const rng = rngRoot.fork('handbook');
   const nodes = [], docs = [], turns = [];
@@ -61,7 +63,13 @@ export function generate(rngRoot) {
   guideTopics.forEach(([slug, title], i) => {
     docs.push({
       collection: 'engineering-guides', relpath: `${String(i + 1).padStart(2, '0')}-${slug}.md`,
-      title, body: `# ${title}\n\n${rng.pick(paras)}\n\n${rng.pick(paras)}\n\n- Keep the template current.\n- Route changes through the review gate.\n- File examples against the project, not the guide.`,
+      title,
+      body: [
+        `# ${title}`, '', rng.pick(paras), '', rng.pick(paras), '',
+        ...guideSections(rng),
+        '- Keep the template current.', '- Route changes through the review gate.',
+        '- File examples against the project, not the guide.',
+      ].join('\n'),
     });
     docs.push({
       collection: 'engineering-guides', relpath: `${String(i + 1).padStart(2, '0')}-${slug}-checklist.md`,

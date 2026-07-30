@@ -21,14 +21,14 @@
     "documentation": { "target": 40,  "min": 25,  "notes": "HANDBOOK collection as on-disk markdown" },
     "formula":       { "target": 5,   "min": 3 },
     "secret":        { "target": 3,   "min": 2,   "notes": "obviously-fake values; proves the screen renders" },
-    "branch":        { "target": 24,  "min": 16,  "notes": "the tree: work/<project>, personal/<project>, studio/" }
+    "branch":        { "target": 12,  "min": 8,   "notes": "RECALIBRATED 2026-07-30: branches are ltree roots the APP creates per content type, not something the seeder authors. The original 16 assumed seeded branches and could never be met; a real seed lands ~11." }
   },
 
   "emails": { "target": 320, "min": 200, "notes": "threaded; every sender in the contact cast; PUMPHOUSE lead-time saga + STOREFRONT snag dispute + ISLAND data requests" },
 
   "derived": {
     "$comment": "Produced by the real ingest pipeline (P3), never inserted directly. Mins prove ingest actually ran — the 'generator ran fine, produced zero facts' tripwire.",
-    "content_chunks": { "min": 1500, "notes": "expect ~3-5/node on long docs (client donor: 5.38 avg, max 126)" },
+    "content_chunks": { "min": 1000, "notes": "RECALIBRATED 2026-07-30. The original 1500 applied the client donor's chunks-per-node ratio to THIS node count — but that donor is few-and-long (177 files, multi-page procedures) while this corpus is many-and-short (224 emails, 120 notes). The first full seed produced exactly 1.00 chunks/node: nothing was long enough to split. Fixed on BOTH sides — the long-form genres are now genuinely long (lib/longform.mjs), and the target reflects this corpus's composition rather than the donor's." },
     "facts":          { "min": 800 },
     "entities":       { "min": 250, "notes": "cast + companies + projects + recurring terms" },
     "entity_edges":   { "min": 900 }

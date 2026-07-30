@@ -3,6 +3,7 @@
 // tables with formula columns, reference files, the data-request thread,
 // and a live deadline (+14d) the demo's tasks and turns point at.
 import { first } from '../lib/world.mjs';
+import { researchSections } from '../lib/longform.mjs';
 
 export function generate(rngRoot) {
   const rng = rngRoot.fork('island');
@@ -21,7 +22,11 @@ export function generate(rngRoot) {
     ['island-risk-register', 'ISLAND risk register', 'Held risks: utility application lead time (long pole, mitigation is early submission), meter data gaps in March (interpolated, flagged in the report), demand-charge tariff change mid-study (sensitivity in the findings), single-relay failure mode of the breaker-level option (retired by choosing feeder-level).'],
   ];
   pages.forEach(([id, title, body], i) =>
-    nodes.push({ id, kind: 'page', branch: `${B}.research`, title, body: `# ${title}\n\n${body}`, offset: -55 + i * 6 + rng.int(0, 2), tags: ['island', 'research'], meta: {} }));
+    nodes.push({
+      id, kind: 'page', branch: `${B}.research`, title,
+      body: [`# ${title}`, '', body, '', ...researchSections(rng, { topic: 'the islanding scheme' })].join('\n'),
+      offset: -55 + i * 6 + rng.int(0, 2), tags: ['island', 'research'], meta: {},
+    }));
 
   // ── Load-profile tables with formula columns ──────────────────────────────
   const hours = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00'];
