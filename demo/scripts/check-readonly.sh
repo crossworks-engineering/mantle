@@ -43,6 +43,30 @@ else
 fi
 echo
 
+# ── The BROWSER's data path, which is what actually decides whether a visitor
+# sees content or an eternal spinner. Three times in P5 a layer worked in
+# isolation while the visitor saw nothing: API with no UI behind it, UI that
+# bounced to /login, and finally a UI whose fetches went straight to the API
+# and bypassed the cookie-injecting edge. Every one of those returned 200 for
+# the page. A 200 with a spinner is the failure this check exists to catch.
+envjs=$(curl -s --max-time 20 "$BASE/env.js")
+api_base=$(printf '%s' "$envjs" | grep -oE '"apiBase":"[^"]*"' | cut -d'"' -f4)
+if [ "$api_base" = "$BASE" ] || [ -z "$api_base" ]; then
+  say "browser apiBase" "same origin ($BASE)"
+else
+  say "browser apiBase" "✗ $api_base — bypasses the edge, so every fetch 401s and the UI spins"
+  fail=1
+fi
+
+# And that origin must actually return data, not just a 200.
+total=$(curl -s --max-time 20 "$BASE/api/dashboard" | grep -oE '"nodesTotal":[0-9]+' | cut -d: -f2)
+if [ -n "$total" ] && [ "$total" -gt 0 ] 2>/dev/null; then
+  say "content behind that origin" "$total nodes"
+else
+  say "content behind that origin" "✗ no nodes — the UI would render an empty shell"; fail=1
+fi
+echo
+
 # ── Reads must work, and must be authenticated by the injected cookie ────────
 for path in /api/version /api/shell /api/dashboard /api/notes /api/pages /api/tasks; do
   c=$(code GET "$path")
