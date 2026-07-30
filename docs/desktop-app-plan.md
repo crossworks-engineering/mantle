@@ -55,26 +55,35 @@ How the renderer is served — two candidates, phased:
    `/n/[id]`, already redirect that way). Only worth it once the desktop app
    has proven itself.
 
-### The one real constraint: CORS on auth paths
+### CORS: do what the mobile companion does — be a native client
 
-`server/web/server/middleware/gate.ts` **refuses `*` on `/api/auth*`** — a
-deliberate gate we keep. A shipped desktop app can't ask every owner to
-hand-edit `MANTLE_API_CORS_ORIGINS`, so the brain must recognise the desktop
-app by default. Options, safest first (Jason decides):
+The worry was `gate.ts` refusing `*` on `/api/auth*`. But the gate never
+*rejects* a request by Origin — it only decides whether to emit
+`Access-Control-Allow-Origin` headers, and `corsOrigin()` short-circuits when
+no `Origin` header is present (`gate.ts:61`, "same-origin / non-browser — no
+CORS needed"). CORS is *browser*-enforced; the credential is the bearer token.
+That's why the Flutter companion needs zero CORS setup: native HTTP sends no
+`Origin`, so the question never arises.
 
-- **A. Ship a canonical desktop origin in the default allowlist** (e.g.
-  `app://mantle-desktop`), the way mobile apps are recognised today. The shell
-  normalises its outgoing `Origin` to that value for requests to the configured
-  brain only. Opt-out env stays available. CORS still does its real job:
-  browsers can't fake this origin.
-- B. Per-box opt-in (`MANTLE_DESKTOP=1`) that enables the origin — safer-sounding
-  but adds an install step to every box, which is an onboarding edge (a
-  first-class bug by our own rules).
-- C. Leave it manual (dev-only posture) for the spike; decide A/B before any
-  release.
+Electron is a native client too — it just embeds Chromium, which self-enforces
+CORS inside the renderer. So the desktop app fences **its own** network layer,
+scoped strictly to the user-configured brain origin:
 
-Phase 0 runs with C against the test box (its allowlist already carries the
-localhost origins).
+- `webRequest.onBeforeSendHeaders`: drop `Origin` on requests to the brain
+  (the app declares itself native, which it is);
+- `webRequest.onHeadersReceived`: add the ACAO headers to the brain's
+  responses so the embedded renderer accepts them.
+
+**Zero server changes; works against every existing box in the fleet today**,
+including boxes that will never set `MANTLE_API_CORS_ORIGINS`. Nothing about
+the server's browser-facing gate is weakened — a real browser tab still can't
+do any of this; the fencing exists only inside the app the user installed and
+pointed at their own brain. This is the same trust stance as the companion.
+
+The honest-CORS alternative (allowlist a canonical `app://` origin by default,
+server-side) stays on the table for Phase 3's static-export shape, but it only
+helps boxes running a new-enough server — fleet skew makes it a worse default
+than native parity.
 
 ## Shell design
 
@@ -106,6 +115,37 @@ client/desktop/
 - **Version skew:** bundled UI no longer matches the box by construction. On
   connect, read the server version and gate on a minimum; surface "brain is
   newer/older" in the connect screen.
+
+## What the mobile companion already proved (audit 2026-07-30)
+
+`~/Projects/mantle-companion` is the existence proof that a detached native
+client works against the fleet, and it hands us the patterns:
+
+- **Connect flow**: single URL field → probe `GET /api/version` (10s timeout,
+  require `200` + a `version` key) → persist only on success, with one
+  plain-language error otherwise. Copy verbatim.
+- **Three-state session gate**: `needsServer | loggedOut | loggedIn` is the
+  *only* input to routing; screens mutate state, the router follows. Maps
+  cleanly onto the desktop shell's window/route guard.
+- **Config vs secret split**: server URL in plain local config; token in the
+  OS keychain (desktop: `safeStorage`), attached per-request by one
+  interceptor with a `skipAuthHandler` opt-out for the login call itself.
+- **Auth-failure contract**: treat **401 OR a 3xx redirecting to `/login`** as
+  session-invalid (revoked-but-unexpired tokens surface as the latter). Fetch
+  must use `redirect: 'manual'` or the login HTML arrives as a 200.
+- **Authed assets**: mobile fetches bytes through the authed client and renders
+  from memory — no token-in-URL. Desktop can do better with a header-attaching
+  protocol/webRequest hook, or keep the web client's `?at=` flow; either way
+  the pattern is proven.
+- **Skew posture**: degrade, don't die — schema-version guard on the turn
+  stream, 404 = feature-dark fallback, unknown enums default safe.
+
+Deltas we deliberately do *not* inherit: no multi-server profiles (mobile's
+"change server" wipes the URL but leaks the old token to the new brain — key
+tokens by profile instead); no scheme auto-prefix on the URL input; no expiry
+tracking (mobile holds a 1-year token; desktop rides the web path —
+`POST /api/auth/token`, 30-day TTL, refresh <7 days out — which `web-ui`
+already implements); no version comparison despite fetching `/api/version`.
 
 ## Known port gotchas (from the audit)
 
@@ -148,9 +188,10 @@ encryption.
 
 ## Open questions for Jason
 
-1. CORS recognition: option **A** (default-allow the canonical desktop origin)
-   is my recommendation — same trust stance as the mobile token flow — but it
-   widens the default surface, so it's your call.
+1. CORS: native-parity fencing (strip `Origin`/inject ACAO inside the app,
+   scoped to the configured brain) is the recommendation — zero server changes,
+   whole fleet works day one. Sign off, or prefer the server-side canonical
+   origin allowlist despite the version-skew cost?
 2. Is multi-brain a v1 feature or a nice-to-have? (Partitions make it cheap
    either way.)
 3. Auto-update from public GitHub releases — comfortable with the desktop app
