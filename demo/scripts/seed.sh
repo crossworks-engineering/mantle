@@ -23,7 +23,10 @@ export S3_SECRET_KEY="minio12345"
 export S3_BUCKET="mantle"
 export TIKA_URL="http://127.0.0.1:56998"
 export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
-export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWYwMTI=}"
+# Must base64-decode to EXACTLY 32 bytes or onboarding 500s ("must decode to
+# 32 bytes"). This is 'demo-master-key-0123456789abcdef' — a fixed dummy, so a
+# re-seed can reopen the vault it sealed; the demo holds no real secrets.
+export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
 export MANTLE_RATE_LIMIT_SCALE="${MANTLE_RATE_LIMIT_SCALE:-50}"   # a seed is a burst by nature
 export EXTRACT_CONCURRENCY="${EXTRACT_CONCURRENCY:-4}"
 export PORT="$WEB_PORT"
