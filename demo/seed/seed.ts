@@ -236,6 +236,58 @@ async function seedTables(m: Manifest) {
   }
 }
 
+// Secrets and formulas: small, but they are what make /secrets and /formulas
+// render as a used brain rather than an empty state.
+async function seedOddments(m: Manifest) {
+  for (const n of m.nodes.filter((x) => x.kind === 'secret')) {
+    const r = (await post('/api/secrets', {
+      title: n.title,
+      description: n.body,
+      kind: 'password',
+      tags: n.tags,
+      fields: [{ label: 'value', value: String(n.meta.value ?? 'demo-placeholder'), secret: true }],
+    })) as { secret?: { id?: string }; id?: string };
+    const id = r.secret?.id ?? r.id;
+    if (id) created.set(n.id, id);
+  }
+  for (const n of m.nodes.filter((x) => x.kind === 'formula')) {
+    const r = (await post('/api/formulas', {
+      title: n.title,
+      tags: n.tags,
+      spec: { expression: String(n.meta.expr ?? ''), description: n.body },
+    })) as { formula?: { id?: string }; id?: string };
+    const id = r.formula?.id ?? r.id;
+    if (id) created.set(n.id, id);
+  }
+}
+
+// Files go up as real multipart uploads — the same path the UI uses — so Tika
+// and the image handling run for real. The bytes come from the generator, not
+// from stubs, which is why that mattered.
+async function seedFiles(m: Manifest) {
+  const dir = join(here, '..', 'generator', 'out', 'files');
+  let ok = 0;
+  for (const f of m.files) {
+    const form = new FormData();
+    form.set('parentPath', 'files');
+    form.set('file', new Blob([readFileSync(join(dir, f.name))]), f.name);
+    const res = await fetch(`${SERVER}/api/files/files`, {
+      method: 'POST',
+      headers: cookie ? { cookie } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      if (ok === 0) throw new Error(`file upload ${f.name} → ${res.status} ${(await res.text()).slice(0, 160)}`);
+      continue; // a later straggler shouldn't discard a good run
+    }
+    const body = (await res.json().catch(() => ({}))) as { file?: { id?: string }; id?: string };
+    const id = body.file?.id ?? body.id;
+    if (id) created.set(f.id, id);
+    ok++;
+  }
+  return ok;
+}
+
 // ── Emails: no API exists (mail arrives by IMAP), so this writes what the
 // sync worker would have written, against a DISABLED demo mailbox that can
 // never actually connect anywhere.
@@ -258,9 +310,17 @@ async function seedEmails(sql: Sql, m: Manifest, ownerId: string) {
     `;
     const nodeId = nodeRows[0]?.id;
     await sql`
-      insert into emails (node_id, account_id, message_id, thread_key, subject, from_address, to_addresses, sent_at, body_text)
-      values (${nodeId}, ${accountId}, ${`<${e.id}@harbourlabs.example.com>`}, ${e.thread},
-              ${e.subject}, ${e.from}, ${sql.array(e.to)}, ${sentAt}, ${e.body})
+      insert into emails (
+        node_id, account_id, provider_msg_id, rfc_message_id, thread_id,
+        from_addr, to_addrs, cc_addrs, subject, snippet, body_text,
+        internal_date, folder, is_read, delivery_kind
+      )
+      values (
+        ${nodeId}, ${accountId}, ${e.id}, ${`<${e.id}@harbourlabs.example.com>`}, ${e.thread},
+        ${e.from}, ${sql.array(e.to)}, ${sql.array(e.cc ?? [])},
+        ${e.subject}, ${e.body.slice(0, 200)}, ${e.body},
+        ${sentAt}, 'INBOX', true, 'direct'
+      )
       on conflict do nothing
     `;
     n++;
@@ -271,7 +331,7 @@ async function seedEmails(sql: Sql, m: Manifest, ownerId: string) {
 // ── Backdating: the manifest's offsets become the brain's history ───────────
 async function backdate(sql: Sql, m: Manifest) {
   const rows: Array<[string, string]> = [];
-  for (const n of [...m.nodes, ...m.tables]) {
+  for (const n of [...m.nodes, ...m.tables, ...m.files]) {
     const id = created.get(n.id);
     if (id) rows.push([id, at(n.offset).toISOString()]);
   }
@@ -302,6 +362,10 @@ async function main() {
   console.log('· notes, journals, tasks, events'); await seedSimple(manifest);
   console.log('· pages (parents first)'); await seedPages(manifest);
   console.log('· tables');     await seedTables(manifest);
+  console.log('· secrets, formulas'); await seedOddments(manifest);
+  console.log('· files (real multipart uploads → Tika runs for real)');
+  const files = await seedFiles(manifest);
+  console.log(`  ${files}/${manifest.files.length} uploaded`);
   console.log('· emails (no API — written as the sync worker would)');
   const mails = await seedEmails(sql, manifest, String(ownerId));
   console.log('· backdating the timeline');
