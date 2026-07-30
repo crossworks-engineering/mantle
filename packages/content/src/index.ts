@@ -626,6 +626,8 @@ export {
   projectSiteName,
   projectPeerName,
   PEER_NAME_MAX,
+  projectHouseStyle,
+  HOUSE_STYLE_MAX,
   projectFontKey,
   projectLogoKey,
   projectLogoType,
