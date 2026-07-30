@@ -557,12 +557,18 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@napi-rs/canvas':
+        specifier: 1.0.2
+        version: 1.0.2
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
       heic-convert:
         specifier: ^2.1.0
         version: 2.1.0
+      jszip:
+        specifier: ^3.10.1
+        version: 3.10.1
       mammoth:
         specifier: ^1.12.0
         version: 1.12.0

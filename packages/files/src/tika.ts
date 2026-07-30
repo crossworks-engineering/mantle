@@ -108,6 +108,79 @@ export async function parseTikaBytes(
 }
 
 /**
+ * Embedded images out of the formats no in-process extractor covers — the
+ * legacy binaries (.doc / .ppt / .xls / .rtf / .vsd) and anything else that
+ * reaches tier 2.
+ *
+ * Tika's `/unpack/all` endpoint returns a ZIP of the document's embedded
+ * resources: the picture parts plus two synthetic entries, `__TEXT__` (the
+ * extracted text) and `__METADATA__`, which we drop. This capability has been
+ * sitting in the stack unused since Tika was introduced — same self-hosted
+ * container, same never-leaves-the-box property as the text path.
+ *
+ * **No document order.** The endpoint hands back a bag of parts with no
+ * indication of where each appeared, so ordinals here are archive order,
+ * which is only loosely related to reading order. That's the honest ceiling
+ * for these formats and the reason docx/pptx/xlsx/pdf all get their own
+ * order-preserving extractors instead of routing through here.
+ *
+ * Never-throws, like every other function in this module: any failure (Tika
+ * down, timeout, unparseable input) is an empty result.
+ */
+export async function unpackTikaImages(
+  bytes: Buffer,
+  ext: string,
+  opts?: { timeoutMs?: number },
+): Promise<import('./embedded-images').EmbeddedImage[]> {
+  const url = `${tikaUrl()}/unpack/all`;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  try {
+    const { mimeForExt } = await import('./slug');
+    const res = await fetch(url, {
+      method: 'PUT',
+      body: bytes as unknown as BodyInit,
+      headers: {
+        'Content-Type': mimeForExt(ext),
+        // Off by default in PDFBox, and harmless for every other format.
+        'X-Tika-PDFextractInlineImages': 'true',
+        'X-Tika-PDFextractUniqueInlineImagesOnly': 'true',
+      },
+      signal: ac.signal,
+    });
+    if (!res.ok) return [];
+    const archive = Buffer.from(await res.arrayBuffer());
+    if (archive.length === 0) return [];
+
+    const { describeImageBytes } = await import('./embedded-images');
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(archive);
+    const out: import('./embedded-images').EmbeddedImage[] = [];
+    for (const name of Object.keys(zip.files).sort()) {
+      // Tika's synthetic entries, and the Office-generated preview thumbnail
+      // that is never part of the document's content.
+      if (name.startsWith('__')) continue;
+      if (/(^|\/)thumbnail\.\w+$/i.test(name)) continue;
+      const entry = zip.files[name];
+      if (!entry || entry.dir) continue;
+      const imgBytes = Buffer.from(await entry.async('uint8array'));
+      if (imgBytes.length === 0) continue;
+      const fallbackExt = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
+      out.push({
+        bytes: imgBytes,
+        ordinal: out.length + 1,
+        ...describeImageBytes(imgBytes, fallbackExt),
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Cheap liveness check — used by callers that want to log a warning when
  * Tika is down rather than silently degrading. Hits Tika's `/version`
  * endpoint with a short timeout; returns true iff a 2xx came back.
