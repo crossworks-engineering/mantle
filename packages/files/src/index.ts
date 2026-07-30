@@ -81,6 +81,8 @@ export {
   ensureFilesRootBranch,
   createFolder,
   ensureDatedUploadFolder,
+  ensureExtractedImagesFolder,
+  EXTRACTED_IMAGES_SLUG,
   updateFolderDescription,
   deleteFolder,
   renameFolderById,

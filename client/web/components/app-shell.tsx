@@ -21,6 +21,7 @@ import { UploadProvider, UploadDock } from '@/components/uploads/upload-provider
 import { AssistantDockProvider, useAssistantDock } from '@/components/assistant/assistant-dock';
 import { AssistantPanel } from '@/components/assistant/assistant-panel';
 import { PendingQuestionWatcher } from '@/components/pending/question-watcher';
+import { DesktopBridge } from '@/components/desktop/desktop-bridge';
 import { PickMode } from '@/components/assistant/pick-mode';
 import { FooterBar } from '@/components/layout/footer-bar';
 import { recordNavVisit } from '@/lib/nav-usage';
@@ -343,6 +344,7 @@ function ShellFrame({
       {/* Headless: toasts a blocked run's question the moment it arrives, with
             an "Answer" action that opens the assistant. Renders nothing. */}
       <PendingQuestionWatcher />
+      <DesktopBridge />
 
       {/* Upload dock — floats just above the footer bar. Inside the shell so it
             inherits --activity-w (sits left of the activity rail) and persists

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Connect — Mantle Desktop</title>
+    <link rel="stylesheet" href="./connect.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>Connect to your Mantle</h1>
+      <p class="hint">Enter your brain's URL — the same address you open in the browser.</p>
+      <form id="add-form" autocomplete="off">
+        <input
+          id="url-input"
+          type="text"
+          inputmode="url"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          placeholder="mantle.example.com"
+        />
+        <button id="add-button" type="submit">Connect</button>
+      </form>
+      <p id="error" class="error" hidden></p>
+      <section id="saved" hidden>
+        <h2>Saved brains</h2>
+        <ul id="profile-list"></ul>
+      </section>
+    </main>
+    <script type="module" src="./connect.ts"></script>
+  </body>
+</html>

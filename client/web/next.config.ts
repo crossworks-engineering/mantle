@@ -18,6 +18,13 @@ const rootPkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), '
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@mantle/web-ui'],
+  // Desktop shell (client/desktop) embeds this app as a self-contained node
+  // server. Opt-in so image builds keep today's output. The tracing root is
+  // pinned to the monorepo root so the standalone tree resolves workspace deps
+  // from THIS checkout (with several worktrees present Next would guess).
+  ...(process.env.MANTLE_STANDALONE
+    ? { output: 'standalone' as const, outputFileTracingRoot: join(__dirname, '../..') }
+    : {}),
   env: {
     NEXT_PUBLIC_APP_VERSION: rootPkg.version,
     NEXT_PUBLIC_GIT_SHA: process.env.MANTLE_GIT_SHA ?? '',

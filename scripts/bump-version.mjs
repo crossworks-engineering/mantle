@@ -20,9 +20,15 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const targets = ['package.json', 'server/web/package.json', 'client/web/package.json'].map((p) =>
-  join(root, p),
-);
+// client/desktop rides too: its version is what the packaged app reports
+// (app.getVersion) and what electron-updater compares against releases — a
+// drift there would stall or loop desktop auto-updates.
+const targets = [
+  'package.json',
+  'server/web/package.json',
+  'client/web/package.json',
+  'client/desktop/package.json',
+].map((p) => join(root, p));
 
 const arg = process.argv[2];
 if (!arg) {

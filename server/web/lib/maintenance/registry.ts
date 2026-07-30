@@ -214,6 +214,23 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     cwd: 'server/web',
   },
 
+  {
+    slug: 'extract-images-backfill',
+    title: 'Extract embedded images from existing documents',
+    description:
+      'Re-fires node_ingested for documents ingested before embedded-image extraction existed, so their diagrams and screenshots become real image files under files/extracted-images/. Skips documents that already produced images.',
+    kind: 'backfill',
+    status: 'live',
+    cost: 'llm',
+    schedulable: false,
+    script: 'scripts/extract-images-backfill.ts',
+    cwd: 'server/web',
+    applyFlag: '--go',
+    extraFlags: ['--types=<list>', '--limit=<n>', '--rate=<seconds>'],
+    notes:
+      'The parent documents are FREE — the image pass sits ahead of the extractor’s already_extracted guard, so no text/summary/embedding work re-runs. Spend is one vision call per image KEPT (gated on dimensions, byte floor and duplicate collapse; capped at 30/doc). Dry-run by default: it prints the candidate count and an upper bound first. Start with --limit=20 --go and read the real yield off the extract_images trace steps.',
+  },
+
   // ── Retired backfills (historical migrations — kept for reference) ───────
   {
     slug: 'relations-backfill',
