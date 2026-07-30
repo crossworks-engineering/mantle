@@ -70,7 +70,7 @@ for i in $(seq 1 120); do
 done
 echo "  ready"
 
-# Safe alongside Jason's dev stack: Next's one-dev-server-per-project-DIRECTORY
+# Safe alongside a running dev stack: Next's one-dev-server-per-project-DIRECTORY
 # limit matches by CWD, and this worktree's client/web is a different directory
 # with its own .next (see the repo CLAUDE.md on worktrees).
 echo "→ UI (client/web) on :$UI_PORT — this is where the 94 screens live"
