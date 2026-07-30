@@ -27,6 +27,54 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/secrets', 'secrets'],
   // The mail screen lives at /inbox; the topic keeps the user-facing name.
   ['/inbox', 'inbox'],
+  ['/formulas', 'formulas'],
+  ['/apps', 'apps'],
+  ['/docs', 'docs'],
+
+  // ── Review ─────────────────────────────────────────────────────────────
+  ['/models', 'models'],
+  ['/settings/discover', 'discover'],
+  ['/team-admin', 'team-admin'],
+  ['/pending', 'pending'],
+
+  // ── Settings ───────────────────────────────────────────────────────────
+  ['/settings/agents', 'agents'],
+  ['/settings/ai-workers', 'ai-workers'],
+  ['/settings/tools', 'tools'],
+  ['/settings/tool-groups', 'tool-groups'],
+  ['/settings/skills', 'skills'],
+  ['/settings/keys', 'keys'],
+  ['/settings/embedding', 'embedding'],
+  ['/settings/heartbeats', 'heartbeats'],
+  ['/settings/worker-groups', 'worker-groups'],
+  ['/settings/appearance', 'appearance'],
+  ['/settings/accounts', 'accounts'],
+  ['/settings/microsoft', 'microsoft'],
+  ['/settings/calendar', 'calendar'],
+  ['/settings/profile', 'profile'],
+  ['/settings/mcp', 'mcp'],
+  ['/settings/network', 'network'],
+  ['/settings/config', 'config'],
+  ['/settings/entities', 'entities'],
+  ['/settings/peers', 'peers'],
+  ['/settings/pdf-passwords', 'pdf-passwords'],
+  ['/settings/backups', 'backups'],
+  ['/settings/updates', 'updates'],
+  ['/settings/security', 'security'],
+  ['/settings/users', 'users'],
+  ['/settings/audit', 'audit'],
+
+  // ── System ─────────────────────────────────────────────────────────────
+  ['/studio', 'studio'],
+  ['/dev-tools', 'dev-tools'],
+  ['/runners', 'runners'],
+  ['/runs', 'runs'],
+  ['/sandboxes', 'sandboxes'],
+  ['/traces', 'traces'],
+  ['/debug', 'debug'],
+
+  // Dashboard. Matched exact-only by the '/' special case below.
+  ['/', 'dashboard'],
 ];
 
 const SORTED = [...ROUTE_TOPICS].sort((a, b) => b[0].length - a[0].length);
