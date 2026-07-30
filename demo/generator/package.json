@@ -1,0 +1,13 @@
+{
+  "name": "mantle-demo-generator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Deterministic generator for the demo brain's content. Zero dependencies on purpose: it must run anywhere (incl. the Mac, no Docker, no workspace install) and never drift with the app's dependency tree. NOT part of the pnpm workspace — joining it would touch a main-owned file, and the demo branch may only add files under demo/.",
+  "scripts": {
+    "gen": "node gen.mjs",
+    "test": "node --test test/",
+    "guard": "node guard.mjs out"
+  },
+  "engines": { "node": ">=22" }
+}

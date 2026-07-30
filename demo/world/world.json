@@ -137,9 +137,10 @@
   ],
 
   "vocabulary": [
-    { "term": "commissioning",  "spread": ["page", "task", "email", "journal", "chat"], "project": "pumphouse" },
+    { "$comment": "spread lists NODE TYPES (what search filters by). Minutes, site reports and technical queries are all notes — the genre lives in tags, the type is what makes a cross-type hit.",
+      "term": "commissioning",  "spread": ["page", "task", "email", "journal", "chat"], "project": "pumphouse" },
     { "term": "telemetry",      "spread": ["page", "note", "email", "chat"],            "project": "pumphouse" },
-    { "term": "snag list",      "spread": ["table", "task", "email", "minutes"],        "project": "pumphouse" },
+    { "term": "snag list",      "spread": ["table", "task", "email", "note"],           "project": "pumphouse" },
     { "term": "changeover",     "spread": ["page", "event", "email", "journal"],        "project": "pumphouse" },
     { "term": "loop check",     "spread": ["page", "task", "note"],                     "project": "pumphouse" },
     { "term": "fit-out",        "spread": ["table", "email", "event", "chat"],          "project": "storefront" },
@@ -147,10 +148,10 @@
     { "term": "islanding",      "spread": ["page", "table", "note", "chat"],            "project": "island" },
     { "term": "load profile",   "spread": ["table", "page", "email"],                   "project": "island" },
     { "term": "feasibility",    "spread": ["page", "task", "journal", "chat"],          "project": "island" },
-    { "term": "review gate",    "spread": ["page", "task", "minutes"],                  "project": "handbook" },
+    { "term": "review gate",    "spread": ["page", "task", "note"],                     "project": "handbook" },
     { "term": "headstock",      "spread": ["journal", "note", "table", "chat"],         "project": "lathe" },
     { "term": "taper",          "spread": ["event", "journal", "note"],                 "project": "trailrun" },
-    { "term": "lead time",      "spread": ["email", "task", "table", "minutes"],        "project": "pumphouse" }
+    { "term": "lead time",      "spread": ["email", "task", "table", "note"],           "project": "pumphouse" }
   ],
 
   "genres": [
