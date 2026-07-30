@@ -54,7 +54,10 @@ async function renderProfiles(): Promise<void> {
             ? ` · app ${shellVersion}`
             : '';
         open.append(
-          Object.assign(document.createElement('span'), { className: 'name', textContent: profile.name }),
+          Object.assign(document.createElement('span'), {
+            className: 'name',
+            textContent: profile.name,
+          }),
           Object.assign(document.createElement('span'), {
             className: 'origin' + (skew ? ' skew' : ''),
             textContent: `${profile.origin}${profile.version ? ` · v${profile.version}` : ''}${skew}`,
