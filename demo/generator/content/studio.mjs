@@ -40,19 +40,21 @@ export function generate(rngRoot) {
     nodes.push({ id, kind: 'secret', branch: 'studio.ops', title, body: 'Demo placeholder credential — not a real secret.', offset: -100 + i * 20, tags: [], meta: { value } }));
 
   // ── Formulas ──────────────────────────────────────────────────────────────
-  // A formula is a structured spec (id + typed variables), not a bare string —
-  // inputs and constants declared, the answer a `derived` expression over them.
+  // A formula is a structured spec (id + typed variables), not a bare string.
+  // Variable references are BRACED — `{symbol}`, the same dialect the table
+  // formula columns use. A bare identifier fails validation, because the spec
+  // parser syntax-checks expressions with a resolver that knows no names.
   const formulas = [
     ['formula-vat', 'VAT inclusive', 'Add VAT at the standard rate.',
-      [['amount', 'input'], ['rate', 'constant', null, 1.15], ['total', 'derived', 'amount * rate']]],
+      [['amount', 'input'], ['rate', 'constant', null, 1.15], ['total', 'derived', '{amount} * {rate}']]],
     ['formula-margin', 'Project margin %', 'Gross margin on a fixed-price job.',
-      [['value', 'input'], ['cost', 'input'], ['margin', 'derived', '(value - cost) / value * 100']]],
+      [['value', 'input'], ['cost', 'input'], ['margin', 'derived', '({value} - {cost}) / {value} * 100']]],
     ['formula-utilisation', 'Utilisation %', 'Studio utilisation for the month.',
-      [['billable_hours', 'input'], ['available_hours', 'input'], ['utilisation', 'derived', 'billable_hours / available_hours * 100']]],
+      [['billable', 'input'], ['available', 'input'], ['utilisation', 'derived', '{billable} / {available} * 100']]],
     ['formula-pace', 'Run pace (min/km)', 'Training pace from a logged run.',
-      [['minutes', 'input'], ['km', 'input'], ['pace', 'derived', 'minutes / km']]],
+      [['minutes', 'input'], ['km', 'input'], ['pace', 'derived', '{minutes} / {km}']]],
     ['formula-ride-through', 'Ride-through hours', 'Storage ride-through at a given load.',
-      [['kwh_usable', 'input'], ['kw_load', 'input'], ['hours', 'derived', 'kwh_usable / kw_load']]],
+      [['kwh_usable', 'input'], ['kw_load', 'input'], ['hours', 'derived', '{kwh_usable} / {kw_load}']]],
   ];
   formulas.forEach(([id, title, desc, vars], i) =>
     nodes.push({
