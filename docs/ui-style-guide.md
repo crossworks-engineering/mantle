@@ -206,6 +206,31 @@ Shared app-level patterns (`components/`):
 
 - `Label` + field wrapped in `space-y-1.5`; stack fields with `space-y-4`.
 - Use `Input`, `Textarea` (not raw elements). Tag fields use `<TagInput>`.
+- **Every settings field carries a `<FieldHint>`** (`ui/field-hint.tsx`) — the
+  dimmed one-liner under the control. Not decoration: a number with no stated
+  effect is a number nobody dares change.
+  - **Say the effect, not the value.** "Default 3" tells the operator nothing.
+    Lead with what moving the field *does*, and fold the default into that
+    sentence ("…; 20 is plenty"). Read defaults from source — never guess them.
+  - **Two sentences, ~120 chars, no jargon that isn't already on screen.**
+  - **`warn` is for fields where excess bites** — money, box load, or answer
+    quality. It renders in `warning-ink` after the description, so the hint
+    reads in two tones. Most fields have no `warn`; using it everywhere makes
+    it invisible where it counts.
+  - **Wire it up for screen readers**: give the hint the field's `id` and put
+    `aria-describedby={hintId(id)}` on the input.
+  - **Field hints only.** A `<fieldset>` intro that explains a whole section
+    stays a plain `<p className="text-xs text-muted-foreground">` — it isn't
+    describing one control, so it takes no `id` and no `aria-describedby`.
+    Don't restate the section intro on each field inside it.
+
+  ```tsx
+  <Label htmlFor="historyLimit">Turns to replay</Label>
+  <Input id="historyLimit" aria-describedby={hintId('historyLimit')} … />
+  <FieldHint id="historyLimit" warn="Each replayed turn is re-billed on every request.">
+    How much of the recent conversation is re-sent with every message.
+  </FieldHint>
+  ```
 - **Date / time entry uses `<DateTimePicker value onChange clearable?>`**
   (`components/ui/date-time-picker.tsx`) — the shadcn Calendar in a popover +
   a time field. Don't use the native `datetime-local` input (used by events +
