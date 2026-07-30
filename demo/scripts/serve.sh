@@ -79,5 +79,9 @@ fi
 
 echo
 echo "demo serving at http://127.0.0.1:$EDGE_PORT  (ctrl-c to stop)"
-trap - EXIT
-wait
+# `wait` would return immediately: the app was setsid'd into its own session,
+# so it is not a job of this shell and the script would exit at once — taking
+# the EXIT trap's teardown with it, or (with the trap removed) leaving a stack
+# nobody is watching. Poll the app instead, and tear down when it goes away.
+while kill -0 "$(cat "$web_pid_file" 2>/dev/null)" 2>/dev/null; do sleep 5; done
+echo "app exited — tearing down the edge"
