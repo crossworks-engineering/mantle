@@ -34,6 +34,28 @@ export PORT="$WEB_PORT"
 # leak into a seeding run — explicit process env beats .env.local in Next.
 unset MANTLE_DETACHED_DEV NEXT_PUBLIC_MANTLE_API_BASE NEXT_PUBLIC_MANTLE_API_TOKEN MANTLE_DEMO || true
 
+# The extractor needs a real chat model (summaries, facts, entities). The key
+# is read from a file OUTSIDE the repo so it is never pasted into a terminal
+# that is being transcribed, never lands in shell history, and never reaches
+# the working tree. Create it yourself:
+#
+#   install -m 600 /dev/null ~/.mantle-demo-openrouter-key
+#   $EDITOR ~/.mantle-demo-openrouter-key     # paste the key, nothing else
+#
+# Without it the seed still runs; extraction produces nothing and verify.ts
+# fails with that exact diagnosis.
+KEY_FILE="${DEMO_KEY_FILE:-$HOME/.mantle-demo-openrouter-key}"
+if [ -z "${DEMO_OPENROUTER_KEY:-}" ] && [ -r "$KEY_FILE" ]; then
+  DEMO_OPENROUTER_KEY="$(tr -d '[:space:]' < "$KEY_FILE")"
+  export DEMO_OPENROUTER_KEY
+fi
+if [ -n "${DEMO_OPENROUTER_KEY:-}" ]; then
+  echo "→ chat model: key loaded (${#DEMO_OPENROUTER_KEY} chars) — extraction will run"
+else
+  echo "⚠ no chat-model key: content will seed but extraction produces nothing."
+  echo "  See the KEY_FILE note in this script."
+fi
+
 web_pid_file="$ART/web.pid"; web_log="$ART/web.log"
 api_pid_file="$ART/api.pid"; api_log="$ART/api.log"
 
