@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Stand the SERVE-time demo up locally, exactly as the site box will run it:
+# a Caddy in front doing the read-only edge, the real app behind it, and the
+# app connected as the read-only Postgres role.
+#
+# This is what P5 is verified against — the edge is only real if you can poke
+# it. Ports are the demo range, so it runs alongside everything else.
+#
+#   demo/scripts/serve.sh          up, then leaves it running
+#   demo/scripts/serve.sh --check  up, run check-readonly.sh, tear down
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+DEMO="demo"; ART="$DEMO/.run"; mkdir -p "$ART"
+
+WEB_PORT=3903          # the app itself (not public)
+EDGE_PORT=56080        # Caddy — this is what a visitor would hit
+export DATABASE_URL="postgres://demo_reader:demo_reader_not_a_secret@127.0.0.1:56432/postgres"
+export S3_ENDPOINT="http://127.0.0.1:56900"
+export S3_REGION="us-east-1"; export S3_ACCESS_KEY="minio"; export S3_SECRET_KEY="minio12345"; export S3_BUCKET="mantle"
+export TIKA_URL="http://127.0.0.1:56998"
+export MANTLE_DOCS_ROOT="$(pwd)/demo/generator/out/docs"
+export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
+export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
+export MANTLE_LOCAL_EMBEDDING_URL="${MANTLE_LOCAL_EMBEDDING_URL:-http://127.0.0.1:56434/v1}"
+export PORT="$WEB_PORT"
+unset MANTLE_DETACHED_DEV NEXT_PUBLIC_MANTLE_API_BASE NEXT_PUBLIC_MANTLE_API_TOKEN MANTLE_DEMO MANTLE_RUNS || true
+
+web_pid_file="$ART/serve-web.pid"; web_log="$ART/serve-web.log"
+cleanup() {
+  [ -f "$web_pid_file" ] && { pgid=$(ps -o pgid= -p "$(cat "$web_pid_file")" 2>/dev/null | tr -d ' '); [ -n "${pgid:-}" ] && kill -TERM -"$pgid" 2>/dev/null; rm -f "$web_pid_file"; }
+  docker rm -f mantle_demo_edge >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+echo "→ read-only Postgres role"
+docker exec -i mantle_demo_pg psql -U postgres -d postgres -q < "$DEMO/deploy/readonly-role.sql"
+echo "  demo_reader ready"
+
+echo "→ mint the visitor session"
+# Minted with the OWNER connection: the reader role cannot even read auth.users
+# until the grants above land, and this must not depend on that ordering.
+SESSION=$(DATABASE_URL="postgres://postgres:postgres@127.0.0.1:56432/postgres" \
+  pnpm -s -C server/web exec tsx ../../demo/seed/mint-session.ts | tail -1)
+[ -n "$SESSION" ] || { echo "✗ failed to mint a session"; exit 1; }
+echo "  minted (${#SESSION} chars, never printed)"
+
+echo "→ render the edge config"
+mkdir -p "$ART/edge"
+sed -e "s|__DEMO_SESSION__|$SESSION|" \
+    -e "s|__DEMO_WEB__|host.docker.internal:$WEB_PORT|" \
+    -e "s|__DEMO_API__|host.docker.internal:$WEB_PORT|" \
+    -e "s|^demo\.mantle-ai\.tech {|:80 {|" \
+    "$DEMO/deploy/Caddyfile.demo" > "$ART/edge/Caddyfile"
+
+echo "→ app on :$WEB_PORT (as demo_reader)"
+( setsid pnpm -C server/web dev >"$web_log" 2>&1 & echo $! >"$web_pid_file" )
+for i in $(seq 1 120); do
+  curl -sf "http://127.0.0.1:$WEB_PORT/api/version" >/dev/null 2>&1 && break
+  sleep 1; [ "$i" = 120 ] && { echo "✗ app not ready:"; tail -25 "$web_log"; exit 1; }
+done
+echo "  ready"
+
+echo "→ edge on :$EDGE_PORT"
+docker rm -f mantle_demo_edge >/dev/null 2>&1 || true
+docker run -d --name mantle_demo_edge \
+  --add-host host.docker.internal:host-gateway \
+  -p "127.0.0.1:$EDGE_PORT:80" \
+  -v "$(pwd)/$ART/edge/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  caddy:2-alpine >/dev/null
+sleep 3
+curl -sf "http://127.0.0.1:$EDGE_PORT/api/version" >/dev/null 2>&1 \
+  && echo "  edge up" || { echo "✗ edge not answering"; docker logs mantle_demo_edge | tail -15; exit 1; }
+
+if [ "${1:-}" = "--check" ]; then
+  echo
+  "$DEMO/scripts/check-readonly.sh" "http://127.0.0.1:$EDGE_PORT"
+  exit $?
+fi
+
+echo
+echo "demo serving at http://127.0.0.1:$EDGE_PORT  (ctrl-c to stop)"
+trap - EXIT
+wait

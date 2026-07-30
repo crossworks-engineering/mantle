@@ -1,0 +1,58 @@
+# The demo's Caddy block — the read-only edge.
+#
+# Goes into the mantle-site Caddyfile in place of the parked redirect (see that
+# repo's DEPLOY.md, "The demo subdomain"). Two placeholders are substituted at
+# deploy time by demo/scripts/render-caddy.sh:
+#
+#   __DEMO_SESSION__   the minted session cookie value (demo/seed/mint-session.ts)
+#   __DEMO_WEB__       upstream host:port of the demo client
+#   __DEMO_API__       upstream host:port of the demo API
+#
+# ONE ORIGIN by design: the browser calls /api/** on this same host, so there
+# is no CORS anywhere. That recipe came from v1 and is the one part of it worth
+# keeping.
+#
+# NOTE the ordering below is load-bearing. Caddy evaluates `handle` blocks in
+# order, and the write-rejection MUST come before the proxies — put it after
+# and every write sails through to a real backend.
+
+demo.mantle-ai.tech {
+	encode zstd gzip
+
+	# ── Layer 1: refuse every write, before anything is proxied ──────────
+	# GET/HEAD/OPTIONS only. Everything else gets an honest 403 rather than
+	# a faked 200: a bogus success desyncs the screen's cache and makes the
+	# demo look broken, which is worse than an obvious "you can't do that".
+	# The app already renders this as a clean toast — v1 proved it.
+	@writes not method GET HEAD OPTIONS
+	handle @writes {
+		header Content-Type application/json
+		respond `{"error":"This is a read-only demo — changes are not saved."}` 403
+	}
+
+	# ── The visitor is the demo owner, without ever seeing a login ────────
+	# Caddy cannot sign a session (it is an HMAC over SESSION_SECRET), so a
+	# long-lived cookie is minted at deploy time and injected here. Set on
+	# the REQUEST only — never handed back to the browser, so it cannot be
+	# captured from a shared machine's cookie jar afterwards.
+	request_header Cookie "mantle_session=__DEMO_SESSION__"
+
+	handle /api/* {
+		reverse_proxy __DEMO_API__
+	}
+
+	handle {
+		reverse_proxy __DEMO_WEB__
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# The demo is a live product surface and must not be framed by a
+		# third party, but the guided tour (P8) may want to embed it on the
+		# marketing site — same-origin framing stays allowed.
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+	}
+}
