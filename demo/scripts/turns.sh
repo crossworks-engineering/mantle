@@ -63,7 +63,13 @@ DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
   pnpm -C server/web exec tsx ../../demo/seed/turns.ts "$@"
 
 echo "→ maintenance runs (populate maintenance_runs, and are honest work anyway)"
-# Real maintenance tasks over the freshly seeded brain — the same registry the
-# nightly cron drives. Non-fatal: a demo is still publishable if a maintenance
-# task has nothing to do.
-pnpm maintain 2>&1 | tail -6 || echo "  (maintenance reported nothing to do)"
+# NOTE: bare `pnpm maintain` only LISTS the registry — it runs nothing. Each
+# task needs its slug. These four are read-only or idempotent and are genuine
+# work on a freshly seeded brain: dedupe the entities extraction just created,
+# dedupe graph edges, reap old traces, ensure the pg-boss schema. Deliberately
+# NOT run: re-embed (expensive), rotate-master-key (destructive), sync-now
+# (would try to reach a mailbox), backup-* (nothing to back up here).
+for slug in entities-dedupe dedupe-edges traces-reap pgboss-init; do
+  echo "  · $slug"
+  pnpm maintain "$slug" 2>&1 | tail -2 || echo "    (reported nothing to do)"
+done

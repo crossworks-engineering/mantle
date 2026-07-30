@@ -105,10 +105,14 @@ export function generate(rngRoot) {
       const offset = -Math.round(rng.float() * 60) - 0.5;
       const id = `turn-${agent}-${String(++n).padStart(3, '0')}`;
       turns.push({ id, agent, offset: Math.round(offset * 10) / 10, prompt });
-      // ~40% of turns get a follow-up in the same thread.
-      if (rng.chance(0.4)) {
+      // Most turns get a follow-up, and some get a second — real threads are
+      // rarely one exchange, and each follow-up is another turn's worth of
+      // assistant_messages without another hand-written prompt.
+      const followUps = rng.chance(0.8) ? (rng.chance(0.35) ? 2 : 1) : 0;
+      for (let f = 0; f < followUps; f++) {
         turns.push({
-          id: `${id}-f`, agent, offset: Math.round((offset + 0.02) * 10) / 10,
+          id: `${id}-f${f + 1}`, agent,
+          offset: Math.round((offset + 0.02 * (f + 1)) * 10) / 10,
           prompt: rng.pick(FOLLOWUPS), followUp: true,
         });
       }
