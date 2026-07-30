@@ -24,8 +24,9 @@ import * as personal from './content/personal.mjs';
 import * as studio from './content/studio.mjs';
 import * as traffic from './content/traffic.mjs';
 import * as turns from './content/turns.mjs';
+import * as showcase from './content/showcase.mjs';
 
-const MODULES = { studio, pumphouse, storefront, island, handbook, personal, traffic, turns };
+const MODULES = { studio, pumphouse, storefront, island, handbook, personal, traffic, turns, showcase };
 
 const args = process.argv.slice(2);
 const argVal = (flag, dflt) => { const i = args.indexOf(flag); return i === -1 ? dflt : args[i + 1]; };
