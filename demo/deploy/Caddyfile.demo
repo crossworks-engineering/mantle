@@ -31,11 +31,21 @@ demo.mantle-ai.tech {
 	}
 
 	# ── The visitor is the demo owner, without ever seeing a login ────────
-	# Caddy cannot sign a session (it is an HMAC over SESSION_SECRET), so a
-	# long-lived cookie is minted at deploy time and injected here. Set on
-	# the REQUEST only — never handed back to the browser, so it cannot be
-	# captured from a shared machine's cookie jar afterwards.
-	request_header Cookie "mantle_session=__DEMO_SESSION__"
+	# TWO cookies are required, and missing the second sends every visitor to
+	# a login screen even though the API is perfectly authenticated:
+	#
+	#   mantle_session  the real credential. An HMAC over SESSION_SECRET, so
+	#                   Caddy cannot sign one — it is minted at deploy time
+	#                   (demo/seed/mint-session.ts) and injected here.
+	#   mantle_authed   client/web's PRESENCE cookie. Its middleware redirects
+	#                   to /login whenever this is absent, purely so a page
+	#                   load does not flash an empty shell before bouncing.
+	#                   It is spoofable by construction and grants nothing —
+	#                   the session above is what actually authenticates.
+	#
+	# Set on the REQUEST only — never handed back to the browser, so neither
+	# can be lifted from a shared machine's cookie jar afterwards.
+	request_header Cookie "mantle_session=__DEMO_SESSION__; mantle_authed=1"
 
 	handle /api/* {
 		reverse_proxy __DEMO_API__
