@@ -14,7 +14,6 @@
 // Deliberately NOT covered: mention, childPage and fileEmbed. All three need a
 // real node id to point at, and a showcase that fabricates ids would render
 // broken cards. They are called out in the page text instead of faked.
-import { owner } from '../lib/world.mjs';
 
 export function generate(rngRoot) {
   const rng = rngRoot.fork('showcase');

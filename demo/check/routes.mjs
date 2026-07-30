@@ -25,6 +25,14 @@
  * and this branch may only add files under demo/. Playwright is resolved from
  * the e2e package, which already has it installed with browsers.
  */
+/*
+ * `document` and `location` below appear only inside page.evaluate /
+ * waitForFunction callbacks. Those are serialised and run in the BROWSER, not
+ * in this Node process, so they are genuinely defined at the point of use —
+ * eslint just cannot see across that boundary. Declared here because the lint
+ * config is main-owned and this branch may only add files under demo/.
+ */
+/* global document, location */
 import { createRequire } from 'node:module';
 import { readdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
