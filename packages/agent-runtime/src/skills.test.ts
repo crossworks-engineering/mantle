@@ -1,9 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import {
-  composeSystemPromptWithSkills,
-  effectiveSkillSlugs,
-  effectiveToolSlugs,
-} from './skills';
+import { composeSystemPromptWithSkills, effectiveSkillSlugs, effectiveToolSlugs } from './skills';
 
 describe('effectiveSkillSlugs', () => {
   it("unions the agent's own skills with its granted groups' usage skills", () => {

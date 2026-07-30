@@ -288,7 +288,9 @@ function ProfileForm({ data }: { data: ProfileData }) {
             value={houseStyle}
             maxLength={2000}
             onChange={(e) => setHouseStyle(e.target.value)}
-            placeholder={'e.g. Never use em dashes (\u2014). Use a comma, a colon, or parentheses instead.'}
+            placeholder={
+              'e.g. Never use em dashes (\u2014). Use a comma, a colon, or parentheses instead.'
+            }
           />
           <p className="text-xs text-muted-foreground">
             Your writing rules, in your own words. Appended to <em>every</em> agent&apos;s prompt,

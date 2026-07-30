@@ -302,7 +302,11 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
         name: s.name,
         instructions: s.instructions,
       })),
-      composedPrompt: composeSystemPromptWithSkills(a.systemPrompt, attached, stylePrefs.houseStyle),
+      composedPrompt: composeSystemPromptWithSkills(
+        a.systemPrompt,
+        attached,
+        stylePrefs.houseStyle,
+      ),
     });
   }
 
