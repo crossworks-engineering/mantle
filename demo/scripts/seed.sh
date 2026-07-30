@@ -22,6 +22,10 @@ export S3_ACCESS_KEY="minio"
 export S3_SECRET_KEY="minio12345"
 export S3_BUCKET="mantle"
 export TIKA_URL="http://127.0.0.1:56998"
+# Documentation collections are DISK-backed: the generator writes the markdown
+# and the app indexes it in place, so the docs root points straight at the
+# generator's output. Absolute, and shared by every process that reads docs.
+export MANTLE_DOCS_ROOT="$(cd "$(dirname "$0")/../.." && pwd)/demo/generator/out/docs"
 export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
 # Must base64-decode to EXACTLY 32 bytes or onboarding 500s ("must decode to
 # 32 bytes"). This is 'demo-master-key-0123456789abcdef' — a fixed dummy, so a
@@ -29,6 +33,12 @@ export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcd
 export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
 export MANTLE_RATE_LIMIT_SCALE="${MANTLE_RATE_LIMIT_SCALE:-50}"   # a seed is a burst by nature
 export EXTRACT_CONCURRENCY="${EXTRACT_CONCURRENCY:-4}"
+# Onboarding provisions LOCAL embeddings, whose default URL is the compose
+# service name `ollama` — which does not resolve here, because the seed runs
+# the app from source on the host, not inside the compose network. Unset, every
+# extraction dies with ECONNREFUSED (not a 401 — the failure looks nothing like
+# a bad key, which is what makes it worth naming).
+export MANTLE_LOCAL_EMBEDDING_URL="${MANTLE_LOCAL_EMBEDDING_URL:-http://127.0.0.1:56434/v1}"
 export PORT="$WEB_PORT"
 # Never let a developer's own .env.local (which may point at a REAL brain)
 # leak into a seeding run — explicit process env beats .env.local in Next.

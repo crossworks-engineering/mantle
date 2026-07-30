@@ -288,6 +288,29 @@ async function seedFiles(m: Manifest) {
   return ok;
 }
 
+// Documentation is disk-backed, not a create endpoint: the generator already
+// wrote the markdown under MANTLE_DOCS_ROOT, so this just registers the
+// collection and lets the app index it in place. 'retrieval' depth is the
+// honest setting for reference material — searchable, not memorised.
+async function seedDocCollections(m: Manifest) {
+  const collections = [...new Set(m.docs.map((d) => d.collection))];
+  for (const key of collections) {
+    const res = await api('/api/docs/collections', {
+      method: 'POST',
+      body: JSON.stringify({
+        key,
+        label: key.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase()),
+        rootPath: key,
+        brainDepth: 'retrieval',
+        origin: 'demo',
+      }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+    if (body.ok === false) console.log(`  (${key}: ${body.message})`);
+  }
+  return collections.length;
+}
+
 // ── Emails: no API exists (mail arrives by IMAP), so this writes what the
 // sync worker would have written, against a DISABLED demo mailbox that can
 // never actually connect anywhere.
@@ -363,6 +386,9 @@ async function main() {
   console.log('· pages (parents first)'); await seedPages(manifest);
   console.log('· tables');     await seedTables(manifest);
   console.log('· secrets, formulas'); await seedOddments(manifest);
+  console.log('· documentation collections (disk-backed, indexed in place)');
+  const cols = await seedDocCollections(manifest);
+  console.log(`  ${cols} registered`);
   console.log('· files (real multipart uploads → Tika runs for real)');
   const files = await seedFiles(manifest);
   console.log(`  ${files}/${manifest.files.length} uploaded`);
