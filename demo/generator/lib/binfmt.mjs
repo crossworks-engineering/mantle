@@ -2,7 +2,13 @@
 // Real bytes matter: P3 runs the REAL file-ingest pipeline (Tika, image
 // handling), so the demo's files must be genuinely parseable — not stubs
 // with the wrong magic. Everything here is deterministic (fixed timestamps).
-import { deflateSync } from 'node:zlib';
+// NOTE: we deliberately do NOT use node:zlib's deflateSync. Its output varies
+// with the linked zlib build, so identical pixels produced different PNG bytes
+// on macOS and Linux — which silently broke the "same seed → identical bytes,
+// everywhere" guarantee. zlibStored() below emits a valid zlib stream using
+// STORED (uncompressed) deflate blocks, so every byte is ours and the output
+// is identical on any platform. PNGs get larger; they are gitignored build
+// output, so that costs nothing that matters.
 
 // ── CRC32 (shared by PNG + ZIP) ─────────────────────────────────────────────
 const CRC_TABLE = (() => {
@@ -18,6 +24,31 @@ export function crc32(buf) {
   let c = 0xffffffff;
   for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
+}
+
+// ── Deterministic zlib stream (stored deflate blocks) ───────────────────────
+function adler32(buf) {
+  let a = 1, b = 0;
+  for (let i = 0; i < buf.length; i++) { a = (a + buf[i]) % 65521; b = (b + a) % 65521; }
+  return ((b << 16) | a) >>> 0;
+}
+export function zlibStored(data) {
+  const MAX = 65535;                       // max payload of one stored block
+  const parts = [Buffer.from([0x78, 0x01])]; // CMF/FLG: deflate, 32K window, check ok
+  for (let off = 0; off < data.length || off === 0; off += MAX) {
+    const chunk = data.subarray(off, Math.min(off + MAX, data.length));
+    const final = off + MAX >= data.length ? 1 : 0;
+    const hdr = Buffer.alloc(5);
+    hdr[0] = final;                        // BFINAL + BTYPE=00, then byte-aligned
+    hdr.writeUInt16LE(chunk.length, 1);
+    hdr.writeUInt16LE(~chunk.length & 0xffff, 3);
+    parts.push(hdr, Buffer.from(chunk));
+    if (final) break;
+  }
+  const adler = Buffer.alloc(4);
+  adler.writeUInt32BE(adler32(data));
+  parts.push(adler);
+  return Buffer.concat(parts);
 }
 
 // ── ZIP (STORE method — no compression, maximally compatible) ───────────────
@@ -122,7 +153,7 @@ export function png(width, height, seed) {
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw, { level: 9 })),
+    chunk('IDAT', zlibStored(raw)),
     chunk('IEND', Buffer.alloc(0)),
   ]);
 }

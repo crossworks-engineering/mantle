@@ -29,6 +29,34 @@ test('same seed produces identical file bytes', () => {
   assert.deepEqual(a, b);
 });
 
+// Same-platform equality cannot catch encoder drift: node:zlib's deflateSync
+// output varies with the linked zlib build, so identical pixels once produced
+// different PNG bytes on macOS and Linux. These pinned hashes are the
+// cross-platform guarantee — if an encoder changes, this fails everywhere
+// rather than silently on one machine.
+test('rendered file bytes match their pinned hashes (cross-platform)', () => {
+  const GOLDEN = {
+    png:  '0e414590b619668966f83add6225e28a2dc2f01252dfe577c721b204a466a785',
+    pdf:  '8e06e985c298943ef9e85b5817513481f5cb0c1bce32cba12fe281058f9f9e0c',
+    xlsx: 'b299e42227d6a8ec6bfe58482cf805d16131f7cb2fa893f8981c51535a8fe325',
+    docx: '601c06f56e5a4d0c3216be485c4bc0d32cdeb828eda3dc2098c1d1192df8b755',
+  };
+  const actual = {};
+  for (const kind of Object.keys(GOLDEN)) {
+    const f = gen.files.find((x) => x.kind === kind);
+    actual[kind] = createHash('sha256').update(renderFile(f)).digest('hex');
+  }
+  // Self-check: hashing must be stable within a run before the pin means anything.
+  for (const kind of Object.keys(GOLDEN)) {
+    const f = gen.files.find((x) => x.kind === kind);
+    assert.equal(createHash('sha256').update(renderFile(f)).digest('hex'), actual[kind]);
+  }
+  const pinned = Object.entries(GOLDEN).filter(([, v]) => v);
+  for (const [kind, want] of pinned) {
+    assert.equal(actual[kind], want, `${kind} bytes changed — update the pin ONLY if the encoder change is intended`);
+  }
+});
+
 test('a different seed produces different content', () => {
   const h = (x) => createHash('sha256').update(JSON.stringify(x)).digest('hex');
   assert.notEqual(h(generateAll(1)), h(generateAll(2)));
