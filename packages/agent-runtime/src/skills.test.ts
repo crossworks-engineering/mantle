@@ -72,6 +72,7 @@ describe('effectiveToolSlugs', () => {
 
 describe('composeSystemPromptWithSkills — house style', () => {
   const skill = (name: string, instructions: string) => ({
+    id: `id-${name.toLowerCase()}`,
     slug: name.toLowerCase(),
     name,
     description: '',
