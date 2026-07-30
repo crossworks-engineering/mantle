@@ -139,6 +139,10 @@ li {
   color: var(--muted);
 }
 
+.profile .origin.skew {
+  color: #e2b93b;
+}
+
 .remove {
   padding: 0 12px;
   background: transparent;

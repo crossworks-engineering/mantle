@@ -13,6 +13,7 @@ type AddResult = { ok: true; profile: Profile } | { ok: false; error: string };
 declare global {
   interface Window {
     mantleDesktop: {
+      shellInfo(): Promise<{ version: string }>;
       listProfiles(): Promise<Profile[]>;
       addProfile(url: string): Promise<AddResult>;
       removeProfile(id: string): Promise<void>;
@@ -33,6 +34,8 @@ function showError(message: string | null): void {
   errorEl.textContent = message ?? '';
 }
 
+let shellVersion = '';
+
 async function renderProfiles(): Promise<void> {
   const profiles = await window.mantleDesktop.listProfiles();
   savedEl.hidden = profiles.length === 0;
@@ -44,9 +47,18 @@ async function renderProfiles(): Promise<void> {
 
         const open = document.createElement('button');
         open.className = 'profile';
+        // Bundled-UI vs server skew is visible, not fatal: surface it here and
+        // let per-feature degradation handle the rest (the mobile posture).
+        const skew =
+          profile.version && shellVersion && profile.version !== shellVersion
+            ? ` · app ${shellVersion}`
+            : '';
         open.append(
           Object.assign(document.createElement('span'), { className: 'name', textContent: profile.name }),
-          Object.assign(document.createElement('span'), { className: 'origin', textContent: profile.origin }),
+          Object.assign(document.createElement('span'), {
+            className: 'origin' + (skew ? ' skew' : ''),
+            textContent: `${profile.origin}${profile.version ? ` · v${profile.version}` : ''}${skew}`,
+          }),
         );
         open.addEventListener('click', async () => {
           const result = await window.mantleDesktop.connect(profile.id);
@@ -88,4 +100,7 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
-void renderProfiles();
+void (async () => {
+  shellVersion = (await window.mantleDesktop.shellInfo()).version;
+  await renderProfiles();
+})();

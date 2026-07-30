@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:ui": "bash scripts/build-ui.sh",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit"
   },

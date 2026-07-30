@@ -1,12 +1,17 @@
 # Mantle Desktop — Electron plan
 
-Status: **Phase 0 built and verified** (branch `feat/mantle-electron`,
-`client/desktop`). Verified 2026-07-30 against the hermetic e2e stack
-(brain :3900, client :3901): connect-screen probe → cross-origin bearer
-login → dashboard renders with live authed data → SSE connects through the
-fencing → preflighted `Idempotency-Key` POST passes → multipart upload +
-`?at=`-token image render → relaunch skips connect and keeps the session
-(per-profile partition). Real model turns aren't testable on that stack
+Status: **Phase 1 built and verified** (branch `feat/mantle-electron`,
+`client/desktop`). The shell now embeds the standalone `next build` of
+`client/web` (staged by `build:ui`, run as a `utilityProcess` on a sticky
+loopback port — sticky because localStorage is origin-scoped) and needs no
+dev server. Verified 2026-07-30 against the hermetic e2e stack: login, SSE,
+dashboard, and relaunch-after-abrupt-kill all pass on the embedded build.
+Phase 0 (dev-server renderer) verified the same day: probe → bearer login →
+SSE → preflighted `Idempotency-Key` POST → multipart upload + `?at=` image →
+partition persistence. Side find: the login bounce could deadlock when an
+abrupt shutdown dropped the presence cookie but kept the token — fixed in
+`client/web` (bounce re-asserts presence), plus the shell flushes the cookie
+store on window close. Real model turns aren't testable on the e2e stack
 (dummy LLM key by design). Nothing ships yet.
 
 ## Goal
@@ -34,15 +39,17 @@ desktop-only powers (deep links, notifications, tray, auto-update).
   `window.__MANTLE_ENV__` (today emitted by the `/env.js` route). The shell just
   injects that object itself with the user-chosen server URL.
 
-The Next *server* is used for exactly four small things, each with a contained
-replacement:
+The Next *server* is used for exactly four small things. Phase 1's
+embedded-standalone shape resolved them more cheaply than replacing them:
 
-| Today | Desktop replacement |
+| Today | Desktop resolution (as built) |
 | --- | --- |
-| `app/env.js/route.ts` emits `window.__MANTLE_ENV__` | preload injects it from the chosen server profile |
-| root layout SSRs brain appearance (`headers()`, `force-dynamic`) | client-side fetch (accept one paint flash) |
-| `(app)/layout.tsx` reads two nav-collapse `cookies()` | `localStorage` |
-| `middleware.ts` login redirect (UX-only, spoofable by design) | client-side route guard |
+| `app/env.js/route.ts` emits `window.__MANTLE_ENV__` | preload injects it (read-only); the served `/env.js` is neutralized by the shell |
+| root layout SSRs brain appearance (`headers()`, `force-dynamic`) | works — the embedded server gets `MANTLE_SERVER_ORIGIN` at spawn (multi-brain: later windows SSR the first brain's branding, cosmetic only) |
+| `(app)/layout.tsx` reads two nav-collapse `cookies()` | works — real server, real cookies |
+| `middleware.ts` login redirect (UX-only, spoofable by design) | works unchanged |
+
+These become real work only if Phase 3's static-export shape ever happens.
 
 ## Architecture decision
 

@@ -1,18 +1,18 @@
-# Mantle Desktop (Phase 0)
+# Mantle Desktop
 
 Electron shell around the owner UI. Design + phasing: [docs/desktop-app-plan.md](../../docs/desktop-app-plan.md).
 
-Phase 0 loads the UI from the `client/web` **dev server** — the shell itself
-only ships the connect screen, the per-brain session partitions, and the
-native-parity CORS fencing. Phase 1 embeds the built UI.
+The shell ships the connect screen, per-brain session partitions, the
+native-parity CORS fencing, and an **embedded copy of the built owner UI** —
+the standalone `next build` of `client/web`, run as a `utilityProcess` on a
+sticky loopback port (sticky because localStorage — and the bearer in it — is
+origin-scoped; a changing port would log everyone out).
 
 ## Run it
 
-Two terminals from the repo root:
-
 ```sh
-pnpm dev:fe -- --port 3001     # the owner UI, detached (see docs/db-less-dev.md)
-pnpm -C client/desktop dev     # the Electron shell
+pnpm -C client/desktop build:ui   # build client/web standalone → client/desktop/ui/
+pnpm -C client/desktop dev        # the Electron shell
 ```
 
 The connect screen asks for your brain's URL (probes `GET /api/version` before
@@ -20,8 +20,9 @@ saving), then the window loads the UI pointed at that brain — log in as usual;
 the bearer lands in the profile's own persisted session partition, so each
 brain keeps its own login and a relaunch goes straight back in.
 
-`MANTLE_DESKTOP_RENDERER_URL` overrides where the shell looks for the UI
-(default `http://localhost:3001`).
+For UI iteration without rebuilding, `MANTLE_DESKTOP_RENDERER_URL` points the
+shell at a `client/web` dev server instead of the embedded copy
+(e.g. `pnpm dev:fe -- --port 3001`, then set it to `http://localhost:3001`).
 
 ## What the shell does (and doesn't)
 
