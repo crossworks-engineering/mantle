@@ -1,0 +1,67 @@
+# Desktop pipeline — fires on the same version tags as the image release.
+# Builds Mantle Desktop for Linux/macOS/Windows and uploads the installers to
+# a DRAFT GitHub release (electron-builder's default on tag builds) —
+# publishing the release stays a human act, exactly like deploys.
+#
+# macOS artifacts are UNSIGNED until Apple credentials land as secrets;
+# electron-updater won't self-update an unsigned mac build (fresh installs
+# still work). Linux and Windows auto-update from the published release.
+
+name: desktop
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # electron-builder uploads to the draft release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build embedded owner UI (next standalone)
+        shell: bash
+        run: pnpm -C client/desktop build:ui
+
+      - name: Build and package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            pnpm -C client/desktop dist:ci
+          else
+            pnpm -C client/desktop dist
+          fi
+
+      - name: Upload artifacts (manual runs)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mantle-desktop-${{ matrix.os }}
+          path: |
+            client/desktop/dist/*.AppImage
+            client/desktop/dist/*.deb
+            client/desktop/dist/*.dmg
+            client/desktop/dist/*.zip
+            client/desktop/dist/*.exe
+          if-no-files-found: warn
