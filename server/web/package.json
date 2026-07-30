@@ -43,6 +43,7 @@
     "seed:location": "tsx --env-file-if-exists=./.env.local scripts/seed-location.ts",
     "test:fire-heartbeat": "tsx --env-file-if-exists=./.env.local scripts/test-fire-heartbeat.ts",
     "extract:backfill": "tsx --env-file-if-exists=./.env.local scripts/extract-backfill.ts",
+    "extract:images-backfill": "tsx --env-file-if-exists=./.env.local scripts/extract-images-backfill.ts",
     "relations:backfill": "tsx --env-file-if-exists=./.env.local scripts/relations-backfill.ts",
     "entities:dedupe": "tsx --env-file-if-exists=./.env.local scripts/entities-dedupe.ts",
     "backfill:block-ids": "tsx --env-file-if-exists=./.env.local scripts/backfill-block-ids.ts",
