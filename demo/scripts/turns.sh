@@ -20,13 +20,20 @@ export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcd
 export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
 export MANTLE_LOCAL_EMBEDDING_URL="${MANTLE_LOCAL_EMBEDDING_URL:-http://127.0.0.1:56434/v1}"
 export MANTLE_RATE_LIMIT_SCALE="${MANTLE_RATE_LIMIT_SCALE:-50}"
+# Runner queues. This flag is only HALF the switch — the `runs` tool group must
+# also be granted to the assistant (demo/seed/enable-runs.ts below), or the
+# worker idles and the assistant has no way to create a run. It must be set on
+# web, api AND the runs worker: a flag set on one process only produces runs
+# that are created and never executed.
+export MANTLE_RUNS="${MANTLE_RUNS:-1}"
 export PORT="$WEB_PORT"
 unset MANTLE_DETACHED_DEV NEXT_PUBLIC_MANTLE_API_BASE NEXT_PUBLIC_MANTLE_API_TOKEN MANTLE_DEMO || true
 
 web_pid_file="$ART/turns-web.pid"; web_log="$ART/turns-web.log"
 api_pid_file="$ART/turns-api.pid"; api_log="$ART/turns-api.log"
+runs_pid_file="$ART/turns-runs.pid"; runs_log="$ART/turns-runs.log"
 cleanup() {
-  for f in "$web_pid_file" "$api_pid_file"; do
+  for f in "$web_pid_file" "$api_pid_file" "$runs_pid_file"; do
     [ -f "$f" ] || continue
     pgid=$(ps -o pgid= -p "$(cat "$f")" 2>/dev/null | tr -d ' ' || true)
     [ -n "${pgid:-}" ] && kill -TERM -"$pgid" 2>/dev/null || true
@@ -68,6 +75,15 @@ echo "  ready"
 echo "→ server/api (traces + tool execution live here)"
 ( setsid pnpm -C server/api start >"$api_log" 2>&1 & echo $! >"$api_pid_file" )
 sleep 8
+
+echo "→ runs worker (executes what run_plan creates)"
+( setsid pnpm -C server/web exec tsx workers/runs.ts >"$runs_log" 2>&1 & echo $! >"$runs_pid_file" )
+sleep 4
+grep -q "disabled" "$runs_log" 2>/dev/null && echo "  ⚠ worker reports runner queues DISABLED — MANTLE_RUNS did not reach it" || echo "  up"
+
+echo "→ grant the \`runs\` tool group (the other half of the switch)"
+DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
+  pnpm -C server/web exec tsx ../../demo/seed/enable-runs.ts
 
 echo "→ running turns"
 DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \

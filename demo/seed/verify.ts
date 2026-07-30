@@ -57,6 +57,10 @@ async function snapshot() {
     extracted: await one(
       sql`select count(*)::int n from nodes where data ? 'extract_completed_at'`,
     ),
+    runs: await one(sql`select count(*)::int n from runs`).catch(() => 0),
+    maintenanceRuns: await one(sql`select count(*)::int n from maintenance_runs`).catch(() => 0),
+    messages: await one(sql`select count(*)::int n from assistant_messages`).catch(() => 0),
+    traces: await one(sql`select count(*)::int n from traces`).catch(() => 0),
     pending: await one(
       sql`select count(*)::int n from pgboss.job where name like '%extract%' and state in ('created','active','retry')`,
     ).catch(() => 0),
@@ -110,6 +114,15 @@ async function main() {
     checks.unshift([`nodes.${kind}`, counts[kind] ?? 0, spec.min]);
   }
   checks.unshift(['emails', counts.email ?? 0, targets.emails.min]);
+  // Behavioural data — produced by real turns and real worker runs (P4),
+  // never written as rows.
+  const b = targets.behavioural;
+  checks.push(
+    ['traces', s.traces, b.traces.min],
+    ['assistant_messages', s.messages, b.assistant_messages.min],
+    ['runs', s.runs, b.runs.min],
+    ['maintenance_runs', s.maintenanceRuns, b.maintenance_runs.min],
+  );
 
   console.log('\nlayer-2 assertions (min = a seed below this is a FAILED seed)\n');
   const pad = (x: string | number, n: number) => String(x).padEnd(n);

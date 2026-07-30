@@ -119,6 +119,34 @@ export function generate(rngRoot) {
     });
   }
 
+  // Multi-step work that warrants a durable background run. A granted tool
+  // nobody invokes produces nothing, so /runs needs turns that genuinely ask
+  // for the kind of job run_plan exists for: several steps, over many nodes,
+  // that nobody wants to sit and watch.
+  const RUN_WORK = [
+    'Work through every PUMPHOUSE procedure revision in the background and produce a change log of what moved between rev A, B and C.',
+    'Kick off a background job to review the whole PS3 snag list and group the open items by area.',
+    'In the background, go through the tranche 2 stores one by one and summarise where each stands.',
+    'Set a background run going to read every technical query and produce a single answered/outstanding register.',
+    'Plan a background job that reads the ISLAND research pages and drafts the executive summary Ingrid asked for.',
+    'Run through all the site visit reports in the background and pull out every observation that became a snag.',
+    'Start a background run to reconcile the transmittal register against the drawings actually issued.',
+    'Go through the studio handbook in the background and list anything that contradicts how we actually work now.',
+    'Work through the email threads in the background and produce a list of commitments I have made to clients.',
+    'Plan a run to check every open task against its project and flag the ones with no recent activity.',
+    'In the background, read the engineering guides and tell me which ones are out of date.',
+    'Set up a background job to summarise the lead-time situation across every supplier we deal with.',
+    'Run a background review of the risk register against what the projects actually show.',
+    'Work through the journals in the background and pull out a month-by-month picture of the year.',
+  ];
+  RUN_WORK.forEach((prompt, i) => {
+    turns.push({
+      id: `turn-run-${String(i + 1).padStart(2, '0')}`, agent: 'assistant',
+      offset: Math.round((-Math.round(rng.float() * 40) - 0.5) * 10) / 10,
+      prompt, wantsRun: true,
+    });
+  });
+
   // A handful of world-derived questions so the set is not a fixed list —
   // these vary with the bible rather than being hard-coded twice.
   for (const p of Object.values(projects)) {
