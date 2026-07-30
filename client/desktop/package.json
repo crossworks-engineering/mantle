@@ -1,0 +1,21 @@
+{
+  "name": "@mantle/client-desktop",
+  "version": "0.214.2",
+  "private": true,
+  "productName": "Mantle Desktop",
+  "description": "Mantle Desktop — Electron shell around the owner UI. A native client like the mobile companion: connect screen picks a brain, bearer auth, no server secrets in the app.",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "electron": "^43.2.0",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^7.0.0"
+  }
+}

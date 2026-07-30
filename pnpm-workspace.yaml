@@ -10,6 +10,9 @@ packages:
 # native binary — which breaks Next.js dev and the worker.
 allowBuilds:
   '@openrouter/sdk': true
+  # Electron's postinstall downloads the platform binary; without approval it
+  # is silently skipped and `electron .` finds no executable.
+  electron: true
   # tailwind CLI's --watch file watcher; our one-shot share-runtime compile
   # never watches, so the native build is unnecessary.
   '@parcel/watcher': false

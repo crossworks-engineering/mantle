@@ -1,6 +1,13 @@
 # Mantle Desktop — Electron plan
 
-Status: **planning** (branch `feat/mantle-electron`). Nothing here ships yet.
+Status: **Phase 0 built and verified** (branch `feat/mantle-electron`,
+`client/desktop`). Verified 2026-07-30 against the hermetic e2e stack
+(brain :3900, client :3901): connect-screen probe → cross-origin bearer
+login → dashboard renders with live authed data → SSE connects through the
+fencing → preflighted `Idempotency-Key` POST passes → multipart upload +
+`?at=`-token image render → relaunch skips connect and keeps the session
+(per-profile partition). Real model turns aren't testable on that stack
+(dummy LLM key by design). Nothing ships yet.
 
 ## Goal
 

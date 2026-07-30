@@ -43,6 +43,7 @@ COPY server/api/package.json server/api/package.json
 COPY server/mcp/package.json server/mcp/package.json
 COPY server/sandboxd/package.json server/sandboxd/package.json
 COPY server/web/package.json server/web/package.json
+COPY client/desktop/package.json client/desktop/package.json
 COPY client/web/package.json client/web/package.json
 COPY e2e/package.json e2e/package.json
 COPY packages/agent-runtime/package.json packages/agent-runtime/package.json
