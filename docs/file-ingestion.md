@@ -80,7 +80,7 @@ See [tables.md](tables.md) §3.
 | `upsertFile` / `syncFileFromDisk` | `@mantle/files` | all save paths | write bytes (disk first) + DB node; sanitise filename; sha dedup |
 | `parseDocumentBytes(bytes, ext)` | `@mantle/files` | extractor, `extractAttachmentForTurn` | three-tier dispatch: in-process parsers (pdf-parse/mammoth/SheetJS) → Tika fallback → empty string. **Spreadsheets are bounded** — see note below. |
 | `rasterizePdfToPngs(bytes, {maxPages})` | `@mantle/files/rasterize` | extractor (`ocrIngestPdfNode`) | render a textless PDF's pages → PNG for the OCR fallback (lazy `pdf-to-png-converter`; pdfjs + `@napi-rs/canvas`) |
-| `parseTikaBytes(bytes, {mimeType})` | `@mantle/files/tika` | `parseDocumentBytes` (tier 2) | PUT to `apache/tika:3.3.0.0` docker service → plain text. Never-throws: any failure (service down, timeout, unparseable) returns `''`. Handles .odt/.ods/.odp/.pptx/.ppt/.doc/.rtf/.epub. Tika's JVM heap is capped at **1 GB** (`JAVA_TOOL_OPTIONS=-Xmx1g`) — headroom for large Office files (a ~24 MB .pptx unzips to many× its size as XML); was 512m, which OOM'd big real decks to an empty parse. Raise to `-Xmx2g` on an 8 GB+ box with heavy deck workloads. Tika extracts **slide/document text only** — embedded images are not OCR'd (that's the separate vision path). Single-file ceiling is `MAX_UPLOAD_BYTES` (25 MB). |
+| `parseTikaBytes(bytes, {mimeType})` | `@mantle/files/tika` | `parseDocumentBytes` (tier 2) | PUT to `apache/tika:3.3.0.0` docker service → plain text. Never-throws: any failure (service down, timeout, unparseable) returns `''`. Handles .odt/.ods/.odp/.pptx/.ppt/.doc/.rtf/.epub. Tika's JVM heap is capped at **1 GB** (`JAVA_TOOL_OPTIONS=-Xmx1g`) — headroom for large Office files (a ~24 MB .pptx unzips to many× its size as XML); was 512m, which OOM'd big real decks to an empty parse. Raise to `-Xmx2g` on an 8 GB+ box with heavy deck workloads. Tika extracts **slide/document text only**; its embedded images come out through the separate `/unpack/all` endpoint (see §3a), not this one. Single-file ceiling is `MAX_UPLOAD_BYTES` (25 MB). |
 | `transcodeImageForVision` | `@mantle/files` | `runVisionWorker` | HEIC/HEIF → JPEG (libheif WASM), passthrough otherwise |
 | `runVisionWorker` | `@mantle/agent-runtime` | extractor (neutral), surfaces (question-aware) | resolve default vision worker + key + transcode + adapter; best-effort |
 | `extractAttachmentForTurn` | `@mantle/agent-runtime` | web /assistant, Telegram | image→vision / doc→parse → text for the current turn (ephemeral) |
@@ -108,6 +108,96 @@ truncated rather than stalling ingest.
 **The `node_ingested` contract:** migration `0018`'s trigger is **AFTER
 INSERT only**. A fresh insert notifies automatically; any code that *updates* a
 node's content (or wants to force re-index) must call `notifyNodeIngested`.
+
+---
+
+## 3a. Embedded images — the pictures inside a document
+
+Every parser above is text-only, so until v0.215 a diagram in a Word file or a
+screenshot in a PDF manual was dropped on the floor: invisible to recall *and*
+to display. Some answers can't be described, only shown — a screenshot of a
+settings screen **is** the answer to "how do I configure this".
+
+`extractEmbeddedImages(bytes, ext)` (`@mantle/files/embedded-images`) mirrors
+`parseDocumentBytes`'s three-tier shape:
+
+| Tier | Formats | How |
+|---|---|---|
+| 1 (in-process) | `docx` | mammoth's parsed document AST — the only entry point that honours `transformDocument` is `convertToHtml` (`extractRawText` silently ignores it) |
+| 1 (in-process) | `pptx`, `xlsx`, `xlsm`, `odt`, `ods`, `odp` | `@mantle/files/ooxml-media` — zip + relationship walk |
+| 1 (in-process) | `pdf` | pdfjs `paintImageXObject`, encoded to PNG via `@napi-rs/canvas` |
+| 2 (Tika) | `doc`, `ppt`, `xls`, `xlsb`, `rtf`, `vsd` | `unpackTikaImages` → `PUT /unpack/all` (a capability the Tika container always had and we never called). Never-throws → `[]` |
+| 3 | everything else | `[]` |
+
+**Reading order is the product requirement.** A manual's screenshots are only
+useful in sequence. Listing `word/media/` gives the wrong answer — part
+numbering reflects when a picture was first *embedded*, and an image reused
+twenty times appears once — so every extractor walks the document body and
+resolves references to parts: slides in numeric order (`slide10` after
+`slide2`), sheets in workbook order, pages in page order.
+
+**Naming is deterministic and costs nothing.** The cascade is alt text →
+caption → nearest heading → position, rejecting Office's default shape names
+(`Picture 3`, `image1.png`) which would otherwise look named while saying
+nothing. Titles carry meaning and the source document; **filenames stay
+mechanical** (`007-apn-manual-p12.png`) so a lexical listing is reading order
+and a reworded caption can't orphan bytes.
+
+**The cost gate runs before any model does.** Pulling bytes out is free and
+always happens; only survivors of the deterministic filters earn a vision call:
+
+- container must be renderable (PNG/JPEG/GIF/WebP/BMP/**SVG**) — **EMF/WMF are
+  dropped** (no browser renders them, so the node could never be shown)
+- both edges ≥ 200 px — this is the real filter; icons and bullets die here.
+  SVG is measured on its `width`/`height`, else its `viewBox`, so a vector icon
+  is filtered on the same rule as a raster one
+- SVG is safe on both display paths: `safeDownloadHeaders` serves it under a
+  `sandbox`ed `default-src 'none'` CSP (inert even on direct navigation), and
+  Pages + chat both embed via `<img>`, where SVG scripts never run. Office
+  stores an inserted SVG behind a raster fallback (`<a:blip>` + an
+  `<asvg:svgBlip>` extension), so the OOXML walk **prefers the svgBlip** —
+  without that, an EMF fallback would be dropped and the diagram lost
+- ≥ 1 KB. Deliberately LOW: flat line art compresses to ~2 KB, and an initial
+  8 KB floor rejected exactly the diagrams this feature exists for
+- sha256 dedupe collapses the logo repeated on every slide
+- 30 per document (`MAX_EMBEDDED_IMAGES_PER_DOC`)
+
+**Scanned PDFs are excluded by shape detection** (one image per page across the
+document) — those belong to the rasterize + OCR path above; extracting them
+would bury real figures under page scans. pdfjs 1-bit images are skipped rather
+than risk a silently inverted picture.
+
+### Where they land, and how they're found
+
+`maybeExtractEmbeddedImages` (extractor) is shaped exactly like
+`maybeAutoTableSpreadsheet`: best-effort, isolated, deduped by
+`data.sourceFileId`, never able to block the text pass. Images are written to
+`files/extracted-images/<document>/` as ordinary `file` nodes — which is what
+keeps the feature small, since the extractor already indexes images (vision
+describe + OCR reads the labels *inside* a screenshot) and Pages already embeds
+a stored image by node id.
+
+Retrieval needed one addition. A vision worker looking at a cropped screenshot
+writes "a mobile settings screen with several input fields" — true, and useless
+for finding it. Each image therefore stores `data.imageContext` (document,
+position, section heading, caption, alt text), prepended to the vision text
+before summary/embedding/chunking. Tagged `extracted-image` + `from:<slug>`;
+tags also feed the summarizer prompt, so provenance improves the summary too.
+
+### Showing one
+
+- **Chat** — the `show_image` tool (`files` group) returns a
+  `ToolArtifact{kind:'image'}`; Telegram gets an explicit `sendPhoto`.
+- **Pages** — no tool: the agent writes `![alt](media:<file-id>)`.
+- The `visual_answers` skill carries the judgment (show rather than narrate,
+  step-by-step images in order, never invent a file id).
+
+### Backfill
+
+`pnpm -C server/web extract:images-backfill` (registry slug
+`extract-images-backfill`). Dry-run by default. The parent documents are **free**
+— the image pass sits ahead of the extractor's `already_extracted` guard, so no
+text/summary/embedding work re-runs; spend is one vision call per image *kept*.
 
 ---
 
