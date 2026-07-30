@@ -68,18 +68,30 @@ echo "→ demo stack"
 
 if [ "${1:-}" != "--keep" ]; then
   echo "→ fresh brain (dropping demo schema contents)"
+  # `drizzle` holds the migration JOURNAL. Dropping public without it leaves
+  # drizzle certain every migration is applied while none of the tables exist —
+  # migrate then says "Already up to date." over an empty database and the
+  # first insert fails with `relation "audit_log" does not exist`. Drop all
+  # four or none.
   docker exec -i mantle_demo_pg psql -U postgres -d postgres -q <<'SQL'
 drop schema if exists public cascade; create schema public;
 drop schema if exists auth cascade;
 drop schema if exists pgboss cascade;
+drop schema if exists drizzle cascade;
 SQL
   docker exec -i mantle_demo_pg psql -U postgres -d postgres -q < infra/postgres/init/01-extensions.sql
   docker exec -i mantle_demo_pg psql -U postgres -d postgres -q < infra/postgres/init/02-auth-schema.sql
 fi
 
 echo "→ migrations + pg-boss schema"
-pnpm --filter @mantle/db migrate >/dev/null
-pnpm -C server/web pgboss:init >/dev/null
+# Output kept on the log, not /dev/null: silencing it is what hid the
+# "Already up to date." over an empty database above.
+pnpm --filter @mantle/db migrate 2>&1 | tail -2
+pnpm -C server/web pgboss:init 2>&1 | tail -1
+# Prove the schema is really there — migrate reporting success is not enough.
+docker exec -i mantle_demo_pg psql -U postgres -d postgres -At \
+  -c "select to_regclass('public.audit_log') is not null and to_regclass('public.nodes') is not null" \
+  | grep -qx t || { echo "✗ migrations reported success but the schema is missing" >&2; exit 1; }
 
 echo "→ generate content"
 node "$DEMO/generator/gen.mjs" | tail -3
