@@ -146,7 +146,7 @@ export async function assembleResponderTurn(
   // put it inside cache breakpoint 1 and made the persona prefix miss on
   // every turn (2026-06 chat-cost audit).
   const timeContextLine = buildTimeContextLine(prefs);
-  const promptWithSkills = composeSystemPromptWithSkills(agent.systemPrompt, attachedSkills);
+  const promptWithSkills = composeSystemPromptWithSkills(agent.systemPrompt, attachedSkills, prefs.houseStyle);
 
   // Open-heartbeat awareness: if the user has heartbeats on this surface that
   // are currently waiting on a reply (state.expecting_reply truthy), append a

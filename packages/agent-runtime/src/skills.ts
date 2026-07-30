@@ -133,18 +133,36 @@ export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): 
  * Append every skill's instructions to a base system prompt as
  * `## Skill: <name>` blocks. Keeps each skill's voice fenced so the
  * model can tell which guidance belongs to which skill.
+ *
+ * `houseStyle` (Settings → Profile, brain-level) lands LAST, after the skills,
+ * because it is the owner overriding the shipped guidance rather than another
+ * voice alongside it: when `chat_writing` and the owner disagree about a dash,
+ * the owner wins, and recency is the cheapest way to say so.
+ *
+ * This function is the single composition seam — the responder turn
+ * (assemble-turn), delegated specialists (invoke-agent), heartbeat turns
+ * (heartbeats/fire), the Studio sandbox, and Studio's composed-prompt PREVIEW
+ * all route through it. That is why the setting reaches page authoring when a
+ * persona note cannot, and why the preview shows it (no hidden prompts).
  */
 export function composeSystemPromptWithSkills(
   basePrompt: string,
   skillsList: SkillForRuntime[],
+  houseStyle?: string,
 ): string {
-  if (skillsList.length === 0) return basePrompt;
   const blocks = skillsList
     .filter((s) => s.instructions.trim().length > 0)
     .map((s) => `## Skill: ${s.name}\n\n${s.instructions.trim()}`)
     .join('\n\n');
-  if (!blocks) return basePrompt;
-  return `${basePrompt.trim()}\n\n${blocks}`;
+  const style = houseStyle?.trim();
+  // Unset ⇒ emit nothing, so the cached prompt prefix stays byte-identical to
+  // what a brain without a house style has always sent.
+  const styleBlock = style
+    ? `## House style\n\n${style}\n\nThis is the owner's own instruction and outranks any writing guidance above. It governs prose YOU author. Never apply it to material you are reproducing: quoted text, retrieved content, code, or a document you were asked to copy or edit verbatim.`
+    : '';
+  const tail = [blocks, styleBlock].filter(Boolean).join('\n\n');
+  if (!tail) return basePrompt;
+  return `${basePrompt.trim()}\n\n${tail}`;
 }
 
 /** Upper bound on the effective tool-slug union sent to a model. Agent slugs

@@ -116,6 +116,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
       : null,
   );
   const [purpose, setPurpose] = useState(defaults.purpose ?? '');
+  const [houseStyle, setHouseStyle] = useState(defaults.houseStyle ?? '');
   const [siteName, setSiteName] = useState(defaults.siteName ?? '');
   const [peerName, setPeerName] = useState(defaults.peerName ?? '');
   const [archetype, setArchetype] = useState(
@@ -185,6 +186,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
       reminderAgentSlug: reminderAgent === REMINDER_AUTO ? '' : reminderAgent,
       reminderChannel,
       purpose,
+      houseStyle,
       purposeArchetype: archetype,
       siteName,
       peerName,
@@ -275,6 +277,24 @@ function ProfileForm({ data }: { data: ProfileData }) {
           <p className="text-xs text-muted-foreground">
             Grounds every assistant in the brain&apos;s mission — injected at the top of each
             conversation. Leave blank to clear it.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="houseStyle">House style</Label>
+          <Textarea
+            id="houseStyle"
+            name="houseStyle"
+            rows={4}
+            value={houseStyle}
+            maxLength={2000}
+            onChange={(e) => setHouseStyle(e.target.value)}
+            placeholder={'e.g. Never use em dashes (\u2014). Use a comma, a colon, or parentheses instead.'}
+          />
+          <p className="text-xs text-muted-foreground">
+            Your writing rules, in your own words. Appended to <em>every</em> agent&apos;s prompt,
+            including the specialists that author pages and tables, and it outranks their built-in
+            writing guidance. Never applied to quoted text, code, or a document being reproduced
+            verbatim. Leave blank to clear it.
           </p>
         </div>
       </section>

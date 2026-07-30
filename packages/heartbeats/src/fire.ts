@@ -195,7 +195,7 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
     toolGroupSlugs: agent.toolGroupSlugs ?? [],
   });
   const prefs = await loadProfilePreferences(hb.ownerId);
-  const baseSystem = composeSystemPromptWithSkills(agent.systemPrompt, persistentSkills);
+  const baseSystem = composeSystemPromptWithSkills(agent.systemPrompt, persistentSkills, prefs.houseStyle);
   const systemPrompt = `${buildTimeContextLine(prefs, now)}\n\n${baseSystem}\n\n${HEARTBEAT_DATA_BOUNDARY}`;
 
   // Resolve tool allowlist = the agent's effective set (from its granted tool

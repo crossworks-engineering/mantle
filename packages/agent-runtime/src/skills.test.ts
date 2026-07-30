@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { effectiveSkillSlugs, effectiveToolSlugs } from './skills';
+import {
+  composeSystemPromptWithSkills,
+  effectiveSkillSlugs,
+  effectiveToolSlugs,
+} from './skills';
 
 describe('effectiveSkillSlugs', () => {
   it("unions the agent's own skills with its granted groups' usage skills", () => {
@@ -63,5 +67,53 @@ describe('effectiveToolSlugs', () => {
     expect([...out].sort()).toEqual(['x', 'y']);
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+describe('composeSystemPromptWithSkills — house style', () => {
+  const skill = (name: string, instructions: string) => ({
+    slug: name.toLowerCase(),
+    name,
+    description: '',
+    instructions,
+  });
+
+  it('emits nothing when no house style is set', () => {
+    // The prompt must stay byte-identical to a brain that predates the
+    // feature — this text rides in the cached prefix of every turn.
+    const withArg = composeSystemPromptWithSkills('BASE', [skill('Chat', 'CHAT')], undefined);
+    const without = composeSystemPromptWithSkills('BASE', [skill('Chat', 'CHAT')]);
+    expect(withArg).toBe(without);
+    expect(withArg).not.toContain('House style');
+  });
+
+  it('treats a whitespace-only house style as unset', () => {
+    expect(composeSystemPromptWithSkills('BASE', [], '   \n  ')).toBe('BASE');
+  });
+
+  it('appends the house style AFTER the skills, so the owner wins on conflict', () => {
+    const out = composeSystemPromptWithSkills(
+      'BASE',
+      [skill('Chat', 'CHAT')],
+      'Never use em dashes.',
+    );
+    expect(out.indexOf('## Skill: Chat')).toBeGreaterThan(-1);
+    expect(out.indexOf('## House style')).toBeGreaterThan(out.indexOf('## Skill: Chat'));
+    expect(out).toContain('Never use em dashes.');
+  });
+
+  it('carries the verbatim-material carve-out with the rule', () => {
+    // Without this the rule is a correctness bug waiting to happen: an agent
+    // "fixing" quoted source to satisfy a style preference.
+    const out = composeSystemPromptWithSkills('BASE', [], 'Never use em dashes.');
+    expect(out).toContain('Never apply it to material you are reproducing');
+  });
+
+  it('applies with no skills attached at all', () => {
+    // researcher/reader-shaped agents carry no skills; the owner's style must
+    // still reach them.
+    const out = composeSystemPromptWithSkills('BASE', [], 'Rule one.');
+    expect(out).toContain('BASE');
+    expect(out).toContain('## House style');
   });
 });

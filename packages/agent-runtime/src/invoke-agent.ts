@@ -128,7 +128,20 @@ export const invokeAgent: AgentInvoker = async ({
   const skills = await resolveAgentSkills(ownerId, (target as Agent).skillSlugs ?? [], {
     toolGroupSlugs: (target as Agent).toolGroupSlugs ?? [],
   });
-  const systemPrompt = composeSystemPromptWithSkills(target.systemPrompt, skills);
+  // The owner's house style (Settings → Profile) applies to the CHILD's prose
+  // too — this is the path that authors pages and tables, so a style rule that
+  // stopped at the responder would miss the documents it most matters for.
+  // Lazy import: @mantle/content pulls the docx/xlsx stack, and this is the
+  // only thing agent-runtime needs from it. Soft-fail — a preferences read must
+  // never sink a delegated turn.
+  let houseStyle: string | undefined;
+  try {
+    const { loadProfilePreferences } = await import('@mantle/content');
+    houseStyle = (await loadProfilePreferences(ownerId)).houseStyle;
+  } catch (e) {
+    console.warn('[invoke-agent] house style unavailable; composing without it', e);
+  }
+  const systemPrompt = composeSystemPromptWithSkills(target.systemPrompt, skills, houseStyle);
   const initialMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: prompt },

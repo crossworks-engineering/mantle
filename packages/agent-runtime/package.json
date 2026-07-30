@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@mantle/api-keys": "workspace:*",
+    "@mantle/content": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",

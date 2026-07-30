@@ -17,6 +17,7 @@
 
 import { db, tools, eq, and, type AgentMemoryConfig } from '@mantle/db';
 import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/agent-runtime';
+import { loadProfilePreferences } from '@mantle/content';
 import { listAgents } from '@/lib/agents';
 import { listSkills } from '@/lib/skills';
 import { listToolGroups } from '@/lib/tool-groups';
@@ -269,6 +270,10 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
   // Per-agent detail incl. the runtime-true composed prompt. Sequential — there
   // are only a handful of agents and each is one cached skill query.
   const agentDetails: StudioAgentDetail[] = [];
+  // The house style rides in every real composed prompt, so the preview has to
+  // show it too — a preview that omits it would be exactly the hidden prompt
+  // Studio exists to prevent.
+  const stylePrefs = await loadProfilePreferences(ownerId);
   for (const a of agents) {
     const attached = await resolveAgentSkills(ownerId, a.skillSlugs ?? [], {
       toolGroupSlugs: a.toolGroupSlugs ?? [],
@@ -297,7 +302,7 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
         name: s.name,
         instructions: s.instructions,
       })),
-      composedPrompt: composeSystemPromptWithSkills(a.systemPrompt, attached),
+      composedPrompt: composeSystemPromptWithSkills(a.systemPrompt, attached, stylePrefs.houseStyle),
     });
   }
 

@@ -27,6 +27,7 @@ import {
   savePreferencesFor,
   SITE_NAME_MAX,
   PEER_NAME_MAX,
+  HOUSE_STYLE_MAX,
 } from '@mantle/content';
 import { listReminderCapableAgents } from '@/lib/agents';
 
@@ -61,6 +62,9 @@ const Body = z.object({
   siteName: z.string().max(120).optional(),
   // Header-centre peer name (empty = clear = no centre label).
   peerName: z.string().max(120).optional(),
+  // The owner's writing conventions, injected into every composed system
+  // prompt (empty = clear = no House style block at all).
+  houseStyle: z.string().max(4000).optional(),
   // Live turn streaming (thinking trail + token typing). Default on.
   streamThoughts: z.boolean().optional(),
   // Live trail display mode + whether the trail persists across refresh.
@@ -91,6 +95,7 @@ export async function PUT(req: Request) {
     purposeArchetype,
     siteName,
     peerName,
+    houseStyle,
     streamThoughts,
     thoughtTrailMode,
     persistThoughts,
@@ -124,6 +129,11 @@ export async function PUT(req: Request) {
       ...(siteName !== undefined ? { siteName: siteName.trim().slice(0, SITE_NAME_MAX) } : {}),
       // Same pattern: empty clears the header-centre peer label.
       ...(peerName !== undefined ? { peerName: peerName.trim().slice(0, PEER_NAME_MAX) } : {}),
+      // Same pattern again: empty stores '' which projects to unset, so the
+      // House style block disappears from every prompt rather than lingering.
+      ...(houseStyle !== undefined
+        ? { houseStyle: houseStyle.trim().slice(0, HOUSE_STYLE_MAX) }
+        : {}),
       ...(streamThoughts !== undefined ? { streamThoughts } : {}),
       ...(thoughtTrailMode !== undefined ? { thoughtTrailMode } : {}),
       ...(persistThoughts !== undefined ? { persistThoughts } : {}),

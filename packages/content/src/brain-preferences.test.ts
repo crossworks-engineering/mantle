@@ -29,6 +29,13 @@ describe('BRAIN_PREFERENCE_KEYS', () => {
     }
   });
 
+  it('shares the house style — one brain writes one way', () => {
+    // composeSystemPromptWithSkills appends it to EVERY agent's prompt from the
+    // anchor row. Keyed per login, a second admin's rule would silently apply
+    // to the same agents the first admin reads, or not at all.
+    expect(BRAIN_PREFERENCE_KEYS).toContain('houseStyle');
+  });
+
   it('carries the brain mission, which every agent turn injects', () => {
     // identity-context builds "# Purpose of this brain" from the anchor's row.
     expect(BRAIN_PREFERENCE_KEYS).toContain('purpose');

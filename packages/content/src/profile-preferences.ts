@@ -70,6 +70,17 @@ export type ProfilePreferences = {
    *  title) as this node's federation-facing identity label. Cosmetic; unset ⇒
    *  the header centre is empty. Read via projectPeerName, never raw. */
   peerName?: string;
+  /** The owner's writing conventions, in their own words — appended to EVERY
+   *  agent's composed system prompt as a `## House style` block (see
+   *  composeSystemPromptWithSkills). Brain-level, because it describes how this
+   *  brain writes, not how one login works.
+   *
+   *  Free text rather than a checkbox on purpose: the first rule anyone wants
+   *  is "no em dashes", the second is "don't say 'delve'", and a boolean per
+   *  rule is a migration per taste. Unset ⇒ no block is emitted at all, so the
+   *  cached prompt prefix is byte-identical to before the feature existed.
+   *  Read via projectHouseStyle, never raw. */
+  houseStyle?: string;
   /** The UI colour-theme id (the header theme toggler / random shuffle). The
    *  DB copy is the source of truth so the choice follows the owner across
    *  browsers and brands member-facing surfaces (/s, /team) — localStorage
@@ -293,6 +304,23 @@ export function projectPeerName(raw: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+export const HOUSE_STYLE_MAX = 2000;
+
+/** Project a stored `houseStyle` — the owner's writing conventions, injected
+ *  into every composed system prompt. Trimmed, capped at {@link
+ *  HOUSE_STYLE_MAX} chars, empty ⇒ undefined (no block emitted).
+ *
+ *  The cap is a prompt-budget guard, not a validation: this text rides in the
+ *  cached prefix of EVERY turn on every agent, so an accidental paste of a
+ *  whole style guide would tax each one. 2000 chars is ~500 tokens, which is
+ *  room for a dozen real rules. Same read+write sharing contract as the other
+ *  projectors. */
+export function projectHouseStyle(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim().slice(0, HOUSE_STYLE_MAX);
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /** Project a stored `logoKey` — must be the exact content-addressed shape
  *  @mantle/storage's contentKey emits, so a hand-edited row can never point
  *  the public logo route at an arbitrary object. Same read+write sharing
@@ -485,6 +513,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
         : undefined,
     siteName: projectSiteName(prefs.siteName),
     peerName: projectPeerName(prefs.peerName),
+    houseStyle: projectHouseStyle(prefs.houseStyle),
     colorTheme: projectColorTheme(prefs.colorTheme),
     fontLogo: projectFontKey(prefs.fontLogo),
     fontTitle: projectFontKey(prefs.fontTitle),
@@ -670,6 +699,7 @@ export async function updateProfilePreferences(
     displayName: merged.displayName || undefined,
     siteName: projectSiteName(merged.siteName),
     peerName: projectPeerName(merged.peerName),
+    houseStyle: projectHouseStyle(merged.houseStyle),
     colorTheme: projectColorTheme(merged.colorTheme),
     fontLogo: projectFontKey(merged.fontLogo),
     fontTitle: projectFontKey(merged.fontTitle),
@@ -720,6 +750,9 @@ export async function updateProfilePreferences(
 export const BRAIN_PREFERENCE_KEYS = [
   'siteName',
   'peerName',
+  // How this BRAIN writes, not how one login works — so two admins can't
+  // hold contradictory house styles while one agent set serves both.
+  'houseStyle',
   'colorTheme',
   'fontLogo',
   'fontTitle',

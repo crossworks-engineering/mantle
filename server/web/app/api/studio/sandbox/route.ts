@@ -5,6 +5,7 @@ import { getAgent } from '@/lib/agents';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter } from '@mantle/voice';
 import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/agent-runtime';
+import { loadProfilePreferences } from '@mantle/content';
 
 /**
  * Agent Studio Phase 4 — the no-persist sandbox (docs/agent-studio.md).
@@ -78,7 +79,7 @@ export async function POST(req: Request) {
     const skills = await resolveAgentSkills(user.id, agent.skillSlugs ?? [], {
       toolGroupSlugs: agent.toolGroupSlugs ?? [],
     });
-    const systemPrompt = composeSystemPromptWithSkills(agent.systemPrompt, skills);
+    const systemPrompt = composeSystemPromptWithSkills(agent.systemPrompt, skills, (await loadProfilePreferences(user.id)).houseStyle);
     const params = agent.params as { temperature?: number; max_tokens?: number };
 
     const result = await adapter.chat({
