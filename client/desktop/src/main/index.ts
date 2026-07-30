@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -12,6 +12,7 @@ import {
   nativeImage,
   net,
   Notification,
+  safeStorage,
   session,
   shell,
   Tray,
@@ -70,6 +71,42 @@ type ShellConfig = { uiPort?: number };
 const configPath = () => join(app.getPath('userData'), 'shell.json');
 const loadConfig = () => readJson<ShellConfig>(configPath(), {});
 const saveConfig = (config: ShellConfig) => writeJson(configPath(), config);
+
+// ── Token vault ──────────────────────────────────────────────────────────────
+//
+// The bearer at rest, encrypted with Electron safeStorage (OS keychain-backed:
+// Keychain / DPAPI / libsecret) — the mobile companion's posture, replacing
+// localStorage's plaintext leveldb. Where a keychain is absent (bare Linux)
+// it falls back to a 0600 file, which is no worse than localStorage was.
+// Access is scoped: only registered app-window webContents may use the IPC,
+// each mapped to its own profile.
+
+const vaultFile = (profileId: string) => join(app.getPath('userData'), 'vault', `${profileId}.tok`);
+const windowProfiles = new Map<number, string>();
+
+function vaultRead(profileId: string): string | null {
+  try {
+    const raw = JSON.parse(readFileSync(vaultFile(profileId), 'utf8')) as {
+      encrypted?: boolean;
+      data?: string;
+    };
+    if (typeof raw.data !== 'string') return null;
+    const buf = Buffer.from(raw.data, 'base64');
+    return raw.encrypted ? safeStorage.decryptString(buf) : buf.toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
+function vaultWrite(profileId: string, token: string): void {
+  const path = vaultFile(profileId);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const encrypted = safeStorage.isEncryptionAvailable();
+  const data = encrypted ? safeStorage.encryptString(token) : Buffer.from(token, 'utf8');
+  writeFileSync(path, JSON.stringify({ v: 1, encrypted, data: data.toString('base64') }), {
+    mode: 0o600,
+  });
+}
 
 // ── Profile helpers ──────────────────────────────────────────────────────────
 
@@ -361,7 +398,10 @@ async function openAppWindow(profile: Profile): Promise<void> {
 
   appWindow = win;
   appRendererUrl = rendererUrl;
+  const webContentsId = win.webContents.id;
+  windowProfiles.set(webContentsId, profile.id);
   win.on('closed', () => {
+    windowProfiles.delete(webContentsId);
     if (appWindow === win) {
       appWindow = null;
       appRendererUrl = null;
@@ -399,6 +439,21 @@ function registerIpc(): void {
     if (typeof count === 'number' && Number.isFinite(count)) {
       app.setBadgeCount(Math.max(0, Math.floor(count)));
     }
+  });
+
+  ipcMain.on('vault:get', (event) => {
+    const profileId = windowProfiles.get(event.sender.id);
+    event.returnValue = profileId ? vaultRead(profileId) : null;
+  });
+  ipcMain.on('vault:set', (event, token: unknown) => {
+    const profileId = windowProfiles.get(event.sender.id);
+    if (profileId && typeof token === 'string' && token.length > 0 && token.length < 8192) {
+      vaultWrite(profileId, token);
+    }
+  });
+  ipcMain.on('vault:clear', (event) => {
+    const profileId = windowProfiles.get(event.sender.id);
+    if (profileId) rmSync(vaultFile(profileId), { force: true });
   });
 
   ipcMain.handle('profiles:list', () => loadProfiles());

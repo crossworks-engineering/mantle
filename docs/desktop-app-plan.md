@@ -202,9 +202,28 @@ draft release on the same `v*` tags as the images. Known gaps: macOS builds
 unsigned (no notarisation creds in CI yet → no mac self-update), and the
 mac/win CI legs are untested until the first tag build.
 
-**Phase 3 — optional slimming.** Static export + `app://` scheme (drop the
-embedded Node server); Microsoft OAuth desktop flow; `safeStorage` token
-encryption.
+**Phase 3 — hardening (resolved 2026-07-30).**
+
+- **Static export: rejected, embedded server is the permanent shape.** The
+  app router still has no native SPA export for dynamic segments (Next
+  issue #79380 open as of 2026-07; `output: 'export'` hard-requires
+  `generateStaticParams` on all 16 `[id]` routes). The alternatives —
+  reshaping the shared app's routing or community fallback hacks with
+  hydration-params risks — buy back ~80 MB and one loopback process. Not
+  worth it. Revisit only if Next ships native SPA export.
+- **`safeStorage` token vault: shipped.** The bearer at rest moves from
+  localStorage's plaintext leveldb into an OS-keychain-encrypted per-profile
+  file (Keychain / DPAPI / libsecret; 0600-file fallback where no keychain
+  exists — no worse than localStorage was). `packages/web-ui/token-store`
+  feature-detects the shell's vault and migrates an existing localStorage
+  bearer on first read, scrubbing the plaintext. Browsers are untouched.
+- **Microsoft OAuth: the absolute-URL fix is in flight in a parallel
+  session** (the relative `/api/microsoft/oauth/start` href — broken in any
+  split client). Shell-side, the flow already routes through the system
+  browser (non-renderer origins open externally) and the settings screen
+  refetches on window focus. Remaining polish, deferred: a server-side
+  "return to the app" close-out page (optionally redirecting to `mantle://`)
+  after the callback.
 
 ## Open questions for Jason
 

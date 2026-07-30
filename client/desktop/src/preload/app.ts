@@ -28,4 +28,15 @@ contextBridge.exposeInMainWorld('mantleDesktop', {
   notify: (payload: { title: string; body?: string }) =>
     ipcRenderer.send('desktop:notify', payload),
   setBadge: (count: number) => ipcRenderer.send('desktop:badge', count),
+  // OS-keychain-backed bearer storage (packages/web-ui token-store detects
+  // this and stops using localStorage). get() is a sync round-trip to main —
+  // sub-millisecond, and always fresh across windows.
+  tokenVault: {
+    get: (): string | null => {
+      const value = ipcRenderer.sendSync('vault:get') as unknown;
+      return typeof value === 'string' ? value : null;
+    },
+    set: (token: string) => ipcRenderer.send('vault:set', token),
+    clear: () => ipcRenderer.send('vault:clear'),
+  },
 });

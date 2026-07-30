@@ -59,6 +59,10 @@ unsigned mac build.
   accepts them. No server-side CORS setup needed on any box.
 - **`window.__MANTLE_ENV__` injection** via preload (read-only), with the dev
   server's `/env.js` neutralized so the user's chosen brain always wins.
-- **No secrets in the shell.** The server URL list (`profiles.json` in
-  userData) is config; tokens live only in the per-profile partition.
+- **No secrets in the shell config.** The server URL list (`profiles.json`
+  in userData) is plain config; the bearer lives in the per-profile **token
+  vault** — an OS-keychain-encrypted file (Electron `safeStorage`), the same
+  at-rest posture as the mobile companion's Keychain. The UI's token-store
+  feature-detects the vault and migrates a pre-vault localStorage bearer on
+  first read.
 - External links (share links, docs) open in the system browser.

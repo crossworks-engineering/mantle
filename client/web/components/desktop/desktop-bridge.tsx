@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { apiEventStream } from '@mantle/web-ui/api-fetch';
+import { desktopShell } from '@mantle/web-ui/desktop-shell';
 
 /**
  * Mantle Desktop integration. Renders nothing and does nothing in a browser —
@@ -15,21 +16,9 @@ import { apiEventStream } from '@mantle/web-ui/api-fetch';
  * shows the reply in-app. Best-effort by design — the stream has no replay,
  * so a ping during a reconnect gap is simply a missed toast, never lost data.
  */
-type DesktopApi = {
-  platform: string;
-  notify(payload: { title: string; body?: string }): void;
-  setBadge(count: number): void;
-};
-
-declare global {
-  interface Window {
-    mantleDesktop?: DesktopApi;
-  }
-}
-
 export function DesktopBridge() {
   useEffect(() => {
-    const desktop = window.mantleDesktop;
+    const desktop = desktopShell();
     if (!desktop) return;
     return apiEventStream('/api/assistant/stream', (data) => {
       if (document.visibilityState === 'visible') return;
