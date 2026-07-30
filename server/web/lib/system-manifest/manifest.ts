@@ -204,6 +204,13 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['page_editing']!,
   },
   {
+    slug: 'visual_answers',
+    name: 'Visual answers',
+    description:
+      'Show the picture when the answer is visual — extracted document images, in chat and in pages.',
+    instructions: SKILL_INSTRUCTIONS['visual_answers']!,
+  },
+  {
     slug: 'chat_writing',
     name: 'Chat writing',
     description:
@@ -428,6 +435,10 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_rename',
       'folder_rename',
       'folder_describe',
+      // Showing a stored image is a file READ that happens to render rather
+      // than return text — it delegates to no worker and generates nothing,
+      // so it belongs here rather than in `media-workers`.
+      'show_image',
     ],
   },
   {
@@ -940,6 +951,11 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       // own job; this is the how — units named when asking, trace quoted when
       // answering. Authoring still routes to the mathematician.
       'formula_use',
+      // Documents now yield their diagrams and screenshots as image files, and
+      // the persona holds both halves of showing one (`show_image` via `files`,
+      // the `media:` page syntax via `pages-draft`). This is the judgment that
+      // makes it happen: show the picture instead of narrating it.
+      'visual_answers',
     ],
     params: { temperature: 0.7, max_tokens: 16000 },
     // Context budgets for the generalist responder. Onboarding seeds these
