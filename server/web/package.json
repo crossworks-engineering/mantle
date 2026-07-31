@@ -1,10 +1,10 @@
 {
   "name": "@mantle/web",
-  "version": "0.217.3",
+  "version": "0.217.4",
   "private": true,
   "type": "module",
   "scripts": {
-    "app-runtime": "APP_RUNTIME_OUT=\"$PWD/public/app-runtime\" pnpm --filter @mantle/app-build build:runtime",
+    "app-runtime": "node ../../packages/app-build/scripts/build-runtime.ts server/web",
     "route-manifest": "tsx scripts/gen-route-manifest.ts",
     "share-runtime": "tsx scripts/build-share-runtime.ts",
     "generate": "pnpm run app-runtime && pnpm run route-manifest && pnpm run share-runtime",
