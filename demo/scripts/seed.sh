@@ -172,5 +172,12 @@ DEMO_TEAM_COOKIE="$(pnpm -s -C server/web exec tsx ../../demo/seed/mint-team-coo
 DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
   pnpm -C server/web exec tsx ../../demo/seed/seed-forum.ts
 
+# Create → draft → build → publish, through the same endpoints an owner uses.
+# A broken app fails HERE with a compiler error rather than as an error card in
+# front of an audience.
+echo "→ showcase app"
+DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
+  pnpm -C server/web exec tsx ../../demo/seed/seed-app.ts
+
 echo "→ verify (waits for extraction to drain)"
 pnpm -C server/web exec tsx ../../demo/seed/verify.ts --wait "${DEMO_VERIFY_WAIT:-900}"
