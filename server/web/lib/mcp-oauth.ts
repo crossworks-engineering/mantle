@@ -13,6 +13,7 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
+import { bearerFrom } from './auth/request';
 import {
   db,
   oauthAccessTokens,
@@ -270,12 +271,6 @@ export async function refreshAccessToken(input: {
 }
 
 // ── Bearer validation (resource server) ──────────────────────────────────────
-
-function bearerFrom(req: Request): string | null {
-  const h = req.headers.get('authorization') ?? '';
-  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
-  return m ? m[1]!.trim() : null;
-}
 
 /** Resolve the owner for a valid, unexpired, unrevoked access token, or null.
  *  Touches `last_used_at` best-effort for the Settings "connected clients" view. */

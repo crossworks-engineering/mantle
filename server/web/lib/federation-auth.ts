@@ -10,12 +10,7 @@
  */
 import { verifyInboundToken } from '@mantle/content';
 import type { MantlePeer } from '@mantle/db';
-
-export function bearerFrom(req: Request): string | null {
-  const h = req.headers.get('authorization') ?? '';
-  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
-  return m ? m[1]!.trim() : null;
-}
+import { bearerFrom } from './auth/request';
 
 /** Resolve the calling peer from the request's bearer token, or null. */
 export async function authenticatePeer(req: Request): Promise<MantlePeer | null> {
