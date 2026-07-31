@@ -64,8 +64,16 @@ describe('helpTopicForPath', () => {
   });
 
   it('returns null for an unmapped route rather than guessing', () => {
-    expect(helpTopicForPath('/settings/keys')).toBeNull();
-    expect(helpTopicForPath('/')).toBeNull();
+    // Deliberately fictional: every real nav route now has a topic, so this
+    // guards the "no topic ⇒ no button" path, not any particular screen.
+    expect(helpTopicForPath('/settings/not-a-screen')).toBeNull();
+    expect(helpTopicForPath('/nowhere')).toBeNull();
+  });
+
+  it('matches the dashboard exactly and does not swallow every route', () => {
+    // '/' is a prefix of everything, so its entry is special-cased in the scan.
+    expect(helpTopicForPath('/')).toBe('dashboard');
+    expect(helpTopicForPath('/nowhere')).toBeNull();
   });
 
   it('does not let a short route swallow a longer one', () => {
