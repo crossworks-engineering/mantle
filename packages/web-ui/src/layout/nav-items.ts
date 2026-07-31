@@ -11,6 +11,7 @@ import {
   Container,
   DatabaseBackup,
   ClipboardCheck,
+  DoorOpen,
   Contact,
   Cpu,
   Combine,
@@ -94,6 +95,14 @@ export const NAV_GROUPS: NavGroup[] = [
       { name: 'Team', href: '/team-admin', icon: MessagesSquare },
       { name: 'Pending', href: '/pending', icon: ClipboardCheck },
     ],
+  },
+  {
+    // Surfaces that face people who are NOT the owner. The screens here are
+    // still owner-space — they're the front door to an outside surface, not
+    // the surface itself, which is why Team Portal points at /team-portal and
+    // not at /team (outside the shell, member credential, no way back).
+    label: 'External',
+    items: [{ name: 'Team Portal', href: '/team-portal', icon: DoorOpen }],
   },
   {
     label: 'Settings',

@@ -37,6 +37,9 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/team-admin', 'team-admin'],
   ['/pending', 'pending'],
 
+  // ── External ───────────────────────────────────────────────────────────
+  ['/team-portal', 'team-portal'],
+
   // ── Settings ───────────────────────────────────────────────────────────
   ['/settings/agents', 'agents'],
   ['/settings/ai-workers', 'ai-workers'],
