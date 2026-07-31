@@ -216,12 +216,23 @@ async function visit({ route, url, skip }) {
     await page.waitForLoadState('networkidle', { timeout: 4_000 }).catch(() => {});
     await page.waitForTimeout(1_200);
 
+    // WHICH container to measure. <main> is the content region inside the app
+    // shell, and measuring it is the whole point — the nav alone is ~103KB, so
+    // measuring the body would pass a screen with nothing in it.
+    //
+    // But not every route lives in that shell. The team portal (/team/**) and
+    // its hub render their own standalone layout with no <main> at all, and an
+    // earlier version of this gate called all eleven of them "no <main>
+    // element" — eleven confident failures against screens that were working
+    // perfectly, showing a token-entry gate exactly as designed. Those pages
+    // carry no nav, so their body IS their content and measuring it is safe.
     const probe = await page.evaluate(() => {
       const m = document.querySelector('main');
+      const el = m ?? document.body;
       return {
-        hasMain: !!m,
-        text: m ? m.innerText.trim() : '',
-        pending: m ? m.innerHTML.includes('template id="B:') : false,
+        container: m ? 'main' : 'body',
+        text: el ? el.innerText.trim() : '',
+        pending: el ? el.innerHTML.includes('template id="B:') : false,
         path: location.pathname,
       };
     });
@@ -230,9 +241,9 @@ async function visit({ route, url, skip }) {
     if (status >= 400) {
       state = 'FAIL';
       note = `HTTP ${status}`;
-    } else if (!probe.hasMain) {
+    } else if (!probe.text && !probe.pending) {
       state = 'FAIL';
-      note = 'no <main> element';
+      note = 'no content region at all';
     } else if (probe.pending) {
       state = 'FAIL';
       note = 'unresolved React placeholder — client never hydrated';
@@ -257,9 +268,20 @@ async function visit({ route, url, skip }) {
     note = String(err.message).split('\n')[0].slice(0, 120);
   }
 
-  if (consoleErrors.length && state === 'OK') {
+  // A 401/403 is not automatically a defect. The team surfaces are token-gated
+  // by design: without a token they answer 401 and render an honest
+  // "enter your team token" screen, and the browser logs a resource error for
+  // it. Failing on that reported eleven working screens as broken. Those
+  // statuses are already surfaced in the AUTH section, so drop only the
+  // resource-load noise that corresponds to them — a real JS exception
+  // (pageerror) or a 5xx still fails, below.
+  const expectedAuthNoise = badResponses.some((b) => b.startsWith('401') || b.startsWith('403'));
+  const realErrors = consoleErrors.filter(
+    (e) => !(expectedAuthNoise && /Failed to load resource/i.test(e)),
+  );
+  if (realErrors.length && state === 'OK') {
     state = 'FAIL';
-    note = consoleErrors[0];
+    note = realErrors[0];
   }
 
   // A screen that renders a tidy empty state while its data call 500s is a
