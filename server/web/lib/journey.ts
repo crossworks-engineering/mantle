@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { db, entities, entityEdges, facts, nodes, traces } from '@mantle/db';
+import { db, entities, entityEdges, facts, isWriteRefused, nodes, traces } from '@mantle/db';
 import { getTrace } from './traces';
 import type { TraceDetail } from '@mantle/web-ui/traces-format';
 import {
@@ -198,6 +198,22 @@ const ABANDON_AFTER_MIN = (Number(process.env.MANTLE_EXTRACT_EXPIRE_MIN) || 60) 
  */
 export async function reapAbandonedTraces(userId: string): Promise<number> {
   const cutoff = new Date(Date.now() - ABANDON_AFTER_MIN * 60_000);
+  try {
+    return await reapOnce(userId, cutoff);
+  } catch (err) {
+    // A self-heal is a convenience; the read it precedes is the point. Against a
+    // read-only replica, a revoked grant, or a reader role, this UPDATE is
+    // refused and used to take GET /api/activity down with it — the Activity
+    // surface 500'd for a reason unrelated to what it was asked for.
+    //
+    // Narrow on purpose: only "the database refused to write". Anything else is
+    // a real failure and must still surface.
+    if (!isWriteRefused(err)) throw err;
+    return 0;
+  }
+}
+
+async function reapOnce(userId: string, cutoff: Date): Promise<number> {
   const rows = await db
     .update(traces)
     .set({

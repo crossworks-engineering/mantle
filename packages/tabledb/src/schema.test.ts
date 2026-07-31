@@ -61,6 +61,25 @@ describe('schemaToText', () => {
     expect(text).not.toContain('Table id:');
     expect(text).toContain('Tabs: none.');
   });
+
+  it('puts the description AHEAD of the query instructions', () => {
+    // Ordering is the whole point: a caveat a reader meets after they have
+    // written the SQL has not done its job.
+    const text = schemaToText(writtenTabs('desc'), {
+      title: 'Plan',
+      description: 'Summary rows already include their children — filter them out of totals.',
+      nodeId: 'node-d1',
+    });
+    expect(text).toContain('> Summary rows already include their children');
+    expect(text.indexOf('Summary rows already')).toBeLessThan(text.indexOf('Query with table_sql'));
+  });
+
+  it('emits no description line when there is nothing to warn about', () => {
+    const text = schemaToText(writtenTabs('nodesc'), { title: 'Plain' });
+    expect(text).not.toContain('> ');
+    // Whitespace-only must not produce an empty blockquote either.
+    expect(schemaToText([], { title: 'Plain', description: '   ' })).not.toContain('> ');
+  });
 });
 
 describe('schemaDigest', () => {

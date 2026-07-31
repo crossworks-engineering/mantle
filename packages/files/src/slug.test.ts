@@ -237,6 +237,21 @@ describe('parserRouteForExt', () => {
     }
   });
 
+  it('routes .xml to tika rather than leaving it unreadable', () => {
+    // Regression guard. `.xml` used to route to `none`, so an upload was
+    // indexed by its filename alone — the same silent-nothing `.mpp` had, for a
+    // plainly readable format. Tika strips markup and keeps content.
+    expect(parserRouteForExt('xml')).toBe('tika');
+    expect(mimeForExt('xml')).toBe('application/xml; charset=utf-8');
+  });
+
+  it('keeps .xml out of TEXT_EXTS', () => {
+    // As text the body would be copied into data.content and the summary,
+    // embedding and chunks would be dominated by tag names — retrieval would
+    // degrade while appearing to work.
+    expect(TEXT_EXTS.has('xml')).toBe(false);
+  });
+
   it('returns "none" for unknown / opaque-binary extensions', () => {
     // Images and unknown types fall through; the extractor records
     // skipped:no_text_layer rather than chasing them.
