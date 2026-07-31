@@ -4,6 +4,34 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — Adding a Microsoft scope quietly killed every older account (branch claude/sharepoint-auth-directory-listing-d78be4)
+
+**A connected Microsoft account had a shelf life measured from the last time we
+edited a constant.** Every token refresh asked Azure for the app's *current*
+scope list, but on the refresh leg Azure only honours scopes the user actually
+consented to — anything beyond that set is not a widened grant, it's a rejected
+request. So the day `Mail.Send` joined the list, every account connected before
+it stopped being refreshable: `invalid_grant` / `AADSTS65001, the user has not
+consented`. The account kept working until its access token expired, then went
+dark, and the only cure was a reconnect nobody knew to perform.
+
+The refresh no longer sends `scope` at all — omitting it re-issues exactly the
+consented set, which is also what comes back on the response, so the granted
+scopes we record (and gate outbound send on) stay accurate. The authorize and
+code-exchange legs still ask for everything, because that is where consent is
+actually given.
+
+**The failure was also invisible from both ends.** Server-side, the refresh
+error was recorded onto `ms_accounts.last_sync_error` *inside* the transaction
+it then aborted by rethrowing — the write rolled back with everything else, so
+an account that had been failing for a fortnight still read as healthy. It is
+now written after the transaction unwinds. Client-side, a token failure threw a
+plain `Error` with no status, so the drive browser's "reconnect the account"
+branch never fired and the folder picker said only *Could not list the folder.
+Try again* — advice that could never work. `invalid_grant` now carries a 401,
+which is the branch that tells the truth, and the browse route logs the
+underlying Graph error instead of swallowing it.
+
 ## Unreleased — The pictures inside your documents (branch claude/mantle-image-extraction)
 
 **Every parser in the stack was text-only, so a diagram in a Word file or a
