@@ -461,12 +461,22 @@ async function maybeAutoTableSpreadsheet(
       const { parseMspdi, sniffMspdi } = await import('@mantle/files/mspdi');
       const plan = sniffMspdi(loaded.bytes) ? parseMspdi(loaded.bytes) : null;
       sheets = plan?.sheets ?? [];
-      if (plan && plan.meta.summaryCount > 0) {
+      if (plan) {
+        // Only the ROLL-UP sentence is conditional. Gating the whole
+        // description on summaryCount left a flat plan — one with no summary
+        // rows — with no description at all, losing the unit guidance, which is
+        // true of every plan. Correct-looking and quietly less useful.
+        const rollup =
+          plan.meta.summaryCount > 0
+            ? ` ${plan.meta.summaryCount} of ${plan.meta.taskCount} rows in Tasks are summary` +
+              ` (roll-up) rows whose work, duration and cost ALREADY include their child tasks —` +
+              ` add WHERE "Summary"=0 to any total, or the same work is counted once per outline` +
+              ` level.`
+            : '';
         description =
-          `Microsoft Project plan. ${plan.meta.summaryCount} of ${plan.meta.taskCount} rows in Tasks are` +
-          ` summary (roll-up) rows whose work, duration and cost ALREADY include their child tasks —` +
-          ` add WHERE "Summary"=0 to any total, or the same work is counted once per outline level.` +
-          ` Durations are hours unless the column says days; slack is in days.`;
+          `Microsoft Project plan.${rollup}` +
+          ` Durations are hours unless the column says days; slack is in days.` +
+          ` Rows are in plan order.`;
       }
     } else {
       sheets = parseSheetToGrid(loaded.bytes);
