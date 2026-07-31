@@ -17,6 +17,21 @@ no source tree needed on the VPS.
 > (e.g. `v0.210.0` — NOT `:latest`; bump it as part of every update, step 2
 > below). See deploy.md §0 for the full topology.
 
+> ⚠️ **`~/mantle` is this box's path. Do not assume it on another box, and do
+> not trust a `~/mantle` you find there.** Ask the running container where its
+> stack lives, before `cd`-ing anywhere:
+>
+> ```bash
+> ssh <box> 'docker inspect --format "{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}" mantle_web'
+> ```
+>
+> On the dev box that answers `/home/cwe/stack-rehearsal` — while `~/mantle` is a
+> **source checkout sitting on a feature branch**, whose `docker-compose.yml`
+> names the image `titanwest/mantle` (the real one is `mantle-server`). Running
+> the steps below verbatim there operates on a directory that is not the live
+> stack, and can stand a second one up under a wrong image name. The label is the
+> only authoritative answer; a directory that merely looks right is not evidence.
+
 ## What a release + update does
 
 1. **tag & push** (Mac). `pnpm version:bump <patch|minor|major>` (by change
@@ -68,12 +83,23 @@ ssh mantle-prod 'cd ~/mantle && docker compose up -d --wait'
 # ── 3b. (VPS) roll the CLIENT stack — a SEPARATE compose file, easily missed ──
 ssh mantle-prod 'cd ~/mantle && docker compose -f docker-compose.client.yml --project-directory . pull \
   && docker compose -f docker-compose.client.yml --project-directory . up -d --wait'
+#   `--project-directory .` derives the project NAME from the directory, so on a
+#   box whose stack is not in ~/mantle it lands under a different project than
+#   the client is already registered as. Read the real one first and pass it:
+#     docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' mantle_client_web
+#     docker compose -p <that> -f docker-compose.client.yml pull && … up -d --wait
+#   (Container names are hardcoded, so the wrong project still touches the right
+#   container — it just relabels it, leaving two projects claiming one container.)
 ```
 
 ## Verify
 
 ```bash
 ssh mantle-prod 'cd ~/mantle && docker compose ps'                          # all up/healthy
+# BOTH images, side by side. The client is the one that silently stays behind,
+# and it is the only one the user actually looks at — assert it explicitly
+# rather than inferring the roll worked from the server being healthy.
+ssh mantle-prod 'for c in mantle_web mantle_api mantle_client_web; do printf "%-20s %s\n" "$c" "$(docker inspect --format "{{.Config.Image}}" $c)"; done'
 ssh mantle-prod 'docker exec mantle_web sh -c "grep -m1 version /app/apps/web/package.json"'  # == the shipped vX.Y.Z
 ssh mantle-prod 'docker logs mantle_migrate 2>&1 | tail'                    # migration applied (or no-op)
 ssh mantle-prod 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from nodes"'  # unchanged
