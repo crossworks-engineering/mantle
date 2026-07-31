@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { allHelpTopics, helpTopicForPath } from '@mantle/web-ui/layout/help-topics';
+import { ALL_NAV_ITEMS } from '@mantle/web-ui/layout/nav-items';
 import { MANIFEST_TOOL_GROUPS } from './system-manifest/manifest';
 import { parseFrontmatter, splitSections } from './help';
 
@@ -81,5 +82,48 @@ describe('helpTopicForPath', () => {
     // and a future '/' entry must never match every route.
     expect(helpTopicForPath('/pages')).toBe('pages');
     expect(helpTopicForPath('/pagesomething')).toBeNull();
+  });
+});
+
+/**
+ * The gap the other tests can't see. They check that the route map, the files
+ * and the tool groups agree with EACH OTHER — but a nav item pointing at a
+ * screen no one mapped satisfies all three and still ships a screen with no
+ * "?" button. Nothing renders an error for it: `helpTopicForPath` returns null
+ * and the header simply draws nothing, which is indistinguishable from a
+ * deliberate omission. So the nav list is the fourth list that has to agree.
+ */
+describe('nav help coverage', () => {
+  /**
+   * Nav routes that intentionally have no help topic.
+   *
+   * Empty, and it should stay that way for anything rendered inside the (app)
+   * shell. The one defensible entry is a nav item whose href leaves the shell
+   * (no header, so no "?" to draw) — the way `/team` would, which is exactly
+   * why Team Portal points at the in-shell `/team-portal` instead. Adding a
+   * route here is a decision: say why in a comment beside it.
+   */
+  const NO_HELP: ReadonlySet<string> = new Set([]);
+
+  it('every nav route resolves to a help topic', () => {
+    const uncovered = ALL_NAV_ITEMS.filter(
+      (item) => !NO_HELP.has(item.href) && helpTopicForPath(item.href) === null,
+    ).map((item) => `${item.name} (${item.href})`);
+
+    expect(
+      uncovered,
+      'nav item with no help topic — the screen ships with no "?" button.\n' +
+        'Fix with the usual two edits: write docs/guide/06-help/<topic>.md and add\n' +
+        "a ['<route>', '<topic>'] row to help-topics.ts. If the item deliberately\n" +
+        'leaves the app shell, add its href to NO_HELP above with a reason.',
+    ).toEqual([]);
+  });
+
+  it('every exempted route is still a real nav item', () => {
+    // Stops NO_HELP rotting into a list of hrefs that no longer exist, which
+    // would silently re-open the hole for a route that reused the path.
+    const hrefs = new Set(ALL_NAV_ITEMS.map((i) => i.href));
+    const stale = [...NO_HELP].filter((href) => !hrefs.has(href));
+    expect(stale, 'NO_HELP names a route that is no longer in the nav').toEqual([]);
   });
 });
