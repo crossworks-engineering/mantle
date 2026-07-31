@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { Pencil, Check, TriangleAlert } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
+import { mermaidThemeVariablesFromDocument } from '@mantle/web-ui/mermaid-theme';
 
 /** Hard cap on diagram source — beyond this we refuse to render (layout cost
  *  grows non-linearly on adversarial input) but always keep the source. */
@@ -29,59 +30,6 @@ function loadMermaid() {
   return mermaidPromise;
 }
 
-/** Resolve a CSS custom property to its concrete value, with a fallback so a
- *  missing token never yields an empty color string (boring-avatar precedent). */
-function token(cs: CSSStyleDeclaration, name: string, fallback: string): string {
-  const v = cs.getPropertyValue(name).trim();
-  return v || fallback;
-}
-
-/**
- * Map theme tokens into Mermaid `themeVariables`. Filled shapes sit on neutral
- * surfaces (`card`/`muted`) with `foreground` text — never chart tokens, which
- * are 3:1 data ink and not legible as text. `chart-1..5` color the categorical
- * series (pie slices, mindmap sections) where nothing has to be read on top.
- * Values must be concrete (mermaid does color math on them), which they are:
- * the generated themes.css emits plain hex.
- */
-function mermaidThemeVariables(): Record<string, string> {
-  const cs = getComputedStyle(document.documentElement);
-  const charts = [1, 2, 3, 4, 5].map((i) =>
-    token(cs, `--chart-${i}`, ['#666ed1', '#ae467f', '#ad5700', '#4b830f', '#00889b'][i - 1]!),
-  );
-  const foreground = token(cs, '--foreground', '#1f2328');
-  const mutedForeground = token(cs, '--muted-foreground', '#59636e');
-  const card = token(cs, '--card', '#ffffff');
-  const muted = token(cs, '--muted', '#f6f8fa');
-  const border = token(cs, '--border', '#d1d9e0');
-  const background = token(cs, '--background', '#ffffff');
-  const vars: Record<string, string> = {
-    fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
-    background,
-    mainBkg: muted,
-    primaryColor: muted,
-    primaryTextColor: foreground,
-    primaryBorderColor: border,
-    secondaryColor: card,
-    secondaryTextColor: foreground,
-    secondaryBorderColor: border,
-    tertiaryColor: background,
-    tertiaryTextColor: foreground,
-    tertiaryBorderColor: border,
-    lineColor: mutedForeground,
-    textColor: foreground,
-    noteBkgColor: muted,
-    noteTextColor: foreground,
-    noteBorderColor: border,
-  };
-  charts.forEach((c, i) => {
-    vars[`pie${i + 1}`] = c;
-    vars[`cScale${i}`] = c;
-    vars[`git${i}`] = c;
-  });
-  return vars;
-}
-
 let renderSeq = 0;
 
 /** Render source → SVG with the current theme. Throws on parse/render errors
@@ -98,7 +46,8 @@ async function renderMermaid(source: string): Promise<string> {
     // foreignObject labels).
     securityLevel: 'strict',
     theme: 'base',
-    themeVariables: mermaidThemeVariables(),
+    // Shared with the /print surface — see @mantle/web-ui/mermaid-theme.
+    themeVariables: mermaidThemeVariablesFromDocument(),
     htmlLabels: false,
     flowchart: { htmlLabels: false },
     // Never inject mermaid's bomb/"Syntax error" graphic into the document —
@@ -220,8 +169,12 @@ export function DiagramView({ node, updateAttributes, editor, selected }: NodeVi
       <div
         contentEditable={false}
         data-diagram
-        className={`group relative rounded-lg border bg-card p-3 ${
-          selected ? 'border-primary' : 'border-border'
+        // Chromeless: no card border or fill, so the diagram sits on the page
+        // like an image rather than in a box. Selection is the same outline the
+        // other atom nodes use (img / block-math in globals.css), not a border,
+        // so nothing reserves space when the node isn't selected.
+        className={`group relative rounded-lg ${
+          selected ? 'outline-2 outline-primary outline-offset-2' : ''
         }`}
       >
         {editor.isEditable && !editing && (
