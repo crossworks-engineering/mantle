@@ -175,11 +175,20 @@ function buildSrcDoc(bundleCode: string, importMapJson: string, viewport: boolea
   // egress channel: `script-src` allows ONLY `<origin>/app-runtime/` (the shared
   // React/kit/host runtime the import map points at); `style-src` allows ONLY
   // `<origin>/_next/` (the host's compiled stylesheet, linked not inlined).
+  //
+  // `font-src` MIRRORS `style-src`, and must keep mirroring it. Allowing the
+  // stylesheet while refusing the faces it declares is self-defeating: the host
+  // sheet carries KaTeX's `@font-face` rules (katex.min.css is imported by the
+  // client layout), whose URLs resolve to `<origin>/_next/static/media/…`. With
+  // `font-src data:` alone every mini-app logged a CSP violation on load and any
+  // app rendering maths fell back to system fonts. This widens nothing: it
+  // permits fonts from exactly the path already trusted for styles.
   const origin = location.origin;
   const csp =
     `default-src 'none'; style-src 'unsafe-inline' ${origin}/_next/; ` +
     `script-src 'unsafe-inline' ${origin}/app-runtime/; ` +
-    "img-src data: blob:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'";
+    `img-src data: blob:; font-src data: ${origin}/_next/; ` +
+    "connect-src 'none'; base-uri 'none'; form-action 'none'";
   return `<!doctype html>
 <html class="${cls}"${colorTheme}>
 <head>
