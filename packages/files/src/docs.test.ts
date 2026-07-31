@@ -11,6 +11,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { isWriteRefused } from '@mantle/db';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -18,7 +19,6 @@ import {
   collectionRoot,
   diffDocSets,
   docsRoot,
-  isWriteRefused,
   effectiveBrainDepth,
   isHiddenDocRelPath,
   listMarkdownRelPaths,
