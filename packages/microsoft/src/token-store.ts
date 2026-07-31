@@ -94,53 +94,65 @@ export async function getValidAccessToken(
     return open(row.accessTokenEnc, row.id);
   }
 
+  // Set inside the transaction, acted on after it aborts (see the catch below).
+  // Boxed so the assignment survives control-flow narrowing across the closure.
+  const failure: { error: Error | null } = { error: null };
+
   // Slow path: refresh under a row lock so concurrent callers don't double-
   // refresh and race Azure's refresh-token rotation.
-  return db.transaction(async (tx) => {
-    const [locked] = await tx
-      .select()
-      .from(msAccounts)
-      .where(eq(msAccounts.id, row.id))
-      .for('update');
-    if (!locked || !locked.enabled) return null;
+  try {
+    return await db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select()
+        .from(msAccounts)
+        .where(eq(msAccounts.id, row.id))
+        .for('update');
+      if (!locked || !locked.enabled) return null;
 
-    // Someone else refreshed while we waited for the lock.
-    if (
-      locked.accessTokenEnc &&
-      locked.tokenExpiresAt &&
-      locked.tokenExpiresAt.getTime() - EXPIRY_SKEW_MS > Date.now()
-    ) {
-      return open(locked.accessTokenEnc, locked.id);
-    }
+      // Someone else refreshed while we waited for the lock.
+      if (
+        locked.accessTokenEnc &&
+        locked.tokenExpiresAt &&
+        locked.tokenExpiresAt.getTime() - EXPIRY_SKEW_MS > Date.now()
+      ) {
+        return open(locked.accessTokenEnc, locked.id);
+      }
 
-    if (!locked.refreshTokenEnc) return null; // can't refresh — needs reconnect
-    const refreshToken = open(locked.refreshTokenEnc, locked.id);
+      if (!locked.refreshTokenEnc) return null; // can't refresh — needs reconnect
+      const refreshToken = open(locked.refreshTokenEnc, locked.id);
 
-    const cfg = await resolveOAuthConfig(userId);
-    if (!cfg) throw new Error('Microsoft app is not configured — cannot refresh token');
+      const cfg = await resolveOAuthConfig(userId);
+      if (!cfg) throw new Error('Microsoft app is not configured — cannot refresh token');
 
-    let fresh: TokenSet;
-    try {
-      fresh = await refreshTokens(cfg, refreshToken);
-    } catch (err) {
-      // Record the failure so the UI can prompt a reconnect; rethrow so the
-      // caller (and pg-boss, once M1 lands) sees it.
+      let fresh: TokenSet;
+      try {
+        fresh = await refreshTokens(cfg, refreshToken);
+      } catch (err) {
+        // Rethrow so the caller sees it — but record the failure OUTSIDE this
+        // transaction. Writing it on `tx` and then throwing rolled the write
+        // back with everything else, so the account looked healthy
+        // (`last_sync_error` null) no matter how often the refresh failed.
+        failure.error = err as Error;
+        throw err;
+      }
+
       await tx
         .update(msAccounts)
+        .set({ ...tokenUpdate(locked.id, fresh), lastSyncError: null })
+        .where(eq(msAccounts.id, locked.id));
+      return fresh.accessToken;
+    });
+  } finally {
+    if (failure.error) {
+      await db
+        .update(msAccounts)
         .set({
-          lastSyncError: `token refresh failed: ${(err as Error).message}`.slice(0, 500),
+          lastSyncError: `token refresh failed: ${failure.error.message}`.slice(0, 500),
           updatedAt: new Date(),
         })
-        .where(eq(msAccounts.id, locked.id));
-      throw err;
+        .where(eq(msAccounts.id, row.id));
     }
-
-    await tx
-      .update(msAccounts)
-      .set({ ...tokenUpdate(locked.id, fresh), lastSyncError: null })
-      .where(eq(msAccounts.id, locked.id));
-    return fresh.accessToken;
-  });
+  }
 }
 
 /** Disconnect: drop the row (and, by FK cascade once M1 adds them, its items).
