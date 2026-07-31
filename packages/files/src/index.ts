@@ -9,6 +9,8 @@ export {
   TIKA_EXTS,
   INGESTABLE_EXTS,
   PREVIEWABLE_MARKDOWN_EXTS,
+  EXPORT_REQUIRED_EXTS,
+  exportHintForExt,
   parserRouteForExt,
   type ParserRoute,
 } from './slug';

@@ -15,6 +15,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   dashToLtree,
+  EXPORT_REQUIRED_EXTS,
+  exportHintForExt,
   extOf,
   INGESTABLE_EXTS,
   ltreeToDash,
@@ -239,6 +241,39 @@ describe('parserRouteForExt', () => {
     // Images and unknown types fall through; the extractor records
     // skipped:no_text_layer rather than chasing them.
     for (const ext of ['png', 'jpg', 'gif', 'mp3', 'mp4', 'zip', 'exe', '']) {
+      expect(parserRouteForExt(ext)).toBe('none');
+    }
+  });
+});
+
+describe('exportHintForExt', () => {
+  it('names Microsoft Project plans and the export that fixes them', () => {
+    const hint = exportHintForExt('mpp');
+    expect(hint).toBeDefined();
+    // The value of this entry is entirely in what it tells the user to DO —
+    // a refusal that doesn't name the recovery move is the thing it replaced.
+    expect(hint).toMatch(/Save As/i);
+    expect(hint).toMatch(/XML/);
+  });
+
+  it('covers Project templates too', () => {
+    expect(exportHintForExt('mpt')).toMatch(/XML/);
+  });
+
+  it('is case-insensitive — Windows hands us .MPP', () => {
+    expect(exportHintForExt('MPP')).toBe(exportHintForExt('mpp'));
+  });
+
+  it('stays silent for everything the parser ladder actually handles', () => {
+    // A false positive here would BLOCK a readable format at ingest, which is
+    // far worse than the silence this feature replaced.
+    for (const ext of [...INGESTABLE_EXTS, 'png', 'jpg', 'svg', 'xml', '']) {
+      expect(exportHintForExt(ext), `${ext} must stay readable`).toBeUndefined();
+    }
+  });
+
+  it('does not overlap the parser routing table', () => {
+    for (const ext of EXPORT_REQUIRED_EXTS.keys()) {
       expect(parserRouteForExt(ext)).toBe('none');
     }
   });
