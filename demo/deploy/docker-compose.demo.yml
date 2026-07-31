@@ -8,7 +8,13 @@
 # DEMO_IMAGE/DEMO_USER_ID/DEMO_SESSION_SECRET contract (mantle-site/DEPLOY.md
 # describes v1; that document does not apply here).
 #
-#   docker compose -f docker-compose.demo.yml --env-file .env.demo up -d --wait
+#   docker compose -f docker-compose.demo.yml --env-file .env.demo up -d --wait web client
+#
+# Name the two long-lived services, not a bare `up --wait`: --wait waits for
+# every service it starts to be running-or-healthy, and `createbucket` is a
+# one-shot that EXITS — so a bare `up --wait` reports failure at the moment it
+# succeeds. web pulls createbucket in via depends_on anyway.
+# Normally you do not run this by hand at all: deploy/restore.sh does it.
 #
 # ── What is NOT here, and why ────────────────────────────────────────────────
 #   migrate   the dump is already migrated, and demo_reader could not run it
