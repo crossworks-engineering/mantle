@@ -68,6 +68,10 @@ export type TableRow = {
   icon: string | null;
   tags: string[];
   summary: string | null;
+  /** Author-set caveat shown to a reader BEFORE they query — see
+   *  `CreateTableInput.description`. Distinct from `summary`, which the
+   *  extractor generates and may replace. */
+  description: string | null;
   visibility: TableVisibility;
   /** Quick stats for the list (cheap to compute from the doc). */
   columnCount: number;
@@ -106,6 +110,7 @@ function rowOf(n: Node, counts: { columnCount: number; rowCount: number }): Tabl
     icon: typeof d.icon === 'string' ? d.icon : null,
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
+    description: typeof d.description === 'string' ? d.description : null,
     visibility: d.visibility === 'public' ? 'public' : 'private',
     columnCount: counts.columnCount,
     rowCount: counts.rowCount,
@@ -404,6 +409,21 @@ export type CreateTableInput = {
    *  to the source. Ignored by the table renderer (the grid lives in
    *  `tables.data`). */
   sourceFileId?: string;
+  /**
+   * A caveat or usage note the reader must see BEFORE they query.
+   *
+   * Column names describe shape, not semantics, and some grids are wrong when
+   * read the obvious way. A Microsoft Project import is the case that prompted
+   * this: its summary rows already contain their children, so `SUM(work)` over
+   * every row overstates by once per outline level — on a five-level plan, ~5x.
+   * Nothing in the column list says so, and the wrong answer looks entirely
+   * plausible.
+   *
+   * Surfaced by `schemaToText`, which is what an agent reads before writing
+   * SQL. Stored on the node's `data` rather than its summary so the extractor's
+   * generated summary can't overwrite it.
+   */
+  description?: string;
 };
 
 export async function createTable(ownerId: string, input: CreateTableInput): Promise<TableDetail> {
@@ -444,6 +464,7 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
             visibility: 'private',
             ...(input.icon ? { icon: input.icon } : {}),
             ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
+            ...(input.description?.trim() ? { description: input.description.trim() } : {}),
           },
           tags: dedupeTags(input.tags ?? []),
         })

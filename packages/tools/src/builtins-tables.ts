@@ -871,19 +871,21 @@ const table_schema: BuiltinToolDef = {
     const ids = Array.isArray(input.table_ids)
       ? input.table_ids.map((v: unknown) => str(v).trim()).filter(Boolean)
       : null;
-    let targets: { id: string; title: string }[];
+    let targets: { id: string; title: string; description: string | null }[];
     if (ids && ids.length > 0) {
       const found = await Promise.all(
         ids.slice(0, SCHEMA_TABLES_MAX).map(async (id) => {
           const t = await getTable(ctx.ownerId, id);
-          return t ? { id: t.id, title: t.title } : null;
+          return t ? { id: t.id, title: t.title, description: t.description } : null;
         }),
       );
-      targets = found.filter((t): t is { id: string; title: string } => t !== null);
+      targets = found.filter(
+        (t): t is { id: string; title: string; description: string | null } => t !== null,
+      );
       if (targets.length === 0) return notFound('table', ids[0] ?? '', 'table_list');
     } else {
       const rows = await listTables(ctx.ownerId, { limit: SCHEMA_TABLES_MAX });
-      targets = rows.map((r) => ({ id: r.id, title: r.title }));
+      targets = rows.map((r) => ({ id: r.id, title: r.title, description: r.description }));
     }
     const described = await Promise.all(
       targets.map(async (t) => {
@@ -892,7 +894,11 @@ const table_schema: BuiltinToolDef = {
           ? {
               id: t.id,
               title: t.title,
-              schema: schemaToText(surface.tabs, { title: t.title, nodeId: t.id }),
+              schema: schemaToText(surface.tabs, {
+                title: t.title,
+                nodeId: t.id,
+                description: t.description ?? undefined,
+              }),
             }
           : {
               id: t.id,

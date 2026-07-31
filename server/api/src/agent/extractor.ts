@@ -380,13 +380,24 @@ async function maybeAutoTableSpreadsheet(
   if (!loaded) return;
   const ext = extOf(nameForExt);
   let sheets: ReturnType<typeof parseSheetToGrid>;
+  /** Caveat the reader needs before querying — set only where the grid is
+   *  genuinely misleading read the obvious way. */
+  let description: string | undefined;
   try {
     if (ext === 'xml') {
       // Content-sniffed, not extension-trusted: a Project export becomes
       // Tasks / Resources / Assignments, and any other XML yields nothing here
       // and stays a plain (Tika-indexed) file.
-      const { parseMspdiToGrids, sniffMspdi } = await import('@mantle/files/mspdi');
-      sheets = sniffMspdi(loaded.bytes) ? parseMspdiToGrids(loaded.bytes) : [];
+      const { parseMspdi, sniffMspdi } = await import('@mantle/files/mspdi');
+      const plan = sniffMspdi(loaded.bytes) ? parseMspdi(loaded.bytes) : null;
+      sheets = plan?.sheets ?? [];
+      if (plan && plan.meta.summaryCount > 0) {
+        description =
+          `Microsoft Project plan. ${plan.meta.summaryCount} of ${plan.meta.taskCount} rows in Tasks are` +
+          ` summary (roll-up) rows whose work, duration and cost ALREADY include their child tasks —` +
+          ` add WHERE "Summary"=0 to any total, or the same work is counted once per outline level.` +
+          ` Durations are hours unless the column says days; slack is in days.`;
+      }
     } else {
       sheets = parseSheetToGrid(loaded.bytes);
     }
@@ -432,6 +443,7 @@ async function maybeAutoTableSpreadsheet(
         tabs,
         tags: ['auto-import'],
         sourceFileId: node.id,
+        ...(description ? { description } : {}),
       });
       void recordIngest({
         source: 'extractor',
@@ -1892,7 +1904,14 @@ async function buildTableIndexPieces(
             headingPath: 'profile',
           },
           {
-            text: schemaToText(surface, { title: node.title, nodeId: node.id }),
+            text: schemaToText(surface, {
+              title: node.title,
+              nodeId: node.id,
+              description:
+                typeof (node.data as Record<string, unknown>)?.description === 'string'
+                  ? ((node.data as Record<string, unknown>).description as string)
+                  : undefined,
+            }),
             headingPath: 'schema',
           },
           ...sections.slice(1).map((s) => ({

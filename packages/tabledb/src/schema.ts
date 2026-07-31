@@ -10,10 +10,15 @@ import type { WorkbookTabRef } from './engine';
  */
 export function schemaToText(
   tabs: WorkbookTabRef[],
-  opts: { title: string; nodeId?: string },
+  opts: { title: string; nodeId?: string; description?: string },
 ): string {
   const lines: string[] = [`# ${opts.title} — table schema`];
   if (opts.nodeId) lines.push(`Table id: ${opts.nodeId}`);
+  // Ahead of the query instructions on purpose. Column names describe shape,
+  // not semantics: an importer that knows a grid is wrong when read the obvious
+  // way (roll-up rows that already contain their children, say) has nowhere
+  // else to say so, and a reader who has already written the SQL is too late.
+  if (opts.description?.trim()) lines.push(`> ${opts.description.trim()}`);
   lines.push(
     `Tabs: ${tabs.map((t) => `${t.name} (${t.rowCount} rows × ${t.columns.length} cols)`).join(', ') || 'none'}. ` +
       'Query with table_sql — read-only SELECT over the views below; FTS MATCH terms need double quotes.',
