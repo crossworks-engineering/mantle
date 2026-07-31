@@ -206,6 +206,16 @@ async function visit({ route, url, skip }) {
       )
       .catch(() => {});
 
+    // Then LET IT SETTLE before judging. Without this the gate probes the
+    // instant the text threshold is met and closes the page, so a data call
+    // that fires slightly later never happens at all — and a screen stuck on
+    // "Loading…" behind a failed fetch passes, because the surrounding
+    // boilerplate alone clears the threshold. /docs did exactly that: 174
+    // chars of explanatory text, a permanent spinner, and GET
+    // /api/docs/collections returning 500 that the sweep never even provoked.
+    await page.waitForLoadState('networkidle', { timeout: 4_000 }).catch(() => {});
+    await page.waitForTimeout(1_200);
+
     const probe = await page.evaluate(() => {
       const m = document.querySelector('main');
       return {

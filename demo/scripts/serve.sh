@@ -51,6 +51,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo "→ docs root"
+# Two different things live under one root, and BOTH are read from disk at
+# request time rather than from Postgres — so a root that is missing or
+# incomplete produces empty screens with no error anywhere.
+#
+#   generated demo docs   what the seeded `documentation` nodes point at. The
+#                         generator is deterministic, so regenerating gives
+#                         byte-identical files; missing here means the seed ran
+#                         in a different checkout (the same trap as the table
+#                         workbooks — see TABLE_DB_DIR below).
+#   guide/06-help         the per-screen help topics. PRODUCT documentation,
+#                         not brain content: /api/help/<topic> resolves
+#                         docsRoot()/guide/06-help/<topic>.md. Without it every
+#                         "?" panel in the demo answers 404 while looking fine.
+if [ ! -d "$MANTLE_DOCS_ROOT" ]; then
+  echo "  generating (deterministic — matches what was seeded)"
+  node "$DEMO/generator/gen.mjs" >/dev/null
+fi
+mkdir -p "$MANTLE_DOCS_ROOT/guide"
+cp -a docs/guide/06-help "$MANTLE_DOCS_ROOT/guide/"
+echo "  $(find "$MANTLE_DOCS_ROOT" -name '*.md' | wc -l | tr -d ' ') markdown files ($(ls "$MANTLE_DOCS_ROOT/guide/06-help" | wc -l | tr -d ' ') help topics)"
+
 echo "→ read-only Postgres role"
 docker exec -i mantle_demo_pg psql -U postgres -d postgres -q < "$DEMO/deploy/readonly-role.sql"
 echo "  demo_reader ready"
