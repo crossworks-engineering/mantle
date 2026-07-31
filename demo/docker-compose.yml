@@ -106,8 +106,10 @@ services:
       retries: 12
       start_period: 30s
 
-  # Embeddings for the P3 ingest run. Seed-time only — the serve-time box
-  # never runs this (only a pg_dump travels there).
+  # Embeddings for the P3 ingest run. NOT seed-time only, despite what this
+  # comment used to claim: search embeds the QUERY at request time, so the
+  # serve box runs an embedder too (deploy/docker-compose.demo.yml). What
+  # travels there is data, not this container.
   ollama:
     image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.2}
     container_name: mantle_demo_ollama

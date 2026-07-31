@@ -1,0 +1,356 @@
+# Demo v2 — the SERVE-time stack. This is what runs on the site box.
+#
+# The seed stack (demo/docker-compose.yml) built the brain on the workstation.
+# This one serves it: a real Postgres restored from that brain's dump, the real
+# app images from Docker Hub, and NOTHING that can write. It is the opposite of
+# v1, which served recorded fixtures from two containers with no database at
+# all — do not reuse any of v1's infrastructure or its
+# DEMO_IMAGE/DEMO_USER_ID/DEMO_SESSION_SECRET contract (mantle-site/DEPLOY.md
+# describes v1; that document does not apply here).
+#
+#   docker compose -f docker-compose.demo.yml --env-file .env.demo up -d --wait
+#
+# ── What is NOT here, and why ────────────────────────────────────────────────
+#   migrate   the dump is already migrated, and demo_reader could not run it
+#             anyway. Restoring is the transfer script's job, not compose's.
+#   workers   a read-only brain has nothing to process. readonly-role.sql
+#             revokes pgboss outright — "a reader that could enqueue would be a
+#             write path by another name".
+#   browser   PDF export only. Saves 1.5 GB of guardrail on a small box; the
+#             export routes are POSTs the edge refuses before they get here.
+#   caddy     the site box already runs `mantle-site-caddy` on 80/443, and the
+#             demo's edge is a site block inside ITS Caddyfile (Caddyfile.demo).
+#             See "Wiring the edge" below.
+#
+# ── Ollama IS required at serve time ─────────────────────────────────────────
+# The seed compose says the serve box "never runs this (only a pg_dump travels
+# there)". That is wrong and this file is the correction: search embeds the
+# QUERY at request time, so a demo without an embedder has a dead search box on
+# every screen. That is a model download (~600 MB) and ~1-2 GB of RAM on the
+# box that v1 never needed.
+#
+# ── Wiring the edge ──────────────────────────────────────────────────────────
+# The default network is NAMED (bottom of this file) so the site's Caddy can
+# join it and reach these containers by name — no published ports, no
+# host-gateway, no CORS. In mantle-site/deploy/docker-compose.yml:
+#
+#     caddy:
+#       networks: [default, mantle_demo_net]
+#     networks:
+#       mantle_demo_net:
+#         external: true
+#
+# and render Caddyfile.demo with
+#     __DEMO_WEB__ = mantle_demo_srv_client:3000
+#     __DEMO_API__ = mantle_demo_srv_web:3000
+#
+# The loopback ports published below are for the transfer/restore and for
+# debugging from a shell on the box; they are NOT the serving path. If you
+# would rather not join networks, point the Caddyfile at host.docker.internal
+# and those ports instead — but then add `extra_hosts` to the site's caddy.
+#
+# ── One thing to decide before deploying ─────────────────────────────────────
+# Caddyfile.demo carries the minted session cookies inline, so the rendered
+# file is a secret and must NOT be committed to the (public) mantle-site repo.
+# Render it on the box into the site's deploy dir and keep it out of that
+# repo's git — the render script is still to be written.
+
+name: mantle-demo-serve
+
+# Every value the app reads. Nothing here is inherited from the root compose:
+# a demo that quietly picked up a real box's env is exactly the accident this
+# whole branch is arranged to prevent.
+x-demo-app-env: &demo-app-env
+  # ── THE read-only layer that does not depend on Caddy being correct ────────
+  # demo_reader (deploy/readonly-role.sql), never the owner. The password is
+  # not a secret — the role can read fictional content and write nothing.
+  DATABASE_URL: postgres://demo_reader:demo_reader_not_a_secret@postgres:5432/postgres
+  # Required, not optional. Unset, the app builds absolute links against
+  # localhost — a share URL shown to a visitor as http://localhost:3000/s/<tok>
+  # is a link to their own machine, and generated content bakes them in
+  # permanently. v0.217.1 warns loudly on boot; earlier releases did not.
+  MANTLE_PUBLIC_URL: ${MANTLE_PUBLIC_URL:?set MANTLE_PUBLIC_URL=https://demo.mantle-ai.tech}
+  # Must be BYTE-IDENTICAL to what the brain was sealed with at seed time.
+  # SESSION_SECRET is what the injected mantle_session / mantle_team_chat
+  # cookies are HMAC'd over — a different value is not an error, it is a login
+  # screen. MANTLE_MASTER_KEY unseals the vault.
+  SESSION_SECRET: ${SESSION_SECRET:?must match the seed-time value exactly}
+  MANTLE_MASTER_KEY: ${MANTLE_MASTER_KEY:?must match the seed-time value exactly}
+  # Blank: the runtime resolves the sole auth.users row, which the dump carries.
+  ALLOWED_USER_ID: ${ALLOWED_USER_ID:-}
+  S3_ENDPOINT: http://minio:9000
+  S3_REGION: us-east-1
+  S3_BUCKET: mantle
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-minio12345}
+  S3_FORCE_PATH_STYLE: 'true'
+  TIKA_URL: http://tika:9998
+  MANTLE_LOCAL_EMBEDDING_URL: http://ollama:11434/v1
+  # Deliberately UNSET, exactly as at seed time: the resolver reads the model
+  # from the brain, and the brain travels in the dump. Pinning it here is how
+  # you end up embedding queries with a model the passages were never built
+  # with — every result subtly wrong, nothing to see in a log.
+  MANTLE_EMBEDDING_MODEL: ''
+  NODE_ENV: production
+  # ── The three roots that resolve cwd-relative by default ───────────────────
+  # This is the trap that bit the demo three times, and the third was silent
+  # for a week: 35 PDFs and 26 images ingested as nodes with a title and
+  # nothing else — no text, no chunks, unsearchable, no error anywhere,
+  # because loadFileBytes() returned null and the parse branch never ran.
+  # In a container the paths are fixed, so the danger here is not the default
+  # — it is shipping a deploy that carries only the database. All three of
+  # these directories are SEEDED DATA and must arrive with the dump.
+  MANTLE_DOCS_ROOT: /data/docs
+  MANTLE_FILES_ROOT: /data/files
+  TABLE_DB_DIR: /data/table-dbs
+  # Not a cwd-relative default (it anchors to the monorepo root) and the seeded
+  # brain's published mini-app has no database file, so nothing ships here
+  # today. Mounted anyway: an ephemeral APP_DB_DIR inside the container is how
+  # a future app's data disappears on the next redeploy.
+  APP_DB_DIR: /data/app-dbs
+  # One proxy hop in front of the app — the site's Caddy. The rate limiter
+  # counts X-Forwarded-For from the right, so a wrong value here makes it key
+  # on a header a visitor can spoof. Raise to 2 if you put Cloudflare (or a
+  # demo-owned Caddy) in front of the site's.
+  MANTLE_TRUSTED_PROXIES: ${MANTLE_TRUSTED_PROXIES:-1}
+  # Everything below stays dark on the demo. Runs are the one visible blemish
+  # (25 cancelled, 1 failed, no successful run) and turning the engine on here
+  # would not fix that — the runs would have to be seeded, writably, before
+  # the dump was taken.
+  MANTLE_RUNS: ''
+  TEAM_CHAT_POST_ENABLED: ''
+  SANDBOXD_TOKEN: ''
+
+services:
+  # ── The brain ──────────────────────────────────────────────────────────────
+  # Empty on first boot; the transfer script restores the dump through the
+  # loopback port below, then applies readonly-role.sql. Order matters: the
+  # grants have to land AFTER the schema exists, which is why the role is not
+  # part of the init scripts.
+  postgres:
+    image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
+    container_name: mantle_demo_srv_pg
+    restart: unless-stopped
+    # The dump was taken from pg18. Restoring into a different major works, but
+    # the client/server skew that has bitten this fleet before is a REAL risk
+    # here — dump with a client matching the server you dump FROM.
+    command: ['postgres', '-c', 'max_connections=100']
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+      # Required for pg18+: the image moved PGDATA to a versioned subdir and
+      # refuses to init into a mount at the classic path.
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - ${DEMO_DATA_DIR:-../.run/serve-data}/postgres:/var/lib/postgresql/data
+      # Extensions + auth.users, once at cluster init. pg_dump emits these too,
+      # so this is insurance rather than a requirement — cheap, and it means a
+      # restore that is missing a CREATE EXTENSION still comes up.
+      - ${DEMO_PG_INIT_DIR:-../../infra/postgres/init}:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Loopback only — this is the restore path, not a serving path.
+      - '127.0.0.1:${DEMO_PG_PORT:-57432}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d postgres']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ── Object store: file blobs and image bytes ───────────────────────────────
+  minio:
+    image: minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
+    container_name: mantle_demo_srv_minio
+    restart: unless-stopped
+    mem_limit: 512m
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minio}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minio12345}
+    volumes:
+      - ${DEMO_DATA_DIR:-../.run/serve-data}/minio:/data
+    ports:
+      # Loopback only — `mc mirror` target for the bucket transfer.
+      - '127.0.0.1:${DEMO_MINIO_PORT:-57900}:9000'
+    healthcheck:
+      test: ['CMD-SHELL', 'mc ready local || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # One-shot, idempotent. The app only HEADs the bucket and never creates it,
+  # so a MinIO that is up with no bucket is a fresh-install failure mode that
+  # looks like healthy infrastructure.
+  createbucket:
+    image: minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-08-13T08-35-41Z}
+    container_name: mantle_demo_srv_createbucket
+    restart: 'no'
+    depends_on:
+      minio: { condition: service_healthy }
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minio12345}
+    entrypoint: ['sh', '-c']
+    command:
+      - |
+        set -e
+        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY"
+        mc mb --ignore-existing local/mantle
+        mc anonymous set none local/mantle
+        echo "[createbucket] bucket 'mantle' ready"
+
+  # ── File previews ──────────────────────────────────────────────────────────
+  # Stateless. Heap settings are the root compose's hard-won values: 512m was
+  # too tight because a text-heavy Office file unzips to many times its size as
+  # XML and Tika holds that in heap, OOMing to an empty parse.
+  tika:
+    image: apache/tika:3.3.1.0
+    container_name: mantle_demo_srv_tika
+    restart: unless-stopped
+    mem_limit: 1.5g
+    environment:
+      JAVA_TOOL_OPTIONS: '-Xmx1g -Xms128m'
+    healthcheck:
+      # The image has only bash — no curl, wget or nc. Probe via /dev/tcp.
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/localhost/9998 || exit 1; printf "GET /version HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3; read -t 2 line <&3; [[ "$$line" == *"200 OK"* ]]'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # ── The embedder — serve-time, not seed-time ───────────────────────────────
+  # See the header. Every search box on every screen goes through here.
+  ollama:
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.2}
+    container_name: mantle_demo_srv_ollama
+    restart: unless-stopped
+    mem_limit: 4g
+    environment:
+      # Keep the model resident: a public demo's traffic is bursty, and a cold
+      # load on the first search of every visit reads as a broken search box.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
+    volumes:
+      - ${DEMO_DATA_DIR:-../.run/serve-data}/ollama:/root/.ollama
+    healthcheck:
+      test: ['CMD', 'ollama', 'list']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # One-shot: pull the embedder into the model volume, then exit. Idempotent,
+  # so it is a no-op on every boot after the first. `web` gates on it
+  # COMPLETING rather than running it in the background — a demo that starts
+  # serving before the model is on disk answers its first searches with an
+  # error, and first impressions are the entire point of a demo.
+  ollama_pull:
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.2}
+    container_name: mantle_demo_srv_ollama_pull
+    restart: 'no'
+    depends_on:
+      ollama: { condition: service_healthy }
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ['ollama', 'pull', '${MANTLE_EMBEDDING_PULL_MODEL:-embeddinggemma}']
+
+  # ── The API (server/web) ───────────────────────────────────────────────────
+  # ZERO pages live here. Every one of the 94 screens is in the client below —
+  # pointing the edge at this service alone yields a working /api/* and a 404
+  # for every actual page, which is exactly what happened the first time.
+  web:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:?pin the release the brain was seeded on, e.g. v0.217.1}
+    container_name: mantle_demo_srv_web
+    restart: unless-stopped
+    mem_limit: 1.5g
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      createbucket: { condition: service_completed_successfully }
+      ollama_pull: { condition: service_completed_successfully }
+    environment:
+      <<: *demo-app-env
+    volumes:
+      # Read-only: the docs root is the ONE mount where that is safe, because
+      # the docs path is one-way (disk → DB) by design. Two different things
+      # live under it and BOTH are read from disk at request time, so an
+      # incomplete root produces empty screens with no error anywhere:
+      #   the generated demo docs   what the seeded `documentation` nodes point at
+      #   guide/06-help             52 product help topics. /api/help/<topic>
+      #                             resolves docsRoot()/guide/06-help/<topic>.md
+      #                             — without them every "?" panel in the demo
+      #                             answers 404 while looking perfectly fine.
+      - ${DEMO_DOCS_ROOT:-../generator/out/docs}:/data/docs:ro
+      # File BYTES — 85 of them. Not in the database, not in MinIO.
+      - ${DEMO_FILES_ROOT:-../.run/files}:/data/files:ro
+      # The 11 SQLite workbooks. Postgres holds only the registry that POINTS
+      # at these, so a dump without them is TableFileMissingError on every
+      # table. Mounted read-write, and that is a real gap worth knowing about:
+      # table writes go to SQLite, not Postgres, so demo_reader does not defend
+      # them — only the edge's write-rejection does. A :ro mount would be the
+      # second layer, but SQLite wants to create -wal/-shm beside the file even
+      # to read, so it needs verifying before it can be tightened.
+      - ${DEMO_TABLE_DB_DIR:-../.run/table-dbs}:/data/table-dbs
+      - ${DEMO_DATA_DIR:-../.run/serve-data}/app-dbs:/data/app-dbs
+    ports:
+      # Loopback only, and NON-default on purpose: when Docker cannot program a
+      # published port it abandons the container's entire network setup and the
+      # process comes up attached to nothing — no service discovery, no
+      # postgres — while still reporting healthy, because the healthcheck
+      # probes 127.0.0.1 inside the container. A busy :3000 is enough to do it.
+      - '127.0.0.1:${DEMO_WEB_PORT:-57080}:3000'
+    healthcheck:
+      # Two parts, because the second one lied on its own: fetch() rejects only
+      # on a network error, so any response (including a 401) means the app is
+      # up — but that passes perfectly in the no-network state above. The
+      # interface check is the honest signal.
+      test:
+        - CMD
+        - node
+        - -e
+        - "const os=require('os');const wired=Object.entries(os.networkInterfaces()).some(([n,a])=>n!=='lo'&&(a||[]).some(x=>!x.internal));if(!wired){console.error('no network interface — container networking failed');process.exit(1)}fetch('http://127.0.0.1:3000/api/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  # ── The UI (client/web) — where the 94 screens live ────────────────────────
+  client:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-client:${MANTLE_IMAGE_TAG:?same tag as the server — releases are lockstep}
+    container_name: mantle_demo_srv_client
+    restart: unless-stopped
+    mem_limit: 768m
+    depends_on:
+      web: { condition: service_healthy }
+    environment:
+      # Read per-request into /env.js, so this tells the BROWSER where to send
+      # its fetches. It MUST be the public edge origin, never the API service:
+      # point it at the API and the browser bypasses Caddy entirely, gets no
+      # injected cookie, and every screen spins forever behind a 401 while the
+      # pages themselves render fine. One origin is the whole design.
+      MANTLE_SERVER_ORIGIN: ${MANTLE_PUBLIC_URL:?set MANTLE_PUBLIC_URL=https://demo.mantle-ai.tech}
+      MANTLE_TURN_STREAMING: ${MANTLE_TURN_STREAMING:-}
+      NODE_ENV: production
+    ports:
+      - '127.0.0.1:${DEMO_CLIENT_PORT:-57081}:3000'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "node -e \"fetch('http://127.0.0.1:3000/env.js').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+# Named so the site's Caddy can join it from its own compose project and reach
+# these containers by name. Without an explicit name this would be
+# `mantle-demo-serve_default`, which is a name you have to look up rather than
+# one you can write down in another repo's compose file.
+networks:
+  default:
+    name: mantle_demo_net

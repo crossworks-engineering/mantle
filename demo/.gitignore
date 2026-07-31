@@ -1,1 +1,3 @@
 .run/
+# Serve-time secrets: the brain's session/master keys. This repo is public.
+deploy/.env.demo
