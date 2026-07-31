@@ -26,7 +26,7 @@
 
 import { createHash } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
-import { db, embeddingCache, embeddingConfig } from '@mantle/db';
+import { db, embeddingCache, embeddingConfig, isWriteRefused } from '@mantle/db';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { currentTrace, step } from '@mantle/tracing';
 // `@mantle/voice` self-registers all built-in adapters on import. The
@@ -172,6 +172,26 @@ const _resolverCache = new Map<string, { config: EmbeddingConfig; expiresAt: num
  * Cached per ownerId for 60s. Mutations on `/settings/embedding` call
  * {@link clearEmbeddingModelCache} so a change kicks in immediately.
  */
+/**
+ * Say once, not once per query.
+ *
+ * Every search embeds a novel string, so a read-only brain would refuse this
+ * write on essentially every request. Logging per occurrence would bury the
+ * server log of a public demo under identical lines — and a warning nobody can
+ * read is the same as no warning. Once per process is enough to explain why the
+ * cache never fills.
+ */
+let warnedCacheReadOnly = false;
+function warnCacheReadOnlyOnce(): void {
+  if (warnedCacheReadOnly) return;
+  warnedCacheReadOnly = true;
+  console.warn(
+    '[embeddings] embedding_cache is not writable (read-only database or a role ' +
+      'without INSERT) — embeddings still compute, they just are not cached. ' +
+      'Every miss will recompute; this is logged once per process.',
+  );
+}
+
 export async function resolveEmbeddingConfig(ownerId: string): Promise<EmbeddingConfig> {
   const cached = _resolverCache.get(ownerId);
   if (cached && cached.expiresAt > Date.now()) return cached.config;
@@ -516,7 +536,29 @@ async function doEmbed(
         out[inputIdx] = vec;
         return { contentHash: hashes[inputIdx]!, embedding: vec };
       });
-      await db.insert(embeddingCache).values(cacheRows).onConflictDoNothing();
+      // The vectors are already in `out` — this write is pure optimisation, and
+      // an optimisation must never fail the read it exists to accelerate.
+      //
+      // On a read-only brain (a replica, a narrowed role, the public demo's
+      // reader) the INSERT is refused, and because it sits in the throwing path
+      // the refusal used to take the whole embed down. The caller then caught it
+      // and degraded to full-text — so semantic search returned plausible
+      // keyword hits and natural-language questions returned nothing, with a 200
+      // and no visible error. Silent degradation, not a 500, which is why the
+      // route sweep that found the other cases of this class walked straight
+      // past it.
+      //
+      // Do NOT try to avoid this by pre-seeding or clearing the cache: Postgres
+      // checks the table ACL when the executor starts, before matching a row, so
+      // even ON CONFLICT DO NOTHING is refused. The statement has to not run.
+      try {
+        await db.insert(embeddingCache).values(cacheRows).onConflictDoNothing();
+      } catch (err) {
+        // Narrow on purpose — anything that is not "the database refused to
+        // write" is a real failure and must stay loud.
+        if (!isWriteRefused(err)) throw err;
+        warnCacheReadOnlyOnce();
+      }
     }
   }
 
