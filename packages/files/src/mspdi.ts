@@ -15,8 +15,10 @@
  * importer discards entirely. A DOM parse would materialise all of it.
  *
  * Parser is `saxes` rather than `sax`: same streaming model, but it ships its
- * own TypeScript types, so both the library and its types come from the existing
- * pnpm store and the dependency downloads nothing.
+ * own TypeScript types, where `sax` needs a separate `@types/sax`. Pinned to 6.x
+ * — `exceljs` already pulls saxes 5.0.1 transitively, and sharing that copy
+ * would tie this parser's version to whatever a spreadsheet library happens to
+ * need. 164 KB, no native build, no runtime dependencies of its own.
  *
  * Separate entry point (`@mantle/files/mspdi`) so the parser only loads when a
  * Project export actually arrives. The `ParsedSheet` import is type-only on
