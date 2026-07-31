@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { db, entities, entityEdges, facts, nodes, traces } from '@mantle/db';
+import { db, entities, entityEdges, facts, isWriteRefused, nodes, traces } from '@mantle/db';
 import { getTrace } from './traces';
 import type { TraceDetail } from '@mantle/web-ui/traces-format';
 import {
@@ -197,6 +197,27 @@ const ABANDON_AFTER_MIN = (Number(process.env.MANTLE_EXTRACT_EXPIRE_MIN) || 60) 
  * poll as a self-heal. Returns how many it reaped.
  */
 export async function reapAbandonedTraces(userId: string): Promise<number> {
+  try {
+    return await reapUnguarded(userId);
+  } catch (err) {
+    // This is a SELF-HEAL on a read path: getLiveActivity reconciles orphaned
+    // rows before listing them, so GET /api/activity performs an UPDATE. On a
+    // database that will not accept writes — a read-only replica, a revoked
+    // grant, the public demo's reader role — that turned the always-on Activity
+    // surface into a 500 on every poll, from every screen.
+    //
+    // Nothing is lost by skipping it. The reconcile is idempotent and runs on
+    // the next poll against a writable database; the read below still returns
+    // the truth, minus the tidy-up. Note that pre-clearing the stale rows does
+    // NOT avoid this: Postgres checks the table ACL at executor start, before
+    // matching a single row, so the UPDATE is refused even when it would touch
+    // nothing.
+    if (!isWriteRefused(err)) throw err;
+    return 0;
+  }
+}
+
+async function reapUnguarded(userId: string): Promise<number> {
   const cutoff = new Date(Date.now() - ABANDON_AFTER_MIN * 60_000);
   const rows = await db
     .update(traces)
