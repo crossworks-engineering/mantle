@@ -168,6 +168,7 @@ const apiErrorsBefore = await countApiErrors();
 
 const browser = await chromium.launch();
 const results = [];
+const noted = [];
 
 async function visit({ route, url, skip }) {
   if (skip) return { route, state: 'SKIP', note: skip };
@@ -233,8 +234,10 @@ async function visit({ route, url, skip }) {
     const probe = await page.evaluate(() => {
       const m = document.querySelector('main');
       const el = m ?? document.body;
+      const frame = el ? el.querySelector('iframe') : null;
       return {
         container: m ? 'main' : 'body',
+        frame: frame ? { w: frame.clientWidth, h: frame.clientHeight } : null,
         text: el ? el.innerText.trim() : '',
         pending: el ? el.innerHTML.includes('template id="B:') : false,
         path: location.pathname,
@@ -255,8 +258,16 @@ async function visit({ route, url, skip }) {
       state = 'FAIL';
       note = 'empty <main>';
     } else if (chars < THIN_CHARS) {
-      state = 'THIN';
-      note = `only ${chars} chars`;
+      // A mini-app renders INSIDE a sandboxed iframe on an opaque origin, so
+      // its content is unreadable from here by design — the parent only holds
+      // the toolbar. Calling that "thin" would be wrong: the honest statement
+      // is that the sandbox is mounted and this gate cannot see inside it.
+      if (probe.frame && probe.frame.w > 200 && probe.frame.h > 100) {
+        note = `sandboxed app ${probe.frame.w}x${probe.frame.h} — contents not readable from the parent`;
+      } else {
+        state = 'THIN';
+        note = `only ${chars} chars`;
+      }
     }
 
     // A redirect is not automatically a fault: the detail routes deliberately
@@ -280,9 +291,17 @@ async function visit({ route, url, skip }) {
   // resource-load noise that corresponds to them — a real JS exception
   // (pageerror) or a 5xx still fails, below.
   const expectedAuthNoise = badResponses.some((b) => b.startsWith('401') || b.startsWith('403'));
+  // A font blocked by the app sandbox's CSP (font-src data:) degrades styling
+  // inside the frame and nothing else — it comes from the shared stylesheet the
+  // runtime injects, not from anything an app asked for, so it fires for ANY
+  // app and would keep /apps permanently red. Narrow on purpose: only font
+  // loads, only CSP. Every other CSP violation still fails.
+  const cspFontNoise = (e) => /Content Security Policy/i.test(e) && /font/i.test(e);
   const realErrors = consoleErrors.filter(
-    (e) => !(expectedAuthNoise && /Failed to load resource/i.test(e)),
+    (e) => !(expectedAuthNoise && /Failed to load resource/i.test(e)) && !cspFontNoise(e),
   );
+  const cspFonts = consoleErrors.filter(cspFontNoise);
+  if (cspFonts.length) noted.push(`${route}: sandbox CSP blocked a webfont (styling only)`);
   if (realErrors.length && state === 'OK') {
     state = 'FAIL';
     note = realErrors[0];
@@ -368,6 +387,11 @@ if (apiErrorsBefore !== null && apiErrorsAfter > apiErrorsBefore) {
   );
   console.log('These do not reach the browser, so no screen above can be trusted to have shown them:');
   for (const p of paths) console.log(`  ${p}`);
+}
+
+if (noted.length) {
+  console.log('\nNOTED — real, but not a failure:');
+  for (const n of noted) console.log(`  ${n}`);
 }
 
 if (fails.length) {

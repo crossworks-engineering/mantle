@@ -19,7 +19,7 @@
     "contact":       { "target": 16,  "min": 15,  "notes": "exactly the world.json cast (16 incl. owner); the email allowlist" },
     "table":         { "target": 14,  "min": 10,  "notes": "≥2 with formula columns, ≥2 with aggregates, 1 currency+select pipeline" },
     "documentation": { "target": 40,  "min": 25,  "notes": "HANDBOOK collection as on-disk markdown" },
-    "formula":       { "target": 5,   "min": 3 },
+    "formula":       { "target": 1,   "min": 1,   "notes": "ONE, deliberately. The five one-liners this replaced (`{amount} * {rate}` and friends) proved formulas exist while hiding everything that makes them worth having. The single pump-station spec exercises typed variables with units, cited equations, a piecewise branch, a lookup with a declared domain, and a rating scale — and passes dimensional analysis. Volume was the wrong target here." },
     "secret":        { "target": 3,   "min": 2,   "notes": "obviously-fake values; proves the screen renders" },
     "branch":        { "target": 12,  "min": 8,   "notes": "RECALIBRATED 2026-07-30: branches are ltree roots the APP creates per content type, not something the seeder authors. The original 16 assumed seeded branches and could never be met; a real seed lands ~11." }
   },
