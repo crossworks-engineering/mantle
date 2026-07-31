@@ -63,6 +63,7 @@ import {
   getPendingCall,
   listPendingCalls,
   rejectPendingCall,
+  checkToolPreconditions,
   CONTACT_TOOLS,
   WORKER_DELEGATION_TOOLS,
   EXPORT_TOOLS,
@@ -1572,9 +1573,15 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
    */
 
   /** Convert one JSON-Schema property def into a zod type. Honors `items` for
-   *  arrays, `integer` (vs number), nested object `properties`, and `[T,'null']`
-   *  nullable unions — so validation isn't silently dropped if a Toolsmith def
-   *  grows past the original string/number/boolean/array<string> vocabulary. */
+   *  arrays, `integer` (vs number), nested object `properties`, `[T,'null']`
+   *  nullable unions, and the size bounds (`minLength`/`maxLength`,
+   *  `minimum`/`maximum`, `minItems`/`maxItems`) — so validation isn't silently
+   *  dropped if a def grows past the original string/number/boolean/array
+   *  vocabulary.
+   *
+   *  The bounds matter as much as the types: `validate-args` enforces them for
+   *  the in-app agent, so dropping them here would leave the MCP surface the
+   *  only one that accepts a 10 000-character title. */
   function zodForDef(def: Record<string, unknown>): z.ZodTypeAny {
     const type = def.type;
     if (Array.isArray(def.enum) && def.enum.every((v) => typeof v === 'string')) {
@@ -1585,18 +1592,34 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
       const inner = base ? zodForDef({ ...def, type: base }) : z.unknown();
       return type.includes('null') ? inner.nullable() : inner;
     }
+    const bound = (key: string): number | undefined =>
+      typeof def[key] === 'number' ? (def[key] as number) : undefined;
+    /** Apply a `[min, max]` pair, skipping the ends the schema left open. */
+    const bounded = <T extends { min(n: number): T; max(n: number): T }>(
+      t: T,
+      minKey: string,
+      maxKey: string,
+    ): T => {
+      const min = bound(minKey);
+      const max = bound(maxKey);
+      let out = t;
+      if (min !== undefined) out = out.min(min);
+      if (max !== undefined) out = out.max(max);
+      return out;
+    };
     switch (type) {
       case 'string':
-        return z.string();
+        return bounded(z.string(), 'minLength', 'maxLength');
       case 'number':
-        return z.number();
+        return bounded(z.number(), 'minimum', 'maximum');
       case 'integer':
-        return z.number().int();
+        return bounded(z.number().int(), 'minimum', 'maximum');
       case 'boolean':
         return z.boolean();
       case 'array': {
         const items = (def.items ?? {}) as Record<string, unknown>;
-        return z.array('type' in items || 'enum' in items ? zodForDef(items) : z.unknown());
+        const inner = 'type' in items || 'enum' in items ? zodForDef(items) : z.unknown();
+        return bounded(z.array(inner), 'minItems', 'maxItems');
       }
       case 'object': {
         const props = (def.properties ?? {}) as Record<string, Record<string, unknown>>;
@@ -1635,19 +1658,39 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
    *  own (e.g. a worker tool that needs a Telegram chat refuses cleanly here).
    *  Binary `artifacts` are dropped (MCP results are text/JSON); tools that also
    *  persist their output to a node — e.g. `generate_image` → /files — still
-   *  surface the node id in `output`. `opts.skip` lets a caller gate writes. */
+   *  surface the node id in `output`.
+   *
+   *  `opts.skip` gates a def out; `opts.only` restricts to an explicit slug set,
+   *  which is how a group is bridged for DEDUPLICATION without also widening the
+   *  MCP surface with its other members. */
   function registerBuiltinTools(
     defs: readonly BuiltinToolDef[],
-    opts?: { skip?: (def: BuiltinToolDef) => boolean },
+    opts?: { skip?: (def: BuiltinToolDef) => boolean; only?: ReadonlySet<string> },
   ) {
     for (const def of defs) {
+      if (opts?.only && !opts.only.has(def.slug)) continue;
       if (opts?.skip?.(def)) continue;
       server.tool(
         def.slug,
         def.description,
         zodShapeFromJsonSchema(def.inputSchema),
         async (args: Record<string, unknown>) => {
-          const result = await def.handler(args ?? {}, { ownerId: ownerId });
+          const input = args ?? {};
+          // Declared referential preconditions run first, exactly as
+          // dispatch.ts does for the in-app agent. Without this the MCP surface
+          // is the only one where an id pointing at a missing — or wrong-type —
+          // node reaches the handler and comes back as a bare "not found",
+          // hiding the actual mistake.
+          if (def.preconditions?.length) {
+            const failure = await checkToolPreconditions(def.preconditions, input, ownerId);
+            if (failure && !failure.ok) {
+              return {
+                content: [{ type: 'text' as const, text: `Error: ${failure.error}` }],
+                isError: true,
+              };
+            }
+          }
+          const result = await def.handler(input, { ownerId: ownerId });
           if (!result.ok) {
             return {
               content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
