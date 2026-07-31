@@ -82,6 +82,4 @@ await esbuild.build({
   logLevel: 'warning',
 });
 
-console.log(
-  `share-runtime: styles.css + islands.js + katex + mermaid + diagram-theme → ${outDir}`,
-);
+console.log(`share-runtime: styles.css + islands.js + katex + mermaid + diagram-theme → ${outDir}`);
