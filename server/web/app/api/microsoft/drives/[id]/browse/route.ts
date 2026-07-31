@@ -18,6 +18,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     if (items === null) return NextResponse.json({ error: 'Drive not found.' }, { status: 404 });
     return NextResponse.json({ items: items satisfies MsDriveChildDTO[] });
   } catch (err) {
+    // Log the real Graph/OAuth detail — the client only ever sees the generic
+    // line below, and without this a failure here is invisible on the server.
+    console.error('[microsoft/drives/browse]', err);
     const status = (err as GraphError).status === 401 ? 401 : 502;
     const message =
       status === 401

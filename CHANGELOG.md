@@ -4,6 +4,101 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — Adding a Microsoft scope quietly killed every older account (branch claude/sharepoint-auth-directory-listing-d78be4)
+
+**A connected Microsoft account had a shelf life measured from the last time we
+edited a constant.** Every token refresh asked Azure for the app's *current*
+scope list, but on the refresh leg Azure only honours scopes the user actually
+consented to — anything beyond that set is not a widened grant, it's a rejected
+request. So the day `Mail.Send` joined the list, every account connected before
+it stopped being refreshable: `invalid_grant` / `AADSTS65001, the user has not
+consented`. The account kept working until its access token expired, then went
+dark, and the only cure was a reconnect nobody knew to perform.
+
+The refresh no longer sends `scope` at all — omitting it re-issues exactly the
+consented set, which is also what comes back on the response, so the granted
+scopes we record (and gate outbound send on) stay accurate. The authorize and
+code-exchange legs still ask for everything, because that is where consent is
+actually given.
+
+**The failure was also invisible from both ends.** Server-side, the refresh
+error was recorded onto `ms_accounts.last_sync_error` *inside* the transaction
+it then aborted by rethrowing — the write rolled back with everything else, so
+an account that had been failing for a fortnight still read as healthy. It is
+now written after the transaction unwinds. Client-side, a token failure threw a
+plain `Error` with no status, so the drive browser's "reconnect the account"
+branch never fired and the folder picker said only *Could not list the folder.
+Try again* — advice that could never work. `invalid_grant` now carries a 401,
+which is the branch that tells the truth, and the browse route logs the
+underlying Graph error instead of swallowing it.
+
+## Unreleased — The pictures inside your documents (branch claude/mantle-image-extraction)
+
+**Every parser in the stack was text-only, so a diagram in a Word file or a
+screenshot in a PDF manual was dropped on the floor** — invisible to recall and
+to display alike. Some answers cannot be described, only shown: a screenshot of
+a settings screen *is* the answer to "how do I configure this". Documents now
+give their pictures up.
+
+`extractEmbeddedImages` mirrors the text path's three tiers — docx through
+mammoth's parsed document, pptx/xlsx/ODF through the zip and its relationship
+files, PDF through pdfjs's image XObjects, and the legacy binaries through
+Tika's `/unpack/all`, a capability that container always had and we had never
+called. Extracted pictures become ordinary image files under
+`files/extracted-images/<document>/`, which is what keeps the change small: the
+extractor already indexes images (vision describe plus OCR, which reads the
+labels *inside* a screenshot), and Pages already embeds a stored image by node
+id.
+
+**Reading order is the feature, not a detail.** A manual's screenshots are only
+useful in sequence, and listing the media folder gives the wrong answer — part
+numbering reflects when a picture was first embedded, and an image reused twenty
+times appears once. So each extractor walks the document body and resolves
+references to parts: slides in numeric order, sheets in workbook order, pages in
+page order. Names follow a cascade of alt text, caption, then nearest heading,
+rejecting Office's defaults (`Picture 3`) which look like names but say nothing;
+titles carry meaning while filenames stay mechanical and zero-padded, so a plain
+listing is reading order and a reworded caption can never orphan bytes.
+
+Retrieval needed one addition. A vision worker looking at a cropped screenshot
+writes "a mobile settings screen with several input fields" — true, and useless
+for finding it, since nothing there names the manual or the step. Each image
+stores its provenance and it is folded in ahead of the vision text, so the
+summary, the embedding and the chunks all know where the picture came from.
+
+**No model runs during extraction, and that is the point.** A sixty-slide deck
+carries a hundred images — logos, bullets, one icon per slide — and describing
+them all would be a hundred LLM calls. Pulling bytes out is free and always
+happens; only survivors of deterministic filters (container, pixel dimensions,
+byte floor, duplicate collapse, thirty per document) are worth a vision call.
+The byte floor is deliberately *low*: flat line art compresses to about 2 KB, and
+an initial 8 KB floor rejected precisely the diagrams this exists for. Pixel
+dimensions do the real filtering.
+
+Showing one is `show_image` in chat (rendered inline; Telegram gets a real
+photo) and `![alt](media:<file-id>)` in a page — no new page machinery, since
+that syntax already resolved to a stored file. A `visual_answers` skill carries
+the judgment: show rather than narrate, put each step's screenshot beside its
+step, and never invent a file id.
+
+SVG is accepted, and is the best case rather than the risky one — vector stays
+crisp at any zoom. It is safe because `safeDownloadHeaders` already serves it
+under a sandboxed, network-less CSP and both display paths embed through `<img>`,
+where SVG scripts never run. Office hides an inserted SVG behind a raster
+fallback, so the OOXML walk prefers the vector; without that, an EMF fallback
+would be dropped and the diagram would vanish with no error. EMF and WMF
+themselves are dropped — no browser renders them — and scanned PDFs are left to
+the existing OCR path rather than being mined for "figures" that are really just
+pages.
+
+Existing documents are swept by `pnpm -C server/web extract:images-backfill`,
+dry-run by default. The documents themselves are free: the image pass sits ahead
+of the extractor's already-extracted guard, so no text, summary or embedding
+work re-runs.
+
+Fixed while here: `upsertFile` reset a file's title to its filename on *every*
+upsert, so any deliberately-titled file silently reverted on re-ingest.
+
 ## Unreleased — The rest of the "all good" over a dead brain (branches feat/healthcheck, feat/sanity-services, feat/test-timeouts)
 
 **Four layers now have to agree before an install calls itself healthy.** The

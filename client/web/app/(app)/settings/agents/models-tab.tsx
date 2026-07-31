@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Check, Pencil, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint } from '@mantle/web-ui/ui/field-hint';
 import {
   Dialog,
   DialogContent,
@@ -518,6 +519,9 @@ function ModelSetPicker({
                 </option>
               ))}
             </select>
+            <FieldHint id="picker-provider">
+              Which service runs this agent&apos;s turns — it narrows the model and key lists below.
+            </FieldHint>
             {!isProviderWired(provider, 'chat') && (
               <p className="text-xs text-warning-ink">
                 No chat adapter registered for <code>{provider}</code> — the agent will fail at
@@ -563,6 +567,9 @@ function ModelSetPicker({
               emptyMessage="No matching models in the catalog."
               required
             />
+            <FieldHint id="picker-model">
+              The model this agent thinks with. Staged until you apply it.
+            </FieldHint>
             {modelMissing && (
               <p className="text-xs text-destructive-ink">Pick a model before staging.</p>
             )}
@@ -591,6 +598,9 @@ function ModelSetPicker({
                 </option>
               ))}
             </select>
+            <FieldHint id="picker-key">
+              Which saved key pays for it. Must belong to the provider above.
+            </FieldHint>
             {apiKeys.length > 0 && eligibleKeys.length === 0 && (
               <p className="text-xs text-warning-ink">
                 None of your saved keys are for <code>{provider}</code>. Add one at{' '}

@@ -28,6 +28,7 @@ import {
 } from '@mantle/web-ui/ui/dialog';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { slugify } from '@mantle/web-ui/slugify';
@@ -232,11 +233,16 @@ export function WorkerGroupsClient() {
                   value={draftName}
                   onChange={(e) => setDraftName(e.target.value)}
                   required
+                  aria-describedby={hintId('wg-name')}
                 />
+                <FieldHint id="wg-name">What this pool of workers is called.</FieldHint>
               </div>
 
               <div className="space-y-1.5">
                 <Label>Members (enabled worker agents)</Label>
+                <FieldHint>
+                  Which workers a run may hand steps to. Only enabled ones appear here.
+                </FieldHint>
                 {workers.length === 0 ? (
                   <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                     No enabled worker agents yet. Create one under{' '}
@@ -313,7 +319,9 @@ export function WorkerGroupsClient() {
                     setNewSlug(slugify(v, { allowUnderscore: true, maxLength: 64 }));
                 }}
                 required
+                aria-describedby={hintId('wg-new-name')}
               />
+              <FieldHint id="wg-new-name">What this pool of workers is called.</FieldHint>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="wg-new-slug">Slug</Label>
@@ -327,7 +335,11 @@ export function WorkerGroupsClient() {
                 pattern="[a-z0-9_\-]+"
                 maxLength={64}
                 required
+                aria-describedby={hintId('wg-new-slug')}
               />
+              <FieldHint id="wg-new-slug">
+                How a run references this group. Fixed once created.
+              </FieldHint>
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>

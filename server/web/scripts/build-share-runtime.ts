@@ -67,4 +67,19 @@ cpSync(join(katexDist, 'fonts'), join(outDir, 'katex/fonts'), { recursive: true 
 // The dist sets `globalThis.mermaid`.
 cpSync(require.resolve('mermaid/dist/mermaid.min.js'), join(outDir, 'mermaid.min.js'));
 
-console.log(`share-runtime: styles.css + islands.js + katex + mermaid → ${outDir}`);
+// ── 5. Shared Mermaid theme map ──────────────────────────────────────────────
+// The print surface's inline script can't import, so the one theme map (shared
+// with the in-app NodeView) is bundled as an IIFE that sets
+// `globalThis.mantleMermaidTheme`.
+await esbuild.build({
+  entryPoints: [join(webRoot, 'server/islands/diagram-theme.ts')],
+  outfile: join(outDir, 'diagram-theme.js'),
+  bundle: true,
+  format: 'iife',
+  platform: 'browser',
+  minify: true,
+  sourcemap: false,
+  logLevel: 'warning',
+});
+
+console.log(`share-runtime: styles.css + islands.js + katex + mermaid + diagram-theme → ${outDir}`);

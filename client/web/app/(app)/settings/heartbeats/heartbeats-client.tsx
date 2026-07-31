@@ -8,6 +8,7 @@ import { Pause, Play, Plus, Trash2, Zap } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { DateTimePicker } from '@mantle/web-ui/ui/date-time-picker';
 import {
   AlertDialog,
@@ -559,12 +560,20 @@ export function HeartbeatsClient() {
             <div className="grid gap-4">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <Label>Name</Label>
-                  <Input value={form.name} onChange={(e) => onName(e.target.value)} />
+                  <Label htmlFor="hb_name">Name</Label>
+                  <Input
+                    id="hb_name"
+                    value={form.name}
+                    onChange={(e) => onName(e.target.value)}
+                    aria-describedby={hintId('hb_name')}
+                  />
+                  <FieldHint id="hb_name">What this heartbeat is called in the list.</FieldHint>
                 </div>
                 <div className="space-y-1">
-                  <Label>Slug</Label>
+                  <Label htmlFor="hb_slug">Slug</Label>
                   <Input
+                    id="hb_slug"
+                    aria-describedby={hintId('hb_slug')}
                     value={form.slug}
                     disabled={editing.mode === 'edit'}
                     onChange={(e) => {
@@ -575,21 +584,31 @@ export function HeartbeatsClient() {
                       }));
                     }}
                   />
+                  <FieldHint id="hb_slug">
+                    The id the <code>heartbeat_fire</code> tool calls it by. Fixed once saved.
+                  </FieldHint>
                 </div>
               </div>
 
               <div className="space-y-1">
-                <Label>Description (optional)</Label>
+                <Label htmlFor="hb_description">Description (optional)</Label>
                 <Input
+                  id="hb_description"
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  aria-describedby={hintId('hb_description')}
                 />
+                <FieldHint id="hb_description">
+                  A note to yourself about what this one is for — nothing reads it at runtime.
+                </FieldHint>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
-                  <Label>Agent</Label>
+                  <Label htmlFor="hb_agent">Agent</Label>
                   <select
+                    id="hb_agent"
+                    aria-describedby={hintId('hb_agent')}
                     className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                     value={form.agent_slug}
                     onChange={(e) => setForm((f) => ({ ...f, agent_slug: e.target.value }))}
@@ -601,10 +620,15 @@ export function HeartbeatsClient() {
                       </option>
                     ))}
                   </select>
+                  <FieldHint id="hb_agent">
+                    Whose model, prompt and tools run the fire — and whose budget pays for it.
+                  </FieldHint>
                 </div>
                 <div className="space-y-1">
-                  <Label>Skill</Label>
+                  <Label htmlFor="hb_skill">Skill</Label>
                   <select
+                    id="hb_skill"
+                    aria-describedby={hintId('hb_skill')}
                     className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                     value={form.skill_slug}
                     onChange={(e) => {
@@ -635,6 +659,10 @@ export function HeartbeatsClient() {
                       </option>
                     ))}
                   </select>
+                  <FieldHint id="hb_skill">
+                    The instructions the agent follows on each fire. Picking one pre-fills the state
+                    below.
+                  </FieldHint>
                 </div>
               </div>
 
@@ -699,32 +727,47 @@ export function HeartbeatsClient() {
                 {form.schedule_kind === 'interval' && (
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1">
-                      <Label>Every (minutes)</Label>
+                      <Label htmlFor="hb_every">Every (minutes)</Label>
                       <Input
+                        id="hb_every"
                         type="number"
                         min="1"
                         value={form.schedule_every_minutes}
                         onChange={(e) =>
                           setForm((f) => ({ ...f, schedule_every_minutes: e.target.value }))
                         }
+                        aria-describedby={hintId('hb_every')}
                       />
+                      <FieldHint
+                        id="hb_every"
+                        warn="Every fire is a full agent turn — a short interval bills around the clock."
+                      >
+                        How often this heartbeat wakes up.
+                      </FieldHint>
                     </div>
                     <div className="space-y-1">
-                      <Label>Jitter ± (minutes)</Label>
+                      <Label htmlFor="hb_jitter">Jitter ± (minutes)</Label>
                       <Input
+                        id="hb_jitter"
                         type="number"
                         min="0"
                         value={form.schedule_jitter_minutes}
                         onChange={(e) =>
                           setForm((f) => ({ ...f, schedule_jitter_minutes: e.target.value }))
                         }
+                        aria-describedby={hintId('hb_jitter')}
                       />
+                      <FieldHint id="hb_jitter">
+                        Random slack around the interval so several heartbeats don&apos;t all fire
+                        on the same minute.
+                      </FieldHint>
                     </div>
                   </div>
                 )}
                 {form.schedule_kind === 'once' && (
                   <div className="space-y-1">
                     <Label>Fire at</Label>
+                    <FieldHint>Runs once at this moment, then goes idle.</FieldHint>
                     <DateTimePicker
                       value={form.schedule_at ? new Date(form.schedule_at) : null}
                       onChange={(d) =>
@@ -761,12 +804,17 @@ export function HeartbeatsClient() {
                 </div>
                 {form.surface_kind === 'telegram' && (
                   <div className="space-y-1">
-                    <Label>Telegram chat_id</Label>
+                    <Label htmlFor="hb_chat_id">Telegram chat_id</Label>
                     <Input
+                      id="hb_chat_id"
                       value={form.surface_chat_id}
                       onChange={(e) => setForm((f) => ({ ...f, surface_chat_id: e.target.value }))}
                       placeholder="e.g. 123456789"
+                      aria-describedby={hintId('hb_chat_id')}
                     />
+                    <FieldHint id="hb_chat_id">
+                      Which chat the reply lands in. Wrong id and the fire runs but nobody sees it.
+                    </FieldHint>
                   </div>
                 )}
               </fieldset>
@@ -794,46 +842,75 @@ export function HeartbeatsClient() {
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
-                    <Label>Min idle (minutes)</Label>
+                    <Label htmlFor="hb_min_idle">Min idle (minutes)</Label>
                     <Input
+                      id="hb_min_idle"
                       type="number"
                       min="0"
                       value={form.min_idle_minutes}
                       onChange={(e) => setForm((f) => ({ ...f, min_idle_minutes: e.target.value }))}
+                      aria-describedby={hintId('hb_min_idle')}
                     />
+                    <FieldHint id="hb_min_idle">
+                      Stay quiet unless you&apos;ve been silent this long — stops it interrupting
+                      mid-conversation.
+                    </FieldHint>
                   </div>
                   <div className="space-y-1">
-                    <Label>Cooldown (minutes)</Label>
+                    <Label htmlFor="hb_cooldown">Cooldown (minutes)</Label>
                     <Input
+                      id="hb_cooldown"
                       type="number"
                       min="0"
                       value={form.cooldown_minutes}
                       onChange={(e) => setForm((f) => ({ ...f, cooldown_minutes: e.target.value }))}
+                      aria-describedby={hintId('hb_cooldown')}
                     />
+                    <FieldHint
+                      id="hb_cooldown"
+                      warn="Leave it at 0 and a short interval can fire back-to-back."
+                    >
+                      Minimum gap between two fires of this heartbeat.
+                    </FieldHint>
                   </div>
                   <div className="space-y-1">
-                    <Label>Quiet from (HH:MM)</Label>
+                    <Label htmlFor="hb_quiet_from">Quiet from (HH:MM)</Label>
                     <Input
+                      id="hb_quiet_from"
                       value={form.quiet_from}
                       placeholder="22:00"
                       onChange={(e) => setForm((f) => ({ ...f, quiet_from: e.target.value }))}
+                      aria-describedby={hintId('hb_quiet_from')}
                     />
+                    <FieldHint id="hb_quiet_from">
+                      Start of the window where it never fires. Blank = no quiet hours.
+                    </FieldHint>
                   </div>
                   <div className="space-y-1">
-                    <Label>Quiet to (HH:MM)</Label>
+                    <Label htmlFor="hb_quiet_to">Quiet to (HH:MM)</Label>
                     <Input
+                      id="hb_quiet_to"
                       value={form.quiet_to}
                       placeholder="07:00"
                       onChange={(e) => setForm((f) => ({ ...f, quiet_to: e.target.value }))}
+                      aria-describedby={hintId('hb_quiet_to')}
                     />
+                    <FieldHint id="hb_quiet_to">
+                      End of that window. May wrap past midnight.
+                    </FieldHint>
                   </div>
                   <div className="space-y-1 sm:col-span-2">
-                    <Label>Quiet tz (IANA, blank = profile tz)</Label>
+                    <Label htmlFor="hb_quiet_tz">Quiet tz (IANA, blank = profile tz)</Label>
                     <Input
+                      id="hb_quiet_tz"
                       value={form.quiet_tz}
                       placeholder="Africa/Johannesburg"
                       onChange={(e) => setForm((f) => ({ ...f, quiet_tz: e.target.value }))}
+                      aria-describedby={hintId('hb_quiet_tz')}
                     />
+                    <FieldHint id="hb_quiet_tz">
+                      Which clock the quiet hours above are read in.
+                    </FieldHint>
                   </div>
                 </div>
               </fieldset>
@@ -841,6 +918,9 @@ export function HeartbeatsClient() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label>Earliest at (optional)</Label>
+                  <FieldHint>
+                    Don&apos;t fire before this moment — useful for arming something ahead of time.
+                  </FieldHint>
                   <DateTimePicker
                     value={form.earliest_at ? new Date(form.earliest_at) : null}
                     onChange={(d) =>
@@ -854,13 +934,21 @@ export function HeartbeatsClient() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label>Max fires (blank = unbounded)</Label>
+                  <Label htmlFor="hb_max_fires">Max fires (blank = unbounded)</Label>
                   <Input
+                    id="hb_max_fires"
                     type="number"
                     min="1"
                     value={form.max_fires}
                     onChange={(e) => setForm((f) => ({ ...f, max_fires: e.target.value }))}
+                    aria-describedby={hintId('hb_max_fires')}
                   />
+                  <FieldHint
+                    id="hb_max_fires"
+                    warn="Blank means it runs forever until you disable it."
+                  >
+                    Retires the heartbeat after this many fires.
+                  </FieldHint>
                 </div>
               </div>
             </div>

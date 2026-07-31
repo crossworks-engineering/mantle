@@ -1,0 +1,157 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0d10;
+  --card: #14171c;
+  --border: #262b33;
+  --text: #e8eaed;
+  --muted: #9aa3ad;
+  --accent: #6ea8fe;
+  --danger: #f28b82;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.card {
+  width: 400px;
+  padding: 28px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+h2 {
+  margin: 24px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.hint {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+
+form {
+  display: flex;
+  gap: 8px;
+}
+
+input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+button {
+  font: inherit;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#add-button {
+  padding: 9px 16px;
+  background: var(--accent);
+  color: #0b0d10;
+  font-weight: 600;
+}
+
+#add-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.error {
+  margin: 12px 0 0;
+  color: var(--danger);
+}
+
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+li {
+  display: flex;
+  gap: 6px;
+}
+
+.profile {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-align: left;
+}
+
+.profile:hover {
+  border-color: var(--accent);
+}
+
+.profile .name {
+  font-weight: 600;
+}
+
+.profile .origin {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.profile .origin.skew {
+  color: #e2b93b;
+}
+
+.remove {
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.remove:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}

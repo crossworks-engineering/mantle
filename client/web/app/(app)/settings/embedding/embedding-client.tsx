@@ -7,6 +7,7 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { Switch } from '@mantle/web-ui/ui/switch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useToast } from '@mantle/web-ui/ui/toast';
@@ -356,11 +357,15 @@ function EmbeddingForm({
                 value={perfConcurrency}
                 onChange={(e) => setPerfConcurrency(e.target.value)}
                 placeholder="default 2"
+                aria-describedby={hintId('extraction_concurrency')}
               />
-              <p className="text-xs text-muted-foreground">
+              <FieldHint
+                id="extraction_concurrency"
+                warn="Past what the box has cores for, everything slows down together."
+              >
                 How many files index at once. Drop to <code>1</code> on a CPU-only box so jobs
                 don&apos;t fight for the same cores.
-              </p>
+              </FieldHint>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="extraction_time_budget_minutes">Time budget (min)</Label>
@@ -373,11 +378,15 @@ function EmbeddingForm({
                 value={perfBudget}
                 onChange={(e) => setPerfBudget(e.target.value)}
                 placeholder="default 60"
+                aria-describedby={hintId('extraction_time_budget_minutes')}
               />
-              <p className="text-xs text-muted-foreground">
+              <FieldHint
+                id="extraction_time_budget_minutes"
+                warn="Too short and big files retry forever without finishing."
+              >
                 How long one file may index before it&apos;s retried. Big documents on a slow
                 embedder need the room.
-              </p>
+              </FieldHint>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="local_embed_batch_size">Local embed batch size</Label>
@@ -390,11 +399,15 @@ function EmbeddingForm({
                 value={perfBatch}
                 onChange={(e) => setPerfBatch(e.target.value)}
                 placeholder="default 16"
+                aria-describedby={hintId('local_embed_batch_size')}
               />
-              <p className="text-xs text-muted-foreground">
+              <FieldHint
+                id="local_embed_batch_size"
+                warn="Large batches on a weak CPU hit the timeout below."
+              >
                 Texts per request to the local embedder. Smaller (<code>8</code>) clears the timeout
                 on a slow vCPU; larger suits a GPU. Only affects the <code>local</code> provider.
-              </p>
+              </FieldHint>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="local_embed_request_timeout_ms">Local embed timeout (ms)</Label>
@@ -408,11 +421,12 @@ function EmbeddingForm({
                 value={perfTimeout}
                 onChange={(e) => setPerfTimeout(e.target.value)}
                 placeholder="default 120000"
+                aria-describedby={hintId('local_embed_request_timeout_ms')}
               />
-              <p className="text-xs text-muted-foreground">
+              <FieldHint id="local_embed_request_timeout_ms">
                 How long one local embed request may run before it&apos;s aborted. Raise on very
                 slow hardware.
-              </p>
+              </FieldHint>
             </div>
           </div>
 
@@ -507,6 +521,7 @@ function RouteFields({
               </option>
             ))}
           </select>
+          <FieldHint id={`${prefix}_provider`}>Who computes the vectors for this route.</FieldHint>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor={`${prefix}_label`}>Label</Label>
@@ -516,7 +531,11 @@ function RouteFields({
             value={state.label}
             onChange={(e) => setState((s) => ({ ...s, label: e.target.value }))}
             placeholder={prefix === 'primary' ? 'Mac Ollama' : 'LAN box'}
+            aria-describedby={hintId(`${prefix}_label`)}
           />
+          <FieldHint id={`${prefix}_label`}>
+            Your own name for this route, so you can tell two boxes apart.
+          </FieldHint>
         </div>
       </div>
       <div className="space-y-1.5">
@@ -527,7 +546,11 @@ function RouteFields({
           value={state.baseUrl}
           onChange={(e) => setState((s) => ({ ...s, baseUrl: e.target.value }))}
           placeholder="blank = provider default (local → http://localhost:11434/v1)"
+          aria-describedby={hintId(`${prefix}_base_url`)}
         />
+        <FieldHint id={`${prefix}_base_url`}>
+          Where the embedder listens. Blank uses the provider&apos;s default.
+        </FieldHint>
       </div>
       <div className="space-y-1.5">
         <Label htmlFor={`${prefix}_api_key_id`}>API key</Label>
@@ -545,6 +568,9 @@ function RouteFields({
             </option>
           ))}
         </select>
+        <FieldHint id={`${prefix}_api_key_id`}>
+          Leave on None for a self-hosted embedder — it needs no key.
+        </FieldHint>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" variant="outline" size="sm" disabled={testing} onClick={onTest}>

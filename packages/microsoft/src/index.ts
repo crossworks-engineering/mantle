@@ -29,6 +29,7 @@ export {
   exchangeCode,
   refreshTokens,
   fetchMe,
+  type MsAuthError,
   type PkcePair,
   type TokenSet,
 } from './oauth';

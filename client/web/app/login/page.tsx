@@ -22,7 +22,14 @@ export default function LoginPage({
   const router = useRouter();
 
   useEffect(() => {
-    if (tokenStore.get()) router.replace(params.next ?? '/');
+    if (tokenStore.get()) {
+      // Re-assert the presence cookie before bouncing. It can be lost while
+      // the token survives (an abrupt shutdown can drop Chromium's unflushed
+      // cookie store; localStorage flushes eagerly) — and without it the
+      // middleware redirects the bounce right back here, a deadlock.
+      tokenStore.markPresence();
+      router.replace(params.next ?? '/');
+    }
   }, [router, params.next]);
 
   const bootQuery = useQuery({

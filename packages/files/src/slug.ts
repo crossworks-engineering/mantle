@@ -110,6 +110,42 @@ export const INGESTABLE_EXTS = new Set<string>([
   ...TIKA_EXTS,
 ]);
 
+/**
+ * Formats we can NAME but deliberately cannot read, mapped to the action that
+ * fixes it.
+ *
+ * These are the dead ends where the answer is a user action rather than a code
+ * change or a retry. Without an entry here such a file falls through the whole
+ * parser ladder to an empty string and gets indexed by its filename alone —
+ * which looks, from the outside, exactly like a successful ingest. The user
+ * believes their plan is in the brain; it isn't, and nothing ever said so.
+ *
+ * Microsoft Project is the case that prompted this. `.mpp` is a proprietary,
+ * undocumented, version-varying binary OLE2 format: there is no JavaScript
+ * reader for it, and reading one natively means MPXJ, which is Java and would
+ * cost this stack a JVM sidecar. Since a plan has to leave Project as an export
+ * either way, the honest move is to say so at ingest time and name the export.
+ *
+ * Keep the hints in the house error style — state the recovery move, not just
+ * the refusal (see packages/tools/CLAUDE.md).
+ */
+export const EXPORT_REQUIRED_EXTS = new Map<string, string>([
+  [
+    'mpp',
+    "Microsoft Project plans are a proprietary binary format Mantle can't read. In Project use File → Save As and choose XML (*.xml) for the full plan — tasks, resources, assignments and dependencies — then upload that. Exporting the task list as CSV or XLSX also works and becomes a queryable Table, but loses the outline hierarchy and links.",
+  ],
+  [
+    'mpt',
+    "Microsoft Project templates are a proprietary binary format Mantle can't read. Open it in Project and use File → Save As → XML (*.xml), then upload that instead.",
+  ],
+]);
+
+/** The recovery hint for a format that needs exporting, or undefined when the
+ *  extension isn't one of them. */
+export function exportHintForExt(ext: string): string | undefined {
+  return EXPORT_REQUIRED_EXTS.get(ext.toLowerCase());
+}
+
 /** Which parser tier handles a given file extension. Mirrors the dispatch
  *  in {@link parseDocumentBytes} and is used by the `parse_document` trace
  *  step's `parser` meta — pulled out as a pure helper so both call sites

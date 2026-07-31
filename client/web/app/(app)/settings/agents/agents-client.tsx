@@ -18,6 +18,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { ModelSelect } from '@/components/ui/model-select';
 import { Slider } from '@mantle/web-ui/ui/slider';
 import { useToast } from '@mantle/web-ui/ui/toast';
@@ -1089,7 +1090,12 @@ export function AgentsClient() {
                           placeholder="Telegram responder"
                           required
                           autoFocus
+                          aria-describedby={hintId('name')}
                         />
+                        <FieldHint id="name">
+                          What you&apos;ll see in the agent list and above this agent&apos;s
+                          messages.
+                        </FieldHint>
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="slug">Slug</Label>
@@ -1103,7 +1109,11 @@ export function AgentsClient() {
                           pattern="[a-z0-9_\-]+"
                           required
                           disabled={editing?.mode === 'edit'}
+                          aria-describedby={hintId('slug')}
                         />
+                        <FieldHint id="slug">
+                          The stable id other agents delegate to. Fixed once saved.
+                        </FieldHint>
                       </div>
                     </div>
 
@@ -1114,7 +1124,12 @@ export function AgentsClient() {
                         value={form.description}
                         onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                         placeholder="Default Telegram responder, with memory"
+                        aria-describedby={hintId('description')}
                       />
+                      <FieldHint id="description">
+                        One line on what this agent is for — it&apos;s what another agent reads when
+                        choosing whether to hand work over.
+                      </FieldHint>
                     </div>
 
                     <div className="space-y-1.5">
@@ -1124,6 +1139,7 @@ export function AgentsClient() {
                         onChange={(v) => setForm((f) => ({ ...f, avatar: v }))}
                         fallbackSeed={form.slug || form.name || 'agent'}
                       />
+                      <FieldHint>Shown beside this agent&apos;s replies and in the list.</FieldHint>
                     </div>
 
                     {/*
@@ -1141,6 +1157,7 @@ export function AgentsClient() {
                           value={form.role}
                           onChange={(e) => onRoleChange(e.target.value as Role)}
                           className={SELECT_CLASS}
+                          aria-describedby={hintId('role')}
                         >
                           {ROLES.map((r) => (
                             <option key={r.value} value={r.value}>
@@ -1148,6 +1165,10 @@ export function AgentsClient() {
                             </option>
                           ))}
                         </select>
+                        <FieldHint id="role">
+                          Which loop runs this agent. It also decides which of the tuning fields
+                          below apply.
+                        </FieldHint>
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="priority">Priority</Label>
@@ -1158,7 +1179,12 @@ export function AgentsClient() {
                           onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
                           min={0}
                           step={1}
+                          aria-describedby={hintId('priority')}
                         />
+                        <FieldHint id="priority">
+                          Ordering when several agents qualify — highest sits at the top of the chat
+                          list.
+                        </FieldHint>
                       </div>
                     </div>
 
@@ -1195,6 +1221,10 @@ export function AgentsClient() {
                                   );
                                 })}
                               </select>
+                              <FieldHint id="provider">
+                                Which service runs this agent&apos;s turns. It picks the adapter and
+                                narrows the key and model lists below.
+                              </FieldHint>
                               {!isProviderWired(form.provider, 'chat') && (
                                 <p className="text-xs text-amber-600 dark:text-amber-400">
                                   No chat adapter registered for <code>{form.provider}</code>. Saves
@@ -1245,14 +1275,19 @@ export function AgentsClient() {
                                   or pick a different provider.
                                 </p>
                               )}
-                              {apiKeys.length === 0 && (
-                                <p className="text-xs text-muted-foreground">
+                              {apiKeys.length === 0 ? (
+                                <FieldHint>
                                   No keys saved.{' '}
                                   <a href="/settings/keys" className="underline">
                                     Add one
                                   </a>{' '}
                                   first.
-                                </p>
+                                </FieldHint>
+                              ) : (
+                                <FieldHint id="apiKey">
+                                  Which saved key pays for this agent. It must belong to the
+                                  provider above — the runtime refuses a mismatch.
+                                </FieldHint>
                               )}
                             </>
                           );
@@ -1385,11 +1420,11 @@ export function AgentsClient() {
                           <Label htmlFor="backupEnabled" className="cursor-pointer">
                             Enable failover
                           </Label>
-                          <p className="text-xs text-muted-foreground">
+                          <FieldHint id="backupEnabled">
                             On a route-down / 429 / 5xx from the primary, fall over to a backup
                             route. May be a different provider + model — that&apos;s what enables a
                             local primary with a cloud safety net (or the reverse).
-                          </p>
+                          </FieldHint>
                         </div>
                         <Switch
                           id="backupEnabled"
@@ -1440,6 +1475,9 @@ export function AgentsClient() {
                                         );
                                       })}
                                     </select>
+                                    <FieldHint id="backupProvider">
+                                      Who answers when the primary route is down.
+                                    </FieldHint>
                                     {!isProviderWired(form.backupProvider, 'chat') && (
                                       <p className="text-xs text-amber-600 dark:text-amber-400">
                                         No chat adapter registered for{' '}
@@ -1505,6 +1543,10 @@ export function AgentsClient() {
                               placeholder="— pick a model —"
                               emptyMessage="No matching models in the catalog."
                             />
+                            <FieldHint id="backupModel">
+                              Needn&apos;t match the primary — a cheaper or smaller model is fine
+                              here, since it only runs when the primary is down.
+                            </FieldHint>
                           </div>
                           {(form.backupProvider === 'local' ||
                             form.backupProvider === 'custom') && (
@@ -1555,12 +1597,21 @@ export function AgentsClient() {
                             }
                             min={0}
                             step={1}
+                            aria-describedby={hintId('historyLimit')}
                           />
-                          <p className="text-xs text-muted-foreground">
-                            {form.role === 'summarizer'
-                              ? 'Unused for summarizers — leave at 0.'
-                              : 'Default 20.'}
-                          </p>
+                          {form.role === 'summarizer' ? (
+                            <FieldHint id="historyLimit">
+                              Unused for summarizers — leave at 0.
+                            </FieldHint>
+                          ) : (
+                            <FieldHint
+                              id="historyLimit"
+                              warn="Every replayed turn is re-billed on each request."
+                            >
+                              How much of the recent conversation is re-sent with each new message.
+                              20 is plenty.
+                            </FieldHint>
+                          )}
                         </div>
                         <div className="space-y-1.5">
                           <Label htmlFor="historyWindowHours">Time window (hours)</Label>
@@ -1574,7 +1625,12 @@ export function AgentsClient() {
                             placeholder="(none — count only)"
                             min={0}
                             step={0.5}
+                            aria-describedby={hintId('historyWindowHours')}
                           />
+                          <FieldHint id="historyWindowHours">
+                            Also drop replayed turns older than this, so an idle chat starts fresh.
+                            Blank = go by count alone.
+                          </FieldHint>
                         </div>
                       </div>
 
@@ -1591,8 +1647,11 @@ export function AgentsClient() {
                               }
                               min={0}
                               step={1}
+                              aria-describedby={hintId('digestLimit')}
                             />
-                            <p className="text-xs text-muted-foreground">Default 3</p>
+                            <FieldHint id="digestLimit">
+                              Rollups of older conversation pulled in for background. Default 3.
+                            </FieldHint>
                           </div>
                           <div className="space-y-1.5">
                             <Label htmlFor="factLimit">Facts</Label>
@@ -1605,8 +1664,14 @@ export function AgentsClient() {
                               }
                               min={0}
                               step={1}
+                              aria-describedby={hintId('factLimit')}
                             />
-                            <p className="text-xs text-muted-foreground">Default 10</p>
+                            <FieldHint
+                              id="factLimit"
+                              warn="Too many and the relevant ones get lost in the noise."
+                            >
+                              Extracted facts matched against the incoming message. Default 10.
+                            </FieldHint>
                           </div>
                           <div className="space-y-1.5">
                             <Label htmlFor="contentHitLimit">Content hits</Label>
@@ -1619,8 +1684,15 @@ export function AgentsClient() {
                               }
                               min={0}
                               step={1}
+                              aria-describedby={hintId('contentHitLimit')}
                             />
-                            <p className="text-xs text-muted-foreground">Default 3</p>
+                            <FieldHint
+                              id="contentHitLimit"
+                              warn="Each hit is a full passage — these add up fast."
+                            >
+                              Passages from your notes and files pulled in for the question. Default
+                              3.
+                            </FieldHint>
                           </div>
                         </div>
                       )}
@@ -1633,13 +1705,13 @@ export function AgentsClient() {
                               value={form.extractTypes}
                               onChange={(v) => setForm((f) => ({ ...f, extractTypes: v }))}
                             />
-                            <p className="text-xs text-muted-foreground">
+                            <FieldHint warn="Every extra type means another LLM pass on every matching node at ingest.">
                               Click a chip to toggle. <strong>all types</strong> is a wildcard —
                               matches every node type the extractor sees, so the specific chips
                               become redundant when it&apos;s on. Add a custom type if you&apos;ve
                               introduced a new node kind. <code>branch</code> and{' '}
                               <code>secret</code> are HARD-SKIPPED regardless of this setting.
-                            </p>
+                            </FieldHint>
                           </div>
                           <label className="flex items-center gap-2 text-sm">
                             <input
@@ -1663,11 +1735,15 @@ export function AgentsClient() {
                                 setForm((f) => ({ ...f, extractCostCapCents: e.target.value }))
                               }
                               placeholder="(none — unlimited)"
+                              aria-describedby={hintId('extractCostCapCents')}
                             />
-                            <p className="text-xs text-muted-foreground">
+                            <FieldHint
+                              id="extractCostCapCents"
+                              warn="Left blank there is no ceiling — a big import can run up a real bill."
+                            >
                               Once trace cost crosses this, the fact-processing loop bails
-                              gracefully. Summary + entity reconciliation still run. Empty = no cap.
-                            </p>
+                              gracefully. Summary + entity reconciliation still run.
+                            </FieldHint>
                           </div>
                         </div>
                       )}
@@ -1685,10 +1761,14 @@ export function AgentsClient() {
                               }
                               min={1}
                               step={1}
+                              aria-describedby={hintId('summarizeThreshold')}
                             />
-                            <p className="text-xs text-muted-foreground">
+                            <FieldHint
+                              id="summarizeThreshold"
+                              warn="Set it low and the summarizer fires constantly."
+                            >
                               Undigested turns per chat before summarization fires. Default 30.
-                            </p>
+                            </FieldHint>
                           </div>
                           <div className="space-y-1.5">
                             <Label htmlFor="summarizeBatch">Batch size</Label>
@@ -1701,10 +1781,14 @@ export function AgentsClient() {
                               }
                               min={1}
                               step={1}
+                              aria-describedby={hintId('summarizeBatch')}
                             />
-                            <p className="text-xs text-muted-foreground">
+                            <FieldHint
+                              id="summarizeBatch"
+                              warn="Fold in too many at once and the digest turns vague."
+                            >
                               How many of the oldest turns to fold into one digest. Default 20.
-                            </p>
+                            </FieldHint>
                           </div>
                         </div>
                       )}
@@ -1861,10 +1945,14 @@ export function AgentsClient() {
                               setForm((f) => ({ ...f, resultInlineMaxKb: e.target.value }))
                             }
                             placeholder="32 (default)"
+                            aria-describedby={hintId('result-inline')}
                           />
-                          <p className="text-xs text-muted-foreground">
+                          <FieldHint
+                            id="result-inline"
+                            warn="Raise it and big results land straight in the prompt."
+                          >
                             Results larger than this spill to the store.
-                          </p>
+                          </FieldHint>
                         </div>
                         <div className="space-y-1.5">
                           <Label htmlFor="result-embed">Semantic-tier (KB)</Label>
@@ -1877,10 +1965,11 @@ export function AgentsClient() {
                               setForm((f) => ({ ...f, resultEmbedMinKb: e.target.value }))
                             }
                             placeholder="100 (default)"
+                            aria-describedby={hintId('result-embed')}
                           />
-                          <p className="text-xs text-muted-foreground">
+                          <FieldHint id="result-embed">
                             At/over this, the agent is steered to semantic <code>query</code>.
-                          </p>
+                          </FieldHint>
                         </div>
                         <div className="space-y-1.5">
                           <Label htmlFor="result-spill">Hard ceiling (KB)</Label>
@@ -1893,11 +1982,14 @@ export function AgentsClient() {
                               setForm((f) => ({ ...f, resultSpillMaxKb: e.target.value }))
                             }
                             placeholder="1024 (default)"
+                            aria-describedby={hintId('result-spill')}
                           />
-                          <p className="text-xs text-muted-foreground">
-                            Bigger results are head-truncated before storing (caps DB + embedding
-                            cost).
-                          </p>
+                          <FieldHint
+                            id="result-spill"
+                            warn="Raising it grows both the DB and the embedding bill."
+                          >
+                            Bigger results are head-truncated before storing.
+                          </FieldHint>
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
@@ -1935,9 +2027,11 @@ export function AgentsClient() {
                             className="py-1.5"
                             aria-label="Temperature"
                           />
-                          <p className="text-xs text-muted-foreground">
+                          <FieldHint
+                            warn={temp > 1.2 ? 'This high, replies start to wander.' : undefined}
+                          >
                             {tempDescriptor(temp).hint}
-                          </p>
+                          </FieldHint>
                         </div>
                         <div className="space-y-1.5">
                           <Label htmlFor="maxTokens">Max tokens</Label>
@@ -1949,7 +2043,14 @@ export function AgentsClient() {
                             value={form.maxTokens}
                             onChange={(e) => setForm((f) => ({ ...f, maxTokens: e.target.value }))}
                             placeholder="(provider default)"
+                            aria-describedby={hintId('maxTokens')}
                           />
+                          <FieldHint
+                            id="maxTokens"
+                            warn="Set it too low and long answers get cut off mid-sentence."
+                          >
+                            Ceiling on a single reply. Blank leaves it to the provider.
+                          </FieldHint>
                         </div>
                       </div>
                     </fieldset>

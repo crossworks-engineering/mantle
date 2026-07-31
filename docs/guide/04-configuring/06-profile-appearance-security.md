@@ -12,6 +12,11 @@ Your identity and locale:
 - **Locale** — date/number formatting and language hints for replies.
 - **Reminder agent** — which agent's bot delivers your event reminders, if you run
   more than one.
+- **House style** — your writing rules, in your own words (e.g. "never use em
+  dashes"). Every agent follows them in anything it writes for you — chat
+  replies, pages, tables, emails — and your rules win over the built-in writing
+  guidance. They're never applied to quoted text, code, or a document an agent
+  is copying verbatim. Leave blank to keep the defaults.
 
 Getting timezone right matters most — it's what makes scheduling and reminders land
 at the time you actually meant.

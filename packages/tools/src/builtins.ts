@@ -48,6 +48,7 @@ import { recordIngest } from '@mantle/tracing';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
+import { IMAGE_TOOLS } from './builtins-images';
 import { EVENT_TOOLS } from './builtins-events';
 import { PROFILE_TOOLS } from './builtins-profile';
 import { TASK_TOOLS } from './builtins-tasks';
@@ -1712,6 +1713,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Saskia's agency to a configured ai_workers row — TTS, vision,
   // summarizer.
   ...WORKER_DELEGATION_TOOLS,
+  // Showing a stored image back to the user — the one image tool that turns
+  // pixels into pixels rather than into words. The display half of the
+  // extracted-document-images feature.
+  ...IMAGE_TOOLS,
   // Event CRUD — mirrors the MCP event tools so Saskia can schedule
   // and manage calendar items from chat. None require_confirm by
   // operator choice; flip per-row in the tools table if you want

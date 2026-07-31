@@ -15,6 +15,7 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { serverUrl } from '@mantle/web-ui/runtime-env';
 import { DisconnectButton } from './disconnect-button';
 import { MsConfigForm } from './config-form';
 import { DrivesList } from './drives-list';
@@ -75,8 +76,9 @@ export function MicrosoftClient() {
         </div>
         {status.configured && (
           <Button asChild size="sm">
-            {/* Plain anchor: this is an API route that 302s to Microsoft, not client nav. */}
-            <a href="/api/microsoft/oauth/start">
+            {/* Plain anchor: this is an API route that 302s to Microsoft, not client
+                nav — and it must hit the brain origin, not the client's, in split mode. */}
+            <a href={serverUrl('/api/microsoft/oauth/start')}>
               <Plus /> Connect
             </a>
           </Button>

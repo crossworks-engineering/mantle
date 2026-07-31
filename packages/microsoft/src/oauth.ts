@@ -77,6 +77,16 @@ interface RawTokenResponse {
   error_description?: string;
 }
 
+/** Token-endpoint failure. `status` mirrors the Graph client's error shape so
+ *  callers can branch the same way; `invalid_grant` (dead/revoked refresh
+ *  token, consent withdrawn, expired auth code) is reported as 401 because the
+ *  only cure is an interactive reconnect — not a retry. */
+export interface MsAuthError extends Error {
+  status: number;
+  /** The raw OAuth2 error code (`invalid_grant`, `invalid_client`, …). */
+  oauthError: string | null;
+}
+
 async function postToken(cfg: MsOAuthConfig, body: URLSearchParams): Promise<TokenSet> {
   const res = await fetch(tokenEndpoint(cfg.tenant), {
     method: 'POST',
@@ -87,9 +97,12 @@ async function postToken(cfg: MsOAuthConfig, body: URLSearchParams): Promise<Tok
   if (!res.ok || json.error || !json.access_token) {
     // error_description carries the actionable detail (AADSTS codes); surface it
     // but never the token request body.
-    throw new Error(
+    const err = new Error(
       `Microsoft token endpoint ${res.status}: ${json.error ?? 'unknown'} — ${json.error_description ?? 'no detail'}`,
-    );
+    ) as MsAuthError;
+    err.oauthError = json.error ?? null;
+    err.status = json.error === 'invalid_grant' ? 401 : res.status || 502;
+    throw err;
   }
   return {
     accessToken: json.access_token,
@@ -118,9 +131,21 @@ export function exchangeCode(
   );
 }
 
-/** Step 3: trade a refresh token for a fresh access token (+ a rotated refresh
- *  token). The caller MUST persist `refreshToken` from the result — Azure
- *  invalidates the old one. */
+/**
+ * Step 3: trade a refresh token for a fresh access token (+ a rotated refresh
+ * token). The caller MUST persist `refreshToken` from the result — Azure
+ * invalidates the old one.
+ *
+ * **No `scope` parameter.** On a refresh, Azure only accepts scopes that are a
+ * subset of what was originally consented to; omitting it re-issues exactly the
+ * granted set. Sending `msScopeString()` here instead meant that every time a
+ * new scope was added to that list (e.g. `Mail.Send` in 0.19.x), every account
+ * connected before it silently became unrefreshable — Azure answers
+ * `invalid_grant` / `AADSTS65001: the user has not consented`, and the account
+ * dies at its next access-token expiry with no way back but a reconnect. The
+ * granted set comes back on the response, so `ms_accounts.scopes` (which gates
+ * send) stays accurate either way.
+ */
 export function refreshTokens(cfg: MsOAuthConfig, refreshToken: string): Promise<TokenSet> {
   return postToken(
     cfg,
@@ -129,7 +154,6 @@ export function refreshTokens(cfg: MsOAuthConfig, refreshToken: string): Promise
       client_secret: cfg.clientSecret,
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
-      scope: msScopeString(),
     }),
   );
 }

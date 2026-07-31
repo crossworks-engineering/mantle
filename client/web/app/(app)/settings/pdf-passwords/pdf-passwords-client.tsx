@@ -7,6 +7,7 @@ import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useToast } from '@mantle/web-ui/ui/toast';
@@ -101,7 +102,11 @@ export function PdfPasswordsClient() {
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="e.g. Nedbank — account no"
+            aria-describedby={hintId('pw-label')}
           />
+          <FieldHint id="pw-label">
+            A reminder of which document this unlocks — you won&apos;t see the password again.
+          </FieldHint>
         </div>
         <div className="flex-1 space-y-1.5">
           <Label htmlFor="pw-value">Password</Label>
@@ -111,7 +116,11 @@ export function PdfPasswordsClient() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="e.g. 1136603190"
             autoComplete="off"
+            aria-describedby={hintId('pw-value')}
           />
+          <FieldHint id="pw-value" warn="Every stored password is tried on every locked PDF.">
+            Tried automatically when a locked attachment arrives.
+          </FieldHint>
         </div>
         <SubmitButton pending={pending}>
           <Plus /> Add

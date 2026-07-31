@@ -8,6 +8,7 @@ import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { Switch } from '@mantle/web-ui/ui/switch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
@@ -292,7 +293,9 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Her Mantle"
             autoFocus
+            aria-describedby={hintId('peer-name')}
           />
+          <FieldHint id="peer-name">Your own name for this brain — only you see it.</FieldHint>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="peer-url">Base URL</Label>
@@ -301,7 +304,11 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             placeholder="https://her-mantle.example.com"
+            aria-describedby={hintId('peer-url')}
           />
+          <FieldHint id="peer-url">
+            Where their brain answers. Must be reachable from here.
+          </FieldHint>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="peer-token">Their token — optional for now</Label>
@@ -311,10 +318,10 @@ function CreatePeer({ onCreated }: { onCreated: (peer: Peer, inboundToken: strin
             onChange={(e) => setOutbound(e.target.value)}
             placeholder="mtlpeer_… (leave empty if they haven't sent it yet)"
           />
-          <p className="text-xs text-muted-foreground">
+          <FieldHint id="peer-token">
             Used to query them; sealed at rest. Without it the peer is added as “awaiting their
             token” — they can already query you, and you paste theirs when it arrives.
-          </p>
+          </FieldHint>
         </div>
         <div className="flex justify-end border-t border-border pt-3">
           <SubmitButton pending={pending}>Add peer</SubmitButton>

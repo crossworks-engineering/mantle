@@ -58,6 +58,10 @@ import {
   parserRouteForExt,
   extractPdfTextWithPassword,
   effectiveBrainDepth,
+  ensureExtractedImagesFolder,
+  exportHintForExt,
+  slugifyFolder,
+  upsertFile,
 } from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
@@ -431,6 +435,222 @@ async function maybeAutoTableSpreadsheet(
       return [table.id];
     },
   );
+}
+
+// ─── embedded images ──────────────────────────────────────────────────
+
+/** Formats that can carry a picture worth pulling out. Deliberately narrower
+ *  than INGESTABLE_EXTS — there is no point opening a .txt looking for a
+ *  diagram, and every ext listed here has an extractor behind it. */
+const IMAGE_BEARING_EXTS = new Set([
+  'docx',
+  'pdf',
+  'pptx',
+  'xlsx',
+  'xlsm',
+  'odt',
+  'ods',
+  'odp',
+  'doc',
+  'ppt',
+  'xls',
+  'xlsb',
+  'rtf',
+]);
+
+/** Tag marking a file node as derived from a document rather than uploaded.
+ *  The lookup path for "show me the pictures from that manual". */
+const EXTRACTED_IMAGE_TAG = 'extracted-image';
+
+/**
+ * Pull the diagrams and screenshots out of a document and save them as real
+ * image files under `files/extracted-images/<document>/`.
+ *
+ * This exists because some answers cannot be described, only shown: a manual's
+ * screenshot of a settings screen is the answer to "how do I configure this",
+ * and every text parser in the stack throws it away. Saving them as ordinary
+ * `file` nodes means the rest of the system needs no special case — the
+ * extractor indexes them like any image (vision describe + OCR, which reads
+ * the UI labels *in* the screenshot), Pages embeds them by node id, and the
+ * assistant can show them in chat.
+ *
+ * Shaped exactly like {@link maybeAutoTableSpreadsheet}: best-effort,
+ * isolated, deduped by `data.sourceFileId` so re-ingest never doubles, and
+ * incapable of blocking the text pass.
+ *
+ * **Cost.** Extraction itself is free — no model runs here. But each image
+ * saved becomes a node the extractor will later run the vision worker over,
+ * so this function's real spend is `images kept × one vision call`. That is
+ * why the gate in `@mantle/files/embedded-images` is deliberately strict and
+ * why the per-document cap exists. A deck of sixty slides must not turn into
+ * sixty LLM calls.
+ */
+async function maybeExtractEmbeddedImages(
+  node: typeof nodes.$inferSelect,
+  ownerId: string,
+): Promise<void> {
+  if (node.type !== 'file') return;
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  // Never recurse: an extracted image is itself a file node, and must not be
+  // reopened looking for images inside it.
+  if (typeof data.sourceFileId === 'string') return;
+  const nameForExt = typeof data.filename === 'string' ? data.filename : node.title;
+  const ext = extOf(nameForExt);
+  if (!IMAGE_BEARING_EXTS.has(ext)) return;
+
+  // Dedupe: if this document already produced images, do nothing.
+  const [existing] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.data}->>'sourceFileId' = ${node.id}`,
+      ),
+    )
+    .limit(1);
+  if (existing) return;
+
+  const loaded = await loadFileBytes(node);
+  if (!loaded) return;
+
+  const { extractEmbeddedImages, buildImageTitles, buildImageFilename } =
+    await import('@mantle/files/embedded-images');
+  const result = await extractEmbeddedImages(loaded.bytes, loaded.ext);
+  if (result.images.length === 0) {
+    // Still worth a step when there WERE candidates: "this manual produced no
+    // images" should be explainable from /traces rather than mysterious.
+    if (result.candidates > 0) {
+      await step(
+        { name: 'extract_images', kind: 'compute', input: { filename: loaded.filename } },
+        async (h) => {
+          h.setMeta({ candidates: result.candidates, kept: 0, rejected: result.rejected });
+        },
+      );
+    }
+    return;
+  }
+
+  const sourceSlug = slugifyFolder(loaded.filename.replace(/\.[a-z0-9]+$/i, '')) ?? 'document';
+  const titles = buildImageTitles(result.images, node.title || loaded.filename);
+
+  await step(
+    {
+      name: 'extract_images',
+      kind: 'compute',
+      input: {
+        filename: loaded.filename,
+        candidates: result.candidates,
+        keeping: result.images.length,
+        sourceFileId: node.id,
+      },
+    },
+    async (h) => {
+      const folderPath = await ensureExtractedImagesFolder({
+        ownerId,
+        sourceSlug,
+        sourceTitle: node.title || loaded.filename,
+      });
+      const createdIds: string[] = [];
+      for (const [i, img] of result.images.entries()) {
+        const title = titles[i]!;
+        try {
+          const saved = await upsertFile({
+            ownerId,
+            parentPath: folderPath,
+            filename: buildImageFilename(img, sourceSlug),
+            bytes: img.bytes,
+            title,
+            tags: [EXTRACTED_IMAGE_TAG, `from:${sourceSlug}`],
+            data: {
+              sourceFileId: node.id,
+              sourceOrdinal: img.ordinal,
+              sourceTotal: result.images.length,
+              ...(img.location ? { sourceLocation: img.location } : {}),
+              extractedFrom: node.title || loaded.filename,
+              // Read back by the vision path so the durable index carries the
+              // document this picture came from — a bare "a screenshot of a
+              // settings screen" retrieves for nobody. See composeImageBody.
+              imageContext: buildImageContext({
+                title,
+                ordinal: img.ordinal,
+                total: result.images.length,
+                sourceTitle: node.title || loaded.filename,
+                location: img.location,
+                heading: img.heading,
+                caption: img.caption,
+                altText: img.altText,
+              }),
+            },
+          });
+          createdIds.push(saved.id);
+        } catch (err) {
+          // One bad image must not cost the rest of the document.
+          console.error(
+            '[extractor] embedded image save failed:',
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+      h.setMeta({
+        created: createdIds.length,
+        candidates: result.candidates,
+        rejected: result.rejected,
+        folder: folderPath,
+      });
+      return createdIds;
+    },
+  );
+}
+
+/**
+ * The provenance header stored on an extracted image and prepended to its
+ * vision description before indexing.
+ *
+ * Retrieval is the whole reason this exists. A vision worker looking at a
+ * cropped screenshot writes something like "a mobile settings screen with
+ * several input fields" — true, and useless for finding it, because nothing
+ * in that sentence mentions the manual, the step, or the subject. Folding the
+ * document's own words back in is what makes "how do I set the APN?" reach
+ * the picture that answers it.
+ */
+function buildImageContext(args: {
+  title: string;
+  ordinal: number;
+  total: number;
+  sourceTitle: string;
+  location?: { page?: number; slide?: number; sheet?: string };
+  heading?: string;
+  caption?: string;
+  altText?: string;
+}): string {
+  const where =
+    args.location?.page != null
+      ? `, page ${args.location.page}`
+      : args.location?.slide != null
+        ? `, slide ${args.location.slide}`
+        : args.location?.sheet
+          ? `, sheet "${args.location.sheet}"`
+          : '';
+  const lines = [
+    `Image ${args.ordinal} of ${args.total} from "${args.sourceTitle}"${where}.`,
+    args.heading ? `Section: ${args.heading}` : '',
+    args.caption ? `Caption: ${args.caption}` : '',
+    args.altText ? `Alt text: ${args.altText}` : '',
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
+/**
+ * Compose what gets indexed for an image: its document provenance first, then
+ * whatever the vision worker read out of the pixels. Plain concatenation —
+ * both halves are wanted verbatim in the summary, the embedding and the
+ * chunks.
+ */
+function composeImageBody(data: Record<string, unknown>, visionText: string): string {
+  const context = typeof data.imageContext === 'string' ? data.imageContext.trim() : '';
+  return context ? `${context}\n\n${visionText}` : visionText;
 }
 
 /**
@@ -1317,6 +1537,35 @@ async function loadExtractableBody(
   const fileMime =
     typeof existingData.mimeType === 'string' ? existingData.mimeType : mimeForExt(fileExt);
 
+  // Formats we can identify but deliberately can't read, where the fix is an
+  // export rather than a retry or a code change (Microsoft Project today).
+  // Caught HERE, ahead of the whole parser ladder, because the alternative is
+  // worse than a refusal: with no parser for the extension, the ladder returns
+  // an empty string, the body falls back to the filename, and the node indexes
+  // as a plausible-looking success. The user believes their plan is in the
+  // brain, nothing ever contradicts them, and the failure is discovered only
+  // when an answer is quietly wrong. An honest terminal skip that names the
+  // export is the whole point.
+  const exportHint = node.type === 'file' ? exportHintForExt(fileExt) : undefined;
+  if (exportHint) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition: 'needs_export',
+      details: {
+        worker_slug: worker.slug,
+        node_type: node.type,
+        title: node.title,
+        filename: existingData.filename,
+        extension: fileExt,
+        hint: exportHint,
+      },
+    });
+    return { ok: false };
+  }
+
   const isImageNeedingVision =
     node.type === 'file' &&
     !existingData.text &&
@@ -1351,7 +1600,10 @@ async function loadExtractableBody(
       });
       return { ok: false };
     }
-    rawBody = visionText;
+    // An extracted document image carries a provenance header; folding it in
+    // here means the summary, embedding and chunks all know which manual and
+    // which step this picture belongs to. A no-op for ordinary photos.
+    rawBody = composeImageBody(existingData, visionText);
   } else {
     rawBody = await readNodeBodyRaw(node);
   }
@@ -2507,6 +2759,12 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   // text-extraction pass. Deduped + published inside the helper.
   await maybeAutoTableSpreadsheet(node, ownerId).catch((err) =>
     console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err),
+  );
+
+  // Pull embedded diagrams/screenshots out into their own image files, on the
+  // same terms: independent of the text allowlist, best-effort, never fatal.
+  await maybeExtractEmbeddedImages(node, ownerId).catch((err) =>
+    console.error('[extractor] embedded images failed:', err instanceof Error ? err.message : err),
   );
 
   // target_types is the new home for the type allowlist. We still

@@ -23,8 +23,17 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@mantle/agent-runtime', () => ({
-  composeSystemPromptWithSkills: (prompt: string, skills: Array<{ slug: string }>) =>
-    skills.length > 0 ? `${prompt}\n\n[skills:${skills.map((s) => s.slug).join(',')}]` : prompt,
+  // Renders ALL THREE arguments so a call site that silently drops one (the
+  // house-style regression this mock previously could not see) goes red.
+  composeSystemPromptWithSkills: (
+    prompt: string,
+    skills: Array<{ slug: string }>,
+    houseStyle?: string,
+  ) => {
+    const base =
+      skills.length > 0 ? `${prompt}\n\n[skills:${skills.map((s) => s.slug).join(',')}]` : prompt;
+    return houseStyle ? `${base}\n\n[house-style:${houseStyle}]` : base;
+  },
   effectiveToolSlugs: (groups: Array<{ toolSlugs: string[] }>) =>
     groups.flatMap((g) => g.toolSlugs),
   resolveAgentSkills: vi.fn(async (_owner: string, slugs: string[]) =>
@@ -127,6 +136,22 @@ describe('assembleResponderTurn — prompt composition', () => {
       'TIME-LINE\n\nLOCATION-LINE\n\nTZ-NOTE\n\nHEARTBEAT-BLOCK(hb-1)',
     );
     expect(a.relatedHeartbeatSlugs).toEqual(['hb-1']);
+  });
+
+  it('passes prefs.houseStyle through to composition; unset adds nothing', async () => {
+    // The pure compose function has its own tests — this pins the CALL SITE:
+    // assemble-turn must actually hand the preference over, on every surface
+    // that routes through it (web, Telegram, team, forum, sim, runner resume).
+    const styled = await assembleResponderTurn({
+      ...BASE,
+      prefs: { ...BASE.prefs, houseStyle: 'Never use em dashes.' },
+      agent: agent({ skillSlugs: ['recall'] }),
+    });
+    expect(styled.effectiveSystemPrompt).toBe(
+      'PERSONA\n\n[skills:recall]\n\n[house-style:Never use em dashes.]',
+    );
+    const unstyled = await assembleResponderTurn({ ...BASE, agent: agent() });
+    expect(unstyled.effectiveSystemPrompt).not.toContain('house-style');
   });
 
   it('memory_config.inject_journal=false skips the identity block', async () => {
