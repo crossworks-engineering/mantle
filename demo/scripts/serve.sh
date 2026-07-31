@@ -35,6 +35,12 @@ export TABLE_DB_DIR="${DEMO_TABLE_DB_DIR:-$(pwd)/demo/.run/table-dbs}"
 export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
 export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
 export MANTLE_LOCAL_EMBEDDING_URL="${MANTLE_LOCAL_EMBEDDING_URL:-http://127.0.0.1:56434/v1}"
+# The origin absolute links are built against. seed.sh already sets this because
+# generated content bakes links permanently; serve time needs it too, for the
+# links the UI builds live — a share URL shown to a visitor as
+# http://localhost:3000/s/<token> is a link to their own machine. The app has
+# been logging "[boot] MANTLE_PUBLIC_URL is unset" on every start of this bench.
+export MANTLE_PUBLIC_URL="${DEMO_PUBLIC_URL:-http://127.0.0.1:$EDGE_PORT}"
 export PORT="$API_PORT"
 unset MANTLE_DETACHED_DEV NEXT_PUBLIC_MANTLE_API_BASE NEXT_PUBLIC_MANTLE_API_TOKEN MANTLE_DEMO MANTLE_RUNS || true
 
