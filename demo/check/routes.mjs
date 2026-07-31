@@ -111,6 +111,9 @@ await Promise.all([
   getJson('/api/apps?limit=1').then((d) => (f.app = pluck(d, 'apps'))),
   getJson('/api/heartbeats').then((d) => (f.heartbeat = pluck(d, 'heartbeats'))),
   getJson('/api/contacts?limit=1').then((d) => (f.contact = pluck(d, 'contacts'))),
+  // The forum lives behind the team cookie, which the edge injects — so this
+  // resolves only once a member exists and topics are seeded.
+  getJson('/api/team/forum/topics').then((d) => (f.forumTopic = pluck(d, 'topics'))),
 ]);
 f.node = f.note; // /n/[id] and /nodes/[id]/history take any node
 
@@ -129,6 +132,7 @@ const FIXTURES = [
   ['/n/[id]', () => f.node && `/n/${f.node}`],
   ['/nodes/[id]/history', () => f.node && `/nodes/${f.node}/history`],
   ['/debug/journey/[traceId]', () => f.trace && `/debug/journey/${f.trace}`],
+  ['/team/forum/[id]', () => f.forumTopic && `/team/forum/${f.forumTopic}`],
 ];
 const fixtureFor = (route) => {
   const hit = FIXTURES.find(([pattern]) => pattern === route);

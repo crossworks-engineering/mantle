@@ -26,6 +26,13 @@ export TIKA_URL="http://127.0.0.1:56998"
 # and the app indexes it in place, so the docs root points straight at the
 # generator's output. Absolute, and shared by every process that reads docs.
 export MANTLE_DOCS_ROOT="$(cd "$(dirname "$0")/../.." && pwd)/demo/generator/out/docs"
+# The origin the app writes into GENERATED TEXT — share links, and the node
+# links the agent puts in forum answers. Those are baked into stored content at
+# seed time and never re-resolved, so an unset value is permanent: the first
+# forum answers came out citing http://localhost:3000/n/<id>, which is a dead
+# link everywhere the demo actually runs. Point it at the public demo origin
+# (override for a local bench: DEMO_PUBLIC_URL=http://127.0.0.1:56080).
+export MANTLE_PUBLIC_URL="${DEMO_PUBLIC_URL:-https://demo.mantle-ai.tech}"
 # Must match serve.sh exactly — see the note there. The default resolves to
 # whichever checkout runs the script, so seeding in a worktree and serving from
 # the clone silently produces a registry pointing at workbooks that are not
@@ -156,6 +163,14 @@ DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
 echo "→ team member + team-visible shares"
 DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
   pnpm -C server/web exec tsx ../../demo/seed/enable-team.ts
+
+# Real agent turns, so server/api must still be up — it is, until cleanup. The
+# member cookie is minted here rather than inside the seeder so the seeder never
+# needs database credentials.
+echo "→ forum topics (the brain answers these for real)"
+DEMO_TEAM_COOKIE="$(pnpm -s -C server/web exec tsx ../../demo/seed/mint-team-cookie.ts | tail -1)" \
+DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
+  pnpm -C server/web exec tsx ../../demo/seed/seed-forum.ts
 
 echo "→ verify (waits for extraction to drain)"
 pnpm -C server/web exec tsx ../../demo/seed/verify.ts --wait "${DEMO_VERIFY_WAIT:-900}"
