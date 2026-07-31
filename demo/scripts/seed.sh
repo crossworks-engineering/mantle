@@ -151,5 +151,11 @@ echo "→ seed"
 DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
   pnpm -C server/web exec tsx ../../demo/seed/seed.ts
 
+# Needs the WRITABLE api that is still up at this point — the serve-time reader
+# could not do this, which is the whole reason it belongs to seeding.
+echo "→ team member + team-visible shares"
+DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
+  pnpm -C server/web exec tsx ../../demo/seed/enable-team.ts
+
 echo "→ verify (waits for extraction to drain)"
 pnpm -C server/web exec tsx ../../demo/seed/verify.ts --wait "${DEMO_VERIFY_WAIT:-900}"

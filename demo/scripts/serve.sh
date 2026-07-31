@@ -85,9 +85,25 @@ SESSION=$(DATABASE_URL="postgres://postgres:postgres@127.0.0.1:56432/postgres" \
 [ -n "$SESSION" ] || { echo "✗ failed to mint a session"; exit 1; }
 echo "  minted (${#SESSION} chars, never printed)"
 
+# The portal's own credential. Minted from (ownerId, contactId) rather than a
+# raw token, and it only works because enable-team.ts made a seeded contact a
+# real member — the liveness check re-queries contact_team_tokens on every call.
+# An empty value is left as-is rather than failing: a demo without a member
+# still serves, it just shows the token box on /team.
+echo "→ mint the team-portal cookie"
+TEAM=$(DATABASE_URL="postgres://postgres:postgres@127.0.0.1:56432/postgres" \
+  pnpm -s -C server/web exec tsx ../../demo/seed/mint-team-cookie.ts 2>/dev/null | tail -1 || true)
+if [ -n "$TEAM" ]; then
+  echo "  minted (${#TEAM} chars, never printed)"
+else
+  echo "  ⚠ no team member on this brain — /team and /hub will show the token box"
+  echo "    (run demo/seed/enable-team.ts against a WRITABLE api to fix)"
+fi
+
 echo "→ render the edge config"
 mkdir -p "$ART/edge"
-sed -e "s|__DEMO_SESSION__|$SESSION|" \
+sed -e "s|__DEMO_TEAM__|$TEAM|" \
+    -e "s|__DEMO_SESSION__|$SESSION|" \
     -e "s|__DEMO_WEB__|host.docker.internal:$UI_PORT|" \
     -e "s|__DEMO_API__|host.docker.internal:$API_PORT|" \
     -e "s|^demo\.mantle-ai\.tech {|:80 {|" \

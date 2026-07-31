@@ -43,9 +43,20 @@ demo.mantle-ai.tech {
 	#                   It is spoofable by construction and grants nothing —
 	#                   the session above is what actually authenticates.
 	#
-	# Set on the REQUEST only — never handed back to the browser, so neither
-	# can be lifted from a shared machine's cookie jar afterwards.
-	request_header Cookie "mantle_session=__DEMO_SESSION__; mantle_authed=1"
+	#   mantle_team_chat  admission to the TEAM PORTAL (/team, /hub), which is a
+	#                   separate surface with its own credential — the owner
+	#                   session grants nothing there. Also an HMAC over
+	#                   SESSION_SECRET, so it is minted too
+	#                   (demo/seed/mint-team-cookie.ts), and it is only half of
+	#                   admission: isTeamMember() re-queries contact_team_tokens
+	#                   on every call, so one of the seeded contacts is a real
+	#                   member (demo/seed/enable-team.ts). Without BOTH, a
+	#                   visitor meets a token box and the portal's eleven
+	#                   screens are a dead end from the nav.
+	#
+	# Set on the REQUEST only — never handed back to the browser, so none of
+	# them can be lifted from a shared machine's cookie jar afterwards.
+	request_header Cookie "mantle_session=__DEMO_SESSION__; mantle_authed=1; mantle_team_chat=__DEMO_TEAM__"
 
 	# ── /api/activity is answered HERE, never proxied ─────────────────────
 	# It is a GET that WRITES. getLiveActivity() calls reapAbandonedTraces(),
