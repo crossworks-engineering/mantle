@@ -3,7 +3,7 @@ export { db, closeDb, type Db } from './client';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export { bumpAgentUsage } from './agents-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
-export { isWriteRefused, isSubsystemMissing } from './errors';
+export { isWriteRefused } from './write-refused';
 export {
   countUsers,
   resolveSingleOwnerId,
