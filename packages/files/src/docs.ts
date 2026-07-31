@@ -27,6 +27,21 @@ import { and, db, docCollections, eq, notifyNodeIngested, nodes, sql } from '@ma
 import type { DocBrainDepth, DocCollection } from '@mantle/db';
 import { dashToLtree, ltreeToDash } from './slug';
 
+/**
+ * The two ways Postgres refuses a write that are NOT a bug on a read path:
+ * the role has no INSERT privilege, or the session/transaction is read-only.
+ * Drizzle wraps the driver error, so the code can sit on the cause.
+ */
+const WRITE_REFUSED_CODES = new Set(['42501', '25006']);
+export function isWriteRefused(err: unknown): boolean {
+  for (let e: unknown = err, depth = 0; e && depth < 4; depth++) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string' && WRITE_REFUSED_CODES.has(code)) return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 /** The single ltree label that roots the documentation subtree. */
 export const DOCS_ROOT_LABEL = 'documentation';
 
@@ -495,18 +510,38 @@ const BUILTIN_COLLECTIONS: ReadonlyArray<{
  *  choice — e.g. a collection already enabled stays enabled). */
 export async function ensureDefaultCollections(ownerId: string): Promise<void> {
   for (const c of BUILTIN_COLLECTIONS) {
-    await db
-      .insert(docCollections)
-      .values({
-        ownerId,
-        key: c.key,
-        label: c.label,
-        origin: c.origin,
-        rootPath: c.rootPath,
-        brainDepth: c.brainDepth,
-        enabled: false,
-      })
-      .onConflictDoNothing({ target: [docCollections.ownerId, docCollections.key] });
+    try {
+      await db
+        .insert(docCollections)
+        .values({
+          ownerId,
+          key: c.key,
+          label: c.label,
+          origin: c.origin,
+          rootPath: c.rootPath,
+          brainDepth: c.brainDepth,
+          enabled: false,
+        })
+        .onConflictDoNothing({ target: [docCollections.ownerId, docCollections.key] });
+    } catch (err) {
+      // A database that refuses writes is not a fault on a read path. This
+      // function is best-effort seeding — `listDocCollections` calls it before
+      // a plain SELECT, so GET /api/docs/collections performed an INSERT and
+      // returned 500 against a read-only role, taking the whole docs surface
+      // down with it. Skipping leaves the caller reading whatever rows exist,
+      // which is the right degradation for a read-only replica, a revoked
+      // grant, or a demo served through a reader role.
+      //
+      // Note that pre-creating the rows does NOT avoid this: Postgres checks
+      // the table ACL at executor start, before matching a single row, so the
+      // statement is refused even when onConflictDoNothing would make it a
+      // no-op.
+      //
+      // Narrow on purpose — only the two codes that mean "refused to write".
+      // Anything else is a real failure and must still surface.
+      if (!isWriteRefused(err)) throw err;
+      return;
+    }
   }
 }
 
