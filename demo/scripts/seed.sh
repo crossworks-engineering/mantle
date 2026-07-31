@@ -38,6 +38,14 @@ export MANTLE_PUBLIC_URL="${DEMO_PUBLIC_URL:-https://demo.mantle-ai.tech}"
 # the clone silently produces a registry pointing at workbooks that are not
 # where the server looks.
 export TABLE_DB_DIR="${DEMO_TABLE_DB_DIR:-$(cd "$(dirname "$0")/../.." && pwd)/demo/.run/table-dbs}"
+# File BYTES. Same cwd-relative trap as the docs root and the table
+# workbooks, and the third time it bit this demo: filesRoot() resolves
+# './data/files' against each process's cwd, so the API (cwd server/web)
+# in one checkout writes where the extractor in another cannot read. The
+# symptom is silent — 35 PDFs and 26 images ingested as nodes with no text
+# and no chunks, unsearchable, with no error anywhere. filesRoot() warns
+# about exactly this; nothing was listening.
+export MANTLE_FILES_ROOT="${DEMO_FILES_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)/demo/.run/files}"
 export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
 # Must base64-decode to EXACTLY 32 bytes or onboarding 500s ("must decode to
 # 32 bytes"). This is 'demo-master-key-0123456789abcdef' — a fixed dummy, so a

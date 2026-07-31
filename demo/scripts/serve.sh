@@ -32,6 +32,14 @@ export MANTLE_DOCS_ROOT="$(pwd)/demo/generator/out/docs"
 # never disagree. NOTE for P7: this directory is seeded data and must ship with
 # the pg dump — a deploy that carries only the database gets hollow tables.
 export TABLE_DB_DIR="${DEMO_TABLE_DB_DIR:-$(pwd)/demo/.run/table-dbs}"
+# File BYTES. Same cwd-relative trap as the docs root and the table
+# workbooks, and the third time it bit this demo: filesRoot() resolves
+# './data/files' against each process's cwd, so the API (cwd server/web)
+# in one checkout writes where the extractor in another cannot read. The
+# symptom is silent — 35 PDFs and 26 images ingested as nodes with no text
+# and no chunks, unsearchable, with no error anywhere. filesRoot() warns
+# about exactly this; nothing was listening.
+export MANTLE_FILES_ROOT="${DEMO_FILES_ROOT:-$(pwd)/demo/.run/files}"
 export SESSION_SECRET="${DEMO_SESSION_SECRET:-demo-session-secret-0123456789abcdef0123456789ab}"
 export MANTLE_MASTER_KEY="${DEMO_MASTER_KEY:-ZGVtby1tYXN0ZXIta2V5LTAxMjM0NTY3ODlhYmNkZWY=}"
 export MANTLE_LOCAL_EMBEDDING_URL="${MANTLE_LOCAL_EMBEDDING_URL:-http://127.0.0.1:56434/v1}"
