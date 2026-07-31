@@ -615,26 +615,52 @@ async function doEmbed(
  * safe to fail over to the same-model backup. A bad-input / 4xx error (or an
  * unsupported-input throw) returns false: a second route wouldn't help and
  * would just burn another call. When uncertain, returns false (don't fail over).
+ *
+ * Deliberately NOT `classifyChatError` from @mantle/voice, despite answering
+ * the same transient-vs-permanent question for chat. Two reasons, both of which
+ * would narrow failover here rather than unify it:
+ *
+ *   · that classifier reads a structured `ChatHttpError.status`, which the
+ *     EMBEDDING adapters do not throw — they throw plain Errors carrying the
+ *     status in the message, so it would see only "an Error" and decline;
+ *   · its retryable set is an explicit list (408/409/425/429/500/502/503/504),
+ *     so a 501 or a proxy 52x — precisely what a self-hosted primary behind a
+ *     tunnel returns when it is down — would stop failing over.
+ *
+ * The honest unification is to give the embedding adapters a structured error
+ * like ChatHttpError and let one classifier read `.status` for both. Until
+ * then this stays separate, and prefers structure where it can get it.
  */
 export function isRouteDownError(err: unknown): boolean {
-  if (err instanceof Error) {
-    // Native fetch network failures surface as TypeError (undici) or an
-    // AbortError/TimeoutError when AbortSignal.timeout fires.
-    if (err instanceof TypeError) return true;
-    if (err.name === 'AbortError' || err.name === 'TimeoutError') return true;
-    const m = err.message;
-    if (
-      /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|fetch failed|network|socket hang up|timed? ?out/i.test(
-        m,
-      )
-    ) {
-      return true;
-    }
-    // Adapters throw "… failed: <status> <statusText> — …". 5xx = server-side
-    // (route down / overloaded); 4xx = bad input (don't fail over).
-    if (/\b4\d\d\b/.test(m)) return false;
-    if (/\b5\d\d\b/.test(m)) return true;
+  if (!(err instanceof Error)) return false;
+
+  // Native fetch network failures surface as TypeError (undici) or an
+  // AbortError/TimeoutError when AbortSignal.timeout fires.
+  if (err instanceof TypeError) return true;
+  if (err.name === 'AbortError' || err.name === 'TimeoutError') return true;
+
+  const m = err.message;
+  if (
+    /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|fetch failed|network|socket hang up|timed? ?out/i.test(
+      m,
+    )
+  ) {
+    return true;
   }
+
+  // A status the error actually carries beats one scraped out of prose.
+  const status = (err as { status?: unknown }).status;
+  if (typeof status === 'number') return status >= 500;
+
+  // Otherwise fall back to the shape the adapters throw:
+  // "… failed: <status> <statusText> — …". 5xx = server-side (route down /
+  // overloaded); 4xx = bad input (don't fail over). Anchored to that prefix
+  // rather than matched loosely, because a bare /\b4\d\d\b/ also fires on any
+  // three-digit number elsewhere in the message — a token count, a dimension,
+  // a port — and reading "expected 400 dimensions" as a client error would
+  // strand the caller on a dead primary.
+  const reported = /(?:failed|error)\D{0,20}?\b([45]\d\d)\b/i.exec(m);
+  if (reported) return reported[1]!.startsWith('5');
   return false;
 }
 

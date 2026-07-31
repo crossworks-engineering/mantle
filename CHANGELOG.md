@@ -43,6 +43,28 @@ would accept `contact_list limit=500` against a declared maximum of 200. Both
 are fixed for all bridged groups, including the seven bridged before this
 change.
 
+**The chat worker's "Test" button did not test what production runs.** It read
+`api_key_id` directly, took the adapter and called `.chat()` — reproducing
+neither of the two things chat routing actually does. So it lied in both
+directions: a keyless `local` worker failed its test with *no api_key
+configured* while working perfectly in production, and a worker whose primary
+was down but whose backup was healthy also failed, though every real caller
+would have been served. It now goes through `resolveChatRoutes` +
+`chatWithFailover` — the production path — and reports which route answered, so
+a green tick that came from the backup says so. The other modalities' test
+buttons are left exactly as they were: they resolve keys the same way
+`builtins-workers.ts` does, so they were already faithful.
+
+Also hardened the embedding failover classifier, which decided 4xx-vs-5xx by
+searching the message for any three-digit number — so an error mentioning a
+dimension count or a port could be read as a client error and strand the caller
+on a dead primary. It now prefers a status the error actually carries, and the
+message fallback is anchored to the reported-status position. It stays separate
+from chat's `classifyChatError` on purpose, with the reason written down: that
+classifier reads a structured status the embedding adapters do not throw, and
+its retryable set would drop 501 and proxy 52x — exactly what a self-hosted
+primary behind a tunnel returns when it is down.
+
 **Separately, `lib/auth` had five copies of its signature check.** There was a
 shared `sign()` but no shared verifier: the split-on-dot, HMAC and
 constant-time-compare preamble was pasted five times, differing only in which
