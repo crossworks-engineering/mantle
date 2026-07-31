@@ -183,7 +183,9 @@ mkdir -p "$OUT"
 TARBALL="$OUT/$NAME.tar.gz"
 tar -czf "$TARBALL" -C "$STAGE" "$NAME"
 rm -rf "$STAGE"
-sha256sum "$TARBALL" > "$TARBALL.sha256"
+# Basename only, not the path: this file travels next to the tarball, and
+# `sha256sum -c` on the box looks for whatever path is written inside it.
+( cd "$OUT" && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256" )
 
 echo
 echo "✓ $TARBALL"
