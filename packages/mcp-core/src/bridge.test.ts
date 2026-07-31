@@ -40,6 +40,61 @@ function registrationFor(slug: string): Registration {
   return found;
 }
 
+/**
+ * Replacing the hand-written content tools with bridged groups had to be a
+ * swap, not a trade: every slug MCP exposed before must still be there, and no
+ * slug may have arrived just because it happened to sit in the same group.
+ */
+describe('bridging the content groups changed the implementation, not the surface', () => {
+  const PREVIOUSLY_EXPOSED = [
+    'note_list',
+    'note_get',
+    'note_create',
+    'note_update',
+    'note_delete',
+    'task_list',
+    'task_get',
+    'task_create',
+    'task_update',
+    'task_delete',
+    'event_list',
+    'event_get',
+    'event_create',
+    'event_update',
+    'event_delete',
+    'journal_list',
+    'journal_get',
+    'journal_create',
+    'journal_update',
+    'journal_delete',
+    'peer_list',
+    'peer_query',
+    'peer_node_get',
+    'email_list',
+    'email_get',
+  ];
+
+  it('still exposes every content tool it exposed before', () => {
+    const registered = surface();
+    expect(PREVIOUSLY_EXPOSED.filter((slug) => !registered.has(slug))).toEqual([]);
+  });
+
+  it('does not expose the other members of the groups it bridged', () => {
+    // email_send in particular: bridging EMAIL_TOOLS wholesale would hand an
+    // MCP client the ability to send mail as the owner. That is a product
+    // decision, not a side effect of removing duplication.
+    const registered = surface();
+    const notInvited = [
+      'email_send',
+      'email_page',
+      'note_from_file',
+      'note_from_page',
+      'peer_search_chunks',
+    ];
+    expect(notInvited.filter((slug) => registered.has(slug))).toEqual([]);
+  });
+});
+
 describe('bridged tools run their declared preconditions', () => {
   it('answers a non-id argument with the teaching error, not a bare not-found', async () => {
     // contact_get declares an `id` precondition of nodeType 'contact'. A

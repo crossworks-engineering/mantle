@@ -4,6 +4,59 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — One implementation per tool, one verifier per credential (branch feat/arch-cleanup)
+
+**24 MCP tools had two implementations, and the spare had gone stale.** Notes,
+tasks, events, journal entries, peers and the email reads were each written
+once as an in-app builtin and again by hand for the MCP server. Only the
+in-app one gets exercised in development, so the MCP twin quietly fell behind:
+`note_create` recorded no ingest provenance, so a note made from Claude Desktop
+appeared in its own biography from nowhere; reads returned no permalink and,
+worse, answered a missing row with a bare `not found` and no `isError`, which a
+client reads as success; `task_list` returned a bare array where every other
+surface returns `{tasks, count}`.
+
+They are now bridged from the in-app definitions, so both surfaces run one
+implementation. **This changes MCP response shapes** — if you parse these tools'
+output in a connector, re-check it:
+
+- `task_list` returns `{tasks, count}` (was a bare array).
+- `task_get`, `note_get`, `event_get`, `journal_get` include a `url` permalink,
+  and answer a missing id with a structured error flagged `isError` plus the
+  tool that finds the right id.
+- `note_create` / `note_update` accept a title over 200 characters by
+  truncating it, where the hand-written tool rejected the call.
+
+The MCP surface itself is unchanged: every slug that was exposed still is, and
+bridging deliberately did NOT pull in the other members of those groups —
+`email_send` and `email_page` in particular stay in-app only, since exposing
+outbound email over MCP is a decision, not a refactor. `page_get`/`page_list`
+and the table reads keep their hand-written ProseMirror/row shapes on purpose.
+A test pins the remaining overlap exactly, so it can only shrink.
+
+**The bridge also validated less than the in-app dispatcher.** Declared
+preconditions were never checked, so an id naming a missing — or wrong-type —
+node reached the handler and came back as an unhelpful `not found` instead of
+the teaching error every other surface gives. And the JSON-Schema→zod
+conversion silently dropped every size bound, so MCP was the only surface that
+would accept `contact_list limit=500` against a declared maximum of 200. Both
+are fixed for all bridged groups, including the seven bridged before this
+change.
+
+**Separately, `lib/auth` had five copies of its signature check.** There was a
+shared `sign()` but no shared verifier: the split-on-dot, HMAC and
+constant-time-compare preamble was pasted five times, differing only in which
+kind byte followed — duplicated constant-time comparison in the module 265
+others depend on. They now share one verifier, and the file splits along the
+boundary its own comments already drew: `auth/tokens` (pure crypto),
+`auth/session` (cookies, headers, `auth.users`) and `auth/request` (reading a
+credential off a Request), behind an unchanged `@/lib/auth` façade. Four bearer
+parsers that had genuinely diverged on whitespace become one, with the
+null-vs-empty rule the gates depend on stated and tested; the rate-limit denial
+shared by the four credential-exchange endpoints and the SSO origin check move
+to `auth/preflight`. No behaviour changes — the kind-isolation matrix is now
+pinned by a test that mints every credential and offers it to every verifier.
+
 ## Unreleased — Adding a Microsoft scope quietly killed every older account (branch claude/sharepoint-auth-directory-listing-d78be4)
 
 **A connected Microsoft account had a shelf life measured from the last time we
