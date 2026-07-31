@@ -30,6 +30,12 @@ export default tseslint.config(
       '**/next-env.d.ts',
       'server/web/public/app-runtime/**',
       'client/web/public/app-runtime/**',
+      // The desktop shell's STAGED copy of the built owner UI — a whole
+      // Next standalone tree (gitignored). CI never sees it because it
+      // lints a fresh checkout, but anyone who runs `build:ui` locally and
+      // then `pnpm verify` gets hundreds of errors from minified vendor
+      // bundles that are not ours to lint.
+      'client/desktop/ui/**',
       // Generated share-surface bundle + route manifest (gitignored).
       'server/web/public/share-runtime/**',
       'server/web/server/route-manifest.gen.ts',
