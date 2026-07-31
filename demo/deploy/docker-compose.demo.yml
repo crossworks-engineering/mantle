@@ -18,16 +18,26 @@
 #             write path by another name".
 #   browser   PDF export only. Saves 1.5 GB of guardrail on a small box; the
 #             export routes are POSTs the edge refuses before they get here.
+#   ollama    the embedder is online — see the next block. Defined below but
+#             behind the `local-embedder` profile, so `up` does not start it.
 #   caddy     the site box already runs `mantle-site-caddy` on 80/443, and the
 #             demo's edge is a site block inside ITS Caddyfile (Caddyfile.demo).
 #             See "Wiring the edge" below.
 #
-# ── Ollama IS required at serve time ─────────────────────────────────────────
-# The seed compose says the serve box "never runs this (only a pg_dump travels
-# there)". That is wrong and this file is the correction: search embeds the
-# QUERY at request time, so a demo without an embedder has a dead search box on
-# every screen. That is a model download (~600 MB) and ~1-2 GB of RAM on the
-# box that v1 never needed.
+# ── The embedder is ONLINE; Ollama does not run here ─────────────────────────
+# Search embeds the QUERY at request time, so a demo needs an embedder — but it
+# does not need a local one. The brain's `embedding_config` row names the model
+# and carries its key in the vault, both of which travel in the dump, so the
+# box spends no RAM and downloads no model. The ollama service below is kept
+# for a bench that wants it and is behind the `local-embedder` profile: it does
+# NOT start with a plain `up`.
+#
+# WHAT MUST BE TRUE BEFORE THIS IS SAFE — the brain's passage vectors were
+# built by embeddinggemma at seed time, and a query embedded by a different
+# model lands in a different space. Nothing errors; the results are just
+# quietly wrong, which is this branch's recurring failure shape. So the brain
+# must be re-embedded with the online model on the WORKSTATION, before the dump
+# is taken. See demo/deploy/README-embedder.md.
 #
 # ── Wiring the edge ──────────────────────────────────────────────────────────
 # The default network is NAMED (bottom of this file) so the site's Caddy can
@@ -85,11 +95,14 @@ x-demo-app-env: &demo-app-env
   S3_SECRET_KEY: ${S3_SECRET_KEY:-minio12345}
   S3_FORCE_PATH_STYLE: 'true'
   TIKA_URL: http://tika:9998
+  # Only consulted when the `local-embedder` profile is up. The online route is
+  # the normal one and comes from the brain, not from here.
   MANTLE_LOCAL_EMBEDDING_URL: http://ollama:11434/v1
-  # Deliberately UNSET, exactly as at seed time: the resolver reads the model
-  # from the brain, and the brain travels in the dump. Pinning it here is how
-  # you end up embedding queries with a model the passages were never built
-  # with — every result subtly wrong, nothing to see in a log.
+  # Deliberately UNSET. This env var only seeds the model id of the LOCAL
+  # fallback that applies when the brain has no `embedding_config` row; the row
+  # wins whenever it exists, and the row is what travels in the dump. Setting a
+  # model here is how you end up embedding queries with a model the passages
+  # were never built with — every result subtly wrong, nothing in any log.
   MANTLE_EMBEDDING_MODEL: ''
   NODE_ENV: production
   # ── The three roots that resolve cwd-relative by default ───────────────────
@@ -222,9 +235,14 @@ services:
       retries: 12
       start_period: 30s
 
-  # ── The embedder — serve-time, not seed-time ───────────────────────────────
-  # See the header. Every search box on every screen goes through here.
+  # ── Local embedder — NOT part of the demo, kept for a bench ────────────────
+  # Behind a profile, so `up` never starts it:
+  #     docker compose … --profile local-embedder up -d --wait
+  # The demo embeds through the online route named in the brain's
+  # `embedding_config`. Use this only to reproduce the seed-time embedder — e.g.
+  # to check a search result against the vectors as they were originally built.
   ollama:
+    profiles: ['local-embedder']
     image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.2}
     container_name: mantle_demo_srv_ollama
     restart: unless-stopped
@@ -242,12 +260,10 @@ services:
       retries: 12
       start_period: 20s
 
-  # One-shot: pull the embedder into the model volume, then exit. Idempotent,
-  # so it is a no-op on every boot after the first. `web` gates on it
-  # COMPLETING rather than running it in the background — a demo that starts
-  # serving before the model is on disk answers its first searches with an
-  # error, and first impressions are the entire point of a demo.
+  # One-shot companion to the above, same profile: pull the model into the
+  # volume, then exit. Idempotent.
   ollama_pull:
+    profiles: ['local-embedder']
     image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.2}
     container_name: mantle_demo_srv_ollama_pull
     restart: 'no'
@@ -270,7 +286,6 @@ services:
       postgres: { condition: service_healthy }
       minio: { condition: service_healthy }
       createbucket: { condition: service_completed_successfully }
-      ollama_pull: { condition: service_completed_successfully }
     environment:
       <<: *demo-app-env
     volumes:
