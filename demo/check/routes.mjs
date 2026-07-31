@@ -281,6 +281,15 @@ async function visit({ route, url, skip }) {
   } catch (err) {
     state = 'FAIL';
     note = String(err.message).split('\n')[0].slice(0, 120);
+    // The TARGET went away — not this route's fault, and not the next
+    // thirty's either. A sweep that keeps going after the server dies produces
+    // a report full of confident failures against screens it never loaded,
+    // which is worse than no report: it looks like a catastrophic regression.
+    // (Ask me how I know: restarting the bench mid-sweep once yielded 31
+    // "failures", every one of them ERR_CONNECTION_REFUSED.)
+    if (/ERR_CONNECTION_REFUSED|ECONNREFUSED|net::ERR_EMPTY_RESPONSE/.test(err.message)) {
+      state = 'ABORT';
+    }
   }
 
   // A 401/403 is not automatically a defect. The team surfaces are token-gated
@@ -328,6 +337,14 @@ async function visit({ route, url, skip }) {
 // because the box is loaded is indistinguishable from one that is broken.
 for (const t of targets) {
   const r = await visit(t);
+  if (r.state === 'ABORT') {
+    console.error(`\n✗ target unreachable at ${r.route} — ${r.note}`);
+    console.error('  The demo stopped answering mid-sweep, so every route after this point');
+    console.error('  would be reported as broken when it was never loaded. Aborting instead.');
+    console.error(`  ${results.length} route(s) had been judged; that partial result is NOT a pass.`);
+    await browser.close();
+    process.exit(2);
+  }
   results.push(r);
   const mark = { OK: '✓', THIN: '·', SKIP: '–', REDIR: '→', FAIL: '✗' }[r.state];
   const detail = r.state === 'OK' ? `${r.chars} chars` : r.note;
