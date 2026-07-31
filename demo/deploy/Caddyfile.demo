@@ -58,29 +58,22 @@ demo.mantle-ai.tech {
 	# them can be lifted from a shared machine's cookie jar afterwards.
 	request_header Cookie "mantle_session=__DEMO_SESSION__; mantle_authed=1; mantle_team_chat=__DEMO_TEAM__"
 
-	# ── /api/activity is answered HERE, never proxied ─────────────────────
-	# It is a GET that WRITES. getLiveActivity() calls reapAbandonedTraces(),
-	# which UPDATEs every trace left `running` past the abandon cutoff. As
-	# demo_reader that UPDATE is denied (42501), the rejection is unhandled,
-	# and the API process EXITS — which took the whole demo down 8 minutes
-	# after boot on 2026-07-30, edge still listening with nothing behind it.
+	# /api/activity used to be answered HERE with an empty LiveActivity,
+	# because getLiveActivity() reconciles orphaned traces before listing them
+	# — a GET that WRITES, refused as demo_reader (42501), 500ing the
+	# always-on Activity surface on every poll from every screen.
 	#
-	# Clearing the stale rows does NOT help: Postgres checks the table ACL at
-	# executor start, before matching a single row, so the UPDATE is refused
-	# even when nothing is stale. The reaper fires on EVERY poll, and the UI
-	# polls it from every screen — so this is fatal on a timer, not a fluke.
+	# That is fixed upstream now (reapAbandonedTraces skips a refused write and
+	# still serves the read), so the intercept is GONE and the demo shows its
+	# real activity — roughly 1300 traces that were previously hidden behind a
+	# hardcoded empty response.
 	#
-	# The edge therefore answers with a well-typed empty LiveActivity. The
-	# cost is real and deliberate: the Activity column renders empty for the
-	# whole demo. The proper fix is app-side — skip the reap when the database
-	# is read-only — but that breaks the no-app-changes invariant that has
-	# held P0→P5, and the underlying write-on-GET is an upstream defect that
-	# should be fixed on main rather than worked around twice.
-	handle /api/activity {
-		header Content-Type application/json
-		header Cache-Control no-store
-		respond `{"active":[],"recent":[],"failures":[]}` 200
-	}
+	# Two things the old comment here got wrong, recorded so they are not
+	# repeated: it did NOT take the API process down (the rejection is awaited
+	# into the route, so it surfaced as a 500 and the process stayed up), and
+	# fixing it did NOT require breaking the no-app-changes invariant — the
+	# invariant is about the DEMO branch not editing app code, and the fix
+	# belongs on main, which is where it went.
 
 	handle /api/* {
 		reverse_proxy __DEMO_API__
