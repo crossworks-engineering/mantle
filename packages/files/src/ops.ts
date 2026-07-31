@@ -9,9 +9,14 @@
  *   - Folders are `nodes.type='branch'` rows. `data.description` is free
  *     text; `data.slug` is the kebab disk-name (because ltree labels
  *     can't carry a dash).
- *   - Files are `nodes.type='file'` rows. `data.filename` carries the
- *     lowercase basename; `data.content` is populated for text files
- *     so the extractor / editor don't need a disk round-trip.
+ *   - Files are `nodes.type='file'` rows. `data.filename` carries the basename
+ *     **exactly as it appears on disk** — it is what `diskPathForFile`
+ *     reconstructs the path from, so it cannot be a transform of the real name.
+ *     Uploads (`upsertFile`) sanitise, because they choose the name and then
+ *     write the bytes under it; the disk watcher (`syncFileFromDisk`) preserves,
+ *     because the file is already there under a name the operator chose.
+ *     `data.content` is populated for text files so the extractor / editor
+ *     don't need a disk round-trip.
  */
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
@@ -25,6 +30,7 @@ import {
   FILES_ROOT_LABEL,
   filesRoot,
   isFilesPath,
+  isSafeDiskBasename,
   ltreeToDash,
   mimeForExt,
   removeFolder as removeFolderOnDisk,
@@ -695,9 +701,22 @@ export async function syncFileFromDisk(args: {
   if (!isFilesPath(args.parentPath)) {
     throw new Error(`syncFileFromDisk: parent '${args.parentPath}' is outside the files root`);
   }
-  const filename = sanitizeFilename(args.filename);
-  if (!filename) {
-    throw new Error(`syncFileFromDisk: invalid filename '${args.filename}'`);
+  // The name is PRESERVED, not sanitised, and that is the whole point of this
+  // function. `sanitizeFilename` exists to invent a safe name when WE write the
+  // bytes (`upsertFile`); here the file already exists and the operator named
+  // it. Sanitising lowercases, so `Plan.XML` on disk was recorded as `plan.xml`
+  // — and `data.filename` is what `diskPathForFile` reconstructs the path from.
+  // On a case-sensitive filesystem that path does not exist, so `loadFileBytes`
+  // returned null and the extractor indexed the FILENAME ALONE while reporting
+  // success. `deleteFileByPath` never sanitised, so the two halves of this
+  // module also disagreed about the key and an orphaned node outlived its file.
+  //
+  // Validate instead of transform. `ltreeForDiskPath` already resolved this
+  // against the files root and rejected anything climbing out of it, so a
+  // separator or dot-segment here means the caller bypassed that guard.
+  const filename = args.filename.trim();
+  if (!isSafeDiskBasename(filename)) {
+    throw new Error(`syncFileFromDisk: unsafe filename '${args.filename}'`);
   }
   // Compute hash locally; no disk write.
   const { createHash } = await import('node:crypto');
@@ -733,7 +752,7 @@ export async function syncFileFromDisk(args: {
         eq(nodes.ownerId, args.ownerId),
         eq(nodes.type, 'file'),
         sql`${nodes.path}::text = ${args.parentPath}`,
-        sql`${nodes.data}->>'filename' = ${filename}`,
+        sql`lower(${nodes.data}->>'filename') = lower(${filename})`,
       ),
     )
     .limit(1);
@@ -802,7 +821,7 @@ export async function deleteFileByPath(args: {
         eq(nodes.ownerId, args.ownerId),
         eq(nodes.type, 'file'),
         sql`${nodes.path}::text = ${args.parentPath}`,
-        sql`${nodes.data}->>'filename' = ${args.filename}`,
+        sql`lower(${nodes.data}->>'filename') = lower(${args.filename})`,
       ),
     )
     .limit(1);
