@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1);
   const since = hours > 0 ? new Date(Date.now() - hours * 3_600_000).toISOString() : undefined;
 
-  const { runs, hasMore } = await listRuns({
+  const { runs, hasMore, engineAvailable } = await listRuns({
     status: statuses.length === 1 ? statuses[0] : statuses.length > 1 ? statuses : undefined,
     name,
     queue,
@@ -36,5 +36,14 @@ export async function GET(req: Request) {
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
-  return NextResponse.json({ runs, hasMore, page, pageSize: PAGE_SIZE });
+  // `engineAvailable` is only present when the runner engine could NOT be
+  // read — an empty list from a healthy idle queue and an empty list from an
+  // unprovisioned one are otherwise identical.
+  return NextResponse.json({
+    runs,
+    hasMore,
+    page,
+    pageSize: PAGE_SIZE,
+    ...(engineAvailable === false ? { engineAvailable: false } : {}),
+  });
 }

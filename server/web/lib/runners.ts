@@ -12,6 +12,7 @@
 import type { DBOSClient, WorkflowStatus, WorkflowStatusString } from '@dbos-inc/dbos-sdk';
 import { RUNNER_QUEUE } from '@mantle/assistant-runtime';
 import { getDbosClient } from '@/lib/dbos-client';
+import { isRunnerEngineAbsent } from './runners-engine';
 import type {
   RunnerListPage,
   RunnerQueueHealth,
@@ -101,11 +102,35 @@ export type ListRunsOpts = {
 
 const DEFAULT_LIMIT = 50;
 
+/** Warn once per process, so an unprovisioned engine is visible in the log
+ *  without a line per poll — the Runners screen polls. */
+let warnedAbsent = false;
+function noteEngineAbsent(where: string, err: unknown): void {
+  if (warnedAbsent) return;
+  warnedAbsent = true;
+  const msg = err instanceof Error ? err.message : String(err);
+  console.warn(
+    `[runners] DBOS system database unavailable (${where}: ${msg}) — ` +
+      'the Runners screen will read as empty. Expected when runners were never ' +
+      'provisioned or the app connects read-only; investigate if runs are meant to work here.',
+  );
+}
+
 /** A page of runs, newest first. Over-fetches by one to report `hasMore`
  *  without a separate count query (DBOS exposes no count API). */
 export async function listRuns(opts: ListRunsOpts = {}): Promise<RunnerListPage> {
-  const client = await getDbosClient();
   const limit = Math.min(Math.max(opts.limit ?? DEFAULT_LIMIT, 1), 200);
+  try {
+    return await listRunsUnguarded(opts, limit);
+  } catch (err) {
+    if (!isRunnerEngineAbsent(err)) throw err;
+    noteEngineAbsent('listRuns', err);
+    return { runs: [], hasMore: false, engineAvailable: false };
+  }
+}
+
+async function listRunsUnguarded(opts: ListRunsOpts, limit: number): Promise<RunnerListPage> {
+  const client = await getDbosClient();
   const rows = await client.listWorkflows({
     ...(opts.status ? { status: opts.status } : {}),
     ...(opts.name ? { workflowName: opts.name } : {}),
@@ -121,6 +146,16 @@ export async function listRuns(opts: ListRunsOpts = {}): Promise<RunnerListPage>
 
 /** A single run with its steps and (truncated) input/output. */
 export async function getRunDetail(workflowID: string): Promise<RunnerRunDetail | null> {
+  try {
+    return await runDetailUnguarded(workflowID);
+  } catch (err) {
+    if (!isRunnerEngineAbsent(err)) throw err;
+    noteEngineAbsent('getRunDetail', err);
+    return null; // the route renders this as 404, which is the truth: no such run here
+  }
+}
+
+async function runDetailUnguarded(workflowID: string): Promise<RunnerRunDetail | null> {
   const client = await getDbosClient();
   const [statuses, steps] = await Promise.all([
     // loadInput/loadOutput pull the payloads (owner-only screen; we truncate).
@@ -150,6 +185,16 @@ export async function listRunnerNames(): Promise<string[]> {
 
 /** Queue config + live ENQUEUED / PENDING counts for the runner queue. */
 export async function getQueueHealth(name: string = RUNNER_QUEUE): Promise<RunnerQueueHealth> {
+  try {
+    return await queueHealthUnguarded(name);
+  } catch (err) {
+    if (!isRunnerEngineAbsent(err)) throw err;
+    noteEngineAbsent('getQueueHealth', err);
+    return { name, enqueued: 0, pending: 0, engineAvailable: false };
+  }
+}
+
+async function queueHealthUnguarded(name: string): Promise<RunnerQueueHealth> {
   const client = await getDbosClient();
   const [queue, enqueued, pending] = await Promise.all([
     client.retrieveQueue(name).catch(() => null),

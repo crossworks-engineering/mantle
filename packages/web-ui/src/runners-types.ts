@@ -94,12 +94,21 @@ export type RunnerQueueHealth = {
   enqueued: number;
   /** Runs currently executing (PENDING). */
   pending: number;
+  /** See RunnerListPage.engineAvailable. */
+  engineAvailable?: boolean;
 };
 
 export type RunnerListPage = {
   runs: RunnerRun[];
   /** True when another page exists (we over-fetch by one to know). */
   hasMore: boolean;
+  /**
+   * False when the DBOS system database is not readable from here — runners
+   * were never provisioned, or the app connects with a role that cannot see the
+   * schema. Distinguishes "no runs" from "no runner engine", which otherwise
+   * look identical to a healthy idle queue.
+   */
+  engineAvailable?: boolean;
 };
 
 /** The lifecycle controls this screen exposes (the "observe + lifecycle" cut —
