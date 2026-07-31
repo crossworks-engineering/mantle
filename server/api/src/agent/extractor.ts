@@ -59,6 +59,7 @@ import {
   extractPdfTextWithPassword,
   effectiveBrainDepth,
   ensureExtractedImagesFolder,
+  exportHintForExt,
   slugifyFolder,
   upsertFile,
 } from '@mantle/files';
@@ -1535,6 +1536,35 @@ async function loadExtractableBody(
   const fileExt = extOf(fileNameForType);
   const fileMime =
     typeof existingData.mimeType === 'string' ? existingData.mimeType : mimeForExt(fileExt);
+
+  // Formats we can identify but deliberately can't read, where the fix is an
+  // export rather than a retry or a code change (Microsoft Project today).
+  // Caught HERE, ahead of the whole parser ladder, because the alternative is
+  // worse than a refusal: with no parser for the extension, the ladder returns
+  // an empty string, the body falls back to the filename, and the node indexes
+  // as a plausible-looking success. The user believes their plan is in the
+  // brain, nothing ever contradicts them, and the failure is discovered only
+  // when an answer is quietly wrong. An honest terminal skip that names the
+  // export is the whole point.
+  const exportHint = node.type === 'file' ? exportHintForExt(fileExt) : undefined;
+  if (exportHint) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition: 'needs_export',
+      details: {
+        worker_slug: worker.slug,
+        node_type: node.type,
+        title: node.title,
+        filename: existingData.filename,
+        extension: fileExt,
+        hint: exportHint,
+      },
+    });
+    return { ok: false };
+  }
 
   const isImageNeedingVision =
     node.type === 'file' &&
