@@ -29,6 +29,23 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
   if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm' || ext === 'xlsb')
     return (await import('./xlsx')).parseXlsx(bytes);
   if (TEXT_EXTS.has(ext)) return bytes.toString('utf8');
+  // `.xml` is a container, not a format — routing by extension alone would send
+  // a Project plan through a generic text parser and lose every task name. So
+  // this one branches on CONTENT: sniff the root element, and only a document
+  // that is actually MSPDI gets the plan renderer.
+  //
+  // The fall-through is deliberate and load-bearing. A file that sniffs as a
+  // plan but yields no rows (truncated, a dialect we mis-read) drops to Tika
+  // rather than returning ''. Worst case the upload is a searchable document;
+  // it is never silently nothing, which is the failure this whole path exists
+  // to prevent.
+  if (ext === 'xml') {
+    const { sniffMspdi, renderMspdiText } = await import('./mspdi');
+    if (sniffMspdi(bytes)) {
+      const plan = renderMspdiText(bytes);
+      if (plan) return plan;
+    }
+  }
   // Tier 2 — anything else Tika might know how to parse. Lazy import keeps
   // the fetch + AbortController machinery off the cold path for the common
   // case (in-process parsers handle ~95% of uploads). Tika's wrapper is

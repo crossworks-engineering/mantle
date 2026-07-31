@@ -33,7 +33,7 @@ each type:
   or a receipt becomes searchable.
 
 So "drop it in and ask about it later" works for almost any file. (Upload limit is
-25 MB per file.)
+64 MB per file.)
 
 ## A few practical notes
 

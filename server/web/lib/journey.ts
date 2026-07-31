@@ -219,6 +219,22 @@ export async function reapAbandonedTraces(userId: string): Promise<number> {
 
 async function reapUnguarded(userId: string): Promise<number> {
   const cutoff = new Date(Date.now() - ABANDON_AFTER_MIN * 60_000);
+  try {
+    return await reapOnce(userId, cutoff);
+  } catch (err) {
+    // A self-heal is a convenience; the read it precedes is the point. Against a
+    // read-only replica, a revoked grant, or a reader role, this UPDATE is
+    // refused and used to take GET /api/activity down with it — the Activity
+    // surface 500'd for a reason unrelated to what it was asked for.
+    //
+    // Narrow on purpose: only "the database refused to write". Anything else is
+    // a real failure and must still surface.
+    if (!isWriteRefused(err)) throw err;
+    return 0;
+  }
+}
+
+async function reapOnce(userId: string, cutoff: Date): Promise<number> {
   const rows = await db
     .update(traces)
     .set({

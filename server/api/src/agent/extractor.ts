@@ -328,8 +328,66 @@ async function loadFileBytes(
   return null;
 }
 
-/** Spreadsheet extensions that auto-convert to Table(s) on ingest. */
-const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv']);
+/**
+ * Read only the first `n` bytes of a file node — enough to identify a format
+ * without paying for its content.
+ *
+ * `.xml` is why this exists. It is a container, so the auto-table pass can't
+ * tell a Project plan from any other document by extension, and it used to
+ * settle that by loading the whole file and then discarding it for the ~99% of
+ * XML that isn't a plan. Under the 64 MB cap that is a 64 MB read to answer a
+ * question the first 2 KB already answers.
+ *
+ * Mirrors {@link loadFileBytes}' resolution order — local disk first, then
+ * content-addressed object storage — and returns null on the same conditions,
+ * so a caller that falls back to the full read behaves identically.
+ */
+async function loadFileHead(node: typeof nodes.$inferSelect, n = 8192): Promise<Buffer | null> {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  if (typeof data.filename === 'string') {
+    const diskPath = diskPathForFile(node.path, data.filename);
+    if (diskPath) {
+      let handle: import('node:fs/promises').FileHandle | undefined;
+      try {
+        const { open } = await import('node:fs/promises');
+        handle = await open(diskPath, 'r');
+        const buf = Buffer.alloc(n);
+        const { bytesRead } = await handle.read(buf, 0, n, 0);
+        return buf.subarray(0, bytesRead);
+      } catch {
+        // fall through to object storage
+      } finally {
+        await handle?.close().catch(() => {});
+      }
+    }
+  }
+  if (typeof data.sha256 === 'string') {
+    try {
+      const { body } = await getContent(contentKey(data.sha256));
+      const chunks: Buffer[] = [];
+      let got = 0;
+      for await (const chunk of body as AsyncIterable<Buffer | string>) {
+        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        chunks.push(b);
+        got += b.length;
+        // Stop pulling as soon as the head is covered; the stream is abandoned
+        // rather than drained, which is the entire point of this helper.
+        if (got >= n) break;
+      }
+      return Buffer.concat(chunks).subarray(0, n);
+    } catch {
+      // unreachable storage / missing object
+    }
+  }
+  return null;
+}
+
+/** Extensions that auto-convert to Table(s) on ingest.
+ *
+ *  `xml` earns its place only conditionally: most XML is not a plan, so the
+ *  grid parse below sniffs the content and a non-MSPDI document falls straight
+ *  back out to the ordinary text path. */
+const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml']);
 
 /** Max TABLES a single auto-import will create (sheets × paginated parts). Each
  *  table is its own indexed node, so a huge or many-sheet workbook would fan out
@@ -356,7 +414,24 @@ async function maybeAutoTableSpreadsheet(
   if (node.type !== 'file') return;
   const data = (node.data ?? {}) as Record<string, unknown>;
   const nameForExt = typeof data.filename === 'string' ? data.filename : node.title;
-  if (!AUTO_TABLE_EXTS.has(extOf(nameForExt))) return;
+  const fileExt = extOf(nameForExt);
+  if (!AUTO_TABLE_EXTS.has(fileExt)) return;
+
+  // `.xml` is a container, so its place in AUTO_TABLE_EXTS is conditional. Rule
+  // out the ~99% that aren't plans from the first 8 KB, before the dedupe query
+  // and before reading the file — under the 64 MB cap the alternative is a whole
+  // file read to answer a question the root element already answers.
+  //
+  // Only the ROOT check is safe this early. The full sniff's second signal is
+  // the namespace OR a `<Tasks>` element, and `<Tasks>` is not near the top: in a
+  // real 25 MB export it sat at byte 114,966. A head-scoped full sniff would
+  // answer false for a namespace-less plan and silently skip it.
+  if (fileExt === 'xml') {
+    const head = await loadFileHead(node);
+    // An unreadable head is not evidence — fall through and let the full path
+    // decide, exactly as it did before.
+    if (head && !(await import('@mantle/files/mspdi')).mspdiRootPresent(head)) return;
+  }
 
   // Dedupe: if a table already references this file, do nothing (re-ingest safe).
   const existing = await db
@@ -375,10 +450,29 @@ async function maybeAutoTableSpreadsheet(
   const loaded = await loadFileBytes(node);
   if (!loaded) return;
   let sheets: ReturnType<typeof parseSheetToGrid>;
+  /** Caveat the reader needs before querying — set only where the grid is
+   *  genuinely misleading read the obvious way. */
+  let description: string | undefined;
   try {
-    sheets = parseSheetToGrid(loaded.bytes);
+    if (fileExt === 'xml') {
+      // Sniffed again, not redundantly: the early check is skipped when the head
+      // could not be read, so this is the one that runs for those. It costs a
+      // regex over 8 KB of a buffer already in hand.
+      const { parseMspdi, sniffMspdi } = await import('@mantle/files/mspdi');
+      const plan = sniffMspdi(loaded.bytes) ? parseMspdi(loaded.bytes) : null;
+      sheets = plan?.sheets ?? [];
+      if (plan && plan.meta.summaryCount > 0) {
+        description =
+          `Microsoft Project plan. ${plan.meta.summaryCount} of ${plan.meta.taskCount} rows in Tasks are` +
+          ` summary (roll-up) rows whose work, duration and cost ALREADY include their child tasks —` +
+          ` add WHERE "Summary"=0 to any total, or the same work is counted once per outline level.` +
+          ` Durations are hours unless the column says days; slack is in days.`;
+      }
+    } else {
+      sheets = parseSheetToGrid(loaded.bytes);
+    }
   } catch {
-    return; // unparseable as a spreadsheet — leave it as a plain file
+    return; // unparseable as a grid — leave it as a plain file
   }
   if (sheets.length === 0) return;
 
@@ -389,7 +483,7 @@ async function maybeAutoTableSpreadsheet(
   // were never set post-v2).
   const toTab = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
   const skipped = sheets.length - toTab.length;
-  const base = loaded.filename.replace(/\.(xlsx|xls|csv)$/i, '').trim() || 'Imported table';
+  const base = loaded.filename.replace(/\.(xlsx|xls|csv|xml)$/i, '').trim() || 'Imported table';
   await step(
     {
       name: 'auto_table',
@@ -419,6 +513,7 @@ async function maybeAutoTableSpreadsheet(
         tabs,
         tags: ['auto-import'],
         sourceFileId: node.id,
+        ...(description ? { description } : {}),
       });
       void recordIngest({
         source: 'extractor',
@@ -1879,7 +1974,14 @@ async function buildTableIndexPieces(
             headingPath: 'profile',
           },
           {
-            text: schemaToText(surface, { title: node.title, nodeId: node.id }),
+            text: schemaToText(surface, {
+              title: node.title,
+              nodeId: node.id,
+              description:
+                typeof (node.data as Record<string, unknown>)?.description === 'string'
+                  ? ((node.data as Record<string, unknown>).description as string)
+                  : undefined,
+            }),
             headingPath: 'schema',
           },
           ...sections.slice(1).map((s) => ({
