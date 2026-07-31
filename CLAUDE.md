@@ -61,6 +61,22 @@ History before 2026-07-25 still carries ~1695 of these. Left deliberately:
 scrubbing them means rewriting every SHA and re-pointing 115 release tags,
 which would re-fire the tag-triggered image builds.
 
+## The `demo` branch merges ONE WAY
+
+`demo` is main plus a `demo/` directory (generator, seed scripts, world
+fixtures, the read-only edge). Take main into demo as often as you like:
+
+```sh
+git checkout demo && git merge --no-ff main
+```
+
+**Never the reverse.** Merging demo into main would drag the whole seeded-demo
+apparatus into the product tree. That used to be a line in a handover; it is now
+mechanical — `pre-push` refuses to push `main` if its tree contains `demo/`,
+checked before `pnpm verify` so it fails in a second rather than after a full
+test run. If you hit it, you almost certainly merged the wrong direction:
+`git reset --hard origin/main` and merge main into demo instead.
+
 ## Other guidance
 
 - **Frontend-only dev (no local Docker/DB): `pnpm dev:fe`** — runs the owner UI
