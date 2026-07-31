@@ -18,6 +18,7 @@ import {
   collectionRoot,
   diffDocSets,
   docsRoot,
+  isWriteRefused,
   effectiveBrainDepth,
   isHiddenDocRelPath,
   listMarkdownRelPaths,
@@ -159,5 +160,32 @@ describe('effectiveBrainDepth', () => {
     expect(effectiveBrainDepth('note', 'retrieval')).toBe('full');
     expect(effectiveBrainDepth('file', undefined)).toBe('full');
     expect(effectiveBrainDepth('email', 'retrieval')).toBe('full');
+  });
+});
+
+describe('isWriteRefused', () => {
+  // GET /api/docs/collections seeds built-in rows before its SELECT, so a
+  // database that refuses writes used to 500 the whole docs surface. Only the
+  // two "refused to write" codes may be tolerated — anything else is a real
+  // failure and must still propagate, or this becomes a blanket catch that
+  // hides broken queries.
+  it('recognises a role without INSERT privilege', () => {
+    expect(isWriteRefused({ code: '42501' })).toBe(true);
+  });
+
+  it('recognises a read-only transaction', () => {
+    expect(isWriteRefused({ code: '25006' })).toBe(true);
+  });
+
+  it('unwraps the driver error through a wrapper cause', () => {
+    // Drizzle wraps the postgres error, so the code is not on the top object.
+    expect(isWriteRefused(new Error('Failed query', { cause: { code: '42501' } }))).toBe(true);
+  });
+
+  it('does NOT swallow other database errors', () => {
+    expect(isWriteRefused({ code: '23505' })).toBe(false); // unique_violation
+    expect(isWriteRefused({ code: '3F000' })).toBe(false); // invalid_schema_name
+    expect(isWriteRefused(new Error('connection refused'))).toBe(false);
+    expect(isWriteRefused(undefined)).toBe(false);
   });
 });
