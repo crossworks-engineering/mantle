@@ -113,13 +113,35 @@ function genToken(): string {
   return randomBytes(16).toString('base64url');
 }
 
+let warnedNoPublicUrl = false;
+
 /** The app's public origin, for building share URLs outside the web request
  *  cycle (e.g. the agent process, where there's no incoming request to read an
  *  origin from). `MANTLE_PUBLIC_URL` overrides; falls back to the same
- *  `NEXT_PUBLIC_APP_URL` the web app uses, then localhost. */
+ *  `NEXT_PUBLIC_APP_URL` the web app uses, then localhost.
+ *
+ *  THE FALLBACK IS PERMANENT WHERE IT LANDS. Most callers hand the result
+ *  straight to a model — every tool result carries `url: nodeUrl(id)` — and the
+ *  model writes those links into prose that is then STORED: forum answers,
+ *  assistant messages, pages. Nothing re-resolves them later, so a brain that
+ *  ran once without a public origin keeps `http://localhost:3000/n/<id>` in its
+ *  content forever, pointing at a machine the reader does not have.
+ *
+ *  There is a boot warning and a sanity check for the unset case, but neither
+ *  reaches the process that does the writing — the agent runtime is not the web
+ *  server — so warn here too, once, where the wrong URL is actually minted. */
 export function publicBaseUrl(): string {
-  const raw =
-    process.env.MANTLE_PUBLIC_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  const configured = process.env.MANTLE_PUBLIC_URL ?? process.env.NEXT_PUBLIC_APP_URL;
+  if (!configured && !warnedNoPublicUrl) {
+    warnedNoPublicUrl = true;
+    console.warn(
+      '[shares] No MANTLE_PUBLIC_URL or NEXT_PUBLIC_APP_URL — building links against ' +
+        'http://localhost:3000. These are written into STORED content (agent answers, ' +
+        'share links, emails) and are never re-resolved, so they stay wrong after the ' +
+        'variable is set. Set it before seeding or running turns.',
+    );
+  }
+  const raw = configured ?? 'http://localhost:3000';
   return raw.replace(/\/$/, '');
 }
 

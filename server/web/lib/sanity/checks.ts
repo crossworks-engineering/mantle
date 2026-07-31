@@ -202,8 +202,8 @@ function checkPublicUrl(): SanityCheck {
       ...base,
       status: 'warn',
       detail: url
-        ? `MANTLE_PUBLIC_URL is “${url}” — share links and outbound emails will embed a localhost address that recipients can't open.`
-        : `MANTLE_PUBLIC_URL is unset — absolute links in shares and emails fall back to localhost. Fine on a dev box; broken on a deployed one.`,
+        ? `MANTLE_PUBLIC_URL is “${url}” — a localhost address recipients can't open, embedded in share links, outbound emails, and any link the assistant writes into stored content (where it stays, permanently).`
+        : `MANTLE_PUBLIC_URL is unset — absolute links fall back to localhost. Fine on a dev box; broken on a deployed one. Note this is not only shares and emails: every tool result hands the assistant an absolute node link, so anything it writes now (forum answers, chat, pages) stores that localhost address permanently — setting the variable later does not fix content already written.`,
       fix: {
         summary: `Set MANTLE_PUBLIC_URL to the box's public HTTPS origin so share/email links resolve.`,
         command: `MANTLE_PUBLIC_URL=https://brain.example.com`,
