@@ -15,7 +15,8 @@
     "./tika": "./src/tika.ts",
     "./embedded-images": "./src/embedded-images.ts",
     "./image-probe": "./src/image-probe.ts",
-    "./ooxml-media": "./src/ooxml-media.ts"
+    "./ooxml-media": "./src/ooxml-media.ts",
+    "./mspdi": "./src/mspdi.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -30,6 +31,7 @@
     "pdf-parse": "^2.4.5",
     "pdf-to-png-converter": "^4.1.1",
     "pdfjs-dist": "^6.1.200",
+    "saxes": "^5.0.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
