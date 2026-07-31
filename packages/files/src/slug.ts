@@ -93,6 +93,14 @@ export const TIKA_EXTS = new Set<string>([
   'epub',
   'vsdx',
   'vsd',
+  // `.xml` was previously unreadable — not in any set, so `parserRouteForExt`
+  // returned `none` and an upload was indexed by its filename alone. Tika
+  // strips the markup and keeps the content, which is right for a format that
+  // is mostly tags: as TEXT_EXTS the summary, embedding and chunks would all be
+  // dominated by element names, so retrieval would get *worse* while appearing
+  // to work (matching `<title>` rather than titles). Project's MSPDI export is
+  // recognised by content before this fallback — see parseDocumentBytes.
+  'xml',
 ]);
 /** TEXT_EXTS + every binary type the extractor can pull readable text from.
  *  In-process: pdf-parse, mammoth, SheetJS. Tika-routed: TIKA_EXTS. Each
@@ -194,6 +202,8 @@ export function mimeForExt(ext: string): string {
       return 'image/svg+xml';
     case 'html':
       return 'text/html; charset=utf-8';
+    case 'xml':
+      return 'application/xml; charset=utf-8';
     case 'csv':
       return 'text/csv; charset=utf-8';
     case 'docx':

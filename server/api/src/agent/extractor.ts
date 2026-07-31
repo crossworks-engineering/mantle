@@ -328,8 +328,12 @@ async function loadFileBytes(
   return null;
 }
 
-/** Spreadsheet extensions that auto-convert to Table(s) on ingest. */
-const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv']);
+/** Extensions that auto-convert to Table(s) on ingest.
+ *
+ *  `xml` earns its place only conditionally: most XML is not a plan, so the
+ *  grid parse below sniffs the content and a non-MSPDI document falls straight
+ *  back out to the ordinary text path. */
+const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml']);
 
 /** Max TABLES a single auto-import will create (sheets × paginated parts). Each
  *  table is its own indexed node, so a huge or many-sheet workbook would fan out
@@ -374,11 +378,20 @@ async function maybeAutoTableSpreadsheet(
 
   const loaded = await loadFileBytes(node);
   if (!loaded) return;
+  const ext = extOf(nameForExt);
   let sheets: ReturnType<typeof parseSheetToGrid>;
   try {
-    sheets = parseSheetToGrid(loaded.bytes);
+    if (ext === 'xml') {
+      // Content-sniffed, not extension-trusted: a Project export becomes
+      // Tasks / Resources / Assignments, and any other XML yields nothing here
+      // and stays a plain (Tika-indexed) file.
+      const { parseMspdiToGrids, sniffMspdi } = await import('@mantle/files/mspdi');
+      sheets = sniffMspdi(loaded.bytes) ? parseMspdiToGrids(loaded.bytes) : [];
+    } else {
+      sheets = parseSheetToGrid(loaded.bytes);
+    }
   } catch {
-    return; // unparseable as a spreadsheet — leave it as a plain file
+    return; // unparseable as a grid — leave it as a plain file
   }
   if (sheets.length === 0) return;
 
@@ -389,7 +402,7 @@ async function maybeAutoTableSpreadsheet(
   // were never set post-v2).
   const toTab = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
   const skipped = sheets.length - toTab.length;
-  const base = loaded.filename.replace(/\.(xlsx|xls|csv)$/i, '').trim() || 'Imported table';
+  const base = loaded.filename.replace(/\.(xlsx|xls|csv|xml)$/i, '').trim() || 'Imported table';
   await step(
     {
       name: 'auto_table',

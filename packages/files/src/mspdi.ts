@@ -737,8 +737,20 @@ export function renderMspdiText(bytes: Buffer | string): string {
   const lines = [
     r.meta.title ? `Project plan: ${r.meta.title}` : 'Project plan',
     `${r.meta.taskCount} tasks, ${r.meta.resourceCount} resources, ${r.meta.assignmentCount} assignments.`,
-    '',
   ];
+  // Stated in prose because the machine-readable guard (the Summary column) only
+  // helps a reader who already knows to look for it. Summary rows carry the
+  // totals of everything beneath them, so adding up every row counts the same
+  // work once per outline level — on a five-level plan that overstates by ~5x,
+  // and it looks entirely plausible.
+  if (r.meta.summaryCount > 0) {
+    lines.push(
+      `${r.meta.summaryCount} of these are summary (roll-up) rows whose work, duration and cost` +
+        ` already include their child tasks. Totals must exclude rows where Summary is true,` +
+        ` or the same work is counted once per outline level.`,
+    );
+  }
+  lines.push('');
   for (const row of tasks.rows) {
     const d = (i: number) => (i >= 0 && row[i] != null ? String(row[i]).slice(0, 10) : '');
     const parts = [row[wbs], row[name]].filter(Boolean).join(' ');

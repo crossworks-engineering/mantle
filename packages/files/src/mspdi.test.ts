@@ -16,6 +16,7 @@ import {
   renderMspdiText,
   sniffMspdi,
 } from './mspdi';
+import { parseDocumentBytes } from './parse';
 
 const XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Project xmlns="http://schemas.microsoft.com/project">
@@ -260,7 +261,25 @@ describe('renderMspdiText', () => {
     expect(t).toContain('2026-01-05');
   });
 
+  it('states the roll-up caveat in prose, not only as a column', () => {
+    // The Summary column only helps a reader who already knows to look. This
+    // text is what gets summarised and chunked, so the warning travels with it.
+    const t = renderMspdiText(XML);
+    expect(t).toMatch(/summary \(roll-up\) rows/i);
+    expect(t).toMatch(/Totals must exclude/i);
+  });
+
   it('returns empty string rather than throwing on junk', () => {
     expect(renderMspdiText('nonsense')).toBe('');
+  });
+});
+
+describe('parseDocumentBytes dispatch', () => {
+  it('recognises a Project export by CONTENT and renders the plan', async () => {
+    // Extension alone would send this through a generic text parser and lose
+    // every task name. Returns before Tika is ever contacted.
+    const text = await parseDocumentBytes(Buffer.from(XML, 'utf8'), 'xml');
+    expect(text).toContain('Scaffold');
+    expect(text).toContain('Project plan: Turnaround');
   });
 });
