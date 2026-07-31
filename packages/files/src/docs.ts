@@ -23,24 +23,18 @@
 import { createHash } from 'node:crypto';
 import { promises as fs, type Dirent } from 'node:fs';
 import path from 'node:path';
-import { and, db, docCollections, eq, notifyNodeIngested, nodes, sql } from '@mantle/db';
+import {
+  and,
+  db,
+  docCollections,
+  eq,
+  isWriteRefused,
+  notifyNodeIngested,
+  nodes,
+  sql,
+} from '@mantle/db';
 import type { DocBrainDepth, DocCollection } from '@mantle/db';
 import { dashToLtree, ltreeToDash } from './slug';
-
-/**
- * The two ways Postgres refuses a write that are NOT a bug on a read path:
- * the role has no INSERT privilege, or the session/transaction is read-only.
- * Drizzle wraps the driver error, so the code can sit on the cause.
- */
-const WRITE_REFUSED_CODES = new Set(['42501', '25006']);
-export function isWriteRefused(err: unknown): boolean {
-  for (let e: unknown = err, depth = 0; e && depth < 4; depth++) {
-    const code = (e as { code?: unknown }).code;
-    if (typeof code === 'string' && WRITE_REFUSED_CODES.has(code)) return true;
-    e = (e as { cause?: unknown }).cause;
-  }
-  return false;
-}
 
 /** The single ltree label that roots the documentation subtree. */
 export const DOCS_ROOT_LABEL = 'documentation';

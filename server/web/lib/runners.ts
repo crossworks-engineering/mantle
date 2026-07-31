@@ -11,6 +11,7 @@
 
 import type { DBOSClient, WorkflowStatus, WorkflowStatusString } from '@dbos-inc/dbos-sdk';
 import { RUNNER_QUEUE } from '@mantle/assistant-runtime';
+import { isSubsystemMissing } from '@mantle/db';
 import { getDbosClient } from '@/lib/dbos-client';
 import type {
   RunnerListPage,
@@ -104,6 +105,20 @@ const DEFAULT_LIMIT = 50;
 /** A page of runs, newest first. Over-fetches by one to report `hasMore`
  *  without a separate count query (DBOS exposes no count API). */
 export async function listRuns(opts: ListRunsOpts = {}): Promise<RunnerListPage> {
+  try {
+    return await listRunsOnce(opts);
+  } catch (err) {
+    // Runners are OPTIONAL. DBOS creates its system-database journal in the
+    // process that runs the engine, so on a deployment that never started one —
+    // or a role narrowed to least privilege — these tables simply do not exist.
+    // That is not an error, and GET /api/runners used to 500 on it. An absent
+    // engine is an empty list.
+    if (!isSubsystemMissing(err)) throw err;
+    return { runs: [], hasMore: false };
+  }
+}
+
+async function listRunsOnce(opts: ListRunsOpts): Promise<RunnerListPage> {
   const client = await getDbosClient();
   const limit = Math.min(Math.max(opts.limit ?? DEFAULT_LIMIT, 1), 200);
   const rows = await client.listWorkflows({
@@ -150,6 +165,18 @@ export async function listRunnerNames(): Promise<string[]> {
 
 /** Queue config + live ENQUEUED / PENDING counts for the runner queue. */
 export async function getQueueHealth(name: string = RUNNER_QUEUE): Promise<RunnerQueueHealth> {
+  try {
+    return await queueHealthOnce(name);
+  } catch (err) {
+    // Same reasoning as listRuns — a queue that was never provisioned reports
+    // zero depth, not a broken page. `retrieveQueue` was already tolerant; the
+    // two listQueuedWorkflows calls beside it were not.
+    if (!isSubsystemMissing(err)) throw err;
+    return { name, enqueued: 0, pending: 0 };
+  }
+}
+
+async function queueHealthOnce(name: string): Promise<RunnerQueueHealth> {
   const client = await getDbosClient();
   const [queue, enqueued, pending] = await Promise.all([
     client.retrieveQueue(name).catch(() => null),

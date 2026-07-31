@@ -6,7 +6,7 @@
  * cron guard treats a read failure as "not due").
  */
 import { desc, eq, and, gte, lt, sql } from 'drizzle-orm';
-import { db, maintenanceRuns, type MaintenanceRunRow } from '@mantle/db';
+import { db, isWriteRefused, maintenanceRuns, type MaintenanceRunRow } from '@mantle/db';
 
 import type { RunState } from '@mantle/web-ui/types/maintenance';
 
@@ -57,6 +57,19 @@ const STALE_RUNNING_MS = 35 * 60 * 1000;
 
 export async function reapStaleRuns(): Promise<number> {
   const cutoff = new Date(Date.now() - STALE_RUNNING_MS);
+  try {
+    return await reapOnce(cutoff);
+  } catch (err) {
+    // Same shape as reapAbandonedTraces: a settle-first self-heal ahead of a
+    // list. GET /api/debug/maintenance calls it, so against a read-only database
+    // the refused UPDATE took the whole maintenance surface down rather than
+    // showing history that was perfectly readable.
+    if (!isWriteRefused(err)) throw err;
+    return 0;
+  }
+}
+
+async function reapOnce(cutoff: Date): Promise<number> {
   const rows = await db
     .update(maintenanceRuns)
     .set({
