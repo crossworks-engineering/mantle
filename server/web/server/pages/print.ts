@@ -13,8 +13,11 @@ import { loadAppearanceAttrs } from './appearance';
  *
  * Static script, no interpolated user data: each block's source is read back
  * from the degrade markup's <pre><code> textContent (the DOM un-escapes it).
- * Theme comes from the page's own resolved CSS tokens — fills use chart-1..5,
- * label text uses foreground roles, matching the in-editor NodeView. On any
+ * Theme comes from the page's own resolved CSS tokens via the shared map in
+ * @mantle/web-ui/mermaid-theme, which the in-editor NodeView also calls — this
+ * script can't import, so it reads it off globalThis (see
+ * server/islands/diagram-theme.ts). `<html>` never carries `dark` here, so the
+ * map resolves light tokens, which is what a forced-light PDF wants. On any
  * failure the source block simply stays. `data-diagrams-ready` on <html> is
  * the completion signal lib/render-pdf.ts waits for; it is set on success,
  * failure, and the no-mermaid path alike so the PDF wait can never hang.
@@ -25,41 +28,16 @@ const DIAGRAM_PRINT_SCRIPT = `
   try {
     const blocks = Array.from(document.querySelectorAll('.diagram[data-diagram-source]'));
     if (!blocks.length || typeof mermaid === 'undefined') return done();
-    const cs = getComputedStyle(document.documentElement);
-    const t = (n, f) => (cs.getPropertyValue(n) || '').trim() || f;
-    const charts = [1, 2, 3, 4, 5].map((i) =>
-      t('--chart-' + i, ['#666ed1', '#ae467f', '#ad5700', '#4b830f', '#00889b'][i - 1]),
-    );
-    const fg = t('--foreground', '#1f2328');
-    const vars = {
-      fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
-      background: t('--background', '#ffffff'),
-      mainBkg: t('--muted', '#f6f8fa'),
-      primaryColor: t('--muted', '#f6f8fa'),
-      primaryTextColor: fg,
-      primaryBorderColor: t('--border', '#d1d9e0'),
-      secondaryColor: t('--card', '#ffffff'),
-      secondaryTextColor: fg,
-      secondaryBorderColor: t('--border', '#d1d9e0'),
-      tertiaryColor: t('--background', '#ffffff'),
-      tertiaryTextColor: fg,
-      tertiaryBorderColor: t('--border', '#d1d9e0'),
-      lineColor: t('--muted-foreground', '#59636e'),
-      textColor: fg,
-      noteBkgColor: t('--muted', '#f6f8fa'),
-      noteTextColor: fg,
-      noteBorderColor: t('--border', '#d1d9e0'),
-    };
-    charts.forEach((c, i) => {
-      vars['pie' + (i + 1)] = c;
-      vars['cScale' + i] = c;
-      vars['git' + i] = c;
-    });
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: 'strict',
       theme: 'base',
-      themeVariables: vars,
+      // The ONE token map, shared with the in-app NodeView — bundled to
+      // share-runtime/diagram-theme.js because this script can't import.
+      // Absent (a stale share-runtime build), base's own defaults render
+      // rather than nothing.
+      themeVariables:
+        typeof mantleMermaidTheme === 'function' ? mantleMermaidTheme() : undefined,
       // BOTH levels: v11 flowchart only honours the top-level flag.
       htmlLabels: false,
       flowchart: { htmlLabels: false },
@@ -112,7 +90,7 @@ export function mountPrint(app: Hono): void {
     // above). The script tag carries data-diagram-print so render-pdf can tell
     // "no diagrams on this page" from "diagrams still rendering".
     const diagramScripts = html.includes('data-diagram-source')
-      ? `<script src="/share-runtime/mermaid.min.js"></script><script data-diagram-print>${DIAGRAM_PRINT_SCRIPT}</script>`
+      ? `<script src="/share-runtime/mermaid.min.js"></script><script src="/share-runtime/diagram-theme.js"></script><script data-diagram-print>${DIAGRAM_PRINT_SCRIPT}</script>`
       : '';
 
     return c.html(
