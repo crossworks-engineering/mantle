@@ -31,6 +31,7 @@ export {
   isFilesPath,
   diskPathForLtree,
   diskPathForFile,
+  isSafeDiskBasename,
   ltreeForDiskPath,
   FILES_ROOT_LABEL,
 } from './paths';
