@@ -20,6 +20,37 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
+# ── demo/ must NEVER reach main ──────────────────────────────────────────────
+# The `demo` branch is main plus a demo/ directory, and the merge is ONE-WAY:
+# main → demo, never the reverse. Nothing about that was mechanical until now —
+# it was a line in a handover, which is not a guarantee. A demo→main merge would
+# drag the whole seeded-demo apparatus into the product tree, and the tell is
+# simple: main must not contain a demo/ directory at all.
+#
+# Checked BEFORE `pnpm verify` so it fails in a second rather than after a full
+# test run, and against the SHA being pushed rather than the working tree, so it
+# cannot be dodged by having something else checked out.
+while read -r _local_ref local_sha remote_ref _remote_sha; do
+  [ "$remote_ref" = "refs/heads/main" ] || continue
+  # All-zero local sha means a branch DELETION — nothing to inspect.
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac
+  if [ -n "$(git ls-tree -r --name-only "$local_sha" -- demo 2>/dev/null | head -1)" ]; then
+    echo
+    echo "✘ pre-push: REFUSING to push main — it contains demo/"
+    echo
+    echo "  The demo branch merges ONE WAY: main → demo, never demo → main."
+    echo "  This push would put the demo's seed scripts, generator and world"
+    echo "  fixtures into the product tree."
+    echo
+    echo "  Most likely you merged demo into main by mistake. Undo it:"
+    echo "      git reset --hard origin/main"
+    echo "  and take main into demo instead, from the demo branch:"
+    echo "      git merge --no-ff main"
+    echo
+    exit 1
+  fi
+done
+
 echo "── pre-push: typecheck + tests ──────────────────────────────────────"
 
 if ! pnpm verify; then
