@@ -157,16 +157,41 @@ const LINK_TYPE: Record<string, string> = { '0': 'FF', '1': 'FS', '2': 'SF', '3'
  */
 export function sniffMspdi(head: Buffer | string): boolean {
   try {
-    const s = (typeof head === 'string' ? head : head.subarray(0, 8192).toString('utf8')).slice(
-      0,
-      8192,
-    );
-    const root = /<([A-Za-z_][\w.-]*:)?Project(\s|>|\/)/.exec(s);
-    if (!root) return false;
-    return s.includes(MSPDI_NS) || /<([A-Za-z_][\w.-]*:)?Tasks(\s|>)/.test(s);
+    const s = text(head);
+    if (!ROOT_RE.test(s)) return false;
+    return s.includes(MSPDI_NS) || TASKS_RE.test(s);
   } catch {
     return false;
   }
+}
+
+/**
+ * Is the root element `Project`? A **decisive negative** — cheap to answer from
+ * the first few hundred bytes, and a document whose root is not `Project` cannot
+ * be MSPDI no matter what follows.
+ *
+ * Exists so a caller can rule a file out before paying to read it. The full
+ * {@link sniffMspdi} cannot be used that way: its second signal is the MSPDI
+ * namespace OR a `<Tasks>` element, and while the namespace sits on the root,
+ * `<Tasks>` does not — in a real 25 MB export it appeared at byte 114,966.
+ * Sniffing a head would therefore answer *false* for a namespace-less plan with
+ * a long header, and the file would be skipped rather than parsed. A negative
+ * here is safe to act on; a positive means "read the file and ask properly".
+ */
+export function mspdiRootPresent(head: Buffer | string): boolean {
+  try {
+    return ROOT_RE.test(text(head));
+  } catch {
+    return false;
+  }
+}
+
+const ROOT_RE = /<([A-Za-z_][\w.-]*:)?Project(\s|>|\/)/;
+const TASKS_RE = /<([A-Za-z_][\w.-]*:)?Tasks(\s|>)/;
+
+/** Bounded decode — never walks past the head, whatever the caller passes. */
+function text(head: Buffer | string): string {
+  return (typeof head === 'string' ? head : head.subarray(0, 8192).toString('utf8')).slice(0, 8192);
 }
 
 /* ------------------------------------------------------------------ stream */

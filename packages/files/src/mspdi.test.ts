@@ -13,6 +13,7 @@ import {
   durationToHours,
   parseMspdi,
   parseMspdiToGrids,
+  mspdiRootPresent,
   renderMspdiText,
   sniffMspdi,
 } from './mspdi';
@@ -128,6 +129,35 @@ describe('sniffMspdi', () => {
 
   it('rejects unrelated XML', () => {
     expect(sniffMspdi('<?xml version="1.0"?><catalog><book/></catalog>')).toBe(false);
+  });
+});
+
+describe('mspdiRootPresent — the cheap pre-read guard', () => {
+  it('rules out XML whose root is not Project', () => {
+    expect(mspdiRootPresent('<?xml version="1.0"?><catalog><book/></catalog>')).toBe(false);
+    expect(mspdiRootPresent('<rss version="2.0"><channel/></rss>')).toBe(false);
+  });
+
+  it('accepts a Project root even before the second signal appears', () => {
+    // THE reason this is separate from sniffMspdi. `<Tasks>` sat at byte 114,966
+    // in a real export, so a head-scoped full sniff would answer false for a
+    // namespace-less plan and the file would be skipped, not parsed. A negative
+    // here is safe to act on; a positive only means "now read the file".
+    const longHeader = `<?xml version="1.0"?>\n<Project>\n${'  <SaveVersion>14</SaveVersion>\n'.repeat(300)}`;
+    expect(longHeader.length).toBeGreaterThan(8192);
+    expect(mspdiRootPresent(longHeader)).toBe(true);
+    expect(sniffMspdi(longHeader)).toBe(false); // second signal is out of reach — hence the split
+  });
+
+  it('agrees with sniffMspdi on a real-shaped head', () => {
+    expect(mspdiRootPresent(XML)).toBe(true);
+    expect(sniffMspdi(XML)).toBe(true);
+  });
+
+  it('never reads past the head it was given', () => {
+    // A Project root buried past 8 KB must NOT be found — otherwise the helper
+    // silently becomes a whole-file scan, which is what it exists to avoid.
+    expect(mspdiRootPresent(Buffer.from(' '.repeat(9000) + '<Project>', 'utf8'))).toBe(false);
   });
 });
 
