@@ -83,14 +83,30 @@ export function diskPathForLtree(ltreePath: string): string | null {
 }
 
 /**
+ * Is this a basename we can safely join onto a folder path?
+ *
+ * The counterpart to {@link diskPathForFile}: anything this accepts must round
+ * trip back to the same file. It VALIDATES and never transforms, which is the
+ * distinction that matters — `sanitizeFilename` invents a safe name for bytes
+ * we are about to write, and lowercases in the process. Applying it to a file
+ * that already exists records a name the filesystem does not have, and on a
+ * case-sensitive filesystem the path then resolves to nothing.
+ */
+export function isSafeDiskBasename(name: string): boolean {
+  const n = name.trim();
+  if (!n || n === '.' || n === '..') return false;
+  return !/[\\/]/.test(n);
+}
+
+/**
  * Resolve a file's absolute path: its parent folder's disk path joined
- * with the (already-sanitised) filename. Returns null if the parent
- * folder isn't host-mirrored.
+ * with the filename EXACTLY as stored. Returns null if the parent folder isn't
+ * host-mirrored, or the name isn't a safe basename.
  */
 export function diskPathForFile(parentLtreePath: string, filename: string): string | null {
   const parentDir = diskPathForLtree(parentLtreePath);
   if (!parentDir) return null;
-  if (filename.includes('/') || filename.includes('\\')) return null;
+  if (!isSafeDiskBasename(filename)) return null;
   return path.join(parentDir, filename);
 }
 

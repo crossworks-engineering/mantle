@@ -140,3 +140,41 @@ describe('ltreeForDiskPath (reverse map)', () => {
     expect(ltreeForDiskPath(disk!)).toEqual(original);
   });
 });
+
+describe('isSafeDiskBasename + the watcher round-trip', () => {
+  it('PRESERVES case — the bug this exists to prevent', async () => {
+    const { isSafeDiskBasename } = await freshPaths();
+    // sanitizeFilename lowercases, which is right when we invent a name for
+    // bytes we are about to write and WRONG for a file already on disk. A real
+    // plan dropped into a watched folder as 30257_NATREF_260726.xml was recorded
+    // as ..._natref_..., so diskPathForFile resolved to a path that does not
+    // exist on a case-sensitive filesystem. loadFileBytes returned null and the
+    // extractor indexed the FILENAME ALONE while reporting success.
+    expect(isSafeDiskBasename('30257_NATREF_260726.xml')).toBe(true);
+    expect(isSafeDiskBasename('Plan.XML')).toBe(true);
+  });
+
+  it('round-trips a disk path through ltreeForDiskPath and back, unchanged', async () => {
+    const { ltreeForDiskPath, diskPathForFile } = await freshPaths();
+    const abs = path.join(FAKE_ROOT, 'natref-project-plan', '30257_NATREF_260726.xml');
+    const loc = ltreeForDiskPath(abs);
+    expect(loc).not.toBeNull();
+    // THE invariant: what the watcher reads off disk must rebuild the same path.
+    expect(diskPathForFile(loc!.parentPath, loc!.filename)).toBe(abs);
+  });
+
+  it('rejects anything that is not a plain basename', async () => {
+    const { isSafeDiskBasename, diskPathForFile } = await freshPaths();
+    for (const bad of ['', '   ', '.', '..', 'a/b.txt', 'a\\b.txt', '../escape.txt']) {
+      expect(isSafeDiskBasename(bad), JSON.stringify(bad)).toBe(false);
+    }
+    expect(diskPathForFile('files.docs', '../escape.txt')).toBeNull();
+  });
+
+  it('tolerates the names operators actually use', async () => {
+    const { isSafeDiskBasename } = await freshPaths();
+    for (const ok of ['Report 2026 Q3.pdf', 'plan (final).xlsx', 'résumé.docx', 'a.b.c.xml']) {
+      expect(isSafeDiskBasename(ok), ok).toBe(true);
+    }
+  });
+});
