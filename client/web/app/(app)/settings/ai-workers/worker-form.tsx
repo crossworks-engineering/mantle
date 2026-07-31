@@ -69,7 +69,7 @@ import type { ExplorerModel } from '@server/lib/model-explorer';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { TtsTestButton } from './tts-test-button';
 import { SttTestButton } from './stt-test-button';
-import { ChatTestButton } from './chat-test-button';
+import { ChatTestButton } from '@/components/settings/chat-test-button';
 import { VisionTestButton } from './vision-test-button';
 import { DocumentTestButton } from './document-test-button';
 import { ImageGenTestButton } from './image-gen-test-button';
@@ -965,7 +965,7 @@ export function WorkerForm({
             Send a one-shot prompt through this worker's adapter ({provider}) and see what comes
             back. Uses the saved system prompt, model, and params — same path as production.
           </p>
-          <ChatTestButton workerId={worker.id} />
+          <ChatTestButton endpoint={`/api/ai-workers/${worker.id}/test/chat`} />
         </section>
       )}
       {mode === 'edit' && worker && kind === 'vision' && (
