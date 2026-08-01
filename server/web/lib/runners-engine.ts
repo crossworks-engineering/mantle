@@ -15,17 +15,29 @@
  */
 
 /**
- * Narrow on purpose. Only the three ways Postgres says "that schema or table is
- * not available to you":
+ * Narrow on purpose. Only the ways Postgres says "the engine's journal is not
+ * available to you":
  *   42501  insufficient_privilege  — the role cannot use the schema
  *   3F000  invalid_schema_name     — the schema does not exist
  *   42P01  undefined_table         — schema exists, journal tables do not
+ *   3D000  invalid_catalog_name    — the DATABASE does not exist
+ *
+ * 3D000 is the odd one out in a list otherwise about schemas, and it is here for
+ * a reason that is easy to miss: DBOS keeps its journal in a separate DATABASE
+ * (`mantle_dbos_sys`), not merely a separate schema. `pg_dump` is per-database,
+ * so a brain RESTORED from a bundle has no such database at all — and "engine
+ * absent" then presents as a catalog-level code rather than a schema-level one.
+ *
+ * That is why a provisioned cluster and a restored one disagree, which is what
+ * hid this for so long:
+ *   provisioned + read-only role  → 42501 → handled → empty screen
+ *   restored, never provisioned   → 3D000 → 500 (until this line)
  *
  * Anything else is a real fault and must still throw. Laundering a broken query
  * into "no runs" would be indistinguishable from a healthy idle queue, which is
  * a worse bug than the 500 this replaces.
  */
-const ENGINE_ABSENT_CODES = new Set(['42501', '3F000', '42P01']);
+const ENGINE_ABSENT_CODES = new Set(['42501', '3F000', '42P01', '3D000']);
 
 export function isRunnerEngineAbsent(err: unknown): boolean {
   for (let e: unknown = err, depth = 0; e && depth < 4; depth++) {
