@@ -25,6 +25,7 @@ import {
   recordTeamAccess,
 } from '@mantle/content';
 import { buildTeamVisitorCookie, TEAM_VISITOR_COOKIE } from '@/lib/auth';
+import { rateLimited } from '@/lib/auth/preflight';
 import { secureCookies } from '@/lib/auth-constants';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
@@ -41,15 +42,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   // clientIp counts hops from the RIGHT past MANTLE_TRUSTED_PROXIES — the
   // leftmost X-Forwarded-For entry is client-supplied and forgeable, so keying
   // on it would let an attacker mint a fresh per-IP bucket per request.
-  const ipGate = rateLimit(`team-auth:ip:${clientIp(req)}`, { max: 8, windowMs: 60_000 });
-  const shareGate = rateLimit(`team-auth:share:${shareToken}`, { max: 20, windowMs: 60_000 });
-  if (!ipGate.ok || !shareGate.ok) {
-    const retryAfterSec = Math.max(ipGate.retryAfterSec, shareGate.retryAfterSec);
-    return NextResponse.json(
-      { ok: false, error: 'too many attempts — try again shortly' },
-      { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
-    );
-  }
+  const denied = rateLimited(
+    rateLimit(`team-auth:ip:${clientIp(req)}`, { max: 8, windowMs: 60_000 }),
+    rateLimit(`team-auth:share:${shareToken}`, { max: 20, windowMs: 60_000 }),
+  );
+  if (denied) return denied;
 
   const share = await resolveActiveShareByToken(shareToken);
   if (!share) return invalid();

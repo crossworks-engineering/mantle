@@ -12,16 +12,14 @@
  *
  * Env loading is handled by Node's `--env-file-if-exists=.env.local` flag.
  */
-import { PgBoss } from 'pg-boss';
 import { and, eq } from 'drizzle-orm';
 import { BACKFILL_QUEUE, backfillMatch, imap, syncAccount } from '@mantle/email';
 import { db, emailAccounts } from '@mantle/db';
-import { startProcessHeartbeat } from '@mantle/content';
+import { maskEmail } from './mask-email';
+import { runQueueWorker } from './_runner';
 
 const SYNC_QUEUE = 'mantle.email.sync';
 const SCHEDULER_QUEUE = 'mantle.email.scheduler';
-
-import { maskEmail } from './mask-email';
 
 interface SyncJob {
   accountId: string;
@@ -46,17 +44,7 @@ function pickProvider(provider: 'imap' | 'gmail' | 'microsoft') {
   );
 }
 
-async function main() {
-  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
-  // WEDGED process; a dead one is already covered by the restart policy).
-  startProcessHeartbeat();
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL must be set');
-
-  const boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
-  boss.on('error', (err) => console.error('[pg-boss]', err));
-  await boss.start();
-
+runQueueWorker('email-sync', async ({ boss }) => {
   await boss.createQueue(SYNC_QUEUE);
   await boss.createQueue(BACKFILL_QUEUE);
   await boss.createQueue(SCHEDULER_QUEUE);
@@ -136,30 +124,5 @@ async function main() {
     }
   });
 
-  console.log(
-    '[email-sync] worker up. Queues:',
-    [SYNC_QUEUE, BACKFILL_QUEUE, SCHEDULER_QUEUE].join(', '),
-  );
-
-  const shutdown = async () => {
-    console.log('[email-sync] shutting down…');
-    await boss.stop({ graceful: true, timeout: 10_000 });
-    process.exit(0);
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
-
-// Backstop: DB-touching work runs inside pg-boss handlers (which catch +
-// retry) and boss.on('error') covers the queue's own connection, but a
-// rejection that slips past either should log and keep the worker alive
-// rather than crash-loop on a transient PostgresError. Docker would bounce
-// us anyway; staying up is strictly better.
-process.on('unhandledRejection', (reason) => {
-  console.error('[email-sync] unhandledRejection (kept alive):', reason);
-});
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
+  console.log('[email-sync] queues:', [SYNC_QUEUE, BACKFILL_QUEUE, SCHEDULER_QUEUE].join(', '));
 });

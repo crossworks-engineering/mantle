@@ -28,31 +28,21 @@
  */
 import { NextResponse } from '../server/http-compat';
 import { buildSessionCookie, getOwnerOr401, SESSION_COOKIE_NAME } from './auth';
-import { secureCookies, requestOrigin } from './auth-constants';
+import { isTrustedOrigin, rateLimited } from './auth/preflight';
+import { secureCookies } from './auth-constants';
 import { rateLimit, clientIp } from './rate-limit';
 
 /** See the mint below for why this is days, not the password login's year. */
 export const OWNER_SSO_COOKIE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export async function handleOwnerSso(req: Request): Promise<NextResponse> {
-  const ipGate = rateLimit(`owner-sso:ip:${clientIp(req)}`, { max: 30, windowMs: 60_000 });
-  if (!ipGate.ok) {
-    return NextResponse.json(
-      { ok: false, error: 'too many attempts — try again shortly' },
-      { status: 429, headers: { 'Retry-After': String(ipGate.retryAfterSec) } },
-    );
-  }
+  const denied = rateLimited(
+    rateLimit(`owner-sso:ip:${clientIp(req)}`, { max: 30, windowMs: 60_000 }),
+  );
+  if (denied) return denied;
 
-  // Login-CSRF hardening, mirroring the team route: when a browser sends
-  // Origin it must be one of OURS, so no third-party page can pin a browser's
-  // server-origin session to an identity. Absent (same-origin in some
-  // browsers, curl) is fine — the credential itself is the gate.
-  const origin = req.headers.get('origin');
-  if (origin && origin !== 'null') {
-    const clientOrigin = (process.env.MANTLE_CLIENT_ORIGIN ?? '').replace(/\/+$/, '');
-    if (origin !== requestOrigin(req) && origin !== clientOrigin) {
-      return NextResponse.json({ ok: false, error: 'invalid origin' }, { status: 403 });
-    }
+  if (!isTrustedOrigin(req)) {
+    return NextResponse.json({ ok: false, error: 'invalid origin' }, { status: 403 });
   }
 
   // Resolves a session cookie first, then an Authorization bearer — so this is

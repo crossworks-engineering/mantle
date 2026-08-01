@@ -38,9 +38,9 @@ import {
   syncFileFromDisk,
 } from '@mantle/files';
 import { waitForOwner } from '@mantle/db';
-import { startProcessHeartbeat } from '@mantle/content';
+import { runWorker } from './_runner';
 
-// Resolved in main() via waitForOwner — ALLOWED_USER_ID when set, else the sole
+// Resolved at startup via waitForOwner — ALLOWED_USER_ID when set, else the sole
 // auth.users row. Left undefined until then so a fresh install boots and idles
 // until the first signup instead of exiting.
 let USER_ID: string | undefined = process.env.ALLOWED_USER_ID;
@@ -113,10 +113,7 @@ async function handleUnlink(absPath: string): Promise<void> {
   }
 }
 
-async function main() {
-  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
-  // WEDGED process; a dead one is already covered by the restart policy).
-  startProcessHeartbeat();
+runWorker('files-watch', async () => {
   USER_ID = await waitForOwner({ label: 'files-watch' });
   const root = filesRoot();
   await ensureRoot(); // mkdir -p
@@ -150,24 +147,5 @@ async function main() {
   watcher.on('error', (err) => console.error('[files-watch] chokidar error', err));
   watcher.on('ready', () => console.log('[files-watch] ready'));
 
-  const shutdown = async () => {
-    console.log('[files-watch] shutting down…');
-    await watcher.close();
-    process.exit(0);
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
-
-// Backstop: the upsert/unlink handlers are fully wrapped and chokidar's
-// 'error' event is handled, but a rejection that slips past should log and
-// keep the watcher alive rather than crash-loop on a transient PostgresError.
-// Docker would bounce us anyway; staying up is strictly better.
-process.on('unhandledRejection', (reason) => {
-  console.error('[files-watch] unhandledRejection (kept alive):', reason);
-});
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
+  return () => watcher.close();
 });

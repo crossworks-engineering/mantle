@@ -64,7 +64,11 @@ EOF
 fi
 
 echo "→ Bringing up postgres + minio (docker-compose.dev.yml)…"
-docker compose -f docker-compose.dev.yml up -d --wait
+# Via the wrapper: the stack (and its data) belongs to the ORIGINAL clone,
+# even when this script is invoked from a worktree. The dev SERVERS below
+# still run from this tree — you want your branch's code against the one
+# database. See scripts/dev-compose.sh.
+bash scripts/dev-compose.sh up -d --wait
 
 # ── 4. Ensure MinIO bucket --------------------------------------------------
 # Read S3 creds from .env.local so the bucket gets created with the same

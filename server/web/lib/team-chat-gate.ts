@@ -17,8 +17,8 @@
  * member locks them out mid-session.
  */
 import { getContact, isTeamMember, verifyTeamToken } from '@mantle/content';
-// Relative (not '@/lib/auth') so the co-located vitest run resolves it too.
-import { TEAM_CHAT_COOKIE, verifyTeamChatValue } from './auth';
+import { TEAM_CHAT_COOKIE, verifyTeamChatValue } from './auth/tokens';
+import { bearerFrom, cookieValues } from './auth/request';
 import type { TeamChannel } from '@mantle/db';
 
 export type TeamChatCaller = {
@@ -28,29 +28,14 @@ export type TeamChatCaller = {
   channel: Extract<TeamChannel, 'web' | 'api'>;
 };
 
-/** Every value of the team-chat cookie in a raw Cookie header. */
-function teamChatCookieValues(cookieHeader: string | null): string[] {
-  if (!cookieHeader) return [];
-  const out: string[] = [];
-  for (const part of cookieHeader.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq < 0) continue;
-    if (part.slice(0, eq).trim() !== TEAM_CHAT_COOKIE) continue;
-    const v = part.slice(eq + 1).trim();
-    if (v) out.push(decodeURIComponent(v));
-  }
-  return out;
-}
-
 /**
  * Resolve who's calling the team surface, or null (caller responds 401 / shows
  * the token prompt). Bearer wins over cookie so an API client with a stale
  * cookie in its jar still authenticates as its token says.
  */
 export async function resolveTeamChatCaller(req: Request): Promise<TeamChatCaller | null> {
-  const authz = req.headers.get('authorization');
-  if (authz?.toLowerCase().startsWith('bearer ')) {
-    const bearer = authz.slice(7).trim();
+  const bearer = bearerFrom(req);
+  if (bearer !== null) {
     // Signed team-chat token first (the split client app — a browser member,
     // just carrying the credential in a header instead of a cookie, so it
     // channels as 'web' like its same-origin twin). Pure HMAC check, no DB.
@@ -68,7 +53,7 @@ export async function resolveTeamChatCaller(req: Request): Promise<TeamChatCalle
     }
     return null; // an explicit-but-bad bearer never falls through to the cookie
   }
-  for (const value of teamChatCookieValues(req.headers.get('cookie'))) {
+  for (const value of cookieValues(req.headers.get('cookie'), TEAM_CHAT_COOKIE)) {
     const claims = verifyTeamChatValue(value);
     if (!claims) continue;
     // Liveness: the cookie is necessary but never sufficient.
