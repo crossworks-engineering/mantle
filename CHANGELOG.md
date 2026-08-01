@@ -79,6 +79,43 @@ shared by the four credential-exchange endpoints and the SSO origin check move
 to `auth/preflight`. No behaviour changes — the kind-isolation matrix is now
 pinned by a test that mints every credential and offers it to every verifier.
 
+**The ten workers each hand-wrote the same shell**, and the copies had drifted
+where it shows least: one shut down synchronously, two exited from a
+`setTimeout` racing their own cleanup, and none bounded how long shutdown may
+take — so a wedged `boss.stop()` left a container that looked alive and did
+nothing until Docker's grace period ran out. `runQueueWorker` / `runWorker` now
+own that shell; 1053 lines of worker become 715. Three things the fleet did not
+have: signal handlers installed BEFORE setup (the three workers that block in
+`waitForOwner` on a fresh brain previously met Node's default handler), a
+shutdown deadline that exits non-zero and says so, and an explicit keep-alive —
+"stays up" had been an accident of whatever handle setup happened to create.
+Smoke-tested against a live Postgres: all ten start and stop cleanly in ~0.5s,
+and a teardown that never resolves exits at 15.3s.
+
+Separately, `pnpm dev` started **seven** of the ten workers. calendar, microsoft
+and push each have a dev script and a production container and had simply never
+been added to the list, so three ingest paths were dark locally while looking
+fully wired.
+
+**A deleted git worktree destroyed the local database, and could again.** The
+dev stack mounts `${MANTLE_DATA_DIR:-./data}/postgres` relative to compose's
+working directory, and the project name is pinned — so running it from a
+worktree does not give you a separate stack, it gives you the SAME containers
+pointed at a DIFFERENT data directory. A stack brought up inside a worktree put
+Postgres' data there; removing the worktree pulled the directory out from under
+a running database. `scripts/dev-compose.sh` now resolves the original clone
+and operates there, `reset.sh` resolves its wipe target the same way, and the
+rule is written into CLAUDE.md. Also `infra:psql` ran `docker exec -it
+mantle_pg` — the PRODUCTION container name — so on a host running both stacks it
+opened a psql session on production.
+
+**The Runners screen 500'd on a restored brain.** The engine-absent guard knew
+42501, 3F000 and 42P01 — all of them about schemas — but DBOS keeps its journal
+in a separate DATABASE, and `pg_dump` is per-database, so a brain restored from
+a bundle has none and Postgres answers `3D000 invalid_catalog_name`. A
+provisioned cluster served by a read-only role says 42501 instead, which is why
+the workstation passed and the deployed demo failed.
+
 ## Unreleased — Adding a Microsoft scope quietly killed every older account (branch claude/sharepoint-auth-directory-listing-d78be4)
 
 **A connected Microsoft account had a shelf life measured from the last time we
