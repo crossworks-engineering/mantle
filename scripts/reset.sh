@@ -11,12 +11,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Resolve the data dir the same way compose does: shell env wins, then the
-# root .env (compose reads it for ${VAR} substitution), then ./data.
-if [[ -z "${MANTLE_DATA_DIR:-}" && -f .env ]]; then
-  MANTLE_DATA_DIR="$(grep -E '^MANTLE_DATA_DIR=' .env | tail -1 | cut -d= -f2- || true)"
+# Resolve the data dir the same way scripts/dev-compose.sh does, or this wipes
+# the wrong directory: the dev stack's data belongs to the ORIGINAL clone, and
+# `cd "$(dirname "$0")/.."` above lands in the WORKTREE when invoked from one.
+# Shell env wins, then the clone's .env (compose reads it for ${VAR}
+# substitution), then <clone>/data.
+COMMON="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+case "$COMMON" in /*) ;; *) COMMON="$(pwd)/$COMMON" ;; esac
+CLONE="$(cd "$(dirname "$COMMON")" && pwd)"
+if [[ -z "${MANTLE_DATA_DIR:-}" && -f "$CLONE/.env" ]]; then
+  MANTLE_DATA_DIR="$(grep -E '^MANTLE_DATA_DIR=' "$CLONE/.env" | tail -1 | cut -d= -f2- || true)"
 fi
-DATA_DIR="${MANTLE_DATA_DIR:-./data}"
+DATA_DIR="${MANTLE_DATA_DIR:-$CLONE/data}"
 
 cat <<EOF
 
@@ -59,7 +65,7 @@ fi
 # ── 2. Tear down + wipe data ------------------------------------------------
 echo
 echo "→ Tearing down dev infra…"
-docker compose -f docker-compose.dev.yml down -v
+bash scripts/dev-compose.sh down -v
 
 # The postgres + minio data are BIND MOUNTS (not named volumes) since v0.103,
 # so `down -v` does NOT delete them — remove the dirs explicitly. Do it from a

@@ -38,6 +38,20 @@ store, so ~seconds), and copies `.env.local`. Tear down with
   "one build at a time" hazard only applies inside a *shared* checkout).
 - Run the dev server on a non-default port when another session holds `:3000`
   (`PORT=3100 pnpm -C server/web dev`).
+- **The dev stack belongs to the original clone, not to your worktree.** Its
+  Postgres and MinIO data are bind mounts resolved relative to compose's working
+  directory, and the compose project name is pinned (`mantle-dev`) — so running
+  compose from a worktree does not give you a separate stack, it gives you THE
+  SAME containers pointed at a DIFFERENT data directory. `pnpm infra:up`,
+  `start`, `stop`, `reset` and friends all go through `scripts/dev-compose.sh`,
+  which resolves the clone from the shared git dir and operates there; use those
+  rather than a bare `docker compose -f docker-compose.dev.yml`. Your worktree
+  still runs its own dev servers against that one database, which is the point.
+
+  This is not hypothetical: on 2026-08-01 a stack brought up inside a worktree
+  put the database in it, `rm-worktree.sh` deleted the worktree, and Postgres
+  PANICked on a data directory that had been pulled out from under it. Nothing
+  warned, because every individual step was doing exactly what it was told.
 
 ## Commits: no agent co-authorship
 
