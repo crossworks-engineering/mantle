@@ -47,9 +47,7 @@ echo "→ verifying the bundle survived the trip"
 echo "  checksums ok"
 
 # The five payloads are bind-mounted straight out of the bundle, so the bundle
-# directory IS the demo's data root from here on. Absolute paths: compose
-# resolves relative ones against the compose file's directory, which is fine
-# here but breaks the moment someone moves the file.
+# directory IS the demo's data root from here on. All absolute.
 export DEMO_DOCS_ROOT="$BUNDLE/docs"
 export DEMO_FILES_ROOT="$BUNDLE/files"
 export DEMO_TABLE_DB_DIR="$BUNDLE/table-dbs"
@@ -59,6 +57,30 @@ export DEMO_DATA_DIR="$BUNDLE/data"
 # only gives pg_restore objects to collide with.
 export DEMO_PG_INIT_DIR="$BUNDLE/.no-init"
 mkdir -p "$DEMO_PG_INIT_DIR" "$DEMO_DATA_DIR"
+
+# PERSIST them into .env.demo, don't just export. Exporting makes the paths
+# correct for exactly one process: this one. The next `docker compose up` —
+# a restart, an image bump, someone's ssh session — would resolve them again,
+# and before they were `:?` required that meant a relative default pointing
+# somewhere else entirely. On this box that silently initialised an EMPTY
+# postgres cluster: every container healthy, every query answering
+# "password authentication failed for demo_reader", search returning nothing.
+# Writing them here makes the bundle self-describing, so there is only ever
+# one answer to where the data lives.
+if ! grep -q '^DEMO_DATA_DIR=' "$BUNDLE/.env.demo"; then
+  cat >> "$BUNDLE/.env.demo" <<EOF
+
+# Written by restore.sh — absolute paths to this bundle's five payloads.
+# Do not make these relative: compose resolves relative paths against the
+# compose file's directory, not your shell's.
+DEMO_DATA_DIR=$DEMO_DATA_DIR
+DEMO_DOCS_ROOT=$DEMO_DOCS_ROOT
+DEMO_FILES_ROOT=$DEMO_FILES_ROOT
+DEMO_TABLE_DB_DIR=$DEMO_TABLE_DB_DIR
+DEMO_PG_INIT_DIR=$DEMO_PG_INIT_DIR
+EOF
+  echo "  wrote the five data paths into .env.demo"
+fi
 
 echo "→ infrastructure"
 # createbucket is deliberately NOT in the --wait set. `up --wait` waits for

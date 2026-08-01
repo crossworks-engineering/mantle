@@ -65,11 +65,28 @@
 # would rather not join networks, point the Caddyfile at host.docker.internal
 # and those ports instead — but then add `extra_hosts` to the site's caddy.
 #
-# ── One thing to decide before deploying ─────────────────────────────────────
-# Caddyfile.demo carries the minted session cookies inline, so the rendered
-# file is a secret and must NOT be committed to the (public) mantle-site repo.
-# Render it on the box into the site's deploy dir and keep it out of that
-# repo's git — the render script is still to be written.
+# The rendered vhost carries minted session cookies, so it is a secret and
+# never goes in the (public) mantle-site repo. demo/scripts/render-caddy.sh
+# writes it to the box's conf.d, which that repo's Caddyfile picks up with an
+# `import` glob.
+#
+# ── The five data paths have NO defaults, on purpose ─────────────────────────
+# DEMO_DATA_DIR / DEMO_DOCS_ROOT / DEMO_FILES_ROOT / DEMO_TABLE_DB_DIR /
+# DEMO_PG_INIT_DIR are all `:?` required and must be ABSOLUTE.
+#
+# They used to carry workstation-relative defaults, and that cost a live demo.
+# Compose resolves a relative path against THIS FILE's directory, so running
+# `docker compose up -d` on the box without the env in front of it did not
+# fail — it pointed postgres at a different directory, initialised a brand-new
+# EMPTY cluster there, and came up healthy. Every container passed its
+# healthcheck while the app answered `password authentication failed for user
+# "demo_reader"`, because the role only exists in the real brain. Search
+# returned 0 results and /runners 500'd, which looked exactly like an
+# application bug.
+#
+# A missing value must be a refusal to start, never a silently different
+# directory. restore.sh writes all five into .env.demo so any later invocation
+# — a restart, a version bump, someone's ssh session — gets the same answer.
 
 name: mantle-demo-serve
 
@@ -162,11 +179,11 @@ services:
       # refuses to init into a mount at the classic path.
       PGDATA: /var/lib/postgresql/data
     volumes:
-      - ${DEMO_DATA_DIR:-../.run/serve-data}/postgres:/var/lib/postgresql/data
+      - ${DEMO_DATA_DIR:?set DEMO_DATA_DIR to an ABSOLUTE path (restore.sh writes it into .env.demo) — a relative default silently creates an EMPTY cluster}/postgres:/var/lib/postgresql/data
       # Extensions + auth.users, once at cluster init. pg_dump emits these too,
       # so this is insurance rather than a requirement — cheap, and it means a
       # restore that is missing a CREATE EXTENSION still comes up.
-      - ${DEMO_PG_INIT_DIR:-../../infra/postgres/init}:/docker-entrypoint-initdb.d:ro
+      - ${DEMO_PG_INIT_DIR:?set DEMO_PG_INIT_DIR to an ABSOLUTE path — an empty dir is correct when restoring a dump}:/docker-entrypoint-initdb.d:ro
     ports:
       # Loopback only — this is the restore path, not a serving path.
       - '127.0.0.1:${DEMO_PG_PORT:-57432}:5432'
@@ -187,7 +204,7 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minio}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minio12345}
     volumes:
-      - ${DEMO_DATA_DIR:-../.run/serve-data}/minio:/data
+      - ${DEMO_DATA_DIR:?set DEMO_DATA_DIR to an ABSOLUTE path (restore.sh writes it into .env.demo) — a relative default silently creates an EMPTY cluster}/minio:/data
     ports:
       # Loopback only — `mc mirror` target for the bucket transfer.
       - '127.0.0.1:${DEMO_MINIO_PORT:-57900}:9000'
@@ -258,7 +275,7 @@ services:
       # load on the first search of every visit reads as a broken search box.
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
     volumes:
-      - ${DEMO_DATA_DIR:-../.run/serve-data}/ollama:/root/.ollama
+      - ${DEMO_DATA_DIR:?set DEMO_DATA_DIR to an ABSOLUTE path (restore.sh writes it into .env.demo) — a relative default silently creates an EMPTY cluster}/ollama:/root/.ollama
     healthcheck:
       test: ['CMD', 'ollama', 'list']
       interval: 10s
@@ -304,9 +321,9 @@ services:
       #                             resolves docsRoot()/guide/06-help/<topic>.md
       #                             — without them every "?" panel in the demo
       #                             answers 404 while looking perfectly fine.
-      - ${DEMO_DOCS_ROOT:-../generator/out/docs}:/data/docs:ro
+      - ${DEMO_DOCS_ROOT:?set DEMO_DOCS_ROOT to an ABSOLUTE path — it must contain guide/06-help}:/data/docs:ro
       # File BYTES — 85 of them. Not in the database, not in MinIO.
-      - ${DEMO_FILES_ROOT:-../.run/files}:/data/files:ro
+      - ${DEMO_FILES_ROOT:?set DEMO_FILES_ROOT to an ABSOLUTE path — the file bytes}:/data/files:ro
       # The 11 SQLite workbooks. Postgres holds only the registry that POINTS
       # at these, so a dump without them is TableFileMissingError on every
       # table. Mounted read-write, and that is a real gap worth knowing about:
@@ -314,8 +331,8 @@ services:
       # them — only the edge's write-rejection does. A :ro mount would be the
       # second layer, but SQLite wants to create -wal/-shm beside the file even
       # to read, so it needs verifying before it can be tightened.
-      - ${DEMO_TABLE_DB_DIR:-../.run/table-dbs}:/data/table-dbs
-      - ${DEMO_DATA_DIR:-../.run/serve-data}/app-dbs:/data/app-dbs
+      - ${DEMO_TABLE_DB_DIR:?set DEMO_TABLE_DB_DIR to an ABSOLUTE path — the SQLite workbooks}:/data/table-dbs
+      - ${DEMO_DATA_DIR:?set DEMO_DATA_DIR to an ABSOLUTE path (restore.sh writes it into .env.demo) — a relative default silently creates an EMPTY cluster}/app-dbs:/data/app-dbs
     ports:
       # Loopback only, and NON-default on purpose: when Docker cannot program a
       # published port it abandons the container's entire network setup and the
