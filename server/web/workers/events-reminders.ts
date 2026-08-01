@@ -35,12 +35,9 @@ import {
 } from '@mantle/db';
 import { sendMessage } from '@mantle/telegram';
 import { recordTurn } from '@mantle/agent-runtime';
-import {
-  loadProfilePreferences,
-  maybeRunScheduledBackups,
-  startProcessHeartbeat,
-} from '@mantle/content';
+import { loadProfilePreferences, maybeRunScheduledBackups } from '@mantle/content';
 import { maybeSweep } from '@mantle/tools';
+import { runWorker } from './_runner';
 import { pickWebDefaultAgent } from '@mantle/assistant-runtime';
 import {
   listDueReminders,
@@ -263,15 +260,8 @@ async function tick(): Promise<void> {
   }
 }
 
-async function main(): Promise<void> {
-  if (!process.env.DATABASE_URL) {
-    console.error('[events-reminders] DATABASE_URL must be set');
-    process.exit(1);
-  }
-  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
-  // WEDGED process; a dead one is already covered by the restart policy).
-  startProcessHeartbeat();
-  console.log(`[events-reminders] up. Polling every ${TICK_MS / 1000}s.`);
+runWorker('events-reminders', async () => {
+  console.log(`[events-reminders] polling every ${TICK_MS / 1000}s.`);
   let running = false;
   // Shared runner so the immediate boot-time tick goes through the
   // same single-flight guard as scheduled ones. Previously the initial
@@ -294,24 +284,5 @@ async function main(): Promise<void> {
   // to wait 30s when it's already overdue.
   void runOnce();
 
-  const shutdown = () => {
-    console.log('[events-reminders] shutting down…');
-    clearInterval(interval);
-    process.exit(0);
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
-
-// Backstop: tick() runs inside runOnce's try/catch (single-flight guarded),
-// but a rejection that slips past should log and keep the worker alive rather
-// than crash-loop on a transient PostgresError. Docker would bounce us anyway;
-// staying up is strictly better.
-process.on('unhandledRejection', (reason) => {
-  console.error('[events-reminders] unhandledRejection (kept alive):', reason);
-});
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
+  return () => clearInterval(interval);
 });

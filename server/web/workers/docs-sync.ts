@@ -18,7 +18,6 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { waitForOwner, type DocCollection } from '@mantle/db';
-import { startProcessHeartbeat } from '@mantle/content';
 import {
   collectionRoot,
   deleteDocByRelPath,
@@ -29,6 +28,7 @@ import {
   reconcileCollection,
   upsertDocFromDisk,
 } from '@mantle/files';
+import { runWorker } from './_runner';
 
 // Resolved in main() via waitForOwner — ALLOWED_USER_ID when set, else the sole
 // auth.users row. Left undefined until then so a fresh install boots and idles
@@ -153,33 +153,16 @@ async function refresh(): Promise<void> {
   if (rootsChanged) await rebuildWatcher();
 }
 
-async function main() {
-  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
-  // WEDGED process; a dead one is already covered by the restart policy).
-  startProcessHeartbeat();
+runWorker('docs-sync', async () => {
   USER_ID = await waitForOwner({ label: 'docs-sync' });
   await ensureDefaultCollections(USER_ID!);
   await refresh(); // boot reconcile + initial watcher
   const timer = setInterval(() => {
     refresh().catch((err) => console.error('[docs-sync] refresh failed', err));
   }, REFRESH_MS);
-  console.log('[docs-sync] ready');
 
-  const shutdown = async () => {
-    console.log('[docs-sync] shutting down…');
+  return async () => {
     clearInterval(timer);
     if (watcher) await watcher.close();
-    process.exit(0);
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
-
-process.on('unhandledRejection', (reason) => {
-  console.error('[docs-sync] unhandledRejection (kept alive):', reason);
-});
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
 });

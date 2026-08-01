@@ -7,11 +7,10 @@
  *
  * `singletonKey: calendar:<id>` collapses concurrent ticks for one calendar.
  */
-import { PgBoss } from 'pg-boss';
 import { eq } from 'drizzle-orm';
 import { calendarAccounts, db } from '@mantle/db';
 import { syncCalendarAccount } from '@mantle/calendar';
-import { startProcessHeartbeat } from '@mantle/content';
+import { runQueueWorker } from './_runner';
 
 const SYNC_QUEUE = 'mantle.calendar.sync';
 const SCHEDULER_QUEUE = 'mantle.calendar.scheduler';
@@ -20,17 +19,7 @@ interface CalSyncJob {
   accountId: string;
 }
 
-async function main() {
-  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
-  // WEDGED process; a dead one is already covered by the restart policy).
-  startProcessHeartbeat();
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL must be set');
-
-  const boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
-  boss.on('error', (err) => console.error('[pg-boss]', err));
-  await boss.start();
-
+runQueueWorker('calendar-sync', async ({ boss }) => {
   await boss.createQueue(SYNC_QUEUE);
   await boss.createQueue(SCHEDULER_QUEUE);
 
@@ -80,22 +69,5 @@ async function main() {
     }
   });
 
-  console.log('[calendar-sync] worker up. Queues:', [SYNC_QUEUE, SCHEDULER_QUEUE].join(', '));
-
-  const shutdown = async () => {
-    console.log('[calendar-sync] shutting down…');
-    await boss.stop({ graceful: true, timeout: 10_000 });
-    process.exit(0);
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
-
-process.on('unhandledRejection', (reason) => {
-  console.error('[calendar-sync] unhandledRejection (kept alive):', reason);
-});
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
+  console.log('[calendar-sync] queues:', [SYNC_QUEUE, SCHEDULER_QUEUE].join(', '));
 });

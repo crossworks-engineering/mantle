@@ -23,7 +23,7 @@ import { eq } from 'drizzle-orm';
 import { channels, db, telegramAccounts, type Channel, type TelegramAccount } from '@mantle/db';
 import { pollOnce, evictBot, type PollHandlers } from '@mantle/telegram';
 import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
-import { startProcessHeartbeat } from '@mantle/content';
+import { runWorker } from './_runner';
 
 const CHANNEL_REFRESH_MS = 60_000;
 const BACKOFF_BASE_MS = 1_000;
@@ -93,28 +93,21 @@ const approvalHandlers: PollHandlers = {
   },
 };
 
-async function main() {
-  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
-  // WEDGED process; a dead one is already covered by the restart policy).
-  startProcessHeartbeat();
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL must be set');
+runWorker('channel-poll', async () => {
   if (!process.env.MANTLE_MASTER_KEY) throw new Error('MANTLE_MASTER_KEY must be set');
 
-  console.log('[channel-poll] worker up');
   await refreshChannels();
   const interval = setInterval(refreshChannels, CHANNEL_REFRESH_MS);
 
-  const shutdown = async () => {
-    console.log('[channel-poll] shutting down…');
+  return async () => {
     clearInterval(interval);
     for (const { stop } of loops.values()) stop();
     loops.clear();
-    // Give in-flight getUpdates a moment to settle.
-    setTimeout(() => process.exit(0), 500);
+    // Give in-flight getUpdates a moment to settle. Awaited rather than left to
+    // a setTimeout the old exit raced.
+    await new Promise((r) => setTimeout(r, 500));
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
+});
 
 async function refreshChannels(): Promise<void> {
   // setInterval doesn't await us — a PostgresError here (Postgres restarted,
@@ -218,16 +211,3 @@ function startTelegramLoop(channel: Channel): { stop: () => void } {
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
-
-// Backstop: every known DB-touching path above is wrapped + backs off, but a
-// rejection that slips past should log and keep the long-poll worker alive
-// rather than crash-loop. Docker's restart:unless-stopped would bounce us
-// anyway; staying up is strictly better.
-process.on('unhandledRejection', (reason) => {
-  console.error('[channel-poll] unhandledRejection (kept alive):', reason);
-});
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});

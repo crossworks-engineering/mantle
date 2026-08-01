@@ -14,12 +14,11 @@
  * `singletonKey: ms-drive:<id>` collapses concurrent ticks for one drive.
  * Discovery (listing drives) is user-triggered from the settings UI, not here.
  */
-import { PgBoss } from 'pg-boss';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { db, emailAccounts, msAccounts, msDrives } from '@mantle/db';
 import { graphMailProvider, syncDrive } from '@mantle/microsoft';
 import { MS_BACKFILL_QUEUE, backfillMatch, syncAccount } from '@mantle/email';
-import { startProcessHeartbeat } from '@mantle/content';
+import { runQueueWorker } from './_runner';
 
 const SYNC_QUEUE = 'mantle.microsoft.drive-sync';
 const MAIL_QUEUE = 'mantle.microsoft.mail-sync';
@@ -40,17 +39,7 @@ interface BackfillJob {
   target: string;
 }
 
-async function main() {
-  // Liveness: touch a heartbeat file the compose healthcheck reads (catches a
-  // WEDGED process; a dead one is already covered by the restart policy).
-  startProcessHeartbeat();
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL must be set');
-
-  const boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
-  boss.on('error', (err) => console.error('[pg-boss]', err));
-  await boss.start();
-
+runQueueWorker('microsoft-sync', async ({ boss }) => {
   await boss.createQueue(SYNC_QUEUE);
   await boss.createQueue(MAIL_QUEUE);
   await boss.createQueue(MS_BACKFILL_QUEUE);
@@ -177,24 +166,7 @@ async function main() {
   });
 
   console.log(
-    '[microsoft-sync] worker up. Queues:',
+    '[microsoft-sync] queues:',
     [SYNC_QUEUE, MAIL_QUEUE, MS_BACKFILL_QUEUE, SCHEDULER_QUEUE].join(', '),
   );
-
-  const shutdown = async () => {
-    console.log('[microsoft-sync] shutting down…');
-    await boss.stop({ graceful: true, timeout: 10_000 });
-    process.exit(0);
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
-
-process.on('unhandledRejection', (reason) => {
-  console.error('[microsoft-sync] unhandledRejection (kept alive):', reason);
-});
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
 });
