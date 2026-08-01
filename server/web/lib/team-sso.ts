@@ -26,6 +26,7 @@
 import { NextResponse } from '../server/http-compat';
 import { isTeamMember } from '@mantle/content';
 import { buildTeamChatToken, verifyTeamChatValue, TEAM_CHAT_COOKIE } from './auth';
+import { isTrustedOrigin, rateLimited } from './auth/preflight';
 import { secureCookies, requestOrigin } from './auth-constants';
 import { rateLimit, clientIp } from './rate-limit';
 
@@ -36,23 +37,13 @@ function denied(status: 401 | 403) {
 }
 
 export async function handleTeamSso(req: Request): Promise<NextResponse> {
-  const ipGate = rateLimit(`team-sso:ip:${clientIp(req)}`, { max: 30, windowMs: 60_000 });
-  if (!ipGate.ok) {
-    return NextResponse.json(
-      { ok: false, error: 'too many attempts — try again shortly' },
-      { status: 429, headers: { 'Retry-After': String(ipGate.retryAfterSec) } },
-    );
-  }
+  const limited = rateLimited(
+    rateLimit(`team-sso:ip:${clientIp(req)}`, { max: 30, windowMs: 60_000 }),
+  );
+  if (limited) return limited;
 
-  // A browser form navigation always sends Origin on cross-origin POSTs; when
-  // present it must be one of OURS (the server origin itself or the client
-  // app). Absent (same-origin navigations in some browsers, curl) is fine —
-  // the bearer in the body is the actual credential.
-  const origin = req.headers.get('origin');
-  if (origin && origin !== 'null') {
-    const clientOrigin = (process.env.MANTLE_CLIENT_ORIGIN ?? '').replace(/\/+$/, '');
-    if (origin !== requestOrigin(req) && origin !== clientOrigin) return denied(403);
-  }
+  // A browser form navigation always sends Origin on cross-origin POSTs.
+  if (!isTrustedOrigin(req)) return denied(403);
 
   const form = await req.formData().catch(() => null);
   const tb = form?.get('tb');

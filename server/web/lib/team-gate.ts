@@ -20,24 +20,10 @@ import {
   verifyTeamChatValue,
   verifyTeamVisitorValue,
 } from '@/lib/auth';
+import { bearerFrom, cookieValues } from '@/lib/auth/request';
 
 export type ShareVisitor =
   { mode: 'public'; contactId: null } | { mode: 'team'; contactId: string };
-
-/** Every value of `name` in a raw Cookie header. Path scoping means at most
- *  one normally arrives, but parse liberally. */
-function cookieValues(cookieHeader: string | null, name: string): string[] {
-  if (!cookieHeader) return [];
-  const out: string[] = [];
-  for (const part of cookieHeader.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq < 0) continue;
-    if (part.slice(0, eq).trim() !== name) continue;
-    const v = part.slice(eq + 1).trim();
-    if (v) out.push(decodeURIComponent(v));
-  }
-  return out;
-}
 
 /**
  * Resolve who's visiting this share. Returns null when a team-mode share has
@@ -85,9 +71,9 @@ export async function resolveShareVisitorFromRequest(
   share: Share,
 ): Promise<ShareVisitor | null> {
   if (shareModeOf(share) === 'public') return { mode: 'public', contactId: null };
-  const authz = req.headers.get('authorization');
-  if (authz?.toLowerCase().startsWith('bearer ')) {
-    const claims = verifyTeamChatValue(authz.slice(7).trim());
+  const bearer = bearerFrom(req);
+  if (bearer !== null) {
+    const claims = verifyTeamChatValue(bearer);
     if (
       claims &&
       claims.ownerId === share.ownerId &&

@@ -20,6 +20,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { verifyTeamToken, markTeamTokenUsed, recordTeamAccess } from '@mantle/content';
 import { buildTeamChatToken, TEAM_CHAT_COOKIE } from '@/lib/auth';
+import { rateLimited } from '@/lib/auth/preflight';
 import { secureCookies } from '@/lib/auth-constants';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
@@ -35,15 +36,11 @@ function invalid() {
 export async function POST(req: Request) {
   // Same posture as the app-share exchange: per-IP (rightmost trusted hop) +
   // a global bucket standing in for per-share (this surface is brain-level).
-  const ipGate = rateLimit(`team-chat-auth:ip:${clientIp(req)}`, { max: 8, windowMs: 60_000 });
-  const globalGate = rateLimit('team-chat-auth:global', { max: 30, windowMs: 60_000 });
-  if (!ipGate.ok || !globalGate.ok) {
-    const retryAfterSec = Math.max(ipGate.retryAfterSec, globalGate.retryAfterSec);
-    return NextResponse.json(
-      { ok: false, error: 'too many attempts — try again shortly' },
-      { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
-    );
-  }
+  const denied = rateLimited(
+    rateLimit(`team-chat-auth:ip:${clientIp(req)}`, { max: 8, windowMs: 60_000 }),
+    rateLimit('team-chat-auth:global', { max: 30, windowMs: 60_000 }),
+  );
+  if (denied) return denied;
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {

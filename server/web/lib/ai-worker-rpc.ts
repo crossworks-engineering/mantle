@@ -24,6 +24,7 @@ import {
   type VisionModelInfo,
 } from '@mantle/voice';
 import { embed, resolveEmbeddingModel, runReembed, type ReembedResult } from '@mantle/embeddings';
+import { chatWithFailover, resolveChatRoutes } from '@mantle/agent-runtime';
 import { getAiWorker } from '@/lib/ai-workers';
 
 export type DiscoverKind = 'tts' | 'stt' | 'chat' | 'vision' | 'image_gen' | 'embedding';
@@ -365,7 +366,24 @@ export async function testDocument(
   };
 }
 
-/** One-shot prompt through a chat-shaped worker's adapter. */
+/**
+ * One-shot prompt through a chat worker — over the SAME path production uses.
+ *
+ * Chat is the one modality with route resolution of its own: `resolveChatKey`
+ * (route-pinned key → the provider's service key → the `local` keyless
+ * sentinel) and a backup route to fail over to. Testing it by hand — read
+ * `api_key_id`, grab the adapter, call `.chat()` — reproduced neither, so the
+ * button lied in both directions: a keyless `local` worker failed its test with
+ * "no api_key configured" while working perfectly in production, and a worker
+ * whose primary was down but whose backup was healthy failed too, even though
+ * every real caller would have been served. `chat-failover.ts` names this exact
+ * drift as having once stopped ingest silently.
+ *
+ * The other modalities are NOT like this: `builtins-workers.ts` resolves their
+ * keys with `worker.apiKeyId` + `getApiKeyById`, which is what their test
+ * functions below already do. They are faithful as written — do not "fix" them
+ * onto resolveChatKey, which would make the test pass where production fails.
+ */
 export async function testChat(
   userId: string,
   workerId: string,
@@ -377,44 +395,41 @@ export async function testChat(
   adapter: string;
   tokensIn: number | null;
   tokensOut: number | null;
+  /** Which route answered, and whether the primary had to be abandoned — the
+   *  operator should be told a green tick came from the backup. */
+  usedProvider: string;
+  failedOver: boolean;
 }> {
   const worker = await getAiWorker(userId, workerId);
   if (!worker) throw new Error('worker not found');
-  if (!worker.apiKeyId) throw new Error('worker has no api_key configured');
-  const apiKey = await getApiKeyById(worker.apiKeyId);
-  if (!apiKey) throw new Error('api key not found or could not decrypt');
 
-  const adapter = getChatAdapter(worker.provider);
-  if (!adapter) {
-    throw new Error(
-      `No chat adapter registered for provider '${worker.provider}'. ` +
-        `Register one in packages/voice/src/adapters/index.ts, or pick a ` +
-        `wired provider (openrouter, anthropic, openai-via-openrouter, google, xai, huggingface).`,
-    );
-  }
   const trimmed = (prompt ?? '').trim() || 'Hello — please reply with a short greeting.';
   const params = (worker.params ?? {}) as {
     temperature?: number;
     max_tokens?: number;
     huggingface_routing?: string;
   };
-  const result = await adapter.chat({
-    apiKey,
-    model: worker.model,
-    messages: [
-      ...(worker.systemPrompt ? [{ role: 'system' as const, content: worker.systemPrompt }] : []),
-      { role: 'user', content: trimmed },
-    ],
-    temperature: params.temperature,
-    maxTokens: params.max_tokens ?? 500,
-    extra: params.huggingface_routing ? { routing: params.huggingface_routing } : undefined,
-  });
+  const { result, usedProvider, failedOver } = await chatWithFailover(
+    userId,
+    resolveChatRoutes(worker),
+    {
+      messages: [
+        ...(worker.systemPrompt ? [{ role: 'system' as const, content: worker.systemPrompt }] : []),
+        { role: 'user' as const, content: trimmed },
+      ],
+      temperature: params.temperature,
+      maxTokens: params.max_tokens ?? 500,
+      extra: params.huggingface_routing ? { routing: params.huggingface_routing } : undefined,
+    },
+  );
   return {
     ok: true,
     reply: result.text,
     model: result.model,
-    adapter: adapter.adapterName,
+    adapter: usedProvider,
     tokensIn: result.tokensIn ?? null,
     tokensOut: result.tokensOut ?? null,
+    usedProvider,
+    failedOver,
   };
 }

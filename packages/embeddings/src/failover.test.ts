@@ -181,4 +181,22 @@ describe('isRouteDownError', () => {
     expect(isRouteDownError('a string')).toBe(false);
     expect(isRouteDownError(null)).toBe(false);
   });
+
+  it('reads a status the error carries in preference to one in its prose', () => {
+    const carried = Object.assign(new Error('upstream said no'), { status: 503 });
+    expect(isRouteDownError(carried)).toBe(true);
+    const clientSide = Object.assign(new Error('upstream said no'), { status: 422 });
+    expect(isRouteDownError(clientSide)).toBe(false);
+  });
+
+  it('does not read an unrelated three-digit number as a status', () => {
+    // The trap in a loose /\b4\d\d\b/: any number in the message decides the
+    // route's fate. Stranding the caller on a dead primary because the message
+    // mentioned a dimension count is the expensive direction of this mistake.
+    expect(isRouteDownError(new Error('embed failed: 500 — expected 400 dimensions'))).toBe(true);
+    expect(isRouteDownError(new Error('vector length 768 does not match 512'))).toBe(false);
+    expect(isRouteDownError(new Error('model gemma-embed returned 404 vectors, wanted 500'))).toBe(
+      false,
+    );
+  });
 });

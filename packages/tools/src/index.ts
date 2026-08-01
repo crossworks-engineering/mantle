@@ -64,6 +64,10 @@ export {
 } from './tool-results';
 export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
 export { TASK_TOOLS, TASK_TOOL_SLUGS } from './builtins-tasks';
+export { NOTE_TOOLS } from './builtins-notes';
+export { EVENT_TOOLS } from './builtins-events';
+export { PEER_TOOLS } from './builtins-peers';
+export { EMAIL_TOOLS } from './builtins-email';
 export { TERMINAL_TOOLS, TERMINAL_TOOL_SLUGS } from './builtins-terminal';
 export { SANDBOX_TOOLS, SANDBOX_TOOL_SLUGS } from './builtins-sandbox';
 export { CONTACT_TOOLS, CONTACT_AUTO_GRANT_SLUGS } from './builtins-contacts';

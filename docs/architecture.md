@@ -222,10 +222,19 @@ MinIO from docker-compose. That's it.
 > prompt-build + LLM helpers with the web `/assistant` through `@mantle/agent-runtime`;
 > it just runs durably inside `apps/api` now.
 
-The workers live under `apps/web/workers/` (not in their own app) because they
-share `.env.local` and `@mantle/*` imports with the web. In production they'd
-be split into their own container; for dev, one process tree keeps things
-simple.
+The workers live under `server/web/workers/` (not in their own app) because they
+share `.env.local` and `@mantle/*` imports with the web, and `pnpm dev` runs
+them as one process tree.
+
+In **production they already are separate containers** — `docker-compose.yml`
+defines a `worker_*` service per worker, each with its own command, memory limit
+and heartbeat healthcheck. What they still share is the *image*: all of them run
+`mantle-server`, so a worker container also carries the web build (share-runtime
+assets, TipTap, Recharts, KaTeX, puppeteer-core) it never executes, and workers
+cannot be released independently of the web app. Splitting the image is the open
+piece of work here, and it is smaller than it looks: six of the ten workers
+import nothing from `server/web/lib` at all, and the four that do reach only
+package-shaped code with no React or Next dependency.
 
 ---
 

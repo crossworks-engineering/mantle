@@ -43,7 +43,7 @@ import { BoringAvatar } from '@/components/boring-avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { Tabs, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
 import { PersonaNotesEditor } from './persona-notes-editor';
-import { AgentChatTestButton } from './chat-test-button';
+import { ChatTestButton } from '@/components/settings/chat-test-button';
 import { ModelsTab } from './models-tab';
 import { slugify } from '@mantle/web-ui/slugify';
 
@@ -2073,7 +2073,7 @@ export function AgentsClient() {
                           responder. Useful for validating a new direct- provider key (Anthropic /
                           Google / xAI) without sending a real Telegram message.
                         </p>
-                        <AgentChatTestButton agentId={editing.agent.id} />
+                        <ChatTestButton endpoint={`/api/agents/${editing.agent.id}/test/chat`} />
                       </section>
                     )}
 

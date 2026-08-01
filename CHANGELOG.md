@@ -4,6 +4,118 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — One implementation per tool, one verifier per credential (branch feat/arch-cleanup)
+
+**24 MCP tools had two implementations, and the spare had gone stale.** Notes,
+tasks, events, journal entries, peers and the email reads were each written
+once as an in-app builtin and again by hand for the MCP server. Only the
+in-app one gets exercised in development, so the MCP twin quietly fell behind:
+`note_create` recorded no ingest provenance, so a note made from Claude Desktop
+appeared in its own biography from nowhere; reads returned no permalink and,
+worse, answered a missing row with a bare `not found` and no `isError`, which a
+client reads as success; `task_list` returned a bare array where every other
+surface returns `{tasks, count}`.
+
+They are now bridged from the in-app definitions, so both surfaces run one
+implementation. **This changes MCP response shapes** — if you parse these tools'
+output in a connector, re-check it:
+
+- `task_list` returns `{tasks, count}` (was a bare array).
+- `task_get`, `note_get`, `event_get`, `journal_get` include a `url` permalink,
+  and answer a missing id with a structured error flagged `isError` plus the
+  tool that finds the right id.
+- `note_create` / `note_update` accept a title over 200 characters by
+  truncating it, where the hand-written tool rejected the call.
+
+The MCP surface itself is unchanged: every slug that was exposed still is, and
+bridging deliberately did NOT pull in the other members of those groups —
+`email_send` and `email_page` in particular stay in-app only, since exposing
+outbound email over MCP is a decision, not a refactor. `page_get`/`page_list`
+and the table reads keep their hand-written ProseMirror/row shapes on purpose.
+A test pins the remaining overlap exactly, so it can only shrink.
+
+**The bridge also validated less than the in-app dispatcher.** Declared
+preconditions were never checked, so an id naming a missing — or wrong-type —
+node reached the handler and came back as an unhelpful `not found` instead of
+the teaching error every other surface gives. And the JSON-Schema→zod
+conversion silently dropped every size bound, so MCP was the only surface that
+would accept `contact_list limit=500` against a declared maximum of 200. Both
+are fixed for all bridged groups, including the seven bridged before this
+change.
+
+**The chat worker's "Test" button did not test what production runs.** It read
+`api_key_id` directly, took the adapter and called `.chat()` — reproducing
+neither of the two things chat routing actually does. So it lied in both
+directions: a keyless `local` worker failed its test with *no api_key
+configured* while working perfectly in production, and a worker whose primary
+was down but whose backup was healthy also failed, though every real caller
+would have been served. It now goes through `resolveChatRoutes` +
+`chatWithFailover` — the production path — and reports which route answered, so
+a green tick that came from the backup says so. The other modalities' test
+buttons are left exactly as they were: they resolve keys the same way
+`builtins-workers.ts` does, so they were already faithful.
+
+Also hardened the embedding failover classifier, which decided 4xx-vs-5xx by
+searching the message for any three-digit number — so an error mentioning a
+dimension count or a port could be read as a client error and strand the caller
+on a dead primary. It now prefers a status the error actually carries, and the
+message fallback is anchored to the reported-status position. It stays separate
+from chat's `classifyChatError` on purpose, with the reason written down: that
+classifier reads a structured status the embedding adapters do not throw, and
+its retryable set would drop 501 and proxy 52x — exactly what a self-hosted
+primary behind a tunnel returns when it is down.
+
+**Separately, `lib/auth` had five copies of its signature check.** There was a
+shared `sign()` but no shared verifier: the split-on-dot, HMAC and
+constant-time-compare preamble was pasted five times, differing only in which
+kind byte followed — duplicated constant-time comparison in the module 265
+others depend on. They now share one verifier, and the file splits along the
+boundary its own comments already drew: `auth/tokens` (pure crypto),
+`auth/session` (cookies, headers, `auth.users`) and `auth/request` (reading a
+credential off a Request), behind an unchanged `@/lib/auth` façade. Four bearer
+parsers that had genuinely diverged on whitespace become one, with the
+null-vs-empty rule the gates depend on stated and tested; the rate-limit denial
+shared by the four credential-exchange endpoints and the SSO origin check move
+to `auth/preflight`. No behaviour changes — the kind-isolation matrix is now
+pinned by a test that mints every credential and offers it to every verifier.
+
+**The ten workers each hand-wrote the same shell**, and the copies had drifted
+where it shows least: one shut down synchronously, two exited from a
+`setTimeout` racing their own cleanup, and none bounded how long shutdown may
+take — so a wedged `boss.stop()` left a container that looked alive and did
+nothing until Docker's grace period ran out. `runQueueWorker` / `runWorker` now
+own that shell; 1053 lines of worker become 715. Three things the fleet did not
+have: signal handlers installed BEFORE setup (the three workers that block in
+`waitForOwner` on a fresh brain previously met Node's default handler), a
+shutdown deadline that exits non-zero and says so, and an explicit keep-alive —
+"stays up" had been an accident of whatever handle setup happened to create.
+Smoke-tested against a live Postgres: all ten start and stop cleanly in ~0.5s,
+and a teardown that never resolves exits at 15.3s.
+
+Separately, `pnpm dev` started **seven** of the ten workers. calendar, microsoft
+and push each have a dev script and a production container and had simply never
+been added to the list, so three ingest paths were dark locally while looking
+fully wired.
+
+**A deleted git worktree destroyed the local database, and could again.** The
+dev stack mounts `${MANTLE_DATA_DIR:-./data}/postgres` relative to compose's
+working directory, and the project name is pinned — so running it from a
+worktree does not give you a separate stack, it gives you the SAME containers
+pointed at a DIFFERENT data directory. A stack brought up inside a worktree put
+Postgres' data there; removing the worktree pulled the directory out from under
+a running database. `scripts/dev-compose.sh` now resolves the original clone
+and operates there, `reset.sh` resolves its wipe target the same way, and the
+rule is written into CLAUDE.md. Also `infra:psql` ran `docker exec -it
+mantle_pg` — the PRODUCTION container name — so on a host running both stacks it
+opened a psql session on production.
+
+**The Runners screen 500'd on a restored brain.** The engine-absent guard knew
+42501, 3F000 and 42P01 — all of them about schemas — but DBOS keeps its journal
+in a separate DATABASE, and `pg_dump` is per-database, so a brain restored from
+a bundle has none and Postgres answers `3D000 invalid_catalog_name`. A
+provisioned cluster served by a read-only role says 42501 instead, which is why
+the workstation passed and the deployed demo failed.
+
 ## Unreleased — Adding a Microsoft scope quietly killed every older account (branch claude/sharepoint-auth-directory-listing-d78be4)
 
 **A connected Microsoft account had a shelf life measured from the last time we

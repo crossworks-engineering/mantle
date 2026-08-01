@@ -21,7 +21,6 @@ import {
   agentGroups,
   agents,
   channels,
-  emails,
   nodes,
   telegramAccounts,
   telegramChats,
@@ -63,6 +62,7 @@ import {
   getPendingCall,
   listPendingCalls,
   rejectPendingCall,
+  checkToolPreconditions,
   CONTACT_TOOLS,
   WORKER_DELEGATION_TOOLS,
   EXPORT_TOOLS,
@@ -70,42 +70,24 @@ import {
   TABLE_TOOLS,
   APP_TOOLS,
   TOOLSMITH_TOOLS,
+  NOTE_TOOLS,
+  TASK_TOOLS,
+  EVENT_TOOLS,
+  JOURNAL_TOOLS,
+  PEER_TOOLS,
+  EMAIL_TOOLS,
 } from '@mantle/tools';
 import type { BuiltinToolDef } from '@mantle/tools';
 import {
-  TASK_PRIORITIES,
-  TASK_STATUSES,
-  createEvent,
-  createNote,
-  createTask,
-  deleteEvent,
   deleteNote,
-  deleteTask,
-  createJournal,
-  deleteJournal,
-  getEvent,
-  getJournal,
-  getNote,
   getPage,
   getTable,
-  getTask,
-  listEvents,
-  listJournals,
-  listNotes,
   listPages,
   listTables,
   listRows,
   ensureTableDoc,
-  listTasks,
-  listPeers,
-  queryPeer,
-  getPeerNode,
-  updateEvent,
-  updateJournal,
-  updateNote,
-  updateTask,
 } from '@mantle/content';
-import { and, asc, desc, eq, type SQL } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON). Module-scope (env is process-stable) so the gate is evaluated once, not
@@ -304,39 +286,6 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
       });
       if ('error' in res) return { content: [{ type: 'text', text: res.error }], isError: true };
       return jsonReply(res);
-    },
-  );
-
-  server.tool(
-    'email_get',
-    'Fetch a single email by id (body, headers, attachment refs).',
-    { id: z.string().uuid() },
-    async ({ id }) => {
-      const [row] = await db.select().from(emails).where(eq(emails.id, id)).limit(1);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }], isError: true };
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'email_list',
-    'Recent emails newest-first. Optionally filter by `accountId` or `since`.',
-    {
-      accountId: z.string().uuid().optional(),
-      since: z.string().datetime().optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-    async ({ accountId, since, limit }) => {
-      const conds: SQL[] = [];
-      if (accountId) conds.push(eq(emails.accountId, accountId));
-      if (since) conds.push(eq(emails.internalDate, new Date(since)));
-      const rows = await db
-        .select()
-        .from(emails)
-        .where(conds.length ? and(...conds) : undefined)
-        .orderBy(desc(emails.internalDate))
-        .limit(limit ?? 50);
-      return jsonReply(rows);
     },
   );
 
@@ -1065,168 +1014,46 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
     },
   );
 
-  // ─── Notes / Tasks / Events ────────────────────────────────────────────────
+  // ─── Notes / Tasks / Events / Journal / Email / Peers ──────────────────────
   //
-  // Three content surfaces the assistant can drive. All three are jsonb on
-  // `nodes` (no dedicated tables) and all three flow through the extractor
-  // for summary + embedding, so semantic search ("what notes do I have
-  // about X?") works without explicit indexing here.
+  // Content surfaces the assistant can drive. Notes, tasks, events and journal
+  // entries are all jsonb on `nodes` (no dedicated tables) and all flow through
+  // the extractor for summary + embedding, so semantic search ("what notes do I
+  // have about X?") works without explicit indexing here. The journal is the
+  // owner's first-person self-knowledge, which feeds the always-on "who you
+  // are" context injected into every agent turn — so logging from an MCP client
+  // teaches the in-app assistant who the user is.
+  //
+  // Bridged from the in-app groups rather than hand-wired, so both surfaces run
+  // one implementation. That is what gets MCP the things the hand-written
+  // twins had drifted away from: ingest provenance on create (the node's
+  // biography says an agent made it, instead of "appeared from nowhere"),
+  // permalinks and teaching errors on read, and `isError` actually set on a
+  // failure rather than a bare "not found" the client reads as success.
+  //
+  // `only` restricts each group to the slugs MCP ALREADY exposed. Bridging is a
+  // deduplication, not a widening: NOTE_TOOLS also carries note_from_file /
+  // note_from_page, PEER_TOOLS carries peer_search_chunks, and EMAIL_TOOLS
+  // carries email_send / email_page — exposing outbound email over MCP is a
+  // product decision, and emphatically not a side effect of a refactor.
+  registerBuiltinTools(NOTE_TOOLS, {
+    only: new Set(['note_list', 'note_get', 'note_create', 'note_update']),
+  });
+  registerBuiltinTools(TASK_TOOLS);
+  registerBuiltinTools(EVENT_TOOLS);
+  registerBuiltinTools(JOURNAL_TOOLS);
+  registerBuiltinTools(PEER_TOOLS, {
+    only: new Set(['peer_list', 'peer_query', 'peer_node_get']),
+  });
+  registerBuiltinTools(EMAIL_TOOLS, { only: new Set(['email_list', 'email_get']) });
 
-  server.tool(
-    'note_list',
-    "List the owner's notes. Optional `query` does a substring match against title/body/summary; `tag` filters to notes carrying that tag. Agent conversation digests are excluded unless `tag` is one of their tags (`conversation-digest`, `agent:*`, `topic:*`).",
-    {
-      query: z.string().optional(),
-      tag: z.string().optional(),
-    },
-    async ({ query, tag }) => {
-      const rows = await listNotes(ownerId, { query, tag });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'note_get',
-    'Get a single note by id, including its full markdown content.',
-    { id: z.string() },
-    async ({ id }) => {
-      const row = await getNote(ownerId, id);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'note_create',
-    'Create a note. Title is required; content is markdown.',
-    {
-      title: z.string().min(1).max(200),
-      content: z.string().max(500_000).optional(),
-      tags: z.array(z.string()).optional(),
-    },
-    async ({ title, content, tags }) => {
-      const row = await createNote(ownerId, {
-        title,
-        content: content ?? '',
-        tags: tags ?? [],
-      });
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'note_update',
-    'Update a note. Pass only the fields you want changed.',
-    {
-      id: z.string(),
-      title: z.string().min(1).max(200).optional(),
-      content: z.string().max(500_000).optional(),
-      tags: z.array(z.string()).optional(),
-    },
-    async ({ id, title, content, tags }) => {
-      const row = await updateNote(ownerId, id, { title, content, tags });
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-      return jsonReply(row);
-    },
-  );
-
+  // The one exception: there is no note_delete builtin — the in-app agent
+  // cannot delete notes — so MCP's own registration is not a duplicate and
+  // stays hand-written.
   server.tool('note_delete', 'Delete a note by id.', { id: z.string() }, async ({ id }) => {
     const ok = await deleteNote(ownerId, id);
     return { content: [{ type: 'text', text: ok ? 'deleted' : 'not found' }] };
   });
-
-  // ─── Journal ─────────────────────────────────────────────────────────────
-  //
-  // The owner's first-person self-knowledge (type='journal'): short entries with
-  // an optional mood + life-area category. These feed the always-on "who you are"
-  // identity context injected into every agent turn — so logging from Claude
-  // Desktop teaches the in-app assistant who the user is. Full CRUD, mirroring
-  // notes (the upstream-ingest surface is where self-facts naturally get added).
-
-  server.tool(
-    'journal_list',
-    "List the owner's Journal — their notes about who they are, their work, family, faith, health, goals, and feelings, newest first. Optional `query` substring-matches title/body/summary; `mood` / `category` filter.",
-    {
-      query: z.string().optional(),
-      mood: z.string().optional(),
-      category: z.string().optional(),
-    },
-    async ({ query, mood, category }) => {
-      const rows = await listJournals(ownerId, { query, mood, category });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'journal_get',
-    'Get a single journal entry by id.',
-    { id: z.string() },
-    async ({ id }) => {
-      const row = await getJournal(ownerId, id);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'journal_create',
-    "Record a short first-person journal entry — something durable about who the user is, what they're doing, or how they feel. `body` is a short paragraph; `mood` and `category` are optional. Becomes part of the assistant's always-on understanding of the user.",
-    {
-      body: z.string().min(1).max(20_000),
-      title: z.string().max(200).optional(),
-      mood: z.string().max(40).optional(),
-      category: z.string().max(40).optional(),
-      entryDate: z.string().max(40).optional(),
-      tags: z.array(z.string()).optional(),
-    },
-    async ({ body, title, mood, category, entryDate, tags }) => {
-      const row = await createJournal(ownerId, {
-        body,
-        title,
-        mood,
-        category,
-        entryDate,
-        tags: tags ?? [],
-      });
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'journal_update',
-    'Update a journal entry. Pass only the fields you want changed; an empty string clears mood/category/entryDate.',
-    {
-      id: z.string(),
-      body: z.string().max(20_000).optional(),
-      title: z.string().max(200).optional(),
-      mood: z.string().max(40).optional(),
-      category: z.string().max(40).optional(),
-      entryDate: z.string().max(40).optional(),
-      tags: z.array(z.string()).optional(),
-    },
-    async ({ id, body, title, mood, category, entryDate, tags }) => {
-      const row = await updateJournal(ownerId, id, {
-        body,
-        title,
-        mood,
-        category,
-        entryDate,
-        tags,
-      });
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'journal_delete',
-    'Delete a journal entry by id.',
-    { id: z.string() },
-    async ({ id }) => {
-      const ok = await deleteJournal(ownerId, id);
-      return { content: [{ type: 'text', text: ok ? 'deleted' : 'not found' }] };
-    },
-  );
 
   // ─── Pages (read-only) ─────────────────────────────────────────────────────
   //
@@ -1339,214 +1166,7 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   const TABLE_READ_SLUGS = new Set(['table_list', 'table_get', 'table_rows_list']);
   registerBuiltinTools(TABLE_TOOLS, { skip: (def) => TABLE_READ_SLUGS.has(def.slug) });
 
-  server.tool(
-    'task_list',
-    'List tasks. `status` filters open/done; `priority` filters low/normal/high; `query` substring-matches title/body/summary. Default sort: open first, soonest due, then most-recently updated.',
-    {
-      query: z.string().optional(),
-      status: z.enum([...TASK_STATUSES, 'all'] as ['open', 'done', 'all']).optional(),
-      priority: z.enum([...TASK_PRIORITIES, 'all'] as ['low', 'normal', 'high', 'all']).optional(),
-      tag: z.string().optional(),
-    },
-    async ({ query, status, priority, tag }) => {
-      const rows = await listTasks(ownerId, {
-        query,
-        status: status ?? 'all',
-        priority: priority ?? 'all',
-        tag,
-      });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool('task_get', 'Get a single task by id.', { id: z.string() }, async ({ id }) => {
-    const row = await getTask(ownerId, id);
-    if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-    return jsonReply(row);
-  });
-
-  server.tool(
-    'task_create',
-    'Create a task. Title is required. `dueAt` is an ISO 8601 timestamp (e.g. "2026-05-25T17:00:00Z").',
-    {
-      title: z.string().min(1).max(200),
-      body: z.string().max(50_000).optional(),
-      status: z.enum(TASK_STATUSES).optional(),
-      priority: z.enum(TASK_PRIORITIES).optional(),
-      dueAt: z.string().datetime().nullable().optional(),
-      tags: z.array(z.string()).optional(),
-    },
-    async ({ title, body, status, priority, dueAt, tags }) => {
-      const row = await createTask(ownerId, {
-        title,
-        body,
-        status,
-        priority,
-        dueAt,
-        tags,
-      });
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'task_update',
-    'Update a task. Use this to flip status to "done", change priority, push the due date, etc.',
-    {
-      id: z.string(),
-      title: z.string().min(1).max(200).optional(),
-      body: z.string().max(50_000).optional(),
-      status: z.enum(TASK_STATUSES).optional(),
-      priority: z.enum(TASK_PRIORITIES).optional(),
-      dueAt: z.string().datetime().nullable().optional(),
-      tags: z.array(z.string()).optional(),
-    },
-    async ({ id, ...rest }) => {
-      const row = await updateTask(ownerId, id, rest);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-      return jsonReply(row);
-    },
-  );
-
-  server.tool('task_delete', 'Delete a task by id.', { id: z.string() }, async ({ id }) => {
-    const ok = await deleteTask(ownerId, id);
-    return { content: [{ type: 'text', text: ok ? 'deleted' : 'not found' }] };
-  });
-
-  server.tool(
-    'event_list',
-    'List calendar events. `window` defaults to "upcoming"; use "past" or "all" to see history. `query` substring-matches title/body/location/summary.',
-    {
-      query: z.string().optional(),
-      window: z.enum(['upcoming', 'past', 'all']).optional(),
-      tag: z.string().optional(),
-    },
-    async ({ query, window, tag }) => {
-      const rows = await listEvents(ownerId, { query, window, tag });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool('event_get', 'Get a single event by id.', { id: z.string() }, async ({ id }) => {
-    const row = await getEvent(ownerId, id);
-    if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-    return jsonReply(row);
-  });
-
-  server.tool(
-    'event_create',
-    'Create a calendar event. `startsAt` is an ISO 8601 instant. `remindMinutesBefore` controls when the Telegram reminder fires (0 = right at start). The reminder lands in the owner\'s most-recent allowed Telegram DM. `timezone` is an optional IANA tz (e.g. "Africa/Johannesburg") used to format the reminder message — the storage is always UTC. Set `recur` (daily/weekly/monthly/yearly) to repeat; `recurUntil` (ISO) caps the series.',
-    {
-      title: z.string().min(1).max(200),
-      body: z.string().max(50_000).optional(),
-      startsAt: z.string().datetime(),
-      endsAt: z.string().datetime().nullable().optional(),
-      location: z.string().max(200).nullable().optional(),
-      remindMinutesBefore: z
-        .number()
-        .int()
-        .min(0)
-        .max(60 * 24 * 30)
-        .optional(),
-      timezone: z.string().max(64).optional(),
-      recur: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly']).optional(),
-      recurUntil: z.string().datetime().nullable().optional(),
-      tags: z.array(z.string()).optional(),
-    },
-    async (args) => {
-      const row = await createEvent(ownerId, args);
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'event_update',
-    "Update a calendar event. If you move `startsAt` or `remindMinutesBefore` and the new reminder time is still in the future, a previously-sent reminder will fire again. Pass `timezone` (IANA tz) to change how the reminder message formats the time. Set `recur` to change the repeat frequency ('none' stops it); `recurUntil` caps the series.",
-    {
-      id: z.string(),
-      title: z.string().min(1).max(200).optional(),
-      body: z.string().max(50_000).optional(),
-      startsAt: z.string().datetime().optional(),
-      endsAt: z.string().datetime().nullable().optional(),
-      location: z.string().max(200).nullable().optional(),
-      remindMinutesBefore: z
-        .number()
-        .int()
-        .min(0)
-        .max(60 * 24 * 30)
-        .optional(),
-      timezone: z.string().max(64).optional(),
-      recur: z.enum(['none', 'daily', 'weekly', 'monthly', 'yearly']).optional(),
-      recurUntil: z.string().datetime().nullable().optional(),
-      tags: z.array(z.string()).optional(),
-    },
-    async ({ id, ...rest }) => {
-      const row = await updateEvent(ownerId, id, rest);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'event_delete',
-    'Delete a calendar event by id. Pending reminders will not fire.',
-    { id: z.string() },
-    async ({ id }) => {
-      const ok = await deleteEvent(ownerId, id);
-      return { content: [{ type: 'text', text: ok ? 'deleted' : 'not found' }] };
-    },
-  );
-
   // ── Federation: query other people's Mantles for data they've shared ─────────
-  server.tool(
-    'peer_list',
-    'List the federated Mantle peers configured for this account — other Mantle systems you can query for data they have shared with you. Returns each peer id, name, base URL, and status.',
-    {},
-    async () => {
-      const peers = await listPeers(ownerId);
-      return jsonReply(peers);
-    },
-  );
-
-  server.tool(
-    'peer_query',
-    "Ask a federated peer Mantle for data it has shared with you. `peer` is the peer's name or id (see peer_list); `query` matches the titles/summaries of nodes the peer GRANTED you — you only ever see what they shared. Optionally narrow by `types`. Use peer_node_get for one node's full content.",
-    {
-      peer: z.string(),
-      query: z.string().max(500).optional(),
-      types: z.array(z.string()).optional(),
-      limit: z.number().int().min(1).max(100).optional(),
-    },
-    async ({ peer, ...opts }) => {
-      const res = await queryPeer(ownerId, peer, opts);
-      return {
-        content: [
-          {
-            type: 'text',
-            text: res.ok ? JSON.stringify(stripVectors(res.data), null, 2) : `Error: ${res.error}`,
-          },
-        ],
-      };
-    },
-  );
-
-  server.tool(
-    'peer_node_get',
-    "Fetch one shared node's full content from a federated peer. `peer` is the peer's name or id; `nodeId` is an id from peer_query. Fails if the peer hasn't granted you that node.",
-    { peer: z.string(), nodeId: z.string() },
-    async ({ peer, nodeId }) => {
-      const res = await getPeerNode(ownerId, peer, nodeId);
-      return {
-        content: [
-          {
-            type: 'text',
-            text: res.ok ? JSON.stringify(stripVectors(res.data), null, 2) : `Error: ${res.error}`,
-          },
-        ],
-      };
-    },
-  );
-
   /* ───────────────────────── Toolsmith over MCP ──────────────────────────
    *
    * The api_tool_* / tool_group_* / agent_* / web_fetch / api_key_refs set
@@ -1572,9 +1192,15 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
    */
 
   /** Convert one JSON-Schema property def into a zod type. Honors `items` for
-   *  arrays, `integer` (vs number), nested object `properties`, and `[T,'null']`
-   *  nullable unions — so validation isn't silently dropped if a Toolsmith def
-   *  grows past the original string/number/boolean/array<string> vocabulary. */
+   *  arrays, `integer` (vs number), nested object `properties`, `[T,'null']`
+   *  nullable unions, and the size bounds (`minLength`/`maxLength`,
+   *  `minimum`/`maximum`, `minItems`/`maxItems`) — so validation isn't silently
+   *  dropped if a def grows past the original string/number/boolean/array
+   *  vocabulary.
+   *
+   *  The bounds matter as much as the types: `validate-args` enforces them for
+   *  the in-app agent, so dropping them here would leave the MCP surface the
+   *  only one that accepts a 10 000-character title. */
   function zodForDef(def: Record<string, unknown>): z.ZodTypeAny {
     const type = def.type;
     if (Array.isArray(def.enum) && def.enum.every((v) => typeof v === 'string')) {
@@ -1585,18 +1211,34 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
       const inner = base ? zodForDef({ ...def, type: base }) : z.unknown();
       return type.includes('null') ? inner.nullable() : inner;
     }
+    const bound = (key: string): number | undefined =>
+      typeof def[key] === 'number' ? (def[key] as number) : undefined;
+    /** Apply a `[min, max]` pair, skipping the ends the schema left open. */
+    const bounded = <T extends { min(n: number): T; max(n: number): T }>(
+      t: T,
+      minKey: string,
+      maxKey: string,
+    ): T => {
+      const min = bound(minKey);
+      const max = bound(maxKey);
+      let out = t;
+      if (min !== undefined) out = out.min(min);
+      if (max !== undefined) out = out.max(max);
+      return out;
+    };
     switch (type) {
       case 'string':
-        return z.string();
+        return bounded(z.string(), 'minLength', 'maxLength');
       case 'number':
-        return z.number();
+        return bounded(z.number(), 'minimum', 'maximum');
       case 'integer':
-        return z.number().int();
+        return bounded(z.number().int(), 'minimum', 'maximum');
       case 'boolean':
         return z.boolean();
       case 'array': {
         const items = (def.items ?? {}) as Record<string, unknown>;
-        return z.array('type' in items || 'enum' in items ? zodForDef(items) : z.unknown());
+        const inner = 'type' in items || 'enum' in items ? zodForDef(items) : z.unknown();
+        return bounded(z.array(inner), 'minItems', 'maxItems');
       }
       case 'object': {
         const props = (def.properties ?? {}) as Record<string, Record<string, unknown>>;
@@ -1635,19 +1277,39 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
    *  own (e.g. a worker tool that needs a Telegram chat refuses cleanly here).
    *  Binary `artifacts` are dropped (MCP results are text/JSON); tools that also
    *  persist their output to a node — e.g. `generate_image` → /files — still
-   *  surface the node id in `output`. `opts.skip` lets a caller gate writes. */
+   *  surface the node id in `output`.
+   *
+   *  `opts.skip` gates a def out; `opts.only` restricts to an explicit slug set,
+   *  which is how a group is bridged for DEDUPLICATION without also widening the
+   *  MCP surface with its other members. */
   function registerBuiltinTools(
     defs: readonly BuiltinToolDef[],
-    opts?: { skip?: (def: BuiltinToolDef) => boolean },
+    opts?: { skip?: (def: BuiltinToolDef) => boolean; only?: ReadonlySet<string> },
   ) {
     for (const def of defs) {
+      if (opts?.only && !opts.only.has(def.slug)) continue;
       if (opts?.skip?.(def)) continue;
       server.tool(
         def.slug,
         def.description,
         zodShapeFromJsonSchema(def.inputSchema),
         async (args: Record<string, unknown>) => {
-          const result = await def.handler(args ?? {}, { ownerId: ownerId });
+          const input = args ?? {};
+          // Declared referential preconditions run first, exactly as
+          // dispatch.ts does for the in-app agent. Without this the MCP surface
+          // is the only one where an id pointing at a missing — or wrong-type —
+          // node reaches the handler and comes back as a bare "not found",
+          // hiding the actual mistake.
+          if (def.preconditions?.length) {
+            const failure = await checkToolPreconditions(def.preconditions, input, ownerId);
+            if (failure && !failure.ok) {
+              return {
+                content: [{ type: 'text' as const, text: `Error: ${failure.error}` }],
+                isError: true,
+              };
+            }
+          }
+          const result = await def.handler(input, { ownerId: ownerId });
           if (!result.ok) {
             return {
               content: [{ type: 'text' as const, text: `Error: ${result.error}` }],

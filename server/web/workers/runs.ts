@@ -23,10 +23,8 @@
  * green) but registers nothing — flipping the env var and restarting the
  * container brings the engine live.
  */
-import { PgBoss } from 'pg-boss';
 import { eq, sql } from 'drizzle-orm';
 import { db, runItems } from '@mantle/db';
-import { startProcessHeartbeat } from '@mantle/content';
 import { registerHeartbeatTools } from '@mantle/heartbeats';
 import {
   enqueueRunActionsSafe,
@@ -40,6 +38,7 @@ import {
 
 import { executeRunItem } from '../lib/runs/execute-item';
 import { enqueueRunsResumeTurn } from '../lib/runs/dbos-enqueue';
+import { createBoss, runWorker, stopBoss } from './_runner';
 
 const SWEEP_QUEUE = 'mantle.run.sweep';
 const SWEEP_CRON = '* * * * *'; // every minute — the sweep is the immune system
@@ -53,11 +52,9 @@ registerHeartbeatTools();
 type DispatchJob = { itemId: string };
 type ResumeJob = { runId: string; groupId: string };
 
-async function main() {
-  startProcessHeartbeat();
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL must be set');
-
+// Not runQueueWorker: with the flag off this worker must idle WITHOUT opening a
+// queue at all, so it decides for itself whether to connect.
+runWorker('runs', async () => {
   if (!isRunsEnabled()) {
     console.log('[runs] MANTLE_RUNS is not set — runner queues disabled; worker idling.');
     // Flag flipped off with runs in flight? Nothing executes AND nothing
@@ -79,9 +76,7 @@ async function main() {
     return; // heartbeat keeps ticking; compose stays green
   }
 
-  const boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
-  boss.on('error', (err) => console.error('[runs] pg-boss:', err));
-  await boss.start();
+  const boss = await createBoss('runs');
   await ensureRunQueues(boss);
   await boss.createQueue(SWEEP_QUEUE);
 
@@ -150,26 +145,9 @@ async function main() {
   });
 
   console.log(
-    `[runs] worker up — queues ${RUN_TOOL_QUEUE}, ${RUN_WORKER_QUEUE}, ${RUN_RESUME_QUEUE}; ` +
+    `[runs] queues ${RUN_TOOL_QUEUE}, ${RUN_WORKER_QUEUE}, ${RUN_RESUME_QUEUE}; ` +
       `sweep '${SWEEP_CRON}' (UTC)`,
   );
 
-  const shutdown = async () => {
-    console.log('[runs] shutting down…');
-    await boss.stop({ graceful: true, timeout: 10_000 });
-    process.exit(0);
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
-
-// Keep-alive backstop (the maintenance worker's rationale): a stray rejection
-// logs instead of crash-looping the container.
-process.on('unhandledRejection', (reason) => {
-  console.error('[runs] unhandledRejection (kept alive):', reason);
-});
-
-main().catch((err) => {
-  console.error('[runs] fatal:', err);
-  process.exit(1);
+  return () => stopBoss(boss);
 });
