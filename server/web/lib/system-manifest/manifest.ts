@@ -225,6 +225,12 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['rich_writing']!,
   },
   {
+    slug: 'writing_style',
+    name: 'Writing style',
+    description: 'House style for all user-facing prose.',
+    instructions: SKILL_INSTRUCTIONS['writing_style']!,
+  },
+  {
     slug: 'table_authoring',
     name: 'Table authoring',
     description: 'Build typed grids: columns, totals, formulas, views; edit by stable row/col id.',
@@ -958,6 +964,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       // the `media:` page syntax via `pages-draft`). This is the judgment that
       // makes it happen: show the picture instead of narrating it.
       'visual_answers',
+      'writing_style',
     ],
     params: { temperature: 0.7, max_tokens: 16000 },
     // Context budgets for the generalist responder. Onboarding seeds these
@@ -1007,7 +1014,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'export',
       'curation',
     ],
-    skillSlugs: ['rich_writing', 'page_editing'],
+    skillSlugs: ['rich_writing', 'page_editing', 'writing_style'],
     isDelegate: true,
     params: { temperature: 0.3, max_tokens: 32000 },
     // Real page work is tool-call heavy: a large restructure is read + N block
@@ -1030,7 +1037,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // `files`/`memory-core` cover source reads + cross-context lookups. Page
     // sharing is Pages' job, not Ledger's — no `page-share` here.
     toolGroupSlugs: ['tables', 'files', 'memory-core', 'export'],
-    skillSlugs: ['table_authoring'],
+    skillSlugs: ['table_authoring', 'writing_style'],
     isDelegate: true,
     params: { temperature: 0.3, max_tokens: 16000 },
     // Grid work is tool-call heavy the same way page work is: a data load is a
@@ -1194,7 +1201,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // Not a delegate, no assist surface — it is resolved explicitly by the team
     // turn pipeline and nothing else.
     toolGroupSlugs: ['team-read', 'formulas-eval'],
-    skillSlugs: ['tool_grounding', 'chat_writing', 'formula_use'],
+    skillSlugs: ['tool_grounding', 'chat_writing', 'formula_use', 'writing_style'],
     params: { temperature: 0.4, max_tokens: 16000 },
     // No owner-personal context: inject_journal OFF (the identity context is
     // the OWNER's self-knowledge), no digests (those summarize the owner's own

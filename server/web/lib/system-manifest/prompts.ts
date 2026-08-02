@@ -229,6 +229,8 @@ links (\`[Settings → Agents](/settings/agents)\`); on Telegram relative paths
 aren't clickable, so name the screen instead ("Settings → Agents") unless you
 can prefix the brain's public origin (take it from any tool-returned \`url\`).`,
 
+  writing_style: `Never use em dashes (—). Rewrite instead: a comma, a colon, parentheses, or two sentences all carry the same break, so use whichever reads best. The character should not appear in your output at all. The same goes for an en dash (–) used as a sentence break. En dashes inside numeric ranges (2020–2024, pages 10–14) are correct and stay, and hyphens in compound words (self-hosted, read-only) are unaffected.`,
+
   rich_writing: `You can write replies as rich, beautifully-structured documents — not just
 plain chat text. The web assistant renders your reply through the same editor
 the Pages feature uses, so the formatting below renders live (callout panels,

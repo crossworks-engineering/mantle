@@ -308,6 +308,25 @@ describe('system manifest integrity', () => {
     expect(grounding!.instructions).toContain('search_chunks');
   });
 
+  it('the writing_style skill carries the no-em-dash house style, attached to every prose agent', () => {
+    // Guards the house-style rule: prose the model follows, not an output filter.
+    // Dropping the rule text or detaching the skill silently reverts the fleet
+    // to em-dash prose on the next reconcile.
+    const style = MANIFEST_SKILLS.find((s) => s.slug === 'writing_style');
+    expect(style, 'writing_style skill missing from manifest').toBeDefined();
+    expect(style!.instructions).toContain('em dash');
+    // The rule must keep its carve-out: range en dashes are correct and stay.
+    expect(style!.instructions).toContain('2020–2024');
+    for (const slug of ['assistant', 'pages', 'tables', 'team-responder']) {
+      const agent = MANIFEST_AGENTS.find((a) => a.slug === slug);
+      expect(agent, `agent '${slug}' missing from manifest`).toBeDefined();
+      expect(
+        agent!.skillSlugs,
+        `agent '${slug}' does not attach writing_style`,
+      ).toContain('writing_style');
+    }
+  });
+
   it('the page_editing skill teaches the restyle playbook (batched, insert-before TL;DR, wrap)', () => {
     // Guards the prose that turns "make this page presentable" into an actual
     // sequence: without it, agents have the dialect but no idea what a
