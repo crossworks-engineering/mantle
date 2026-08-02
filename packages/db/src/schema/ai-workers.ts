@@ -194,7 +194,9 @@ export type ExtractorParams = ChatLlmParams & {
  *  history into conversation digests. */
 export type SummarizerParams = ChatLlmParams & {
   /** Min undigested turns before we attempt to roll up a chat. Legacy
-   *  name kept since backfilled rows use this exact key. */
+   *  name kept since backfilled rows use this exact key. The effective
+   *  value is capped at max(agent history_limit, summarize_batch) so no
+   *  turn can age out of the live history window while still undigested. */
   summarize_threshold?: number;
   /** Max turns to include in one digest's LLM call. */
   summarize_batch?: number;

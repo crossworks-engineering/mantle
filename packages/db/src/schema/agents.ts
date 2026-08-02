@@ -73,7 +73,8 @@ export type AgentMemoryConfig = {
    *  Deterministic, no LLM — a no-op when the user has no journal entries. */
   inject_journal?: boolean;
   /** Summarizer-only: undigested-turn count that triggers a summarization.
-   *  Default 30. */
+   *  Default 30, capped at max(history_limit, summarize_batch) so no turn
+   *  can age out of the live history window while still undigested. */
   summarize_threshold?: number;
   /** Summarizer-only: how many of the oldest undigested turns to fold into
    *  one digest per run. Default 20. */

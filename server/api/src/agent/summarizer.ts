@@ -109,8 +109,29 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
   }
 
   const params = (worker.params ?? {}) as SummarizerParams;
-  const threshold = params.summarize_threshold ?? 30;
   const batchSize = params.summarize_batch ?? params.window_size ?? 20;
+
+  // Resolve the conversational agent's slug (digest provenance + tags) and its
+  // memory config (the coupling below). Needed before the threshold check now.
+  const [agentRow] = await db
+    .select({ slug: agents.slug, memoryConfig: agents.memoryConfig })
+    .from(agents)
+    .where(eq(agents.id, agentId))
+    .limit(1);
+  const agentSlug = agentRow?.slug ?? agentId;
+
+  // Couple the trigger to the agent's live-history window (context-transfer
+  // audit, dev-brain task 64170cb0): with the old flat default of 30 vs a
+  // 20-turn history window, up to 9 turns could sit in neither history nor any
+  // digest. Capping the threshold at the history window closes that band by
+  // construction. The batch-size floor keeps a small history window from
+  // driving near-per-turn digest LLM calls (cost safety); an explicit lower
+  // threshold is respected as before.
+  const historyLimit = agentRow?.memoryConfig?.history_limit ?? 20;
+  const threshold = Math.min(
+    params.summarize_threshold ?? 30,
+    Math.max(historyLimit, batchSize),
+  );
 
   // Count undigested turns for THIS agent's stream only.
   const countRows = await db
@@ -125,14 +146,6 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
     );
   const undigested = countRows[0]?.n ?? 0;
   if (undigested < threshold) return;
-
-  // Resolve the conversational agent's slug for digest provenance + tags.
-  const [agentRow] = await db
-    .select({ slug: agents.slug })
-    .from(agents)
-    .where(eq(agents.id, agentId))
-    .limit(1);
-  const agentSlug = agentRow?.slug ?? agentId;
 
   await startTrace(
     {
