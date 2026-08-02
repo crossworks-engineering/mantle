@@ -28,9 +28,13 @@ store, so ~seconds), and copies `.env.local`. Tear down with
   merges/releases. Don't develop features directly in it while other sessions
   run; do feature work in a worktree.
 - `main` (or any branch) can be checked out in **only one** worktree at a time.
-  Merge a feature branch from the integrator. To merge from a worktree instead,
-  `git checkout main` only where it's currently free, merge `--no-ff`, then
-  switch back so `main` is free again.
+  Land a finished branch with **`scripts/merge-branch.sh <branch>`** (runs from
+  anywhere, operates in the integrator): ff-only merge, then the version bump as
+  its own `release:` commit ON MAIN. Feature branches never touch version
+  fields — bumping there made every concurrent session edit the same 4
+  package.json lines, a guaranteed conflict; `pnpm version:bump` now refuses to
+  run off main. If the merge isn't a fast-forward, rebase in your worktree and
+  re-run the script.
 - **Refs are shared** across worktrees — branches, tags, and the **stash stack**.
   Use unique branch names; don't run a bare `git stash` while others are active
   (scope it: `git stash push -- <paths>`).

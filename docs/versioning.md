@@ -20,25 +20,41 @@ Pre-1.0, the parts mean:
 
 ## Single source of truth
 
-The root [`package.json`](../package.json) `version` field. `apps/web/package.json`
-is kept in lockstep so the two never drift.
+The root [`package.json`](../package.json) `version` field.
+`server/web/package.json`, `client/web/package.json` and
+`client/desktop/package.json` are kept in lockstep so they never drift (the
+desktop version is what electron-updater compares — drift there stalls
+auto-updates).
 
-Bump it with the helper (never hand-edit both files):
+## Bumps happen on main, as part of the merge
+
+Feature branches **never** touch version fields. The old ritual (bump on the
+branch, then merge) made every concurrent worktree edit the same 4 version
+lines, so two sessions in flight meant a guaranteed conflict — or a silent
+dedupe — at whichever rebase happened second. Merges into main are serialized
+through the integrator clone (only it has main checked out), so the bump rides
+the merge instead:
 
 ```bash
-pnpm version:bump patch          # 0.19.0-alpha -> 0.19.1  (fixes)
-pnpm version:bump minor          # 0.19.0-alpha -> 0.20.0  (new milestone)
-pnpm version:bump major          # 0.19.0-alpha -> 1.0.0   (stable)
-pnpm version:bump 0.19.3-alpha   # set explicitly (pre-release tag allowed)
+scripts/merge-branch.sh feat/my-thing          # ff-only merge + patch bump + release commit
+scripts/merge-branch.sh feat/my-thing minor    # new milestone
 ```
+
+If the merge isn't a fast-forward, the script tells you to rebase in the
+branch's own worktree and re-run. It never tags and never pushes.
+
+`pnpm version:bump` is still there for release prep directly on main
+(`pnpm version:bump 0.19.3-alpha` to set an explicit version, tag drops as
+usual), but it now **refuses to run on any other branch** — that's the
+mechanical enforcement of this section, same spirit as the pre-push demo gate.
+`--force` overrides when you genuinely know better.
 
 `patch`/`minor`/`major` operate on the numeric core and drop any `-alpha` tag —
 pass it back explicitly (`0.20.0-alpha`) to keep carrying it while pre-1.0.
 
-Then commit and tag:
+Tag and push only when cutting a release:
 
 ```bash
-git commit -am "release: v0.2.0"
 git tag v0.2.0
 git push origin main v0.2.0   # the tag push cuts the release (see below)
 ```
