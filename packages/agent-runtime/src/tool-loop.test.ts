@@ -1889,3 +1889,116 @@ describe('resolveMaxTokens', () => {
     expect(resolveMaxTokens(undefined, 0)).toBeUndefined();
   });
 });
+
+describe('write-target capture (tool-outcome read-back)', () => {
+  it('recognises write-style slugs by verb segment, not substring', async () => {
+    const { looksLikeWriteTool } = await import('./tool-loop');
+    for (const slug of [
+      'page_create',
+      'table_row_add',
+      'page_update_draft',
+      'table_rows_upsert',
+      'page_commit',
+      'telegram_send',
+    ]) {
+      expect(looksLikeWriteTool(slug)).toBe(true);
+    }
+    for (const slug of ['page_get', 'search_chunks', 'table_query', 'file_read', 'additive_tool']) {
+      expect(looksLikeWriteTool(slug)).toBe(false);
+    }
+  });
+
+  it('extracts only UUID-shaped ids with optional title/name', async () => {
+    const { extractWriteTarget } = await import('./tool-loop');
+    expect(
+      extractWriteTarget({ id: '1964e026-9c95-4cae-9670-9908f6ad8f8e', title: 'Domain Records' }),
+    ).toEqual({ id: '1964e026-9c95-4cae-9670-9908f6ad8f8e', title: 'Domain Records' });
+    expect(extractWriteTarget({ id: '1964e026-9c95-4cae-9670-9908f6ad8f8e', name: 'Rows' })).toEqual(
+      { id: '1964e026-9c95-4cae-9670-9908f6ad8f8e', title: 'Rows' },
+    );
+    // prose ids, missing ids, non-objects → no claim at all
+    expect(extractWriteTarget({ id: 'not-a-uuid', title: 'x' })).toBeNull();
+    expect(extractWriteTarget({ ok: true })).toBeNull();
+    expect(extractWriteTarget('done')).toBeNull();
+    expect(extractWriteTarget(null)).toBeNull();
+  });
+
+  it('summarizeToolOutcomes dedupes write targets by id and caps at 5', async () => {
+    const { summarizeToolOutcomes } = await import('./tool-loop');
+    const rec = (i: number, id: string) => ({
+      slug: 'page_update',
+      argsJson: '{}',
+      durationMs: 1,
+      status: 'success' as const,
+      target: { id, title: `T${i}` },
+    });
+    const sameId = '00000000-0000-4000-8000-000000000000';
+    const stats = summarizeToolOutcomes([
+      rec(1, sameId),
+      rec(2, sameId), // dup id → collapsed
+      ...Array.from({ length: 6 }, (_, i) =>
+        rec(i + 3, `1111111${i}-0000-4000-8000-000000000000`),
+      ),
+    ]);
+    expect(stats.writes).toHaveLength(5);
+    expect(stats.writes![0]).toEqual({ slug: 'page_update', id: sameId, title: 'T1' });
+  });
+
+  it('failed and queued calls never contribute a write claim', async () => {
+    const { summarizeToolOutcomes } = await import('./tool-loop');
+    const stats = summarizeToolOutcomes([
+      { slug: 'page_update', argsJson: '{}', durationMs: 1, status: 'error', error: 'boom' },
+      {
+        slug: 'page_delete',
+        argsJson: '{}',
+        durationMs: 1,
+        status: 'skipped',
+        error: 'queued_for_approval',
+      },
+    ]);
+    expect(stats.writes).toBeUndefined();
+  });
+});
+
+describe('write-target capture through the loop', () => {
+  it('records the touched artifact on a successful write call', async () => {
+    const tool = fakeTool({ slug: 'note_create', name: 'Create note' });
+    const { adapter } = makeFakeAdapter([
+      {
+        type: 'toolCalls',
+        toolCalls: [
+          {
+            id: 'call_w1',
+            type: 'function',
+            function: { name: 'note_create', arguments: '{"title":"x"}' },
+          },
+        ],
+      },
+      { type: 'text', text: 'done' },
+    ]);
+    dispatchToolImpl = () => ({
+      ok: true,
+      output: { id: 'abcd1234-0000-4000-8000-000000000000', title: 'My note' },
+    });
+
+    const result = await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+    });
+
+    expect(result.toolCalls[0]?.target).toEqual({
+      id: 'abcd1234-0000-4000-8000-000000000000',
+      title: 'My note',
+    });
+    const { summarizeToolOutcomes } = await import('./tool-loop');
+    const stats = summarizeToolOutcomes(result.toolCalls);
+    expect(stats.writes).toEqual([
+      { slug: 'note_create', id: 'abcd1234-0000-4000-8000-000000000000', title: 'My note' },
+    ]);
+  });
+});

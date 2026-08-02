@@ -215,4 +215,9 @@ export type ToolCallRecord = {
   durationMs: number;
   status: 'success' | 'error' | 'skipped';
   error?: string;
+  /** The artifact a successful write-style call touched (node id + title from
+   *  the tool's own output), captured so the NEXT turn's history can say what
+   *  this turn actually did — the reply prose alone often doesn't (context-
+   *  transfer audit, dev-brain task 64170cb0). Absent for reads and failures. */
+  target?: { id: string; title?: string };
 };

@@ -246,6 +246,10 @@ export type ToolOutcomeStats = {
   queued: number;
   /** Up to 5 distinct handler failures, slug + truncated error. */
   failures: Array<{ slug: string; error: string }>;
+  /** Up to 5 distinct artifacts touched by successful write-style calls
+   *  (ToolCallRecord.target, deduped by id) — read back into the next turn's
+   *  history so "where did you update it?" is answerable. */
+  writes?: Array<{ slug: string; id: string; title?: string }>;
 };
 
 export function summarizeToolOutcomes(records: readonly ToolCallRecord[]): ToolOutcomeStats {
@@ -254,11 +258,21 @@ export function summarizeToolOutcomes(records: readonly ToolCallRecord[]): ToolO
   let skipped = 0;
   let queued = 0;
   const failures: Array<{ slug: string; error: string }> = [];
+  const writes: Array<{ slug: string; id: string; title?: string }> = [];
+  const writeIds = new Set<string>();
   for (const r of records) {
     if (r.error === 'queued_for_approval') {
       queued++;
     } else if (r.status === 'success') {
       succeeded++;
+      if (r.target && writes.length < 5 && !writeIds.has(r.target.id)) {
+        writeIds.add(r.target.id);
+        writes.push({
+          slug: r.slug,
+          id: r.target.id,
+          ...(r.target.title ? { title: r.target.title } : {}),
+        });
+      }
     } else if (r.error !== undefined && SKIP_REASONS.has(r.error)) {
       skipped++;
     } else {
@@ -269,7 +283,67 @@ export function summarizeToolOutcomes(records: readonly ToolCallRecord[]): ToolO
       }
     }
   }
-  return { calls: records.length, succeeded, failed, skipped, queued, failures };
+  return {
+    calls: records.length,
+    succeeded,
+    failed,
+    skipped,
+    queued,
+    failures,
+    ...(writes.length > 0 ? { writes } : {}),
+  };
+}
+
+// ── Write-target capture ──
+// There is no mutation flag on tool rows, so write-style calls are recognised
+// by slug verb (the builtin naming convention is consistent: page_create,
+// table_row_add, page_update_draft, …). A miss just means no target is
+// recorded — never a wrong claim, since the id/title come from the tool's own
+// success output.
+const WRITE_VERBS = new Set([
+  'create',
+  'update',
+  'add',
+  'set',
+  'delete',
+  'commit',
+  'move',
+  'rename',
+  'upsert',
+  'apply',
+  'split',
+  'replace',
+  'edit',
+  'send',
+  'share',
+  'unshare',
+  'upload',
+  'insert',
+]);
+
+/** True when any underscore segment of the slug is a write verb
+ *  (`table_row_add` → add, `page_update_draft` → update). */
+export function looksLikeWriteTool(slug: string): boolean {
+  return slug.split('_').some((seg) => WRITE_VERBS.has(seg));
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Pull `{id, title}` out of a successful write tool's output. Builtins return
+ *  the touched artifact at the top level (`{id, url, title}`) or under
+ *  `output`; only a UUID-shaped id is accepted so prose fields can't leak in. */
+export function extractWriteTarget(output: unknown): { id: string; title?: string } | null {
+  if (output === null || typeof output !== 'object') return null;
+  const rec = output as Record<string, unknown>;
+  const id = typeof rec.id === 'string' && UUID_RE.test(rec.id) ? rec.id : null;
+  if (!id) return null;
+  const title =
+    typeof rec.title === 'string' && rec.title.trim()
+      ? rec.title.trim().slice(0, 80)
+      : typeof rec.name === 'string' && rec.name.trim()
+        ? rec.name.trim().slice(0, 80)
+        : undefined;
+  return { id, ...(title ? { title } : {}) };
 }
 
 /** One-line rendering of the stats for the model-facing nudges. */
@@ -1213,12 +1287,17 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         outcome.output !== null &&
         typeof outcome.output === 'object' &&
         (outcome.output as { status?: unknown }).status === 'queued_for_approval';
+      const writeTarget =
+        outcome.ok && !queuedForApproval && looksLikeWriteTool(slug)
+          ? extractWriteTarget(outcome.output)
+          : null;
       toolCalls.push({
         slug,
         argsJson: call.function.arguments ?? '{}',
         durationMs: duration,
         status: queuedForApproval ? 'skipped' : outcome.ok ? 'success' : 'error',
         error: queuedForApproval ? 'queued_for_approval' : outcome.ok ? undefined : outcome.error,
+        ...(writeTarget ? { target: writeTarget } : {}),
       });
 
       // Harvest any sidecar artifacts the tool emitted (audio bytes,

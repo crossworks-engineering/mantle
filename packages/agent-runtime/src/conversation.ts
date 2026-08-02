@@ -114,7 +114,11 @@ export type ContextSnapshot = {
   chunkHits: { sent: SnapshotItem[]; dropped: SnapshotItem[]; cutoff: number };
   relations: string[];
   digests: { count: number; topics: string[] };
-  history: { count: number };
+  history: {
+    count: number;
+    /** How many outbound turns carried a [tool record: …] read-back suffix. */
+    toolRecords: number;
+  };
   personaNotes: { count: number };
   corpusMap: { count: number; truncated: boolean };
 };
@@ -151,6 +155,76 @@ const ANAPHORA =
 export function looksAnaphoricFollowup(text: string): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean);
   return words.length > 0 && words.length <= 8 && ANAPHORA.test(text);
+}
+
+// ─── Tool-outcome read-back (context-transfer audit, task 64170cb0) ─────────
+// History carries reply text only, so what a turn actually DID — which node it
+// wrote, what failed, what's parked behind approval — vanished unless the
+// prose restated it. The per-turn toolStats ledger persisted on
+// assistant_messages.data (see updateAssistantMessageOutcome) is rendered as a
+// compact one-line suffix on outbound history turns. Silent (returns null)
+// when the record adds nothing: all-success read-only turns and chat-only
+// turns stay byte-identical to before.
+
+const TOOL_RECORD_MAX_FAILURES = 2;
+const TOOL_RECORD_MAX_WRITES = 3;
+const TOOL_RECORD_ERR_SNIP = 60;
+
+/** Render an outbound turn's persisted toolStats as a `[tool record: …]`
+ *  history suffix, or null when there is nothing worth saying. Tolerant of
+ *  arbitrary `data` shapes — rows predate the ledger, and other writers own
+ *  keys on the same jsonb. */
+export function formatToolRecordSuffix(data: unknown): string | null {
+  if (data === null || typeof data !== 'object') return null;
+  const stats = (data as { toolStats?: unknown }).toolStats;
+  if (stats === null || typeof stats !== 'object') return null;
+  const s = stats as {
+    calls?: unknown;
+    failed?: unknown;
+    queued?: unknown;
+    failures?: unknown;
+    writes?: unknown;
+  };
+  const calls = typeof s.calls === 'number' ? s.calls : 0;
+  const failed = typeof s.failed === 'number' ? s.failed : 0;
+  const queued = typeof s.queued === 'number' ? s.queued : 0;
+  const writes = Array.isArray(s.writes)
+    ? (s.writes as Array<{ id?: unknown; title?: unknown }>).filter(
+        (w) => w && typeof w.id === 'string',
+      )
+    : [];
+  if (failed <= 0 && queued <= 0 && writes.length === 0) return null;
+
+  const parts: string[] = [`${calls} tool call${calls === 1 ? '' : 's'} ran`];
+  if (failed > 0) {
+    const failures = Array.isArray(s.failures)
+      ? (s.failures as Array<{ slug?: unknown; error?: unknown }>)
+          .filter((f) => f && typeof f.slug === 'string')
+          .slice(0, TOOL_RECORD_MAX_FAILURES)
+          .map(
+            (f) =>
+              `${f.slug}${
+                typeof f.error === 'string' && f.error
+                  ? ` (${f.error.slice(0, TOOL_RECORD_ERR_SNIP)})`
+                  : ''
+              }`,
+          )
+      : [];
+    parts.push(`${failed} FAILED${failures.length > 0 ? `: ${failures.join(', ')}` : ''}`);
+  }
+  if (queued > 0) parts.push(`${queued} queued for operator approval, not yet run`);
+  if (writes.length > 0) {
+    const shown = writes
+      .slice(0, TOOL_RECORD_MAX_WRITES)
+      .map((w) =>
+        typeof w.title === 'string' && w.title
+          ? `"${w.title}" (${(w.id as string).slice(0, 8)})`
+          : (w.id as string).slice(0, 8),
+      );
+    const more = writes.length > TOOL_RECORD_MAX_WRITES ? ` +${writes.length - 3} more` : '';
+    parts.push(`wrote: ${shown.join(', ')}${more}`);
+  }
+  return `[tool record: ${parts.join('; ')}]`;
 }
 
 /** How many section-level passages to auto-pull into context (the fine-grained
@@ -275,6 +349,9 @@ export async function updateAssistantMessageOutcome(args: {
     /** Confirm-gated calls parked behind operator approval — not yet run. */
     queued: number;
     failures: Array<{ slug: string; error: string }>;
+    /** Artifacts touched by successful write-style calls (see
+     *  summarizeToolOutcomes) — read back into the next turn's history. */
+    writes?: Array<{ slug: string; id: string; title?: string }>;
   };
   tx?: Executor;
 }): Promise<AssistantMessage | null> {
@@ -816,14 +893,26 @@ export async function loadConversationContext(args: {
       direction: assistantMessages.direction,
       text: assistantMessages.text,
       createdAt: assistantMessages.createdAt,
+      data: assistantMessages.data,
     })
     .from(assistantMessages)
     .where(and(...histConds))
     .orderBy(desc(assistantMessages.createdAt))
     .limit(historyLimit);
-  const history: HistoryTurn[] = rows
-    .reverse()
-    .map((r) => ({ role: r.direction === 'outbound' ? 'assistant' : 'user', text: r.text }));
+  let historyToolRecords = 0;
+  const history: HistoryTurn[] = rows.reverse().map((r) => {
+    if (r.direction !== 'outbound') return { role: 'user', text: r.text };
+    // Tool-outcome read-back (context-transfer audit, dev-brain task
+    // 64170cb0): the ledger of what an assistant turn actually DID — failures,
+    // approval-queued calls, artifacts written — is otherwise invisible to the
+    // next turn unless the reply prose restated it, which is exactly what
+    // failed in the field ("Where did you update it?"). Appended only when the
+    // record says something the text may not, so chat-only and read-only turns
+    // cost nothing extra.
+    const suffix = formatToolRecordSuffix(r.data);
+    if (suffix) historyToolRecords++;
+    return { role: 'assistant', text: suffix ? `${r.text}\n${suffix}` : r.text };
+  });
 
   const snapshot: ContextSnapshot = {
     query: {
@@ -839,7 +928,7 @@ export async function loadConversationContext(args: {
       count: digests.length,
       topics: digests.map((d) => d.topic).filter((t): t is string => !!t),
     },
-    history: { count: history.length },
+    history: { count: history.length, toolRecords: historyToolRecords },
     personaNotes: { count: personaNotes.length },
     corpusMap: { count: corpusMap.entries.length, truncated: corpusMap.truncated },
   };

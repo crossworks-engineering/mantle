@@ -170,6 +170,15 @@ loadConversationContext({ ownerId, agent, inboundText, queryVec? })
      digests = conversation-digest notes WHERE data.agent_id = agent.id
 ```
 
+History is reply text plus, on outbound turns whose persisted `toolStats` ledger
+says something the prose may not, a one-line `[tool record: …]` suffix: failures,
+approval-queued calls, and the artifacts written (id + title, captured from
+write-style tools' own success output). This is the tool-outcome read-back from
+the 2026-08 context-transfer audit (dev-brain task `64170cb0`): without it, "did
+that work?" and "where did you update it?" were unanswerable once the reply
+prose didn't restate the outcome. All-success read-only turns get no suffix, so
+chat-only history is byte-identical to before.
+
 The "per-agent, cross-channel" semantics live here. The digest filter changes from
 `data.chat_id = chatPk` (Telegram) / `source = 'web'` (web) to a uniform
 `data.agent_id = <agent>`.
