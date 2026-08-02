@@ -320,10 +320,9 @@ describe('system manifest integrity', () => {
     for (const slug of ['assistant', 'pages', 'tables', 'team-responder']) {
       const agent = MANIFEST_AGENTS.find((a) => a.slug === slug);
       expect(agent, `agent '${slug}' missing from manifest`).toBeDefined();
-      expect(
-        agent!.skillSlugs,
-        `agent '${slug}' does not attach writing_style`,
-      ).toContain('writing_style');
+      expect(agent!.skillSlugs, `agent '${slug}' does not attach writing_style`).toContain(
+        'writing_style',
+      );
     }
   });
 
