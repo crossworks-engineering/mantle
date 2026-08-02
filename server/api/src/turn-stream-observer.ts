@@ -45,6 +45,7 @@ function statusEvent(
   label: string,
   stage: StageLabel,
   stepId: string,
+  narrated?: true,
 ): TurnEvent {
   return {
     v: TURN_EVENT_SCHEMA_VERSION,
@@ -52,7 +53,7 @@ function statusEvent(
     seq: e.seq,
     round: 0, // tool-loop round — populated in a later phase
     type: 'status',
-    data: { label, kind: stage.kind, stepId },
+    data: { label, kind: stage.kind, stepId, ...(narrated ? { narrated } : {}) },
   };
 }
 
@@ -156,7 +157,10 @@ export function installTurnStreamObserver(): void {
     if (isTurnNarrationEnabled() && stage.kind !== 'thinking') {
       void narrateStatus(e.ownerId, stage.label).then((narrated) => {
         if (narrated)
-          void publishTurnEvent(e.ownerId, statusEvent(e, attributed(narrated), stage, stepId));
+          void publishTurnEvent(
+            e.ownerId,
+            statusEvent(e, attributed(narrated), stage, stepId, true),
+          );
       });
     }
   });

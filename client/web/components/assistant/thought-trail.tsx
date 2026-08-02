@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
 import type { ThoughtEvent } from './use-turn-stream';
+import { liveTrailView } from './thought-trail-view';
 
 /** Map a status `kind` to its trail icon. Unknown kinds fall back to the tool
  *  glyph (forward-compatible with new buckets / narrator output). */
@@ -274,9 +275,11 @@ export function ThoughtTrail({
     // Every completed step — thinking rounds AND actions — persists as history,
     // so the full trail of what the agent did is remembered (not just the few
     // tool actions). Only the current step lives in the active footer line. In
-    // 'replace' mode we drop the stack entirely and show only the active line.
-    const past = mode === 'replace' ? [] : steps.slice(0, -1);
-    const active = steps[steps.length - 1]!;
+    // 'replace' mode the stack keeps ONLY narrated paragraphs. The newest
+    // narrated step is promoted out of the stack into its own slot above the
+    // footer (see liveTrailView), so the narrator's line stays visible while
+    // grounded tool lines advance beneath it.
+    const { past, active, lastNarrated } = liveTrailView(steps, mode);
     return (
       <div
         className={cn(
@@ -291,12 +294,21 @@ export function ThoughtTrail({
             ))}
           </ol>
         )}
+        {lastNarrated && (
+          <div className={cn(past.length > 0 && 'mt-2.5 border-t border-border/25 pt-2.5')}>
+            {/* Word-wrapped in full — narration can run to a short paragraph
+                (400-char cap server-side); truncating it defeats the slot. */}
+            <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground/75">
+              {stripTrailingEllipsis(lastNarrated.label)}
+            </p>
+          </div>
+        )}
         <StatusFooter
           label={active.label}
           startedAt={startedAt}
           tokens={tokens}
           tokensApprox={tokensApprox}
-          bordered={past.length > 0}
+          bordered={past.length > 0 || lastNarrated != null}
         />
         {reasoning ? <ThinkingTrace reasoning={reasoning} bordered /> : null}
       </div>

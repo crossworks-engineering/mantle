@@ -24,6 +24,14 @@ import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/compose
 import { KindBadge, TopicFlags, type ForumKind, type ForumStatus } from '@mantle/web-ui/forum-meta';
 import { teamFetch, teamEventStream } from '@mantle/web-ui/team-fetch';
 import {
+  applyLiveTurnEvent,
+  emptyLiveTurn,
+  NarrationLine,
+  ReasoningTrace,
+  type LiveTurn,
+  type LiveTurnEvent,
+} from '@mantle/web-ui/live-turn';
+import {
   AttachmentChips,
   ComposerAttachments,
   type PostAttachment,
@@ -55,8 +63,6 @@ type Post = {
   attachments: PostAttachment[];
   createdAt: string;
 };
-
-type LiveTurn = { turnId: string; status: string | null; text: string };
 
 type Match = {
   id: string;
@@ -119,6 +125,27 @@ function AuthorLine({ post }: { post: Post }) {
   );
 }
 
+/** The in-flight reply body: the narrator's persistent first-person line, the
+ *  streamed reasoning behind a collapsible, then the typing indicator (or the
+ *  streaming reply once text lands). Shared by the pending-post host and the
+ *  trailing (host-less) render site so they can't drift. */
+function LiveReplyBody({ live }: { live: LiveTurn | null }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {live?.narration && <NarrationLine text={live.narration} />}
+      {live && <ReasoningTrace reasoning={live.reasoning} />}
+      {live?.text ? (
+        <div>
+          <Prose markdown={live.text} />
+          {live.status && <p className="mt-1.5 text-xs text-muted-foreground">{live.status}</p>}
+        </div>
+      ) : (
+        <ThinkingBubble label={live?.status ?? null} />
+      )}
+    </div>
+  );
+}
+
 function PostRow({
   post,
   live,
@@ -134,14 +161,7 @@ function PostRow({
     return (
       <div>
         <AuthorLine post={post} />
-        {live?.text ? (
-          <>
-            <Prose markdown={live.text} />
-            {live.status && <p className="mt-1.5 text-xs text-muted-foreground">{live.status}</p>}
-          </>
-        ) : (
-          <ThinkingBubble label={live?.status ?? null} />
-        )}
+        <LiveReplyBody live={live} />
       </div>
     );
   }
@@ -280,24 +300,21 @@ export function TopicViewClient({
   const openStream = useCallback(
     (turnId: string) => {
       let dispose: (() => void) | null = null;
-      setLive({ turnId, status: 'Thinking…', text: '' });
+      setLive(emptyLiveTurn(turnId));
       dispose = teamEventStream(
         `/api/team/turn/${turnId}/stream`,
         (data) => {
           try {
-            const event = JSON.parse(data) as {
-              type: string;
-              data: { label?: string; text?: string; message?: string };
+            const event = JSON.parse(data) as LiveTurnEvent & {
+              data: { message?: string };
             };
-            if (event.type === 'status' && event.data.label) {
-              setLive((l) => (l ? { ...l, status: event.data.label ?? l.status } : l));
-            } else if (event.type === 'text-delta' && event.data.text) {
-              setLive((l) =>
-                l ? { ...l, status: null, text: l.text + (event.data.text ?? '') } : l,
-              );
-            } else if (event.type === 'done' || event.type === 'error') {
+            if (event.type === 'done' || event.type === 'error') {
               if (event.type === 'error') setSendError(event.data.message ?? 'The turn failed.');
               if (esRef.current === dispose) finishTurn();
+            } else {
+              // status (grounded or narrated) / reasoning-delta / text-delta —
+              // one shared router with the team chat client (live-turn.tsx).
+              setLive((l) => (l ? applyLiveTurnEvent(l, event) : l));
             }
           } catch {
             /* ignore malformed frames */
@@ -595,7 +612,7 @@ export function TopicViewClient({
       },
     ]);
     setDraft('');
-    if (!effectiveNoReply) setLive({ turnId: '', status: 'Thinking…', text: '' });
+    if (!effectiveNoReply) setLive(emptyLiveTurn(''));
 
     // On any failure: give the member their text back and drop the phantom
     // optimistic post (a refetch may not run — or may itself fail on an
@@ -792,17 +809,10 @@ export function TopicViewClient({
               </div>
             ))}
             {live && !hasPendingHost ? (
-              live.text ? (
-                <div>
-                  <div className="mb-1.5 text-sm font-medium text-muted-foreground">Assistant</div>
-                  <Prose markdown={live.text} />
-                  {live.status && (
-                    <p className="mt-1.5 text-xs text-muted-foreground">{live.status}</p>
-                  )}
-                </div>
-              ) : (
-                <ThinkingBubble label={live.status} />
-              )
+              <div>
+                <div className="mb-1.5 text-sm font-medium text-muted-foreground">Assistant</div>
+                <LiveReplyBody live={live} />
+              </div>
             ) : null}
           </div>
         </div>

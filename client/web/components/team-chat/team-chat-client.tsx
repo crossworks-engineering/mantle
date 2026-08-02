@@ -31,6 +31,14 @@ import { CopyButton } from '@mantle/web-ui/copy-button';
 import { TokenGate } from '@/components/team-chat/token-gate';
 import { teamFetch, teamEventStream } from '@mantle/web-ui/team-fetch';
 import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
+import {
+  applyLiveTurnEvent,
+  emptyLiveTurn,
+  NarrationLine,
+  ReasoningTrace,
+  type LiveTurn,
+  type LiveTurnEvent,
+} from '@mantle/web-ui/live-turn';
 
 type TeamMessage = {
   id: string;
@@ -40,12 +48,6 @@ type TeamMessage = {
   error: string | null;
   attachments: { kind: string; nodeId?: string; mime?: string }[];
   createdAt: string;
-};
-
-type LiveTurn = {
-  turnId: string;
-  status: string | null;
-  text: string;
 };
 
 /** One exchange: the member's message and the reply it produced. The API
@@ -151,6 +153,28 @@ function ThinkingBubble({ label }: { label: string | null }) {
         <span className="text-xs text-current opacity-70" aria-hidden>
           {label}
         </span>
+      )}
+    </div>
+  );
+}
+
+/** The in-flight reply as the member sees it: the narrator's persistent
+ *  first-person line, the streamed reasoning behind a collapsible, then the
+ *  typing indicator (or the streaming reply once text lands). One component
+ *  for both live render sites (host turn + trailing turn) so they can't drift. */
+function LiveReply({ live }: { live: LiveTurn }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {live.narration && <NarrationLine text={live.narration} />}
+      <ReasoningTrace reasoning={live.reasoning} />
+      {live.text ? (
+        <div>
+          <div className="mb-2 text-sm font-medium text-muted-foreground">Assistant</div>
+          <ReplyBody markdown={live.text} />
+          {live.status && <p className="mt-1.5 text-xs text-muted-foreground">{live.status}</p>}
+        </div>
+      ) : (
+        <ThinkingBubble label={live.status} />
       )}
     </div>
   );
@@ -270,19 +294,16 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
         `/api/team/turn/${turnId}/stream`,
         (data) => {
           try {
-            const event = JSON.parse(data) as {
-              type: string;
-              data: { label?: string; text?: string; message?: string };
+            const event = JSON.parse(data) as LiveTurnEvent & {
+              data: { message?: string };
             };
-            if (event.type === 'status' && event.data.label) {
-              setLive((l) => (l ? { ...l, status: event.data.label ?? l.status } : l));
-            } else if (event.type === 'text-delta' && event.data.text) {
-              setLive((l) =>
-                l ? { ...l, status: null, text: l.text + (event.data.text ?? '') } : l,
-              );
-            } else if (event.type === 'done' || event.type === 'error') {
+            if (event.type === 'done' || event.type === 'error') {
               if (event.type === 'error') setSendError(event.data.message ?? 'The turn failed.');
               if (esRef.current === dispose) finishTurn();
+            } else {
+              // status (grounded or narrated) / reasoning-delta / text-delta —
+              // one shared router with the forum client (live-turn.tsx).
+              setLive((l) => (l ? applyLiveTurnEvent(l, event) : l));
             }
           } catch {
             /* ignore malformed frames */
@@ -323,7 +344,7 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
     setShowJump(false);
     // Show the thinking state immediately; the real turn id arrives from the
     // POST (minted server-side, contact-scoped) and the stream opens after.
-    setLive({ turnId: '', status: 'Thinking…', text: '' });
+    setLive(emptyLiveTurn(''));
 
     // Optimistic user bubble.
     setMessages((m) => [
@@ -497,21 +518,7 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
                       {/* MAIN CANVAS: the reply as a document. */}
                       <div className="min-w-0 lg:col-start-1 lg:row-start-1">
                         {liveHere ? (
-                          live.text ? (
-                            <div>
-                              <div className="mb-2 text-sm font-medium text-muted-foreground">
-                                Assistant
-                              </div>
-                              <ReplyBody markdown={live.text} />
-                              {live.status && (
-                                <p className="mt-1.5 text-xs text-muted-foreground">
-                                  {live.status}
-                                </p>
-                              )}
-                            </div>
-                          ) : (
-                            <ThinkingBubble label={live.status} />
-                          )
+                          <LiveReply live={live} />
                         ) : turn.response ? (
                           turn.response.status === 'failed' ? (
                             <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive-ink">
@@ -556,19 +563,7 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
                 {live && liveHostIdx === -1 ? (
                   <li className="grid gap-x-10 gap-y-3 pb-10 lg:grid-cols-[minmax(0,1fr)_300px] border-t border-primary/15 pt-10">
                     <div className="min-w-0 lg:col-start-1 lg:row-start-1">
-                      {live.text ? (
-                        <div>
-                          <div className="mb-2 text-sm font-medium text-muted-foreground">
-                            Assistant
-                          </div>
-                          <ReplyBody markdown={live.text} />
-                          {live.status && (
-                            <p className="mt-1.5 text-xs text-muted-foreground">{live.status}</p>
-                          )}
-                        </div>
-                      ) : (
-                        <ThinkingBubble label={live.status} />
-                      )}
+                      <LiveReply live={live} />
                     </div>
                   </li>
                 ) : null}

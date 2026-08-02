@@ -520,6 +520,10 @@ export interface TurnStatusData {
   /** Stable id for the step this status describes. Two events sharing a stepId
    *  are the same step (grounded → narrated); the client upserts by it. */
   stepId?: string;
+  /** Present (true) only on the narrator's rephrased line for a step — the warm
+   *  first-person paragraph. Grounded lines omit it. Lets clients keep narrated
+   *  text visible while later grounded lines tick past. */
+  narrated?: true;
 }
 
 /** A tool round began. `summary` is an optional one-line, secret-free preview. */

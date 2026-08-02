@@ -13,10 +13,41 @@ export interface ThoughtEvent {
   kind: string;
   /** The user-facing line ("Let me dig through your notes on cars…"). */
   label: string;
+  /** True when the label is the narrator's warm first-person line (vs. the
+   *  grounded system line). Narrated steps survive 'replace'-mode pruning and
+   *  feed the trail's persistent narration slot. */
+  narrated?: boolean;
   /** Elapsed ms into the turn when this step started (client-stamped on arrival).
    *  Shown beside the step so the user can follow the flow's timing. Preserved
    *  across a grounded→narrated upgrade (the step's start time doesn't change). */
   elapsedMs?: number;
+}
+
+/** Fold one incoming `status` step into the trail (pure — exported for tests).
+ *  Upserts by stepId so a late narrated line replaces its grounded twin in
+ *  place (keeping the original elapsedMs), and collapses a consecutive
+ *  duplicate append. Both comparisons include `narrated` so a narrated line
+ *  whose text happens to match a grounded one is never swallowed. */
+export function applyStatusToTrail(prev: ThoughtEvent[], incoming: ThoughtEvent): ThoughtEvent[] {
+  const same = (a: ThoughtEvent, b: ThoughtEvent) =>
+    a.label === b.label && !!a.narrated === !!b.narrated;
+  if (incoming.stepId) {
+    const i = prev.findIndex((t) => t.stepId === incoming.stepId);
+    if (i >= 0) {
+      if (same(prev[i]!, incoming)) return prev;
+      const copy = prev.slice();
+      copy[i] = {
+        ...copy[i]!,
+        label: incoming.label,
+        kind: incoming.kind,
+        narrated: incoming.narrated,
+      };
+      return copy;
+    }
+  }
+  const last = prev[prev.length - 1];
+  if (last && same(last, incoming)) return prev;
+  return [...prev, incoming];
 }
 
 /** Lifecycle of the subscribed turn, driven by the terminal bus events. */
@@ -189,31 +220,14 @@ export function useTurnStream(turnId: string | null): TurnStream {
             return;
           }
           if (ev && ev.type === 'status' && typeof ev.data?.label === 'string') {
-            const stepId = ev.data.stepId;
             const incoming: ThoughtEvent = {
-              stepId,
+              stepId: ev.data.stepId,
               kind: ev.data.kind ?? 'tool',
               label: ev.data.label,
+              ...(ev.data.narrated === true ? { narrated: true } : {}),
               elapsedMs: Date.now() - startedAtMs,
             };
-            setTrail((prev) => {
-              // Upgrade in place: a later narrated event for the same step
-              // replaces the grounded line rather than appending a duplicate.
-              // Keep the original elapsedMs — the step started when it first arrived.
-              if (stepId) {
-                const i = prev.findIndex((t) => t.stepId === stepId);
-                if (i >= 0) {
-                  if (prev[i]!.label === incoming.label) return prev;
-                  const copy = prev.slice();
-                  copy[i] = { ...copy[i]!, label: incoming.label, kind: incoming.kind };
-                  return copy;
-                }
-              }
-              // Append, collapsing a consecutive duplicate label (Thinking… ×3).
-              const last = prev[prev.length - 1];
-              if (last && last.label === incoming.label) return prev;
-              return [...prev, incoming];
-            });
+            setTrail((prev) => applyStatusToTrail(prev, incoming));
           }
         } catch {
           /* malformed frame — ignore, keep the trail */
