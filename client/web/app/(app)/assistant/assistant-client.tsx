@@ -76,6 +76,9 @@ const PAGE_SIZE = 100;
 /** Within this many px of the bottom counts as "stuck" for autoscroll-follow. */
 const NEAR_BOTTOM_PX = 24;
 
+/** Marked-block pills shown before the rest collapse behind a "+N more" expander. */
+const MARK_PILL_LIMIT = 4;
+
 type Message = {
   id: string;
   direction: 'inbound' | 'outbound';
@@ -260,6 +263,18 @@ export function AssistantClient({
     }
   }, [draft, draftKey]);
   const [sending, setSending] = useState(false);
+  // Marked-block pills collapse past MARK_PILL_LIMIT; this expands the full set.
+  // The list itself stays uncapped; the assistant still receives every mark.
+  const [showAllMarks, setShowAllMarks] = useState(false);
+  const markItems = surfaceSelection?.items ?? [];
+  const visibleMarks = showAllMarks ? markItems : markItems.slice(0, MARK_PILL_LIMIT);
+  const hiddenMarkCount = markItems.length - visibleMarks.length;
+  // Drop stale expansion once the selection shrinks back under the limit
+  // (per-pill removal or "Clear N marked").
+  const markCount = markItems.length;
+  useEffect(() => {
+    if (markCount <= MARK_PILL_LIMIT) setShowAllMarks(false);
+  }, [markCount]);
   // True from the moment the user hits Stop until the turn settles — so the Stop
   // button reflects "stopping…" and can't be double-fired.
   const [stopping, setStopping] = useState(false);
@@ -1359,7 +1374,7 @@ export function AssistantClient({
                 it's unambiguous the assistant sees exactly what you selected.
                 Pick-mode chips come last and clear after a send. */}
             {(allContext.length > 0 || (surfaceSelection?.items.length ?? 0) > 0) && (
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto scrollbar-thin">
                 {allContext.map((c) => {
                   const pinned = pinnedContext.some((r) => r.id === c.id);
                   return (
@@ -1395,21 +1410,21 @@ export function AssistantClient({
                     </span>
                   );
                 })}
-                {surfaceSelection?.items.map((s) => (
+                {visibleMarks.map((s) => (
                   <span
                     key={`focus-${s.id}`}
                     className={
                       'inline-flex max-w-[16rem] items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 py-1 pl-2 text-xs text-foreground ' +
-                      (surfaceSelection.onRemove ? 'pr-1' : 'pr-2')
+                      (surfaceSelection?.onRemove ? 'pr-1' : 'pr-2')
                     }
-                    title={`Focused ${surfaceSelection.noun} — the assistant will work on exactly what you marked`}
+                    title={`Focused ${surfaceSelection?.noun} — the assistant will work on exactly what you marked`}
                   >
                     <Highlighter className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
                     <span className="truncate font-medium">{s.label}</span>
-                    {surfaceSelection.onRemove && (
+                    {surfaceSelection?.onRemove && (
                       <button
                         type="button"
-                        onClick={() => surfaceSelection.onRemove?.(s.id)}
+                        onClick={() => surfaceSelection?.onRemove?.(s.id)}
                         className="rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground"
                         title="Unmark"
                         aria-label={`Unmark ${s.label}`}
@@ -1419,6 +1434,26 @@ export function AssistantClient({
                     )}
                   </span>
                 ))}
+                {hiddenMarkCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllMarks(true)}
+                    className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+                    aria-label={`Show all ${markItems.length} marked sections`}
+                  >
+                    +{hiddenMarkCount} more
+                  </button>
+                )}
+                {showAllMarks && markItems.length > MARK_PILL_LIMIT && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllMarks(false)}
+                    className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+                    aria-label="Show fewer marked sections"
+                  >
+                    Show fewer
+                  </button>
+                )}
                 {(surfaceSelection?.items.length ?? 0) > 1 && surfaceSelection?.onClear && (
                   <button
                     type="button"
