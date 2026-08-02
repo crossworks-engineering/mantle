@@ -12,7 +12,15 @@
 
 import { describe, expect, it } from 'vitest';
 import { ensureBlockIds } from './block-ids';
-import { deleteBlock, findBlock, insertAfterBlock, replaceBlock } from './block-edit';
+import {
+  appendBlocks,
+  deleteBlock,
+  findBlock,
+  insertAfterBlock,
+  insertBeforeBlock,
+  replaceBlock,
+  wrapBlocks,
+} from './block-edit';
 
 function blocked(doc: Record<string, unknown>): Record<string, unknown> {
   return ensureBlockIds(doc);
@@ -307,5 +315,285 @@ describe('deleteBlock', () => {
     const r = deleteBlock(doc, 'missing');
     expect(r.found).toBe(false);
     expect(r.doc).toBe(doc);
+  });
+});
+
+describe('insertBeforeBlock', () => {
+  it('inserts before the FIRST block (index 0, the case insert_after cannot express)', () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'body' }] }],
+    });
+    type N = { attrs: { id: string }; type: string; content?: Array<{ text?: string }> };
+    const firstId = (doc as { content: N[] }).content[0]!.attrs.id;
+    const r = insertBeforeBlock(doc, firstId, [
+      { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Title' }] },
+    ]);
+    expect(r.found).toBe(true);
+    const blocks = (r.doc as { content: N[] }).content;
+    expect(blocks.map((b) => b.type)).toEqual(['heading', 'paragraph']);
+    expect(blocks[1]!.attrs.id).toBe(firstId); // anchor unchanged, just shifted
+  });
+
+  it('inserts before a nested block inside a callout', () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [
+        {
+          type: 'callout',
+          attrs: { variant: 'info' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'inside' }] }],
+        },
+      ],
+    });
+    type N = { attrs: { id: string }; type: string; content?: N[] & Array<{ text?: string }> };
+    const innerId = (doc as { content: N[] }).content[0]!.content![0]!.attrs.id;
+    const r = insertBeforeBlock(doc, innerId, [
+      { type: 'paragraph', content: [{ type: 'text', text: 'lead-in' }] },
+    ]);
+    expect(r.found).toBe(true);
+    const callout = (r.doc as { content: N[] }).content[0]!;
+    expect(callout.content).toHaveLength(2);
+    expect((callout.content![0] as { content?: Array<{ text?: string }> }).content![0]!.text).toBe(
+      'lead-in',
+    );
+  });
+
+  it('returns found=false on unknown id, leaves doc unchanged', () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A' }] }],
+    });
+    const r = insertBeforeBlock(doc, 'missing', [
+      { type: 'paragraph', content: [{ type: 'text', text: 'B' }] },
+    ]);
+    expect(r.found).toBe(false);
+    expect(r.doc).toBe(doc);
+  });
+});
+
+describe('appendBlocks', () => {
+  it("position 'end' adds after the last block", () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'one' }] }],
+    });
+    type N = { type: string; content?: Array<{ text?: string }> };
+    const r = appendBlocks(
+      doc,
+      [{ type: 'paragraph', content: [{ type: 'text', text: 'two' }] }],
+      'end',
+    );
+    const blocks = (r.doc as { content: N[] }).content;
+    expect(blocks.map((b) => b.content![0]!.text)).toEqual(['one', 'two']);
+    // Pure: the input doc is untouched.
+    expect((doc as { content: N[] }).content).toHaveLength(1);
+  });
+
+  it("position 'start' adds before the first block", () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'body' }] }],
+    });
+    type N = { type: string; content?: Array<{ text?: string }> };
+    const r = appendBlocks(
+      doc,
+      [{ type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Title' }] }],
+      'start',
+    );
+    const blocks = (r.doc as { content: N[] }).content;
+    expect(blocks.map((b) => b.type)).toEqual(['heading', 'paragraph']);
+  });
+
+  it('works on an empty doc (no content array)', () => {
+    const r = appendBlocks(
+      { type: 'doc' },
+      [{ type: 'paragraph', content: [{ type: 'text', text: 'first' }] }],
+      'end',
+    );
+    expect((r.doc as { content: unknown[] }).content).toHaveLength(1);
+  });
+});
+
+describe('wrapBlocks', () => {
+  type N = {
+    type: string;
+    attrs?: { id: string; variant?: string; color?: string };
+    content?: N[] & Array<{ text?: string }>;
+  };
+  /** Three top-level paragraphs + their ids. */
+  function threePara() {
+    const doc = blocked({
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'A' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'B' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'C' }] },
+      ],
+    });
+    const ids = (doc as { content: N[] }).content.map((b) => b.attrs!.id);
+    return { doc, ids };
+  }
+
+  it('wraps a contiguous run in a callout, byte-for-byte, ids kept', () => {
+    const { doc, ids } = threePara();
+    const r = wrapBlocks(doc, [ids[0]!, ids[1]!], 'callout', 'warning');
+    expect(r.found).toBe(true);
+    expect(r.refused).toBeUndefined();
+    const blocks = (r.doc as { content: N[] }).content!;
+    expect(blocks).toHaveLength(2);
+    const callout = blocks[0]!;
+    expect(callout.type).toBe('callout');
+    expect(callout.attrs!.variant).toBe('warning');
+    expect(callout.attrs!.id).toBe(r.wrapperId);
+    // The wrapped blocks moved inside UNCHANGED: same ids, same text.
+    expect(callout.content!.map((b) => (b as N).attrs!.id)).toEqual([ids[0], ids[1]]);
+    expect(callout.content!.map((b) => (b as N).content![0]!.text)).toEqual(['A', 'B']);
+    expect(blocks[1]!.attrs!.id).toBe(ids[2]);
+  });
+
+  it('accepts ids out of document order and wraps in document order', () => {
+    const { doc, ids } = threePara();
+    const r = wrapBlocks(doc, [ids[1]!, ids[0]!], 'callout');
+    expect(r.refused).toBeUndefined();
+    const callout = (r.doc as { content: N[] }).content![0]!;
+    expect(callout.content!.map((b) => (b as N).attrs!.id)).toEqual([ids[0], ids[1]]);
+  });
+
+  it('refuses a non-contiguous run', () => {
+    const { doc, ids } = threePara();
+    const r = wrapBlocks(doc, [ids[0]!, ids[2]!], 'callout');
+    expect(r.refused).toBe(true);
+    expect(r.reason).toContain('not contiguous');
+    expect(r.doc).toBe(doc);
+  });
+
+  it('refuses blocks under different parents', () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'top' }] },
+        {
+          type: 'callout',
+          attrs: { variant: 'info' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'nested' }] }],
+        },
+      ],
+    });
+    const top = (doc as { content: N[] }).content[0]!.attrs!.id;
+    const nested = ((doc as { content: N[] }).content[1]!.content![0] as N).attrs!.id;
+    const r = wrapBlocks(doc, [top, nested], 'callout');
+    expect(r.refused).toBe(true);
+    expect(r.reason).toContain('different parents');
+  });
+
+  it('refuses a callout inside a callout', () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [
+        {
+          type: 'callout',
+          attrs: { variant: 'info' },
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'nested' }] }],
+        },
+      ],
+    });
+    const nested = ((doc as { content: N[] }).content[0]!.content![0] as N).attrs!.id;
+    const r = wrapBlocks(doc, [nested], 'callout');
+    expect(r.refused).toBe(true);
+    expect(r.reason).toContain('callout');
+  });
+
+  it('refuses columns nested inside a column', () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [
+        {
+          type: 'columnList',
+          content: [
+            {
+              type: 'column',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'in col' }] }],
+            },
+            {
+              type: 'column',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'other' }] }],
+            },
+          ],
+        },
+      ],
+    });
+    const inCol = (((doc as { content: N[] }).content[0]!.content![0] as N).content![0] as N)
+      .attrs!.id;
+    const r = wrapBlocks(doc, [inCol], 'columns');
+    expect(r.refused).toBe(true);
+    expect(r.reason).toContain('columns');
+  });
+
+  it('refuses structural children (list items cannot leave their list)', () => {
+    const doc = blocked({
+      type: 'doc',
+      content: [
+        {
+          type: 'bulletList',
+          content: [
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'item' }] }],
+            },
+          ],
+        },
+      ],
+    });
+    const li = ((doc as { content: N[] }).content[0]!.content![0] as N).attrs!.id;
+    const r = wrapBlocks(doc, [li], 'callout');
+    expect(r.refused).toBe(true);
+    expect(r.reason).toContain('structural child');
+  });
+
+  it('columns fan-out: one column per block, wrapper id minted', () => {
+    const { doc, ids } = threePara();
+    const r = wrapBlocks(doc, [ids[0]!, ids[1]!, ids[2]!], 'columns');
+    expect(r.refused).toBeUndefined();
+    const blocks = (r.doc as { content: N[] }).content!;
+    expect(blocks).toHaveLength(1);
+    const list = blocks[0]!;
+    expect(list.type).toBe('columnList');
+    expect(list.attrs!.id).toBe(r.wrapperId);
+    expect(list.content!.map((c) => (c as N).type)).toEqual(['column', 'column', 'column']);
+    expect(
+      list.content!.map((c) => ((c as N).content![0] as N).attrs!.id),
+    ).toEqual([ids[0], ids[1], ids[2]]);
+  });
+
+  it('refuses a columns wrap of more than 4 blocks', () => {
+    const doc = blocked({
+      type: 'doc',
+      content: ['A', 'B', 'C', 'D', 'E'].map((t) => ({
+        type: 'paragraph',
+        content: [{ type: 'text', text: t }],
+      })),
+    });
+    const ids = (doc as { content: N[] }).content.map((b) => b.attrs!.id);
+    const r = wrapBlocks(doc, ids, 'columns');
+    expect(r.refused).toBe(true);
+    expect(r.reason).toContain('caps at 4');
+  });
+
+  it('reports found=false with the missing id', () => {
+    const { doc, ids } = threePara();
+    const r = wrapBlocks(doc, [ids[0]!, 'missing'], 'callout');
+    expect(r.found).toBe(false);
+    expect(r.missingId).toBe('missing');
+    expect(r.doc).toBe(doc);
+  });
+
+  it('aside wrap carries the themed colour variant', () => {
+    const { doc, ids } = threePara();
+    const r = wrapBlocks(doc, [ids[0]!], 'aside', 'chart-3');
+    expect(r.refused).toBeUndefined();
+    const aside = (r.doc as { content: N[] }).content![0]!;
+    expect(aside.type).toBe('aside');
+    expect(aside.attrs!.color).toBe('chart-3');
   });
 });

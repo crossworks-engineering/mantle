@@ -574,6 +574,8 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'page_block_get',
       'page_block_update',
       'page_block_insert_after',
+      'page_block_insert_before',
+      'page_block_append',
     ],
   },
   {

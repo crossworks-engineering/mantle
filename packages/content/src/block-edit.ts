@@ -1,8 +1,8 @@
 /**
- * Block-addressed editing helpers — find / replace / insert-after / delete
- * a single block in a ProseMirror doc by its stable id. Foundation for the
- * Phase 2b page_block_* tools (find via page_blocks_list, then mutate via
- * these), and (later) for the Phase 3a editor's diff view.
+ * Block-addressed editing helpers: find / replace / insert (before, after,
+ * start/end) / delete / wrap blocks in a ProseMirror doc by stable id.
+ * Foundation for the Phase 2b page_block_* tools (find via page_blocks_list,
+ * then mutate via these), and (later) for the Phase 3a editor's diff view.
  *
  * Pure. No DB, no markdown parsing — the caller arrives with already-
  * parsed PM block nodes and an id. The functions return a NEW doc with the
@@ -25,7 +25,7 @@
  * by its id directly.
  */
 
-import { BLOCK_NODE_TYPES } from './block-ids';
+import { BLOCK_NODE_TYPES, mintBlockId } from './block-ids';
 
 /** Loose PM node shape — exported so tool handlers that pre-parse via
  *  markdownToDoc can cast their `content` array to the right type before
@@ -139,6 +139,172 @@ export function insertAfterBlock(
   const target = findBlock(next as unknown as Record<string, unknown>, blockId)!;
   target.parent.content!.splice(target.index + 1, 0, ...newBlocks);
   return { doc: next as unknown as Record<string, unknown>, found: true };
+}
+
+/**
+ * Return a new doc with `newBlocks` inserted directly before the block
+ * matching `blockId`. Mirror of insertAfterBlock, with the same id semantics
+ * (new blocks keep their fresh parse-minted ids; id-less ones get fresh
+ * ids on the next ensureBlockIds pass via saveDraft).
+ */
+export function insertBeforeBlock(
+  doc: Record<string, unknown>,
+  blockId: string,
+  newBlocks: AnyNode[],
+): { doc: Record<string, unknown>; found: boolean } {
+  const found = findBlock(doc, blockId);
+  if (!found) return { doc, found: false };
+
+  const next = clone(doc as AnyNode);
+  const target = findBlock(next as unknown as Record<string, unknown>, blockId)!;
+  target.parent.content!.splice(target.index, 0, ...newBlocks);
+  return { doc: next as unknown as Record<string, unknown>, found: true };
+}
+
+/**
+ * Return a new doc with `newBlocks` added at the very start or end of the
+ * ROOT: the anchor-free insertion path (prepend an intro, append a
+ * closing section) that doesn't require the caller to know any existing
+ * block id first. Always succeeds: the doc root exists even when empty.
+ */
+export function appendBlocks(
+  doc: Record<string, unknown>,
+  newBlocks: AnyNode[],
+  position: 'start' | 'end',
+): { doc: Record<string, unknown> } {
+  const next = clone(doc as AnyNode);
+  if (!Array.isArray(next.content)) next.content = [];
+  if (position === 'start') next.content.splice(0, 0, ...newBlocks);
+  else next.content.push(...newBlocks);
+  return { doc: next as unknown as Record<string, unknown> };
+}
+
+export type WrapContainer = 'callout' | 'aside' | 'columns';
+
+const CALLOUT_VARIANTS = new Set(['info', 'success', 'warning', 'danger']);
+const ASIDE_COLORS = new Set(['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5']);
+/** Block types that only exist as structural children of a specific parent
+ *  (list / table / columnList); pulling one into a callout/aside/columns
+ *  wrapper, or splicing a wrapper in among its siblings, is schema-invalid
+ *  either way. */
+const STRUCTURAL_CHILD_TYPES = new Set([
+  'listItem',
+  'taskItem',
+  'tableRow',
+  'tableCell',
+  'tableHeader',
+  'column',
+]);
+/** Wrapping more than this many blocks into columns would produce an
+ *  unreadably narrow layout; the caller should group content first. */
+const MAX_WRAP_COLUMNS = 4;
+
+/**
+ * Return a new doc where the blocks matching `blockIds`, which must be a
+ * CONTIGUOUS run of siblings under ONE parent, are moved inside a freshly
+ * built container (callout / aside / columns) spliced into the run's slot.
+ * The blocks travel byte-for-byte (no re-emission), keeping their ids; the
+ * wrapper gets a minted id, returned as `wrapperId` so tool output can
+ * report it for chaining. `variant` carries the callout variant or aside
+ * themed colour (unknown values fall back like the markdown fence parser:
+ * 'info' / 'chart-1'); columns get one column per block.
+ *
+ * Refusals (all schema-safety): non-sibling or non-contiguous ids, blocks
+ * that are structural children (list items, table rows/cells, columns),
+ * a callout wrapped inside a callout, columns nested inside a column, and
+ * a columns wrap of more blocks than fit side by side.
+ */
+export function wrapBlocks(
+  doc: Record<string, unknown>,
+  blockIds: string[],
+  container: WrapContainer,
+  variant?: string,
+): {
+  doc: Record<string, unknown>;
+  found: boolean;
+  refused?: boolean;
+  reason?: string;
+  missingId?: string;
+  wrapperId?: string;
+} {
+  const refuse = (reason: string) => ({ doc, found: true, refused: true, reason });
+  if (blockIds.length === 0) {
+    return { doc, found: true, refused: true, reason: 'block_ids is empty; nothing to wrap' };
+  }
+  const seen = new Set<string>();
+  for (const id of blockIds) {
+    if (seen.has(id)) return refuse(`block id ${id} appears twice in block_ids`);
+    seen.add(id);
+  }
+
+  const next = clone(doc as AnyNode);
+  const hits: FindResult[] = [];
+  for (const id of blockIds) {
+    const hit = walk(next, id);
+    if (!hit) return { doc, found: false, missingId: id };
+    hits.push(hit);
+  }
+
+  const parent = hits[0]!.parent;
+  if (hits.some((h) => h.parent !== parent)) {
+    return refuse(
+      'blocks span different parents; wrap only takes siblings under ONE container. ' +
+        'Wrap each parent\'s run separately.',
+    );
+  }
+  const indices = hits.map((h) => h.index).sort((a, b) => a - b);
+  if (indices[indices.length - 1]! - indices[0]! + 1 !== indices.length) {
+    return refuse(
+      'blocks are not contiguous; wrap only takes an unbroken run of siblings. ' +
+        'Wrap each contiguous run separately, or include the blocks in between.',
+    );
+  }
+  if (hits.some((h) => h.block.type && STRUCTURAL_CHILD_TYPES.has(h.block.type))) {
+    return refuse(
+      'a targeted block is a structural child (list item / table row or cell / column) ' +
+        'that cannot leave its parent; wrap the whole list / table / columnList instead.',
+    );
+  }
+  if (parent.type && STRUCTURAL_CHILD_TYPES.has(parent.type) && parent.type !== 'column') {
+    return refuse(
+      `blocks live inside a ${parent.type}, which cannot hold a ${container}; ` +
+        'wrap the enclosing list / table instead.',
+    );
+  }
+  if (container === 'callout' && parent.type === 'callout') {
+    return refuse('a callout cannot nest inside a callout; wrap the outer callout instead.');
+  }
+  if (container === 'columns' && (parent.type === 'column' || parent.type === 'columnList')) {
+    return refuse('columns cannot nest inside columns; restructure the outer columnList instead.');
+  }
+  if (container === 'columns' && blockIds.length > MAX_WRAP_COLUMNS) {
+    return refuse(
+      `columns wraps one column per block and caps at ${MAX_WRAP_COLUMNS}; ` +
+        `${blockIds.length} blocks would be unreadably narrow. Group the content first ` +
+        '(e.g. wrap runs in callouts, then wrap those).',
+    );
+  }
+
+  const start = indices[0]!;
+  // Splice in DOCUMENT order regardless of the order ids were passed in.
+  const run = parent.content!.slice(start, start + blockIds.length);
+  const wrapperId = mintBlockId();
+  let wrapper: AnyNode;
+  if (container === 'callout') {
+    const v = variant && CALLOUT_VARIANTS.has(variant) ? variant : 'info';
+    wrapper = { type: 'callout', attrs: { id: wrapperId, variant: v }, content: run };
+  } else if (container === 'aside') {
+    const color = variant && ASIDE_COLORS.has(variant) ? variant : 'chart-1';
+    wrapper = { type: 'aside', attrs: { id: wrapperId, color, angle: 135 }, content: run };
+  } else {
+    wrapper = {
+      type: 'columnList',
+      attrs: { id: wrapperId },
+      content: run.map((b) => ({ type: 'column', content: [b] })),
+    };
+  }
+  parent.content!.splice(start, blockIds.length, wrapper);
+  return { doc: next as unknown as Record<string, unknown>, found: true, wrapperId };
 }
 
 /**

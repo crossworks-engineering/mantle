@@ -374,7 +374,139 @@ describe('page_blocks_apply', () => {
     );
     expect(res.ok).toBe(false);
     if (!res.ok)
-      expect(res.error).toContain("op must be one of: 'update', 'insert_after', 'delete'");
+      expect(res.error).toContain(
+        "op must be 'update', 'insert_before', 'insert_after', 'delete', or 'wrap'",
+      );
+  });
+
+  it('insert_before lands the new blocks BEFORE the anchor (prepend included)', async () => {
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null } as never);
+
+    const res = await apply.handler(
+      {
+        page_id: PAGE_ID,
+        ops: [{ op: 'insert_before', block_id: ids[0], markdown: 'Preface' }],
+      },
+      ctx,
+    );
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.output).toMatchObject({ ops_applied: 1, inserted: 1, draft_saved: true });
+    }
+    const saved = vi.mocked(saveDraft).mock.calls[0]![2] as { content: Block[] };
+    const texts = saved.content.map((b) => b.content?.[0]?.text);
+    expect(texts).toEqual(['Preface', 'Old title', 'Keep me', 'Delete me', 'Anchor']);
+    // The anchor keeps its id; the new block is reported for chaining.
+    expect(saved.content[1]!.attrs.id).toBe(ids[0]);
+    if (res.ok) {
+      const out = res.output as { created_ids: Array<{ op: number; ids: string[] }> };
+      expect(out.created_ids[0]!.ids).toEqual([saved.content[0]!.attrs.id]);
+    }
+  });
+
+  it("wrap folds a contiguous run into a callout and reports the wrapper's id", async () => {
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null } as never);
+
+    const res = await apply.handler(
+      {
+        page_id: PAGE_ID,
+        ops: [
+          { op: 'wrap', block_ids: [ids[1], ids[2]], container: 'callout', variant: 'warning' },
+        ],
+      },
+      ctx,
+    );
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.output).toMatchObject({ ops_applied: 1, wrapped: 1, draft_saved: true });
+    const out = res.output as { created_ids: Array<{ op: number; ids: string[] }> };
+    expect(out.created_ids).toHaveLength(1);
+    const wrapperId = out.created_ids[0]!.ids[0]!;
+
+    type Wrapper = { type: string; attrs: { id: string }; content?: Block[] };
+    const saved = vi.mocked(saveDraft).mock.calls[0]![2] as { content: Wrapper[] };
+    expect(saved.content).toHaveLength(3);
+    const callout = saved.content[1]!;
+    expect(callout.type).toBe('callout');
+    expect(callout.attrs.id).toBe(wrapperId);
+    // Wrapped blocks moved inside byte-for-byte, ids intact.
+    expect(callout.content!.map((b) => b.attrs.id)).toEqual([ids[1], ids[2]]);
+    expect(
+      callout.content!.map((b) => (b.content?.[0] as { text?: string } | undefined)?.text),
+    ).toEqual(['Keep me', 'Delete me']);
+  });
+
+  it('a wrapped run stays addressable later in the SAME batch (ids are kept)', async () => {
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null } as never);
+
+    const res = await apply.handler(
+      {
+        page_id: PAGE_ID,
+        ops: [
+          { op: 'wrap', block_ids: [ids[1], ids[2]], container: 'aside' },
+          { op: 'update', block_id: ids[1], markdown: 'Kept and retitled' },
+        ],
+      },
+      ctx,
+    );
+
+    expect(res.ok).toBe(true);
+    type Wrapper = { type: string; attrs: { id: string }; content?: Block[] };
+    const saved = vi.mocked(saveDraft).mock.calls[0]![2] as { content: Wrapper[] };
+    const aside = saved.content[1]!;
+    expect(aside.type).toBe('aside');
+    expect((aside.content![0]!.content?.[0] as { text?: string } | undefined)?.text).toBe(
+      'Kept and retitled',
+    );
+  });
+
+  it('is atomic: a refused wrap (non-contiguous run) aborts and nothing is saved', async () => {
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null } as never);
+
+    const res = await apply.handler(
+      {
+        page_id: PAGE_ID,
+        ops: [
+          { op: 'update', block_id: ids[0], markdown: '## Fine' },
+          { op: 'wrap', block_ids: [ids[1], ids[3]], container: 'callout' }, // ids[2] skipped
+        ],
+      },
+      ctx,
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toContain("op 1 ('wrap')");
+      expect(res.error).toContain('not contiguous');
+      expect(res.error).toContain('NOTHING was saved');
+    }
+    expect(saveDraft).not.toHaveBeenCalled();
+  });
+
+  it('wrap validates its own params: block_ids and a known container are required', async () => {
+    const { doc, ids } = makeBaseline();
+    vi.mocked(getPage).mockResolvedValue({ doc, draft: null } as never);
+
+    const noIds = await apply.handler(
+      { page_id: PAGE_ID, ops: [{ op: 'wrap', container: 'callout' }] },
+      ctx,
+    );
+    expect(noIds.ok).toBe(false);
+    if (!noIds.ok) expect(noIds.error).toContain('block_ids');
+
+    const badContainer = await apply.handler(
+      { page_id: PAGE_ID, ops: [{ op: 'wrap', block_ids: [ids[1]], container: 'quote' }] },
+      ctx,
+    );
+    expect(badContainer.ok).toBe(false);
+    if (!badContainer.ok) expect(badContainer.error).toContain('container');
+    expect(saveDraft).not.toHaveBeenCalled();
   });
 
   it('threads the read draft_rev as saveDraft baseRev (agent-vs-user optimistic concurrency)', async () => {

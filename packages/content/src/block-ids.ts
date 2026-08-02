@@ -233,3 +233,10 @@ function checkAll(node: AnyNode, seen: Set<string>): boolean {
 
 /** Exported for the TipTap-side extension and any other consumer. */
 export const BLOCK_NODE_TYPES = BLOCK_TYPES;
+
+/** Mint a fresh block id outside a full ensureBlockIds pass, for helpers
+ *  that build a container node in code (wrapBlocks) and must know its id
+ *  BEFORE the doc is saved, so tool output can report it for chaining. */
+export function mintBlockId(): string {
+  return newId();
+}

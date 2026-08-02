@@ -392,9 +392,13 @@ export {
   findBlock,
   replaceBlock,
   insertAfterBlock,
+  insertBeforeBlock,
+  appendBlocks,
+  wrapBlocks,
   deleteBlock,
   type FindResult,
   type PMBlockNode,
+  type WrapContainer,
 } from './block-edit';
 
 export { diffBlocks, type BlockDiff, type BlockChange } from './block-diff';
