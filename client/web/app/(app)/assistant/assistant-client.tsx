@@ -15,6 +15,7 @@ import {
   FileText,
   Highlighter,
   Image as ImageIcon,
+  ListRestart,
   Loader2,
   MapPin,
   Mic,
@@ -36,6 +37,11 @@ import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { assetUrl } from '@mantle/web-ui/asset-url';
 import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
 import { uuid } from '@mantle/web-ui/lib/secure-context-fallbacks';
+import { isTurnStreamingEnabledClient } from '@mantle/web-ui/turn-streaming';
+import {
+  canReplaceInFlightTurn,
+  combineCorrectedPrompt,
+} from '@/components/assistant/replace-turn';
 
 /** A sidecar artifact attached to a message. Mirrors @mantle/tools
  *  ToolArtifact, with the discriminated `kind` driving the rendering
@@ -118,6 +124,10 @@ type Message = {
    *  own ledger of what ran vs failed this turn, independent of what the
    *  reply claims. Drives the footer count + the failed-calls notice. */
   toolStats?: ToolStats;
+  /** This row belongs to a replaced (superseded) turn pair — the user stopped
+   *  the turn mid-stream and re-sent original + correction as one combined
+   *  turn. Rendered dimmed with a "replaced" tag; never hidden. */
+  superseded?: boolean;
 };
 
 type ToolStats = {
@@ -289,11 +299,16 @@ export function AssistantClient({
     reasoning: streamReasoning,
     phase: streamPhase,
     outboundId: streamOutboundId,
+    inboundId: streamInboundId,
     error: streamError,
     startedAt: streamStartedAt,
     tokens: streamTokens,
     tokensApprox: streamTokensApprox,
   } = useTurnStream(activeTurnId);
+  // Non-blocking streaming on for this client build? Gates the whole
+  // premature-Enter replace flow — blocking mode has no cancel primitive, so
+  // there the composer stays disabled mid-turn exactly as before.
+  const streamingOn = isTurnStreamingEnabledClient();
   const polledLabel = useTurnStage(sending);
   const stageLabel = streamLabel ?? polledLabel;
   // Live trail display mode (Settings → Profile). Fetched once on mount; the
@@ -317,6 +332,14 @@ export function AssistantClient({
   useEffect(() => {
     outboundIdRef.current = streamOutboundId;
   }, [streamOutboundId]);
+  // The durable inbound row id (also from turn-start) — the replace path needs
+  // BOTH ids to stamp the cancelled pair superseded. Mirrored into a ref so the
+  // brief post-Enter retry (turn-start may lag a sub-second correction) reads
+  // the fresh value.
+  const inboundIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    inboundIdRef.current = streamInboundId;
+  }, [streamInboundId]);
   // Mirror the final token count + the turn's start time so reconcileDone (async,
   // stable callback) can stamp the real "duration · tokens" onto the frozen trail.
   const streamTokensRef = useRef<number | null>(null);
@@ -354,6 +377,13 @@ export function AssistantClient({
   // Set when a Stop restores the prompt — focus the composer once it re-enables
   // (the textarea is disabled while `sending`, so we can't focus immediately).
   const focusAfterStopRef = useRef(false);
+  // ── Premature-Enter replace state (streaming mode only) ──
+  // True while a replace's cancel round-trip is in flight — the thread lock
+  // that keeps a triple-Enter from firing two supersedes for one turn.
+  const supersedingRef = useRef(false);
+  // Whether the in-flight turn carried a file. Replace combines text verbatim,
+  // so an attachment turn keeps today's behaviour (a second Enter is a no-op).
+  const lastTurnHadFileRef = useRef(false);
 
   // ── Share-location toggle ──
   // Sticky opt-in (persisted): when on, each send attaches a fresh browser
@@ -530,7 +560,8 @@ export function AssistantClient({
             existing.status !== row.status ||
             existing.error !== row.error ||
             existing.model !== row.model ||
-            (existing.toolStats?.calls ?? 0) !== (row.toolStats?.calls ?? 0)
+            (existing.toolStats?.calls ?? 0) !== (row.toolStats?.calls ?? 0) ||
+            !!existing.superseded !== !!row.superseded
           ) {
             byId.set(row.id, {
               ...existing,
@@ -541,6 +572,7 @@ export function AssistantClient({
               channel: row.channel ?? existing.channel,
               attachments: row.attachments ?? existing.attachments,
               ...(row.toolStats ? { toolStats: row.toolStats } : {}),
+              ...(row.superseded ? { superseded: true } : {}),
             });
             changed = true;
           }
@@ -799,10 +831,82 @@ export function AssistantClient({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const text = draft.trim();
+    let text = draft.trim();
     // Allow attachment-only submits — the API route fills in a default
     // prompt server-side when text is empty.
-    if ((!text && !attachedFile) || sending) return;
+    if ((!text && !attachedFile) || supersedingRef.current) return;
+
+    // Idempotency key for this submit — lets the server replay (not re-run)
+    // the turn if the request is retried, so we never get duplicate file
+    // nodes / turns. Minted up front: the replace path below also stamps it
+    // onto the cancelled pair as `superseded_by`, and the two must agree.
+    const idempotencyKey = uuid();
+
+    if (sending) {
+      // A turn is already in flight. In streaming mode, a second Enter on a
+      // text-only pair becomes a REPLACE: stop the old turn, stamp its pair
+      // superseded, and fall through to send original + correction as one
+      // combined turn. Anywhere the gate fails, keep today's no-op.
+      if (
+        !canReplaceInFlightTurn({
+          streamingOn,
+          sending,
+          stopping,
+          activeTurnId,
+          hasAttachment: attachedFile != null,
+          lastTurnHadFile: lastTurnHadFileRef.current,
+        })
+      ) {
+        return;
+      }
+      // The durable row ids ride the turn-start event; a sub-second correction
+      // can beat it. One brief retry, then degrade to the old no-op (the draft
+      // stays put — the user can hit Enter again).
+      let inboundId = inboundIdRef.current;
+      let outboundId = outboundIdRef.current;
+      if (!inboundId || !outboundId) {
+        await new Promise((r) => setTimeout(r, 300));
+        inboundId = inboundIdRef.current;
+        outboundId = outboundIdRef.current;
+      }
+      if (!inboundId || !outboundId) return;
+      const turnToCancel = activeTurnId;
+      supersedingRef.current = true;
+      try {
+        // AWAIT the stamping cancel before sending the combined turn — this
+        // ordering is the race fix (see the cancel route): the pair is marked
+        // superseded before the new turn's context load can run, regardless of
+        // when the old turn's finalize lands.
+        await apiFetch(`/api/assistant/turn/${turnToCancel}/cancel`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            supersede: { inboundId, outboundId, newTurnId: idempotencyKey },
+          }),
+        });
+      } catch (err) {
+        // The old turn is still running untouched — surface it, keep the draft.
+        supersedingRef.current = false;
+        setError(err instanceof Error ? err.message : String(err));
+        return;
+      }
+      supersedingRef.current = false;
+      // Reflect the supersede locally: drop the old optimistic bubble (the
+      // durable pair reappears dimmed via syncLatest once it finalizes) and
+      // mark any already-merged pair rows. Ending the old turn's stream below
+      // also clears the streamed partial from the typing branch.
+      const oldOptimisticId = pendingTurnRef.current?.optimisticId;
+      setMessages((prev) =>
+        prev
+          .filter((m) => m.id !== oldOptimisticId)
+          .map((m) => (m.id === inboundId || m.id === outboundId ? { ...m, superseded: true } : m)),
+      );
+      pendingTurnRef.current = null;
+      setActiveTurnId(null);
+      setStopping(false);
+      text = combineCorrectedPrompt(lastPromptRef.current, text);
+    }
+
     setError(undefined);
     // Remember this turn's prompt so a Stop can drop it back into the composer.
     lastPromptRef.current = text;
@@ -819,10 +923,9 @@ export function AssistantClient({
 
     const hasFile = attachedFile != null;
     const isImage = hasFile && attachedFile.type.startsWith('image/');
-    // Idempotency key for this submit — lets the server replay (not re-run)
-    // the turn if the request is retried, so we never get duplicate file
-    // nodes / turns.
-    const idempotencyKey = uuid();
+    // Whether THIS turn carries a file — read by a replace attempt while the
+    // turn streams (attachment turns keep today's behaviour).
+    lastTurnHadFileRef.current = hasFile;
     const optimisticId = `pending-${Date.now()}`;
     const optimistic: Message = {
       id: optimisticId,
@@ -1036,6 +1139,21 @@ export function AssistantClient({
 
   const lastTurnId = turns[turns.length - 1]?.id;
 
+  // The premature-Enter replace affordance: while a text-only turn streams and
+  // the user has typed a correction, the send slot becomes a "stop and resend"
+  // button (and Enter triggers it). Structurally impossible in blocking mode —
+  // `streamingOn` gates the whole thing. Reading `lastTurnHadFileRef` in render
+  // is safe: it's set synchronously in submit, before the `sending` re-render.
+  const replaceEligible = canReplaceInFlightTurn({
+    streamingOn,
+    sending,
+    stopping,
+    activeTurnId,
+    hasAttachment: attachedFile != null,
+    lastTurnHadFile: lastTurnHadFileRef.current,
+  });
+  const showReplace = replaceEligible && draft.trim().length > 0;
+
   return (
     <>
       <div className="relative flex min-h-0 flex-1 flex-col">
@@ -1100,6 +1218,10 @@ export function AssistantClient({
                   {turns.map((turn, idx) => {
                     const isLast = turn.id === lastTurnId;
                     const showTyping = isLast && sending && !turn.response;
+                    // A superseded pair (cancelled + re-sent with a correction)
+                    // stays visible but dimmed, tagged "replaced" on the prompt
+                    // card — a truthful record the model no longer sees.
+                    const replaced = !!(turn.prompt?.superseded || turn.response?.superseded);
                     return (
                       <li
                         key={turn.id}
@@ -1107,7 +1229,8 @@ export function AssistantClient({
                           'group/turn grid gap-x-10 gap-y-3 pb-10 @3xl/thread:grid-cols-[minmax(0,1fr)_300px]' +
                           // A thin divider between turns, in the agent's accent
                           // colour (the accent moved here from the old left border).
-                          (idx > 0 ? ' border-t pt-10' : '')
+                          (idx > 0 ? ' border-t pt-10' : '') +
+                          (replaced ? ' opacity-60' : '')
                         }
                         style={
                           idx > 0
@@ -1559,35 +1682,64 @@ export function AssistantClient({
                         ? 'Recording… press the stop button to transcribe.'
                         : transcribing
                           ? 'Transcribing your recording…'
-                          : 'Message your assistant — Enter to send, Shift+Enter for newline.'
+                          : replaceEligible
+                            ? 'Typed too soon? Add a correction — Enter stops and resends both; Esc clears.'
+                            : 'Message your assistant — Enter to send, Shift+Enter for newline.'
                 }
-                disabled={!agentReady || sending}
+                // In streaming mode the box stays live mid-turn so a correction
+                // can be typed (the premature-Enter flow); blocking mode keeps
+                // the old lock — it has no cancel primitive.
+                disabled={!agentReady || (sending && !streamingOn)}
                 rows={2}
                 className={`${COMPOSER_BOX} flex-1 resize-none rounded-md border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     void submit(e);
+                    return;
+                  }
+                  // Opt out of a pending correction: Esc clears the draft.
+                  // stopPropagation keeps it from the panel's window-level
+                  // Esc-to-minimize; scoped to the replace affordance only, so
+                  // Esc behaves exactly as before everywhere else.
+                  if (e.key === 'Escape' && showReplace) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDraft('');
                   }
                 }}
               />
               {sending ? (
-                // Mid-turn the send button becomes a Stop button — one click aborts
-                // generation and keeps whatever partial reply has streamed.
-                <button
-                  type="button"
-                  onClick={stopTurn}
-                  aria-label="Stop"
-                  title="Stop generating"
-                  disabled={!activeTurnId || stopping}
-                  className="flex w-12 shrink-0 items-center justify-center self-stretch rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-40"
-                >
-                  {stopping ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden />
-                  ) : (
-                    <Square className="size-3.5 fill-current" aria-hidden />
+                // Mid-turn the send slot holds a Stop button — and, when a
+                // correction has been typed (streaming mode), a "stop and
+                // resend" button beside it: one press supersedes the in-flight
+                // turn and sends original + correction as one combined turn.
+                <div className="flex shrink-0 gap-2 self-stretch">
+                  {showReplace && (
+                    <button
+                      type="submit"
+                      aria-label="Stop and resend with this correction"
+                      title="Stop and resend with this correction (Enter) — Esc to discard it"
+                      className="flex w-12 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      <ListRestart className="size-4" aria-hidden />
+                    </button>
                   )}
-                </button>
+                  <button
+                    type="button"
+                    onClick={stopTurn}
+                    aria-label="Stop"
+                    title="Stop generating"
+                    disabled={!activeTurnId || stopping}
+                    className="flex w-12 items-center justify-center rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-40"
+                  >
+                    {stopping ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Square className="size-3.5 fill-current" aria-hidden />
+                    )}
+                  </button>
+                </div>
               ) : (
                 <button
                   type="submit"
@@ -1640,6 +1792,14 @@ function PromptCard({ message }: { message: Message }) {
             You
           </span>
           <ChannelBadge channel={message.channel} />
+          {message.superseded && (
+            <span
+              className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+              title="You stopped this turn and re-sent it with a correction — the combined message below replaced it."
+            >
+              replaced
+            </span>
+          )}
         </span>
         <span
           className="text-[10px] text-muted-foreground"

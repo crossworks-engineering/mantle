@@ -58,6 +58,7 @@ export { invokeAgent } from './invoke-agent';
 export {
   recordTurn,
   updateAssistantMessageOutcome,
+  markTurnSuperseded,
   loadConversationContext,
   looksAnaphoricFollowup,
   type ConversationContext,

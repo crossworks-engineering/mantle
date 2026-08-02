@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { agents } from './agents';
 import { nodes } from './nodes';
@@ -121,3 +121,20 @@ export const assistantMessages = pgTable(
 
 export type AssistantMessage = typeof assistantMessages.$inferSelect;
 export type NewAssistantMessage = typeof assistantMessages.$inferInsert;
+
+/**
+ * SQL condition: this row is NOT part of a superseded (replaced) turn pair.
+ *
+ * `data.superseded_by = <newTurnId>` marks both rows of a turn the user
+ * cancelled mid-stream and re-sent with a correction (the premature-Enter
+ * flow). A jsonb key rather than a column — the same convention as
+ * `data.thoughts` / `data.toolStats`, and it survives the finalize merge
+ * (`data || patch` in updateAssistantMessageOutcome). Prompt history and the
+ * digest summarizer must both apply this filter so the abandoned pair never
+ * leaks back into an LLM prompt; recall deliberately does NOT (the raw record
+ * stays visible there). `data` is NOT NULL DEFAULT '{}', so the bare `?`
+ * existence test is safe.
+ */
+export function notSuperseded(): SQL {
+  return sql`not (${assistantMessages.data} ? 'superseded_by')`;
+}

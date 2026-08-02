@@ -18,6 +18,7 @@ import {
   db,
   agents,
   assistantMessages,
+  notSuperseded,
   bumpWorkerUsage,
   getDefaultWorker,
   nodes,
@@ -128,12 +129,13 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
   // driving near-per-turn digest LLM calls (cost safety); an explicit lower
   // threshold is respected as before.
   const historyLimit = agentRow?.memoryConfig?.history_limit ?? 20;
-  const threshold = Math.min(
-    params.summarize_threshold ?? 30,
-    Math.max(historyLimit, batchSize),
-  );
+  const threshold = Math.min(params.summarize_threshold ?? 30, Math.max(historyLimit, batchSize));
 
-  // Count undigested turns for THIS agent's stream only.
+  // Count undigested turns for THIS agent's stream only. Superseded pairs
+  // (data.superseded_by — a cancelled-and-corrected turn) are excluded here AND
+  // in load_batch below: excluded from one but not the other, they'd either
+  // leak into a digest or sit undigested forever, inflating this count past the
+  // threshold on every run.
   const countRows = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(assistantMessages)
@@ -142,6 +144,7 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.agentId, agentId),
         isNull(assistantMessages.digestNodeId),
+        notSuperseded(),
       ),
     );
   const undigested = countRows[0]?.n ?? 0;
@@ -179,6 +182,8 @@ export async function summarizeAgentConversation(ownerId: string, agentId: strin
                 eq(assistantMessages.ownerId, ownerId),
                 eq(assistantMessages.agentId, agentId),
                 isNull(assistantMessages.digestNodeId),
+                // Keep in step with the threshold count above (see its comment).
+                notSuperseded(),
               ),
             )
             .orderBy(asc(assistantMessages.createdAt))

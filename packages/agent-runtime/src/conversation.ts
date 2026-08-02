@@ -28,6 +28,7 @@ import {
   db,
   agents,
   assistantMessages,
+  notSuperseded,
   entities,
   facts,
   nodes,
@@ -298,6 +299,39 @@ export async function updateAssistantMessageOutcome(args: {
     .where(and(eq(assistantMessages.id, args.id), eq(assistantMessages.ownerId, args.ownerId)))
     .returning();
   return row ?? null;
+}
+
+/**
+ * Stamp both rows of a cancelled turn pair `data.superseded_by = newTurnId` —
+ * the premature-Enter correction flow (the user hit Enter too early, cancelled
+ * the streaming turn, and re-sent original + correction as one combined turn).
+ *
+ * Called SYNCHRONOUSLY by the cancel route BEFORE the cancel is published:
+ * the client awaits that response before POSTing the combined turn, so the new
+ * turn's context load excludes the pair regardless of when the old turn's
+ * finalize lands (finalize merges `data`, so the flag survives it). Owner-
+ * scoped, so ids guessed from another owner are no-ops. Returns the number of
+ * rows stamped (2 on the happy path).
+ */
+export async function markTurnSuperseded(args: {
+  ownerId: string;
+  inboundId: string;
+  outboundId: string;
+  newTurnId: string;
+}): Promise<number> {
+  const rows = await db
+    .update(assistantMessages)
+    .set({
+      data: sql`${assistantMessages.data} || ${JSON.stringify({ superseded_by: args.newTurnId })}::jsonb`,
+    })
+    .where(
+      and(
+        inArray(assistantMessages.id, [args.inboundId, args.outboundId]),
+        eq(assistantMessages.ownerId, args.ownerId),
+      ),
+    )
+    .returning({ id: assistantMessages.id });
+  return rows.length;
 }
 
 /**
@@ -759,10 +793,15 @@ export async function loadConversationContext(args: {
   // (no usable reply). Either would otherwise leak into a later turn's prompt as
   // an empty/garbage assistant message. Inbound rows are always 'complete', so
   // this filter keeps every user turn. See docs/live-turn-streaming.md §6.
+  // Superseded pairs (data.superseded_by — a turn the user cancelled mid-stream
+  // and re-sent with a correction) are ALSO excluded: both rows finalize
+  // 'complete', so without this the abandoned half-answer would leak back into
+  // the next prompt. Recall deliberately still sees them.
   const histConds = [
     eq(assistantMessages.ownerId, ownerId),
     eq(assistantMessages.agentId, agent.id),
     eq(assistantMessages.status, 'complete'),
+    notSuperseded(),
   ];
   if (args.excludeMessageId) histConds.push(ne(assistantMessages.id, args.excludeMessageId));
   if (args.before) histConds.push(lt(assistantMessages.createdAt, args.before));

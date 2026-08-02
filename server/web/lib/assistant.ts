@@ -47,6 +47,11 @@ export type AssistantTimelineRow = {
    *  ledger, persisted at finalize. Drives the "N tool calls · M failed"
    *  footer so the record is independent of the reply's claims. */
   toolStats?: ToolOutcomeStatsRow;
+  /** True when this row belongs to a superseded (replaced) turn pair — the
+   *  user cancelled the turn mid-stream and re-sent original + correction as
+   *  one combined turn (data.superseded_by). The pair stays in the transcript,
+   *  rendered dimmed with a "replaced" tag; prompt history and digests skip it. */
+  superseded?: boolean;
   createdAt: string;
 };
 
@@ -70,6 +75,11 @@ function thoughtsFromData(data: unknown): AssistantTimelineRow['thoughts'] {
         Boolean(s) && typeof (s as { label?: unknown }).label === 'string',
     )
     .map((s) => ({ kind: String(s.kind ?? 'tool'), label: s.label, elapsedMs: s.elapsedMs }));
+}
+
+/** True when the row carries the supersede stamp (`data.superseded_by`). */
+function supersededFromData(data: unknown): boolean {
+  return Boolean((data as { superseded_by?: unknown } | null)?.superseded_by);
 }
 
 /** Pull the persisted tool-outcome tally out of a row's `data` jsonb. */
@@ -132,6 +142,7 @@ export async function recentAssistantMessages(
     attachments: r.attachments ?? [],
     ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
     ...(toolStatsFromData(r.data) ? { toolStats: toolStatsFromData(r.data) } : {}),
+    ...(supersededFromData(r.data) ? { superseded: true } : {}),
     createdAt: r.createdAt.toISOString(),
   }));
 }
@@ -182,6 +193,7 @@ export async function assistantMessagesBefore(
     attachments: r.attachments ?? [],
     ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
     ...(toolStatsFromData(r.data) ? { toolStats: toolStatsFromData(r.data) } : {}),
+    ...(supersededFromData(r.data) ? { superseded: true } : {}),
     createdAt: r.createdAt.toISOString(),
   }));
 }
