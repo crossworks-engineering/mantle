@@ -298,6 +298,10 @@ type FormState = {
   resultSpillMaxKb: string;
   temperature: string;
   maxTokens: string;
+  /** Suggest a follow-up question after each reply (the suggester worker's
+   *  chip in the chat composer). One extra cheap LLM call per turn, so off by
+   *  default. */
+  suggestFollowUp: boolean;
   /** Avatar {style, seed}; null = initials fallback. */
   avatar: AgentAvatar | null;
 };
@@ -342,6 +346,7 @@ function emptyForm(role: Role = 'responder'): FormState {
     resultSpillMaxKb: '',
     temperature: '0.7',
     maxTokens: '',
+    suggestFollowUp: false,
     avatar: null,
   };
 }
@@ -389,6 +394,7 @@ function formFromAgent(a: AgentSummary): FormState {
     resultSpillMaxKb: a.memoryConfig.result_handling?.spill_max_kb?.toString() ?? '',
     temperature: a.params.temperature?.toString() ?? '0.7',
     maxTokens: a.params.max_tokens?.toString() ?? '',
+    suggestFollowUp: a.params.suggest_follow_up === true,
     avatar: a.avatar ?? null,
   };
 }
@@ -797,7 +803,7 @@ export function AgentsClient() {
     if (!Number.isNaN(spillKb) && spillKb > 0) rh.spill_max_kb = spillKb;
     memoryConfig.result_handling = rh;
 
-    const params: { temperature?: number; max_tokens?: number } = {};
+    const params: { temperature?: number; max_tokens?: number; suggest_follow_up?: boolean } = {};
     const t = parseFloat(form.temperature);
     if (!Number.isNaN(t)) params.temperature = t;
     const mt = form.maxTokens.trim();
@@ -805,6 +811,8 @@ export function AgentsClient() {
       const n = parseInt(mt, 10);
       if (!Number.isNaN(n)) params.max_tokens = n;
     }
+    // Only persisted when on; absent means off, keeping default rows clean.
+    if (form.suggestFollowUp) params.suggest_follow_up = true;
 
     const priority = parseInt(form.priority, 10);
 
@@ -2053,6 +2061,21 @@ export function AgentsClient() {
                             Ceiling on a single reply. Blank leaves it to the provider.
                           </FieldHint>
                         </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="flex cursor-pointer items-center gap-2 text-sm">
+                          <Switch
+                            checked={form.suggestFollowUp}
+                            onCheckedChange={(v) => setForm((f) => ({ ...f, suggestFollowUp: v }))}
+                          />
+                          Suggest follow-ups
+                        </label>
+                        <FieldHint>
+                          After each reply, propose the next question as an accept-with-Enter chip
+                          in the chat composer. Runs the Follow-up suggester worker once per turn (a
+                          cheap model, off the reply&apos;s critical path), so it costs a little per
+                          message. Off by default.
+                        </FieldHint>
                       </div>
                     </fieldset>
 

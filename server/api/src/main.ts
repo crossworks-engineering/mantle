@@ -20,6 +20,7 @@ import { FORUM_QUEUE } from '@mantle/assistant-runtime';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 import { installTurnStreamObserver } from './turn-stream-observer';
+import { installTurnSuggestionHook } from './turn-suggestion';
 import { startTurnCancelListener, stopTurnCancelListener } from './turn-cancel';
 // Import workflow modules for their registration side-effects (registerWorkflow
 // runs at import, before launch).
@@ -72,6 +73,9 @@ async function main(): Promise<void> {
   // registration (no I/O); harmless when MANTLE_TURN_STREAMING is off, since
   // the web SSE endpoint that relays these events is itself flag-gated.
   installTurnStreamObserver();
+  // Post-finalize follow-up suggester (fire-and-forget, per-agent opt-in).
+  // Pure registration; every real guard lives inside suggestFollowUp.
+  installTurnSuggestionHook();
   // LISTEN for user "stop" requests so an in-flight streamed turn can be aborted
   // (apps/web publishes the cancel; this process runs the turn). Best-effort.
   await startTurnCancelListener().catch((err) =>

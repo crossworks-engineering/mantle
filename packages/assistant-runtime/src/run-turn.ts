@@ -91,6 +91,32 @@ export const CHATTABLE_ROLES: ('assistant' | 'responder' | 'custom')[] = [
   'custom',
 ];
 
+/** Everything the post-turn follow-up suggester needs. `stopped` marks a
+ *  user-Stop turn (which still finalizes 'complete' with its partial reply) so
+ *  the hook can decline to decorate an interrupted answer. */
+export type TurnSuggestionContext = {
+  ownerId: string;
+  agent: Agent;
+  /** The finalized outbound row's id, where the suggestion is persisted. */
+  outboundId: string;
+  /** What the user actually typed (displayText, not the LLM-augmented text). */
+  userText: string;
+  /** The finalized reply text. */
+  replyText: string;
+  stopped: boolean;
+};
+
+export type TurnSuggestionHook = (ctx: TurnSuggestionContext) => void;
+
+// Injectable post-finalize hook (same pattern as the tracing observers): this
+// package must not import server/api, so the api process installs the real
+// suggester at boot. Fired fire-and-forget AFTER the done emit; it must never
+// delay or fail the turn. Null (the default) costs nothing.
+let turnSuggestionHook: TurnSuggestionHook | null = null;
+export function setTurnSuggestionHook(fn: TurnSuggestionHook | null): void {
+  turnSuggestionHook = fn;
+}
+
 export type AssistantTurnResult = {
   inbound: AssistantMessage;
   outbound: AssistantMessage;
@@ -578,6 +604,26 @@ export async function runAssistantTurn(
       // estimate for this once `done` lands (0 when no provider reported usage).
       tokensOut: outcome.loop.tokensOut,
     });
+  }
+
+  // Follow-up suggestion: strictly AFTER done, fire-and-forget, so it can
+  // never delay the turn. The hook itself guards (per-agent toggle, reply
+  // length, kill switch) and persists onto the outbound row's data; the client
+  // fetches it separately after done. A throwing hook is a bug, but even then
+  // the turn result must not be harmed.
+  if (turnSuggestionHook) {
+    try {
+      turnSuggestionHook({
+        ownerId,
+        agent,
+        outboundId: outboundPending.id,
+        userText: displayText,
+        replyText: reply,
+        stopped: abortController?.signal.aborted ?? false,
+      });
+    } catch (err) {
+      console.warn('[suggester] hook threw:', err instanceof Error ? err.message : err);
+    }
   }
 
   return { inbound, outbound, reply, artifacts: outcome.loop.artifacts };

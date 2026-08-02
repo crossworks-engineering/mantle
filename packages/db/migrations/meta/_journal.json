@@ -995,6 +995,13 @@
       "when": 1786234500000,
       "tag": "0141_source_file_id_index",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1786234600000,
+      "tag": "0142_ai_worker_kind_suggester",
+      "breakpoints": true
     }
   ]
 }

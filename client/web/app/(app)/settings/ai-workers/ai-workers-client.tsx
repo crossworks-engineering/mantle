@@ -48,6 +48,11 @@ const KIND_META: Record<AiWorkerKind, { label: string; description: string }> = 
     description:
       'Restyles the live turn “thought trail” into the assistant’s voice. Its system prompt is the verbosity dial — tune it for a terse phrase, a sentence, or a short paragraph. Falls back to the Summarizer when unset.',
   },
+  suggester: {
+    label: 'Follow-up suggester',
+    description:
+      'Proposes one follow-up question after a reply, shown as an accept-with-Enter chip above the chat composer. Off by default; enable it per agent in Settings → Agents. Falls back to the Narrator, then the Summarizer, when unset.',
+  },
   tts: {
     label: 'Voice (TTS)',
     description:
@@ -101,6 +106,7 @@ const KIND_ORDER: AiWorkerKind[] = [
   'summarizer',
   'reflector',
   'narrator',
+  'suggester',
   // 'embedding' is retired as a worker kind — the embedder lives at
   // /settings/embedding (one config row, migration 0061). Hidden here.
   'image_gen',

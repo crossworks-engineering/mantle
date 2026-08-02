@@ -10,9 +10,12 @@
 export {
   runAssistantTurn,
   resolveAssistantAgent,
+  setTurnSuggestionHook,
   CHATTABLE_ROLES,
   type AssistantTurnResult,
   type RunAssistantTurnOptions,
+  type TurnSuggestionContext,
+  type TurnSuggestionHook,
 } from './run-turn';
 export { stageLabelForStep, type StageLabel } from './stage-label';
 export {

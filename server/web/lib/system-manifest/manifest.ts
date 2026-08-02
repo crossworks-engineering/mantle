@@ -1358,6 +1358,19 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     provider: 'openrouter',
     model: 'google/gemini-3.1-flash-lite',
   },
+  // Suggester: proposes one follow-up question after a completed turn (the
+  // accept-with-Enter chip above the chat composer). OPTIONAL: fresh onboarding
+  // seeds it; existing brains fall back to the narrator, then the summarizer,
+  // so the feature works everywhere and an operator adds a dedicated worker
+  // only to tune it. The feature itself is off by default per agent
+  // (agents.params.suggest_follow_up), so seeding this worker costs nothing.
+  {
+    kind: 'suggester',
+    name: 'Follow-up suggester',
+    required: false,
+    provider: 'openrouter',
+    model: 'google/gemini-3.1-flash-lite',
+  },
 ];
 
 // ── Derived selectors (single computation; kills the duplication) ────────────

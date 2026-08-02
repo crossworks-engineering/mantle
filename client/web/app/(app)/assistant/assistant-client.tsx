@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
+import { composerKeyAction } from '@/lib/composer-keys';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { RichText } from '@/components/assistant/rich-text';
 import { CopyButton } from '@mantle/web-ui/copy-button';
@@ -385,6 +386,49 @@ export function AssistantClient({
   // so an attachment turn keeps today's behaviour (a second Enter is a no-op).
   const lastTurnHadFileRef = useRef(false);
 
+  // ── Follow-up suggestion chip ──
+  // The suggester worker persists ONE proposed next question onto the finalized
+  // outbound row's data, strictly after `done` (docs: fetch-after-done, never a
+  // post-done SSE event). We fetch it with a few short retries once a turn
+  // reconciles; 204s (toggle off / guards declined / not written yet) just mean
+  // no chip. Empty composer + Enter sends it verbatim; ArrowRight loads it for
+  // editing; X dismisses. Cleared on send/dismiss; an agent switch re-keys this
+  // component, which resets it for free.
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  // Bumped on every send/dismiss so an in-flight fetch for an older turn can
+  // tell it's stale and drop its result instead of resurrecting the chip.
+  const suggestionEpochRef = useRef(0);
+  const dismissSuggestion = useCallback(() => {
+    suggestionEpochRef.current += 1;
+    setSuggestion(null);
+  }, []);
+  const fetchSuggestion = useCallback((outboundId: string) => {
+    const epoch = ++suggestionEpochRef.current;
+    setSuggestion(null);
+    void (async () => {
+      // ~1s, ~2.5s, ~4s after done; give up quietly at ~5s (a slow suggester
+      // model that lands later is acceptable waste; it just never shows).
+      for (const delay of [1000, 1500, 1500]) {
+        await new Promise((r) => setTimeout(r, delay));
+        if (suggestionEpochRef.current !== epoch) return;
+        try {
+          const res = await apiFetch<{ suggestion?: string }>(
+            `/api/assistant/turn/${outboundId}/suggestion`,
+            { cache: 'no-store' },
+          );
+          if (suggestionEpochRef.current !== epoch) return;
+          const s = typeof res.suggestion === 'string' ? res.suggestion.trim() : '';
+          if (s) {
+            setSuggestion(s);
+            return;
+          }
+        } catch {
+          /* transient; retry on the next tick, or give up */
+        }
+      }
+    })();
+  }, []);
+
   // ── Share-location toggle ──
   // Sticky opt-in (persisted): when on, each send attaches a fresh browser
   // geolocation fix to the turn — the same `location` wire contract the companion
@@ -637,6 +681,7 @@ export function AssistantClient({
     async (optimisticId: string) => {
       const trail = trailRef.current;
       const outboundId = outboundIdRef.current;
+      if (outboundId) fetchSuggestion(outboundId);
       const tokens = streamTokensRef.current;
       const startedAt = streamStartedAtRef.current;
       const durationMs = startedAt != null ? Date.now() - startedAt : undefined;
@@ -662,7 +707,7 @@ export function AssistantClient({
       });
       endActiveTurn();
     },
-    [syncLatest, endActiveTurn],
+    [syncLatest, endActiveTurn, fetchSuggestion],
   );
 
   const failActiveTurn = useCallback(
@@ -829,9 +874,14 @@ export function AssistantClient({
     }
   }, [shareLocation, getBrowserLocation]);
 
-  const submit = async (e: React.FormEvent) => {
+  // `textOverride` is the suggestion-chip path: Enter on an EMPTY composer
+  // sends the proposed follow-up verbatim (setDraft-then-submit would read the
+  // stale draft). Everything else about the turn is identical.
+  const submit = async (e: { preventDefault(): void }, textOverride?: string) => {
     e.preventDefault();
-    let text = draft.trim();
+    // `let`: the replace path below folds the original prompt into a combined
+    // correction turn by reassigning this.
+    let text = (textOverride ?? draft).trim();
     // Allow attachment-only submits — the API route fills in a default
     // prompt server-side when text is empty.
     if ((!text && !attachedFile) || supersedingRef.current) return;
@@ -957,6 +1007,8 @@ export function AssistantClient({
     setShowJump(false);
     setMessages((prev) => [...prev, optimistic]);
     setDraft('');
+    // This turn supersedes any follow-up chip (accepted or ignored alike).
+    dismissSuggestion();
     // Open the live status stream for this turn (same uuid the server keys it
     // on) the instant we start — before the POST — so we catch the early steps.
     setActiveTurnId(idempotencyKey);
@@ -1039,6 +1091,9 @@ export function AssistantClient({
         if (data.warnings?.length) setError(data.warnings.join(' · '));
         setSending(false);
         setActiveTurnId(null);
+        // Blocking path finalizes the same durable row, so the suggestion (if
+        // the agent's toggle is on) lands there too, so fetch it the same way.
+        fetchSuggestion(data.outbound.id);
       } else {
         // NON-BLOCKING (202): the live stream now types the reply out; the phase
         // effect (and the safety poll) reconcile to the durable row on
@@ -1588,6 +1643,33 @@ export function AssistantClient({
                 )}
               </div>
             )}
+            {/* Follow-up suggestion chip (the suggester worker). One bounded
+                row above the input, respecting the composer-height lesson from
+                the marked-block pills. Enter (empty composer) or a click sends
+                it verbatim; ArrowRight loads it for editing; X dismisses. */}
+            {suggestion && !sending && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={(e) => void submit(e, suggestion)}
+                  disabled={!agentReady}
+                  className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 py-1 pl-2 pr-2.5 text-xs text-foreground transition-colors hover:bg-primary/20 disabled:opacity-40"
+                  title="Send this follow-up (Enter while the composer is empty); press → to edit it first"
+                >
+                  <CornerDownLeft className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
+                  <span className="truncate font-medium">{suggestion}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissSuggestion}
+                  className="rounded p-1 text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                  title="Dismiss suggestion"
+                  aria-label="Dismiss suggested follow-up"
+                >
+                  <X className="size-3" aria-hidden />
+                </button>
+              </div>
+            )}
             <div className="flex gap-2">
               <input
                 ref={fileInputRef}
@@ -1693,7 +1775,27 @@ export function AssistantClient({
                 rows={2}
                 className={`${COMPOSER_BOX} flex-1 resize-none rounded-md border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  // Decision table lives in lib/composer-keys (pure + tested):
+                  // the chip claims Enter/ArrowRight STRICTLY when the draft is
+                  // empty, so Enter on anything the user typed (including a
+                  // Stop-restored prompt) always sends their text.
+                  const action = composerKeyAction(e, draft, suggestion);
+                  if (action === 'send-suggestion' && suggestion) {
+                    e.preventDefault();
+                    void submit(e, suggestion);
+                  } else if (action === 'edit-suggestion' && suggestion) {
+                    // Load the suggestion for editing: chip → draft, cursor to
+                    // the end (the textarea is already focused; the keystroke
+                    // landed here).
+                    e.preventDefault();
+                    const s = suggestion;
+                    dismissSuggestion();
+                    setDraft(s);
+                    requestAnimationFrame(() => {
+                      const el = textareaRef.current;
+                      if (el) el.setSelectionRange(el.value.length, el.value.length);
+                    });
+                  } else if (action === 'send-draft') {
                     e.preventDefault();
                     void submit(e);
                     return;

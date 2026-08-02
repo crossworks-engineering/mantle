@@ -151,7 +151,8 @@ export type AiWorkerKind =
   | 'embedding'
   | 'search'
   | 'search_advanced'
-  | 'narrator';
+  | 'narrator'
+  | 'suggester';
 
 /** An AI worker as returned by `GET /api/ai-workers`. `params` is jsonb (shape
  *  varies by kind) — kept loose here; the form narrows per kind. */
@@ -249,6 +250,9 @@ export interface AgentParamsDTO {
     model?: 'tts-1' | 'tts-1-hd';
     speed?: number;
   };
+  /** Propose a follow-up question after each completed turn (the suggester
+   *  worker's chip above the chat composer). Absent/false = off. */
+  suggest_follow_up?: boolean;
 }
 
 /** One persona note (jsonb element). Soft-retired, never deleted — the read

@@ -61,6 +61,13 @@ export const aiWorkerKind = pgEnum('ai_worker_kind', [
   // a terse phrase, a full sentence, or a short paragraph. Optional; when absent
   // the runtime falls back to the summarizer worker. See migration 0106.
   'narrator',
+  // Suggester: proposes ONE follow-up question after a completed assistant turn,
+  // rendered as an accept-with-Enter chip above the composer. A cheap, fast chat
+  // model, fire-and-forget off the turn's critical path; its system_prompt is the
+  // tuning knob (tone/length of the proposed question). Off by default per agent
+  // (agents.params.suggest_follow_up). Optional; when absent the runtime falls
+  // back to the narrator, then the summarizer. See migration 0142.
+  'suggester',
 ]);
 
 export type AiWorkerKind = (typeof aiWorkerKind.enumValues)[number];
@@ -213,6 +220,11 @@ export type SummarizerParams = ChatLlmParams & {
  *  plus `max_tokens` (raise both to let it say more). */
 export type NarratorParams = ChatLlmParams;
 
+/** Params for `kind='suggester'`. The suggester proposes one follow-up question
+ *  after a turn. Plain chat knobs; the behaviour lives in `system_prompt` plus
+ *  `max_tokens` (a suggestion is one short question, so the cap stays tiny). */
+export type SuggesterParams = ChatLlmParams;
+
 /** Params for `kind='embedding'`. Deliberately tiny — embedding is a pure
  *  text→vector transformation; there's no system_prompt, no temperature,
  *  no max_tokens, no streaming choice to make. Just the model (which lives
@@ -248,6 +260,7 @@ export type AiWorkerParams =
   | ExtractorParams
   | SummarizerParams
   | NarratorParams
+  | SuggesterParams
   | EmbeddingParams
   | SearchParams;
 

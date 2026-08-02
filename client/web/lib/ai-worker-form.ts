@@ -84,8 +84,9 @@ export function paramsFromForm(kind: AiWorkerKind, fd: FormData): Record<string,
         huggingface_routing: str(fd.get('huggingface_routing')),
       };
     case 'narrator':
-      // Plain chat knobs. The verbosity dial is the systemPrompt (handled by
-      // buildWorkerBody) + max_tokens — no narrator-specific params.
+    case 'suggester':
+      // Plain chat knobs. The behaviour dial is the systemPrompt (handled by
+      // buildWorkerBody) + max_tokens; no kind-specific params.
       return {
         temperature: num(fd.get('temperature')),
         max_tokens: num(fd.get('max_tokens')),

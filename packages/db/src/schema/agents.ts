@@ -159,6 +159,10 @@ export type AgentParams = {
      *  a touch more conversational. */
     speed?: number;
   };
+  /** Propose a follow-up question after each completed turn (the suggester
+   *  worker; the accept-with-Enter chip above the chat composer). One extra
+   *  cheap LLM call per turn, so OFF unless explicitly true. */
+  suggest_follow_up?: boolean;
 };
 
 /**

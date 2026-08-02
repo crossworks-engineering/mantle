@@ -256,4 +256,7 @@ export const CAPABILITY_FOR_KIND: Record<string, ProviderCapability> = {
   // The narrator runs a plain chat-completion to restyle a status line — same
   // 'chat' capability/provider eligibility as the other one-shot LLM workers.
   narrator: 'chat',
+  // The suggester runs a plain chat-completion to propose one follow-up
+  // question after a turn; same 'chat' capability as the narrator.
+  suggester: 'chat',
 };
