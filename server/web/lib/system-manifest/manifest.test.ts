@@ -308,6 +308,22 @@ describe('system manifest integrity', () => {
     expect(grounding!.instructions).toContain('search_chunks');
   });
 
+  it('the page_editing skill teaches the restyle playbook (batched, with the TL;DR workaround)', () => {
+    // Guards the prose that turns "make this page presentable" into an actual
+    // sequence: without it, agents have the dialect but no idea what a
+    // presentable page looks like or how to get there safely.
+    const editing = MANIFEST_SKILLS.find((s) => s.slug === 'page_editing');
+    expect(editing, 'page_editing skill missing from manifest').toBeDefined();
+    expect(editing!.instructions).toContain('restyle playbook');
+    // The whole restyle lands as one atomic batch, not block-by-block surgery.
+    expect(editing!.instructions).toContain('page_blocks_apply');
+    // No insert-before tool exists yet, so a top-of-page TL;DR needs the
+    // documented update-then-re-insert workaround anchored on one block id.
+    expect(editing!.instructions).toContain(
+      "re-insert that block's original content immediately after it",
+    );
+  });
+
   it('every specialist agent has a system prompt; the persona has none (persona-bank)', () => {
     for (const agent of MANIFEST_AGENTS) {
       if (agent.isPersona) {

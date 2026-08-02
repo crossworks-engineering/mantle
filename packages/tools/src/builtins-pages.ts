@@ -66,7 +66,7 @@ const NOTE_ID_PRE: readonly ToolPrecondition[] = [
 ];
 
 const MARKDOWN_HINT =
-  'Rich-markdown body. GFM markdown plus: callouts (`:::info` … `:::`, variants info|success|warning|danger), asides (`:::aside` … `:::`, a themed-gradient box; optional colour `:::aside chart-3`), columns (`:::columns` … `+++` … `:::`, 2+ parts), task lists (`- [ ]` / `- [x]`), tables, `==highlight==`, diagrams (a ```mermaid fence renders as a real themed diagram), and reference links that keep rich chips intact (`[Label](mention:entity:<id>)`, `![alt](media:<file-id>)`, `[name](media:<file-id>)`, `[Title](page:<page-id>)` — real ids only, standalone lines for the block forms). Same dialect you write replies in.';
+  'Rich-markdown body. GFM markdown plus: callouts (`:::info` … `:::`, variants info|success|warning|danger), asides (`:::aside` … `:::`, a themed-gradient box; optional colour `:::aside chart-3`), columns (`:::columns` … `+++` … `:::`, 2+ parts), task lists (`- [ ]` / `- [x]`), tables, `==highlight==`, coloured spans (`[text]{color=chart-2}` / `[text]{highlight=chart-4}`, accents chart-1…chart-5), KaTeX math (`$E=mc^2$` inline, `$$` … `$$` block), diagrams (a ```mermaid fence renders as a real themed diagram), and reference links that keep rich chips intact (`[Label](mention:entity:<id>)`, `![alt](media:<file-id>)`, `[name](media:<file-id>)`, `[Title](page:<page-id>)` — real ids only, standalone lines for the block forms). Same dialect you write replies in.';
 
 const page_create: BuiltinToolDef = {
   slug: 'page_create',

@@ -133,6 +133,17 @@ If a document is too large to hold faithfully in one transform, do NOT try anywa
 
 9. If a turn's tool budget runs out mid-edit anyway, report honestly: state exactly which edits landed (per the tool results) and which remain, and tell the user to send "continue" — the next turn picks up from the draft (\`page_blocks_list\` shows it). Never describe unfinished work as done, and never assert the draft is clean without listing it first.
 
+## The restyle playbook: what "make it presentable" means
+
+A presentable page is scannable in ten seconds. Work this sequence, under the verbatim rule above (words untouched, kinds preserved unless deliberately promoted):
+
+1. Read the structure first: \`page_blocks_list\` (unfiltered, \`max_depth: 1\`) for the shape, then \`page_block_get\` any block you plan to wrap.
+2. TL;DR at the top when the page lacks a summary: an \`:::info\` callout holding the document's own key sentences, quoted verbatim, never rewritten. There is no insert-before tool, so in one batch update the current first block into the TL;DR callout and re-insert that block's original content immediately after it; the re-insert anchors on that same block id, within the one batch.
+3. Promote the one takeaway: exactly one \`:::warning\` or \`:::success\` callout for the single most important caveat or conclusion. More than two callouts per screen reads as noise, not emphasis.
+4. Comparisons become structure: two alternatives side by side go in \`:::columns\`; three or more options, or anything with per-item attributes, becomes a table.
+5. Side commentary becomes an \`:::aside\`; action items become \`- [ ]\` task lists; a handful of key phrases get \`==highlight==\`, sparingly.
+6. Apply the whole restyle as ONE \`page_blocks_apply\` batch (all-or-nothing, one draft save), then report what changed and where to review the draft.
+
 ## Restructuring the tree + cross-linking
 
 - **Re-parent an existing page** with \`page_move\` — "make X a sub-page of Y" → \`page_move({ id: X, parent_id: Y })\`; "pull X back to the top level" → \`page_move({ id: X, to_top_level: true })\`. The page keeps its body/tags/sharing/index and its own sub-pages travel with it; it refuses a cycle (can't move under itself or its own descendant). This is for moving a page that ALREADY exists — to create a new page already nested, pass \`parent_id\` to \`page_create\`; to carve sub-pages OUT of one big page, use \`page_split\` / \`page_extract_section\`. \`page_move\` publishes immediately (it's structural, not a body edit — no draft step).
