@@ -54,6 +54,11 @@ const save = useMutation({
 - **Query keys** = URL as an array: `['skills']`, `['skills', id]`, `['skills', 'backrefs']`.
 - **Invalidate the broadest affected prefix** after a mutation; don't hand-patch the cache
   unless you need optimistic UI.
+- **Any mutation touching agents must use `invalidateAgentQueries`**
+  (`@mantle/web-ui/agent-invalidation`): agent identity is cached under three
+  disjoint prefixes (`['agents']`, `['assistant']`, `['studio']`), and the
+  assistant panel never unmounts, so a save path that invalidates only its own
+  key leaves the panel's model indicator stale until a full page refresh.
 - **Errors**: `apiFetch` throws `ApiError` carrying the endpoint's `{ error }` message —
   surface it via `query.error.message` / mutation `onError` + `toast`.
 - **Auth is handled for you.** `apiFetch` detects a `401` *or* a followed redirect-to-`/login`
@@ -125,7 +130,9 @@ Notes from the conversions so far:
   server action so the screen has zero server-action deps).
 - **Mutable list + `router.refresh()`** (agents kept the list in `useState` and
   hand-upserted on save): replace the state with `agentsQuery.data ?? []` and the
-  refresh with `invalidateQueries(['agents'])`. Track in-flight save with a plain
+  refresh with `invalidateQueries(['agents'])`, since generalised to
+  `invalidateAgentQueries(queryClient)`, which also covers the `['assistant']`
+  and `['studio']` prefixes. Track in-flight save with a plain
   `useState` boolean for `<SubmitButton pending>` (the optimistic upsert is dropped
   — invalidate refetches; a brief repaint is acceptable, matching the other screens).
 - **Building the mutation API + Zod from scratch** (heartbeats had only GETs): put

@@ -34,6 +34,7 @@ import type {
   AiWorkerDTO,
 } from '@mantle/client-types';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { invalidateAgentQueries } from '@mantle/web-ui/agent-invalidation';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
@@ -849,7 +850,7 @@ export function AgentsClient() {
       // Keep focus on the just-saved row instead of dropping back to the
       // empty-detail state. Promote the saved record into `editing` (turning a
       // create into an edit naturally — slug/id are now known) and resync the
-      // form fields to whatever the server canonicalised. invalidate(['agents'])
+      // form fields to whatever the server canonicalised. invalidateAgentQueries
       // then refetches the list around the still-selected row.
       if (saved) {
         setEditing({ mode: 'edit', agent: saved });
@@ -858,7 +859,7 @@ export function AgentsClient() {
       } else {
         closeDialog();
       }
-      await queryClient.invalidateQueries({ queryKey: ['agents'] });
+      await invalidateAgentQueries(queryClient);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Save failed.');
     } finally {
@@ -877,7 +878,7 @@ export function AgentsClient() {
     }
     toast.success(`Deleted ${a.name}`);
     if (editing?.mode === 'edit' && editing.agent.id === a.id) closeDialog();
-    await queryClient.invalidateQueries({ queryKey: ['agents'] });
+    await invalidateAgentQueries(queryClient);
   };
 
   const activeResponder = useMemo(

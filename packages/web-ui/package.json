@@ -5,6 +5,7 @@
   "description": "Shared web UI layer \u2014 the shadcn kit, theme CSS, api-fetch/asset-url transport, app-sandbox, and the app-bridge protocol. Consumed as raw TS by both Next apps via transpilePackages.",
   "type": "module",
   "exports": {
+    "./agent-invalidation": "./src/agent-invalidation.ts",
     "./api-fetch": "./src/api-fetch.ts",
     "./appearance": "./src/appearance.ts",
     "./desktop-shell": "./src/desktop-shell.ts",
