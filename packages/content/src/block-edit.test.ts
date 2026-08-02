@@ -523,8 +523,8 @@ describe('wrapBlocks', () => {
         },
       ],
     });
-    const inCol = (((doc as { content: N[] }).content[0]!.content![0] as N).content![0] as N)
-      .attrs!.id;
+    const inCol = (((doc as { content: N[] }).content[0]!.content![0] as N).content![0] as N).attrs!
+      .id;
     const r = wrapBlocks(doc, [inCol], 'columns');
     expect(r.refused).toBe(true);
     expect(r.reason).toContain('columns');
@@ -561,9 +561,11 @@ describe('wrapBlocks', () => {
     expect(list.type).toBe('columnList');
     expect(list.attrs!.id).toBe(r.wrapperId);
     expect(list.content!.map((c) => (c as N).type)).toEqual(['column', 'column', 'column']);
-    expect(
-      list.content!.map((c) => ((c as N).content![0] as N).attrs!.id),
-    ).toEqual([ids[0], ids[1], ids[2]]);
+    expect(list.content!.map((c) => ((c as N).content![0] as N).attrs!.id)).toEqual([
+      ids[0],
+      ids[1],
+      ids[2],
+    ]);
   });
 
   it('refuses a columns wrap of more than 4 blocks', () => {

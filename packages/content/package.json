@@ -46,6 +46,7 @@
   "dependencies": {
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/files": "workspace:*",
     "@mantle/search": "workspace:*",
     "@mantle/tabledb": "workspace:*",
     "docx": "^9.5.1",

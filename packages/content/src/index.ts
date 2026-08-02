@@ -21,6 +21,17 @@ export {
 } from './notes';
 
 export {
+  countDerivedFromFile,
+  describeDerivedCounts,
+  reapDerivedFromFile,
+  deleteFileWithDerived,
+  isPerDocumentExtractedImagesPath,
+  type DerivedCounts,
+  type ReapResult,
+  type CascadeDeleteResult,
+} from './derived';
+
+export {
   TASKS_ROOT_LABEL,
   TASK_STATUSES,
   TASK_PRIORITIES,

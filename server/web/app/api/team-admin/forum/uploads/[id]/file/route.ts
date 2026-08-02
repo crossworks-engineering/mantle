@@ -108,7 +108,13 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
       if (!marked) {
         // Lost a review race after creating the node — undo the fresh node (not
         // an adopted pre-existing one) so the loser's outcome stays the truth.
-        if (!already) await deleteFileById({ ownerId: user.id, fileId: nodeId }).catch(() => {});
+        // deleteDerived: the node is seconds old, but if the extractor already
+        // derived from it the undo must still win — never leave the loser's
+        // node behind because of a has_derived refusal.
+        if (!already)
+          await deleteFileById({ ownerId: user.id, fileId: nodeId, deleteDerived: true }).catch(
+            () => {},
+          );
         return NextResponse.json(
           { error: 'already reviewed — refresh to see the current queue' },
           { status: 409 },

@@ -281,6 +281,52 @@ const CHECKS: CheckDef[] = [
       FROM traces
       WHERE owner_id = ${o} AND status = 'running' AND started_at < now() - interval '10 minutes'`,
   },
+  {
+    key: 'dangling_source_file',
+    label: 'Dangling source-file references',
+    severity: 'medium',
+    note: 'a derived node (extracted image, auto-imported table, page/note from a *_from_file tool) whose data.sourceFileId points at a node that no longer exists — its source was deleted without reaping what it produced. Backlog from before the reap path shipped is expected sediment (clean it with the reap-dangling-derived script); the reap path prevents new ones, so a GROWING count is a regression.',
+    query: (o) => sql`
+      SELECT n.id, n.type::text AS kind, left(coalesce(n.title, ''), 60) AS detail
+      FROM nodes n
+      WHERE n.owner_id = ${o}
+        AND nullif(n.data->>'sourceFileId', '') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM nodes s
+          WHERE s.owner_id = ${o} AND s.id::text = n.data->>'sourceFileId'
+        )
+      LIMIT ${CAP}`,
+    spanQuery: (o) => sql`
+      SELECT min(n.created_at)::date::text AS oldest, max(n.created_at)::date::text AS newest
+      FROM nodes n
+      WHERE n.owner_id = ${o}
+        AND nullif(n.data->>'sourceFileId', '') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM nodes s
+          WHERE s.owner_id = ${o} AND s.id::text = n.data->>'sourceFileId'
+        )`,
+  },
+  {
+    key: 'dangling_trace_subject',
+    label: 'Dangling trace subjects',
+    severity: 'low',
+    note: "a trace whose subject node is gone — the history of something that was deleted. Audit-only by design: traces are the deleted node's biography (what ran over it, what it cost) and deleting them would erase the only remaining record. Expected to tick up whenever nodes are deleted; flagged so the rate stays visible.",
+    query: (o) => sql`
+      SELECT t.id, t.kind::text AS kind, to_char(t.started_at, 'YYYY-MM-DD') AS detail
+      FROM traces t
+      WHERE t.owner_id = ${o} AND t.subject_kind = 'node' AND t.subject_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM nodes n WHERE n.id = t.subject_id AND n.owner_id = ${o}
+        )
+      LIMIT ${CAP}`,
+    spanQuery: (o) => sql`
+      SELECT min(t.started_at)::date::text AS oldest, max(t.started_at)::date::text AS newest
+      FROM traces t
+      WHERE t.owner_id = ${o} AND t.subject_kind = 'node' AND t.subject_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM nodes n WHERE n.id = t.subject_id AND n.owner_id = ${o}
+        )`,
+  },
 ];
 
 export async function runCorpusAudit(ownerId: string): Promise<AuditReport> {

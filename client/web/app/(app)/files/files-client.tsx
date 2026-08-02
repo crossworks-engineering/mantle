@@ -87,6 +87,49 @@ type TextExt = 'md' | 'txt' | 'json';
 
 const FILES_ROOT = 'files';
 
+/** Server-shaped counts of the nodes ingest derived from a file — mirrors
+ *  DerivedCounts in @mantle/files (the client bundle can't import it). */
+type DerivedCounts = {
+  images: number;
+  tables: number;
+  pages: number;
+  notes: number;
+  other: number;
+  total: number;
+};
+
+type BulkDeleteResponse = {
+  deleted: number;
+  hasDerived?: Array<{ fileId: string; derived: DerivedCounts }>;
+};
+
+function sumDerivedCounts(all: DerivedCounts[]): DerivedCounts {
+  const sum: DerivedCounts = { images: 0, tables: 0, pages: 0, notes: 0, other: 0, total: 0 };
+  for (const c of all) {
+    sum.images += c.images;
+    sum.tables += c.tables;
+    sum.pages += c.pages;
+    sum.notes += c.notes;
+    sum.other += c.other;
+    sum.total += c.total;
+  }
+  return sum;
+}
+
+/** "34 images, 2 tables and 1 note" — matches the server's phrasing. */
+function describeDerivedCounts(c: DerivedCounts): string {
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const parts: string[] = [];
+  if (c.images) parts.push(plural(c.images, 'image', 'images'));
+  if (c.tables) parts.push(plural(c.tables, 'table', 'tables'));
+  if (c.pages) parts.push(plural(c.pages, 'page', 'pages'));
+  if (c.notes) parts.push(plural(c.notes, 'note', 'notes'));
+  if (c.other) parts.push(plural(c.other, 'other node', 'other nodes'));
+  if (parts.length === 0) return 'nothing';
+  if (parts.length === 1) return parts[0]!;
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]!}`;
+}
+
 /** What the rename dialog is acting on — a file (stem, extension preserved) or
  *  a folder (slug). */
 type RenameTarget =
@@ -195,6 +238,13 @@ function FilesView({
   const [createFileExt, setCreateFileExt] = useState<TextExt | null>(null);
   const [deleteFolderOpen, setDeleteFolderOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  // Second-step confirm for files that ingest derived nodes from (extracted
+  // images, imported tables, pages, notes) — deleting those needs an explicit
+  // cascade opt-in; the server refuses otherwise and reports the counts here.
+  const [cascadeConfirm, setCascadeConfirm] = useState<{
+    ids: string[];
+    counts: DerivedCounts;
+  } | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
 
   // Sync local file state when server re-fetches.
@@ -271,14 +321,42 @@ function FilesView({
   const confirmBulkDelete = async () => {
     if (selectedFileIds.size === 0) return;
     const ids = Array.from(selectedFileIds);
+    let res: BulkDeleteResponse;
     try {
-      await apiSend('/api/files/files', 'DELETE', { ids });
+      res = await apiSend<BulkDeleteResponse>('/api/files/files', 'DELETE', { ids });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Delete failed');
       return;
     }
-    toast.success(`Deleted ${ids.length} file${ids.length === 1 ? '' : 's'}`);
+    const refused = res.hasDerived ?? [];
+    if (refused.length > 0) {
+      // Some files produced derived nodes; nothing of theirs was deleted.
+      // Ask before cascading.
+      setCascadeConfirm({
+        ids: refused.map((r) => r.fileId),
+        counts: sumDerivedCounts(refused.map((r) => r.derived)),
+      });
+    }
+    if (res.deleted > 0) {
+      toast.success(`Deleted ${res.deleted} file${res.deleted === 1 ? '' : 's'}`);
+    }
     setSelectedFileIds(new Set());
+    refresh();
+  };
+
+  const confirmCascadeDelete = async () => {
+    if (!cascadeConfirm) return;
+    const { ids } = cascadeConfirm;
+    try {
+      await apiSend('/api/files/files', 'DELETE', { ids, cascade: true });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Delete failed');
+      return;
+    }
+    toast.success(
+      `Deleted ${ids.length} file${ids.length === 1 ? '' : 's'} and everything derived from them`,
+    );
+    setCascadeConfirm(null);
     refresh();
   };
 
@@ -660,6 +738,44 @@ function FilesView({
               onClick={confirmBulkDelete}
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Cascade confirm: files with derived nodes ─────────────── */}
+      <AlertDialog
+        open={cascadeConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setCascadeConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Also delete everything derived from{' '}
+              {cascadeConfirm && cascadeConfirm.ids.length === 1
+                ? 'this file'
+                : `these ${cascadeConfirm?.ids.length ?? 0} files`}
+              ?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {cascadeConfirm
+                ? `Ingest produced ${describeDerivedCounts(cascadeConfirm.counts)} from ${
+                    cascadeConfirm.ids.length === 1 ? 'this file' : 'these files'
+                  }. Nothing has been deleted yet — confirming removes the file${
+                    cascadeConfirm.ids.length === 1 ? '' : 's'
+                  } and all of it. This can’t be undone.`
+                : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep everything</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmCascadeDelete}
+            >
+              Delete all
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

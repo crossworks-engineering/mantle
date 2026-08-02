@@ -249,7 +249,7 @@ export function wrapBlocks(
   if (hits.some((h) => h.parent !== parent)) {
     return refuse(
       'blocks span different parents; wrap only takes siblings under ONE container. ' +
-        'Wrap each parent\'s run separately.',
+        "Wrap each parent's run separately.",
     );
   }
   const indices = hits.map((h) => h.index).sort((a, b) => a - b);

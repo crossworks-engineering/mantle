@@ -42,6 +42,7 @@ import {
   writeFile as writeFileOnDisk,
   deleteFile as deleteFileOnDisk,
 } from './index';
+import { derivedCountsOf, type DerivedCounts } from './derived-counts';
 import {
   db,
   emailAttachments,
@@ -644,10 +645,41 @@ export async function readFileById(args: {
   return { row: fileRowFromNode(node), bytes, path: filePath };
 }
 
+/**
+ * Count the nodes ingest derived from this file (extracted images,
+ * auto-imported tables, pages/notes/tables from the *_from_file tools) —
+ * everything whose `data.sourceFileId` points here. One GROUP BY, served by
+ * the partial index from migration 0141. Re-exported by `@mantle/content`'s
+ * derived module, whose `reapDerivedFromFile` is the matching delete.
+ */
+export async function countDerivedFromFile(args: {
+  ownerId: string;
+  fileId: string;
+}): Promise<DerivedCounts> {
+  const rows = await db
+    .select({ kind: sql<string>`${nodes.type}::text`, n: sql<number>`count(*)::int` })
+    .from(nodes)
+    .where(
+      and(eq(nodes.ownerId, args.ownerId), sql`${nodes.data}->>'sourceFileId' = ${args.fileId}`),
+    )
+    .groupBy(nodes.type);
+  return derivedCountsOf(rows);
+}
+
 export async function deleteFileById(args: {
   ownerId: string;
   fileId: string;
-}): Promise<{ ok: boolean; reason?: 'not_found' | 'attachment' }> {
+  /** Skip the has_derived refusal. Callers set this AFTER reaping (or
+   *  explicitly accepting) the file's derived nodes — see
+   *  `reapDerivedFromFile` in `@mantle/content`. */
+  deleteDerived?: boolean;
+}): Promise<{
+  ok: boolean;
+  reason?: 'not_found' | 'attachment' | 'has_derived';
+  /** Populated on the has_derived refusal so the caller can show what a
+   *  cascade would remove before asking again with `deleteDerived: true`. */
+  derived?: DerivedCounts;
+}> {
   const [node] = await db
     .select()
     .from(nodes)
@@ -664,6 +696,16 @@ export async function deleteFileById(args: {
     .where(eq(emailAttachments.fileNodeId, node.id))
     .limit(1);
   if (attachment) return { ok: false, reason: 'attachment' };
+  // Refuse when ingest derived nodes from this file and the caller hasn't
+  // opted in: a bare delete would strand them (data.sourceFileId is JSONB —
+  // no FK cascade reaches them). The refusal carries counts so the caller can
+  // confirm, reap, and retry with the flag. Count-first keeps the failure
+  // mode measurable: the dangling_source_file audit check flags anything a
+  // mid-reap crash leaves behind.
+  if (!args.deleteDerived) {
+    const derived = await countDerivedFromFile({ ownerId: args.ownerId, fileId: node.id });
+    if (derived.total > 0) return { ok: false, reason: 'has_derived', derived };
+  }
   const data = (node.data ?? {}) as Record<string, unknown>;
   const filename = String(data.filename ?? '');
   await db.delete(nodes).where(eq(nodes.id, node.id));
@@ -983,16 +1025,22 @@ export async function renameFolderById(args: {
   return folderById({ ownerId: args.ownerId, folderId: args.folderId });
 }
 
-export async function bulkDeleteFiles(args: {
-  ownerId: string;
-  fileIds: string[];
-}): Promise<{ deleted: number }> {
+export async function bulkDeleteFiles(args: { ownerId: string; fileIds: string[] }): Promise<{
+  deleted: number;
+  /** Files refused because ingest derived nodes from them — the caller shows
+   *  the counts and retries the confirmed set via the cascade path. */
+  hasDerived: Array<{ fileId: string; derived: DerivedCounts }>;
+}> {
   let deleted = 0;
+  const hasDerived: Array<{ fileId: string; derived: DerivedCounts }> = [];
   for (const id of args.fileIds) {
     const res = await deleteFileById({ ownerId: args.ownerId, fileId: id });
     if (res.ok) deleted++;
+    else if (res.reason === 'has_derived' && res.derived) {
+      hasDerived.push({ fileId: id, derived: res.derived });
+    }
   }
-  return { deleted };
+  return { deleted, hasDerived };
 }
 
 export async function listFiles(args: { ownerId: string; parentPath: string }): Promise<FileRow[]> {

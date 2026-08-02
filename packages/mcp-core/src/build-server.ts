@@ -79,7 +79,9 @@ import {
 } from '@mantle/tools';
 import type { BuiltinToolDef } from '@mantle/tools';
 import {
+  deleteFileWithDerived,
   deleteNote,
+  describeDerivedCounts,
   getPage,
   getTable,
   listPages,
@@ -529,11 +531,41 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
 
   server.tool(
     'file_delete',
-    'Delete a file by id. Removes both the DB row and the on-disk file.',
-    { file_id: z.string().uuid() },
-    async ({ file_id }) => {
+    'Delete a file by id. Removes both the DB row and the on-disk file. If ingest derived nodes from the file (extracted images, imported tables, pages, notes), the call reports their counts instead of deleting; confirm with the user, then call again with delete_derived: true to remove them too.',
+    { file_id: z.string().uuid(), delete_derived: z.boolean().optional() },
+    async ({ file_id, delete_derived }) => {
+      if (delete_derived) {
+        const res = await deleteFileWithDerived(ownerId, file_id);
+        if (!res.ok) {
+          const text =
+            res.reason === 'attachment'
+              ? "can't delete — this file is an email attachment; delete it from the email instead"
+              : 'file not found';
+          return { content: [{ type: 'text', text }], isError: true };
+        }
+        const skipped = res.skipped > 0 ? ` (${res.skipped} derived node(s) skipped)` : '';
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `deleted, along with ${describeDerivedCounts(res.reaped)} derived from it${skipped}`,
+            },
+          ],
+        };
+      }
       const res = await deleteFileById({ ownerId: ownerId, fileId: file_id });
       if (!res.ok) {
+        if (res.reason === 'has_derived' && res.derived) {
+          // Not an error: a count-and-confirm preview. Nothing was deleted.
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `this file produced ${describeDerivedCounts(res.derived)} — nothing was deleted; call again with delete_derived: true to remove the file and everything derived from it`,
+              },
+            ],
+          };
+        }
         const text =
           res.reason === 'attachment'
             ? "can't delete — this file is an email attachment; delete it from the email instead"

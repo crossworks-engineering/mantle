@@ -128,8 +128,35 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   if (!idParsed.success) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
+  const cascade = new URL(_req.url).searchParams.get('cascade') === '1';
+  if (cascade) {
+    // Confirmed cascade: reap the derived nodes first, then the source file.
+    const { deleteFileWithDerived } = await import('@mantle/content');
+    const res = await deleteFileWithDerived(user.id, idParsed.data.id);
+    if (!res.ok) {
+      if (res.reason === 'attachment') {
+        return NextResponse.json(
+          {
+            error:
+              "Can't delete — this file is an email attachment. Delete it from the email instead.",
+          },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json({ error: 'not found' }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, reaped: res.reaped, skipped: res.skipped });
+  }
   const res = await deleteFileById({ ownerId: user.id, fileId: idParsed.data.id });
   if (!res.ok) {
+    if (res.reason === 'has_derived' && res.derived) {
+      // Count-and-confirm: nothing was deleted. The client shows the counts
+      // and retries with ?cascade=1 once the user confirms.
+      return NextResponse.json(
+        { error: 'file has derived nodes', reason: 'has_derived', derived: res.derived },
+        { status: 409 },
+      );
+    }
     if (res.reason === 'attachment') {
       return NextResponse.json(
         {

@@ -81,6 +81,14 @@ export {
 } from './docs';
 
 export {
+  emptyDerivedCounts,
+  derivedBucketForType,
+  derivedCountsOf,
+  describeDerivedCounts,
+  type DerivedCounts,
+} from './derived-counts';
+
+export {
   ensureFilesRootBranch,
   createFolder,
   ensureDatedUploadFolder,
@@ -96,6 +104,7 @@ export {
   folderByPath,
   upsertFile,
   readFileById,
+  countDerivedFromFile,
   deleteFileById,
   renameFileById,
   bulkDeleteFiles,

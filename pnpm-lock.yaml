@@ -431,6 +431,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/files':
+        specifier: workspace:*
+        version: link:../files
       '@mantle/search':
         specifier: workspace:*
         version: link:../search
