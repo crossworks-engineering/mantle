@@ -619,7 +619,26 @@ async function maybeExtractEmbeddedImages(
   if (existing) return;
 
   const loaded = await loadFileBytes(node);
-  if (!loaded) return;
+  if (!loaded) {
+    // A byte-load failure used to return silently, which made it
+    // INDISTINGUISHABLE from "this document has no pictures" — both left no
+    // trace step at all. That ambiguity is the point of the fix: you could not
+    // tell a document that was read and held nothing from one the pass never
+    // opened, so a corpus whose bytes are unreachable (a half-finished sync, a
+    // missing object) looked exactly like a corpus with no diagrams in it.
+    await step(
+      {
+        name: 'extract_images',
+        kind: 'compute',
+        input: { filename: nameForExt, sourceFileId: node.id },
+      },
+      async (h) => {
+        h.setMeta({ candidates: 0, kept: 0, bytes_available: false });
+        h.setError('could not load file bytes — image extraction never ran for this document');
+      },
+    );
+    return;
+  }
 
   const { extractEmbeddedImages, buildImageTitles, buildImageFilename } =
     await import('@mantle/files/embedded-images');
