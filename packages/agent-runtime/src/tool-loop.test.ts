@@ -1913,9 +1913,9 @@ describe('write-target capture (tool-outcome read-back)', () => {
     expect(
       extractWriteTarget({ id: '1964e026-9c95-4cae-9670-9908f6ad8f8e', title: 'Domain Records' }),
     ).toEqual({ id: '1964e026-9c95-4cae-9670-9908f6ad8f8e', title: 'Domain Records' });
-    expect(extractWriteTarget({ id: '1964e026-9c95-4cae-9670-9908f6ad8f8e', name: 'Rows' })).toEqual(
-      { id: '1964e026-9c95-4cae-9670-9908f6ad8f8e', title: 'Rows' },
-    );
+    expect(
+      extractWriteTarget({ id: '1964e026-9c95-4cae-9670-9908f6ad8f8e', name: 'Rows' }),
+    ).toEqual({ id: '1964e026-9c95-4cae-9670-9908f6ad8f8e', title: 'Rows' });
     // prose ids, missing ids, non-objects → no claim at all
     expect(extractWriteTarget({ id: 'not-a-uuid', title: 'x' })).toBeNull();
     expect(extractWriteTarget({ ok: true })).toBeNull();
@@ -1936,9 +1936,7 @@ describe('write-target capture (tool-outcome read-back)', () => {
     const stats = summarizeToolOutcomes([
       rec(1, sameId),
       rec(2, sameId), // dup id → collapsed
-      ...Array.from({ length: 6 }, (_, i) =>
-        rec(i + 3, `1111111${i}-0000-4000-8000-000000000000`),
-      ),
+      ...Array.from({ length: 6 }, (_, i) => rec(i + 3, `1111111${i}-0000-4000-8000-000000000000`)),
     ]);
     expect(stats.writes).toHaveLength(5);
     expect(stats.writes![0]).toEqual({ slug: 'page_update', id: sameId, title: 'T1' });

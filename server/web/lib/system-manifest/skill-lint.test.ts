@@ -51,8 +51,9 @@ const NOT_A_TOOL_SLUG = new Set<string>([
 /** Backticked tokens, with call-shaped suffixes stripped so
  *  `page_get({ id })` resolves as `page_get`. */
 function slugTokens(text: string): string[] {
-  return Array.from(text.matchAll(/`([^`\n]+)`/g), (m) => (m[1] ?? '').replace(/\(.*$/, '').trim())
-    .filter((t) => SLUG_SHAPE.test(t));
+  return Array.from(text.matchAll(/`([^`\n]+)`/g), (m) =>
+    (m[1] ?? '').replace(/\(.*$/, '').trim(),
+  ).filter((t) => SLUG_SHAPE.test(t));
 }
 
 describe('skill-prose lint', () => {

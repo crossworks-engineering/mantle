@@ -80,14 +80,16 @@ describe('formatToolRecordSuffix', () => {
         queued: 0,
         failures: [],
         writes: [
-          { slug: 'table_create', id: '1964e026-9c95-4cae-9670-9908f6ad8f8e', title: 'Domain Records' },
+          {
+            slug: 'table_create',
+            id: '1964e026-9c95-4cae-9670-9908f6ad8f8e',
+            title: 'Domain Records',
+          },
           { slug: 'page_update', id: 'ca4ede98-f0c4-4286-85b3-33c978099468' },
         ],
       },
     });
-    expect(s).toBe(
-      '[tool record: 2 tool calls ran; wrote: "Domain Records" (1964e026), ca4ede98]',
-    );
+    expect(s).toBe('[tool record: 2 tool calls ran; wrote: "Domain Records" (1964e026), ca4ede98]');
   });
 
   it('caps failure and write lists', () => {

@@ -281,9 +281,8 @@ export async function refreshAccessToken(input: {
   await db
     .update(oauthAccessTokens)
     .set({
-      refreshExpiresAt: row.refreshExpiresAt.getTime() > graceEnd.getTime()
-        ? graceEnd
-        : row.refreshExpiresAt,
+      refreshExpiresAt:
+        row.refreshExpiresAt.getTime() > graceEnd.getTime() ? graceEnd : row.refreshExpiresAt,
       lastUsedAt: new Date(now),
     })
     .where(eq(oauthAccessTokens.id, row.id));
