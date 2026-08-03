@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Anchor, KeyRound, Plus, Trash2, Users } from 'lucide-react';
+import { Anchor, Bot, KeyRound, Plus, Trash2, Users } from 'lucide-react';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { Badge } from '@mantle/web-ui/ui/badge';
@@ -27,6 +27,13 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@mantle/web-ui/ui/select';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
@@ -40,7 +47,33 @@ type UserRow = {
   isOwner: boolean;
   createdAt: string;
   lastLoginAt: string | null;
+  /** This login's personal assistant, or null when it shares the brain default. */
+  agent: { id: string; slug: string; name: string } | null;
 };
+
+/** One option in the "copy from" picker. */
+type SourceAgent = { id: string; slug: string; name: string; role: string; model: string };
+
+/**
+ * Agents a personal assistant can be copied from: the brain's ENTRY-POINT
+ * agents only (role assistant/responder), highest priority first — so the
+ * canonical persona is the default pick.
+ *
+ * Specialists (role `custom`: researcher, appsmith, …) are deliberately absent.
+ * They're delegation targets, not chat entry points, and only responder/assistant
+ * rows get the manifest's persona convergence on upgrade
+ * (`reconcilePersonaCapabilitiesByRole`) and new specialists wired into their
+ * delegation (`wireDelegation`) — a `custom` clone would quietly drift.
+ */
+function useSourceAgents() {
+  return useQuery({
+    queryKey: ['users', 'source-agents'],
+    queryFn: async () => {
+      const { agents } = await apiFetch<{ agents: SourceAgent[] }>('/api/agents');
+      return agents.filter((a) => a.role === 'assistant' || a.role === 'responder');
+    },
+  });
+}
 
 /**
  * Co-admin logins into the one brain — NOT tenants. Everyone sees the same data
@@ -114,6 +147,11 @@ export function UsersClient() {
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">
                   {u.displayName || u.email}
                 </span>
+                {u.agent && (
+                  <Badge variant="outline" className="shrink-0" title={u.agent.name}>
+                    <Bot className="size-3" /> {u.agent.name}
+                  </Badge>
+                )}
                 {u.isOwner && (
                   <Badge variant="secondary" className="shrink-0">
                     Anchor
@@ -276,6 +314,8 @@ function UserDetail({
         <SubmitButton pending={saving}>Save user</SubmitButton>
       </form>
 
+      <AssistantCard user={user} onChanged={onChanged} />
+
       <div className="max-w-md rounded-md border border-border p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -295,6 +335,236 @@ function UserDetail({
   );
 }
 
+/**
+ * A login's personal assistant: create it, rename it, or release it.
+ *
+ * Releasing only drops the binding — the agent and its whole chat history stay,
+ * as an ordinary shared agent under /settings/agents. Nothing here ever deletes
+ * an agent; that stays a deliberate act on the agents screen.
+ */
+function AssistantCard({ user, onChanged }: { user: UserRow; onChanged: () => void }) {
+  const toast = useToast();
+  const sources = useSourceAgents();
+  const [name, setName] = useState(user.agent?.name ?? '');
+  const [sourceAgentId, setSourceAgentId] = useState('');
+  const [pending, setPending] = useState(false);
+  const [releaseOpen, setReleaseOpen] = useState(false);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast.error('Enter a name for the assistant.');
+      return;
+    }
+    // With an assistant already in place and no explicit new source, this is a
+    // rename — the server keeps the slug, so the existing thread survives.
+    const source = user.agent ? sourceAgentId || undefined : sourceAgentId || sources.data?.[0]?.id;
+    if (!user.agent && !source) {
+      toast.error('No agent available to copy from.');
+      return;
+    }
+    setPending(true);
+    try {
+      await apiSend(`/api/users/${user.id}/agent`, 'PUT', {
+        name: trimmed,
+        ...(source ? { sourceAgentId: source } : {}),
+      });
+      setSourceAgentId('');
+      onChanged();
+      toast.success(user.agent ? 'Assistant renamed' : 'Assistant created');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not save the assistant');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const release = async () => {
+    setPending(true);
+    try {
+      await apiSend(`/api/users/${user.id}/agent`, 'DELETE');
+      setName('');
+      setReleaseOpen(false);
+      onChanged();
+      toast.success('Assistant released');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not release the assistant');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="max-w-md space-y-3 rounded-md border border-border p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Bot className="size-4 text-muted-foreground" /> Assistant
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {user.agent ? (
+              <>
+                Chats open on{' '}
+                <a
+                  href={`/settings/agents?selected=${user.agent.id}`}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  {user.agent.name}
+                </a>{' '}
+                for this login, on its own thread.
+              </>
+            ) : (
+              'Shares the brain’s default assistant — chats land in the same thread as everyone else’s.'
+            )}
+          </p>
+        </div>
+        {user.agent && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => setReleaseOpen(true)}
+          >
+            Release
+          </Button>
+        )}
+      </div>
+      <form onSubmit={save} className="space-y-3">
+        <AssistantFields
+          idPrefix={`user-${user.id}`}
+          name={name}
+          onNameChange={setName}
+          sourceAgentId={sourceAgentId}
+          onSourceAgentIdChange={setSourceAgentId}
+          sources={sources.data ?? []}
+          nameLabel="Assistant name"
+          showSource={!user.agent}
+          nameHint={
+            user.agent
+              ? 'Renaming keeps the same assistant and its chat history. To copy from a different agent, release this one and create a new one.'
+              : undefined
+          }
+        />
+        <SubmitButton pending={pending}>
+          {user.agent ? 'Rename assistant' : 'Create assistant'}
+        </SubmitButton>
+      </form>
+
+      <AlertDialog open={releaseOpen} onOpenChange={setReleaseOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Release {user.agent?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This login goes back to the brain&apos;s default assistant. The agent and its whole
+              chat history stay — it just becomes a shared agent again, and you can delete it from
+              Settings → Agents if you want it gone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={(e) => {
+                e.preventDefault();
+                void release();
+              }}
+            >
+              Release assistant
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+/**
+ * Name + source-agent inputs for a login's personal assistant. Shared by the
+ * Add-login dialog and the detail panel's assistant card, so the wording of
+ * what this does — and what it does NOT do — is written once.
+ */
+function AssistantFields({
+  idPrefix,
+  name,
+  onNameChange,
+  sourceAgentId,
+  onSourceAgentIdChange,
+  sources,
+  nameLabel = 'Assistant name (optional)',
+  nameHint,
+  showSource = true,
+}: {
+  idPrefix: string;
+  name: string;
+  onNameChange: (v: string) => void;
+  sourceAgentId: string;
+  onSourceAgentIdChange: (v: string) => void;
+  sources: SourceAgent[];
+  nameLabel?: string;
+  nameHint?: React.ReactNode;
+  /** False once an assistant exists — then the only in-place edit is a rename,
+   *  which keeps the slug and therefore the thread. Pointing a login at a
+   *  different source is Release + Create, so nobody strands a live thread by
+   *  nudging a dropdown. */
+  showSource?: boolean;
+}) {
+  const nameId = `${idPrefix}-agent-name`;
+  const sourceId = `${idPrefix}-agent-source`;
+  const selected = sourceAgentId || sources[0]?.id || '';
+  return (
+    <>
+      <div className="space-y-1.5">
+        <Label htmlFor={nameId}>{nameLabel}</Label>
+        <Input
+          id={nameId}
+          value={name}
+          onChange={(e) => onNameChange(e.target.value)}
+          placeholder="e.g. Nova"
+          aria-describedby={hintId(nameId)}
+        />
+        <FieldHint
+          id={nameId}
+          warn="Not private: every login can still open this assistant and read its chat."
+        >
+          {nameHint ?? (
+            <>
+              Gives this login its own copy of an assistant, so their chat is a separate
+              conversation instead of sharing one thread with everyone else. Leave blank to share
+              the brain&apos;s default assistant.
+            </>
+          )}
+        </FieldHint>
+      </div>
+      {showSource && name.trim().length > 0 && (
+        <div className="space-y-1.5">
+          <Label htmlFor={sourceId}>Copy from</Label>
+          <Select value={selected} onValueChange={onSourceAgentIdChange}>
+            <SelectTrigger id={sourceId} aria-describedby={hintId(sourceId)}>
+              <SelectValue placeholder="Choose an agent" />
+            </SelectTrigger>
+            <SelectContent>
+              {sources.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  <span className="font-medium">{a.name}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {a.model.split('/').pop()}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FieldHint id={sourceId}>
+            The copy keeps its source&apos;s model, prompt, skills and tools — it just gets its own
+            chat history. Telegram bots and learned persona notes aren&apos;t copied.
+          </FieldHint>
+        </div>
+      )}
+    </>
+  );
+}
+
 function AddUserDialog({
   open,
   onOpenChange,
@@ -308,21 +578,36 @@ function AddUserDialog({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [agentName, setAgentName] = useState('');
+  const [sourceAgentId, setSourceAgentId] = useState('');
   const [pending, setPending] = useState(false);
+  const sources = useSourceAgents();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPending(true);
     try {
-      const res = await apiSend<{ id: string }>('/api/users', 'POST', {
+      // A blank assistant name means "share the brain default", exactly as every
+      // login behaved before per-login assistants existed.
+      const wantsAgent = agentName.trim().length > 0;
+      const source = sourceAgentId || sources.data?.[0]?.id;
+      if (wantsAgent && !source) {
+        toast.error('No agent available to copy from.');
+        return;
+      }
+      const res = await apiSend<{ id: string; agentError: string | null }>('/api/users', 'POST', {
         email: email.trim(),
         password,
         displayName: displayName.trim() || undefined,
+        ...(wantsAgent ? { agent: { name: agentName.trim(), sourceAgentId: source } } : {}),
       });
-      toast.success('User added');
+      if (res.agentError) toast.error(res.agentError);
+      else toast.success(wantsAgent ? 'Login and assistant added' : 'User added');
       setEmail('');
       setPassword('');
       setDisplayName('');
+      setAgentName('');
+      setSourceAgentId('');
       onOpenChange(false);
       onCreated(res.id);
     } catch (err) {
@@ -392,6 +677,14 @@ function AddUserDialog({
               Falls back to the email address when blank.
             </FieldHint>
           </div>
+          <AssistantFields
+            idPrefix="new-user"
+            name={agentName}
+            onNameChange={setAgentName}
+            sourceAgentId={sourceAgentId}
+            onSourceAgentIdChange={setSourceAgentId}
+            sources={sources.data ?? []}
+          />
           <div className="flex justify-end pt-1">
             <SubmitButton pending={pending}>Add login</SubmitButton>
           </div>

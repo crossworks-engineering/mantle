@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { resolveAssistantAgent } from '@/lib/assistant';
+import { resolveAgentForActor } from '@/lib/assistant';
 import { markAssistantRead } from '@/lib/assistant-inbox';
 
 const Body = z.object({
@@ -12,7 +12,8 @@ const Body = z.object({
 
 /**
  * POST /api/assistant/read — mark an agent's thread read (clears its unread
- * count). `{ agentSlug?, at? }`; omitting agentSlug marks the default agent.
+ * count). `{ agentSlug?, at? }`; omitting agentSlug marks this login's assigned
+ * assistant, else the brain default.
  * Owner-gated → works with a mobile bearer token.
  */
 export async function POST(req: Request) {
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
   }
   const body = parsed.data;
 
-  const agent = await resolveAssistantAgent(owner.id, body.agentSlug);
+  const agent = await resolveAgentForActor(owner, body.agentSlug);
   if (!agent) {
     return NextResponse.json({ error: 'no_agent' }, { status: 404 });
   }

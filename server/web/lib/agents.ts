@@ -14,6 +14,7 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { MANIFEST_AGENTS } from './system-manifest/manifest';
+import { cloneAgentFields, slugifyAgentName, uniqueAgentSlug } from './agent-clone';
 
 /**
  * Server-side CRUD wrapper for the `agents` table. Every call is owner-scoped
@@ -63,6 +64,8 @@ function toSummary(a: Agent): AgentSummary {
     params: a.params ?? {},
     avatar: a.avatar ?? null,
     personaNotes: (a.personaNotes ?? []) as PersonaNote[],
+    assignedUserId: a.assignedUserId ?? null,
+    assignedAt: a.assignedAt?.toISOString() ?? null,
     priority: a.priority,
     enabled: a.enabled,
     manifestManaged: DEF_SYNCED_SLUGS.has(a.slug),
@@ -271,6 +274,107 @@ export async function setEnabled(
   enabled: boolean,
 ): Promise<AgentSummary | null> {
   return updateAgent(userId, id, { enabled });
+}
+
+/* ---------------------------------------------------------------------------
+ * Per-login assistants (migration 0143).
+ *
+ * `agents.assigned_user_id` binds an agent to ONE co-admin login and makes it
+ * that login's default chat target. Since `assistant_messages` is keyed
+ * (owner_id, agent_id) — and the live NOTIFY payload, read cursors, digests and
+ * the inbox all key off the agent too — that single pointer is what stops two
+ * people typing at once from landing in one interleaved thread.
+ *
+ * Thread separation, NOT privacy: `userId` here is still the anchor, every
+ * agent stays visible to every login, and recall_window replays any of them.
+ * ------------------------------------------------------------------------- */
+
+/** The agent assigned to a given LOGIN (`actor.id`), or null. Owner-scoped and
+ *  enabled-only: a disabled assistant falls the caller back to the brain
+ *  default rather than dead-ending them. */
+export async function getAssignedAgent(
+  userId: string,
+  actorId: string,
+): Promise<AgentSummary | null> {
+  const [row] = await db
+    .select()
+    .from(agents)
+    .where(
+      and(eq(agents.ownerId, userId), eq(agents.assignedUserId, actorId), eq(agents.enabled, true)),
+    )
+    .limit(1);
+  return row ? toSummary(row) : null;
+}
+
+/**
+ * Clone `sourceAgentId` into a personal assistant for `actorId`.
+ *
+ * What is and isn't inherited lives in `cloneAgentFields` (pure, unit-tested);
+ * this is the DB half — resolve the source, mint a free slug, insert via the
+ * one `createAgent` path, then stamp the assignment.
+ *
+ * Any assistant the login already had is released first (assignment moves, the
+ * old agent and its history stay put) so the partial unique index can't trip.
+ * Throws when the source agent isn't this owner's.
+ */
+export async function cloneAgentForUser(
+  userId: string,
+  input: { actorId: string; actorEmail: string; name: string; sourceAgentId: string },
+): Promise<AgentSummary> {
+  const source = await getAgent(userId, input.sourceAgentId);
+  if (!source) throw new Error(`source agent ${input.sourceAgentId} not found`);
+
+  const existing = await db
+    .select({ slug: agents.slug })
+    .from(agents)
+    .where(eq(agents.ownerId, userId));
+  const slug = uniqueAgentSlug(
+    slugifyAgentName(input.name),
+    existing.map((r) => r.slug),
+  );
+
+  await releaseAssignedAgent(userId, input.actorId);
+  const created = await createAgent(
+    userId,
+    cloneAgentFields(source, { name: input.name, slug, assignedUserEmail: input.actorEmail }),
+  );
+  const [assigned] = await db
+    .update(agents)
+    .set({ assignedUserId: input.actorId, assignedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(agents.id, created.id), eq(agents.ownerId, userId)))
+    .returning();
+  if (!assigned) throw new Error('failed to assign the cloned agent');
+  return toSummary(assigned);
+}
+
+/** Drop a login's assignment. The agent and its whole archive survive — it just
+ *  becomes a shared agent again (same reasoning as migration 0127). Returns the
+ *  released agent, or null when the login had none. */
+export async function releaseAssignedAgent(
+  userId: string,
+  actorId: string,
+): Promise<AgentSummary | null> {
+  const [row] = await db
+    .update(agents)
+    .set({ assignedUserId: null, assignedAt: null, updatedAt: new Date() })
+    .where(and(eq(agents.ownerId, userId), eq(agents.assignedUserId, actorId)))
+    .returning();
+  return row ? toSummary(row) : null;
+}
+
+/** Rename an already-assigned assistant in place (keeps its slug, and therefore
+ *  its thread — the client keys threads by slug). Null when unassigned. */
+export async function renameAssignedAgent(
+  userId: string,
+  actorId: string,
+  name: string,
+): Promise<AgentSummary | null> {
+  const [row] = await db
+    .update(agents)
+    .set({ name, updatedAt: new Date() })
+    .where(and(eq(agents.ownerId, userId), eq(agents.assignedUserId, actorId)))
+    .returning();
+  return row ? toSummary(row) : null;
 }
 
 export async function deleteAgent(userId: string, id: string): Promise<boolean> {

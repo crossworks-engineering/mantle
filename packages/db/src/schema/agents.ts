@@ -281,6 +281,19 @@ export const agents = pgTable(
       .notNull(),
     /** Avatar {style, seed}. Null → derived initials/accent avatar. */
     avatar: jsonb('avatar').$type<AgentAvatar | null>(),
+    /** The co-admin login this agent is the personal assistant for (migration
+     *  0143). NULL = a shared agent, the way every agent behaved before. Set,
+     *  it makes this agent that login's DEFAULT chat target, which is what
+     *  keeps two people typing at once out of one interleaved thread.
+     *
+     *  Thread separation, not privacy: content is still keyed to the anchor and
+     *  every login can open every agent from the picker. FK ON DELETE SET NULL
+     *  — deleting the login must not destroy the assistant's archive (0127). */
+    assignedUserId: uuid('assigned_user_id'),
+    /** When the current assignment was made. The client compares it against a
+     *  local watermark to override a stale `mantle_assistant_agent` cookie
+     *  once — see AssistantDockProvider. */
+    assignedAt: timestamp('assigned_at', { withTimezone: true }),
     /** Higher = wins. Convention: 100 default. */
     priority: integer('priority').default(100).notNull(),
     enabled: boolean('enabled').default(true).notNull(),
@@ -292,6 +305,9 @@ export const agents = pgTable(
   (t) => [
     uniqueIndex('agents_owner_slug_uq').on(t.ownerId, t.slug),
     index('agents_owner_role_priority_idx').on(t.ownerId, t.role, t.priority),
+    // Partial (WHERE assigned_user_id IS NOT NULL) in migration 0143 — a login
+    // has at most one assistant, but any number of agents stay unassigned.
+    uniqueIndex('agents_assigned_user_uq').on(t.assignedUserId),
   ],
 );
 

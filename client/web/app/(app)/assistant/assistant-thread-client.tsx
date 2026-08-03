@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { GitCompareArrows, Highlighter, MapPin, Minus } from 'lucide-react';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
@@ -27,7 +28,13 @@ type ThreadData = {
   agents: AssistantAgentOption[];
   agent: ResolvedAgent | null;
   messages: AssistantTimelineRow[];
+  /** This login's own assistant, when the operator gave it one (migration 0143).
+   *  Null when it shares the brain default. */
+  assigned: { slug: string; assignedAt: string | null } | null;
 };
+
+/** Watermark for the last assignment this browser has already honoured. */
+const ASSIGNED_SEEN_KEY = 'mantle_assistant_assigned_seen';
 
 /**
  * Data-free /assistant. Fetches the agent list + resolved agent + initial
@@ -36,7 +43,8 @@ type ThreadData = {
  * writes the cookie + navigates to ?agent=<slug>, which re-keys this query.
  */
 export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
-  const { minimize, pinnedContext, surfaceSelection, surfaceChanges } = useAssistantDock();
+  const { minimize, pinnedContext, surfaceSelection, surfaceChanges, setActiveAgentSlug } =
+    useAssistantDock();
   const threadQuery = useQuery({
     queryKey: ['assistant', 'thread', slugHint ?? ''],
     queryFn: () =>
@@ -46,6 +54,21 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
           : '/api/assistant/thread',
       ),
   });
+
+  // Adopt a NEW assignment once. The sticky `mantle_assistant_agent` cookie is
+  // per-browser, so a co-admin who has been chatting to the shared agent keeps
+  // landing there after the operator gives them their own — i.e. the change
+  // wouldn't reach the very people it's for. Comparing the server's assignedAt
+  // against a local watermark switches them over exactly once; a deliberate pick
+  // from the agent picker afterwards is left alone.
+  const assignedSlug = threadQuery.data?.assigned?.slug ?? null;
+  const assignedAt = threadQuery.data?.assigned?.assignedAt ?? null;
+  useEffect(() => {
+    if (!assignedAt || !assignedSlug) return;
+    if (window.localStorage.getItem(ASSIGNED_SEEN_KEY) === assignedAt) return;
+    window.localStorage.setItem(ASSIGNED_SEEN_KEY, assignedAt);
+    if (slugHint !== assignedSlug) setActiveAgentSlug(assignedSlug);
+  }, [assignedAt, assignedSlug, slugHint, setActiveAgentSlug]);
 
   if (threadQuery.isPending) {
     return (

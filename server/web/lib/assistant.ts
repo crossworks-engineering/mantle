@@ -11,14 +11,44 @@
  */
 
 import { and, desc, eq, inArray, lt } from 'drizzle-orm';
-import { db, agents, assistantMessages, type ConversationAttachment } from '@mantle/db';
-import { CHATTABLE_ROLES } from '@mantle/assistant-runtime';
+import { db, agents, assistantMessages, type Agent, type ConversationAttachment } from '@mantle/db';
+import {
+  CHATTABLE_ROLES,
+  resolveAssistantAgent as resolveAssistantAgentRuntime,
+} from '@mantle/assistant-runtime';
+import { getAssignedAgent } from './agents';
+import type { SessionUser } from './auth';
 
 export {
   runAssistantTurn,
   resolveAssistantAgent,
   type AssistantTurnResult,
 } from '@mantle/assistant-runtime';
+
+/**
+ * `resolveAssistantAgent`, but aware of WHICH LOGIN is asking.
+ *
+ * The runtime resolver only ever sees the anchor owner id — by design; it runs
+ * outside the request, from the durable runner as well as a route, and must not
+ * learn about logins. But since migration 0111 several logins share that anchor,
+ * so they all resolved to the same agent and their turns interleaved in one
+ * thread. Migration 0143 lets a login own an agent; this resolves it, at the
+ * HTTP boundary where `actor.id` is known.
+ *
+ * Order: an explicit slug always wins (the picker is the user's own choice) →
+ * the login's assigned assistant → today's brain-wide default. Every step falls
+ * through, so a brain with no assignments behaves exactly as before.
+ */
+export async function resolveAgentForActor(
+  user: SessionUser,
+  slug?: string,
+): Promise<Agent | null> {
+  if (!slug) {
+    const assigned = await getAssignedAgent(user.id, user.actor.id);
+    if (assigned) return resolveAssistantAgentRuntime(user.id, assigned.slug);
+  }
+  return resolveAssistantAgentRuntime(user.id, slug);
+}
 
 export type AssistantTimelineRow = {
   id: string;

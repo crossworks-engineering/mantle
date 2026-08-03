@@ -250,11 +250,55 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
   `conversation-digest` notes (they currently carry `data.chat_id` / `source`), or the
   responder briefly loses old digests after cutover.
 
+## 6a. Per-login assistants (migration 0143)
+
+Multi-admin logins (0111) share the anchor owner, so before 0143 every login
+resolved to the SAME default agent — two co-admins chatting at once interleaved
+in one thread, and each turn's history block fed the other person's words to the
+model.
+
+The fix rides on the split this document already established: because the stream
+is keyed `(owner_id, agent_id)` — and the `conversation_changed` NOTIFY payload
+(0091), read cursors (0090), digests and the inbox all key off the agent too —
+giving a login its own agent row splits every one of them for free.
+
+`agents.assigned_user_id` (nullable, `ON DELETE SET NULL`, partial-unique) binds
+an agent to one login. Moving parts:
+
+- **Clone** — `cloneAgentFields` (`server/web/lib/agent-clone.ts`, unit-tested)
+  copies the source's route, prompt, skills, tool groups and `delegate_to`.
+  It does NOT copy persona notes (they're about a different human) and cannot
+  copy a Telegram binding (`channels` rows key off `agent_id`). Priority lands
+  one BELOW the source, so `pickWebDefaultAgent`'s slug tiebreak can never let a
+  clone become the brain-wide default for headless callers (reminders,
+  heartbeats).
+- **Resolution** — `resolveAgentForActor` (`server/web/lib/assistant.ts`) at the
+  HTTP boundary: explicit slug → the login's assigned agent → the runtime's
+  brain default. `resolveAssistantAgent` in `@mantle/assistant-runtime` is
+  unchanged; it runs outside the request and must not learn about logins.
+- **Cookie handshake** — `mantle_assistant_agent` is per-browser and sticky, so
+  a co-admin already chatting to the shared agent would keep landing there. The
+  thread payload carries `assigned: {slug, assignedAt}`; the client adopts a
+  newer `assignedAt` once against a `localStorage` watermark.
+- **Not privacy.** Content stays keyed to the anchor, every login sees every
+  agent in the picker, and `recall_window` replays any thread. The brain is
+  still the trust boundary — this is thread separation only, and the UI says so.
+- **Releasing never deletes.** `DELETE /api/users/[id]/agent` only clears the
+  binding; the agent and its archive stay, per the reasoning in migration 0127.
+
 ## 7. Risks & call-outs
 
 - **Multiple Telegram chats on one agent interleave** in the single stream. For the
   single-user setup (one bot per responder, DMs only) this is correct and desired —
   noted, not partitioned.
+- **Reminders and heartbeats stay brain-wide** — they resolve one agent (the
+  pinned `reminderAgentSlug`, or `heartbeats.agent_slug`), so a per-login
+  assistant does not get its own reminders. Deliberate; per-login routing is
+  separate work.
+- **`/settings/config` "adopt" converges only the effective persona**
+  (`syncPersonaSkills`), so it won't reach clones. The boot reconcile does —
+  `reconcilePersonaCapabilitiesByRole` and `wireDelegation` both operate on every
+  enabled responder/assistant — so clones stay current across version bumps.
 - **Dual-write transactionality** — Telegram writes both `telegram_messages` and
   `assistant_messages`; wrap in one transaction so a crash can't half-record a turn.
 - **Digest re-keying** — see §6; old digests must gain `agent_id` or be migrated.

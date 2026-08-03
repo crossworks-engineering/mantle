@@ -296,6 +296,14 @@ export interface AgentDTO {
   params: AgentParamsDTO;
   avatar: AgentAvatarDTO | null;
   personaNotes: PersonaNoteDTO[];
+  /** The co-admin login this agent is the personal assistant for (migration
+   *  0143), or null for a shared agent. Set, it becomes that login's default
+   *  chat target — the mechanism that keeps two people typing at once out of
+   *  one interleaved thread. Not a privacy boundary: every login still sees
+   *  and can open every agent. */
+  assignedUserId: string | null;
+  /** ISO timestamp of the current assignment; null when unassigned. */
+  assignedAt: string | null;
   priority: number;
   enabled: boolean;
   /** True when this agent ships from the system manifest (a def-synced

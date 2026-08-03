@@ -4,6 +4,50 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — Your own assistant, not everyone else's thread (branch claude/per-user-agent-duplication-60eb10)
+
+**Two people signed into the same brain were talking to one assistant, in one
+conversation.** Extra logins have always been co-admins on the anchor account's
+data rather than tenants, and chat was never split off that: every login
+resolved to the same default agent, and the conversation store is keyed
+`(owner_id, agent_id)`. So a second person's turns appeared mid-thread, and
+worse, each turn's history block handed the model the other person's words as
+though the user had said them.
+
+A login can now have its own assistant. In Settings → Users, name one when you
+add a login (or later, from that login's panel) and pick which agent to copy;
+the copy becomes that login's default chat target. Because the stream was
+already keyed per agent — as are the live-turn NOTIFY payload, unread cursors,
+digests and the inbox — one pointer, `agents.assigned_user_id`, splits all of
+them at once. There is no new scoping model.
+
+The copy is the same assistant with its own history: model, route, prompt,
+skills, tool groups and delegation all come across, so it can reach the shared
+specialists from its first turn. Three things deliberately don't:
+
+- **Persona notes.** What an assistant learned about the person it was talking
+  to is about *that* person. A copy starts with none.
+- **Telegram.** A bot binding is a row against the old agent id, so a copy has
+  no transport and no credentials — by construction, not by filtering.
+- **Rank.** A copy sits one priority below its source. Headless callers (event
+  reminders, heartbeats) break priority ties on slug, so an equal-ranked copy
+  named `aaron` could quietly have become the brain's background default.
+
+**This is separation, not privacy, and the screen says so.** The brain is still
+one trust boundary: every login can open every assistant from the picker, and
+`recall_window` replays any thread. What changes is that your chat is your chat.
+
+The sticky agent cookie is per-browser, which would have made this land nowhere
+for the exact people it's for — someone already chatting to the shared assistant
+keeps landing there. The thread payload now carries when the assignment was
+made, and the client switches over once against a local watermark; a deliberate
+pick from the picker afterwards is left alone.
+
+Releasing an assistant only drops the binding. The agent and its whole archive
+stay, as an ordinary shared agent — deleting one remains a deliberate act on
+Settings → Agents, same reasoning as the earlier fix that stopped agent deletion
+destroying chat history.
+
 ## Unreleased — A picture where the sentence needs it (branch claude/vibrant-elion-4dda88)
 
 **A chat reply could not put a picture mid-answer.** Every image a turn produced

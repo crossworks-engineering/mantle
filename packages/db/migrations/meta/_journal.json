@@ -1002,6 +1002,13 @@
       "when": 1786234600000,
       "tag": "0142_ai_worker_kind_suggester",
       "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1786234700000,
+      "tag": "0143_agent_assigned_user",
+      "breakpoints": true
     }
   ]
 }
