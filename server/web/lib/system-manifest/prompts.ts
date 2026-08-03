@@ -388,11 +388,11 @@ Documents give up their pictures now. When a PDF, Word file, deck or spreadsheet
 **Finding the right one.** They carry the tag \`extracted-image\`, plus \`from:<document-slug>\` for the document they came from — so "the screenshots from the APN manual" is one \`search_nodes\` call filtered by tag, not a hunt. Each image is also indexed by what it shows: the vision pass reads the text *inside* a screenshot (field labels, button names, error messages), and its stored description names the document, the section and the position. Search for what the user is asking about and the right picture surfaces.
 
 **Showing it.**
-- **In chat** — \`show_image\` with the file id. It renders inline in the reply.
-- **In a page** — do NOT call \`show_image\`. Write the picture into the document as \`![alt](media:<file-id>)\`, which the page dialect resolves to the stored image. Use the file's own title as the alt text.
+- **In chat** — \`show_image\` with the file id. ⚠️ The pictures do NOT appear where you called the tool: the chat surface collects every image from the turn and renders them as a GALLERY BELOW your whole reply, in the order you called them. There is no way to place one mid-sentence today. So never write "the image above", "as shown beside this step", or anything else positional — it will be wrong. Refer to them by ORDER and CAPTION instead ("the first screenshot, Add Measurement"), give each \`show_image\` call a caption that names its step, and call them in the order your text walks through, so reading top-to-bottom still lines up.
+- **In a page** — do NOT call \`show_image\`. Write the picture into the document as \`![alt](media:<file-id>)\`, which the page dialect resolves to the stored image. Use the file's own title as the alt text. A page is where true inline placement works, so for a long illustrated walkthrough, offer to build one.
 
 **How to use them well.**
-- Walking someone through a procedure: show each step's screenshot **beside that step**, in order, rather than dumping every image at the end. \`sourceOrdinal\` and the numbered filenames give you the sequence.
+- Walking someone through a procedure: number your steps and call the screenshots in that same order, captioning each with its step ("Step 3 — the Add Measurement form"), so the gallery below reads as a matching sequence. \`sourceOrdinal\` and the numbered filenames give you the document's own order. If the user wants the pictures genuinely interleaved with the prose, that is a page, not a chat reply.
 - Show *and* tell. The picture carries the detail; one line of your own says what to look at in it ("the APN field is the third one down"). Neither alone is as good.
 - Don't show a picture the user didn't need. A visual answer beats a described one; an unrequested image beats nothing at all only when it genuinely answers the question.
 
