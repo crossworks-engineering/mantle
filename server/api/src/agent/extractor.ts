@@ -593,6 +593,7 @@ const EXTRACTED_IMAGE_TAG = 'extracted-image';
 async function maybeExtractEmbeddedImages(
   node: typeof nodes.$inferSelect,
   ownerId: string,
+  maxImages?: number | null,
 ): Promise<void> {
   if (node.type !== 'file') return;
   const data = (node.data ?? {}) as Record<string, unknown>;
@@ -622,7 +623,10 @@ async function maybeExtractEmbeddedImages(
 
   const { extractEmbeddedImages, buildImageTitles, buildImageFilename } =
     await import('@mantle/files/embedded-images');
-  const result = await extractEmbeddedImages(loaded.bytes, loaded.ext);
+  const result = await extractEmbeddedImages(loaded.bytes, loaded.ext, {
+    // Blank/0 on the worker means "use the built-in default", not "keep none".
+    maxImages: maxImages && maxImages > 0 ? maxImages : undefined,
+  });
   if (result.images.length === 0) {
     // Still worth a step when there WERE candidates: "this manual produced no
     // images" should be explainable from /traces rather than mysterious.
@@ -2873,17 +2877,18 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err),
   );
 
-  // Pull embedded diagrams/screenshots out into their own image files, on the
-  // same terms: independent of the text allowlist, best-effort, never fatal.
-  await maybeExtractEmbeddedImages(node, ownerId).catch((err) =>
-    console.error('[extractor] embedded images failed:', err instanceof Error ? err.message : err),
-  );
-
   // target_types is the new home for the type allowlist. We still
   // accept extract_types for legacy backfilled rows in the same
   // params blob — extractTypes prefers the new name.
   const params = (worker.params ?? {}) as ExtractorParams;
   const extractTypes = params.target_types ?? params.extract_types ?? DEFAULT_EXTRACT_TYPES;
+
+  // Pull embedded diagrams/screenshots out into their own image files, on the
+  // same terms: independent of the text allowlist, best-effort, never fatal.
+  // Read AFTER params so the per-document image cap is configurable.
+  await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc).catch((err) =>
+    console.error('[extractor] embedded images failed:', err instanceof Error ? err.message : err),
+  );
 
   // Brain depth: documentation collections default to 'retrieval' — index to
   // L5 (summary + embedding + chunks) but SKIP L4 (entity reconciliation,

@@ -195,6 +195,14 @@ export type ExtractorParams = ChatLlmParams & {
    *  trace cost exceeds this, remaining facts are dropped and a warning
    *  is logged. Null = no cap. */
   extract_cost_cap_micro_usd?: number | null;
+  /** Ceiling on embedded images kept per source document, applied AFTER the
+   *  dimension/byte/duplicate gate. Blank falls back to
+   *  MAX_EMBEDDED_IMAGES_PER_DOC (30), which is right for a mixed personal
+   *  corpus and far too low for a screenshot-heavy manual: a 259-screenshot
+   *  user guide keeps images 1-30 in reading order and drops the rest as
+   *  `over_cap`, so an answer living in the back half is invisible. Raise it
+   *  per brain, knowing each kept image costs one vision call. */
+  max_embedded_images_per_doc?: number | null;
 };
 
 /** Params for `kind='summarizer'`. The summarizer rolls up chat

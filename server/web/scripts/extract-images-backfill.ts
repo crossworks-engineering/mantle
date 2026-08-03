@@ -64,9 +64,25 @@ const DEFAULT_EXTS = [
   'rtf',
 ];
 
-/** Worst case per document, from MAX_EMBEDDED_IMAGES_PER_DOC. Used only for
- *  the upper-bound estimate printed in the dry run. */
-const MAX_IMAGES_PER_DOC = 30;
+/** Fallback worst case per document, mirroring MAX_EMBEDDED_IMAGES_PER_DOC in
+ *  `@mantle/files/embedded-images`. Used only when the extractor worker has no
+ *  explicit `max_embedded_images_per_doc` set. */
+const DEFAULT_MAX_IMAGES_PER_DOC = 30;
+
+/** The cap the extractor will actually apply, read from the same worker param
+ *  the Settings → AI workers form writes. The backfill only fires
+ *  `node_ingested`; the extractor does the keeping, so this is a read for the
+ *  estimate's sake and never an instruction. */
+async function effectiveImageCap(sql: postgres.Sql): Promise<number> {
+  const [row] = await sql<Array<{ cap: number | null }>>`
+    select (params->>'max_embedded_images_per_doc')::int as cap
+    from ai_workers
+    where kind = 'extractor' and enabled = true
+    order by created_at
+    limit 1`;
+  const cap = row?.cap;
+  return cap && cap > 0 ? cap : DEFAULT_MAX_IMAGES_PER_DOC;
+}
 
 type Args = { go: boolean; limit: number | null; rateSec: number; exts: string[] };
 
@@ -148,10 +164,14 @@ async function main() {
   }
 
   if (!args.go) {
+    const cap = await effectiveImageCap(sql);
     console.log('');
     console.log('[images-backfill] DRY RUN — nothing fired.');
     console.log(
-      `[images-backfill] Upper bound on vision calls: ${rows.length} docs × up to ${MAX_IMAGES_PER_DOC} kept images = ${rows.length * MAX_IMAGES_PER_DOC}.`,
+      `[images-backfill] Upper bound on vision calls: ${rows.length} docs × up to ${cap} kept images = ${rows.length * cap}.`,
+    );
+    console.log(
+      `[images-backfill] Cap of ${cap}/doc comes from the extractor worker's "Embedded images per document" setting (Settings → AI workers). Raise it there BEFORE backfilling a screenshot-heavy corpus — a document that already produced images is skipped on a re-run, so a low first pass is not automatically corrected by a second one.`,
     );
     console.log(
       '[images-backfill] The real number is far lower — most documents hold no qualifying picture at all, and icons, logos and duplicates are dropped before any model runs. Try --limit=20 --go first and read the actual yield off the extract_images trace steps.',

@@ -72,6 +72,7 @@ export function paramsFromForm(kind: AiWorkerKind, fd: FormData): Record<string,
           : undefined,
         extract_facts: fd.get('extract_facts') === 'on',
         extract_cost_cap_micro_usd: num(fd.get('extract_cost_cap_micro_usd')),
+        max_embedded_images_per_doc: num(fd.get('max_embedded_images_per_doc')),
         huggingface_routing: str(fd.get('huggingface_routing')),
       };
     }

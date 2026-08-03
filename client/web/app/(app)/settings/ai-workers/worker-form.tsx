@@ -2270,6 +2270,25 @@ function LlmWorkerFields({
                 Spend allowed on a single node before extraction gives up.
               </FieldHint>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="max_embedded_images_per_doc">Embedded images per document</Label>
+              <Input
+                id="max_embedded_images_per_doc"
+                name="max_embedded_images_per_doc"
+                type="number"
+                min={0}
+                defaultValue={(params.max_embedded_images_per_doc as number | undefined) ?? ''}
+                placeholder="blank = 30"
+                aria-describedby={hintId('max_embedded_images_per_doc')}
+              />
+              <FieldHint
+                id="max_embedded_images_per_doc"
+                warn="Every image kept costs one vision call, so a big number across a big corpus is real money."
+              >
+                Diagrams and screenshots kept per document, in reading order. The default 30 suits a
+                mixed corpus; a screenshot-heavy manual needs more or its later figures are dropped.
+              </FieldHint>
+            </div>
           </div>
         </>
       )}
