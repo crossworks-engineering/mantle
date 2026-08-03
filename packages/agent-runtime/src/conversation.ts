@@ -353,6 +353,20 @@ export async function updateAssistantMessageOutcome(args: {
      *  summarizeToolOutcomes) — read back into the next turn's history. */
     writes?: Array<{ slug: string; id: string; title?: string }>;
   };
+  /** Media the turn's tools produced (a `show_image` picture, a generated
+   *  image), persisted so the turn still renders them after a reload.
+   *
+   *  The live `artifacts` channel carries base64 bytes and is returned ONLY by
+   *  the legacy blocking response — the streaming path answers 202 with a turn
+   *  id and the client reconciles to this durable row, so an artifact that is
+   *  never written here is never seen at all. That is exactly what happened to
+   *  `show_image`: four successful calls, four artifacts built, and an empty
+   *  `attachments` column. Stores the node reference, never the bytes — the
+   *  client fetches them from /api/files/files/<nodeId>.
+   *
+   *  Omitted ⇒ column left untouched (an empty list must not clobber whatever
+   *  the insert already recorded). */
+  attachments?: ConversationAttachment[];
   tx?: Executor;
 }): Promise<AssistantMessage | null> {
   const exec = args.tx ?? db;
@@ -367,6 +381,9 @@ export async function updateAssistantMessageOutcome(args: {
       ...(args.text != null ? { text: args.text } : {}),
       ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.error !== undefined ? { error: args.error } : {}),
+      ...(args.attachments != null && args.attachments.length > 0
+        ? { attachments: args.attachments }
+        : {}),
       ...(Object.keys(dataPatch).length > 0
         ? {
             data: sql`${assistantMessages.data} || ${JSON.stringify(dataPatch)}::jsonb`,

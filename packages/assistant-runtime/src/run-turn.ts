@@ -558,6 +558,25 @@ export async function runAssistantTurn(
   // voice-mode reply would skip the strip.
   const reply = stripAudioTags(outcome.reply).text;
 
+  // Persist the turn's media onto the row. The live `artifacts` channel below
+  // carries the bytes, but it only reaches the client on the LEGACY BLOCKING
+  // response — with streaming on, the route answers 202 with a turn id and the
+  // client reconciles to this durable row instead. So an artifact not written
+  // here is never rendered at all: `show_image` was building four perfectly
+  // good artifacts a turn and landing an empty `attachments` column.
+  //
+  // Node reference only, never the base64 — StoredAttachmentView fetches from
+  // /api/files/files/<nodeId>, so an artifact WITHOUT a node id has nothing the
+  // client could load and is left to the live channel.
+  const durableAttachments: ConversationAttachment[] = outcome.loop.artifacts
+    .filter((a) => typeof a.nodeId === 'string' && a.nodeId.length > 0)
+    .map((a) => ({
+      kind: a.kind,
+      nodeId: a.nodeId!,
+      ...(a.mimeType ? { mime: a.mimeType } : {}),
+      ...(a.caption ? { caption: a.caption } : {}),
+    }));
+
   // Finalize the pending outbound row: fill the composed reply + flip the status
   // to 'complete'. Journaled, so a crash-resume re-applies it idempotently.
   const { persistedThoughts, toolStats } = outcome;
@@ -570,6 +589,7 @@ export async function runAssistantTurn(
       model: agent.model,
       ...(persistedThoughts.length ? { thoughts: persistedThoughts } : {}),
       ...(toolStats ? { toolStats } : {}),
+      ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
     }),
   );
   // The row was inserted this same turn, so it should always still be there;
