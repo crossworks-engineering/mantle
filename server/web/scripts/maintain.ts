@@ -31,8 +31,14 @@ const KIND_LABELS: Record<TaskKind, string> = {
   recurring: 'Recurring hygiene',
   remedy: 'Remedies (run when a monitor flags drift)',
   ops: 'Ops (deliberate events)',
-  backfill: 'Retired backfills (historical — need --force-retired)',
+  backfill: 'Backfills (one-off — run when it applies to this brain)',
 };
+
+/** Retired-ness is `status`, NOT `kind`. Labelling every backfill "retired"
+ *  hid a LIVE one behind a warning to pass --force-retired that the runner
+ *  does not want and will not use (the gate below keys off status). A live
+ *  backfill is a normal task nobody has run here yet. */
+const RETIRED_BACKFILL_LABEL = 'Retired backfills (historical — need --force-retired)';
 
 function defaultMode(t: MaintenanceTask): string {
   if (t.applyFlag) return `dry-run (${t.applyFlag} applies)`;
@@ -40,19 +46,32 @@ function defaultMode(t: MaintenanceTask): string {
   return 'LIVE on invoke';
 }
 
+function printGroup(label: string, tasks: MaintenanceTask[]): void {
+  if (tasks.length === 0) return;
+  console.log(`\n${label}`);
+  for (const t of tasks) {
+    const spend = t.cost === 'llm' || t.cost === 'embedding' ? ` 💸${t.cost}` : '';
+    console.log(`  ${t.slug.padEnd(28)} ${t.title}${spend}`);
+    console.log(`  ${''.padEnd(28)} default: ${defaultMode(t)}`);
+  }
+}
+
 function list(includeRetired: boolean): void {
   const kinds: TaskKind[] = ['recurring', 'remedy', 'ops', 'backfill'];
   for (const kind of kinds) {
-    const tasks = MAINTENANCE_TASKS.filter(
-      (t) => t.kind === kind && (includeRetired || t.status === 'live'),
+    // Live first, under the kind's own label. Retired rows are a separate
+    // group so "historical, needs --force-retired" only ever describes tasks
+    // that are actually retired.
+    printGroup(
+      KIND_LABELS[kind],
+      MAINTENANCE_TASKS.filter((t) => t.kind === kind && t.status === 'live'),
     );
-    if (tasks.length === 0) continue;
-    console.log(`\n${KIND_LABELS[kind]}`);
-    for (const t of tasks) {
-      const spend = t.cost === 'llm' || t.cost === 'embedding' ? ` 💸${t.cost}` : '';
-      console.log(`  ${t.slug.padEnd(28)} ${t.title}${spend}`);
-      console.log(`  ${''.padEnd(28)} default: ${defaultMode(t)}`);
-    }
+  }
+  if (includeRetired) {
+    printGroup(
+      RETIRED_BACKFILL_LABEL,
+      MAINTENANCE_TASKS.filter((t) => t.status === 'retired'),
+    );
   }
   console.log(
     includeRetired
