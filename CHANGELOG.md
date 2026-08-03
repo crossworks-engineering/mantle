@@ -4,6 +4,50 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — A picture where the sentence needs it (branch claude/vibrant-elion-4dda88)
+
+**A chat reply could not put a picture mid-answer.** Every image a turn produced
+was collected and rendered as a strip below the whole reply, in the order the
+tool was called. For the case this feature exists for, an illustrated walkthrough
+of a product manual, that is the wrong shape: the reader wants each step's
+screenshot under that step, not a clump at the bottom to map back by counting.
+v0.218.10 corrected the prompt to describe that limit honestly. This removes the
+limit instead.
+
+The renderer already had everything. Chat replies render through the same TipTap
+schema Pages uses, image node included, and that node resolves a stored file from
+its id. The missing link was one converter: `markdownToDoc` (Pages, server-side)
+turned `![alt](media:<file-id>)` into a real image, while the chat converter let
+it fall through to a broken `<img src="media:...">`. So the same syntax now works
+in a reply, and the assistant writes each screenshot where it belongs.
+
+Two converters drifting is how the bug happened, so the reference schemes
+(`media:`, `page:`, `mention:`) moved to one dependency-free module both import,
+with a test that runs the same markdown through both and fails if they disagree
+about which picture goes where. The standalone form deliberately does not go
+through `marked`: the `<p>` wrapper it adds makes ProseMirror close an empty
+paragraph before the image, putting a blank line above every picture.
+
+Three edges, decided rather than left to chance:
+
+- **Shown twice.** A reply that writes the image inline *and* calls `show_image`
+  for the same file used to show it in both places. The reply's own placement
+  wins; the strip copy is dropped at finalize. Mechanical, not prompt-only,
+  because a confused model doing both is exactly the case a prompt misses.
+- **Mid-stream.** A half-typed `![alt](media:` is not a complete markdown image,
+  so it stays literal text until the closing paren lands: no crash, no
+  broken-image flash. The live stream buffer resolves finished markers through
+  the same route the durable reply uses.
+- **Telegram.** That surface sends plain text, where a marker would arrive as
+  literal `![...](media:...)`. Inline markers are stripped on the way out and
+  counted on the trace. `show_image` remains the only path that delivers a photo
+  there, and `visual_answers` now says so.
+
+No new surface area: the `<img>` hits the same owner-gated bytes route Pages and
+the attachment strip already use. It answers unauthenticated with 401 and scopes
+every read by owner id, so an invented or someone else's file id is a broken
+image, never a leak.
+
 ## Unreleased — One implementation per tool, one verifier per credential (branch feat/arch-cleanup)
 
 **24 MCP tools had two implementations, and the spare had gone stale.** Notes,
@@ -187,11 +231,14 @@ The byte floor is deliberately *low*: flat line art compresses to about 2 KB, an
 an initial 8 KB floor rejected precisely the diagrams this exists for. Pixel
 dimensions do the real filtering.
 
-Showing one is `show_image` in chat (rendered inline; Telegram gets a real
-photo) and `![alt](media:<file-id>)` in a page — no new page machinery, since
-that syntax already resolved to a stored file. A `visual_answers` skill carries
-the judgment: show rather than narrate, put each step's screenshot beside its
-step, and never invent a file id.
+Showing one is `show_image` in chat and `![alt](media:<file-id>)` in a page — no
+new page machinery, since that syntax already resolved to a stored file. A
+`visual_answers` skill carries the judgment: show rather than narrate, put each
+step's screenshot beside its step, and never invent a file id. (At the time this
+shipped, `show_image` did **not** place a picture where it was called: the chat
+surface clumped every image from a turn into a strip below the whole reply. See
+"A picture where the sentence needs it" below, which made the inline form work
+in chat too.)
 
 SVG is accepted, and is the best case rather than the risky one — vector stays
 crisp at any zoom. It is safe because `safeDownloadHeaders` already serves it

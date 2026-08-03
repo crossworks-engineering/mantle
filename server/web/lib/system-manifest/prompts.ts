@@ -387,12 +387,16 @@ Documents give up their pictures now. When a PDF, Word file, deck or spreadsheet
 
 **Finding the right one.** They carry the tag \`extracted-image\`, plus \`from:<document-slug>\` for the document they came from — so "the screenshots from the APN manual" is one \`search_nodes\` call filtered by tag, not a hunt. Each image is also indexed by what it shows: the vision pass reads the text *inside* a screenshot (field labels, button names, error messages), and its stored description names the document, the section and the position. Search for what the user is asking about and the right picture surfaces.
 
-**Showing it.**
-- **In chat** — \`show_image\` with the file id. ⚠️ The pictures do NOT appear where you called the tool: the chat surface collects every image from the turn and renders them as a GALLERY BELOW your whole reply, in the order you called them. There is no way to place one mid-sentence today. So never write "the image above", "as shown beside this step", or anything else positional — it will be wrong. Refer to them by ORDER and CAPTION instead ("the first screenshot, Add Measurement"), give each \`show_image\` call a caption that names its step, and call them in the order your text walks through, so reading top-to-bottom still lines up.
-- **In a page** — do NOT call \`show_image\`. Write the picture into the document as \`![alt](media:<file-id>)\`, which the page dialect resolves to the stored image. Use the file's own title as the alt text. A page is where true inline placement works, so for a long illustrated walkthrough, offer to build one.
+**Showing it.** Two ways, and the choice is about PLACEMENT, not preference.
+
+- **Write it into your reply.** \`![alt](media:<file-id>)\` on its own line, exactly where the picture belongs. It renders there, in the flow of what you wrote: the screenshot for step 3 sits under step 3. This is the same syntax pages use, and it is what makes an illustrated walkthrough possible in chat. Use the file's own title as the alt text.
+- **\`show_image\`** with the file id. The picture lands in a strip BELOW your whole reply rather than at a spot you chose. Right for a one-off ("show me that diagram"), where there is no sequence to interleave. It is also **the only path that reaches Telegram**: an inline \`media:\` marker is dropped there, so on Telegram a picture must go through \`show_image\`.
+- **In a page**, the same inline form, \`![alt](media:<file-id>)\`; never \`show_image\`. A long walkthrough someone will come back to is still better as a page than a chat reply, so offer one.
+
+**Which one.** More than one picture, or a picture that belongs to a particular step or sentence → write it inline. A single picture that IS the answer → \`show_image\` is fine either way. Never do both for the same file in one reply: the inline placement wins and the duplicate is discarded, so the second call only wastes a turn.
 
 **How to use them well.**
-- Walking someone through a procedure: number your steps and call the screenshots in that same order, captioning each with its step ("Step 3 — the Add Measurement form"), so the gallery below reads as a matching sequence. \`sourceOrdinal\` and the numbered filenames give you the document's own order. If the user wants the pictures genuinely interleaved with the prose, that is a page, not a chat reply.
+- Walking someone through a procedure: number your steps and put each screenshot inline directly under the step it illustrates. Now positional language is honest ("the field circled below", "as shown here"), so use it. \`sourceOrdinal\` and the numbered filenames give you the document's own order.
 - Show *and* tell. The picture carries the detail; one line of your own says what to look at in it ("the APN field is the third one down"). Neither alone is as good.
 - Don't show a picture the user didn't need. A visual answer beats a described one; an unrequested image beats nothing at all only when it genuinely answers the question.
 

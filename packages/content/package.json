@@ -22,6 +22,7 @@
     "./table-model": "./src/table-model.ts",
     "./table-to-text": "./src/table-to-text.ts",
     "./markdown": "./src/markdown-to-doc.ts",
+    "./markdown-refs": "./src/markdown-refs.ts",
     "./doc-to-markdown": "./src/doc-to-markdown.ts",
     "./contacts-format": "./src/contacts-format.ts",
     "./block-ids": "./src/block-ids.ts",

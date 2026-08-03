@@ -204,11 +204,22 @@ tags also feed the summarizer prompt, so provenance improves the summary too.
 
 ### Showing one
 
-- **Chat** — the `show_image` tool (`files` group) returns a
-  `ToolArtifact{kind:'image'}`; Telegram gets an explicit `sendPhoto`.
-- **Pages** — no tool: the agent writes `![alt](media:<file-id>)`.
+Two forms, and the difference is placement:
+
+- **Inline, where the picture belongs** — the agent writes
+  `![alt](media:<file-id>)` in the reply (or the page) and calls no tool. Both
+  surfaces render through the same TipTap schema, and `client/web/lib/rich-markdown.ts`
+  resolves the marker to the image node exactly as `markdownToDoc` does for
+  Pages. The two converters share the scheme (`@mantle/content/markdown-refs`)
+  and a drift test. This is the form for an illustrated walkthrough.
+- **Below the reply** — the `show_image` tool (`files` group) returns a
+  `ToolArtifact{kind:'image'}`, rendered as a strip under the whole answer.
+  Right for a one-off, and the only path that reaches Telegram (an explicit
+  `sendPhoto`; inline markers are stripped from outbound Telegram text).
+- Doing both for one file shows it once: the inline placement wins and the strip
+  copy is dropped at finalize (`packages/assistant-runtime/src/inline-images.ts`).
 - The `visual_answers` skill carries the judgment (show rather than narrate,
-  step-by-step images in order, never invent a file id).
+  which form to use, never invent a file id).
 
 ### Backfill
 

@@ -36,6 +36,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { assetUrl } from '@mantle/web-ui/asset-url';
+import { fileRawSrc, mediaFileId } from '@mantle/content/markdown-refs';
 import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
 import { uuid } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import { isTurnStreamingEnabledClient } from '@mantle/web-ui/turn-streaming';
@@ -75,6 +76,33 @@ type StoredAttachment = {
   nodeId?: string;
   fileId?: string;
   url?: string;
+};
+
+/**
+ * Image handling for the LIVE STREAM buffer (the lightweight ReactMarkdown
+ * render; the durable reply below it goes through RichText/TipTap instead).
+ *
+ * Saskia places a stored picture with `![alt](media:<file-id>)`. ReactMarkdown
+ * knows nothing of that scheme, so left alone it emits `<img src="media:…">`
+ * and the browser paints a broken-image icon for the rest of the turn. Resolve
+ * it to the same owner-gated bytes route RichText and the gallery use.
+ *
+ * A HALF-TYPED marker never reaches here at all: `![alt](media:` isn't a
+ * complete markdown image, so it stays literal text until the closing paren
+ * arrives, which is the quiet degradation we want mid-stream.
+ */
+const STREAM_MARKDOWN_COMPONENTS = {
+  img: ({ src, alt }: { src?: string | Blob; alt?: string }) => {
+    const href = typeof src === 'string' ? src : '';
+    const nodeId = mediaFileId(href);
+    // A media: id that doesn't resolve (model-invented, or another owner's)
+    // 401s at the route and shows as a broken image, never as someone else's
+    // picture. Same gate the durable render and the gallery sit behind.
+    const resolved = nodeId ? assetUrl(fileRawSrc(nodeId)) : href;
+    if (!resolved) return null;
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={resolved} alt={alt ?? ''} className="max-h-96 rounded-lg object-contain" />;
+  },
 };
 
 /** Page size for the initial load and each scroll-up fetch. */
@@ -1447,7 +1475,10 @@ export function AssistantClient({
                                       streamTrail.length > 0 ? 'mt-3' : ''
                                     }`}
                                   >
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    <ReactMarkdown
+                                      remarkPlugins={[remarkGfm]}
+                                      components={STREAM_MARKDOWN_COMPONENTS}
+                                    >
                                       {streamReply}
                                     </ReactMarkdown>
                                   </div>

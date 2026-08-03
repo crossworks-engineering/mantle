@@ -15,14 +15,16 @@
  *
  * ## Surfaces
  *
- * Web `/assistant` renders a `ToolArtifact` inline in the reply bubble;
+ * Web `/assistant` renders a `ToolArtifact` as a strip below the reply;
  * Telegram has no artifact channel and needs an explicit `sendPhoto`, exactly
  * as `generate_image` does. Both are covered, because a tool that silently
  * shows nothing on one of the two surfaces is worse than one that refuses.
  *
- * In Pages the agent doesn't call this at all — it writes
- * `![alt](media:<file-id>)`, which the Pages dialect already resolves to the
- * stored file. Same node id, different surface.
+ * This is the UNPLACED path. To put a picture at a chosen point (in a page,
+ * or now in a chat reply) the agent writes `![alt](media:<file-id>)` there and
+ * doesn't call this at all. Same node id, different placement. A reply that
+ * does both for one file has its gallery copy dropped at finalize (run-turn.ts)
+ * so the picture appears once, where it was placed.
  */
 
 import { fileById, readFileById } from '@mantle/files';
@@ -51,7 +53,7 @@ const show_image: BuiltinToolDef = {
   slug: 'show_image',
   name: 'Show an image',
   description:
-    "Display a stored image inline in the conversation; returns the file's metadata and renders the picture in the reply. Use whenever the answer is visual and words are a poor substitute — a diagram, a screenshot of a UI step, a chart. Images pulled out of documents (tagged `extracted-image`) are the common case: locate one with `search_nodes`, then show it instead of describing it. **To quote a document's text use `file_read`; to put an image INTO a page write `![alt](media:<file-id>)` rather than calling this.** Re-serves stored bytes only — generates nothing.",
+    "Display a stored image to the person you're talking to; returns the file's metadata and renders the picture BELOW your reply, not at the point you called it. Use for a one-off visual answer (a diagram, a chart, a screenshot someone asked to see) and on Telegram, which this is the only way to reach. **To place a picture at a chosen spot in the reply or in a page, write `![alt](media:<file-id>)` there instead; to quote a document's text use `file_read`.** Images pulled out of documents (tagged `extracted-image`) are the common case: locate one with `search_nodes`. Re-serves stored bytes only; generates nothing.",
   preconditions: IMAGE_FILE_ID_PRE,
   inputSchema: {
     type: 'object',

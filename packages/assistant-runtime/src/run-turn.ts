@@ -58,6 +58,7 @@ import {
   unregisterTurnAbort,
 } from '@mantle/tracing';
 import { pickWebDefaultAgent } from './select';
+import { artifactsNotPlacedInline } from './inline-images';
 import {
   assembleResponderTurn,
   base64Bytes,
@@ -568,7 +569,13 @@ export async function runAssistantTurn(
   // Node reference only, never the base64 — StoredAttachmentView fetches from
   // /api/files/files/<nodeId>, so an artifact WITHOUT a node id has nothing the
   // client could load and is left to the live channel.
-  const durableAttachments: ConversationAttachment[] = outcome.loop.artifacts
+  //
+  // A reply can PLACE a picture itself now, by writing `![alt](media:<id>)`
+  // where it belongs. Anything it placed must not ALSO appear in the strip
+  // below. See inline-images.ts for the rule.
+  const galleryArtifacts = artifactsNotPlacedInline(outcome.loop.artifacts, reply);
+
+  const durableAttachments: ConversationAttachment[] = galleryArtifacts
     .filter((a) => typeof a.nodeId === 'string' && a.nodeId.length > 0)
     .map((a) => ({
       kind: a.kind,
@@ -646,5 +653,7 @@ export async function runAssistantTurn(
     }
   }
 
-  return { inbound, outbound, reply, artifacts: outcome.loop.artifacts };
+  // `artifacts` is the LEGACY BLOCKING channel (streaming off): the client
+  // renders it directly, so it needs the same dedupe the durable row got.
+  return { inbound, outbound, reply, artifacts: galleryArtifacts };
 }

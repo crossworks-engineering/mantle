@@ -33,6 +33,13 @@
  *   Colour:  [text]{color=chart-2} / [text]{highlight=chart-3}  (chart-1..5) →
  *     a themed text colour and/or highlight (both keys may appear in one span).
  *
+ *   Stored image:  ![alt](media:<file-id>)  → the uploaded file's picture,
+ *     placed exactly where it was written. This is what lets a reply put a
+ *     screenshot beside the step it belongs to instead of clumping every
+ *     picture in a gallery underneath. Same syntax the Pages dialect uses; the
+ *     scheme itself is shared (@mantle/content/markdown-refs) so the two
+ *     converters cannot drift apart again.
+ *
  * Containers are parsed by a top-level line walk (they aren't markdown); every
  * other run is handed to `marked`. Nesting containers inside containers isn't
  * supported in v1 — callouts hold simple block content, which covers the cases
@@ -41,6 +48,7 @@
  * dropped gracefully rather than shown raw.
  */
 import { Marked, type TokenizerAndRendererExtension } from 'marked';
+import { fileRawSrc, mediaFileId } from '@mantle/content/markdown-refs';
 
 const CALLOUT_VARIANTS = ['info', 'success', 'warning', 'danger'] as const;
 type CalloutVariant = (typeof CALLOUT_VARIANTS)[number];
@@ -133,20 +141,84 @@ const inlineMathExtension: TokenizerAndRendererExtension = {
   },
 };
 
+// `![alt](media:<file-id>)` → the stored file's picture, INLINE where it was
+// written. Registered as an inline extension (custom inline tokenizers run
+// before marked's built-ins) rather than a renderer override, so a non-`media:`
+// image still takes the default path untouched.
+//
+// The emitted tag must carry a real `src`: PageImage.parseHTML is
+// `[{ tag: 'img[src]' }]`, and a bare `<img data-node-id>` would not be parsed
+// as an image at all. Once parsed, the node re-derives its own src from
+// `data-node-id` (through assetUrl, so a detached client loads it from the
+// remote origin), which is why `fileRawSrc` is shared with that code path.
+//
+// `image` is a BLOCK node in the shared schema, so ProseMirror's DOM parser
+// closes the surrounding paragraph and places it as its own block, the same
+// outcome markdownToDoc reaches via `paragraphAndImages`. That is the point of
+// the drift test: one dialect, two renderers, one answer.
+const mediaImageExtension: TokenizerAndRendererExtension = {
+  name: 'mediaImage',
+  level: 'inline',
+  start(src) {
+    return src.indexOf('![');
+  },
+  tokenizer(src) {
+    const m = /^!\[([^\]]*)\]\(\s*([^\s)]+)(?:\s+"([^"]*)")?\s*\)/.exec(src);
+    if (!m) return undefined;
+    const nodeId = mediaFileId(m[2]);
+    // Any other href (http, data, a relative path) is an ordinary markdown
+    // image. Hand it back to marked's own tokenizer.
+    if (!nodeId) return undefined;
+    return { type: 'mediaImage', raw: m[0], text: m[1] ?? '', nodeId };
+  },
+  renderer(token) {
+    const nodeId = typeof token.nodeId === 'string' ? token.nodeId : '';
+    if (!nodeId) return '';
+    return mediaImageHtml(nodeId, typeof token.text === 'string' ? token.text : '');
+  },
+};
+
+/** The `<img>` for a stored file. One spelling for both entry points: the
+ *  line-level standalone form and the inline-in-prose extension above. */
+function mediaImageHtml(nodeId: string, alt: string): string {
+  return `<img src="${escapeAttr(fileRawSrc(nodeId))}" data-node-id="${escapeAttr(
+    nodeId,
+  )}" alt="${escapeAttr(alt)}">`;
+}
+
 // One configured instance (module singleton) so we don't re-register the
 // extensions on every call. GFM gives us tables + strikethrough.
 const md = new Marked({ gfm: true });
-md.use({ extensions: [highlightExtension, colorSpanExtension, inlineMathExtension] });
+md.use({
+  extensions: [highlightExtension, colorSpanExtension, inlineMathExtension, mediaImageExtension],
+});
 
 const BLOCK_MATH_INLINE = /^\$\$(.+?)\$\$\s*$/;
+
+// A `![alt](media:<id>)` alone on an unindented line, the form the skill
+// teaches for a walkthrough. Lifted at the line level (like the `:::` fences)
+// rather than through `marked`, which would wrap it in a `<p>`: ProseMirror
+// then closes that paragraph EMPTY before opening the block image, leaving a
+// blank line above every picture. markdownToDoc emits the bare image node, so
+// this is what keeps the two in step. An INDENTED marker (inside a list item)
+// is left to marked, which keeps it in its item.
+const MEDIA_IMAGE_LINE_RE = /^!\[([^\]]*)\]\(\s*media:([^\s)]+)(?:\s+"[^"]*")?\s*\)\s*$/;
 
 const TASK_RE = /^\s*[-*]\s+\[([ xX])\]\s+(.*)$/;
 // Optional trailing token carries an aside's themed colour (`:::aside chart-3`).
 const FENCE_OPEN_RE = /^:::([A-Za-z]+)(?:\s+([A-Za-z0-9-]+))?\s*$/;
 const ASIDE_COLORS = new Set(['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5']);
 
+// Attribute-value escaping. `&` first, or the entities below get double-escaped.
+// `<`/`>` aren't strictly required inside a quoted value, but escaping them
+// keeps a malformed alt (`![a"><b](media:…)`) from being able to close the tag
+// early. The output is parsed by a real DOM parser before ProseMirror sees it.
 function escapeAttr(s: string): string {
-  return s.replace(/"/g, '&quot;');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function renderInline(text: string): string {
@@ -254,6 +326,14 @@ export function richMarkdownToHtml(source: string): string {
       else if ((CALLOUT_VARIANTS as readonly string[]).includes(kind))
         out.push(renderCallout(kind as CalloutVariant, body));
       else out.push(renderCallout('info', body));
+      continue;
+    }
+
+    const mediaLine = MEDIA_IMAGE_LINE_RE.exec(line);
+    if (mediaLine) {
+      flush();
+      out.push(mediaImageHtml(mediaLine[2]!, mediaLine[1] ?? ''));
+      i++;
       continue;
     }
 

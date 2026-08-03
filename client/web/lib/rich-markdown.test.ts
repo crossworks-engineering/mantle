@@ -90,6 +90,74 @@ describe('richMarkdownToHtml', () => {
     expect(richMarkdownToHtml('![alt](https://x/y.png)')).toContain('<img src="https://x/y.png"');
   });
 
+  describe('media: images (inline placement)', () => {
+    it('resolves a standalone marker to the file-bytes route + data-node-id', () => {
+      const html = richMarkdownToHtml('![Step 3: Add Measurement](media:f-1)');
+      // PageImage.parseHTML is `img[src]`, so a real src is what makes this
+      // parse as an image at all; data-node-id is what it re-derives from.
+      expect(html).toContain('src="/api/files/files/f-1?raw=1"');
+      expect(html).toContain('data-node-id="f-1"');
+      expect(html).toContain('alt="Step 3: Add Measurement"');
+      expect(html).not.toContain('src="media:');
+    });
+
+    it('places a marker written mid-prose, matching markdownToDoc', () => {
+      // markdownToDoc lifts ANY image token out of its paragraph
+      // (paragraphAndImages). The block-form-only rule is for media: LINKS,
+      // not images. The chat converter emits the <img> in place and the shared
+      // schema's block image node closes the paragraph around it.
+      const html = richMarkdownToHtml('Open the form ![the form](media:f-2) and fill it in.');
+      expect(html).toContain('data-node-id="f-2"');
+      expect(html).toContain('Open the form');
+      expect(html).toContain('and fill it in.');
+    });
+
+    it('renders several markers in written order', () => {
+      const html = richMarkdownToHtml('1. one\n\n![a](media:f-1)\n\n2. two\n\n![b](media:f-2)');
+      expect(html.indexOf('data-node-id="f-1"')).toBeLessThan(html.indexOf('data-node-id="f-2"'));
+    });
+
+    it('leaves a half-typed marker as literal text (streaming degrades quietly)', () => {
+      // Every prefix a stream passes through on the way to a complete marker.
+      for (const partial of [
+        '!',
+        '![',
+        '![alt',
+        '![alt]',
+        '![alt](',
+        '![alt](media:',
+        '![alt](media:f-1',
+      ]) {
+        const html = richMarkdownToHtml(`Step one. ${partial}`);
+        expect(html).not.toContain('<img');
+        expect(html).not.toContain('data-node-id');
+      }
+    });
+
+    it('never claims a stored file for a malformed or empty id', () => {
+      // `media:` with nothing after it is not a file reference, so no
+      // data-node-id is emitted and nothing is fetched from the files route.
+      // It degrades to the same broken plain image markdownToDoc produces
+      // (src `media:`, nodeId null); see the drift test's 'empty id' case.
+      for (const src of ['![alt](media:)', '![alt](media: )']) {
+        const html = richMarkdownToHtml(src);
+        expect(html).not.toContain('data-node-id');
+        expect(html).not.toContain('/api/files/files/');
+      }
+    });
+
+    it('escapes the alt text so it cannot break out of the attribute', () => {
+      const html = richMarkdownToHtml('![a"><script>x</script>](media:f-1)');
+      expect(html).not.toContain('"><script>');
+      expect(html).toContain('&quot;');
+    });
+
+    it('leaves an inline media: LINK as a plain link (only images place a picture)', () => {
+      const html = richMarkdownToHtml('see [spec.pdf](media:f-2) here');
+      expect(html).not.toContain('<img');
+    });
+  });
+
   it('renders $…$ / $$…$$ as KaTeX math spans/divs', () => {
     const inline = richMarkdownToHtml('Inline $E=mc^2$ here');
     expect(inline).toContain('data-type="inline-math"');
