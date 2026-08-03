@@ -192,3 +192,37 @@ describe('live turn streaming — delegated child traces', () => {
     ]);
   });
 });
+
+/**
+ * A step written OUTSIDE any trace is silently discarded. This is by design
+ * (step() bypasses when there is no trace to hang off), but the silence is a
+ * trap: the extractor's embedded-image pass ran before extractNode opened its
+ * trace, so three carefully-written `extract_images` steps evaporated on every
+ * path for the life of the feature. A 453-image backfill on a live box produced
+ * zero trace rows, and on a second brain that same zero read as "these
+ * documents contain no pictures". Nothing errored; the steps just never
+ * existed.
+ *
+ * Pinning the behaviour both ways, so the next person who moves a step call
+ * out from under its trace has a test telling them what they just did.
+ */
+describe('step() outside a trace — the silent-discard trap', () => {
+  it('persists NOTHING when no trace is active', async () => {
+    await step({ name: 'extract_images', kind: 'compute', input: {} }, async (handle) => {
+      // The body still runs — the work happens, only the record is lost.
+      handle.setMeta({ kept: 179 });
+      handle.setError('this failure is invisible');
+    });
+    expect(h.stepUpdates).toHaveLength(0);
+  });
+
+  it('persists once the same call is wrapped in a trace', async () => {
+    await startTrace({ ownerId: 'o', kind: 'extractor_run' }, async () => {
+      await step({ name: 'extract_images', kind: 'compute', input: {} }, async (handle) => {
+        handle.setMeta({ kept: 179 });
+      });
+    });
+    const persisted = h.stepUpdates.filter((u) => u.status === 'success');
+    expect(persisted.length).toBeGreaterThan(0);
+  });
+});

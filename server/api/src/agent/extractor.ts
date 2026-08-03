@@ -73,7 +73,14 @@ import {
   schemaDigest,
   schemaToText,
 } from '@mantle/tabledb';
-import { currentTrace, recordIngest, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
+import {
+  currentTrace,
+  recordIngest,
+  recordSkippedTrace,
+  startTrace,
+  step,
+  type StepHandle,
+} from '@mantle/tracing';
 import {
   chatWithFailover,
   documentWorkerPrefersNative,
@@ -568,6 +575,42 @@ const IMAGE_BEARING_EXTS = new Set([
 const EXTRACTED_IMAGE_TAG = 'extracted-image';
 
 /**
+ * Record a step, opening a trace first when none is active.
+ *
+ * `step()` bypasses entirely without a live trace — and this pass runs BEFORE
+ * `extractNode` opens its `extractor_run` trace, which on a re-notify never
+ * happens at all because the `already_extracted` guard returns first. So the
+ * `extract_images` steps below have never reached /traces on ANY path: a
+ * 453-image backfill on a live box produced zero of them, and the same zero on
+ * a second brain read as "these documents have no pictures". The step calls
+ * were written and simply evaporated.
+ *
+ * Opened LAZILY — only where there is something to record — so a text-only
+ * document cannot mint an empty trace just by being looked at. `startTrace`
+ * nests safely (it inherits turnId/label from a parent), so the normal
+ * fresh-ingest path, which DOES have a trace by the time anything is worth
+ * recording, keeps its single trace and gains a child step.
+ */
+async function stepInOwnTrace<T>(
+  ownerId: string,
+  node: typeof nodes.$inferSelect,
+  init: Parameters<typeof step<T>>[0],
+  body: (handle: StepHandle) => Promise<T>,
+): Promise<T> {
+  if (currentTrace()) return await step(init, body);
+  return await startTrace(
+    {
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      data: { nodeType: node.type, title: node.title, pass: 'embedded_images' },
+    },
+    () => step(init, body),
+  );
+}
+
+/**
  * Pull the diagrams and screenshots out of a document and save them as real
  * image files under `files/extracted-images/<document>/`.
  *
@@ -626,7 +669,9 @@ async function maybeExtractEmbeddedImages(
     // tell a document that was read and held nothing from one the pass never
     // opened, so a corpus whose bytes are unreachable (a half-finished sync, a
     // missing object) looked exactly like a corpus with no diagrams in it.
-    await step(
+    await stepInOwnTrace(
+      ownerId,
+      node,
       {
         name: 'extract_images',
         kind: 'compute',
@@ -650,7 +695,9 @@ async function maybeExtractEmbeddedImages(
     // Still worth a step when there WERE candidates: "this manual produced no
     // images" should be explainable from /traces rather than mysterious.
     if (result.candidates > 0) {
-      await step(
+      await stepInOwnTrace(
+        ownerId,
+        node,
         { name: 'extract_images', kind: 'compute', input: { filename: loaded.filename } },
         async (h) => {
           h.setMeta({ candidates: result.candidates, kept: 0, rejected: result.rejected });
@@ -663,7 +710,9 @@ async function maybeExtractEmbeddedImages(
   const sourceSlug = slugifyFolder(loaded.filename.replace(/\.[a-z0-9]+$/i, '')) ?? 'document';
   const titles = buildImageTitles(result.images, node.title || loaded.filename);
 
-  await step(
+  await stepInOwnTrace(
+    ownerId,
+    node,
     {
       name: 'extract_images',
       kind: 'compute',
