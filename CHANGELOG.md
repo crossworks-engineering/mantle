@@ -4,6 +4,49 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — The models you pinned, and whether they still exist (branch feat/model-drift)
+
+**A pinned model is a decision, not a subscription.** It was right the day it
+was chosen and nothing ages it. Nothing in the product ever checked whether the
+ids `agents.model` and `ai_workers.model` actually send are still real — the
+first sign of a delisted model is a failed conversation.
+
+`pinned-model-drift` is a new read-only maintenance report, on the nightly
+schedule alongside `deps-drift`. It reads every enabled agent and worker, asks
+each provider what it currently lists, and reports pins that no longer exist
+plus newer versions of the same family. It never rewrites a model: which one
+you run is a cost and behaviour decision, and that stays yours.
+
+It does not replace `models-drift`, and the two are easy to confuse.
+`models-drift` is catalogue-level — does our onboarding dropdown still offer
+what providers serve — and it deliberately skips OpenRouter, whose list is
+built from the provider and cannot drift. That is true of a catalogue and false
+of a pin, so this report covers exactly what that one skips.
+
+**Most of the work here is in not crying wolf.** The naive version was written
+first and pointed at the real fleet, where it confidently reported three
+retired models across five healthy boxes. All three were the checker being
+wrong:
+
+- OpenRouter's `/models` enumerates **chat models only** — no TTS or STT id
+  appears in it at all — so every voice worker read as dead. A pin is now
+  compared only against catalogue entries of its own modality, and the modality
+  comes from the row, never from the catalogue.
+- `~x-ai/grok-latest` is a **real, current** id; the tilde is OpenRouter's
+  auto-alias marker. Ids are matched exactly, never normalised or tidied. An
+  alias is also never told that something newer exists — tracking the family is
+  the point of pinning one.
+- A provider with no list API, or one whose key is missing, tells us nothing.
+
+So everything unjudgeable is reported as **not checked, with the reason**,
+never as missing, and every cannot-see case is decided before any conclusion
+about the id. A report that flags healthy pins gets muted within a week, and
+then the genuine delisting goes unread too.
+
+One judgement is stated wherever the output is read rather than buried in the
+source: version segments compare as integers, so `4.20` is newer than `4.5`,
+matching how these vendors number releases rather than how decimals sort.
+
 ## Unreleased — An assistant that answers to its own name (branch feat/agent-name-token)
 
 **A copied assistant introduced itself as the one it was copied from.** Give a

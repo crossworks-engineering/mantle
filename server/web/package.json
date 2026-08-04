@@ -15,6 +15,7 @@
     "dedupe:edges": "tsx --env-file-if-exists=./.env.local scripts/dedupe-edges.ts",
     "deps:drift": "tsx scripts/deps-drift.ts",
     "models:drift": "tsx --env-file-if-exists=./.env.local scripts/models-drift.ts",
+    "models:pinned": "tsx --env-file-if-exists=./.env.local scripts/pinned-model-drift.ts",
     "dev": "tsx watch server/main.ts",
     "entities:dedupe": "tsx --env-file-if-exists=./.env.local scripts/entities-dedupe.ts",
     "eval:recall": "tsx --env-file-if-exists=./.env.local scripts/eval-recall.ts",

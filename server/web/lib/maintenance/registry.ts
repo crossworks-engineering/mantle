@@ -428,6 +428,23 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       "Read-only, so there is no dry-run/apply split — running it IS the report, and it exits 0 even when drift is found (a non-zero exit would make the nightly sweep read as failing every time a dependency shipped a patch). --majors also lists versions outside the declared range, which are deliberate migrations rather than update fodder. Ran nightly for real as of the SWEEPS entry — before that this said schedulable:true while the sweep runner's own cost==='sql' check dropped it every time.",
   },
   {
+    slug: 'pinned-model-drift',
+    title: 'Pinned-model drift report',
+    description:
+      "Checks the models this brain's enabled agents and workers actually point at against each provider's live list, and reports pins that no longer exist plus newer versions of the same family. A pinned model is a decision, not a subscription — it was right the day it was chosen and nothing ages it. Complements models-drift, which asks whether our onboarding CATALOGUE is current and skips OpenRouter as un-driftable: true of a catalogue, false of a pin, since a delisted slug 404s at turn time. Report-only — never rewrites a model, which stays a cost decision.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'io',
+    schedulable: true,
+    script: 'scripts/pinned-model-drift.ts',
+    cwd: 'server/web',
+    readOnly: true,
+    extraFlags: ['--all', '--json'],
+    requiresEnv: ['MANTLE_MASTER_KEY'],
+    notes:
+      'Lists each provider once (5-min cached) and invokes no model, so there is no token spend; the master key is needed only for providers whose list endpoint requires a key — OpenRouter, the common case, is keyless. Exits 0 even when drift is found. Everything it cannot see is reported as "not checked" with a reason, never as missing: a provider with no list API, an absent key, and a catalogue that does not cover the pin\'s modality all say nothing about whether the pin is valid. That distinction is the whole report — the naive version marked a healthy fleet as three models retired, because OpenRouter\'s /models enumerates chat only and its alias ids carry a leading tilde.',
+  },
+  {
     slug: 'models-drift',
     title: 'Model catalogue drift report',
     description:

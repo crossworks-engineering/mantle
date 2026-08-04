@@ -161,10 +161,27 @@ streams a run.
   key, so CLI, UI, and cron (three different processes) can never merge
   concurrently — a contender fails fast with a clear message. Dry-runs skip
   the lock.
-- The schedule contains four tasks: `entities-dedupe` (auto tier),
-  `traces-reap` (all owners), and the two read-only reports `deps-drift` and
-  `models-drift`. Backups stay on the `db-dump.sh` path — they are already
-  scheduled there.
+- The schedule contains five tasks: `entities-dedupe` (auto tier),
+  `traces-reap` (all owners), and the three read-only reports `deps-drift`,
+  `models-drift` and `pinned-model-drift`. Backups stay on the `db-dump.sh`
+  path — they are already scheduled there.
+
+  The two model reports answer different questions and neither subsumes the
+  other. `models-drift` is CATALOGUE-level: does our onboarding dropdown still
+  offer what providers serve? It skips OpenRouter, whose list is built from the
+  provider and so cannot drift. `pinned-model-drift` is BRAIN-level: do the ids
+  `agents.model` / `ai_workers.model` actually send still exist, and has the
+  family moved on? A pin on OpenRouter absolutely can drift — a delisted slug
+  404s at turn time — so it covers precisely what the other one skips.
+
+  `pinned-model-drift` reports anything it cannot judge as **not checked, with
+  a reason**, never as missing. A provider with no list API, an absent key, and
+  a catalogue that does not cover the pin's modality all say nothing about
+  whether the pin is valid. That distinction is the whole report: the naive
+  version marked a healthy five-box fleet as three models retired, because
+  OpenRouter's `/models` enumerates chat only (so every TTS/STT worker read as
+  dead) and its auto-alias ids carry a leading `~`. A report that cries wolf
+  gets muted, and then the real delisting goes unread too.
 
   The reports **summarise rather than fail**. A dependency publishing a patch,
   or a provider shipping a model, is not a failed run; a sweep that goes red on

@@ -23,6 +23,8 @@ import { MAINTENANCE_TASKS, isFreeCost } from './registry';
 import { finishRun, hasRecentCronRun, recordRunStart } from './history';
 import { runDepsDrift, summariseDepsDrift } from './deps-drift';
 import { runModelsDrift, summariseModelsDrift } from './models-drift';
+import { summarisePinnedModelDrift } from './pinned-model-drift';
+import { runPinnedModelDrift } from './pinned-model-drift-run';
 import { reapAbandonedTracesAllOwners } from '../journey';
 
 export interface EntitiesDedupeResult {
@@ -112,6 +114,7 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
   },
   'deps-drift': async () => summariseDepsDrift(await runDepsDrift()),
   'models-drift': async () => summariseModelsDrift(await runModelsDrift()),
+  'pinned-model-drift': async () => summarisePinnedModelDrift(await runPinnedModelDrift()),
   // All owners, unlike the owner-scoped self-heal the live-activity view runs
   // on poll — a box nobody browses is exactly the case this exists for.
   'traces-reap': async () => {
