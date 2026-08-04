@@ -72,16 +72,39 @@ export function parseRetryAfterMs(headers?: Headers | null): number | undefined 
 /**
  * An empty or truncated 2xx body that `JSON.parse` choked on — the signature of
  * an upstream timeout / dropped connection that still returned 200 (or a cut-off
- * stream). V8 throws `SyntaxError: "Unexpected end of JSON input"` for
- * `JSON.parse('')` or a truncated object. It's transient — the same request
- * usually succeeds on retry. We match ONLY the end-of-input family, not every
- * malformed body: a complete-but-invalid payload is a genuine bug we must not
- * mask behind retries. (Caught in prod: a 16-step assistant turn died here after
- * a 34s upstream stall returned an empty body — see openrouter-chat.ts.)
+ * stream). Transient: the same request usually succeeds on retry. (Caught in
+ * prod: a 16-step assistant turn died here after a 34s upstream stall returned
+ * an empty body — see openrouter-chat.ts.)
+ *
+ * We match only the families that CANNOT arise from a complete payload, because
+ * a complete-but-invalid body is a genuine bug we must not mask behind retries:
+ *
+ *   - "Unexpected end of JSON input"  — `''`, whitespace, or input ending where
+ *                                       a value was expected. Always truncation.
+ *   - "Unterminated string in JSON"   — a string opened and never closed. Only
+ *                                       reachable by running out of input.
+ *
+ * Deliberately NOT matched: `Expected ',' or '}' after property value…`,
+ * `Expected ':' after property name…`, `Expected property name or '}'…`. Those
+ * fire for BOTH a mid-object truncation and a malformed-but-complete body, and
+ * the message alone cannot tell them apart — only the byte offset versus the
+ * body length could, which this signature doesn't receive. Retrying a real
+ * malformed payload would turn one loud bug into three silent ones.
+ *
+ * ⚠️ The message strings are V8's, and V8 has changed them before: this used to
+ * claim it covered truncation generally, which was true on older Node where
+ * every cut-off body said "Unexpected end of JSON input". Modern V8 emits
+ * specific messages per failure shape, so that claim had quietly become false
+ * for most truncations. The tests below parse REAL malformed JSON rather than
+ * asserting hand-written message strings, so the next V8 wording change fails
+ * them instead of silently narrowing this again.
  */
 export function isEmptyJsonBodyError(err: unknown): boolean {
   if (!(err instanceof SyntaxError)) return false;
-  return /unexpected end of (json )?input/i.test(err.message);
+  return (
+    /unexpected end of (json )?input/i.test(err.message) ||
+    /unterminated string in json/i.test(err.message)
+  );
 }
 
 /** Decide whether an adapter error is worth retrying, and after how long. */
