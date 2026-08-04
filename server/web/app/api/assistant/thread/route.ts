@@ -5,7 +5,7 @@ import {
   recentAssistantMessages,
   resolveAgentForActor,
 } from '@/lib/assistant';
-import { getAssignedAgent } from '@/lib/agents';
+import { getAssignedAgentSummary } from '@/lib/agents';
 
 /**
  * GET /api/assistant/thread?agent=<slug> — the initial /assistant bundle: the
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   const [agents, agent, assigned] = await Promise.all([
     listAssistantAgents(user.id),
     resolveAgentForActor(user, slug),
-    getAssignedAgent(user.id, user.actor.id),
+    getAssignedAgentSummary(user.id, user.actor.id),
   ]);
   const messages = agent ? await recentAssistantMessages(user.id, agent.id, 100) : [];
 

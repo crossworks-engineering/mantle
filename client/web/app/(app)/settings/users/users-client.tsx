@@ -457,9 +457,11 @@ function AssistantCard({ user, onChanged }: { user: UserRow; onChanged: () => vo
           <AlertDialogHeader>
             <AlertDialogTitle>Release {user.agent?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This login goes back to the brain&apos;s default assistant. The agent and its whole
-              chat history stay — it just becomes a shared agent again, and you can delete it from
-              Settings → Agents if you want it gone.
+              It stops being this login&apos;s assistant, so a fresh sign-in lands on the
+              brain&apos;s default instead. Someone already chatting to it keeps their place until
+              they pick another agent. The agent and its whole chat history stay — it becomes an
+              ordinary shared agent, and you can delete it from Settings → Agents if you want it
+              gone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -44,8 +44,10 @@ export async function resolveAgentForActor(
   slug?: string,
 ): Promise<Agent | null> {
   if (!slug) {
+    // Returns the row, so this is one query — not a lookup followed by a
+    // re-fetch of the same agent by slug.
     const assigned = await getAssignedAgent(user.id, user.actor.id);
-    if (assigned) return resolveAssistantAgentRuntime(user.id, assigned.slug);
+    if (assigned) return assigned;
   }
   return resolveAssistantAgentRuntime(user.id, slug);
 }

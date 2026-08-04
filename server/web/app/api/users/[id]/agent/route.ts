@@ -4,9 +4,10 @@ import { db, authUsers, eq } from '@mantle/db';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
   cloneAgentForUser,
-  getAssignedAgent,
+  getAssignedAgentSummary,
   releaseAssignedAgent,
   renameAssignedAgent,
+  CloneAgentError,
 } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 
@@ -81,7 +82,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   // Whatever they had is released (never deleted) inside cloneAgentForUser —
   // capture it first so the audit row explains the orphan left in
   // /settings/agents.
-  const existing = await getAssignedAgent(user.id, targetId);
+  const existing = await getAssignedAgentSummary(user.id, targetId);
   let agent;
   try {
     agent = await cloneAgentForUser(user.id, {
@@ -91,8 +92,14 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       sourceAgentId,
     });
   } catch (err) {
+    // A rejected source is the caller's mistake (400) and worth saying out loud;
+    // anything else is ours (500). The clone is one transaction, so either way
+    // the login keeps whatever assistant it already had.
+    if (err instanceof CloneAgentError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error('[users] assistant clone failed', err);
-    return NextResponse.json({ error: 'Could not create the assistant.' }, { status: 400 });
+    return NextResponse.json({ error: 'Could not create the assistant.' }, { status: 500 });
   }
 
   auditFireAndForget({
