@@ -29,7 +29,7 @@
     "@mantle/telegram": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",
-    "@openrouter/sdk": "^1.0.0",
+    "@openrouter/sdk": "^1.2.7",
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {

@@ -886,8 +886,8 @@ importers:
         specifier: workspace:*
         version: link:../voice
       '@openrouter/sdk':
-        specifier: ^1.0.0
-        version: 1.0.0
+        specifier: ^1.2.7
+        version: 1.2.7
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
@@ -940,8 +940,8 @@ importers:
         specifier: workspace:*
         version: link:../api-keys
       '@openrouter/sdk':
-        specifier: ^1.0.0
-        version: 1.0.0
+        specifier: ^1.2.7
+        version: 1.2.7
       undici:
         specifier: ^8.8.0
         version: 8.8.0
@@ -2748,8 +2748,8 @@ packages:
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
 
-  '@openrouter/sdk@1.0.0':
-    resolution: {integrity: sha512-FTZg35yWnNUjMCGrjBbsGw9WJhnleAWyJlON4ZQ7pxOKsqBrZo7Zzmc3OoJQFQ+39bsIcKMf3wRNNC9KLjihrw==}
+  '@openrouter/sdk@1.2.7':
+    resolution: {integrity: sha512-vpRo7QCmAePYNBhUPmimg20dDT3+2m6QUPLg3DL4kfmVqzkti32kGxAEgHsGgbmgQ5NlgvYL1X71ePeoRwIn0A==}
 
   '@oxc-project/types@0.139.0':
     resolution: {integrity: sha512-r9gHphtCs+1M7J0pw6Sn/hh/Wpa/iQrOOkrNAlVLF/gHq+/CJmHIWKKUUhdWjcD6CIa8idarspCsASiXCXvFUw==}
@@ -9368,7 +9368,7 @@ snapshots:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
 
-  '@openrouter/sdk@1.0.0':
+  '@openrouter/sdk@1.2.7':
     dependencies:
       zod: 4.4.3
 
