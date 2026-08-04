@@ -53,6 +53,17 @@ export default tseslint.config(
       // (v0.206.3 had to be pushed from a worktree). Deleted 2026-07-27; this
       // stays so a stale checkout can never re-break the gate.
       'apps/**',
+      // Agent-tooling trees (.agents/, .codex/, .github/{agents,hooks,skills}).
+      // Same wolf-cry as apps/** above: these carry minified vendor bundles that
+      // `eslint .` parses as source — 2,428 errors on main, 2026-08-04, entirely
+      // from .agents/skills/impeccable + .github/skills/impeccable. Note these
+      // are ALREADY gitignored and that is NOT sufficient: flat config does not
+      // read .gitignore, so the ignore has to be repeated here.
+      '.agents/**',
+      '.codex/**',
+      '.github/agents/**',
+      '.github/hooks/**',
+      '.github/skills/**',
     ],
   },
   js.configs.recommended,
