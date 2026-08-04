@@ -20,6 +20,7 @@ import {
   setStepObserver,
   setTurnDeltaObserver,
   setTurnLifecycleObserver,
+  allocateTurnSeq,
   type StepObserverEvent,
   type TurnDeltaEvent,
   type TurnLifecycleEvent,
@@ -39,22 +40,60 @@ export function isTurnTokenStreamingEnabled(): boolean {
 }
 
 /** Build a `status` event for one step. `stepId` ties the grounded line to its
- *  later narrated upgrade so the client replaces it in place. */
+ *  later narrated upgrade so the client replaces it in place.
+ *
+ *  The grounded line rides the step's own `e.seq`. The narrated upgrade must
+ *  NOT: it resolves an LLM call long after that seq was emitted, and both the
+ *  SSE replay merger (monotonic-seq dedup) and the replay buffer (PK on
+ *  `(turn_id, seq)`, insert-or-ignore) silently drop a re-used seq — the
+ *  upgrade would never reach any client. So `upgrade` carries a seq minted at
+ *  publish time (allocateTurnSeq). */
 function statusEvent(
   e: StepObserverEvent,
   label: string,
   stage: StageLabel,
   stepId: string,
-  narrated?: true,
+  upgrade?: { seq: number; narrated: true },
 ): TurnEvent {
   return {
     v: TURN_EVENT_SCHEMA_VERSION,
     turnId: e.turnId,
-    seq: e.seq,
+    seq: upgrade?.seq ?? e.seq,
     round: 0, // tool-loop round — populated in a later phase
     type: 'status',
-    data: { label, kind: stage.kind, stepId, ...(narrated ? { narrated } : {}) },
+    data: { label, kind: stage.kind, stepId, ...(upgrade ? { narrated: true } : {}) },
   };
+}
+
+// ─── Ordered publishing ──────────────────────────────────────────────────────
+//
+// publishTurnEvent is async (a buffer INSERT, then the NOTIFY) and every
+// observer fires it without awaiting, so two in-flight publishes can commit
+// their NOTIFYs in the opposite order to their seq mint. The SSE merger's
+// monotonic guard then DROPS the overtaken event — lost narration, or worse, a
+// lost text-delta (a hole in the live reply). Chaining each turn's publishes
+// through one promise makes NOTIFY order equal mint order. The chain entry is
+// removed once the terminal event (done/error) has flushed; its absence is also
+// the liveness signal that stops a late narration from publishing into a
+// finished turn (where the seq cursor has been reset and clients are gone).
+const publishChains = new Map<string, Promise<void>>();
+
+function isTurnPublishing(turnId: string): boolean {
+  return publishChains.has(turnId);
+}
+
+function publishOrdered(turnId: string, ownerId: string, event: TurnEvent): void {
+  const chain = (publishChains.get(turnId) ?? Promise.resolve()).then(() =>
+    // publishTurnEvent never throws; the catch is a belt-and-braces guard so a
+    // surprise rejection can never wedge the chain for the rest of the turn.
+    publishTurnEvent(ownerId, event).catch(() => {}),
+  );
+  publishChains.set(turnId, chain);
+  if (event.type === 'done' || event.type === 'error') {
+    void chain.finally(() => {
+      if (publishChains.get(turnId) === chain) publishChains.delete(turnId);
+    });
+  }
 }
 
 /** Map one streamed token delta → a `text-delta` / `reasoning-delta` turn event.
@@ -115,7 +154,7 @@ export function installTurnStreamObserver(): void {
   // publishes over the SAME NOTIFY bus as status — fire-and-forget, never throws.
   if (isTurnTokenStreamingEnabled()) {
     setTurnDeltaObserver((e: TurnDeltaEvent) => {
-      void publishTurnEvent(e.ownerId, deltaEvent(e));
+      publishOrdered(e.turnId, e.ownerId, deltaEvent(e));
     });
   }
 
@@ -124,7 +163,7 @@ export function installTurnStreamObserver(): void {
   // SSE route's MANTLE_TURN_STREAMING flag, not by the token flag. The runtime's
   // emitTurnLifecycle calls are free no-ops until this observer exists.
   setTurnLifecycleObserver((e: TurnLifecycleEvent) => {
-    void publishTurnEvent(e.ownerId, lifecycleEvent(e));
+    publishOrdered(e.turnId, e.ownerId, lifecycleEvent(e));
   });
 
   setStepObserver((e: StepObserverEvent) => {
@@ -146,21 +185,26 @@ export function installTurnStreamObserver(): void {
 
     // 1) Grounded line, published INSTANTLY so the trail never waits on the LLM.
     //    publishTurnEvent never throws (a dropped status is cosmetic).
-    void publishTurnEvent(e.ownerId, statusEvent(e, attributed(stage.label), stage, stepId));
+    publishOrdered(e.turnId, e.ownerId, statusEvent(e, attributed(stage.label), stage, stepId));
 
     // 2) Narrated upgrade — Step 2. Only for tool actions (skip 'thinking' to
     //    save spend), strictly OFF the critical path (not awaited), gated by the
     //    narration flag. On success it replaces line `stepId` in the trail; on
     //    failure the grounded line simply stays. Narration sees the BARE label
     //    (the prefix is attribution, not content) and the prefix is re-applied
-    //    to its output, so the speaker can't be paraphrased away.
+    //    to its output, so the speaker can't be paraphrased away. It publishes
+    //    under a FRESH seq minted now (see statusEvent) — and only while the
+    //    turn is still publishing (a narration resolving after done/error has
+    //    no audience and a reset seq cursor).
     if (isTurnNarrationEnabled() && stage.kind !== 'thinking') {
       void narrateStatus(e.ownerId, stage.label).then((narrated) => {
-        if (narrated)
-          void publishTurnEvent(
-            e.ownerId,
-            statusEvent(e, attributed(narrated), stage, stepId, true),
-          );
+        if (!narrated || !isTurnPublishing(e.turnId)) return;
+        const upgrade = { seq: allocateTurnSeq(e.turnId), narrated: true as const };
+        publishOrdered(
+          e.turnId,
+          e.ownerId,
+          statusEvent(e, attributed(narrated), stage, stepId, upgrade),
+        );
       });
     }
   });
