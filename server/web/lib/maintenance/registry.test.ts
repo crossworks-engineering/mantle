@@ -19,12 +19,29 @@ describe('maintenance registry', () => {
     }
   });
 
-  it('cost-safety: schedulable tasks are free, recurring, live, dry-run-by-default', () => {
+  it('cost-safety: schedulable tasks are free, recurring, live, and never mutate unasked', () => {
     for (const t of MAINTENANCE_TASKS.filter((t) => t.schedulable)) {
-      expect(t.cost, t.slug).toBe('sql');
+      // Free means no SPEND: sql and io cost nothing, imap burns mailbox
+      // round-trips, embedding/llm are real money.
+      expect(['sql', 'io'], t.slug).toContain(t.cost);
       expect(t.kind, t.slug).toBe('recurring');
       expect(t.status, t.slug).toBe('live');
-      expect(t.applyFlag, t.slug).toBeTruthy();
+      // Either it defaults to dry-run (and the worker declines to pass the
+      // flag), or it cannot write at all. One or the other, never neither.
+      expect(Boolean(t.applyFlag || t.readOnly), t.slug).toBe(true);
+    }
+  });
+
+  it('imap / model-spending tasks are never schedulable', () => {
+    const spends = (c: string) => c === 'imap' || c === 'llm' || c === 'embedding';
+    for (const t of MAINTENANCE_TASKS.filter((t) => spends(t.cost))) {
+      expect(t.schedulable, t.slug).toBe(false);
+    }
+  });
+
+  it('a readOnly task never declares an applyFlag', () => {
+    for (const t of MAINTENANCE_TASKS.filter((t) => t.readOnly)) {
+      expect(t.applyFlag, t.slug).toBeUndefined();
     }
   });
 

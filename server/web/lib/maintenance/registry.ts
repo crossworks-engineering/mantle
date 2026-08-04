@@ -30,6 +30,11 @@ export interface MaintenanceTask {
   script: string;
   /** Repo-relative working directory to spawn in. */
   cwd: 'server/web' | 'packages/email';
+  /** The task cannot mutate or spend — it only reads and reports. Such a task
+   *  has no dry-run/apply split to opt into, so it satisfies the schedulable
+   *  guardrail without an `applyFlag`. Set this ONLY when the script provably
+   *  writes nothing: it is the thing that lets the unattended cron run it. */
+  readOnly?: boolean;
   /** Flag that switches the script from dry-run (its default) to live. */
   applyFlag?: string;
   /** Flag that switches the script from live (its default) to dry-run. */
@@ -404,6 +409,24 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     cwd: 'packages/email',
     notes: 'No flags; no dry-run. Idempotent (WHERE rfc_message_id IS NULL guard).',
   },
+
+  // ── Supply chain ─────────────────────────────────────────────────────────
+  {
+    slug: 'deps-drift',
+    title: 'Dependency drift report',
+    description:
+      'Compares every declared dependency range against the npm registry and reports what a plain `pnpm update` would take. A caret range is permission, not a mechanism: @openrouter/sdk sat at 1.0.0 for 46 releases while its manifest said ^1.0.0, because nothing resolved it and nothing said so. Report-only — never installs, never writes, never touches the DB.',
+    kind: 'recurring',
+    status: 'live',
+    cost: 'io',
+    schedulable: true,
+    script: 'scripts/deps-drift.ts',
+    cwd: 'server/web',
+    readOnly: true,
+    extraFlags: ['--majors', '--json'],
+    notes:
+      'Read-only, so there is no dry-run/apply split — running it IS the report, and it exits 0 even when drift is found (a non-zero exit would make the nightly sweep read as failing every time a dependency shipped a patch). --majors also lists versions outside the declared range, which are deliberate migrations rather than update fodder.',
+  },
 ];
 
 export function getTask(slug: string): MaintenanceTask | undefined {
@@ -420,9 +443,19 @@ export function isLiveRun(task: MaintenanceTask, args: string[]): boolean {
 
 /**
  * Cost-safety guardrail (see the standing "no runaway-LLM triggers" rule):
- * anything the cron worker may run unattended must be free (pure SQL),
- * recurring, live, and dry-run-by-default so the worker opts into --apply
- * explicitly. Throws at module load if the registry ever violates this.
+ * anything the cron worker may run unattended must be FREE and must not mutate
+ * without an explicit opt-in. Throws at module load if the registry violates it.
+ *
+ * "Free" means `sql` or `io` — both are documented as costing nothing (see the
+ * TaskCost note above); `imap` burns mailbox round-trips and `embedding`/`llm`
+ * are real model spend, so those stay barred. The rule's intent has always been
+ * about SPEND, and a local file read or a public-registry GET is not spend.
+ *
+ * "Must not mutate without opt-in" is satisfied two ways: a dry-run-by-default
+ * task with an `applyFlag` the worker declines to pass, or a `readOnly` task
+ * that has nothing to opt into. Widening to the latter is what lets a pure
+ * report be scheduled — a report the operator has to remember to run is exactly
+ * the failure it exists to catch.
  */
 function assertRegistryInvariants(tasks: MaintenanceTask[]): void {
   const seen = new Set<string>();
@@ -431,12 +464,22 @@ function assertRegistryInvariants(tasks: MaintenanceTask[]): void {
     seen.add(t.slug);
     if (t.applyFlag && t.dryRunFlag)
       throw new Error(`maintenance registry: "${t.slug}" declares both applyFlag and dryRunFlag`);
+    if (t.readOnly && t.applyFlag)
+      throw new Error(
+        `maintenance registry: "${t.slug}" is readOnly but declares an applyFlag — a read-only task has nothing to apply`,
+      );
     if (t.schedulable) {
-      if (t.cost !== 'sql')
-        throw new Error(`maintenance registry: schedulable task "${t.slug}" must be cost 'sql'`);
-      if (t.kind !== 'recurring' || t.status !== 'live' || !t.applyFlag)
+      if (t.cost !== 'sql' && t.cost !== 'io')
         throw new Error(
-          `maintenance registry: schedulable task "${t.slug}" must be a live, recurring, dry-run-by-default task`,
+          `maintenance registry: schedulable task "${t.slug}" must be free (cost 'sql' or 'io')`,
+        );
+      if (t.kind !== 'recurring' || t.status !== 'live')
+        throw new Error(
+          `maintenance registry: schedulable task "${t.slug}" must be live and recurring`,
+        );
+      if (!t.applyFlag && !t.readOnly)
+        throw new Error(
+          `maintenance registry: schedulable task "${t.slug}" must be dry-run-by-default (applyFlag) or readOnly`,
         );
     }
   }
