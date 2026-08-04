@@ -219,3 +219,80 @@ describe('openai-compat finishReason', () => {
     expect(r.finishReason).toBe('content_filter');
   });
 });
+
+// ─── Anthropic sampling-param guard ─────────────────────────────────────────
+//
+// Brought over from the @ai-sdk/anthropic comparison: rejecting temperature /
+// top_p is a property of the MODEL, not of whether thinking was requested this
+// round. The body builder previously dropped them only while thinking was on,
+// so a tool continuation (where wantGuardedThinking suppresses thinking) put
+// temperature back on the wire for models that never accept it.
+
+describe('anthropic-chat sampling params', () => {
+  const body = () => ({
+    id: 'msg_1',
+    type: 'message',
+    role: 'assistant',
+    model: 'x',
+    content: [{ type: 'text', text: 'ok' }],
+    stop_reason: 'end_turn',
+    usage: { input_tokens: 1, output_tokens: 1 },
+  });
+
+  function captureBody() {
+    const calls: string[] = [];
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      calls.push(String(init?.body ?? ''));
+      return { ok: true, json: async () => body() };
+    }) as unknown as typeof fetch;
+    return calls;
+  }
+
+  // The regression case: no thinking requested (as on every tool-continuation
+  // round), temperature set, model rejects it.
+  it.each(['claude-opus-4-7', 'claude-sonnet-5', 'claude-opus-5', 'claude-fable-5'])(
+    'omits temperature/top_p for %s even with thinking off',
+    async (model) => {
+      const calls = captureBody();
+      await anthropicChatAdapter.chat({
+        apiKey: 'k',
+        model,
+        messages: MSG,
+        temperature: 0.7,
+        topP: 0.9,
+      });
+      const sent = JSON.parse(calls[0]!);
+      expect(sent.temperature).toBeUndefined();
+      expect(sent.top_p).toBeUndefined();
+      expect(sent.thinking).toBeUndefined();
+    },
+  );
+
+  // Dated snapshots must resolve the same way as the bare id.
+  it('matches on prefix so dated snapshots are covered', async () => {
+    const calls = captureBody();
+    await anthropicChatAdapter.chat({
+      apiKey: 'k',
+      model: 'claude-opus-4-7-20260315',
+      messages: MSG,
+      temperature: 0.7,
+    });
+    expect(JSON.parse(calls[0]!).temperature).toBeUndefined();
+  });
+
+  // Contrast: a model that DOES accept them still gets them, so the guard is
+  // specific rather than a blanket drop.
+  it('still sends temperature/top_p for a model that accepts them', async () => {
+    const calls = captureBody();
+    await anthropicChatAdapter.chat({
+      apiKey: 'k',
+      model: 'claude-sonnet-4-6',
+      messages: MSG,
+      temperature: 0.7,
+      topP: 0.9,
+    });
+    const sent = JSON.parse(calls[0]!);
+    expect(sent.temperature).toBe(0.7);
+    expect(sent.top_p).toBe(0.9);
+  });
+});

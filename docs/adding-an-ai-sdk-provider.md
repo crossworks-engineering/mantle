@@ -11,20 +11,53 @@ Both routes are legitimate. Read "Which route" below before picking.
 
 ## Current state
 
-`packages/voice/src/adapters/anthropic-chat-aisdk.ts` is a **complete, working,
-deliberately unwired** implementation of `ChatDispatcher` on `@ai-sdk/anthropic`.
-Nothing imports it; no route can reach it; `pnpm verify` passes with it present.
+**No AI SDK package is installed.** The pilot adapter
+(`packages/voice/src/adapters/anthropic-chat-aisdk.ts`, a complete unwired
+`ChatDispatcher` on `@ai-sdk/anthropic`) was **removed on 2026-08-04**, along
+with the `ai` and `@ai-sdk/anthropic` deps, once it had produced its findings.
+Recover it with `git show <commit>^:packages/voice/src/adapters/anthropic-chat-aisdk.ts`
+if you want the reference implementation back — the five frictions below are all
+commented inline in that file.
 
-It exists as a reference implementation and as evidence. Read it before writing a
-second one — every friction listed below is commented inline at the exact line
-where it bites.
+It was deleted rather than kept because an unwired parallel adapter is a second
+thing to maintain: it drifted out of date the moment `ChatResult` gained
+`finishReason`, and a reference implementation nobody runs decays silently.
 
-Deps live in `packages/voice`: `ai` and `@ai-sdk/anthropic`, both on caret ranges
-so in-range fixes land on the next `pnpm update`. The `deps-drift` maintenance
-task reports when they have fallen behind (`pnpm -C server/web deps:drift`).
+**What the pilot actually bought us.** Beyond proving the wire bodies match, the
+comparison surfaced one live bug in our own hand-written adapter. Anthropic
+rejects `temperature`/`top_p` as a property of the **model**, not of whether
+thinking was requested; ours dropped them only while thinking was on, so every
+tool-continuation round (where `wantGuardedThinking` suppresses thinking) put
+temperature back on the wire for `claude-opus-4-7` and `claude-sonnet-5`, both
+in our catalogue. Fixed in `anthropicRejectsSamplingParams`. Reading a mature
+SDK's capability table against our own is a cheap, repeatable audit — see
+"Mining the SDK without adopting it" below.
 
 The research that led here, including the case _against_ wholesale adoption, is
 dev-brain page `e75bfbe5-35eb-4ac6-9909-6ed233ac42cd`.
+
+---
+
+## Mining the SDK without adopting it
+
+You do not need the package installed to learn from it. Both of these read the
+published artefacts directly:
+
+```sh
+# The provider's own capability table + option schema (readable, unminified).
+curl -sL https://cdn.jsdelivr.net/npm/@ai-sdk/<provider>/dist/index.js
+
+# The typed surface, including which model factories the provider implements.
+curl -sL https://cdn.jsdelivr.net/npm/@ai-sdk/<provider>/dist/index.d.ts
+```
+
+Read the provider's own `*Provider` interface rather than grepping the whole
+file: the shared `ProviderV4` base declares every modality, so a bare grep for
+`textEmbeddingModel` "finds" embeddings on providers that return `never`.
+
+What is worth harvesting: per-model capability flags (which params a model
+rejects), the full stop-reason enum, and documented mitigations for provider
+quirks. What is not: wire translation we already have working and tested.
 
 ---
 
@@ -144,8 +177,10 @@ grep -oE "^\s+(instructions|messages|maxOutputTokens|providerOptions|toolChoice)
 2. **Install the provider package** into `packages/voice` with a **caret** range
    (`pnpm add @ai-sdk/<provider>@^x.y.z`). A bare `pnpm add pkg@version` pins
    exact, which freezes you out of in-range fixes.
-3. **Write the adapter**, copying `anthropic-chat-aisdk.ts`. Keep `buildArgs()`
-   shared between `chat` and `chatStream` so the two cannot drift.
+3. **Write the adapter.** The removed `anthropic-chat-aisdk.ts` is the worked
+   example — recover it from git history (see "Current state") and copy from
+   there. Keep `buildArgs()` shared between `chat` and `chatStream` so the two
+   cannot drift.
 4. **Do not give tools an `execute` function.** Our `runToolLoop` dispatches.
    Omitting `execute` is what stops the SDK's own agent loop from taking over.
 5. **Write the capability guard** if the provider rejects any parameter on any

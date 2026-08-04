@@ -13,10 +13,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.29",
     "@mantle/api-keys": "workspace:*",
     "@openrouter/sdk": "^1.2.7",
-    "ai": "^7.0.51",
     "undici": "^8.8.0"
   },
   "devDependencies": {

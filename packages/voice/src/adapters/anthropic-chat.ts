@@ -49,6 +49,34 @@ const EFFORT_NO_XHIGH = new Set(['claude-opus-4-6', 'claude-sonnet-4-6', 'claude
 /** `claude-opus-4-5` predates `max` as well — its ladder stops at `high`. */
 const EFFORT_MAX_IS_HIGH = new Set(['claude-opus-4-5']);
 
+/** Models that reject `temperature` / `top_p` / `top_k` outright — a property
+ *  of the MODEL, not of whether we asked it to think this round.
+ *
+ *  This distinction cost us a real bug. The body builder used to drop sampling
+ *  params only while thinking was on, on the theory that "reasoning-capable
+ *  models reject them". But `wantGuardedThinking` deliberately suppresses
+ *  thinking on a tool continuation, so every follow-up round of a tool loop
+ *  put temperature back on the wire for a model that never accepts it. Two of
+ *  these ids (`claude-opus-4-7`, `claude-sonnet-5`) are in our catalogue, so
+ *  it was reachable by any agent with a temperature set.
+ *
+ *  Cross-checked against @ai-sdk/anthropic's own capability table, which
+ *  strips these per-model and unconditionally. */
+const SAMPLING_UNSUPPORTED = new Set([
+  'claude-opus-5',
+  'claude-opus-4-8',
+  'claude-opus-4-7',
+  'claude-fable-5',
+  'claude-sonnet-5',
+]);
+
+/** Whether this model rejects sampling params regardless of thinking state.
+ *  Prefix-matched so dated snapshots (`-20260805`) and suffixed variants
+ *  resolve the same way, matching {@link anthropicEffort}. */
+export function anthropicRejectsSamplingParams(model: string): boolean {
+  return [...SAMPLING_UNSUPPORTED].some((id) => model.startsWith(id));
+}
+
 /**
  * Translate our provider-neutral tier to what THIS model accepts.
  *
@@ -505,9 +533,14 @@ function buildAnthropicBody(opts: ChatOptions): Record<string, unknown> {
     //   - 'auto' is the default → omit the field
     //   - 'none' has no direct Anthropic equivalent → omit tools instead.
     // The tool_choice translation needed here today is therefore none.
-    // Sampling params are dropped when thinking is on (the API rejects them on
-    // reasoning-capable models); otherwise honour the caller's values.
-    ...(wantThinking
+    // Sampling params are dropped on TWO independent grounds, and both must
+    // hold for them to be sent:
+    //   1. thinking is on for this round (the API rejects them alongside a
+    //      thinking request), and
+    //   2. the model accepts them at all — see SAMPLING_UNSUPPORTED. This one
+    //      is a model property, so it still applies on a tool continuation
+    //      where thinking has been suppressed.
+    ...(wantThinking || anthropicRejectsSamplingParams(opts.model)
       ? {}
       : {
           ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
