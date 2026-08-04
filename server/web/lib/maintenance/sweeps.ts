@@ -4,17 +4,26 @@
  * hygiene tasks, so the CLI script and the cron run exactly one definition
  * of each sweep (docs/maintenance-runner.md, Phase 2).
  *
- * Cost-safety: only registry tasks with `schedulable: true` are considered,
- * and the registry asserts at load that those are pure SQL. As belt-and-braces
- * this module re-checks `cost === 'sql'` before running anything — the cron
- * path must never be able to touch a model-spending task.
+ * Cost-safety: only registry tasks with `schedulable: true` are considered, and
+ * the registry asserts at load that those are free. As belt-and-braces this
+ * module re-checks the cost before running anything — the cron path must never
+ * be able to touch a model-spending task.
+ *
+ * That re-check now calls the registry's own `isFreeCost` rather than restating
+ * the rule. It used to hardcode `cost === 'sql'`, and when the registry widened
+ * to `sql | io` the two silently disagreed: `deps-drift` declared itself
+ * schedulable, passed the registry assertion, and was dropped here on every
+ * single run. It never fired once. One rule, one definition.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
 import { findDuplicateCandidates, mergeEntities, type MergeCandidate } from '@mantle/content';
 
-import { MAINTENANCE_TASKS } from './registry';
+import { MAINTENANCE_TASKS, isFreeCost } from './registry';
 import { finishRun, hasRecentCronRun, recordRunStart } from './history';
+import { runDepsDrift, summariseDepsDrift } from './deps-drift';
+import { runModelsDrift, summariseModelsDrift } from './models-drift';
+import { reapAbandonedTracesAllOwners } from '../journey';
 
 export interface EntitiesDedupeResult {
   auto: MergeCandidate[];
@@ -89,11 +98,25 @@ export async function runEntitiesDedupe(
 
 /** In-process runners for schedulable tasks, keyed by registry slug. A
  *  schedulable task with no entry here is skipped (the cron never falls back
- *  to spawning scripts). Each returns a one-line summary for the run row. */
-const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
+ *  to spawning scripts), which is why `registry.test.ts` fails the build when
+ *  the two lists disagree — a missing entry is invisible at runtime beyond one
+ *  console.warn nobody reads at 03:30 UTC.
+ *
+ *  Each returns a one-line summary for the run row. Report-style sweeps
+ *  summarise their findings rather than throwing on them: a dependency
+ *  publishing a patch, or a provider shipping a model, is not a failed run. */
+export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
   'entities-dedupe': async (ownerId) => {
     const res = await runEntitiesDedupe(ownerId, { applyAuto: true });
     return `merged ${res.merged}/${res.auto.length} auto candidates (${res.review.length} left for review)`;
+  },
+  'deps-drift': async () => summariseDepsDrift(await runDepsDrift()),
+  'models-drift': async () => summariseModelsDrift(await runModelsDrift()),
+  // All owners, unlike the owner-scoped self-heal the live-activity view runs
+  // on poll — a box nobody browses is exactly the case this exists for.
+  'traces-reap': async () => {
+    const reaped = await reapAbandonedTracesAllOwners();
+    return reaped === 0 ? 'no abandoned traces' : `reaped ${reaped} abandoned trace(s)`;
   },
 };
 
@@ -131,7 +154,7 @@ async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise
  *  contained — one broken sweep doesn't stop the rest. */
 export async function runScheduledSweeps(ownerId: string): Promise<void> {
   for (const task of MAINTENANCE_TASKS.filter((t) => t.schedulable)) {
-    if (task.cost !== 'sql') continue; // belt-and-braces; see module header
+    if (!isFreeCost(task.cost)) continue; // belt-and-braces; see module header
     const sweep = SWEEPS[task.slug];
     if (!sweep) {
       console.warn(

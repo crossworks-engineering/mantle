@@ -425,7 +425,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     readOnly: true,
     extraFlags: ['--majors', '--json'],
     notes:
-      "Read-only, so there is no dry-run/apply split — running it IS the report, and it exits 0 even when drift is found (a non-zero exit would make the nightly sweep read as failing every time a dependency shipped a patch). --majors also lists versions outside the declared range, which are deliberate migrations rather than update fodder. ⚠️ schedulable:true is currently ASPIRATIONAL — runScheduledSweeps still gates on cost==='sql' and dispatches via the in-process SWEEPS map, so this 'io' task is skipped nightly on both counts. Widening that gate to sql|io (matching this registry's own guardrail) and adding a SWEEPS entry would make it real.",
+      "Read-only, so there is no dry-run/apply split — running it IS the report, and it exits 0 even when drift is found (a non-zero exit would make the nightly sweep read as failing every time a dependency shipped a patch). --majors also lists versions outside the declared range, which are deliberate migrations rather than update fodder. Ran nightly for real as of the SWEEPS entry — before that this said schedulable:true while the sweep runner's own cost==='sql' check dropped it every time.",
   },
   {
     slug: 'models-drift',
@@ -435,13 +435,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     kind: 'recurring',
     status: 'live',
     cost: 'io',
-    // NOT schedulable yet, and deliberately so rather than aspirationally true:
-    // runScheduledSweeps gates on `cost === 'sql'` and dispatches through an
-    // in-process SWEEPS map, so an 'io' task with no map entry is skipped
-    // twice over. Marking it true would describe a nightly run that does not
-    // happen. `deps-drift` has exactly this problem today — see the note there.
-    // Runnable now from `pnpm maintain` and the /debug/integrity Maintenance tab.
-    schedulable: false,
+    schedulable: true,
     script: 'scripts/models-drift.ts',
     cwd: 'server/web',
     readOnly: true,
@@ -462,6 +456,20 @@ export function isLiveRun(task: MaintenanceTask, args: string[]): boolean {
   if (task.applyFlag) return args.includes(task.applyFlag);
   if (task.dryRunFlag) return !args.includes(task.dryRunFlag);
   return true; // no dry-run convention — invoking it IS the live run
+}
+
+/**
+ * "Free" for scheduling purposes: costs nothing to run unattended.
+ *
+ * THE definition, exported so the cron's belt-and-braces re-check uses this
+ * rather than its own copy. It had one, and the two drifted the moment this
+ * widened from `sql` to `sql | io`: `deps-drift` shipped `schedulable: true`,
+ * passed the registry assertion, and was then silently dropped by a stale
+ * `cost !== 'sql'` in the sweep runner. It never ran once. A safety rule stated
+ * in two places is a safety rule that will disagree with itself.
+ */
+export function isFreeCost(cost: TaskCost): boolean {
+  return cost === 'sql' || cost === 'io';
 }
 
 /**
@@ -492,7 +500,7 @@ function assertRegistryInvariants(tasks: MaintenanceTask[]): void {
         `maintenance registry: "${t.slug}" is readOnly but declares an applyFlag — a read-only task has nothing to apply`,
       );
     if (t.schedulable) {
-      if (t.cost !== 'sql' && t.cost !== 'io')
+      if (!isFreeCost(t.cost))
         throw new Error(
           `maintenance registry: schedulable task "${t.slug}" must be free (cost 'sql' or 'io')`,
         );

@@ -234,6 +234,31 @@ async function reapUnguarded(userId: string): Promise<number> {
   }
 }
 
+/**
+ * The same reconcile across EVERY owner, for the nightly maintenance sweep.
+ *
+ * The owner-scoped reaper above only fires when someone opens the live-activity
+ * view, so on a box nobody browses an orphaned trace sits in `running` for days
+ * (NATREF 2026-07-18: two reaped ~41 h late). Unguarded on purpose, unlike the
+ * self-heal: this is the sweep's whole job, not a tidy-up before a read, so a
+ * database that refuses the write must surface as a failed run rather than
+ * silently report zero. Returns how many it reaped.
+ */
+export async function reapAbandonedTracesAllOwners(): Promise<number> {
+  const cutoff = new Date(Date.now() - ABANDON_AFTER_MIN * 60_000);
+  const rows = await db
+    .update(traces)
+    .set({
+      status: 'error',
+      error: `abandoned — no completion after ${ABANDON_AFTER_MIN} min (the process likely restarted or crashed mid-run)`,
+      finishedAt: new Date(),
+      durationMs: null,
+    })
+    .where(and(eq(traces.status, 'running'), lt(traces.startedAt, cutoff)))
+    .returning({ id: traces.id });
+  return rows.length;
+}
+
 async function reapOnce(userId: string, cutoff: Date): Promise<number> {
   const rows = await db
     .update(traces)
