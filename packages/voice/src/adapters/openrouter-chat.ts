@@ -44,6 +44,7 @@ import type {
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL, OPENROUTER_CHAT_MODELS } from '../catalogs/openrouter';
 import { DEFAULT_MAX_RETRIES, isEmptyJsonBodyError } from './retry';
+import { mapOpenAICompatFinishReason } from './openai-compat';
 import { StreamingThinkScrubber } from './think-scrubber';
 import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reasoning-accum';
 
@@ -545,10 +546,17 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   const reportedCostUsd =
     usage?.cost != null && Number.isFinite(usage.cost) ? usage.cost : undefined;
 
+  // OpenRouter normalises the upstream provider's stop reason onto the OpenAI
+  // vocabulary, so the shared compat mapper applies. Both spellings appear
+  // depending on the route, hence the camel/snake fallback.
+  const orChoice = choice as { finishReason?: string | null; finish_reason?: string | null };
+  const finishReason = mapOpenAICompatFinishReason(orChoice?.finishReason ?? orChoice?.finish_reason);
+
   return {
     text,
     model: (result as { model?: string }).model || opts.model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: usage?.promptTokens,
     tokensOut: usage?.completionTokens,
     cacheReadTokens: usage?.promptTokensDetails?.cachedTokens ?? undefined,
@@ -777,6 +785,7 @@ async function openrouterChatStream(
   }
 
   let text = '';
+  let rawFinish: string | null | undefined;
   let model = opts.model;
   let usage: OrStreamChunk['usage'];
   // Tool-call fragments accumulate by index: id+name land first, arguments arrive
@@ -803,6 +812,10 @@ async function openrouterChatStream(
       if (chunk.model) model = chunk.model;
       if (chunk.usage) usage = chunk.usage;
       const choice = chunk.choices?.[0];
+      // Read before the `!delta` bail: the terminal chunk carries the finish
+      // reason and usually no delta at all.
+      const chunkFinish = choice?.finishReason ?? choice?.finish_reason;
+      if (chunkFinish) rawFinish = chunkFinish;
       const delta = choice?.delta;
       if (!delta) continue;
       if (typeof delta.content === 'string' && delta.content.length > 0) {
@@ -874,10 +887,12 @@ async function openrouterChatStream(
     usage?.prompt_tokens_details?.cache_write_tokens;
 
   const details = reasoningDetails.result();
+  const finishReason = mapOpenAICompatFinishReason(rawFinish);
   return {
     text: text.trim(),
     model,
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: usage?.promptTokens ?? usage?.prompt_tokens,
     tokensOut: usage?.completionTokens ?? usage?.completion_tokens,
     cacheReadTokens: cacheRead ?? undefined,

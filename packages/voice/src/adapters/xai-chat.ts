@@ -28,6 +28,7 @@ import type { DiscoveryResult } from '../discover';
 import { XAI_BASE_URL, XAI_CHAT_MODELS } from '../catalogs/xai';
 import {
   extractOpenAICompatToolCalls,
+  mapOpenAICompatFinishReason,
   streamOpenAICompatChat,
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
@@ -90,10 +91,12 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
   const message = parsed.choices?.[0]?.message;
   const text = scrubThinkBlocks(message?.content ?? parsed.choices?.[0]?.text ?? '');
   const toolCalls = extractOpenAICompatToolCalls(message);
+  const finishReason = mapOpenAICompatFinishReason(parsed.choices?.[0]?.finish_reason);
   return {
     text: text.trim(),
     model: parsed.model || opts.model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usage?.prompt_tokens,
     tokensOut: parsed.usage?.completion_tokens,
     cacheReadTokens: parsed.usage?.prompt_tokens_details?.cached_tokens,

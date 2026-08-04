@@ -24,6 +24,7 @@
 
 import type {
   ChatDispatcher,
+  ChatFinishReason,
   ChatModelInfo,
   ChatOptions,
   ChatResult,
@@ -362,6 +363,37 @@ function buildAnthropicTools(opts: ChatOptions): AnthropicTool[] | undefined {
 }
 
 /** Pull tool_use blocks off the Anthropic response and normalise. */
+/**
+ * Anthropic `stop_reason` → the normalised {@link ChatFinishReason}.
+ *
+ * Unlike Gemini and the OpenAI dialect, Anthropic distinguishes `tool_use` at
+ * the stop-reason level, so no tool-call lookahead is needed here.
+ *
+ * `refusal` maps to 'content_filter' because it is the same situation from a
+ * caller's point of view: the reply was withheld on policy grounds and the
+ * text is unusable. `pause_turn` is a long-running server-tool turn the client
+ * is expected to continue, which is neither a completion nor a failure, so it
+ * lands in 'other' rather than being flattened into 'stop'.
+ */
+function mapAnthropicStopReason(raw: string | undefined): ChatFinishReason | undefined {
+  if (!raw) return undefined;
+  switch (raw) {
+    case 'end_turn':
+    case 'stop_sequence':
+      return 'stop';
+    case 'max_tokens':
+    case 'model_context_window_exceeded':
+      return 'length';
+    case 'tool_use':
+      return 'tool_calls';
+    case 'refusal':
+      return 'content_filter';
+    default:
+      // 'pause_turn' and anything Anthropic adds later.
+      return 'other';
+  }
+}
+
 function extractAnthropicToolCalls(parsed: AnthropicResponse): ChatToolCall[] | undefined {
   const uses = parsed.content.filter(
     (c): c is { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> } =>
@@ -525,10 +557,12 @@ async function anthropicChat(opts: ChatOptions): Promise<ChatResult> {
   );
   const text = textBlocks.map((b) => b.text).join('');
   const toolCalls = extractAnthropicToolCalls(parsed);
+  const finishReason = mapAnthropicStopReason(parsed.stop_reason);
   return {
     text: text.trim(),
     model: parsed.model || opts.model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usage?.input_tokens,
     tokensOut: parsed.usage?.output_tokens,
     cacheReadTokens: parsed.usage?.cache_read_input_tokens,
@@ -670,6 +704,9 @@ type AnthropicStreamEvent = {
     text?: string;
     thinking?: string;
     partial_json?: string;
+    /** Only on `message_delta`, which is where Anthropic reports the final
+     *  stop reason (the one-shot path reads it off the response body). */
+    stop_reason?: string;
   };
   usage?: { output_tokens?: number };
 };
@@ -718,6 +755,7 @@ async function anthropicChatStream(
   let tokensOut: number | undefined;
   let cacheRead: number | undefined;
   let cacheWrite: number | undefined;
+  let rawStop: string | undefined;
   // Content blocks by index: their type, and (for tool_use) id + name + the
   // input_json_delta fragments accumulated into the arguments string.
   const blocks = new Map<number, { type: string; id: string; name: string; args: string }>();
@@ -769,8 +807,14 @@ async function anthropicChatStream(
           const b = blocks.get(ev.index);
           if (b) b.args += d.partial_json;
         }
-      } else if (ev.type === 'message_delta' && ev.usage?.output_tokens != null) {
-        tokensOut = ev.usage.output_tokens; // cumulative — last one wins
+      } else if (ev.type === 'message_delta') {
+        // Two independent payloads ride this event: cumulative output tokens
+        // and the final stop_reason. Read them separately — a message_delta
+        // carrying only stop_reason must not be skipped.
+        if (ev.usage?.output_tokens != null) {
+          tokensOut = ev.usage.output_tokens; // cumulative — last one wins
+        }
+        if (ev.delta?.stop_reason) rawStop = ev.delta.stop_reason;
       }
     }
   } catch (err) {
@@ -798,10 +842,12 @@ async function anthropicChatStream(
       function: { name: b.name, arguments: b.args || '{}' },
     }));
 
+  const finishReason = mapAnthropicStopReason(rawStop);
   return {
     text: text.trim(),
     model,
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn,
     tokensOut,
     cacheReadTokens: cacheRead,

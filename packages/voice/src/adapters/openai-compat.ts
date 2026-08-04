@@ -22,7 +22,13 @@
  * brittle name-mapping. Keep them separate.
  */
 
-import type { ChatOptions, ChatResult, ChatStreamSink, ChatToolCall } from './types';
+import type {
+  ChatFinishReason,
+  ChatOptions,
+  ChatResult,
+  ChatStreamSink,
+  ChatToolCall,
+} from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import { readSSE, safeDelta } from './sse';
 import { StreamingThinkScrubber } from './think-scrubber';
@@ -73,6 +79,10 @@ export type OpenAICompatChatResponse = {
       content?: string | null;
       tool_calls?: OpenAICompatToolCall[];
     };
+    /** Why generation stopped. Optional because not every OpenAI-compatible
+     *  server sends it — several local runtimes omit it entirely. Map with
+     *  {@link mapOpenAICompatFinishReason} rather than reading it raw. */
+    finish_reason?: string | null;
   }>;
   usage?: {
     prompt_tokens?: number;
@@ -83,6 +93,45 @@ export type OpenAICompatChatResponse = {
     prompt_tokens_details?: { cached_tokens?: number };
   };
 };
+
+/**
+ * OpenAI-compat `finish_reason` → the normalised {@link ChatFinishReason}.
+ *
+ * Shared by every adapter on this dialect (xAI, HuggingFace, DeepSeek, local,
+ * Copilot, custom) so a truncation reads the same whoever served it.
+ *
+ * Two things worth knowing about this field in the wild:
+ *
+ *   - Many OpenAI-compatible servers, especially local runtimes, omit it
+ *     entirely. Undefined therefore means "not reported", never "stop", and
+ *     we return undefined rather than inventing a value.
+ *   - `function_call` is the pre-2023 spelling of `tool_calls`. Still emitted
+ *     by older self-hosted builds, so it maps to the same value.
+ */
+export function mapOpenAICompatFinishReason(
+  raw: string | null | undefined,
+): ChatFinishReason | undefined {
+  if (!raw) return undefined;
+  switch (raw) {
+    case 'stop':
+      return 'stop';
+    // 'max_tokens' is a non-standard spelling some self-hosted servers use.
+    case 'length':
+    case 'max_tokens':
+      return 'length';
+    case 'tool_calls':
+    case 'function_call':
+      return 'tool_calls';
+    case 'content_filter':
+      return 'content_filter';
+    // Not an OpenAI value; OpenRouter emits it when an upstream provider
+    // failed mid-generation, and it shares this mapper.
+    case 'error':
+      return 'error';
+    default:
+      return 'other';
+  }
+}
 
 // ─── Message translation ────────────────────────────────────────────────────
 
@@ -186,6 +235,9 @@ export function extractOpenAICompatToolCalls(
 type OpenAICompatStreamChunk = {
   model?: string;
   choices?: Array<{
+    /** Sent on the terminal choice chunk (the one before `[DONE]`), and only
+     *  by servers that report it at all. */
+    finish_reason?: string | null;
     delta?: {
       content?: string | null;
       reasoning_content?: string | null;
@@ -273,6 +325,7 @@ export async function streamOpenAICompatChat(
   let text = '';
   let model = opts.model;
   let usage: OpenAICompatStreamChunk['usage'];
+  let rawFinish: string | null | undefined;
   const toolAccum = new Map<number, { id: string; name: string; args: string }>();
   // Some open/local models (DeepSeek-R1, Qwen QwQ, many GGUF builds) inline their
   // chain-of-thought as `<think>…</think>` in `delta.content` instead of using
@@ -292,6 +345,9 @@ export async function streamOpenAICompatChat(
       }
       if (chunk.model) model = chunk.model;
       if (chunk.usage) usage = chunk.usage;
+      // Arrives on the terminal choice chunk, which typically carries no delta
+      // — so read it BEFORE the `!delta` bail below, or it is never seen.
+      if (chunk.choices?.[0]?.finish_reason) rawFinish = chunk.choices[0].finish_reason;
       const delta = chunk.choices?.[0]?.delta;
       if (!delta) continue;
       if (typeof delta.content === 'string' && delta.content.length > 0) {
@@ -353,10 +409,12 @@ export async function streamOpenAICompatChat(
       function: { name: c.name, arguments: c.args || '{}' },
     }));
 
+  const finishReason = mapOpenAICompatFinishReason(rawFinish);
   return {
     text: text.trim(),
     model,
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: usage?.prompt_tokens,
     tokensOut: usage?.completion_tokens,
     cacheReadTokens: usage?.prompt_tokens_details?.cached_tokens,

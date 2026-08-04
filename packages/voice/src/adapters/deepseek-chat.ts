@@ -37,6 +37,7 @@ import type { DiscoveryResult } from '../discover';
 import { DEEPSEEK_BASE_URL, DEEPSEEK_CHAT_MODELS } from '../catalogs/deepseek';
 import {
   extractOpenAICompatToolCalls,
+  mapOpenAICompatFinishReason,
   streamOpenAICompatChat,
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
@@ -103,10 +104,12 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
   // <think> defensively (some routes/distills emit it in content).
   const text = scrubThinkBlocks(message?.content ?? '');
   const toolCalls = extractOpenAICompatToolCalls(message);
+  const finishReason = mapOpenAICompatFinishReason(parsed.choices?.[0]?.finish_reason);
   return {
     text: text.trim(),
     model: parsed.model || opts.model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usage?.prompt_tokens,
     tokensOut: parsed.usage?.completion_tokens,
     // DeepSeek-specific: cache hits come back as

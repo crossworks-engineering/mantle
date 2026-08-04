@@ -29,6 +29,7 @@ import { chatAbortSignal } from './sse';
 import type { DiscoveryResult } from '../discover';
 import {
   extractOpenAICompatToolCalls,
+  mapOpenAICompatFinishReason,
   streamOpenAICompatChat,
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
@@ -85,10 +86,12 @@ async function localChat(opts: ChatOptions): Promise<ChatResult> {
   // Strip any inline <think> block (local GGUF reasoning models emit it in content).
   const text = scrubThinkBlocks(message?.content ?? '');
   const toolCalls = extractOpenAICompatToolCalls(message);
+  const finishReason = mapOpenAICompatFinishReason(parsed.choices?.[0]?.finish_reason);
   return {
     text: text.trim(),
     model: parsed.model || opts.model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usage?.prompt_tokens,
     tokensOut: parsed.usage?.completion_tokens,
   };
