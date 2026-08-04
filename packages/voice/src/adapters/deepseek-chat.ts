@@ -157,7 +157,13 @@ async function deepseekDiscover(apiKey: string): Promise<DiscoveryResult<ChatMod
 
 /** Streaming DeepSeek chat — OpenAI-compatible SSE (its reasoning models also
  *  stream a `reasoning_content` channel, which the shared streamer forwards as
- *  reasoning deltas). */
+ *  reasoning deltas).
+ *
+ *  The `cacheReadTokens` hook is not optional decoration: DeepSeek's cache hits
+ *  ride `usage.prompt_cache_hit_tokens`, not the OpenAI-compat
+ *  `prompt_tokens_details.cached_tokens` the shared streamer reads by default.
+ *  Without it the streaming path — the one the responder takes — recorded no
+ *  cache reads at all while `chat()` recorded them correctly. */
 function deepseekChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> {
   if (!opts.apiKey) throw new Error('deepseek-chat: apiKey required');
   if (!opts.model) throw new Error('deepseek-chat: model required');
@@ -167,6 +173,7 @@ function deepseekChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise
       url: `${DEEPSEEK_BASE_URL}/chat/completions`,
       headers: { Authorization: `Bearer ${opts.apiKey}`, 'content-type': 'application/json' },
       provider: 'deepseek',
+      cacheReadTokens: (u) => u.prompt_cache_hit_tokens ?? u.prompt_tokens_details?.cached_tokens,
     },
     onDelta,
   );

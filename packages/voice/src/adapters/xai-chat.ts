@@ -10,9 +10,14 @@
  * on failure (404 or other) we fall back to the static catalog with
  * a "couldn't verify" hint so the UI is still usable.
  *
- * Reasoning models: grok-4.20-reasoning accepts a `reasoning_effort`
- * field (low|medium|high). We forward it via `opts.extra` when set,
- * so the adapter stays generic but power-users can still steer.
+ * Reasoning: `reasoning_effort` is NOT a property of "is this a reasoning
+ * model". Per xAI's docs it is honoured on `grok-4.5` (depth) and on
+ * `grok-4.20-multi-agent` (where it selects agent COUNT, 4 or 16 — same field,
+ * different meaning). The `grok-4.20-*-reasoning` / `-non-reasoning` pair bakes
+ * the decision into the model id and takes no effort field; @ai-sdk/xai excludes
+ * exactly that pair via `/^grok-4\.20(-\d{4})?-(non-)?reasoning$/`. We forward
+ * whatever rides `opts.extra` rather than deriving it, so nothing is sent to a
+ * model that ignores it unless an operator asked for it explicitly.
  */
 
 import type {

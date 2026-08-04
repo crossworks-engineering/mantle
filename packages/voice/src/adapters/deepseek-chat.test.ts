@@ -253,3 +253,98 @@ describe('deepseek-chat error surface', () => {
     ).rejects.toThrow(/deepseek chat 401/);
   });
 });
+
+/**
+ * The streaming path has the SAME non-standard cache field to read, and for a
+ * long time it did not read it: `chatStream` goes through the shared
+ * openai-compat streamer, whose default lookup is
+ * `prompt_tokens_details.cached_tokens` — a field DeepSeek never sends. Because
+ * the responder streams whenever live-turn streaming is on, that meant the path
+ * actually used in production recorded no cache reads at all while the one-shot
+ * path recorded them correctly. Pin both halves.
+ */
+describe('deepseek-chat streaming usage', () => {
+  function streamFetch(frames: string[]) {
+    globalThis.fetch = (async () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const enc = new TextEncoder();
+          for (const f of frames) controller.enqueue(enc.encode(f));
+          controller.close();
+        },
+      });
+      return { ok: true, status: 200, body } as unknown as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  const sse = (obj: unknown) => `data: ${JSON.stringify(obj)}\n\n`;
+
+  it('reads cacheReadTokens from the DeepSeek-specific prompt_cache_hit_tokens', async () => {
+    streamFetch([
+      sse({ model: 'deepseek-v4-flash', choices: [{ delta: { content: 'ok' } }] }),
+      sse({
+        choices: [{ finish_reason: 'stop', delta: {} }],
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 7,
+          prompt_cache_hit_tokens: 64,
+          prompt_cache_miss_tokens: 36,
+        },
+      }),
+      'data: [DONE]\n\n',
+    ]);
+    const res = await deepseekChatAdapter.chatStream!(
+      {
+        apiKey: 'sk-test',
+        model: 'deepseek-v4-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+      () => {},
+    );
+    expect(res.cacheReadTokens).toBe(64);
+    expect(res.tokensIn).toBe(100);
+    expect(res.tokensOut).toBe(7);
+  });
+
+  it('still honours the OpenAI-compat spelling if DeepSeek ever sends it', async () => {
+    streamFetch([
+      sse({
+        choices: [{ finish_reason: 'stop', delta: { content: 'ok' } }],
+        usage: {
+          prompt_tokens: 10,
+          completion_tokens: 2,
+          prompt_tokens_details: { cached_tokens: 8 },
+        },
+      }),
+      'data: [DONE]\n\n',
+    ]);
+    const res = await deepseekChatAdapter.chatStream!(
+      {
+        apiKey: 'sk-test',
+        model: 'deepseek-v4-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+      () => {},
+    );
+    expect(res.cacheReadTokens).toBe(8);
+  });
+
+  it('leaves cacheReadTokens undefined when neither field is present', async () => {
+    streamFetch([
+      sse({
+        choices: [{ finish_reason: 'stop', delta: { content: 'ok' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 2 },
+      }),
+      'data: [DONE]\n\n',
+    ]);
+    const res = await deepseekChatAdapter.chatStream!(
+      {
+        apiKey: 'sk-test',
+        model: 'deepseek-v4-flash',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+      () => {},
+    );
+    expect(res.cacheReadTokens).toBeUndefined();
+  });
+});

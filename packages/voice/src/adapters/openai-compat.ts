@@ -228,6 +228,19 @@ export function extractOpenAICompatToolCalls(
 
 // ─── Streaming ────────────────────────────────────────────────────────────────
 
+/** The `usage` envelope on a streamed chunk. Superset of the strict OpenAI
+ *  shape: DeepSeek reports its cache hits as a top-level `prompt_cache_hit_tokens`
+ *  instead of `prompt_tokens_details.cached_tokens`, and it rides this same
+ *  streamer — so the field lives on the shared type and
+ *  {@link OpenAICompatStreamConfig.cacheReadTokens} decides which one to read. */
+export type OpenAICompatStreamUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+  /** DeepSeek's spelling. See https://api-docs.deepseek.com/guides/kv_cache. */
+  prompt_cache_hit_tokens?: number;
+};
+
 /** One streamed OpenAI-compat chunk. `delta.content` is the visible text;
  *  `delta.reasoning_content` is the (DeepSeek-style) reasoning channel;
  *  `delta.tool_calls` arrive as fragments accumulated by `index`. Usage rides
@@ -248,11 +261,7 @@ type OpenAICompatStreamChunk = {
       }>;
     };
   }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    prompt_tokens_details?: { cached_tokens?: number };
-  };
+  usage?: OpenAICompatStreamUsage;
 };
 
 /** Per-call configuration for {@link streamOpenAICompatChat}: the provider's
@@ -267,6 +276,16 @@ export type OpenAICompatStreamConfig = {
   /** Override the fetch implementation (e.g. the local adapter's `tailnetFetch`
    *  to reach a NAT'd box). Defaults to global `fetch`. */
   fetchImpl?: typeof fetch;
+  /** Read cache-read tokens out of the terminal chunk's usage, for a provider
+   *  that doesn't use `prompt_tokens_details.cached_tokens`. Defaults to that
+   *  standard field.
+   *
+   *  This exists because the one-shot and streaming paths of an adapter can
+   *  drift: `deepseek-chat` read its own `prompt_cache_hit_tokens` in `chat()`
+   *  and then silently lost the number in `chatStream()`, which is the path the
+   *  responder actually takes. A per-adapter hook keeps the two spellings in
+   *  one place per provider. */
+  cacheReadTokens?: (usage: OpenAICompatStreamUsage) => number | undefined;
 };
 
 /**
@@ -410,6 +429,7 @@ export async function streamOpenAICompatChat(
     }));
 
   const finishReason = mapOpenAICompatFinishReason(rawFinish);
+  const readCache = cfg.cacheReadTokens ?? ((u) => u.prompt_tokens_details?.cached_tokens);
   return {
     text: text.trim(),
     model,
@@ -417,6 +437,6 @@ export async function streamOpenAICompatChat(
     ...(finishReason ? { finishReason } : {}),
     tokensIn: usage?.prompt_tokens,
     tokensOut: usage?.completion_tokens,
-    cacheReadTokens: usage?.prompt_tokens_details?.cached_tokens,
+    cacheReadTokens: usage ? readCache(usage) : undefined,
   };
 }

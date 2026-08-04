@@ -59,6 +59,27 @@ What is worth harvesting: per-model capability flags (which params a model
 rejects), the full stop-reason enum, and documented mitigations for provider
 quirks. What is not: wire translation we already have working and tested.
 
+### What the sweep has caught so far
+
+Each of these was a live defect that no test, error or log would have shown you,
+because none of them fails loudly. That is the shape of what this audit is good
+at: not crashes, but a wrong number or a stale knob that nothing contradicts.
+
+| Found in            | The defect                                                                                                                                                                                     | Fixed in                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `@ai-sdk/anthropic` | `temperature`/`top_p` are rejected as a property of the MODEL; we dropped them only while thinking was on, so every tool continuation put one back on the wire                                 | `anthropicRejectsSamplingParams`           |
+| `@ai-sdk/google`    | `thoughtsTokenCount` is reported separately from `candidatesTokenCount` and the response is priced on the SUM. We read only the latter, under-reporting every thinking turn                    | `googleOutputTokens`                       |
+| `@ai-sdk/google`    | Gemini 3 takes `thinkingLevel`, not `thinkingBudget`. The old field is still accepted, so this never 400'd — Google documents it as "unexpected performance" on Pro instead                    | `geminiThinkingLevel`                      |
+| `@ai-sdk/deepseek`  | (by comparison, not from the SDK) `chat()` read DeepSeek's `prompt_cache_hit_tokens`; `chatStream()` used the shared streamer's default lookup and lost it. Streaming is the responder's path  | `OpenAICompatStreamConfig.cacheReadTokens` |
+| `@ai-sdk/xai`       | `reasoning_effort` is honoured on `grok-4.5` and `grok-4.20-multi-agent` (where it sets agent COUNT), not on the `-reasoning`/`-non-reasoning` pair. Our catalogue told operators the opposite | `catalogs/xai.ts`                          |
+
+Two patterns to carry forward. **Usage accounting is the richest seam** — every
+provider splits its counters differently and a missed field is silent money.
+**Check `chat()` against `chatStream()` while you are in there**: the SDK
+comparison keeps surfacing our own two paths disagreeing, which is a defect
+class the SDK does not have (it has one path) and our tests mostly did not
+cover.
+
 ---
 
 ## Which route: SDK or hand-written?

@@ -34,7 +34,8 @@ export const XAI_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
     id: 'grok-4.20-0309-reasoning',
     label: 'Grok 4.20 (reasoning)',
-    description: 'Reasoning variant. Configure effort with reasoning_effort: low | medium | high.',
+    description:
+      'Reasoning variant — depth is fixed by the model id, not steerable with reasoning_effort.',
     contextTokens: 1_000_000,
     capabilities: ['reasoning', 'function_calling', 'json_mode'],
     inputPricePer1M: 1.25,
@@ -52,7 +53,8 @@ export const XAI_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
     id: 'grok-4.20-multi-agent-0309',
     label: 'Grok 4.20 (multi-agent)',
-    description: '2M context, designed for multi-agent workflows with shared state.',
+    description:
+      '2M context, designed for multi-agent workflows with shared state. reasoning_effort selects the agent COUNT here (4 or 16), not depth.',
     contextTokens: 2_000_000,
     capabilities: ['function_calling', 'json_mode'],
     inputPricePer1M: 1.25,

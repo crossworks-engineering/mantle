@@ -76,6 +76,13 @@ type GeminiResponse = {
   usageMetadata?: {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
+    /** Thinking tokens, reported SEPARATELY from candidatesTokenCount and
+     *  billed at the output rate: "response pricing is the sum of output
+     *  tokens and thinking tokens". Reading only candidatesTokenCount
+     *  under-reports every thinking turn, which is the whole cost of a
+     *  reasoning model. See {@link googleOutputTokens}.
+     *  https://ai.google.dev/gemini-api/docs/generate-content/thinking */
+    thoughtsTokenCount?: number;
     /** Gemini 2.5+ models do implicit prompt caching automatically.
      *  When the request's prefix matches a previous call's prefix
      *  (within the 1-hour TTL), the cached portion is billed at ~25%
@@ -162,6 +169,23 @@ function mapGoogleFinishReason(
       // FINISH_REASON_UNSPECIFIED, OTHER, and anything Google adds later.
       return 'other';
   }
+}
+
+/**
+ * Output tokens as Gemini bills them: the visible reply PLUS the thinking that
+ * produced it. The two arrive in separate counters and only their sum is what
+ * the response is priced on, so a thinking turn that reads only
+ * `candidatesTokenCount` under-reports — badly, since thinking is usually the
+ * larger half.
+ *
+ * Returns undefined when Gemini reported neither, so an absent usage block
+ * stays absent rather than becoming a confident zero.
+ */
+function googleOutputTokens(usage: GeminiResponse['usageMetadata']): number | undefined {
+  const text = usage?.candidatesTokenCount;
+  const thoughts = usage?.thoughtsTokenCount;
+  if (typeof text !== 'number' && typeof thoughts !== 'number') return undefined;
+  return (text ?? 0) + (thoughts ?? 0);
 }
 
 /** Translate an OpenAI-shape image_url into a Gemini inlineData part. Only
@@ -352,9 +376,41 @@ const SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validator';
 
 /** Gemini 3+ is where thought-signature validation is enforced. Earlier models
  *  ignore the field, so replaying it is harmless there and the sentinel is
- *  never needed. */
+ *  never needed. Also selects the thinking knob — see
+ *  {@link geminiThinkingLevel}. */
 function isGemini3Model(model: string): boolean {
   return /^gemini-3/i.test(model);
+}
+
+/**
+ * Gemini 3 replaced the token budget with a discrete depth: `thinkingLevel`
+ * rather than `thinkingBudget`. The old field is still ACCEPTED there for
+ * backwards compatibility, so this was never a 400 — it is documented to
+ * produce "unexpected performance" on Gemini 3 Pro instead, which is the worse
+ * failure because nothing surfaces it. Sending both at once IS a 400, so the
+ * two branches below are exclusive by construction.
+ *
+ * Our tiers are one step deeper than Gemini's at the top (`xhigh`/`max` have no
+ * counterpart) so both fold into 'high', the same collapse @ai-sdk/google
+ * makes. We never emit 'minimal': "off" is expressed by omitting thinking
+ * entirely, per the ThinkingEffort contract.
+ * https://ai.google.dev/gemini-api/docs/generate-content/thinking
+ */
+function geminiThinkingLevel(
+  effort: ChatOptions['thinkingEffort'],
+): 'low' | 'medium' | 'high' | undefined {
+  switch (effort) {
+    case 'low':
+      return 'low';
+    case 'medium':
+      return 'medium';
+    case 'high':
+    case 'xhigh':
+    case 'max':
+      return 'high';
+    default:
+      return undefined;
+  }
 }
 
 /** Walk parts[], surface every functionCall as a normalised ChatToolCall.
@@ -438,15 +494,26 @@ function buildGoogleBody(opts: ChatOptions): Record<string, unknown> {
   if (typeof opts.topP === 'number') generationConfig.topP = opts.topP;
 
   // Gemini 2.5+ native thinking: ask the model to reason first and return a
-  // thought summary (`includeThoughts`), surfaced as reasoning deltas. We don't
-  // replay Gemini's thought signatures across tool rounds, so the same guard as
-  // the direct-Anthropic path suppresses thinking on a tool continuation (first
-  // round still thinks). `thinkingBudget` is Gemini's own knob — pass it through.
-  if (wantGuardedThinking(opts) && typeof opts.thinkingBudget === 'number') {
-    generationConfig.thinkingConfig = {
-      thinkingBudget: Math.floor(opts.thinkingBudget),
-      includeThoughts: true,
-    };
+  // thought summary (`includeThoughts`, which both generations still take),
+  // surfaced as reasoning deltas. We don't replay Gemini's thought signatures
+  // across tool rounds, so the same guard as the direct-Anthropic path
+  // suppresses thinking on a tool continuation (first round still thinks).
+  //
+  // The depth knob is model-generation-specific: Gemini 3 takes `thinkingLevel`
+  // (see geminiThinkingLevel), 2.5 takes `thinkingBudget`. Gemini 3 falls back
+  // to the budget when the caller supplied no effort tier — that is exactly the
+  // pre-existing behaviour and the API still accepts it, so nothing regresses
+  // on a caller that only sets a budget.
+  if (wantGuardedThinking(opts)) {
+    const level = isGemini3Model(opts.model) ? geminiThinkingLevel(opts.thinkingEffort) : undefined;
+    if (level) {
+      generationConfig.thinkingConfig = { thinkingLevel: level, includeThoughts: true };
+    } else if (typeof opts.thinkingBudget === 'number') {
+      generationConfig.thinkingConfig = {
+        thinkingBudget: Math.floor(opts.thinkingBudget),
+        includeThoughts: true,
+      };
+    }
   }
 
   const tools = buildGoogleTools(opts);
@@ -515,7 +582,7 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
     ...(reasoningDetails ? { reasoningDetails } : {}),
     ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usageMetadata?.promptTokenCount,
-    tokensOut: parsed.usageMetadata?.candidatesTokenCount,
+    tokensOut: googleOutputTokens(parsed.usageMetadata),
     cacheReadTokens: parsed.usageMetadata?.cachedContentTokenCount,
     // Gemini has no cache-write line item — implicit caching is
     // automatic and free to populate; explicit caching has its own
@@ -619,9 +686,11 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
       }
       if (chunk.modelVersion) model = chunk.modelVersion;
       if (chunk.usageMetadata) {
-        // Cumulative across the stream — last chunk's totals win.
+        // Cumulative across the stream — last chunk's totals win. Output is
+        // reply + thinking (googleOutputTokens); a chunk that carries usage but
+        // no output counters leaves the previous total standing.
         tokensIn = chunk.usageMetadata.promptTokenCount ?? tokensIn;
-        tokensOut = chunk.usageMetadata.candidatesTokenCount ?? tokensOut;
+        tokensOut = googleOutputTokens(chunk.usageMetadata) ?? tokensOut;
         cacheRead = chunk.usageMetadata.cachedContentTokenCount ?? cacheRead;
       }
       if (chunk.candidates?.[0]?.finishReason) rawFinish = chunk.candidates[0].finishReason;
