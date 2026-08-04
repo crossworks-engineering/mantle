@@ -30,6 +30,7 @@ import type {
   ChatResult,
   ChatStreamSink,
   ChatToolCall,
+  ReasoningDetail,
   ThinkingEffort,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
@@ -165,8 +166,30 @@ type AnthropicImageBlock = {
   cache_control?: { type: 'ephemeral' };
 };
 
+/** A signed thinking block. Anthropic validates the signature against the exact
+ *  thinking text, so both fields must be replayed byte-for-byte or the request
+ *  400s. Never carries cache_control — thinking blocks are not cacheable. */
+type AnthropicThinkingBlock = {
+  type: 'thinking';
+  thinking: string;
+  signature: string;
+};
+
+/** The opaque form Anthropic returns when it redacts its own reasoning. The
+ *  payload is unreadable to us and to the model, but it still has to be
+ *  replayed for the turn to validate. */
+type AnthropicRedactedThinkingBlock = {
+  type: 'redacted_thinking';
+  data: string;
+};
+
 type AnthropicContentBlock =
-  AnthropicTextBlock | AnthropicToolUseBlock | AnthropicToolResultBlock | AnthropicImageBlock;
+  | AnthropicTextBlock
+  | AnthropicToolUseBlock
+  | AnthropicToolResultBlock
+  | AnthropicImageBlock
+  | AnthropicThinkingBlock
+  | AnthropicRedactedThinkingBlock;
 
 type AnthropicMessage = {
   role: 'user' | 'assistant';
@@ -197,6 +220,8 @@ type AnthropicResponse = {
   content: Array<
     | { type: 'text'; text: string }
     | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+    | { type: 'thinking'; thinking: string; signature: string }
+    | { type: 'redacted_thinking'; data: string }
     | { type: string }
   >;
   stop_reason?: 'end_turn' | 'tool_use' | 'max_tokens' | string;
@@ -340,10 +365,13 @@ function splitSystemAndMessages(messages: ChatOptions['messages']): {
       });
       continue;
     }
-    // Build a mixed content array: text block first (if any), then
-    // every tool_use block in original order. Empty text blocks are
+    // Build a mixed content array: signed thinking blocks FIRST (Anthropic
+    // requires them to lead the turn they belong to), then the text block if
+    // any, then every tool_use block in original order. Empty text blocks are
     // omitted — Anthropic rejects empty text content.
-    const blocks: AnthropicContentBlock[] = [];
+    const blocks: AnthropicContentBlock[] = [
+      ...reasoningToAnthropicBlocks('reasoningDetails' in m ? m.reasoningDetails : undefined),
+    ];
     if (typeof m.content === 'string' && m.content.length > 0) {
       blocks.push({ type: 'text', text: m.content });
     }
@@ -420,6 +448,73 @@ function mapAnthropicStopReason(raw: string | undefined): ChatFinishReason | und
       // 'pause_turn' and anything Anthropic adds later.
       return 'other';
   }
+}
+
+/**
+ * Anthropic thinking blocks → the provider-neutral {@link ReasoningDetail}
+ * channel, and back.
+ *
+ * Why this exists: a thinking-enabled request whose history contains an
+ * assistant `tool_use` turn MUST replay that turn's thinking blocks, or
+ * Anthropic 400s. We previously had no way to carry them, so
+ * `wantGuardedThinking` switched thinking OFF for the rest of any tool loop —
+ * meaning the model reasoned on round one and then composed the actual answer
+ * to the user with reasoning disabled.
+ *
+ * The vocabulary is OpenRouter's, deliberately: `reasoning.text` /
+ * `reasoning.encrypted` already round-trip through `ChatAssistantMessage`
+ * and the tool loop echoes them back with no per-provider code. Anthropic
+ * direct is now the second producer on that same channel.
+ *
+ * Fidelity matters more than usual here. The signature is validated against
+ * the exact thinking text, so text and signature travel together and are
+ * never reformatted, trimmed or merged.
+ */
+function extractAnthropicReasoning(parsed: AnthropicResponse): ReasoningDetail[] | undefined {
+  const out: ReasoningDetail[] = [];
+  parsed.content.forEach((block, i) => {
+    if (block.type === 'thinking') {
+      const b = block as { thinking?: string; signature?: string };
+      // A thinking block with no signature cannot be replayed (the API rejects
+      // an unsigned one), so keeping it would poison the next request.
+      if (typeof b.signature !== 'string' || b.signature.length === 0) return;
+      out.push({
+        type: 'reasoning.text',
+        index: i,
+        text: b.thinking ?? '',
+        signature: b.signature,
+      });
+    } else if (block.type === 'redacted_thinking') {
+      const b = block as { data?: string };
+      if (typeof b.data !== 'string' || b.data.length === 0) return;
+      out.push({ type: 'reasoning.encrypted', index: i, data: b.data });
+    }
+  });
+  return out.length > 0 ? out : undefined;
+}
+
+/** The reverse: replayable thinking blocks for an assistant turn we are sending
+ *  back. Anything without the fields Anthropic validates is dropped rather than
+ *  sent half-formed. Order is preserved — blocks lead the assistant turn. */
+function reasoningToAnthropicBlocks(
+  details: ReasoningDetail[] | undefined,
+): AnthropicContentBlock[] {
+  if (!details || details.length === 0) return [];
+  const out: AnthropicContentBlock[] = [];
+  for (const d of details) {
+    if (typeof d.signature === 'string' && d.signature.length > 0 && typeof d.text === 'string') {
+      out.push({ type: 'thinking', thinking: d.text, signature: d.signature });
+    } else if (typeof d.data === 'string' && d.data.length > 0) {
+      out.push({ type: 'redacted_thinking', data: d.data });
+    }
+  }
+  return out;
+}
+
+/** Whether an assistant turn carries enough to replay its reasoning. Used by
+ *  the continuation guard to decide if thinking can stay on. */
+export function hasReplayableAnthropicReasoning(details: ReasoningDetail[] | undefined): boolean {
+  return reasoningToAnthropicBlocks(details).length > 0;
 }
 
 function extractAnthropicToolCalls(parsed: AnthropicResponse): ChatToolCall[] | undefined {
@@ -591,10 +686,12 @@ async function anthropicChat(opts: ChatOptions): Promise<ChatResult> {
   const text = textBlocks.map((b) => b.text).join('');
   const toolCalls = extractAnthropicToolCalls(parsed);
   const finishReason = mapAnthropicStopReason(parsed.stop_reason);
+  const reasoningDetails = extractAnthropicReasoning(parsed);
   return {
     text: text.trim(),
     model: parsed.model || opts.model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(reasoningDetails ? { reasoningDetails } : {}),
     ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usage?.input_tokens,
     tokensOut: parsed.usage?.output_tokens,
@@ -731,12 +828,15 @@ type AnthropicStreamEvent = {
       cache_creation_input_tokens?: number;
     };
   };
-  content_block?: { type: string; id?: string; name?: string };
+  content_block?: { type: string; id?: string; name?: string; data?: string };
   delta?: {
     type: string;
     text?: string;
     thinking?: string;
     partial_json?: string;
+    /** Only on `signature_delta`. Anthropic emits the signature whole, once,
+     *  after the thinking text of the same block has finished streaming. */
+    signature?: string;
     /** Only on `message_delta`, which is where Anthropic reports the final
      *  stop reason (the one-shot path reads it off the response body). */
     stop_reason?: string;
@@ -791,7 +891,22 @@ async function anthropicChatStream(
   let rawStop: string | undefined;
   // Content blocks by index: their type, and (for tool_use) id + name + the
   // input_json_delta fragments accumulated into the arguments string.
-  const blocks = new Map<number, { type: string; id: string; name: string; args: string }>();
+  const blocks = new Map<
+    number,
+    {
+      type: string;
+      id: string;
+      name: string;
+      args: string;
+      /** thinking_delta fragments, concatenated. The signature is validated
+       *  against the COMPLETE text, so partial assembly would corrupt it. */
+      thinking: string;
+      /** Lands once, via signature_delta. */
+      signature: string;
+      /** redacted_thinking payload, carried on content_block_start. */
+      data: string;
+    }
+  >();
 
   try {
     for await (const payload of readSSE(res.body, opts.signal)) {
@@ -820,6 +935,11 @@ async function anthropicChatStream(
           id: ev.content_block.id ?? '',
           name: ev.content_block.name ?? '',
           args: '',
+          thinking: '',
+          signature: '',
+          // A redacted block carries its whole payload here; there are no
+          // deltas to follow.
+          data: ev.content_block.data ?? '',
         });
       } else if (ev.type === 'content_block_delta' && ev.delta) {
         const d = ev.delta;
@@ -831,7 +951,21 @@ async function anthropicChatStream(
           typeof d.thinking === 'string' &&
           d.thinking.length > 0
         ) {
+          // Surface it live AND retain it: the replayed block must carry the
+          // exact text the signature was computed over.
+          if (typeof ev.index === 'number') {
+            const b = blocks.get(ev.index);
+            if (b) b.thinking += d.thinking;
+          }
           safeDelta(onDelta, { type: 'reasoning', text: d.thinking });
+        } else if (
+          d.type === 'signature_delta' &&
+          typeof d.signature === 'string' &&
+          d.signature.length > 0 &&
+          typeof ev.index === 'number'
+        ) {
+          const b = blocks.get(ev.index);
+          if (b) b.signature = d.signature;
         } else if (
           d.type === 'input_json_delta' &&
           typeof d.partial_json === 'string' &&
@@ -875,11 +1009,27 @@ async function anthropicChatStream(
       function: { name: b.name, arguments: b.args || '{}' },
     }));
 
+  // Reassemble the signed reasoning blocks in wire order so the next request
+  // can replay them. Unsigned thinking is dropped: replaying a block without
+  // its signature is rejected, so a partial one is worse than none.
+  const reasoningDetails: ReasoningDetail[] = [...blocks.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .flatMap(([index, b]): ReasoningDetail[] => {
+      if (b.type === 'thinking' && b.signature) {
+        return [{ type: 'reasoning.text', index, text: b.thinking, signature: b.signature }];
+      }
+      if (b.type === 'redacted_thinking' && b.data) {
+        return [{ type: 'reasoning.encrypted', index, data: b.data }];
+      }
+      return [];
+    });
+
   const finishReason = mapAnthropicStopReason(rawStop);
   return {
     text: text.trim(),
     model,
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(reasoningDetails.length > 0 ? { reasoningDetails } : {}),
     ...(finishReason ? { finishReason } : {}),
     tokensIn,
     tokensOut,

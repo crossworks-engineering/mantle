@@ -22,6 +22,7 @@
 import type {
   ChatDispatcher,
   ChatFinishReason,
+  ReasoningDetail,
   ChatModelInfo,
   ChatOptions,
   ChatResult,
@@ -40,9 +41,15 @@ import { GOOGLE_BASE_URL, GOOGLE_CHAT_MODELS } from '../catalogs/google';
  *  - functionCall: the model's tool-call request (on a model-role content)
  *  - functionResponse: our tool result fed back (on a user-role content) */
 type GeminiPart =
-  | { text: string; thought?: boolean }
+  | { text: string; thought?: boolean; thoughtSignature?: string }
   | { inlineData: { mimeType: string; data: string } }
-  | { functionCall: { name: string; args: Record<string, unknown> } }
+  | {
+      functionCall: { name: string; args: Record<string, unknown> };
+      /** Sibling key on the PART, not a field inside functionCall. Gemini 3
+       *  validates it on replay and 400s a signed-thinking turn that comes
+       *  back without one. */
+      thoughtSignature?: string;
+    }
   | { functionResponse: { name: string; response: Record<string, unknown> } };
 
 type GeminiContent = {
@@ -274,6 +281,14 @@ function splitSystemAndContents(
       parts.push({ text: m.content });
     }
     if ('toolCalls' in m && Array.isArray(m.toolCalls)) {
+      // Signed reasoning replay: put each call's original thoughtSignature back
+      // on its part, or the documented sentinel when we have none and the model
+      // would otherwise reject the turn.
+      const sigs = signaturesForTurn(
+        m.toolCalls,
+        'reasoningDetails' in m ? m.reasoningDetails : undefined,
+        model,
+      );
       for (const tc of m.toolCalls) {
         let args: Record<string, unknown>;
         try {
@@ -282,7 +297,11 @@ function splitSystemAndContents(
         } catch {
           args = {};
         }
-        parts.push({ functionCall: { name: tc.function.name, args } });
+        const sig = sigs.get(tc.id);
+        parts.push({
+          functionCall: { name: tc.function.name, args },
+          ...(sig ? { thoughtSignature: sig } : {}),
+        });
         toolCallNameById.set(tc.id, tc.function.name);
       }
     }
@@ -325,24 +344,80 @@ function buildGoogleTools(opts: ChatOptions): GeminiToolDeclaration[] | undefine
   ];
 }
 
+/** The documented escape hatch for replaying a Gemini 3 functionCall whose
+ *  signature we don't have. Without it the request 400s outright; with it the
+ *  model accepts the turn and simply skips signature validation.
+ *  https://ai.google.dev/gemini-api/docs/thought-signatures */
+const SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validator';
+
+/** Gemini 3+ is where thought-signature validation is enforced. Earlier models
+ *  ignore the field, so replaying it is harmless there and the sentinel is
+ *  never needed. */
+function isGemini3Model(model: string): boolean {
+  return /^gemini-3/i.test(model);
+}
+
 /** Walk parts[], surface every functionCall as a normalised ChatToolCall.
- *  Mints synthetic ids since Gemini's functionCall has no id field. */
-function extractGoogleToolCalls(parts: GeminiPart[] | undefined): ChatToolCall[] | undefined {
-  if (!parts) return undefined;
+ *  Mints synthetic ids since Gemini's functionCall has no id field.
+ *
+ *  Also returns the `thoughtSignature` that rode alongside each call, keyed by
+ *  the synthetic id we just minted, so the next request can put it back on the
+ *  right part. Pairing by id is what makes this safe across a multi-call turn.
+ */
+function extractGoogleToolCalls(parts: GeminiPart[] | undefined): {
+  toolCalls?: ChatToolCall[];
+  reasoningDetails?: ReasoningDetail[];
+} {
+  if (!parts) return {};
   const calls: ChatToolCall[] = [];
+  const details: ReasoningDetail[] = [];
   for (const p of parts) {
     if ('functionCall' in p) {
+      const id = nextSynthCallId();
       calls.push({
-        id: nextSynthCallId(),
+        id,
         type: 'function',
         function: {
           name: p.functionCall.name,
           arguments: JSON.stringify(p.functionCall.args ?? {}),
         },
       });
+      if (typeof p.thoughtSignature === 'string' && p.thoughtSignature.length > 0) {
+        // `id` pairs this back to its call. There is no text to carry: Gemini's
+        // signature is opaque and validated on its own.
+        details.push({ type: 'reasoning.signature', id, signature: p.thoughtSignature });
+      }
     }
   }
-  return calls.length > 0 ? calls : undefined;
+  return {
+    ...(calls.length > 0 ? { toolCalls: calls } : {}),
+    ...(details.length > 0 ? { reasoningDetails: details } : {}),
+  };
+}
+
+/** Attach the replayed `thoughtSignature` to each functionCall part of an
+ *  assistant turn we're sending back.
+ *
+ *  The parallel-call nuance matters: Gemini 3 returns ONE signature for a
+ *  multi-call response, on the first call, and the rest legitimately have
+ *  none. So the sentinel is only injected when the turn carries NO signature
+ *  at all — injecting it per-unsigned-call would override a turn that was
+ *  already validly signed. */
+function signaturesForTurn(
+  toolCalls: ChatToolCall[],
+  details: ReasoningDetail[] | undefined,
+  model: string,
+): Map<string, string> {
+  const byId = new Map<string, string>();
+  for (const d of details ?? []) {
+    if (typeof d.id === 'string' && typeof d.signature === 'string' && d.signature) {
+      byId.set(d.id, d.signature);
+    }
+  }
+  if (byId.size === 0 && isGemini3Model(model) && toolCalls.length > 0) {
+    for (const tc of toolCalls) byId.set(tc.id, SKIP_THOUGHT_SIGNATURE_VALIDATOR);
+  }
+  return byId;
 }
 
 /**
@@ -428,7 +503,7 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
     .map((p) => ('text' in p && !p.thought ? p.text : ''))
     .filter(Boolean)
     .join('');
-  const toolCalls = extractGoogleToolCalls(parts);
+  const { toolCalls, reasoningDetails } = extractGoogleToolCalls(parts);
   const finishReason = mapGoogleFinishReason(
     parsed.candidates?.[0]?.finishReason,
     !!toolCalls && toolCalls.length > 0,
@@ -437,6 +512,7 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
     text: text.trim(),
     model: parsed.modelVersion || opts.model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(reasoningDetails ? { reasoningDetails } : {}),
     ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usageMetadata?.promptTokenCount,
     tokensOut: parsed.usageMetadata?.candidatesTokenCount,
@@ -573,12 +649,13 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
     return { text: text.trim(), model, tokensIn, tokensOut, cacheReadTokens: cacheRead };
   }
 
-  const toolCalls = extractGoogleToolCalls(fnParts);
+  const { toolCalls, reasoningDetails } = extractGoogleToolCalls(fnParts);
   const finishReason = mapGoogleFinishReason(rawFinish, !!toolCalls && toolCalls.length > 0);
   return {
     text: text.trim(),
     model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(reasoningDetails ? { reasoningDetails } : {}),
     ...(finishReason ? { finishReason } : {}),
     tokensIn,
     tokensOut,
