@@ -550,7 +550,9 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   // vocabulary, so the shared compat mapper applies. Both spellings appear
   // depending on the route, hence the camel/snake fallback.
   const orChoice = choice as { finishReason?: string | null; finish_reason?: string | null };
-  const finishReason = mapOpenAICompatFinishReason(orChoice?.finishReason ?? orChoice?.finish_reason);
+  const finishReason = mapOpenAICompatFinishReason(
+    orChoice?.finishReason ?? orChoice?.finish_reason,
+  );
 
   return {
     text,

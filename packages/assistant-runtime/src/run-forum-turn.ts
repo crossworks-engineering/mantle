@@ -346,6 +346,8 @@ export async function runForumTurn(
         loop: emptyLoopResult(),
         reply: '',
         emptyReplySubstituted: false,
+        blockedByProvider: false,
+        truncated: false,
         persistedThoughts: [],
         toolStats: null,
         ctx,

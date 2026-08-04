@@ -147,6 +147,7 @@ export {
   type ChatAssistantMessage,
   type ChatCacheControl,
   type ChatDispatcher,
+  type ChatFinishReason,
   type ChatModelInfo,
   type ChatOptions,
   type ChatResult,

@@ -525,6 +525,8 @@ export async function runAssistantTurn(
         loop: emptyLoopResult(),
         reply: '',
         emptyReplySubstituted: false,
+        blockedByProvider: false,
+        truncated: false,
         persistedThoughts: [],
         toolStats: null,
         ctx,

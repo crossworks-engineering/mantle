@@ -24,7 +24,10 @@ afterEach(() => {
 
 /** Mock a one-shot `:generateContent` reply. */
 function jsonFetch(response: unknown) {
-  globalThis.fetch = (async () => ({ ok: true, json: async () => response })) as unknown as typeof fetch;
+  globalThis.fetch = (async () => ({
+    ok: true,
+    json: async () => response,
+  })) as unknown as typeof fetch;
 }
 
 /** Mock a `:streamGenerateContent?alt=sse` body from SSE frames. */

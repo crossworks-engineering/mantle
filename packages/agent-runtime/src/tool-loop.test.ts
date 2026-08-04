@@ -103,13 +103,20 @@ import {
   clampThinkingBudget,
   resolveMaxTokens,
 } from './tool-loop';
-import type { ChatDispatcher, ChatOptions, ChatResult, ChatToolCall } from '@mantle/voice';
+import type {
+  ChatDispatcher,
+  ChatFinishReason,
+  ChatOptions,
+  ChatResult,
+  ChatToolCall,
+} from '@mantle/voice';
 import type { Tool } from '@mantle/db';
 
 // ─── Fake adapter ──────────────────────────────────────────────────────────
 
 type ScriptStep =
-  { type: 'text'; text: string } | { type: 'toolCalls'; toolCalls: ChatToolCall[]; text?: string };
+  | { type: 'text'; text: string; finishReason?: ChatFinishReason }
+  | { type: 'toolCalls'; toolCalls: ChatToolCall[]; text?: string };
 
 function makeFakeAdapter(script: ScriptStep[]): {
   adapter: ChatDispatcher;
@@ -137,6 +144,7 @@ function makeFakeAdapter(script: ScriptStep[]): {
           model: 'fake-model',
           tokensIn: 10,
           tokensOut: 5,
+          ...(step.finishReason ? { finishReason: step.finishReason } : {}),
         };
       }
       return {
@@ -1998,5 +2006,59 @@ describe('write-target capture through the loop', () => {
     expect(stats.writes).toEqual([
       { slug: 'note_create', id: 'abcd1234-0000-4000-8000-000000000000', title: 'My note' },
     ]);
+  });
+});
+
+// ─── finishReason ──────────────────────────────────────────────────────────
+
+describe('runToolLoop finishReason', () => {
+  const base = {
+    apiKey: 'k',
+    model: 'm',
+    params: {},
+    ownerId: 'owner-1',
+    initialMessages: [{ role: 'user' as const, content: 'hi' }],
+    tools: [],
+  };
+
+  it('carries the final round finishReason onto the result', async () => {
+    const { adapter } = makeFakeAdapter([
+      { type: 'text', text: 'a long cut-off answer', finishReason: 'length' },
+    ]);
+    const result = await runToolLoop({ adapter, ...base });
+    expect(result.finishReason).toBe('length');
+    expect(result.reply).toBe('a long cut-off answer');
+  });
+
+  it('leaves finishReason undefined when the adapter reports none', async () => {
+    const { adapter } = makeFakeAdapter([{ type: 'text', text: 'plain' }]);
+    const result = await runToolLoop({ adapter, ...base });
+    expect(result.finishReason).toBeUndefined();
+  });
+
+  // The cost guard. An empty reply normally earns one retry nudge, but a
+  // content block is deliberate: re-asking spends a second call to be refused
+  // again. The fake adapter throws if the loop asks for more calls than the
+  // script provides, so a single scripted response also PROVES no retry ran.
+  it('does not retry an empty reply that was blocked by the provider', async () => {
+    const { adapter, calls } = makeFakeAdapter([
+      { type: 'text', text: '', finishReason: 'content_filter' },
+    ]);
+    const result = await runToolLoop({ adapter, ...base });
+    expect(calls).toHaveLength(1);
+    expect(result.reply).toBe('');
+    expect(result.finishReason).toBe('content_filter');
+  });
+
+  // Contrast case: an ordinary empty reply still gets its retry, so the guard
+  // above is specific to content_filter rather than disabling the nudge.
+  it('still retries an ordinary empty reply', async () => {
+    const { adapter, calls } = makeFakeAdapter([
+      { type: 'text', text: '' },
+      { type: 'text', text: 'second time lucky' },
+    ]);
+    const result = await runToolLoop({ adapter, ...base });
+    expect(calls).toHaveLength(2);
+    expect(result.reply).toBe('second time lucky');
   });
 });

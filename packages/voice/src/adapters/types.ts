@@ -223,12 +223,7 @@ export interface ChatResult {
  *  their provider's longer enum onto these, since callers only ever need to
  *  branch on "was this reply complete, truncated, or refused". */
 export type ChatFinishReason =
-  | 'stop'
-  | 'length'
-  | 'tool_calls'
-  | 'content_filter'
-  | 'error'
-  | 'other';
+  'stop' | 'length' | 'tool_calls' | 'content_filter' | 'error' | 'other';
 
 /** A single tool the model can call. Mirrors the OpenAI function-tool
  *  shape since every adapter we're likely to talk to either accepts

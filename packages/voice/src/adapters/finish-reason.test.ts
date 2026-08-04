@@ -70,9 +70,12 @@ describe('mapOpenAICompatFinishReason', () => {
 
   // Many OpenAI-compatible servers, especially local runtimes, omit the field.
   // Undefined must mean "not reported", never "finished cleanly".
-  it.each([undefined, null, ''])('returns undefined for %p rather than defaulting to stop', (raw) => {
-    expect(mapOpenAICompatFinishReason(raw)).toBeUndefined();
-  });
+  it.each([undefined, null, ''])(
+    'returns undefined for %p rather than defaulting to stop',
+    (raw) => {
+      expect(mapOpenAICompatFinishReason(raw)).toBeUndefined();
+    },
+  );
 });
 
 // ─── Anthropic ──────────────────────────────────────────────────────────────
@@ -101,13 +104,21 @@ describe('anthropic-chat finishReason', () => {
     ['pause_turn', 'other'],
   ])('maps stop_reason %s to %s', async (raw, expected) => {
     jsonFetch(anthropicBody(raw));
-    const r = await anthropicChatAdapter.chat({ apiKey: 'k', model: 'claude-opus-4-8', messages: MSG });
+    const r = await anthropicChatAdapter.chat({
+      apiKey: 'k',
+      model: 'claude-opus-4-8',
+      messages: MSG,
+    });
     expect(r.finishReason).toBe(expected);
   });
 
   it('leaves finishReason undefined when no stop_reason is reported', async () => {
     jsonFetch(anthropicBody());
-    const r = await anthropicChatAdapter.chat({ apiKey: 'k', model: 'claude-opus-4-8', messages: MSG });
+    const r = await anthropicChatAdapter.chat({
+      apiKey: 'k',
+      model: 'claude-opus-4-8',
+      messages: MSG,
+    });
     expect(r.finishReason).toBeUndefined();
   });
 
@@ -117,7 +128,8 @@ describe('anthropic-chat finishReason', () => {
     streamFetch([
       'event: content_block_delta\n' +
         sse({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'cut' } }),
-      'event: message_delta\n' + sse({ type: 'message_delta', delta: { stop_reason: 'max_tokens' } }),
+      'event: message_delta\n' +
+        sse({ type: 'message_delta', delta: { stop_reason: 'max_tokens' } }),
       'event: message_stop\n' + sse({ type: 'message_stop' }),
     ]);
     const r = await anthropicChatAdapter.chatStream!(

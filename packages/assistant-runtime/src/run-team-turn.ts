@@ -308,6 +308,8 @@ export async function runTeamTurn(
         loop: emptyLoopResult(),
         reply: '',
         emptyReplySubstituted: false,
+        blockedByProvider: false,
+        truncated: false,
         persistedThoughts: [],
         toolStats: null,
         ctx,

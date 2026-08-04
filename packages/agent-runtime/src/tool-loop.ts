@@ -54,6 +54,7 @@ import { db, pendingToolCalls, type Tool, type AgentParams } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
 import {
   type ChatDispatcher,
+  type ChatFinishReason,
   type ChatOptions,
   type ChatResult,
   type ChatToolDefinition,
@@ -412,6 +413,16 @@ export type ToolLoopResult = {
    *  /assistant surfaces it in the turn's `done` event so the live status
    *  footer can show the real count once the turn lands. */
   tokensOut: number;
+  /** Why the FINAL model round stopped, when the adapter reported it.
+   *  Undefined means the provider said nothing — not that it finished
+   *  cleanly. Only the last round is carried: an intermediate round always
+   *  stops for `tool_calls`, which says nothing about the answer the user
+   *  ends up seeing.
+   *
+   *  The two values callers act on are `'length'` (the reply is cut off
+   *  mid-thought) and `'content_filter'` (the provider withheld it). Both
+   *  otherwise arrive as an ordinary successful turn. */
+  finishReason?: ChatFinishReason;
 };
 
 export type ToolLoopArgs = {
@@ -912,7 +923,14 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     if (!calls || calls.length === 0) {
       // Final text response. Done.
       let text = result.text;
-      if (!text.trim() && !turnAborted()) text = await retryEmptyReply('final_round_empty');
+      // An empty reply usually means the model fumbled, and one nudge fixes it.
+      // A content_filter block is the exception: the provider withheld the text
+      // deliberately, so re-asking spends a second call to be refused again.
+      // Skip the retry there and let the caller degrade with an honest message.
+      const blocked = result.finishReason === 'content_filter';
+      if (!text.trim() && !turnAborted() && !blocked) {
+        text = await retryEmptyReply('final_round_empty');
+      }
       messages.push({ role: 'assistant', content: text });
       return {
         reply: text,
@@ -922,6 +940,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         pendingIds,
         artifacts,
         tokensOut,
+        ...(result.finishReason ? { finishReason: result.finishReason } : {}),
       };
     }
 
@@ -1524,7 +1543,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     },
   );
   let text = finalResult.text;
-  if (!text.trim() && !turnAborted()) text = await retryEmptyReply('force_final_empty');
+  // Same reasoning as the normal exit above: a withheld reply won't un-withhold
+  // itself on a second ask.
+  const finalBlocked = finalResult.finishReason === 'content_filter';
+  if (!text.trim() && !turnAborted() && !finalBlocked) {
+    text = await retryEmptyReply('force_final_empty');
+  }
   messages.push({ role: 'assistant', content: text });
   return {
     reply: text,
@@ -1534,5 +1558,6 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     pendingIds,
     artifacts,
     tokensOut,
+    ...(finalResult.finishReason ? { finishReason: finalResult.finishReason } : {}),
   };
 }
