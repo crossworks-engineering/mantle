@@ -623,6 +623,9 @@ async function googleDiscover(apiKey: string): Promise<DiscoveryResult<ChatModel
       available: available.length > 0 ? available : [...GOOGLE_CHAT_MODELS],
       filtered: available.length > 0,
       error: null,
+      // Already filtered to generateContent-capable ids, so the drift report
+      // doesn't have to re-learn which of Gemini's models are chat models.
+      liveIds: [...ids],
     };
   } catch (err) {
     return {

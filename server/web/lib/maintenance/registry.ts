@@ -425,7 +425,30 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     readOnly: true,
     extraFlags: ['--majors', '--json'],
     notes:
-      'Read-only, so there is no dry-run/apply split — running it IS the report, and it exits 0 even when drift is found (a non-zero exit would make the nightly sweep read as failing every time a dependency shipped a patch). --majors also lists versions outside the declared range, which are deliberate migrations rather than update fodder.',
+      "Read-only, so there is no dry-run/apply split — running it IS the report, and it exits 0 even when drift is found (a non-zero exit would make the nightly sweep read as failing every time a dependency shipped a patch). --majors also lists versions outside the declared range, which are deliberate migrations rather than update fodder. ⚠️ schedulable:true is currently ASPIRATIONAL — runScheduledSweeps still gates on cost==='sql' and dispatches via the in-process SWEEPS map, so this 'io' task is skipped nightly on both counts. Widening that gate to sql|io (matching this registry's own guardrail) and adding a SWEEPS entry would make it real.",
+  },
+  {
+    slug: 'models-drift',
+    title: 'Model catalogue drift report',
+    description:
+      "Compares each provider's live model list against our curated catalogue and reports both directions: models they serve that we don't offer, and entries we offer that they no longer serve. A static catalogue is a snapshot and nothing ages it — grok-4.5 shipped and our dropdown never mentioned it, which looks identical to the model not existing. Report-only: decrypts stored keys to authenticate the list calls, writes nothing.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'io',
+    // NOT schedulable yet, and deliberately so rather than aspirationally true:
+    // runScheduledSweeps gates on `cost === 'sql'` and dispatches through an
+    // in-process SWEEPS map, so an 'io' task with no map entry is skipped
+    // twice over. Marking it true would describe a nightly run that does not
+    // happen. `deps-drift` has exactly this problem today — see the note there.
+    // Runnable now from `pnpm maintain` and the /debug/integrity Maintenance tab.
+    schedulable: false,
+    script: 'scripts/models-drift.ts',
+    cwd: 'server/web',
+    readOnly: true,
+    extraFlags: ['--json'],
+    requiresEnv: ['MANTLE_MASTER_KEY'],
+    notes:
+      'Reads api_keys and calls each provider once; no model is invoked, so there is no token spend. Skips OpenRouter, Copilot, local and custom — they build their lists from the provider and cannot drift by construction. Exits 0 even when drift is found: a provider shipping a model is not a failure.',
   },
 ];
 

@@ -145,6 +145,7 @@ async function deepseekDiscover(apiKey: string): Promise<DiscoveryResult<ChatMod
       available: available.length > 0 ? available : [...DEEPSEEK_CHAT_MODELS],
       filtered: available.length > 0,
       error: null,
+      liveIds: [...ids],
     };
   } catch (err) {
     return {

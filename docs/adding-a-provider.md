@@ -82,6 +82,26 @@ Shape per chat model:
 
 Also export the API base URL + any auth-header conventions (`<PROVIDER>_BASE_URL`, `<PROVIDER>_API_VERSION` if applicable) — the adapter imports these from the catalogue file so the URL lives in one place.
 
+### Keeping it current: set `liveIds`
+
+A static catalogue is a snapshot, and nothing ages it. xAI shipped grok-4.5 and our dropdown never mentioned it — which is invisible, because a model nobody can pick looks exactly like a model that doesn't exist.
+
+If your `discoverModels` **filters this catalogue against a live list** (rather than building its list from the provider, as OpenRouter and Copilot do), return the raw ids too:
+
+```ts
+const ids = new Set((parsed.data ?? []).map((m) => m.id));
+return {
+  available: CATALOG.filter((m) => ids.has(m.id)),
+  filtered: true,
+  error: null,
+  liveIds: [...ids], // ← the half that used to be discarded
+};
+```
+
+You are already computing that set in order to intersect with it. `available` answers "which of ours are live"; only the raw list answers "which of theirs aren't ours", which is the drift. `pnpm -C server/web models:drift` reports both directions and runs on the nightly sweep.
+
+Leave `liveIds` **absent** when the list call failed — the report distinguishes "we could not look" from "the provider serves nothing", and conflating them would read as the whole catalogue having gone stale.
+
 ---
 
 ## Step 3 — Write the adapter

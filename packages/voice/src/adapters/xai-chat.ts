@@ -135,6 +135,7 @@ async function xaiDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInf
       available: available.length > 0 ? available : [...XAI_CHAT_MODELS],
       filtered: available.length > 0,
       error: null,
+      liveIds: [...ids],
     };
   } catch (err) {
     return {

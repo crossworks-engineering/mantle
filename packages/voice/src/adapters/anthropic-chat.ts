@@ -804,6 +804,9 @@ async function anthropicDiscover(apiKey: string): Promise<DiscoveryResult<ChatMo
       available: available.length > 0 ? available : [...ANTHROPIC_CHAT_MODELS],
       filtered: available.length > 0,
       error: null,
+      // Dated ids included as-returned; the drift report resolves them back to
+      // their alias rather than reporting every snapshot as a new model.
+      liveIds: [...ids],
     };
   } catch (err) {
     return {

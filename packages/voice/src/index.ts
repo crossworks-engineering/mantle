@@ -26,7 +26,12 @@ export {
   type SttModelInfo,
 } from './catalog';
 
-export { discoverTtsModels, discoverSttModels, type DiscoveryResult } from './discover';
+export {
+  discoverTtsModels,
+  discoverSttModels,
+  catalogDrift,
+  type DiscoveryResult,
+} from './discover';
 
 export {
   SUPPORTED_PROVIDERS,

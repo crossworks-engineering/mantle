@@ -165,6 +165,7 @@ async function hfDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo
       available: available.length > 0 ? available : [...HUGGINGFACE_CHAT_MODELS],
       filtered: available.length > 0,
       error: null,
+      liveIds: [...ids],
     };
   } catch (err) {
     return {
