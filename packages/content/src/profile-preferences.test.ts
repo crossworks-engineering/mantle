@@ -7,6 +7,10 @@ import {
   projectTeamHubAppId,
   projectTeamHubTags,
   projectThinkingBudget,
+  resolveThinkingEffort,
+  thinkingEffortForBudget,
+  THINKING_EFFORTS,
+  THINKING_TIERS,
   TEAM_HUB_TAGS_MAX,
   TEAM_HUB_TAG_MAX_LEN,
   resolveThinkingBudget,
@@ -198,6 +202,41 @@ describe('isReminderChannel', () => {
   it('rejects other channels and junk values', () => {
     for (const v of ['whatsapp', '', 'Telegram', 'MOBILE', null, undefined, 0, {}, []]) {
       expect(isReminderChannel(v)).toBe(false);
+    }
+  });
+});
+
+describe('thinking effort tiers', () => {
+  it('maps each dropdown tier to its effort', () => {
+    expect(thinkingEffortForBudget(0)).toBeUndefined();
+    expect(thinkingEffortForBudget(1024)).toBe('low');
+    expect(thinkingEffortForBudget(4096)).toBe('medium');
+    expect(thinkingEffortForBudget(8000)).toBe('high');
+  });
+
+  it('snaps an off-tier budget to the nearest tier rather than dropping it', () => {
+    // An operator or the API can store any number; it must still mean something.
+    expect(thinkingEffortForBudget(900)).toBe('low');
+    expect(thinkingEffortForBudget(5000)).toBe('medium');
+    expect(thinkingEffortForBudget(999_999)).toBe('high');
+  });
+
+  it('treats absent / non-positive as off', () => {
+    expect(thinkingEffortForBudget(undefined)).toBeUndefined();
+    expect(thinkingEffortForBudget(-1)).toBeUndefined();
+  });
+
+  it('honours the double gate: the switch AND a positive budget', () => {
+    expect(resolveThinkingEffort({ streamThoughts: true, thinkingBudget: 4096 })).toBe('medium');
+    // Switch off ⇒ no reasoning even with a budget stored.
+    expect(resolveThinkingEffort({ streamThoughts: false, thinkingBudget: 4096 })).toBeUndefined();
+    expect(resolveThinkingEffort({ streamThoughts: true, thinkingBudget: 0 })).toBeUndefined();
+  });
+
+  it('every tier label maps to a real effort or explicit off', () => {
+    for (const t of THINKING_TIERS) {
+      if (t.budget === 0) expect(t.effort).toBeNull();
+      else expect(THINKING_EFFORTS).toContain(t.effort);
     }
   });
 });

@@ -73,34 +73,23 @@ type SdkChatRequest = Parameters<InstanceType<typeof OpenRouter>['chat']['send']
  *  diverging. */
 type OrReasoning = NonNullable<SdkChatRequest['reasoning']>;
 
-/** OpenRouter's unified `reasoning` param from our `thinkingBudget`.
+/** OpenRouter's unified `reasoning` param, built from {@link ChatOptions.thinkingEffort}.
  *
- *  ⚠️ KNOWN GAP — the budget currently reaches the wire as `reasoning: {}`.
- *  The SDK's `ChatRequestReasoning` is `{ effort, summary }`: it has no
- *  `max_tokens` (nor `enabled`), so a `{ maxTokens }` object is dropped by the
- *  outbound zod schema. This was masked for the whole life of the adapter by the
- *  blanket `as unknown as` cast at the send boundary, which is now narrowed to
- *  `messages` only (see {@link SdkChatRequest}).
- *
- *  Deliberately NOT fixed here: the correct fix is to send `effort`
- *  (minimal|low|medium|high|xhigh|max), which would make thinking actually
- *  engage and therefore change token spend — a behavioural decision, not a
- *  typing one. Upstream has moved on too: on Sonnet 5 / Claude 4.7 budget-based
+ *  Effort, not budget, is what OpenRouter transmits: its `reasoning` shape is
+ *  `{ effort, summary }` with no max_tokens field, so the token budget this
+ *  adapter used to send was discarded by the SDK's outbound schema and thinking
+ *  never engaged at all. Upstream agrees — on Sonnet 5 / Claude 4.7 budget-based
  *  thinking is removed, `reasoning.max_tokens` is accepted-but-ignored, and
- *  `reasoning.effort` maps to Anthropic's `output_config.effort`. Model-aware
- *  effort selection wants the per-model `reasoning` metadata from GET /models
- *  (`supported_efforts`, `default_effort`, `supports_max_tokens`, `mandatory`).
+ *  effort maps to Anthropic's `output_config.effort`.
  *
- *  Until that lands this returns the empty object rather than `undefined` so the
- *  emitted wire body is byte-identical to what shipped before the cast was
- *  narrowed. `openrouter-chat.test.ts` asserts that emptiness against the real
- *  outbound schema, so the day it is fixed the test fails and says so. */
+ *  `thinkingBudget` is intentionally NOT consulted as a fallback: a positive
+ *  budget with no effort would otherwise re-emit the `reasoning: {}` no-op. The
+ *  runtime sets both fields together (see `resolveThinkingEffort`), so an absent
+ *  effort genuinely means "no reasoning requested" and the field is omitted —
+ *  which also keeps us off `effort: 'none'`, rejected by mandatory-reasoning
+ *  models. */
 function openRouterReasoning(opts: ChatOptions): OrReasoning | undefined {
-  const budget =
-    typeof opts.thinkingBudget === 'number' && opts.thinkingBudget > 0
-      ? Math.floor(opts.thinkingBudget)
-      : 0;
-  return budget > 0 ? {} : undefined;
+  return opts.thinkingEffort ? { effort: opts.thinkingEffort } : undefined;
 }
 
 /** Text content block. Used for messages that need a cache_control

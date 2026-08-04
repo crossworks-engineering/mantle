@@ -264,6 +264,8 @@ vi.mock('@mantle/content', () => ({
   buildTimeContextLine: () => 'Current time: 2026-07-17T10:00:00+02:00 (Africa/Johannesburg)',
   loadProfilePreferences: vi.fn(async () => ({})),
   resolveThinkingBudget: () => 0,
+  // Thinking off for these fixtures, so no effort either.
+  resolveThinkingEffort: () => undefined,
   noteInboundChannel: (...a: unknown[]) => (h.noteInboundChannel(...a), Promise.resolve()),
   isStreamThoughtsEnabled: () => h.thoughtsOn,
   isPersistThoughtsEnabled: () => h.thoughtsOn,

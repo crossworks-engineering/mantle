@@ -383,6 +383,28 @@ export function resolveThinkingBudget(
   return projectThinkingBudget(prefs.thinkingBudget) ?? 0;
 }
 
+// The tier vocabulary lives in a leaf module with no imports so the settings UI
+// can use the values without pulling @mantle/db into the browser bundle.
+// Re-exported here so server-side callers keep importing from one place.
+export {
+  THINKING_EFFORTS,
+  THINKING_TIERS,
+  thinkingEffortForBudget,
+  type ThinkingEffort,
+} from './thinking-tiers';
+// Also imported (not just re-exported) because resolveThinkingEffort below uses them.
+import { thinkingEffortForBudget, type ThinkingEffort } from './thinking-tiers';
+
+/** Effective per-turn thinking EFFORT — the control that actually reaches the
+ *  providers today. Same double gate as {@link resolveThinkingBudget} (the
+ *  live-thinking switch AND a positive budget); undefined means "don't ask for
+ *  reasoning", which adapters render by omitting the field entirely. */
+export function resolveThinkingEffort(
+  prefs: Pick<ProfilePreferences, 'streamThoughts' | 'thinkingBudget'>,
+): ThinkingEffort | undefined {
+  return thinkingEffortForBudget(resolveThinkingBudget(prefs));
+}
+
 /** The onboarding "Models" step's stored choices. Kept as one object so the
  *  projection can't half-apply; every field optional so partial saves survive. */
 export interface OnboardingModelChoices {

@@ -758,19 +758,32 @@ describe('openrouter-chat serialised wire body', () => {
     expect(wireBody()).not.toHaveProperty('stream_options');
   });
 
-  it('documents the KNOWN GAP: a thinking budget reaches the wire as reasoning:{}', async () => {
-    // Not an endorsement — a tripwire. The SDK's ChatRequestReasoning is
-    // { effort, summary } with no max_tokens, so the per-user thinking budget
-    // cannot currently be expressed and thinking is inert on this path.
-    // When that is fixed (send `effort`, ideally chosen from the per-model
-    // GET /models reasoning metadata) this test SHOULD fail — update it then.
-    await openrouterChatAdapter.chat({ ...baseOpts, thinkingBudget: 4096 });
-
-    expect(wireBody().reasoning).toEqual({});
-    expect(wireBody().reasoning).not.toHaveProperty('max_tokens');
+  it('puts the effort tier on the wire', async () => {
+    // This replaced a tripwire that asserted `reasoning: {}` — the shape the old
+    // budget-based code actually emitted, i.e. thinking silently doing nothing.
+    // The tripwire failing is what confirmed this fix landed.
+    await openrouterChatAdapter.chat({ ...baseOpts, thinkingEffort: 'high' });
+    expect(wireBody().reasoning).toEqual({ effort: 'high' });
   });
 
-  it('omits reasoning entirely when no budget is set', async () => {
+  it.each(['low', 'medium', 'high', 'xhigh', 'max'] as const)(
+    'effort %s survives serialisation',
+    async (effort) => {
+      await openrouterChatAdapter.chat({ ...baseOpts, thinkingEffort: effort });
+      expect(wireBody().reasoning).toEqual({ effort });
+    },
+  );
+
+  it('a budget WITHOUT an effort sends no reasoning at all', async () => {
+    // The old failure mode, now impossible: a bare budget used to serialise to
+    // `reasoning: {}`, which reads like reasoning was requested when nothing was.
+    // Omitting the key entirely also keeps us off `effort: 'none'`, which
+    // mandatory-reasoning models reject.
+    await openrouterChatAdapter.chat({ ...baseOpts, thinkingBudget: 4096 });
+    expect(wireBody()).not.toHaveProperty('reasoning');
+  });
+
+  it('omits reasoning entirely when nothing is set', async () => {
     await openrouterChatAdapter.chat(baseOpts);
     expect(wireBody()).not.toHaveProperty('reasoning');
   });

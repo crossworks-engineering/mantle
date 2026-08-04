@@ -194,6 +194,7 @@ export async function runResponderLoop(
     delegateTo: assembled.delegateTo,
     resultHandling: assembled.resultHandling,
     thinkingBudget: assembled.thinkingBudget,
+    thinkingEffort: assembled.thinkingEffort,
     ...assembled.loopOverrides,
     initialMessages: await opts.buildMessages(ctx),
     tools: assembled.allowedTools,

@@ -14,6 +14,7 @@
     "./journal-options": "./src/journal-options.ts",
     "./persona-bank": "./src/persona-bank.ts",
     "./onboarding-questions": "./src/onboarding-questions.ts",
+    "./thinking-tiers": "./src/thinking-tiers.ts",
     "./peers": "./src/peers.ts",
     "./peers-crypto": "./src/peers-crypto.ts",
     "./pages": "./src/pages.ts",

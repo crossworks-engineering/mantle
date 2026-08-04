@@ -348,6 +348,20 @@ export interface ChatCacheControl {
   lastUserMessage?: boolean;
 }
 
+/** Reasoning-depth tiers, ascending. Provider-neutral: OpenRouter takes these
+ *  verbatim as `reasoning.effort`, Anthropic as `output_config.effort`, Copilot
+ *  as `reasoning_effort`.
+ *
+ *  Restated here rather than imported from `@mantle/content` on purpose —
+ *  `@mantle/voice` is the low-level adapter layer and must not pull in content's
+ *  db/files/search dependency tree for five string literals. The two lists are
+ *  pinned together by a compile-time assertion in `@mantle/assistant-runtime`,
+ *  which already depends on both, so they cannot drift silently.
+ *
+ *  No `none`: "off" is expressed by omitting the field, because models flagged
+ *  `reasoning.mandatory` in GET /models reject an explicit none. */
+export type ThinkingEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface ChatOptions {
   apiKey: string;
   model: string;
@@ -391,6 +405,20 @@ export interface ChatOptions {
    *  otherwise) — that capture/replay is NOT yet implemented, so the runner must
    *  not set this by default until it is. */
   thinkingBudget?: number;
+  /** Thinking EFFORT tier — the control providers actually honour now. Where
+   *  {@link thinkingBudget} asks for N tokens of reasoning, this asks for a
+   *  depth (`low`…`max`) and lets the provider size it.
+   *
+   *  Prefer this. Budget-based thinking has been removed upstream on current
+   *  models (Sonnet 5, Claude 4.7): `reasoning.max_tokens` is accepted-but-
+   *  ignored, and effort maps to Anthropic's `output_config.effort`. On the
+   *  OpenRouter path the budget was never even transmitted — its `reasoning`
+   *  shape has no max_tokens field, so it serialised to `{}`.
+   *
+   *  Adapters that have no effort concept ignore it and may still read
+   *  `thinkingBudget` as an on/off signal. Both fields are set together by the
+   *  runtime, so an adapter can use whichever its provider understands. */
+  thinkingEffort?: ThinkingEffort;
   /** Retries AFTER the first attempt on transient errors (429/5xx/network/
    *  timeout), with exponential backoff + jitter. Undefined ⇒
    *  DEFAULT_MAX_RETRIES (2); 0 disables. Honored by withChatRetry, which the

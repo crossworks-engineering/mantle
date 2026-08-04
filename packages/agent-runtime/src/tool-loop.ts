@@ -57,6 +57,7 @@ import {
   type ChatOptions,
   type ChatResult,
   type ChatToolDefinition,
+  type ThinkingEffort,
 } from '@mantle/voice';
 import { recordChatUsage } from './llm-usage';
 import { isChatFailover } from './chat-failover';
@@ -480,6 +481,12 @@ export type ToolLoopArgs = {
    *  this via the invoke_agent tool-context bridge and re-clamp against their
    *  own max_tokens — see invoke-agent.ts. */
   thinkingBudget?: number;
+  /** Thinking EFFORT tier — the control the providers actually honour (see
+   *  ChatOptions.thinkingEffort). Travels alongside `thinkingBudget`: the budget
+   *  still drives the max_tokens headroom maths and the Anthropic-direct on/off
+   *  signal, while this is what OpenRouter puts on the wire. Undefined ⇒ no
+   *  reasoning requested. */
+  thinkingEffort?: ThinkingEffort;
   /** Initial messages: system + any history + the new user turn. */
   initialMessages: ChatMessage[];
   /** Tool rows the agent is permitted to use. Empty array → no tools sent. */
@@ -817,6 +824,13 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           // markers ignore this — see ChatCacheControl docs.
           cacheControl: { systemPrompt: true, lastUserMessage: true },
           ...(thinkingBudget > 0 ? { thinkingBudget } : {}),
+          // Gated on the CLAMPED budget, not the raw effort: when the clamp
+          // drops thinking (budget below the provider floor for this agent's
+          // max_tokens) the effort must drop with it, or the request would ask
+          // for reasoning the token ceiling can't accommodate.
+          ...(thinkingBudget > 0 && args.thinkingEffort
+            ? { thinkingEffort: args.thinkingEffort }
+            : {}),
           ...(thinkingBudget === 0 && typeof args.params.temperature === 'number'
             ? { temperature: args.params.temperature }
             : {}),

@@ -55,6 +55,10 @@ vi.mock('@mantle/content', () => ({
   }),
   buildTimeContextLine: () => 'TIME-LINE',
   resolveThinkingBudget: () => h.thinkingBudget,
+  // Mirrors the real tier mapping (1024→low, 4096→medium, 8000→high) closely
+  // enough for the gate assertions below; the mapping itself is unit-tested in
+  // @mantle/content, not here.
+  resolveThinkingEffort: () => (h.thinkingBudget > 0 ? 'medium' : undefined),
 }));
 
 vi.mock('@mantle/heartbeats', () => ({
