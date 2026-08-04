@@ -14,8 +14,36 @@
  * differing only in identity.
  */
 
+import { AGENT_NAME_TOKEN } from '@mantle/agent-runtime';
 import type { CreateAgentInput } from './agents';
 import type { AgentDTO } from '@mantle/client-types';
+
+/**
+ * Replace the SOURCE agent's name with `{{name}}` in a prompt being cloned.
+ *
+ * Without this a clone answers as the agent it was copied from — an assistant
+ * named Tommy opening with "You are Mira — an RBI specialist" (observed live at
+ * v0.220.0). The name and the prompt are separate columns and nothing kept them
+ * in step.
+ *
+ * The token rather than the new name literally, because baking "Tommy" in
+ * recreates the same bug the moment anyone renames Tommy. Resolved per turn by
+ * `applyAgentName`, so rename works forever after.
+ *
+ * Whole-word only: a persona called "Max" must not turn "maximum" into
+ * "{{name}}imum". Case-sensitive, since a name is a proper noun and lowercase
+ * "mira" in prose is more likely an unrelated word than the assistant. A prompt
+ * that never mentions its own name (or a blank name) comes back untouched.
+ */
+export function tokeniseSourceName(prompt: string, sourceName: string): string {
+  const name = sourceName?.trim();
+  if (!name) return prompt;
+  // Escape regex metacharacters — a name is operator-supplied free text.
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // \b is wrong at a non-word boundary (a name ending in '.' or ')'), so anchor
+  // on "not preceded/followed by a word character" instead.
+  return prompt.replace(new RegExp(`(?<![\\w])${escaped}(?![\\w])`, 'g'), AGENT_NAME_TOKEN);
+}
 
 /**
  * Kebab-case an assistant name into a slug candidate.
@@ -69,6 +97,14 @@ export function uniqueAgentSlug(base: string, taken: Iterable<string>): string {
  * avatar, and `memoryConfig` INCLUDING `delegate_to` (specialists are shared
  * across the brain, so a clone must be able to delegate to them on day one).
  *
+ * Copied but REWRITTEN:
+ *
+ * - **`systemPrompt`** — the source's own name is replaced with `{{name}}`, so
+ *   the clone answers as itself instead of as the agent it was copied from
+ *   (see `tokeniseSourceName`). Everything else about the prompt survives
+ *   verbatim, which matters when the source is a hand-written domain persona
+ *   rather than a persona-bank one.
+ *
  * Deliberately not copied:
  *
  * - **`personaNotes`** — start empty. Notes are things the assistant learned
@@ -105,7 +141,7 @@ export function cloneAgentFields(
     backupBaseUrl: source.backupBaseUrl,
     backupViaTailnet: source.backupViaTailnet,
     ttsWorkerId: source.ttsWorkerId,
-    systemPrompt: source.systemPrompt,
+    systemPrompt: tokeniseSourceName(source.systemPrompt, source.name),
     skillSlugs: [...(source.skillSlugs ?? [])],
     toolGroupSlugs: [...(source.toolGroupSlugs ?? [])],
     memoryConfig: { ...(source.memoryConfig ?? {}) },

@@ -48,9 +48,12 @@ export {
   resolveAgentToolGroups,
   resolveToolGroupSkillSlugs,
   composeSystemPromptWithSkills,
+  applyAgentName,
+  AGENT_NAME_TOKEN,
   effectiveSkillSlugs,
   effectiveToolSlugs,
   type SkillForRuntime,
+  type ComposePromptOptions,
 } from './skills';
 
 export { invokeAgent } from './invoke-agent';

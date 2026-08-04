@@ -11,8 +11,9 @@
  *
  * Each preset shares Saskia's skeleton — "Who you are" / "How you talk" / "Tone"
  * / a closing line — and varies the trait content. `{{name}}` is the assistant's
- * name; the user's name comes from the always-on identity block, so the prompt
- * stays name-agnostic about the user (it's known to the model every turn).
+ * name, left as a TOKEN and resolved per turn from `agents.name` (see
+ * `PERSONA_NAME_TOKEN` below); the user's name comes from the always-on identity
+ * block, so the prompt stays name-agnostic about both parties.
  */
 
 export type PersonaGender = 'female' | 'male';
@@ -203,9 +204,31 @@ const BUILDERS: Record<PersonaPresetKey, (opts: BuildOpts) => string> = {
   concise: buildConcise,
 };
 
-/** Build a system prompt for the chosen preset + assistant name + gender. */
-export function buildPersonaPrompt(preset: PersonaPresetKey, opts: BuildOpts): string {
+/**
+ * The token a built prompt carries in place of the assistant's name.
+ *
+ * MIRRORS `AGENT_NAME_TOKEN` in `@mantle/agent-runtime/skills`, which is what
+ * resolves it on every turn. Duplicated rather than imported because this file
+ * is a browser-safe leaf and agent-runtime depends on THIS package — importing
+ * back would be a cycle. `persona-bank-token.test.ts` in agent-runtime is the
+ * tripwire that fails if the two ever drift.
+ */
+export const PERSONA_NAME_TOKEN = '{{name}}';
+
+/**
+ * Build a system prompt for the chosen preset + gender.
+ *
+ * The prompt is name-AGNOSTIC: it carries `{{name}}`, resolved to
+ * `agents.name` when the turn's prompt is composed. Baking the name in at build
+ * time (what this did until v0.220.x) meant the name and the prompt were two
+ * columns nothing kept in step — renaming an agent left it introducing itself
+ * by its old name, and a per-login assistant cloned from another agent answered
+ * as the agent it was copied from.
+ */
+export function buildPersonaPrompt(
+  preset: PersonaPresetKey,
+  opts: { gender: PersonaGender },
+): string {
   const build = BUILDERS[preset] ?? BUILDERS.warm;
-  const assistantName = opts.assistantName.trim() || DEFAULT_PERSONA_NAMES[opts.gender];
-  return build({ assistantName, gender: opts.gender });
+  return build({ assistantName: PERSONA_NAME_TOKEN, gender: opts.gender });
 }

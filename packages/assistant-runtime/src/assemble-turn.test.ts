@@ -23,16 +23,18 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@mantle/agent-runtime', () => ({
-  // Renders ALL THREE arguments so a call site that silently drops one (the
-  // house-style regression this mock previously could not see) goes red.
+  // Renders EVERY argument so a call site that silently drops one (the
+  // house-style regression this mock previously could not see, and now the
+  // agent name that `{{name}}` resolves from) goes red.
   composeSystemPromptWithSkills: (
     prompt: string,
     skills: Array<{ slug: string }>,
-    houseStyle?: string,
+    opts: { agentName: string; houseStyle?: string },
   ) => {
     const base =
       skills.length > 0 ? `${prompt}\n\n[skills:${skills.map((s) => s.slug).join(',')}]` : prompt;
-    return houseStyle ? `${base}\n\n[house-style:${houseStyle}]` : base;
+    const styled = opts.houseStyle ? `${base}\n\n[house-style:${opts.houseStyle}]` : base;
+    return opts.agentName ? styled.split('{{name}}').join(opts.agentName) : styled;
   },
   effectiveToolSlugs: (groups: Array<{ toolSlugs: string[] }>) =>
     groups.flatMap((g) => g.toolSlugs),
@@ -140,6 +142,19 @@ describe('assembleResponderTurn — prompt composition', () => {
       'TIME-LINE\n\nLOCATION-LINE\n\nTZ-NOTE\n\nHEARTBEAT-BLOCK(hb-1)',
     );
     expect(a.relatedHeartbeatSlugs).toEqual(['hb-1']);
+  });
+
+  it("resolves {{name}} from the AGENT's name, not the source it was cloned from", async () => {
+    // A per-login assistant (migration 0143) is a COPY of another agent's
+    // prompt. Before the token it inherited that agent's identity verbatim —
+    // an assistant named Tommy opening "You are Mira". The turn must resolve
+    // the token from the row it is actually running as.
+    const a = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ name: 'Tommy', systemPrompt: 'You are {{name}}.' }),
+    });
+    expect(a.effectiveSystemPrompt).toContain('You are Tommy.');
+    expect(a.effectiveSystemPrompt).not.toContain('{{name}}');
   });
 
   it('passes prefs.houseStyle through to composition; unset adds nothing', async () => {

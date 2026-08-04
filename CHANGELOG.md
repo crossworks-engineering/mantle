@@ -4,6 +4,50 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — An assistant that answers to its own name (branch feat/agent-name-token)
+
+**A copied assistant introduced itself as the one it was copied from.** Give a
+login its own assistant called Tommy and his prompt still opened *"You are Mira
+— a specialist assistant to a Risk-Based Inspection team"*, because cloning
+copies the prompt verbatim and the name lived in the prose. Caught on a live
+box the day per-login assistants shipped.
+
+The name and the prompt were always two separate columns with nothing keeping
+them in step, so the same bug was already there without any cloning: renaming an
+agent in Settings → Agents writes `name` and never touches `system_prompt`, so
+it kept introducing itself by the old one.
+
+An assistant's name is now a token in its prompt — `{{name}}` — resolved once
+per turn from the agent actually running. Rename it and the prompt follows;
+copy it and the copy is itself.
+
+Three things had to agree for that to be true:
+
+- **Resolution happens at the composition seam**, the one function every
+  surface routes through — real turns, delegated specialists, heartbeats, runner
+  workers, the Studio sandbox, and Studio's composed-prompt preview. Substituting
+  any deeper would have let the model see a name the preview didn't, which is the
+  hidden prompt that seam exists to prevent. The name is a required argument, so
+  a future call site cannot quietly omit it — which immediately earned itself:
+  it caught a sixth call site (delegated specialists) that a search for the
+  function had missed.
+- **The persona bank stops baking names in.** New assistants are name-agnostic
+  from the start. The token is declared in two packages because the bank is a
+  browser-safe leaf that the resolver depends on, so importing back would cycle;
+  a tripwire test fails if the two literals ever drift, and caught a missing
+  export the first time it ran.
+- **Cloning rewrites the source's name to the token, not to the new name.**
+  Baking "Tommy" in would recreate the bug the moment anyone renamed Tommy.
+  Whole-word and case-sensitive, so an assistant called Max doesn't turn
+  "maximum" into a template.
+
+A prompt that never mentions its own name is unchanged, byte for byte — the
+cached prefix every turn depends on is untouched until a brain opts in. The
+existing `{{secret:service/label}}` refs are a different mechanism resolved in
+the HTTP tool dispatcher, and are never matched: their syntax appears verbatim
+in the toolsmith skill's own instructions, and a greedy matcher would have eaten
+the example it teaches from.
+
 ## Unreleased — Your own assistant, not everyone else's thread (branch claude/per-user-agent-duplication-60eb10)
 
 **Two people signed into the same brain were talking to one assistant, in one

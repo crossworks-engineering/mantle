@@ -820,6 +820,7 @@ export {
 export {
   PERSONA_PRESETS,
   DEFAULT_PERSONA_NAMES,
+  PERSONA_NAME_TOKEN,
   buildPersonaPrompt,
   type PersonaGender,
   type PersonaPresetKey,

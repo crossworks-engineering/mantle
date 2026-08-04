@@ -302,11 +302,12 @@ export async function buildStudioGraph(ownerId: string): Promise<StudioGraph> {
         name: s.name,
         instructions: s.instructions,
       })),
-      composedPrompt: composeSystemPromptWithSkills(
-        a.systemPrompt,
-        attached,
-        stylePrefs.houseStyle,
-      ),
+      // Passes the agent's own name so the preview resolves `{{name}}` exactly
+      // as a turn will — the preview must not differ from what the model sees.
+      composedPrompt: composeSystemPromptWithSkills(a.systemPrompt, attached, {
+        agentName: a.name,
+        houseStyle: stylePrefs.houseStyle,
+      }),
     });
   }
 

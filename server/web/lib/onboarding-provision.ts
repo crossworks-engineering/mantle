@@ -183,7 +183,9 @@ export async function provisionDefaults(ownerId: string): Promise<ProvisionResul
         apiKeyId: azureRoute ? customKey : openrouter,
         baseUrl: azureRoute ? (modelOverlay?.azureBaseUrl ?? null) : null,
         ttsWorkerId,
-        systemPrompt: buildPersonaPrompt('warm', { assistantName: name, gender: 'female' }),
+        // Name-agnostic: the prompt carries `{{name}}` and resolves from the
+        // `name` set above, so renaming the persona later actually renames it.
+        systemPrompt: buildPersonaPrompt('warm', { gender: 'female' }),
         toolGroupSlugs: [...PERSONA_TOOL_GROUP_SLUGS],
         memoryConfig: { ...(PERSONA_MANIFEST.memoryConfig ?? {}) },
         params: { ...PERSONA_MANIFEST.params },
@@ -238,10 +240,7 @@ export async function savePersonaAgent(ownerId: string, input: SavePersonaInput)
   const name = input.assistantName.trim() || DEFAULT_PERSONA_NAMES[input.gender];
   await updateAgent(ownerId, row.id, {
     name,
-    systemPrompt: buildPersonaPrompt(input.presetKey, {
-      assistantName: name,
-      gender: input.gender,
-    }),
+    systemPrompt: buildPersonaPrompt(input.presetKey, { gender: input.gender }),
     // temperature is the user's overlay; max_tokens stays the manifest default.
     params: { temperature: input.temperature, max_tokens: PERSONA_MANIFEST.params.max_tokens },
   });

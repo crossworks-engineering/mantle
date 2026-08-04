@@ -79,11 +79,10 @@ export async function POST(req: Request) {
     const skills = await resolveAgentSkills(user.id, agent.skillSlugs ?? [], {
       toolGroupSlugs: agent.toolGroupSlugs ?? [],
     });
-    const systemPrompt = composeSystemPromptWithSkills(
-      agent.systemPrompt,
-      skills,
-      (await loadProfilePreferences(user.id)).houseStyle,
-    );
+    const systemPrompt = composeSystemPromptWithSkills(agent.systemPrompt, skills, {
+      agentName: agent.name,
+      houseStyle: (await loadProfilePreferences(user.id)).houseStyle,
+    });
     const params = agent.params as { temperature?: number; max_tokens?: number };
 
     const result = await adapter.chat({

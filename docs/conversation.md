@@ -272,6 +272,27 @@ an agent to one login. Moving parts:
   one BELOW the source, so `pickWebDefaultAgent`'s slug tiebreak can never let a
   clone become the brain-wide default for headless callers (reminders,
   heartbeats).
+- **Identity — the `{{name}}` token.** A copied prompt named its SOURCE: an
+  assistant called Tommy opened with *"You are Mira — an RBI specialist"*
+  (observed live at v0.220.0). `name` and `system_prompt` are separate columns
+  and nothing kept them in step — the same reason renaming any agent in
+  `/settings/agents` left it introducing its old name. So the name is now a
+  token, resolved once per turn:
+  - `composeSystemPromptWithSkills` (`packages/agent-runtime/src/skills.ts`)
+    substitutes `{{name}}` → `agents.name`. It resolves at that seam, not deeper
+    in `renderPersonaBlock`, so Studio's composed-prompt preview shows exactly
+    what the model sees (no hidden prompts). `agentName` is a REQUIRED option so
+    a new call site cannot forget it.
+  - The persona bank emits the token instead of interpolating a name, so fresh
+    installs are name-agnostic. `PERSONA_NAME_TOKEN` is declared separately in
+    `@mantle/content` (a browser-safe leaf that agent-runtime depends on —
+    importing back would cycle); `persona-bank-token.test.ts` is the tripwire
+    against drift.
+  - Cloning rewrites whole-word occurrences of the source's name to the token,
+    NOT to the new name — baking "Tommy" in would re-break on the next rename.
+  - A prompt with no token is byte-identical, so existing brains' cached
+    prefixes are untouched. `{{secret:service/label}}` is a different mechanism
+    resolved in the HTTP dispatcher and is never matched.
 - **Resolution** — `resolveAgentForActor` (`server/web/lib/assistant.ts`) at the
   HTTP boundary: explicit slug → the login's assigned agent → the runtime's
   brain default. `resolveAssistantAgent` in `@mantle/assistant-runtime` is

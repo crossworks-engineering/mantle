@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { cloneAgentFields, slugifyAgentName, uniqueAgentSlug } from './agent-clone';
+import {
+  cloneAgentFields,
+  slugifyAgentName,
+  tokeniseSourceName,
+  uniqueAgentSlug,
+} from './agent-clone';
+import { AGENT_NAME_TOKEN } from '@mantle/agent-runtime';
 import type { AgentDTO } from '@mantle/client-types';
 
 /**
@@ -136,5 +142,69 @@ describe('cloneAgentFields', () => {
     const clone = cloneAgentFields(s, identity);
     clone.skillSlugs?.push('extra');
     expect(s.skillSlugs).toEqual(['tool_grounding', 'voice_reply']);
+  });
+});
+
+/**
+ * The clone used to answer as the agent it was copied from — live at v0.220.0,
+ * where an assistant named Tommy opened with "You are Mira — an RBI specialist".
+ */
+describe('tokeniseSourceName', () => {
+  it("replaces the source's name with the token", () => {
+    expect(tokeniseSourceName('You are Mira — an RBI specialist.', 'Mira')).toBe(
+      `You are ${AGENT_NAME_TOKEN} — an RBI specialist.`,
+    );
+  });
+
+  it('replaces every occurrence', () => {
+    const out = tokeniseSourceName('You are Saskia. Be Saskia.', 'Saskia');
+    expect(out).toBe(`You are ${AGENT_NAME_TOKEN}. Be ${AGENT_NAME_TOKEN}.`);
+  });
+
+  it('matches whole words only — "Max" must not corrupt "maximum"', () => {
+    const out = tokeniseSourceName('You are Max. Give maximum effort, Max.', 'Max');
+    expect(out).toBe(`You are ${AGENT_NAME_TOKEN}. Give maximum effort, ${AGENT_NAME_TOKEN}.`);
+  });
+
+  it('matches at punctuation boundaries, not just spaces', () => {
+    const out = tokeniseSourceName('(Mira) said "Mira", then Mira.', 'Mira');
+    expect(out).toBe(`(${AGENT_NAME_TOKEN}) said "${AGENT_NAME_TOKEN}", then ${AGENT_NAME_TOKEN}.`);
+  });
+
+  it('is case-sensitive — a name is a proper noun', () => {
+    // "Iris" the assistant vs "iris" the flower: lowercase prose is far more
+    // likely an unrelated word than a reference to the agent.
+    expect(tokeniseSourceName('You are Iris. The iris opened.', 'Iris')).toBe(
+      `You are ${AGENT_NAME_TOKEN}. The iris opened.`,
+    );
+  });
+
+  it('treats an operator name with regex metacharacters as literal text', () => {
+    expect(tokeniseSourceName('You are C++ here.', 'C++')).toBe(
+      `You are ${AGENT_NAME_TOKEN} here.`,
+    );
+  });
+
+  it('leaves a prompt that never names itself untouched', () => {
+    const prompt = 'You are a helpful assistant.';
+    expect(tokeniseSourceName(prompt, 'Mira')).toBe(prompt);
+    expect(tokeniseSourceName(prompt, '   ')).toBe(prompt);
+  });
+
+  it('leaves an already-tokenised prompt alone', () => {
+    // A persona-bank prompt is name-agnostic already; cloning must be a no-op.
+    const prompt = `You are ${AGENT_NAME_TOKEN} — warm and grounded.`;
+    expect(tokeniseSourceName(prompt, 'Saskia')).toBe(prompt);
+  });
+});
+
+describe('cloneAgentFields — identity', () => {
+  it("hands the clone a name-agnostic prompt, not the source's identity", () => {
+    const s = source({ name: 'Mira', systemPrompt: 'You are Mira — an RBI specialist.' });
+    const clone = cloneAgentFields(s, identity);
+    expect(clone.systemPrompt).toBe(`You are ${AGENT_NAME_TOKEN} — an RBI specialist.`);
+    // The domain expertise is the whole reason to clone rather than regenerate.
+    expect(clone.systemPrompt).toContain('RBI specialist');
+    expect(clone.systemPrompt).not.toContain('Mira');
   });
 });
