@@ -21,6 +21,7 @@
 
 import type {
   ChatDispatcher,
+  ChatFinishReason,
   ChatModelInfo,
   ChatOptions,
   ChatResult,
@@ -102,6 +103,60 @@ function nextSynthCallId(): string {
   return `gemini_call_${synthCallSeq}`;
 }
 
+/**
+ * Gemma models (served through the same Gemini endpoint) reject a top-level
+ * `systemInstruction` outright — the request 400s rather than degrading. The
+ * documented workaround is to prepend the system text to the first user turn
+ * instead. Detected by model-id prefix because that is the only signal the
+ * request carries.
+ *
+ * Reachability today is narrow: `googleDiscover` intersects the live model
+ * list against GOOGLE_CHAT_MODELS, which lists only `gemini-*`, so a Gemma id
+ * cannot be picked from the model dropdown. It can still arrive from a stored
+ * agent/worker row or a seeded config, which is exactly the path that would
+ * fail with no useful message. Cheap guard, so we take it.
+ */
+function isGemmaModel(model: string): boolean {
+  return model.toLowerCase().startsWith('gemma-');
+}
+
+/**
+ * Map Gemini's `finishReason` onto the normalised {@link ChatFinishReason}.
+ *
+ * The safety-ish family is deliberately collapsed to one value: callers act
+ * identically on all of them (the reply is unusable and was withheld), and
+ * the specific flavour is Google-internal detail. `STOP` is context-sensitive
+ * — with tool calls present it means "paused to call tools", not "done".
+ *
+ * Returns undefined when Gemini reported nothing, so the caller can leave the
+ * field absent rather than asserting a stop that never happened.
+ */
+function mapGoogleFinishReason(
+  raw: string | undefined,
+  hasToolCalls: boolean,
+): ChatFinishReason | undefined {
+  if (!raw) return undefined;
+  switch (raw) {
+    case 'STOP':
+      return hasToolCalls ? 'tool_calls' : 'stop';
+    case 'MAX_TOKENS':
+      return 'length';
+    // Every withheld-content variant Gemini can report.
+    case 'SAFETY':
+    case 'RECITATION':
+    case 'BLOCKLIST':
+    case 'PROHIBITED_CONTENT':
+    case 'SPII':
+    case 'IMAGE_SAFETY':
+      return 'content_filter';
+    case 'MALFORMED_FUNCTION_CALL':
+      return 'error';
+    default:
+      // FINISH_REASON_UNSPECIFIED, OTHER, and anything Google adds later.
+      return 'other';
+  }
+}
+
 /** Translate an OpenAI-shape image_url into a Gemini inlineData part. Only
  *  `data:` URLs are handled (the responder always sends base64 data URLs); an
  *  http(s) URL returns null so the caller can warn + skip — the dedicated
@@ -134,8 +189,14 @@ function toGeminiInlineData(
  *   4. **Tool result** (`role:'tool'`) → user-role content with a
  *      functionResponse part. The result's text body becomes
  *      `response.result` (we wrap the string so the JSON parses).
+ *
+ * `model` is needed only to spot Gemma, which cannot take a systemInstruction
+ * at all — see {@link isGemmaModel}.
  */
-function splitSystemAndContents(messages: ChatOptions['messages']): {
+function splitSystemAndContents(
+  messages: ChatOptions['messages'],
+  model: string,
+): {
   systemInstruction?: { parts: GeminiPart[] };
   contents: GeminiContent[];
 } {
@@ -232,10 +293,22 @@ function splitSystemAndContents(messages: ChatOptions['messages']): {
     }
     contents.push({ role: 'model', parts });
   }
-  return {
-    ...(sys.length > 0 ? { systemInstruction: { parts: [{ text: sys.join('\n\n') }] } } : {}),
-    contents,
-  };
+  if (sys.length === 0) return { contents };
+  const systemText = sys.join('\n\n');
+
+  // Gemma: fold the system text into the first user turn instead of sending
+  // systemInstruction, which it rejects. If there is no user turn to fold into
+  // there is nowhere to put it, so fall through and send it the normal way —
+  // a 400 with the system text present beats silently discarding the persona.
+  if (isGemmaModel(model)) {
+    const firstUser = contents.find((c) => c.role === 'user');
+    if (firstUser) {
+      firstUser.parts.unshift({ text: `${systemText}\n\n` });
+      return { contents };
+    }
+  }
+
+  return { systemInstruction: { parts: [{ text: systemText }] }, contents };
 }
 
 /** Translate ChatOptions.tools → Gemini's functionDeclarations form. */
@@ -280,7 +353,7 @@ function extractGoogleToolCalls(parts: GeminiPart[] | undefined): ChatToolCall[]
  * endpoint.
  */
 function buildGoogleBody(opts: ChatOptions): Record<string, unknown> {
-  const { systemInstruction, contents } = splitSystemAndContents(opts.messages);
+  const { systemInstruction, contents } = splitSystemAndContents(opts.messages, opts.model);
 
   // Gemini packs generation knobs into a nested object — temperature,
   // maxOutputTokens (NOTE: not 'max_tokens'), topP all live here.
@@ -356,10 +429,15 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
     .filter(Boolean)
     .join('');
   const toolCalls = extractGoogleToolCalls(parts);
+  const finishReason = mapGoogleFinishReason(
+    parsed.candidates?.[0]?.finishReason,
+    !!toolCalls && toolCalls.length > 0,
+  );
   return {
     text: text.trim(),
     model: parsed.modelVersion || opts.model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usageMetadata?.promptTokenCount,
     tokensOut: parsed.usageMetadata?.candidatesTokenCount,
     cacheReadTokens: parsed.usageMetadata?.cachedContentTokenCount,
@@ -447,6 +525,9 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
   let tokensIn: number | undefined;
   let tokensOut: number | undefined;
   let cacheRead: number | undefined;
+  // Gemini reports finishReason on the candidate, typically only on the final
+  // chunk — keep the last non-empty one we see.
+  let rawFinish: string | undefined;
   // Gemini streams complete functionCall parts (not arg fragments), so collect
   // them and run the same extractor the one-shot path uses.
   const fnParts: GeminiPart[] = [];
@@ -467,6 +548,7 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
         tokensOut = chunk.usageMetadata.candidatesTokenCount ?? tokensOut;
         cacheRead = chunk.usageMetadata.cachedContentTokenCount ?? cacheRead;
       }
+      if (chunk.candidates?.[0]?.finishReason) rawFinish = chunk.candidates[0].finishReason;
       const parts = chunk.candidates?.[0]?.content?.parts ?? [];
       for (const p of parts) {
         if ('text' in p && typeof p.text === 'string' && p.text.length > 0) {
@@ -492,10 +574,12 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
   }
 
   const toolCalls = extractGoogleToolCalls(fnParts);
+  const finishReason = mapGoogleFinishReason(rawFinish, !!toolCalls && toolCalls.length > 0);
   return {
     text: text.trim(),
     model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn,
     tokensOut,
     cacheReadTokens: cacheRead,

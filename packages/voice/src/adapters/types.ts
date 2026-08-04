@@ -199,7 +199,36 @@ export interface ChatResult {
    *  {@link ChatAssistantMessage.reasoningDetails}). Undefined when the turn
    *  produced no reasoning. */
   reasoningDetails?: ReasoningDetail[];
+  /** Why the model stopped, normalised across providers. Undefined when the
+   *  adapter doesn't report one (most don't yet) — treat that as "unknown",
+   *  NOT as `'stop'`.
+   *
+   *  This exists because a truncated answer and a policy-blocked answer are
+   *  otherwise indistinguishable from a genuinely short one: every provider
+   *  returns HTTP 200 with little or no text in all three cases. Without this
+   *  field a caller cannot tell "the model finished" from "the model was cut
+   *  off at maxTokens" or "the provider refused". Adapters map their native
+   *  value onto this small grammar:
+   *
+   *    - 'stop'           — finished normally
+   *    - 'length'         — hit the output-token ceiling, reply is TRUNCATED
+   *    - 'tool_calls'     — stopped to call tools (expect `toolCalls`)
+   *    - 'content_filter' — provider blocked it (safety/recitation/blocklist)
+   *    - 'error'          — provider signalled a malformed generation
+   *    - 'other'          — reported, but not one of the above */
+  finishReason?: ChatFinishReason;
 }
+
+/** Normalised stop reason. Deliberately a small closed set: adapters collapse
+ *  their provider's longer enum onto these, since callers only ever need to
+ *  branch on "was this reply complete, truncated, or refused". */
+export type ChatFinishReason =
+  | 'stop'
+  | 'length'
+  | 'tool_calls'
+  | 'content_filter'
+  | 'error'
+  | 'other';
 
 /** A single tool the model can call. Mirrors the OpenAI function-tool
  *  shape since every adapter we're likely to talk to either accepts

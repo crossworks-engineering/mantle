@@ -759,6 +759,50 @@ describe('multi-block system content', () => {
     });
   });
 
+  // Gemma is served through the same endpoint but rejects systemInstruction
+  // outright (HTTP 400). The documented workaround is to prepend the system
+  // text to the first user turn.
+  it('google-chat folds system into the first user turn for gemma models', async () => {
+    const calls = captureFetch({
+      candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+      usageMetadata: {},
+      modelVersion: 'gemma-3-27b-it',
+    });
+    await googleChatAdapter.chat({
+      apiKey: 'gk-test',
+      model: 'gemma-3-27b-it',
+      messages: [
+        { role: 'system', content: 'you are terse' },
+        { role: 'user', content: 'hi' },
+      ],
+    });
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.systemInstruction).toBeUndefined();
+    expect(body.contents[0]).toEqual({
+      role: 'user',
+      parts: [{ text: 'you are terse\n\n' }, { text: 'hi' }],
+    });
+  });
+
+  it('google-chat still sends systemInstruction for gemini models', async () => {
+    const calls = captureFetch({
+      candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+      usageMetadata: {},
+      modelVersion: 'gemini-2.5-flash',
+    });
+    await googleChatAdapter.chat({
+      apiKey: 'gk-test',
+      model: 'gemini-2.5-flash',
+      messages: [
+        { role: 'system', content: 'you are terse' },
+        { role: 'user', content: 'hi' },
+      ],
+    });
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.systemInstruction).toEqual({ parts: [{ text: 'you are terse' }] });
+    expect(body.contents[0]).toEqual({ role: 'user', parts: [{ text: 'hi' }] });
+  });
+
   it('openrouter-chat passes array-shape system through with cacheControl camelCase', async () => {
     // openrouter-chat uses the mocked SDK, not fetch — this test is
     // in the openrouter-chat.test.ts file. Skipping here; the
