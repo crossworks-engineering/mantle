@@ -51,16 +51,56 @@ import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reason
 const RETRY_BASE_DELAY_MS = 500;
 const RETRY_MAX_DELAY_MS = 8_000;
 
-/** OpenRouter's unified `reasoning` param from our `thinkingBudget`. OR routes
- *  `max_tokens` to the upstream provider's thinking budget (Anthropic) or maps
- *  it to an effort tier (OpenAI o-series); models without a reasoning mode
- *  ignore it. Returns undefined when no budget is set so we omit the field. */
-function openRouterReasoning(opts: ChatOptions): { maxTokens: number } | undefined {
+/** The SDK's own chat-request input type, derived rather than restated so it
+ *  tracks the installed version automatically.
+ *
+ *  This exists to keep the type checker switched ON for the request body. The
+ *  send boundary used to launder the WHOLE object with `as unknown as`, which
+ *  meant any field name we invented compiled happily and was then discarded by
+ *  the SDK's outbound zod schema — silently, at runtime, in production. Two such
+ *  fields were live for the entire life of this adapter (`reasoning.maxTokens`
+ *  and a `usage` flag that should have been `streamOptions`).
+ *
+ *  Only `messages` is laundered now: our structurally-clean OrChatMessage
+ *  builders are not nominally assignable to the SDK's zod-generated input type.
+ *  Everything else is checked. Keep it that way — widening this cast back to the
+ *  whole object re-opens the same class of bug. */
+type SdkChatRequest = Parameters<InstanceType<typeof OpenRouter>['chat']['send']>[0]['chatRequest'];
+
+/** The `reasoning` sub-shape the SDK actually serialises. Derived from the SDK's
+ *  own request type rather than hand-written, so a future bump that adds
+ *  `enabled` / `max_tokens` widens this automatically instead of silently
+ *  diverging. */
+type OrReasoning = NonNullable<SdkChatRequest['reasoning']>;
+
+/** OpenRouter's unified `reasoning` param from our `thinkingBudget`.
+ *
+ *  ⚠️ KNOWN GAP — the budget currently reaches the wire as `reasoning: {}`.
+ *  The SDK's `ChatRequestReasoning` is `{ effort, summary }`: it has no
+ *  `max_tokens` (nor `enabled`), so a `{ maxTokens }` object is dropped by the
+ *  outbound zod schema. This was masked for the whole life of the adapter by the
+ *  blanket `as unknown as` cast at the send boundary, which is now narrowed to
+ *  `messages` only (see {@link SdkChatRequest}).
+ *
+ *  Deliberately NOT fixed here: the correct fix is to send `effort`
+ *  (minimal|low|medium|high|xhigh|max), which would make thinking actually
+ *  engage and therefore change token spend — a behavioural decision, not a
+ *  typing one. Upstream has moved on too: on Sonnet 5 / Claude 4.7 budget-based
+ *  thinking is removed, `reasoning.max_tokens` is accepted-but-ignored, and
+ *  `reasoning.effort` maps to Anthropic's `output_config.effort`. Model-aware
+ *  effort selection wants the per-model `reasoning` metadata from GET /models
+ *  (`supported_efforts`, `default_effort`, `supports_max_tokens`, `mandatory`).
+ *
+ *  Until that lands this returns the empty object rather than `undefined` so the
+ *  emitted wire body is byte-identical to what shipped before the cast was
+ *  narrowed. `openrouter-chat.test.ts` asserts that emptiness against the real
+ *  outbound schema, so the day it is fixed the test fails and says so. */
+function openRouterReasoning(opts: ChatOptions): OrReasoning | undefined {
   const budget =
     typeof opts.thinkingBudget === 'number' && opts.thinkingBudget > 0
       ? Math.floor(opts.thinkingBudget)
       : 0;
-  return budget > 0 ? { maxTokens: budget } : undefined;
+  return budget > 0 ? {} : undefined;
 }
 
 /** Text content block. Used for messages that need a cache_control
@@ -444,10 +484,10 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   const tools = buildTools(opts);
   const reasoningParam = openRouterReasoning(opts);
 
-  const chatRequest = {
+  const chatRequest: SdkChatRequest = {
     model: opts.model,
-    messages,
-    ...(tools ? { tools } : {}),
+    messages: messages as unknown as SdkChatRequest['messages'],
+    ...(tools ? { tools: tools as unknown as SdkChatRequest['tools'] } : {}),
     // Only send tool_choice when tools are actually present. xAI/Grok rejects a
     // tool_choice with no tools ("A tool_choice was set but no tools were
     // specified" → 400) — which is exactly the force-final pass (toolChoice
@@ -461,13 +501,9 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     ...(reasoningParam ? { reasoning: reasoningParam } : {}),
     ...(opts.extra ?? {}),
   };
-  // Single typed boundary: our structurally-clean builders (OrChatMessage /
-  // tool records) aren't nominally assignable to the SDK's zod-generated input
-  // types, so we bridge once here rather than scattering `as unknown as` over
-  // individual fields. Behaviour is unchanged; the laundering is one line.
   const sendOnce = () =>
     client.chat.send({
-      chatRequest: chatRequest as unknown as Parameters<typeof client.chat.send>[0]['chatRequest'],
+      chatRequest,
     });
 
   // The SDK retries HTTP-level transients (429/5xx/network) itself, which is why
@@ -709,14 +745,20 @@ async function openrouterChatStream(
   const messages = buildMessages(opts.messages, opts.cacheControl);
   const tools = buildTools(opts);
   const reasoningParam = openRouterReasoning(opts);
-  const chatRequest = {
+  const chatRequest: SdkChatRequest = {
     model: opts.model,
-    messages,
+    messages: messages as unknown as SdkChatRequest['messages'],
     stream: true,
     // Ask OR to fold the usage block into the final chunk — without this a
     // streamed call reports no tokens and cost tracking silently breaks.
-    usage: { include: true },
-    ...(tools ? { tools } : {}),
+    //
+    // This was `usage: { include: true }` from the day streaming shipped, which
+    // is not a field on the request: the outbound schema discarded it wholesale,
+    // so the flag never reached OpenRouter despite the comment above. The real
+    // field is `streamOptions.includeUsage` → wire `stream_options.include_usage`.
+    // Invisible until the send-boundary cast was narrowed (see SdkChatRequest).
+    streamOptions: { includeUsage: true },
+    ...(tools ? { tools: tools as unknown as SdkChatRequest['tools'] } : {}),
     ...(opts.toolChoice && tools ? { toolChoice: opts.toolChoice } : {}),
     ...(typeof opts.temperature === 'number' ? { temperature: opts.temperature } : {}),
     ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
@@ -734,9 +776,7 @@ async function openrouterChatStream(
   try {
     sent = (await client.chat.send(
       {
-        chatRequest: chatRequest as unknown as Parameters<
-          typeof client.chat.send
-        >[0]['chatRequest'],
+        chatRequest,
       },
       // Thread the cancellation signal into the underlying fetch so a Stop aborts
       // the HTTP stream — halting upstream token generation, not just our reading.

@@ -51,11 +51,69 @@ vi.mock('@openrouter/sdk', () => ({
 // Import AFTER vi.mock so the adapter picks up the mocked SDK.
 import { openrouterChatAdapter } from './openrouter-chat';
 
+// The REAL outbound schema. `vi.mock('@openrouter/sdk')` above replaces that
+// exact module id only, so this subpath import is the genuine article — which is
+// the whole point: it lets these tests assert on the body that actually goes on
+// the wire, not merely the object we hand the SDK.
+import { ChatRequest$outboundSchema } from '@openrouter/sdk/models';
+
 function setMockResult(r: unknown) {
   mockResult = r;
 }
 
+/** Serialise a captured request exactly as the SDK would before sending. */
+function wireBody(call = 0): Record<string, unknown> {
+  return ChatRequest$outboundSchema.parse(sendCalls[call]!.chatRequest) as unknown as Record<
+    string,
+    unknown
+  >;
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const toSnake = (k: string) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+
+/**
+ * Every field we hand the SDK must survive its outbound zod schema.
+ *
+ * This is the guard that was missing. The schema DISCARDS unknown keys rather
+ * than throwing, so an invented field name is a silent runtime no-op — it type
+ * checks (before the cast was narrowed), it tests green (the SDK is mocked, so
+ * serialisation never runs), and it simply never reaches OpenRouter. Two fields
+ * lived that way for the life of the adapter: `reasoning.maxTokens` and a
+ * `usage` flag that should have been `streamOptions.includeUsage`.
+ *
+ * Walks nested objects too, because that is where the reasoning bug hid: the
+ * top-level `reasoning` key survived while its only child was thrown away.
+ * camelCase→snake_case renaming is expected and not a drop.
+ */
+function findDroppedKeys(input: unknown, output: unknown, path = ''): string[] {
+  if (!isPlainObject(input) || !isPlainObject(output)) return [];
+  const dropped: string[] = [];
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined) continue;
+    const outKey = key in output ? key : toSnake(key) in output ? toSnake(key) : null;
+    if (outKey === null) {
+      dropped.push(`${path}${key}`);
+      continue;
+    }
+    dropped.push(...findDroppedKeys(value, output[outKey], `${path}${key}.`));
+  }
+  return dropped;
+}
+
 afterEach(() => {
+  // Applies to EVERY test in this file: whatever request a test provoked, assert
+  // the SDK would actually transmit all of it. New tests inherit the guard for
+  // free, and a future SDK bump that renames a field fails here rather than in
+  // production. `messages` is exempt — the schema legitimately restructures
+  // content blocks, and message translation has its own dedicated assertions.
+  for (const [i, call] of sendCalls.entries()) {
+    const { messages: _messages, ...rest } = call.chatRequest;
+    const dropped = findDroppedKeys(rest, wireBody(i));
+    expect(dropped, `call ${i}: field(s) silently discarded by the SDK`).toEqual([]);
+  }
   sendCalls.length = 0;
   mockSendImpl = null;
 });
@@ -572,7 +630,7 @@ function streamOf(chunks: unknown[]): AsyncIterable<unknown> {
 }
 
 describe('openrouter-chat chatStream', () => {
-  it('sets stream + usage.include on the request and assembles text from deltas', async () => {
+  it('sets stream + usage accounting on the request and assembles text from deltas', async () => {
     mockSendImpl = async () =>
       streamOf([
         { model: 'openai/gpt-4o', choices: [{ delta: { content: 'Hel' } }] },
@@ -587,7 +645,11 @@ describe('openrouter-chat chatStream', () => {
     );
     const req = sendCalls[0]!.chatRequest;
     expect(req.stream).toBe(true);
-    expect(req.usage).toEqual({ include: true });
+    // Was `expect(req.usage).toEqual({ include: true })` — green for the life of
+    // the adapter while the flag never reached OpenRouter, because it asserted
+    // the object we hand the SDK rather than the body the SDK emits. The real
+    // field is streamOptions; 'serialised wire body' below pins the wire form.
+    expect(req.streamOptions).toEqual({ includeUsage: true });
     expect(deltas).toEqual([
       { type: 'text', text: 'Hel' },
       { type: 'text', text: 'lo' },
@@ -662,5 +724,77 @@ describe('openrouter-chat chatStream', () => {
         () => {},
       ),
     ).rejects.toThrow(/upstream boom/);
+  });
+});
+
+/**
+ * Wire-body assertions — what OpenRouter actually receives.
+ *
+ * Distinct from every other describe in this file: those assert the object the
+ * adapter builds, these assert the bytes after the SDK's outbound schema has run.
+ * That gap is where two silent no-ops lived undetected.
+ */
+describe('openrouter-chat serialised wire body', () => {
+  const baseOpts = {
+    apiKey: 'sk-test',
+    model: 'anthropic/claude-sonnet-5',
+    messages: [{ role: 'user' as const, content: 'hi' }],
+  };
+
+  it('streamed calls really ask for usage accounting', async () => {
+    // REGRESSION: shipped as `usage: { include: true }`, which is not a request
+    // field — the schema dropped it and OR never folded usage into the final
+    // chunk, so streamed cost tracking was reporting nothing. The correct field
+    // serialises to snake_case.
+    mockSendImpl = async () => streamOf([{ choices: [{ delta: { content: 'ok' } }] }]);
+    await openrouterChatAdapter.chatStream!(baseOpts, () => {});
+
+    expect(wireBody()).toMatchObject({ stream_options: { include_usage: true } });
+    expect(wireBody()).not.toHaveProperty('usage');
+  });
+
+  it('one-shot calls send no stream_options', async () => {
+    await openrouterChatAdapter.chat(baseOpts);
+    expect(wireBody()).not.toHaveProperty('stream_options');
+  });
+
+  it('documents the KNOWN GAP: a thinking budget reaches the wire as reasoning:{}', async () => {
+    // Not an endorsement — a tripwire. The SDK's ChatRequestReasoning is
+    // { effort, summary } with no max_tokens, so the per-user thinking budget
+    // cannot currently be expressed and thinking is inert on this path.
+    // When that is fixed (send `effort`, ideally chosen from the per-model
+    // GET /models reasoning metadata) this test SHOULD fail — update it then.
+    await openrouterChatAdapter.chat({ ...baseOpts, thinkingBudget: 4096 });
+
+    expect(wireBody().reasoning).toEqual({});
+    expect(wireBody().reasoning).not.toHaveProperty('max_tokens');
+  });
+
+  it('omits reasoning entirely when no budget is set', async () => {
+    await openrouterChatAdapter.chat(baseOpts);
+    expect(wireBody()).not.toHaveProperty('reasoning');
+  });
+
+  it('sampling params and tool_choice survive serialisation', async () => {
+    await openrouterChatAdapter.chat({
+      ...baseOpts,
+      temperature: 0.4,
+      maxTokens: 1024,
+      topP: 0.9,
+      toolChoice: 'auto',
+      tools: [
+        {
+          type: 'function',
+          function: { name: 'search', description: 'find', parameters: { type: 'object' } },
+        },
+      ],
+    });
+
+    expect(wireBody()).toMatchObject({
+      temperature: 0.4,
+      max_tokens: 1024,
+      top_p: 0.9,
+      tool_choice: 'auto',
+    });
   });
 });
