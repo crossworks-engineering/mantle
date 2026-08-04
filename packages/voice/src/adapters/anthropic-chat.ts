@@ -29,10 +29,54 @@ import type {
   ChatResult,
   ChatStreamSink,
   ChatToolCall,
+  ThinkingEffort,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
 import { chatAbortSignal, readSSE, safeDelta } from './sse';
 import { wantGuardedThinking } from './thinking-guard';
+
+/** Models that REJECT `output_config.effort` outright. Sending it 400s the
+ *  request, so these must be matched exactly rather than defaulted into.
+ *  Both are in our catalogue, so this is a live hazard, not a hypothetical. */
+const EFFORT_UNSUPPORTED = new Set(['claude-sonnet-4-5', 'claude-haiku-4-5']);
+
+/** Models that accept effort but have no `xhigh` tier — it arrived with Opus
+ *  4.7. Asking for a tier a model doesn't publish is rejected, so we step down
+ *  to the nearest one it does have rather than dropping effort entirely. */
+const EFFORT_NO_XHIGH = new Set(['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-opus-4-5']);
+
+/** `claude-opus-4-5` predates `max` as well — its ladder stops at `high`. */
+const EFFORT_MAX_IS_HIGH = new Set(['claude-opus-4-5']);
+
+/**
+ * Translate our provider-neutral tier to what THIS model accepts.
+ *
+ * Anthropic's effort ladder grew over time and the older rungs are not
+ * forward-compatible, so a single vocabulary can't be sent blind:
+ *   - Sonnet 4.5 / Haiku 4.5 reject the parameter entirely.
+ *   - Opus 4.6 / Sonnet 4.6 / Opus 4.5 have no `xhigh`.
+ *   - Opus 4.5 additionally has no `max`.
+ *
+ * Unknown models get the full ladder. That's deliberate: the two rejecting
+ * models are named and finite, while new releases have trended toward
+ * supporting every tier, so defaulting to "supported" fails safe for the
+ * models that don't exist yet. If a future model regresses, it goes in
+ * EFFORT_UNSUPPORTED — the failure is a loud 400, not a silent no-op.
+ *
+ * A bare version prefix is matched (not an exact id) so dated snapshots and
+ * `-fast`-style suffixes of the same model resolve the same way.
+ */
+export function anthropicEffort(
+  model: string,
+  effort: ThinkingEffort | undefined,
+): ThinkingEffort | undefined {
+  if (!effort) return undefined;
+  const matches = (ids: Set<string>) => [...ids].some((id) => model.startsWith(id));
+  if (matches(EFFORT_UNSUPPORTED)) return undefined;
+  if (effort === 'xhigh' && matches(EFFORT_NO_XHIGH)) return 'high';
+  if (effort === 'max' && matches(EFFORT_MAX_IS_HIGH)) return 'high';
+  return effort;
+}
 import type { DiscoveryResult } from '../discover';
 import {
   ANTHROPIC_API_VERSION,
@@ -407,6 +451,7 @@ function buildAnthropicBody(opts: ChatOptions): Record<string, unknown> {
   // tool continuation — otherwise a replayed thinking-less tool_use turn 400s.
   // First-round thinking (incl. the round that calls a tool) is still on.
   const wantThinking = wantGuardedThinking(opts);
+  const effort = anthropicEffort(opts.model, opts.thinkingEffort);
 
   const body: Record<string, unknown> = {
     model: opts.model,
@@ -417,6 +462,12 @@ function buildAnthropicBody(opts: ChatOptions): Record<string, unknown> {
     ...(systemField !== undefined ? { system: systemField } : {}),
     ...(tools ? { tools } : {}),
     ...(wantThinking ? { thinking: { type: 'adaptive', display: 'summarized' } } : {}),
+    // Reasoning depth. Nested under `output_config`, NOT top-level — a
+    // top-level `effort` is ignored. GA, no beta header. Sent independently of
+    // `thinking` because it shapes text and tool-calling too, not just
+    // reasoning depth, so it is worth sending even on a thinking-suppressed
+    // tool continuation.
+    ...(effort ? { output_config: { effort } } : {}),
     // Anthropic's tool_choice supports 'auto' (default) and 'any' (force
     // some tool). We map our 'auto'/'none' carefully:
     //   - 'auto' is the default → omit the field

@@ -21,7 +21,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { anthropicChatAdapter, googleChatAdapter, xaiChatAdapter } from './index';
-import type { ChatToolDefinition } from './types';
+import type { ChatToolDefinition, ThinkingEffort } from './types';
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -839,5 +839,96 @@ describe('xai-chat tool translation', () => {
       tool_call_id: 'call_x1',
       content: '{"ok":true}',
     });
+  });
+});
+
+// ─── anthropic-chat: output_config.effort ───────────────────────────────────
+
+describe('anthropic-chat effort', () => {
+  /** Run one chat and return the parsed wire body. */
+  async function bodyFor(model: string, thinkingEffort?: ThinkingEffort) {
+    const calls = captureFetch({ content: [{ type: 'text', text: 'ok' }], model, usage: {} });
+    await anthropicChatAdapter.chat({
+      apiKey: 'sk-test',
+      model,
+      messages: [{ role: 'user', content: 'hi' }],
+      ...(thinkingEffort ? { thinkingEffort } : {}),
+    });
+    return JSON.parse(calls[0]!.body);
+  }
+
+  it('nests effort under output_config, never top-level', async () => {
+    // A top-level `effort` is silently ignored by the API — the whole point of
+    // the parameter is that it sits inside output_config.
+    const body = await bodyFor('claude-sonnet-5', 'high');
+    expect(body.output_config).toEqual({ effort: 'high' });
+    expect(body).not.toHaveProperty('effort');
+  });
+
+  it('omits output_config entirely when no effort is set', async () => {
+    const body = await bodyFor('claude-sonnet-5');
+    expect(body).not.toHaveProperty('output_config');
+  });
+
+  it.each(['low', 'medium', 'high', 'xhigh', 'max'] as const)(
+    'passes %s through on a model with the full ladder',
+    async (effort) => {
+      expect((await bodyFor('claude-sonnet-5', effort)).output_config).toEqual({ effort });
+    },
+  );
+
+  it.each(['claude-sonnet-4-5', 'claude-haiku-4-5'])(
+    'sends NO effort to %s, which rejects the parameter',
+    async (model) => {
+      // These 400 if effort is present. Both are in our catalogue, so this
+      // guard is load-bearing, not defensive.
+      expect(await bodyFor(model, 'high')).not.toHaveProperty('output_config');
+    },
+  );
+
+  it.each(['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-opus-4-5'])(
+    'steps xhigh down to high on %s, which has no xhigh tier',
+    async (model) => {
+      // Step down rather than drop: the caller asked for deep reasoning, and
+      // the nearest available rung honours that better than no effort at all.
+      expect((await bodyFor(model, 'xhigh')).output_config).toEqual({ effort: 'high' });
+    },
+  );
+
+  it('steps max down to high on claude-opus-4-5, whose ladder stops at high', async () => {
+    expect((await bodyFor('claude-opus-4-5', 'max')).output_config).toEqual({ effort: 'high' });
+  });
+
+  it('keeps max on models that do publish it', async () => {
+    expect((await bodyFor('claude-opus-4-6', 'max')).output_config).toEqual({ effort: 'max' });
+  });
+
+  it('matches on version prefix, so dated snapshots resolve the same way', async () => {
+    expect(await bodyFor('claude-haiku-4-5-20251001', 'high')).not.toHaveProperty('output_config');
+    expect((await bodyFor('claude-opus-4-6-20260101', 'xhigh')).output_config).toEqual({
+      effort: 'high',
+    });
+  });
+
+  it('sends effort even when thinking is suppressed on a tool continuation', async () => {
+    // effort shapes text and tool-calling too, not just reasoning depth, so it
+    // is still worth sending on the round where thinking is guarded off.
+    const calls = captureFetch({
+      content: [{ type: 'text', text: 'ok' }],
+      model: 'claude-sonnet-5',
+      usage: {},
+    });
+    await anthropicChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'claude-sonnet-5',
+      thinkingEffort: 'high',
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: null, toolCalls: [] },
+        { role: 'tool', toolCallId: 't1', content: 'done' },
+      ],
+    });
+    const body = JSON.parse(calls[0]!.body);
+    expect(body.output_config).toEqual({ effort: 'high' });
   });
 });
