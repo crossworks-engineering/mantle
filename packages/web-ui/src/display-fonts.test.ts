@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -129,4 +131,56 @@ describe('display-font files', () => {
       );
     }
   });
+});
+
+/**
+ * Both apps carry their own copy of the font payload, on purpose: client/web
+ * serves it through `next start`, server/web through its own static layer
+ * (server/static.ts) for the public /s and /print surfaces. Each origin needs
+ * the bytes, so the duplication is load-bearing and stays.
+ *
+ * What must NOT happen is the two drifting. Update a face in one app and forget
+ * the other and nothing breaks loudly — the share page just quietly renders a
+ * different font from the app that authored it, on a surface nobody is looking
+ * at. Content hashes make that impossible to land.
+ *
+ * Adding or replacing a face means mirroring it into BOTH public dirs; see
+ * `scripts/fonts-to-woff2.mjs` and server/web/CLAUDE.md.
+ */
+function fingerprint(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (abs: string, rel: string) => {
+    for (const entry of readdirSync(abs, { withFileTypes: true })) {
+      const next = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(join(abs, entry.name), next);
+      else
+        out[next] = createHash('sha256')
+          .update(readFileSync(join(abs, entry.name)))
+          .digest('hex');
+    }
+  };
+  walk(dir, '');
+  return out;
+}
+
+describe('the two apps serve the same font payload', () => {
+  // Everything duplicated between them: the display library and its licenses,
+  // the Bukhari wordmark, and the Inter UI face.
+  for (const root of ['fonts', 'Inter'] as const) {
+    it(`public/${root} is byte-identical in client/web and server/web`, () => {
+      const client = fingerprint(`${publicDir('client')}/${root}`);
+      const server = fingerprint(`${publicDir('server')}/${root}`);
+
+      expect(
+        Object.keys(server).sort(),
+        `public/${root}: one app has files the other does not`,
+      ).toEqual(Object.keys(client).sort());
+
+      const differing = Object.keys(client).filter((f) => client[f] !== server[f]);
+      expect(
+        differing,
+        `public/${root}: same filename, different bytes — mirror the change`,
+      ).toEqual([]);
+    });
+  }
 });
