@@ -34,6 +34,9 @@ import { XAI_BASE_URL } from '../catalogs/xai';
 export const xaiSttAdapter: SttDispatcher = {
   providerId: 'xai',
   adapterName: 'xai-stt',
+  // /v1/stt takes language. Note `format` (punctuation) DEPENDS on it, so we
+  // only enable formatting when a language is set.
+  supports: ['language'],
   async transcribe(audio: Buffer, opts: TranscribeOptions): Promise<TranscribeResult> {
     if (!opts.apiKey) throw new Error('xai-stt: apiKey required');
     if (!audio || audio.length === 0) {
@@ -44,8 +47,15 @@ export const xaiSttAdapter: SttDispatcher = {
     const form = new FormData();
     // Order matters — xAI requires `file` as the LAST field. Build
     // all the metadata fields first, then append the file.
-    form.append('format', 'true');
-    if (opts.language) form.append('language', opts.language);
+    //
+    // `format=true` (punctuation/capitalisation) REQUIRES `language`, per
+    // docs.x.ai. It used to be sent unconditionally, so on the common
+    // auto-detect path — no language configured, which is the default for a
+    // multilingual user — the request carried a flag it could not satisfy.
+    if (opts.language) {
+      form.append('language', opts.language);
+      form.append('format', 'true');
+    }
     const blob = new Blob([new Uint8Array(audio)], { type: opts.mimeType });
     form.append('file', blob, filename);
 
@@ -58,13 +68,25 @@ export const xaiSttAdapter: SttDispatcher = {
       const body = await res.text().catch(() => '');
       throw new Error(`xai-stt ${res.status}: ${body.slice(0, 400)}`);
     }
-    const parsed = (await res.json()) as { text?: string };
+    // The response DOES carry the detected language and the duration
+    // (`{text, language, duration, words[], channels[]}`). A comment here
+    // previously claimed it echoed neither, and both were thrown away —
+    // so an auto-detected language never reached /traces and the duration
+    // cap below had nothing to check against.
+    const parsed = (await res.json()) as {
+      text?: string;
+      language?: string;
+      duration?: number;
+    };
+    const durationSeconds = typeof parsed.duration === 'number' ? parsed.duration : null;
+    const cap = opts.maxDurationSeconds ?? 180;
+    if (cap > 0 && durationSeconds != null && durationSeconds > cap) {
+      throw new Error(`xai-stt: clip too long: ${durationSeconds.toFixed(1)}s exceeds ${cap}s cap`);
+    }
     return {
       text: (parsed.text ?? '').trim(),
-      // The endpoint doesn't echo the detected language or duration —
-      // surface nulls so /traces stays honest about what we know.
-      language: opts.language ?? null,
-      durationSeconds: null,
+      language: parsed.language ?? opts.language ?? null,
+      durationSeconds,
       model: opts.model || 'grok-stt',
     };
   },

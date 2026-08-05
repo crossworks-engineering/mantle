@@ -51,6 +51,9 @@ type DeepgramResponse = {
 export const deepgramSttAdapter: SttDispatcher = {
   providerId: 'deepgram',
   adapterName: 'deepgram-stt',
+  // language, or detect_language=true in its absence (Deepgram defaults to
+  // English otherwise, which surprises non-English callers).
+  supports: ['language'],
   async transcribe(audio: Buffer, opts: TranscribeOptions): Promise<TranscribeResult> {
     if (!opts.apiKey) throw new Error('deepgram-stt: apiKey required');
     if (!audio || audio.length === 0) {

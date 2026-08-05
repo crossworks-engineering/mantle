@@ -66,6 +66,9 @@ function formatFromMime(mimeType: string | undefined): string {
 export const openrouterSttAdapter: SttDispatcher = {
   providerId: 'openrouter',
   adapterName: 'openrouter-stt',
+  // OpenAI-compatible transcription. Forwards language; the response carries
+  // text + usage only, so language/duration come back null.
+  supports: ['language'],
   async transcribe(audio: Buffer, opts: TranscribeOptions): Promise<TranscribeResult> {
     if (!opts.apiKey) throw new Error('openrouter-stt: apiKey required');
     if (!audio || audio.length === 0) throw new Error('openrouter-stt: empty audio buffer');

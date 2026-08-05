@@ -363,6 +363,39 @@ The `[VOICE]` opt-in marker is documented in Saskia's system prompt
 template — see [memory.md §6.2](./memory.md#62-the-agent-roles) for
 where that lives.
 
+### 5a″. Transcription (STT) options
+
+Thinner than TTS by nature: the normalized surface is a language hint and
+nothing else, so every wired adapter declares `supports: ['language']`. What
+diverges is what each provider hands BACK.
+
+| adapter | language hint | returns detected language | returns duration |
+|---|---|---|---|
+| `openai-stt` | ✅ | ✅ (`verbose_json`) | ✅ |
+| `elevenlabs-stt` | ✅ `language_code` | ✅ | ✗ (needs word timestamps) |
+| `deepgram-stt` | ✅, else `detect_language=true` | ✅ | ✅ |
+| `assemblyai-stt` | ✅ `language_code`, else `language_detection` | ✅ | ✅ |
+| `xai-stt` | ✅ | ✅ | ✅ |
+| `openrouter-stt` | ✅ | ✗ (response is text + usage) | ✗ |
+| `google-stt` | prompt text, not a parameter | ✗ | ✗ |
+
+The 2026-08 docs sweep found two faults, both in `xai-stt`, both of the same
+kind as the TTS ones — a comment asserting something about someone else's API
+that had stopped being true:
+
+- `format=true` (punctuation and capitalisation) **requires** `language`. It
+  was sent unconditionally, so the common auto-detect path carried a flag the
+  request could not satisfy. Formatting is now enabled only alongside a
+  language.
+- The response carries `{text, language, duration, words[], channels[]}`. A
+  comment claimed it echoed neither language nor duration and both were
+  discarded, so an auto-detected language never reached `/traces` and the
+  duration cap had nothing to check. Both are now read, and the cap applies.
+
+`whisper-1` stays the OpenAI default deliberately. The gpt-4o transcribe models
+are newer, but they reject the ogg/webm containers that Telegram voice notes
+and browser recordings arrive in, which is our main inbound path.
+
 ### 5a′. Which speech options actually reach the provider
 
 The normalized option set (`SynthesizeOptions`) is `text`, `voice`, `model`,

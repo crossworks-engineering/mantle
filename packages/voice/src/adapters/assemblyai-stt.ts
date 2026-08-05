@@ -131,6 +131,8 @@ async function pollUntilDone(apiKey: string, transcriptId: string): Promise<Poll
 export const assemblyAiSttAdapter: SttDispatcher = {
   providerId: 'assemblyai',
   adapterName: 'assemblyai-stt',
+  // language_code, or language_detection=true in its absence.
+  supports: ['language'],
   async transcribe(audio: Buffer, opts: TranscribeOptions): Promise<TranscribeResult> {
     if (!opts.apiKey) throw new Error('assemblyai-stt: apiKey required');
     if (!audio || audio.length === 0) {

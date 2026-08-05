@@ -9,6 +9,7 @@ export type {
   SynthesizeResult,
   TtsVoice,
   TtsParam,
+  SttParam,
   TtsWarning,
 } from './types';
 

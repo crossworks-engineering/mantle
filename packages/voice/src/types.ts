@@ -26,6 +26,10 @@ export type TranscribeOptions = {
   model?: string;
 };
 
+/** A transcription request option that may or may not reach the provider.
+ *  `model` is excluded: every STT API takes one. */
+export type SttParam = 'language';
+
 export type TranscribeResult = {
   /** Transcribed text — already trimmed. */
   text: string;

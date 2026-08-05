@@ -42,6 +42,8 @@ type ScribeResponse = {
 export const elevenLabsSttAdapter: SttDispatcher = {
   providerId: 'elevenlabs',
   adapterName: 'elevenlabs-stt',
+  // Scribe takes language_code and echoes the detected one back.
+  supports: ['language'],
   async transcribe(audio: Buffer, opts: TranscribeOptions): Promise<TranscribeResult> {
     if (!opts.apiKey) throw new Error('elevenlabs-stt: apiKey required');
     if (!audio || audio.length === 0) {

@@ -28,6 +28,7 @@ import type { ProviderId } from '../providers';
 import type {
   SynthesizeOptions,
   SynthesizeResult,
+  SttParam,
   TranscribeOptions,
   TranscribeResult,
   TtsParam,
@@ -517,6 +518,19 @@ export interface ChatDispatcher extends AdapterMeta {
 }
 
 export interface SttDispatcher extends AdapterMeta {
+  /** The request options this adapter forwards, completing the convention
+   *  shared with {@link TtsDispatcher.supports} and
+   *  {@link ImageGenDispatcher.supports}.
+   *
+   *  Thin by nature: transcription's normalized surface is a language hint and
+   *  nothing else, so every wired adapter currently declares `['language']`.
+   *  It is still worth declaring rather than assuming — a 2026-08 docs sweep
+   *  found xAI's `format` flag silently depending on `language`, and the value
+   *  of these lists is that they are checked claims rather than beliefs. What
+   *  each provider REPORTS BACK varies far more than what it accepts; see
+   *  `TranscribeResult`, where several adapters can only return nulls. */
+  supports: readonly SttParam[];
+
   /** Transcribe an audio buffer. Buffer must be in one of the formats
    *  the provider accepts; the adapter handles the multipart encoding
    *  and any provider-specific MIME wrangling. */
