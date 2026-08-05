@@ -25,7 +25,7 @@
  * Docs: https://openrouter.ai/docs/guides/overview/multimodal/image-generation
  */
 
-import type { ImageGenDispatcher, ImageGenModelInfo } from './types';
+import type { ImageGenDispatcher, ImageGenModelInfo, ImageGenWarning } from './types';
 import type { GenerateImageOptions, GenerateImageResult } from './types';
 import { OPENROUTER_BASE_URL } from '../catalogs/openrouter';
 
@@ -103,8 +103,20 @@ export const openrouterImageAdapter: ImageGenDispatcher = {
     const model = opts.model || OPENROUTER_IMAGE_DEFAULT_MODEL;
 
     // Explicit pixels are authoritative and reject a companion aspect_ratio
-    // with a 400, so an explicit size wins and the ratio is left off.
+    // with a 400, so an explicit size wins and the ratio is left off. Dropping
+    // it SILENTLY was a real bug: a worker default of 1024x1024 outranked a
+    // user's "make it 16:9" and the result came back square with nothing
+    // saying why. The caller resolves that precedence now (a per-call arg beats
+    // a saved default), and this warning is the backstop for whatever slips
+    // past it.
     const explicitPixels = !!opts.size && PIXEL_SIZE_RE.test(opts.size);
+    const warnings: ImageGenWarning[] = [];
+    if (opts.aspectRatio && explicitPixels) {
+      warnings.push({
+        param: 'aspectRatio',
+        reason: `dropped: size '${opts.size}' is explicit pixels, which OpenRouter treats as authoritative`,
+      });
+    }
     // Image-to-image: the references ride as data URLs, same encoding the
     // response comes back in. With these present the model EDITS rather than
     // invents, which is what makes "change the sky in that one" possible
@@ -153,6 +165,7 @@ export const openrouterImageAdapter: ImageGenDispatcher = {
       bytes: Buffer.from(first.b64_json, 'base64'),
       mimeType: first.media_type || 'image/png',
       model,
+      ...(warnings.length > 0 ? { warnings } : {}),
     };
   },
   staticCatalog() {

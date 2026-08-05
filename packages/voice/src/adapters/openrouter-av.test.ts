@@ -184,3 +184,42 @@ describe('openrouter-image editing', () => {
     expect(getImageGenAdapter('xai')!.supports).not.toContain('inputImages');
   });
 });
+
+/**
+ * Sizing precedence, found by a live probe: the request said "16:9", the trace
+ * claimed 16:9 applied, and the file came back 1024x1024. The worker's DEFAULT
+ * pixel size outranked the user's explicit ratio, and the drop was silent.
+ * The caller resolves provenance now; this is the adapter-side backstop.
+ */
+describe('openrouter-image sizing conflict', () => {
+  const okResponse = () =>
+    new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('x').toString('base64') }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  it('warns when an explicit pixel size forces the ratio to be dropped', async () => {
+    const read = stubFetch(okResponse());
+    const out = await getImageGenAdapter('openrouter')!.generate({
+      apiKey: 'k',
+      prompt: 'a lighthouse',
+      size: '1024x1024',
+      aspectRatio: '16:9',
+    });
+    expect(read().body).not.toHaveProperty('aspect_ratio');
+    expect(out.warnings?.[0]).toMatchObject({ param: 'aspectRatio' });
+    expect(out.warnings?.[0]!.reason).toContain('1024x1024');
+  });
+
+  it('says nothing when a TIER size and a ratio coexist happily', async () => {
+    const read = stubFetch(okResponse());
+    const out = await getImageGenAdapter('openrouter')!.generate({
+      apiKey: 'k',
+      prompt: 'a lighthouse',
+      size: '2K',
+      aspectRatio: '16:9',
+    });
+    expect(read().body).toMatchObject({ size: '2K', aspect_ratio: '16:9' });
+    expect(out.warnings).toBeUndefined();
+  });
+});

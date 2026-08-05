@@ -723,13 +723,32 @@ const generate_image: BuiltinToolDef = {
     take('quality', 'quality', strOpt(input.quality), params.quality);
     take('negativePrompt', 'negative_prompt', strOpt(input.negative_prompt));
 
+    // Precedence between the two SIZING options, resolved here because this is
+    // the only layer that knows where each value came from.
+    //
+    // `size` and `aspect_ratio` both describe the shape, and providers treat an
+    // explicit pixel size as authoritative (OpenRouter rejects a companion
+    // ratio outright). So a worker default of 1024x1024 would quietly outrank
+    // "make it a 16:9 banner" — which is what it did on the first real test:
+    // the request said 16:9, the trace claimed 16:9 applied, and the file came
+    // back square. A per-call argument must beat a saved default, never the
+    // other way round.
+    const supersede = (winner: ImageGenParam, loser: ImageGenParam) => {
+      const w = requested.find((r) => r.param === winner && r.fromCall);
+      const l = requested.find((r) => r.param === loser && !r.fromCall);
+      if (w && l) l.reason = `superseded by the ${w.key} you asked for (${w.value})`;
+    };
+    supersede('aspectRatio', 'size');
+    supersede('size', 'aspectRatio');
+
     // The honesty split. An option the adapter does not forward must never
     // look like it applied: an operator once had size/style/quality saved on
     // an OpenRouter worker, all three shown in the UI, none of them sent, and
     // nothing anywhere said so.
     const supported = new Set<ImageGenParam>(adapter.supports);
-    const sent = requested.filter((r) => supported.has(r.param));
-    const ignored = requested.filter((r) => !supported.has(r.param));
+    // A superseded default is neither sent nor claimed as applied.
+    const sent = requested.filter((r) => supported.has(r.param) && !r.reason);
+    const ignored = requested.filter((r) => !supported.has(r.param) || r.reason);
     const get = (param: ImageGenParam) => sent.find((a) => a.param === param)?.value;
 
     // ── reference images (image-to-image) ──
