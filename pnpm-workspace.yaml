@@ -35,3 +35,6 @@ overrides:
   # 273 typecheck errors that look nothing like their cause. pg-boss 12 requires
   # ^8.22.0 while the rest of the tree had settled on 8.20.0; this pins both to one.
   pg: 8.22.0
+
+patchedDependencies:
+  katex@0.18.1: patches/katex@0.18.1.patch

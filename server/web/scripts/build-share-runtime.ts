@@ -8,7 +8,7 @@
  *                     presenters + web-ui components).
  *   islands.js        esbuild bundle of server/islands/entry.tsx (the three
  *                     interactive share presenters, React included).
- *   katex/            katex.min.css + its font files (math nodes).
+ *   katex/            katex.min.css + its woff2 font files (math nodes).
  *
  * Wired into predev/prebuild alongside app-runtime generation. Output is
  * gitignored; served by server/static.ts with no-cache semantics implicit in
@@ -16,7 +16,7 @@
  * later if it ever matters).
  */
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,7 +59,15 @@ const katexDist = dirname(katexCss);
 rmSync(join(outDir, 'katex'), { recursive: true, force: true });
 mkdirSync(join(outDir, 'katex'), { recursive: true });
 cpSync(katexCss, join(outDir, 'katex/katex.min.css'));
-cpSync(join(katexDist, 'fonts'), join(outDir, 'katex/fonts'), { recursive: true });
+// woff2 only. KaTeX ships every face three times (woff2 + woff + ttf, ~1.1M);
+// patches/katex@0.18.1.patch drops the legacy `src` entries from the stylesheet,
+// so copying them here would just be 840K nothing can ask for. Every browser
+// that can render the rest of these pages has had woff2 since 2016 — Tailwind 4
+// alone needs far newer than that.
+cpSync(join(katexDist, 'fonts'), join(outDir, 'katex/fonts'), {
+  recursive: true,
+  filter: (src) => statSync(src).isDirectory() || src.endsWith('.woff2'),
+});
 
 // ── 4. Mermaid IIFE bundle (diagram nodes on /print → PDF) ──────────────────
 // The print surface upgrades diagram degrade blocks to real SVG inside the PDF

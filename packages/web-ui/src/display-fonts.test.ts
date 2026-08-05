@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { existsSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
-import { DEFAULT_LOGO_FONT, DEFAULT_TITLE_FONT, resolveFontVars } from './display-fonts';
+import {
+  DEFAULT_LOGO_FONT,
+  DEFAULT_TITLE_FONT,
+  DISPLAY_FONTS,
+  displayFontFaceCss,
+  resolveFontVars,
+} from './display-fonts';
 import { resolveAppearanceAttrs } from './appearance';
 
 /**
@@ -74,5 +82,51 @@ describe('resolveAppearanceAttrs', () => {
     expect(attrs.fontLogo).toBeUndefined();
     expect(attrs.fontVars.wordmark).toBeUndefined();
     expect(attrs.fontTitle).toBe('capriola');
+  });
+});
+
+/**
+ * The registry names files by hand and TWO apps serve them from their own
+ * `public/` — so a font can be listed with no file behind it (picker offers a
+ * face that 404s and silently falls back), or a file can outlive the entry that
+ * pointed at it (dead weight in both images, nobody notices). Neither shows up
+ * in a typecheck. Both directions are asserted here, per app.
+ */
+const APPS = ['client', 'server'] as const;
+const publicDir = (app: string) =>
+  fileURLToPath(new URL(`../../../${app}/web/public`, import.meta.url));
+
+describe('display-font files', () => {
+  for (const app of APPS) {
+    it(`${app}/web ships a file for every registry entry`, () => {
+      const missing = DISPLAY_FONTS.filter((f) => f.file).filter(
+        (f) => !existsSync(`${publicDir(app)}${f.file}`),
+      );
+      expect(
+        missing.map((f) => f.file),
+        `listed in DISPLAY_FONTS but absent`,
+      ).toEqual([]);
+    });
+
+    it(`${app}/web ships no library face the registry dropped`, () => {
+      const listed = new Set(
+        DISPLAY_FONTS.map((f) => f.file?.split('/').pop()).filter(Boolean) as string[],
+      );
+      const orphans = readdirSync(`${publicDir(app)}/fonts/library`)
+        .filter((n) => /\.(ttf|otf|woff2?)$/.test(n))
+        .filter((n) => !listed.has(n));
+      expect(orphans, 'delete these, or add the registry entry back').toEqual([]);
+    });
+  }
+
+  it('declares each face with the format its file actually is', () => {
+    const css = displayFontFaceCss();
+    for (const f of DISPLAY_FONTS) {
+      if (!f.file || !f.family) continue;
+      const want = f.file.endsWith('.woff2') ? 'woff2' : 'truetype';
+      expect(css, `${f.key} declared with the wrong format()`).toContain(
+        `url("${f.file}") format("${want}")`,
+      );
+    }
   });
 });

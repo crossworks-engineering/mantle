@@ -9,6 +9,9 @@ overrides:
   '@napi-rs/canvas': 1.0.2
   pg: 8.22.0
 
+patchedDependencies:
+  katex@0.18.1: dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d
+
 importers:
 
   .:
@@ -130,7 +133,7 @@ importers:
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))
       '@tiptap/extension-mathematics':
         specifier: ^3.28.0
-        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1)
+        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d))
       '@tiptap/extension-mention':
         specifier: ^3.28.0
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/suggestion@3.28.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))
@@ -178,7 +181,7 @@ importers:
         version: 9.0.0
       katex:
         specifier: ^0.18.1
-        version: 0.18.1
+        version: 0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d)
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0
@@ -1026,7 +1029,7 @@ importers:
         version: 1.1.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       katex:
         specifier: ^0.18.1
-        version: 0.18.1
+        version: 0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d)
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0
@@ -1377,7 +1380,7 @@ importers:
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))
       '@tiptap/extension-mathematics':
         specifier: ^3.28.0
-        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1)
+        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d))
       '@tiptap/extension-mention':
         specifier: ^3.28.0
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/suggestion@3.28.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))
@@ -1461,7 +1464,7 @@ importers:
         version: 4.12.31
       katex:
         specifier: ^0.18.1
-        version: 0.18.1
+        version: 0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d)
       libsodium-wrappers:
         specifier: ^0.8.4
         version: 0.8.4
@@ -5090,6 +5093,7 @@ packages:
   cron-parser@5.6.2:
     resolution: {integrity: sha512-yJ/G1LVir6CnlkLI40CsampPLKl1SprGGlUagWtGJxewytRVYezv5xVyzzbT+Pvzx+VIRvZVF7/a0eEMTxdnTA==}
     engines: {node: '>=18'}
+    deprecated: 'Published tarball was built from a stale dist/ and is missing the fixes from #414 and #415 — its contents are effectively v5.6.1. Upgrade to v5.7.0.'
 
   cross-dirname@0.1.0:
     resolution: {integrity: sha512-+R08/oI0nl3vfPcqftZRpytksBXDzOUveBq/NBVx0sUp1axwzPQrKinNx5yd5sxPu8j1wIy8AfnVQ+5eFdha6Q==}
@@ -10701,11 +10705,11 @@ snapshots:
       '@tiptap/core': 3.28.0(@tiptap/pm@3.28.0)
       '@tiptap/pm': 3.28.0
 
-  '@tiptap/extension-mathematics@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1)':
+  '@tiptap/extension-mathematics@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d))':
     dependencies:
       '@tiptap/core': 3.28.0(@tiptap/pm@3.28.0)
       '@tiptap/pm': 3.28.0
-      katex: 0.18.1
+      katex: 0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d)
 
   '@tiptap/extension-mention@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/suggestion@3.28.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))':
     dependencies:
@@ -13036,7 +13040,7 @@ snapshots:
     dependencies:
       commander: 8.3.0
 
-  katex@0.18.1:
+  katex@0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d):
     dependencies:
       commander: 8.3.0
 

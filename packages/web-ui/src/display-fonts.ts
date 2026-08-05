@@ -54,20 +54,6 @@ export const DISPLAY_FONTS: DisplayFont[] = [
   // Library — one representative face per family (self-hosted, OFL; licenses in
   // public/fonts/library/licenses/).
   {
-    key: 'allison',
-    label: 'Allison',
-    family: 'Allison',
-    fallback: 'cursive',
-    file: `${LIB}/allison.ttf`,
-  },
-  {
-    key: 'arizonia',
-    label: 'Arizonia',
-    family: 'Arizonia',
-    fallback: 'cursive',
-    file: `${LIB}/arizonia.ttf`,
-  },
-  {
     key: 'biorhyme',
     label: 'BioRhyme',
     family: 'BioRhyme',
@@ -138,13 +124,6 @@ export const DISPLAY_FONTS: DisplayFont[] = [
     file: `${LIB}/londrina-outline.ttf`,
   },
   {
-    key: 'montez',
-    label: 'Montez',
-    family: 'Montez',
-    fallback: 'cursive',
-    file: `${LIB}/montez.ttf`,
-  },
-  {
     key: 'nabla',
     label: 'Nabla',
     family: 'Nabla',
@@ -194,13 +173,6 @@ export const DISPLAY_FONTS: DisplayFont[] = [
     file: `${LIB}/share.ttf`,
   },
   { key: 'sofia', label: 'Sofia', family: 'Sofia', fallback: 'cursive', file: `${LIB}/sofia.ttf` },
-  {
-    key: 'square-peg',
-    label: 'Square Peg',
-    family: 'Square Peg',
-    fallback: 'cursive',
-    file: `${LIB}/square-peg.ttf`,
-  },
   {
     key: 'warnes',
     label: 'Warnes',
