@@ -74,6 +74,23 @@ export const EMPTY_REPLY_FALLBACK =
   '(the model returned an empty response twice). Please ask that again, ' +
   'perhaps more narrowly.';
 
+/** Shown when the provider WITHHELD the reply on a policy rule rather than
+ *  failing to produce one. Distinct from EMPTY_REPLY_FALLBACK because the
+ *  advice differs: "ask again more narrowly" is wrong here — a re-ask of the
+ *  same question gets blocked the same way. Naming the cause also stops a
+ *  content block reading as a Mantle bug. */
+export const BLOCKED_REPLY_FALLBACK =
+  "Sorry — the model provider blocked its own response to that, so there's " +
+  'nothing for me to show you. This was a safety filter on their side, not an ' +
+  'error in your request. Rephrasing usually helps.';
+
+/** Appended when the model hit its output-token ceiling mid-sentence. The reply
+ *  is kept in full and the note is added, because a truncated answer that
+ *  announces itself is far more useful than one that just stops. */
+export const TRUNCATED_REPLY_NOTE =
+  '\n\n_(Cut off — I hit my output length limit. Ask me to continue and I’ll ' +
+  'pick up where this stops.)_';
+
 export type ResponderLoopResult = {
   /** The raw tool-loop outcome (artifacts, tokensOut, messages, …). */
   loop: ToolLoopResult;
@@ -81,6 +98,14 @@ export type ResponderLoopResult = {
    *  voice surfaces need the tags, text surfaces strip them at delivery. */
   reply: string;
   emptyReplySubstituted: boolean;
+  /** True when the empty reply was a provider CONTENT BLOCK rather than a
+   *  model fumble — `reply` carries BLOCKED_REPLY_FALLBACK. Implies
+   *  `emptyReplySubstituted`; surfaces can use it to distinguish "refused"
+   *  from "failed" without re-deriving it from the text. */
+  blockedByProvider: boolean;
+  /** True when the model hit its output-token ceiling — `reply` is the full
+   *  partial answer plus TRUNCATED_REPLY_NOTE. */
+  truncated: boolean;
   /** Grounded action labels for the turn record (b4) — [] unless the owner
    *  has live streaming AND persistence on (Settings → Profile). */
   persistedThoughts: Array<{ kind: string; label: string; elapsedMs?: number }>;
@@ -194,6 +219,7 @@ export async function runResponderLoop(
     delegateTo: assembled.delegateTo,
     resultHandling: assembled.resultHandling,
     thinkingBudget: assembled.thinkingBudget,
+    thinkingEffort: assembled.thinkingEffort,
     ...assembled.loopOverrides,
     initialMessages: await opts.buildMessages(ctx),
     tools: assembled.allowedTools,
@@ -205,14 +231,30 @@ export async function runResponderLoop(
   const stopped = opts.abortSignal?.aborted === true;
   let reply = loop.reply;
   let emptyReplySubstituted = false;
+  let blockedByProvider = false;
+  let truncated = false;
   if (!stopped && !reply.trim()) {
+    // Two different empties. A provider content block is not a model fumble,
+    // and telling the user to "ask more narrowly" would be actively misleading
+    // advice — so it gets its own message and its own log line.
+    blockedByProvider = loop.finishReason === 'content_filter';
     console.error(
-      `${opts.logPrefix} empty reply from model after retry (agent ${agent.slug}, ` +
-        `${loop.iterations} iterations, ${loop.toolCalls.length} tool calls) — ` +
-        'substituting fallback reply',
+      `${opts.logPrefix} ${blockedByProvider ? 'reply blocked by provider' : 'empty reply from model after retry'} ` +
+        `(agent ${agent.slug}, ${loop.iterations} iterations, ` +
+        `${loop.toolCalls.length} tool calls) — substituting fallback reply`,
     );
-    reply = EMPTY_REPLY_FALLBACK;
+    reply = blockedByProvider ? BLOCKED_REPLY_FALLBACK : EMPTY_REPLY_FALLBACK;
     emptyReplySubstituted = true;
+  } else if (!stopped && loop.finishReason === 'length') {
+    // Non-empty but cut off at the token ceiling. Keep every word the model
+    // produced and mark it, so the user knows the thought is unfinished rather
+    // than assuming the assistant simply stopped there.
+    truncated = true;
+    console.warn(
+      `${opts.logPrefix} reply truncated at the output-token limit (agent ${agent.slug}, ` +
+        `${loop.iterations} iterations, ${loop.tokensOut} output tokens)`,
+    );
+    reply = reply.trimEnd() + TRUNCATED_REPLY_NOTE;
   }
 
   // Thought trail (b4): grounded action labels rebuilt from this turn's tool
@@ -227,5 +269,14 @@ export async function runResponderLoop(
   // the thoughts-persistence preference.
   const toolStats = loop.toolCalls.length > 0 ? summarizeToolOutcomes(loop.toolCalls) : null;
 
-  return { loop, reply, emptyReplySubstituted, persistedThoughts, toolStats, ctx };
+  return {
+    loop,
+    reply,
+    emptyReplySubstituted,
+    blockedByProvider,
+    truncated,
+    persistedThoughts,
+    toolStats,
+    ctx,
+  };
 }

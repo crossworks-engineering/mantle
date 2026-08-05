@@ -38,8 +38,26 @@ import {
   buildIdentityContext,
   buildTimeContextLine,
   resolveThinkingBudget,
+  resolveThinkingEffort,
   type ProfilePreferences,
+  type ThinkingEffort as ContentThinkingEffort,
 } from '@mantle/content';
+import type { ThinkingEffort } from '@mantle/voice';
+
+/**
+ * Pin the two ThinkingEffort vocabularies together.
+ *
+ * `@mantle/content` owns the stored preference tiers and `@mantle/voice` owns the
+ * wire contract, and voice deliberately does NOT depend on content (it is the
+ * low-level adapter layer and would drag in db/files/search for five string
+ * literals). This package already imports both, so it is the one place the two
+ * can be compared — a mutual-assignability check that costs nothing at runtime
+ * and fails the build the moment one list gains a tier the other lacks.
+ */
+type _EffortVocabulariesMatch = [
+  ContentThinkingEffort extends ThinkingEffort ? true : never,
+  ThinkingEffort extends ContentThinkingEffort ? true : never,
+];
 import {
   buildOpenHeartbeatContext,
   HEARTBEAT_RESPONDER_TOOLS,
@@ -111,6 +129,7 @@ export type AssembledResponderTurn = {
   relatedHeartbeatSlugs: string[];
   allowedTools: Awaited<ReturnType<typeof resolveAgentTools>>;
   thinkingBudget: number | undefined;
+  thinkingEffort: ThinkingEffort | undefined;
   delegateTo: string[];
   resultHandling: NonNullable<Agent['memoryConfig']>['result_handling'] | null;
   loopOverrides: ResponderLoopOverrides;
@@ -146,11 +165,10 @@ export async function assembleResponderTurn(
   // put it inside cache breakpoint 1 and made the persona prefix miss on
   // every turn (2026-06 chat-cost audit).
   const timeContextLine = buildTimeContextLine(prefs);
-  const promptWithSkills = composeSystemPromptWithSkills(
-    agent.systemPrompt,
-    attachedSkills,
-    prefs.houseStyle,
-  );
+  const promptWithSkills = composeSystemPromptWithSkills(agent.systemPrompt, attachedSkills, {
+    agentName: agent.name,
+    houseStyle: prefs.houseStyle,
+  });
 
   // Open-heartbeat awareness: if the user has heartbeats on this surface that
   // are currently waiting on a reply (state.expecting_reply truthy), append a
@@ -259,6 +277,10 @@ export async function assembleResponderTurn(
     // Per-user adaptive thinking: gated by the live-thinking switch AND a
     // positive budget. 0 ⇒ no thinking (runToolLoop treats 0/unset the same).
     thinkingBudget: (opts.withThinking ?? true) ? resolveThinkingBudget(prefs) : undefined,
+    // The tier the providers actually honour. Same gate as the budget above;
+    // undefined ⇒ omit the field so mandatory-reasoning models don't see a
+    // rejected `none`.
+    thinkingEffort: (opts.withThinking ?? true) ? resolveThinkingEffort(prefs) : undefined,
     delegateTo: (opts.allowDelegation ?? true) ? (memoryConfig.delegate_to ?? []) : [],
     resultHandling: agent.memoryConfig?.result_handling ?? null,
     loopOverrides,

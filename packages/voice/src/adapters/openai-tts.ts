@@ -22,6 +22,11 @@ import type { TtsDispatcher } from './types';
 export const openAiTtsAdapter: TtsDispatcher = {
   providerId: 'openai',
   adapterName: 'openai-tts',
+  // /v1/audio/speech takes response_format, speed (0.25-4.0) and
+  // instructions. It has NO language field: the model infers it from the
+  // text. `instructions` is per-MODEL (tts-1 / tts-1-hd ignore it), warned
+  // about in synthesize.ts rather than declared here.
+  supports: ['speed', 'format', 'instructions'],
   async synthesize(opts) {
     return synthesizeSpeech(opts);
   },

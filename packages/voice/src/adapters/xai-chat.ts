@@ -10,9 +10,14 @@
  * on failure (404 or other) we fall back to the static catalog with
  * a "couldn't verify" hint so the UI is still usable.
  *
- * Reasoning models: grok-4.20-reasoning accepts a `reasoning_effort`
- * field (low|medium|high). We forward it via `opts.extra` when set,
- * so the adapter stays generic but power-users can still steer.
+ * Reasoning: `reasoning_effort` is NOT a property of "is this a reasoning
+ * model". Per xAI's docs it is honoured on `grok-4.5` (depth) and on
+ * `grok-4.20-multi-agent` (where it selects agent COUNT, 4 or 16 — same field,
+ * different meaning). The `grok-4.20-*-reasoning` / `-non-reasoning` pair bakes
+ * the decision into the model id and takes no effort field; @ai-sdk/xai excludes
+ * exactly that pair via `/^grok-4\.20(-\d{4})?-(non-)?reasoning$/`. We forward
+ * whatever rides `opts.extra` rather than deriving it, so nothing is sent to a
+ * model that ignores it unless an operator asked for it explicitly.
  */
 
 import type {
@@ -28,6 +33,7 @@ import type { DiscoveryResult } from '../discover';
 import { XAI_BASE_URL, XAI_CHAT_MODELS } from '../catalogs/xai';
 import {
   extractOpenAICompatToolCalls,
+  mapOpenAICompatFinishReason,
   streamOpenAICompatChat,
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
@@ -90,10 +96,12 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
   const message = parsed.choices?.[0]?.message;
   const text = scrubThinkBlocks(message?.content ?? parsed.choices?.[0]?.text ?? '');
   const toolCalls = extractOpenAICompatToolCalls(message);
+  const finishReason = mapOpenAICompatFinishReason(parsed.choices?.[0]?.finish_reason);
   return {
     text: text.trim(),
     model: parsed.model || opts.model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usage?.prompt_tokens,
     tokensOut: parsed.usage?.completion_tokens,
     cacheReadTokens: parsed.usage?.prompt_tokens_details?.cached_tokens,
@@ -127,6 +135,7 @@ async function xaiDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInf
       available: available.length > 0 ? available : [...XAI_CHAT_MODELS],
       filtered: available.length > 0,
       error: null,
+      liveIds: [...ids],
     };
   } catch (err) {
     return {

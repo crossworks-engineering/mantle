@@ -22,6 +22,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401WithSource } from '@/lib/auth';
+import { getAssignedAgent } from '@/lib/agents';
 import { getDbosClient } from '@/lib/dbos-client';
 import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
 import {
@@ -327,6 +328,17 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     // to the blocking path below — the chat shows a static thinking bubble.
     const streamingOn =
       isTurnStreamingEnabled() && isStreamThoughtsEnabled(await loadProfilePreferences(user.id));
+
+    // A client that named no agent gets THIS LOGIN's assigned assistant, so two
+    // co-admins typing at once land in their own threads rather than one
+    // interleaved one (migration 0143). Resolved here rather than in
+    // runAssistantTurn because the runtime only ever sees the anchor owner id —
+    // it runs outside the request, from the durable runner too. Falls through to
+    // the runtime's brain-wide default when the login has no assistant.
+    if (!agentSlug) {
+      const assigned = await getAssignedAgent(user.id, user.actor.id);
+      if (assigned) agentSlug = assigned.slug;
+    }
 
     const options: RunAssistantTurnOptions = {
       agentSlug,

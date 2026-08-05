@@ -230,18 +230,21 @@ describe('every registered theme', () => {
       });
     }
 
-    it(`${theme.id}: picker swatches match its real light-mode colours`, () => {
-      // swatches are [primary, accent, background] and drive the picker
-      // preview. They are generated from the same seeds as the CSS, so a
-      // mismatch means one artifact was rebuilt without the other.
-      //
-      // Compare RENDERED COLOUR, not notation, so a hand-added registry entry
-      // written in oklch would still be judged fairly.
-      const t = resolved(sels.light);
-      expect(theme.swatches.map(toHex), `${theme.id} swatches are stale`).toEqual(
-        [t.primary!, t.accent!, t.background!].map(toHex),
-      );
-    });
+    for (const mode of ['light', 'dark'] as const) {
+      it(`${theme.id}: picker swatches match its real ${mode}-mode colours`, () => {
+        // swatches are [primary, accent, background] per mode and drive the
+        // picker preview. They are generated from the same seeds as the CSS,
+        // so a mismatch means one artifact was rebuilt without the other —
+        // and a picker that advertises a colour the theme does not paint.
+        //
+        // Compare RENDERED COLOUR, not notation, so a hand-added registry
+        // entry written in oklch would still be judged fairly.
+        const t = resolved(sels[mode]);
+        expect(theme.swatches[mode].map(toHex), `${theme.id} ${mode} swatches are stale`).toEqual(
+          [t.primary!, t.accent!, t.background!].map(toHex),
+        );
+      });
+    }
   }
 });
 

@@ -4,6 +4,181 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — The models you pinned, and whether they still exist (branch feat/model-drift)
+
+**A pinned model is a decision, not a subscription.** It was right the day it
+was chosen and nothing ages it. Nothing in the product ever checked whether the
+ids `agents.model` and `ai_workers.model` actually send are still real — the
+first sign of a delisted model is a failed conversation.
+
+`pinned-model-drift` is a new read-only maintenance report, on the nightly
+schedule alongside `deps-drift`. It reads every enabled agent and worker, asks
+each provider what it currently lists, and reports pins that no longer exist
+plus newer versions of the same family. It never rewrites a model: which one
+you run is a cost and behaviour decision, and that stays yours.
+
+It does not replace `models-drift`, and the two are easy to confuse.
+`models-drift` is catalogue-level — does our onboarding dropdown still offer
+what providers serve — and it deliberately skips OpenRouter, whose list is
+built from the provider and cannot drift. That is true of a catalogue and false
+of a pin, so this report covers exactly what that one skips.
+
+**Most of the work here is in not crying wolf.** The naive version was written
+first and pointed at the real fleet, where it confidently reported three
+retired models across five healthy boxes. All three were the checker being
+wrong:
+
+- OpenRouter's `/models` enumerates **chat models only** — no TTS or STT id
+  appears in it at all — so every voice worker read as dead. A pin is now
+  compared only against catalogue entries of its own modality, and the modality
+  comes from the row, never from the catalogue.
+- `~x-ai/grok-latest` is a **real, current** id; the tilde is OpenRouter's
+  auto-alias marker. Ids are matched exactly, never normalised or tidied. An
+  alias is also never told that something newer exists — tracking the family is
+  the point of pinning one.
+- A provider with no list API, or one whose key is missing, tells us nothing.
+
+So everything unjudgeable is reported as **not checked, with the reason**,
+never as missing, and every cannot-see case is decided before any conclusion
+about the id. A report that flags healthy pins gets muted within a week, and
+then the genuine delisting goes unread too.
+
+One judgement is stated wherever the output is read rather than buried in the
+source: version segments compare as integers, so `4.20` is newer than `4.5`,
+matching how these vendors number releases rather than how decimals sort.
+
+## Unreleased — An assistant that answers to its own name (branch feat/agent-name-token)
+
+**A copied assistant introduced itself as the one it was copied from.** Give a
+login its own assistant called Tommy and his prompt still opened *"You are Mira
+— a specialist assistant to a Risk-Based Inspection team"*, because cloning
+copies the prompt verbatim and the name lived in the prose. Caught on a live
+box the day per-login assistants shipped.
+
+The name and the prompt were always two separate columns with nothing keeping
+them in step, so the same bug was already there without any cloning: renaming an
+agent in Settings → Agents writes `name` and never touches `system_prompt`, so
+it kept introducing itself by the old one.
+
+An assistant's name is now a token in its prompt — `{{name}}` — resolved once
+per turn from the agent actually running. Rename it and the prompt follows;
+copy it and the copy is itself.
+
+Three things had to agree for that to be true:
+
+- **Resolution happens at the composition seam**, the one function every
+  surface routes through — real turns, delegated specialists, heartbeats, runner
+  workers, the Studio sandbox, and Studio's composed-prompt preview. Substituting
+  any deeper would have let the model see a name the preview didn't, which is the
+  hidden prompt that seam exists to prevent. The name is a required argument, so
+  a future call site cannot quietly omit it — which immediately earned itself:
+  it caught a sixth call site (delegated specialists) that a search for the
+  function had missed.
+- **The persona bank stops baking names in.** New assistants are name-agnostic
+  from the start. The token is declared in two packages because the bank is a
+  browser-safe leaf that the resolver depends on, so importing back would cycle;
+  a tripwire test fails if the two literals ever drift, and caught a missing
+  export the first time it ran.
+- **Cloning rewrites the source's name to the token, not to the new name.**
+  Baking "Tommy" in would recreate the bug the moment anyone renamed Tommy.
+  Whole-word and case-sensitive, so an assistant called Max doesn't turn
+  "maximum" into a template.
+
+A prompt that never mentions its own name is unchanged, byte for byte — the
+cached prefix every turn depends on is untouched until a brain opts in. The
+existing `{{secret:service/label}}` refs are a different mechanism resolved in
+the HTTP tool dispatcher, and are never matched: their syntax appears verbatim
+in the toolsmith skill's own instructions, and a greedy matcher would have eaten
+the example it teaches from.
+
+## Unreleased — Your own assistant, not everyone else's thread (branch claude/per-user-agent-duplication-60eb10)
+
+**Two people signed into the same brain were talking to one assistant, in one
+conversation.** Extra logins have always been co-admins on the anchor account's
+data rather than tenants, and chat was never split off that: every login
+resolved to the same default agent, and the conversation store is keyed
+`(owner_id, agent_id)`. So a second person's turns appeared mid-thread, and
+worse, each turn's history block handed the model the other person's words as
+though the user had said them.
+
+A login can now have its own assistant. In Settings → Users, name one when you
+add a login (or later, from that login's panel) and pick which agent to copy;
+the copy becomes that login's default chat target. Because the stream was
+already keyed per agent — as are the live-turn NOTIFY payload, unread cursors,
+digests and the inbox — one pointer, `agents.assigned_user_id`, splits all of
+them at once. There is no new scoping model.
+
+The copy is the same assistant with its own history: model, route, prompt,
+skills, tool groups and delegation all come across, so it can reach the shared
+specialists from its first turn. Three things deliberately don't:
+
+- **Persona notes.** What an assistant learned about the person it was talking
+  to is about *that* person. A copy starts with none.
+- **Telegram.** A bot binding is a row against the old agent id, so a copy has
+  no transport and no credentials — by construction, not by filtering.
+- **Rank.** A copy sits one priority below its source. Headless callers (event
+  reminders, heartbeats) break priority ties on slug, so an equal-ranked copy
+  named `aaron` could quietly have become the brain's background default.
+
+**This is separation, not privacy, and the screen says so.** The brain is still
+one trust boundary: every login can open every assistant from the picker, and
+`recall_window` replays any thread. What changes is that your chat is your chat.
+
+The sticky agent cookie is per-browser, which would have made this land nowhere
+for the exact people it's for — someone already chatting to the shared assistant
+keeps landing there. The thread payload now carries when the assignment was
+made, and the client switches over once against a local watermark; a deliberate
+pick from the picker afterwards is left alone.
+
+Releasing an assistant only drops the binding. The agent and its whole archive
+stay, as an ordinary shared agent — deleting one remains a deliberate act on
+Settings → Agents, same reasoning as the earlier fix that stopped agent deletion
+destroying chat history.
+
+## Unreleased — A picture where the sentence needs it (branch claude/vibrant-elion-4dda88)
+
+**A chat reply could not put a picture mid-answer.** Every image a turn produced
+was collected and rendered as a strip below the whole reply, in the order the
+tool was called. For the case this feature exists for, an illustrated walkthrough
+of a product manual, that is the wrong shape: the reader wants each step's
+screenshot under that step, not a clump at the bottom to map back by counting.
+v0.218.10 corrected the prompt to describe that limit honestly. This removes the
+limit instead.
+
+The renderer already had everything. Chat replies render through the same TipTap
+schema Pages uses, image node included, and that node resolves a stored file from
+its id. The missing link was one converter: `markdownToDoc` (Pages, server-side)
+turned `![alt](media:<file-id>)` into a real image, while the chat converter let
+it fall through to a broken `<img src="media:...">`. So the same syntax now works
+in a reply, and the assistant writes each screenshot where it belongs.
+
+Two converters drifting is how the bug happened, so the reference schemes
+(`media:`, `page:`, `mention:`) moved to one dependency-free module both import,
+with a test that runs the same markdown through both and fails if they disagree
+about which picture goes where. The standalone form deliberately does not go
+through `marked`: the `<p>` wrapper it adds makes ProseMirror close an empty
+paragraph before the image, putting a blank line above every picture.
+
+Three edges, decided rather than left to chance:
+
+- **Shown twice.** A reply that writes the image inline *and* calls `show_image`
+  for the same file used to show it in both places. The reply's own placement
+  wins; the strip copy is dropped at finalize. Mechanical, not prompt-only,
+  because a confused model doing both is exactly the case a prompt misses.
+- **Mid-stream.** A half-typed `![alt](media:` is not a complete markdown image,
+  so it stays literal text until the closing paren lands: no crash, no
+  broken-image flash. The live stream buffer resolves finished markers through
+  the same route the durable reply uses.
+- **Telegram.** That surface sends plain text, where a marker would arrive as
+  literal `![...](media:...)`. Inline markers are stripped on the way out and
+  counted on the trace. `show_image` remains the only path that delivers a photo
+  there, and `visual_answers` now says so.
+
+No new surface area: the `<img>` hits the same owner-gated bytes route Pages and
+the attachment strip already use. It answers unauthenticated with 401 and scopes
+every read by owner id, so an invented or someone else's file id is a broken
+image, never a leak.
+
 ## Unreleased — One implementation per tool, one verifier per credential (branch feat/arch-cleanup)
 
 **24 MCP tools had two implementations, and the spare had gone stale.** Notes,
@@ -187,11 +362,14 @@ The byte floor is deliberately *low*: flat line art compresses to about 2 KB, an
 an initial 8 KB floor rejected precisely the diagrams this exists for. Pixel
 dimensions do the real filtering.
 
-Showing one is `show_image` in chat (rendered inline; Telegram gets a real
-photo) and `![alt](media:<file-id>)` in a page — no new page machinery, since
-that syntax already resolved to a stored file. A `visual_answers` skill carries
-the judgment: show rather than narrate, put each step's screenshot beside its
-step, and never invent a file id.
+Showing one is `show_image` in chat and `![alt](media:<file-id>)` in a page — no
+new page machinery, since that syntax already resolved to a stored file. A
+`visual_answers` skill carries the judgment: show rather than narrate, put each
+step's screenshot beside its step, and never invent a file id. (At the time this
+shipped, `show_image` did **not** place a picture where it was called: the chat
+surface clumped every image from a turn into a strip below the whole reply. See
+"A picture where the sentence needs it" below, which made the inline form work
+in chat too.)
 
 SVG is accepted, and is the best case rather than the risky one — vector stays
 crisp at any zoom. It is safe because `safeDownloadHeaders` already serves it

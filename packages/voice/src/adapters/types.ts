@@ -28,8 +28,10 @@ import type { ProviderId } from '../providers';
 import type {
   SynthesizeOptions,
   SynthesizeResult,
+  SttParam,
   TranscribeOptions,
   TranscribeResult,
+  TtsParam,
 } from '../types';
 import type { TtsModelInfo, SttModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
@@ -86,6 +88,15 @@ export type WrappingTag = {
 };
 
 export interface TtsDispatcher extends AdapterMeta {
+  /** The subset of {@link SynthesizeOptions} this adapter actually puts on the
+   *  wire, excluding `voice`/`model`/`text` which every provider takes.
+   *  REQUIRED and it must be honest: the caller reports every requested option
+   *  outside this set rather than letting it look like it applied. Where the
+   *  gate is per-MODEL instead of per-provider, the adapter additionally
+   *  returns `warnings` from the call. Same contract as
+   *  {@link ImageGenDispatcher.supports}. */
+  supports: readonly TtsParam[];
+
   /** Synthesise speech and return audio bytes. The runtime then hands
    *  these to Telegram's sendVoice (when format='opus') or to an
    *  `<audio>` element on the web. */
@@ -199,7 +210,31 @@ export interface ChatResult {
    *  {@link ChatAssistantMessage.reasoningDetails}). Undefined when the turn
    *  produced no reasoning. */
   reasoningDetails?: ReasoningDetail[];
+  /** Why the model stopped, normalised across providers. Undefined when the
+   *  adapter doesn't report one (most don't yet) — treat that as "unknown",
+   *  NOT as `'stop'`.
+   *
+   *  This exists because a truncated answer and a policy-blocked answer are
+   *  otherwise indistinguishable from a genuinely short one: every provider
+   *  returns HTTP 200 with little or no text in all three cases. Without this
+   *  field a caller cannot tell "the model finished" from "the model was cut
+   *  off at maxTokens" or "the provider refused". Adapters map their native
+   *  value onto this small grammar:
+   *
+   *    - 'stop'           — finished normally
+   *    - 'length'         — hit the output-token ceiling, reply is TRUNCATED
+   *    - 'tool_calls'     — stopped to call tools (expect `toolCalls`)
+   *    - 'content_filter' — provider blocked it (safety/recitation/blocklist)
+   *    - 'error'          — provider signalled a malformed generation
+   *    - 'other'          — reported, but not one of the above */
+  finishReason?: ChatFinishReason;
 }
+
+/** Normalised stop reason. Deliberately a small closed set: adapters collapse
+ *  their provider's longer enum onto these, since callers only ever need to
+ *  branch on "was this reply complete, truncated, or refused". */
+export type ChatFinishReason =
+  'stop' | 'length' | 'tool_calls' | 'content_filter' | 'error' | 'other';
 
 /** A single tool the model can call. Mirrors the OpenAI function-tool
  *  shape since every adapter we're likely to talk to either accepts
@@ -348,6 +383,20 @@ export interface ChatCacheControl {
   lastUserMessage?: boolean;
 }
 
+/** Reasoning-depth tiers, ascending. Provider-neutral: OpenRouter takes these
+ *  verbatim as `reasoning.effort`, Anthropic as `output_config.effort`, Copilot
+ *  as `reasoning_effort`.
+ *
+ *  Restated here rather than imported from `@mantle/content` on purpose —
+ *  `@mantle/voice` is the low-level adapter layer and must not pull in content's
+ *  db/files/search dependency tree for five string literals. The two lists are
+ *  pinned together by a compile-time assertion in `@mantle/assistant-runtime`,
+ *  which already depends on both, so they cannot drift silently.
+ *
+ *  No `none`: "off" is expressed by omitting the field, because models flagged
+ *  `reasoning.mandatory` in GET /models reject an explicit none. */
+export type ThinkingEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface ChatOptions {
   apiKey: string;
   model: string;
@@ -391,6 +440,20 @@ export interface ChatOptions {
    *  otherwise) — that capture/replay is NOT yet implemented, so the runner must
    *  not set this by default until it is. */
   thinkingBudget?: number;
+  /** Thinking EFFORT tier — the control providers actually honour now. Where
+   *  {@link thinkingBudget} asks for N tokens of reasoning, this asks for a
+   *  depth (`low`…`max`) and lets the provider size it.
+   *
+   *  Prefer this. Budget-based thinking has been removed upstream on current
+   *  models (Sonnet 5, Claude 4.7): `reasoning.max_tokens` is accepted-but-
+   *  ignored, and effort maps to Anthropic's `output_config.effort`. On the
+   *  OpenRouter path the budget was never even transmitted — its `reasoning`
+   *  shape has no max_tokens field, so it serialised to `{}`.
+   *
+   *  Adapters that have no effort concept ignore it and may still read
+   *  `thinkingBudget` as an on/off signal. Both fields are set together by the
+   *  runtime, so an adapter can use whichever its provider understands. */
+  thinkingEffort?: ThinkingEffort;
   /** Retries AFTER the first attempt on transient errors (429/5xx/network/
    *  timeout), with exponential backoff + jitter. Undefined ⇒
    *  DEFAULT_MAX_RETRIES (2); 0 disables. Honored by withChatRetry, which the
@@ -455,6 +518,19 @@ export interface ChatDispatcher extends AdapterMeta {
 }
 
 export interface SttDispatcher extends AdapterMeta {
+  /** The request options this adapter forwards, completing the convention
+   *  shared with {@link TtsDispatcher.supports} and
+   *  {@link ImageGenDispatcher.supports}.
+   *
+   *  Thin by nature: transcription's normalized surface is a language hint and
+   *  nothing else, so every wired adapter currently declares `['language']`.
+   *  It is still worth declaring rather than assuming — a 2026-08 docs sweep
+   *  found xAI's `format` flag silently depending on `language`, and the value
+   *  of these lists is that they are checked claims rather than beliefs. What
+   *  each provider REPORTS BACK varies far more than what it accepts; see
+   *  `TranscribeResult`, where several adapters can only return nulls. */
+  supports: readonly SttParam[];
+
   /** Transcribe an audio buffer. Buffer must be in one of the formats
    *  the provider accepts; the adapter handles the multipart encoding
    *  and any provider-specific MIME wrangling. */
@@ -561,10 +637,54 @@ export interface ImageGenModelInfo {
   /** Steerable styles, when the model supports them (DALL-E 3:
    *  'vivid' | 'natural'). Undefined = no style steering. */
   supportedStyles?: readonly string[];
+  /** Quality tiers the model accepts. Genuinely provider-specific:
+   *  DALL-E 3 takes 'standard' | 'hd', gpt-image-1 takes
+   *  'low' | 'medium' | 'high' | 'auto', OpenRouter normalizes to the
+   *  latter. Undefined = no quality control. */
+  supportedQualities?: readonly string[];
+  /** Aspect ratios the model accepts, for providers that steer by ratio
+   *  rather than by pixel size. Undefined = not ratio-steerable. */
+  supportedAspectRatios?: readonly string[];
   /** USD per image at default size. UI hint only. */
   pricePerImage?: number;
   /** Latency tier — useful when picking between same-provider models. */
   tier?: 'fast' | 'balanced' | 'quality';
+}
+
+/** A request option an image-gen adapter may or may not forward.
+ *
+ *  Declared per adapter so an option that will not survive the trip is
+ *  REPORTED rather than silently discarded. Silent drop is the failure this
+ *  interface exists to kill: an operator set size/style/quality on an
+ *  OpenRouter worker, the UI showed them saved, and the adapter sent
+ *  neither — with nothing in the trace to say so. See
+ *  {@link ImageGenDispatcher.supports}. */
+export type ImageGenParam =
+  'size' | 'aspectRatio' | 'style' | 'quality' | 'negativePrompt' | 'seed' | 'inputImages';
+
+/** One option the adapter chose not to send, and why.
+ *
+ *  `supports` is declared per PROVIDER, but the real gate is often per MODEL:
+ *  the OpenAI images endpoint takes `style` on dall-e-3 and not on
+ *  gpt-image-1, `quality` on those two and not on dall-e-2. A provider-level
+ *  list cannot express that, so the adapter — the only layer that knows which
+ *  model it is actually talking to — reports the difference here rather than
+ *  dropping it. (Same role as `warnings` on the AI SDK's image result.) */
+export type ImageGenWarning = {
+  param: ImageGenParam;
+  /** Model-specific reason, phrased for a reader deciding what to do next. */
+  reason: string;
+};
+
+/** A picture handed IN to a generation: the reference for an edit or a
+ *  variation. Bytes rather than a URL, because the source is a file node in
+ *  the owner's own store and providers take base64 or multipart, never a link
+ *  only we can reach. */
+export interface ImageGenInput {
+  bytes: Buffer;
+  mimeType: string;
+  /** Original filename, used where the provider takes multipart. */
+  filename?: string;
 }
 
 export interface GenerateImageOptions {
@@ -572,11 +692,22 @@ export interface GenerateImageOptions {
   /** Free-form prompt. No length cap at the interface layer; per-
    *  provider limits get enforced inside the adapter. */
   prompt: string;
+  /** Reference images. Present ⇒ this is an EDIT, not a fresh generation:
+   *  "make the sky orange in this one". An adapter that does not declare
+   *  `inputImages` in `supports` must never be handed these — generating from
+   *  scratch when an edit was asked for produces a confidently wrong picture
+   *  and bills for it, so the caller refuses BEFORE spending. */
+  inputImages?: readonly ImageGenInput[];
   /** Model id. Defaults to the adapter's documented default. */
   model?: string;
   /** Native resolution, e.g. '1024x1024' or '1792x1024'. Adapters
-   *  validate against ImageGenModelInfo.supportedSizes. */
+   *  validate against ImageGenModelInfo.supportedSizes. OpenRouter also
+   *  accepts a tier ('1K' / '2K' / '4K'). */
   size?: string;
+  /** Aspect ratio, e.g. '16:9'. The natural control for providers that
+   *  steer by ratio (Imagen) or normalize across them (OpenRouter);
+   *  ignored by the fixed-size APIs. */
+  aspectRatio?: string;
   /** Style hint (provider-specific: DALL-E 3 = 'vivid'/'natural';
    *  others may ignore). */
   style?: string;
@@ -600,6 +731,11 @@ export interface GenerateImageResult {
   mimeType: string;
   /** Model id that did the work. Echoed back for traces. */
   model: string;
+  /** Options the adapter deliberately did NOT send, because this MODEL has
+   *  no such control. Empty/absent means everything the caller passed went on
+   *  the wire. Callers must surface these rather than let a requested option
+   *  look like it applied. */
+  warnings?: readonly ImageGenWarning[];
   /** Provider's revised prompt, when it returns one (DALL-E 3 rewrites
    *  the user prompt for safety+quality and surfaces the revision).
    *  Caller can pass this back as `revised_prompt` metadata on the
@@ -609,6 +745,13 @@ export interface GenerateImageResult {
 }
 
 export interface ImageGenDispatcher extends AdapterMeta {
+  /** The subset of {@link GenerateImageOptions} this adapter actually puts
+   *  on the wire. REQUIRED, and it must be honest: the caller reports every
+   *  requested option outside this set back to the model and into the trace
+   *  rather than pretending it applied. An adapter that starts forwarding a
+   *  new option must add it here in the same commit. */
+  supports: readonly ImageGenParam[];
+
   /** Generate an image from a prompt. Throws on auth/network/quota
    *  errors with the provider's verbatim message slice — same
    *  convention as the other dispatchers. */

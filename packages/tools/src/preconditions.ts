@@ -18,10 +18,20 @@
  * One indexed PK lookup per flagged param — sub-ms; handlers keep their own
  * checks as backstops (the precondition read isn't transactional with the
  * handler's work).
+ *
+ * The second kind, `markdown_refs`, covers ids that ride INSIDE a body rather
+ * than in a param of their own: `![alt](media:<file-id>)` and friends. Those
+ * failed silently until now — a page stored with a dangling `media:` id renders
+ * a blank where the picture should be, and nothing tells the model. A real
+ * instance: an image was generated, its id never reached the next turn, and the
+ * model rebuilt a UUID from the 8-char display prefix the corpus map shows
+ * (`file#2153d1f2`). `page_create` accepted it. The error below therefore names
+ * that exact mistake, because it is the one a model is most likely to make.
  */
 
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
+import { markdownRefs, type MarkdownRef } from '@mantle/content/markdown-refs';
 import { notFound } from './errors';
 import type { ToolHandlerResult, ToolPrecondition } from './types';
 
@@ -40,6 +50,82 @@ async function defaultNodeTypeLookup(ownerId: string, id: string): Promise<strin
   return row?.type ?? null;
 }
 
+/** Where to send the model to find a real id, per reference scheme. */
+const REF_LOOKUP: Record<MarkdownRef['scheme'], string> = {
+  media: 'file_list / search_nodes',
+  page: 'page_list / search_nodes',
+  mention: 'search_nodes',
+};
+
+/** The href form as written, for quoting back in the error. */
+function refHref(ref: MarkdownRef): string {
+  return ref.scheme === 'mention' ? `mention:node:${ref.id}` : `${ref.scheme}:${ref.id}`;
+}
+
+/** Collect the markdown a `markdown_refs` precondition points at — either a
+ *  plain string param, or the `itemKey` of every object in an array param. */
+function markdownSources(
+  input: Record<string, unknown>,
+  param: string,
+  itemKey?: string,
+): string[] {
+  const raw = input[param];
+  if (typeof raw === 'string') return raw ? [raw] : [];
+  if (itemKey && Array.isArray(raw)) {
+    return raw
+      .map((item) =>
+        item && typeof item === 'object' ? (item as Record<string, unknown>)[itemKey] : undefined,
+      )
+      .filter((v): v is string => typeof v === 'string' && v.length > 0);
+  }
+  return [];
+}
+
+/** Check every app-native reference in a body. One combined error for the whole
+ *  body, not one per bad id — a page with three dangling images should cost one
+ *  retry, not three. */
+async function checkMarkdownRefs(
+  input: Record<string, unknown>,
+  param: string,
+  itemKey: string | undefined,
+  ownerId: string,
+  lookup: NodeTypeLookup,
+): Promise<ToolHandlerResult | null> {
+  const refs = markdownSources(input, param, itemKey).flatMap((md) => markdownRefs(md));
+  if (refs.length === 0) return null;
+
+  const problems: string[] = [];
+  const lookups: string[] = [];
+  const resolved = await Promise.all(
+    refs.map(async (ref) => ({
+      ref,
+      type: UUID_RE.test(ref.id) ? await lookup(ownerId, ref.id) : null,
+    })),
+  );
+  for (const { ref, type } of resolved) {
+    if (type === null) {
+      problems.push(`\`${refHref(ref)}\` (no such node)`);
+      lookups.push(REF_LOOKUP[ref.scheme]);
+    } else if (ref.nodeType && type !== ref.nodeType) {
+      problems.push(`\`${refHref(ref)}\` (that id is a ${type}, not a ${ref.nodeType})`);
+      lookups.push(REF_LOOKUP[ref.scheme]);
+    }
+  }
+  if (problems.length === 0) return null;
+
+  const where = itemKey ? `'${param}[].${itemKey}'` : `'${param}'`;
+  return {
+    ok: false,
+    error:
+      `${where} references ${problems.length} id${problems.length === 1 ? '' : 's'} that ` +
+      `${problems.length === 1 ? 'does' : 'do'} not exist: ${problems.join(', ')}. ` +
+      'Nothing was written. A reference id must be COPIED WHOLE from a tool result — ' +
+      'never reconstructed from a shortened display form like `file#2153d1f2`, which is a ' +
+      'prefix, not an id. Look the real id up with ' +
+      `${[...new Set(lookups)].join(' / ')} and re-issue with the full UUID.`,
+  };
+}
+
 /**
  * Check a tool's declared preconditions against the (already coerced) input.
  * Returns a teaching-error result to send back to the model, or null when
@@ -52,6 +138,11 @@ export async function checkToolPreconditions(
   lookup: NodeTypeLookup = defaultNodeTypeLookup,
 ): Promise<ToolHandlerResult | null> {
   for (const pre of preconditions) {
+    if (pre.kind === 'markdown_refs') {
+      const failure = await checkMarkdownRefs(input, pre.param, pre.itemKey, ownerId, lookup);
+      if (failure) return failure;
+      continue;
+    }
     const raw = input[pre.param];
     if (raw === undefined || raw === null || raw === '') {
       // Presence is the schema's job (required/validate-args) — a missing

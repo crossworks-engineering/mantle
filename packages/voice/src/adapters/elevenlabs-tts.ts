@@ -26,7 +26,7 @@
  * names mean different things across providers.
  */
 
-import type { SynthesizeOptions, SynthesizeResult } from '../types';
+import type { SynthesizeOptions, SynthesizeResult, TtsWarning } from '../types';
 import type { ChatModelInfo, TtsDispatcher } from './types';
 import type { DiscoveryResult } from '../discover';
 import type { TtsModelInfo } from '../catalog';
@@ -101,14 +101,31 @@ async function elevenLabsSynthesize(opts: SynthesizeOptions): Promise<Synthesize
       : ELEVENLABS_PREMADE_VOICES[0]!.id;
   const outputFormat = elevenLabsFormatFor(opts.format);
 
+  // `language_code` (ISO 639-1) IS accepted, but NOT by the multilingual_v2
+  // family, which infers language from the text and rejects the idea of being
+  // told (elevenlabs.io/docs/api-reference/text-to-speech/convert, checked
+  // 2026-08). Our own option doc used to say ElevenLabs ignored language
+  // outright, which was only true for the model we happened to default to.
+  const warnings: TtsWarning[] = [];
+  const wantsLanguage =
+    typeof opts.language === 'string' && opts.language.length > 0 && opts.language !== 'auto';
+  const languageUnsupported = modelId.includes('multilingual_v2');
+  if (wantsLanguage && languageUnsupported) {
+    warnings.push({
+      param: 'language',
+      reason: `${modelId} takes no language_code (it infers language from the text)`,
+    });
+  }
+
   const body: Record<string, unknown> = {
     text,
     model_id: modelId,
+    ...(wantsLanguage && !languageUnsupported ? { language_code: opts.language } : {}),
     // voice_settings is where ElevenLabs hides the knobs that matter
     // for character: stability + similarity_boost + style + speed.
     // We only forward what's in the unified options; speed maps
-    // directly. Stability/style/etc. can be added via opts.instructions
-    // later if we want to expose them.
+    // directly. Stability/style/etc. have no unified equivalent — they're
+    // numeric dials, not the prose `instructions` other providers take.
     voice_settings: {
       ...(typeof opts.speed === 'number' ? { speed: opts.speed } : {}),
     },
@@ -144,6 +161,7 @@ async function elevenLabsSynthesize(opts: SynthesizeOptions): Promise<Synthesize
     // it as a free-form string.
     voice: voiceId as unknown as SynthesizeResult['voice'],
     model: modelId,
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
@@ -250,6 +268,11 @@ void ([] as ChatModelInfo[]);
 export const elevenLabsTtsAdapter: TtsDispatcher = {
   providerId: 'elevenlabs',
   adapterName: 'elevenlabs-tts',
+  // speed rides inside voice_settings, format is the output_format query
+  // param, language_code is top-level and model-dependent. There is no
+  // prose style field: character comes from the voice plus the numeric
+  // voice_settings dials, and delivery from the v3 audio tags.
+  supports: ['speed', 'format', 'language'],
   synthesize: elevenLabsSynthesize,
   discoverModels: elevenLabsDiscoverModels,
   voicesForModel: elevenLabsVoicesForModel,

@@ -29,6 +29,12 @@ export type AuditEntry = {
     | 'user.update'
     | 'user.delete'
     | 'user.password_reset'
+    // A login's personal assistant (migration 0143): bound, renamed, or
+    // released. `release` never deletes the agent — the archive outlives the
+    // binding, so the trail must say which agent was orphaned.
+    | 'user.agent.assign'
+    | 'user.agent.rename'
+    | 'user.agent.release'
     | 'api.write';
   method?: string | null;
   path?: string | null;

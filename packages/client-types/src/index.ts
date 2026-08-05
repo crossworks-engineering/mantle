@@ -151,7 +151,8 @@ export type AiWorkerKind =
   | 'embedding'
   | 'search'
   | 'search_advanced'
-  | 'narrator';
+  | 'narrator'
+  | 'suggester';
 
 /** An AI worker as returned by `GET /api/ai-workers`. `params` is jsonb (shape
  *  varies by kind) — kept loose here; the form narrows per kind. */
@@ -249,6 +250,9 @@ export interface AgentParamsDTO {
     model?: 'tts-1' | 'tts-1-hd';
     speed?: number;
   };
+  /** Propose a follow-up question after each completed turn (the suggester
+   *  worker's chip above the chat composer). Absent/false = off. */
+  suggest_follow_up?: boolean;
 }
 
 /** One persona note (jsonb element). Soft-retired, never deleted — the read
@@ -292,6 +296,14 @@ export interface AgentDTO {
   params: AgentParamsDTO;
   avatar: AgentAvatarDTO | null;
   personaNotes: PersonaNoteDTO[];
+  /** The co-admin login this agent is the personal assistant for (migration
+   *  0143), or null for a shared agent. Set, it becomes that login's default
+   *  chat target — the mechanism that keeps two people typing at once out of
+   *  one interleaved thread. Not a privacy boundary: every login still sees
+   *  and can open every agent. */
+  assignedUserId: string | null;
+  /** ISO timestamp of the current assignment; null when unassigned. */
+  assignedAt: string | null;
   priority: number;
   enabled: boolean;
   /** True when this agent ships from the system manifest (a def-synced
@@ -520,6 +532,10 @@ export interface TurnStatusData {
   /** Stable id for the step this status describes. Two events sharing a stepId
    *  are the same step (grounded → narrated); the client upserts by it. */
   stepId?: string;
+  /** Present (true) only on the narrator's rephrased line for a step — the warm
+   *  first-person paragraph. Grounded lines omit it. Lets clients keep narrated
+   *  text visible while later grounded lines tick past. */
+  narrated?: true;
 }
 
 /** A tool round began. `summary` is an optional one-line, secret-free preview. */

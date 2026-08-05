@@ -308,6 +308,44 @@ describe('system manifest integrity', () => {
     expect(grounding!.instructions).toContain('search_chunks');
   });
 
+  it('the writing_style skill carries the no-em-dash house style, attached to every prose agent', () => {
+    // Guards the house-style rule: prose the model follows, not an output filter.
+    // Dropping the rule text or detaching the skill silently reverts the fleet
+    // to em-dash prose on the next reconcile.
+    const style = MANIFEST_SKILLS.find((s) => s.slug === 'writing_style');
+    expect(style, 'writing_style skill missing from manifest').toBeDefined();
+    expect(style!.instructions).toContain('em dash');
+    // The rule must keep its carve-out: range en dashes are correct and stay.
+    expect(style!.instructions).toContain('2020–2024');
+    for (const slug of ['assistant', 'pages', 'tables', 'team-responder']) {
+      const agent = MANIFEST_AGENTS.find((a) => a.slug === slug);
+      expect(agent, `agent '${slug}' missing from manifest`).toBeDefined();
+      expect(agent!.skillSlugs, `agent '${slug}' does not attach writing_style`).toContain(
+        'writing_style',
+      );
+    }
+  });
+
+  it('the page_editing skill teaches the restyle playbook (batched, insert-before TL;DR, wrap)', () => {
+    // Guards the prose that turns "make this page presentable" into an actual
+    // sequence: without it, agents have the dialect but no idea what a
+    // presentable page looks like or how to get there safely.
+    const editing = MANIFEST_SKILLS.find((s) => s.slug === 'page_editing');
+    expect(editing, 'page_editing skill missing from manifest').toBeDefined();
+    expect(editing!.instructions).toContain('restyle playbook');
+    // The whole restyle lands as one atomic batch, not block-by-block surgery.
+    expect(editing!.instructions).toContain('page_blocks_apply');
+    // A top-of-page TL;DR goes in with the real insert-before tool. The old
+    // update-then-re-insert workaround predates it and must stay retired.
+    expect(editing!.instructions).toContain('page_block_insert_before');
+    expect(editing!.instructions).not.toContain(
+      "re-insert that block's original content immediately after it",
+    );
+    // Restyles fold existing blocks into containers with the wrap op, never
+    // by re-emitting their content.
+    expect(editing!.instructions).toContain("'wrap' op");
+  });
+
   it('every specialist agent has a system prompt; the persona has none (persona-bank)', () => {
     for (const agent of MANIFEST_AGENTS) {
       if (agent.isPersona) {

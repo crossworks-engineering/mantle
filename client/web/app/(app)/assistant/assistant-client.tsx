@@ -15,6 +15,7 @@ import {
   FileText,
   Highlighter,
   Image as ImageIcon,
+  ListRestart,
   Loader2,
   MapPin,
   Mic,
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
+import { composerKeyAction } from '@/lib/composer-keys';
 import { BoringAvatar } from '@/components/boring-avatar';
 import { RichText } from '@/components/assistant/rich-text';
 import { CopyButton } from '@mantle/web-ui/copy-button';
@@ -34,8 +36,14 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { assetUrl } from '@mantle/web-ui/asset-url';
+import { fileRawSrc, mediaFileId } from '@mantle/content/markdown-refs';
 import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
 import { uuid } from '@mantle/web-ui/lib/secure-context-fallbacks';
+import { isTurnStreamingEnabledClient } from '@mantle/web-ui/turn-streaming';
+import {
+  canReplaceInFlightTurn,
+  combineCorrectedPrompt,
+} from '@/components/assistant/replace-turn';
 
 /** A sidecar artifact attached to a message. Mirrors @mantle/tools
  *  ToolArtifact, with the discriminated `kind` driving the rendering
@@ -70,11 +78,41 @@ type StoredAttachment = {
   url?: string;
 };
 
+/**
+ * Image handling for the LIVE STREAM buffer (the lightweight ReactMarkdown
+ * render; the durable reply below it goes through RichText/TipTap instead).
+ *
+ * Saskia places a stored picture with `![alt](media:<file-id>)`. ReactMarkdown
+ * knows nothing of that scheme, so left alone it emits `<img src="media:…">`
+ * and the browser paints a broken-image icon for the rest of the turn. Resolve
+ * it to the same owner-gated bytes route RichText and the gallery use.
+ *
+ * A HALF-TYPED marker never reaches here at all: `![alt](media:` isn't a
+ * complete markdown image, so it stays literal text until the closing paren
+ * arrives, which is the quiet degradation we want mid-stream.
+ */
+const STREAM_MARKDOWN_COMPONENTS = {
+  img: ({ src, alt }: { src?: string | Blob; alt?: string }) => {
+    const href = typeof src === 'string' ? src : '';
+    const nodeId = mediaFileId(href);
+    // A media: id that doesn't resolve (model-invented, or another owner's)
+    // 401s at the route and shows as a broken image, never as someone else's
+    // picture. Same gate the durable render and the gallery sit behind.
+    const resolved = nodeId ? assetUrl(fileRawSrc(nodeId)) : href;
+    if (!resolved) return null;
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={resolved} alt={alt ?? ''} className="max-h-96 rounded-lg object-contain" />;
+  },
+};
+
 /** Page size for the initial load and each scroll-up fetch. */
 const PAGE_SIZE = 100;
 
 /** Within this many px of the bottom counts as "stuck" for autoscroll-follow. */
 const NEAR_BOTTOM_PX = 24;
+
+/** Marked-block pills shown before the rest collapse behind a "+N more" expander. */
+const MARK_PILL_LIMIT = 4;
 
 type Message = {
   id: string;
@@ -115,6 +153,10 @@ type Message = {
    *  own ledger of what ran vs failed this turn, independent of what the
    *  reply claims. Drives the footer count + the failed-calls notice. */
   toolStats?: ToolStats;
+  /** This row belongs to a replaced (superseded) turn pair — the user stopped
+   *  the turn mid-stream and re-sent original + correction as one combined
+   *  turn. Rendered dimmed with a "replaced" tag; never hidden. */
+  superseded?: boolean;
 };
 
 type ToolStats = {
@@ -260,6 +302,18 @@ export function AssistantClient({
     }
   }, [draft, draftKey]);
   const [sending, setSending] = useState(false);
+  // Marked-block pills collapse past MARK_PILL_LIMIT; this expands the full set.
+  // The list itself stays uncapped; the assistant still receives every mark.
+  const [showAllMarks, setShowAllMarks] = useState(false);
+  const markItems = surfaceSelection?.items ?? [];
+  const visibleMarks = showAllMarks ? markItems : markItems.slice(0, MARK_PILL_LIMIT);
+  const hiddenMarkCount = markItems.length - visibleMarks.length;
+  // Drop stale expansion once the selection shrinks back under the limit
+  // (per-pill removal or "Clear N marked").
+  const markCount = markItems.length;
+  useEffect(() => {
+    if (markCount <= MARK_PILL_LIMIT) setShowAllMarks(false);
+  }, [markCount]);
   // True from the moment the user hits Stop until the turn settles — so the Stop
   // button reflects "stopping…" and can't be double-fired.
   const [stopping, setStopping] = useState(false);
@@ -274,11 +328,16 @@ export function AssistantClient({
     reasoning: streamReasoning,
     phase: streamPhase,
     outboundId: streamOutboundId,
+    inboundId: streamInboundId,
     error: streamError,
     startedAt: streamStartedAt,
     tokens: streamTokens,
     tokensApprox: streamTokensApprox,
   } = useTurnStream(activeTurnId);
+  // Non-blocking streaming on for this client build? Gates the whole
+  // premature-Enter replace flow — blocking mode has no cancel primitive, so
+  // there the composer stays disabled mid-turn exactly as before.
+  const streamingOn = isTurnStreamingEnabledClient();
   const polledLabel = useTurnStage(sending);
   const stageLabel = streamLabel ?? polledLabel;
   // Live trail display mode (Settings → Profile). Fetched once on mount; the
@@ -302,6 +361,14 @@ export function AssistantClient({
   useEffect(() => {
     outboundIdRef.current = streamOutboundId;
   }, [streamOutboundId]);
+  // The durable inbound row id (also from turn-start) — the replace path needs
+  // BOTH ids to stamp the cancelled pair superseded. Mirrored into a ref so the
+  // brief post-Enter retry (turn-start may lag a sub-second correction) reads
+  // the fresh value.
+  const inboundIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    inboundIdRef.current = streamInboundId;
+  }, [streamInboundId]);
   // Mirror the final token count + the turn's start time so reconcileDone (async,
   // stable callback) can stamp the real "duration · tokens" onto the frozen trail.
   const streamTokensRef = useRef<number | null>(null);
@@ -339,6 +406,56 @@ export function AssistantClient({
   // Set when a Stop restores the prompt — focus the composer once it re-enables
   // (the textarea is disabled while `sending`, so we can't focus immediately).
   const focusAfterStopRef = useRef(false);
+  // ── Premature-Enter replace state (streaming mode only) ──
+  // True while a replace's cancel round-trip is in flight — the thread lock
+  // that keeps a triple-Enter from firing two supersedes for one turn.
+  const supersedingRef = useRef(false);
+  // Whether the in-flight turn carried a file. Replace combines text verbatim,
+  // so an attachment turn keeps today's behaviour (a second Enter is a no-op).
+  const lastTurnHadFileRef = useRef(false);
+
+  // ── Follow-up suggestion chip ──
+  // The suggester worker persists ONE proposed next question onto the finalized
+  // outbound row's data, strictly after `done` (docs: fetch-after-done, never a
+  // post-done SSE event). We fetch it with a few short retries once a turn
+  // reconciles; 204s (toggle off / guards declined / not written yet) just mean
+  // no chip. Empty composer + Enter sends it verbatim; ArrowRight loads it for
+  // editing; X dismisses. Cleared on send/dismiss; an agent switch re-keys this
+  // component, which resets it for free.
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  // Bumped on every send/dismiss so an in-flight fetch for an older turn can
+  // tell it's stale and drop its result instead of resurrecting the chip.
+  const suggestionEpochRef = useRef(0);
+  const dismissSuggestion = useCallback(() => {
+    suggestionEpochRef.current += 1;
+    setSuggestion(null);
+  }, []);
+  const fetchSuggestion = useCallback((outboundId: string) => {
+    const epoch = ++suggestionEpochRef.current;
+    setSuggestion(null);
+    void (async () => {
+      // ~1s, ~2.5s, ~4s after done; give up quietly at ~5s (a slow suggester
+      // model that lands later is acceptable waste; it just never shows).
+      for (const delay of [1000, 1500, 1500]) {
+        await new Promise((r) => setTimeout(r, delay));
+        if (suggestionEpochRef.current !== epoch) return;
+        try {
+          const res = await apiFetch<{ suggestion?: string }>(
+            `/api/assistant/turn/${outboundId}/suggestion`,
+            { cache: 'no-store' },
+          );
+          if (suggestionEpochRef.current !== epoch) return;
+          const s = typeof res.suggestion === 'string' ? res.suggestion.trim() : '';
+          if (s) {
+            setSuggestion(s);
+            return;
+          }
+        } catch {
+          /* transient; retry on the next tick, or give up */
+        }
+      }
+    })();
+  }, []);
 
   // ── Share-location toggle ──
   // Sticky opt-in (persisted): when on, each send attaches a fresh browser
@@ -515,7 +632,8 @@ export function AssistantClient({
             existing.status !== row.status ||
             existing.error !== row.error ||
             existing.model !== row.model ||
-            (existing.toolStats?.calls ?? 0) !== (row.toolStats?.calls ?? 0)
+            (existing.toolStats?.calls ?? 0) !== (row.toolStats?.calls ?? 0) ||
+            !!existing.superseded !== !!row.superseded
           ) {
             byId.set(row.id, {
               ...existing,
@@ -526,6 +644,7 @@ export function AssistantClient({
               channel: row.channel ?? existing.channel,
               attachments: row.attachments ?? existing.attachments,
               ...(row.toolStats ? { toolStats: row.toolStats } : {}),
+              ...(row.superseded ? { superseded: true } : {}),
             });
             changed = true;
           }
@@ -590,6 +709,7 @@ export function AssistantClient({
     async (optimisticId: string) => {
       const trail = trailRef.current;
       const outboundId = outboundIdRef.current;
+      if (outboundId) fetchSuggestion(outboundId);
       const tokens = streamTokensRef.current;
       const startedAt = streamStartedAtRef.current;
       const durationMs = startedAt != null ? Date.now() - startedAt : undefined;
@@ -615,7 +735,7 @@ export function AssistantClient({
       });
       endActiveTurn();
     },
-    [syncLatest, endActiveTurn],
+    [syncLatest, endActiveTurn, fetchSuggestion],
   );
 
   const failActiveTurn = useCallback(
@@ -782,12 +902,89 @@ export function AssistantClient({
     }
   }, [shareLocation, getBrowserLocation]);
 
-  const submit = async (e: React.FormEvent) => {
+  // `textOverride` is the suggestion-chip path: Enter on an EMPTY composer
+  // sends the proposed follow-up verbatim (setDraft-then-submit would read the
+  // stale draft). Everything else about the turn is identical.
+  const submit = async (e: { preventDefault(): void }, textOverride?: string) => {
     e.preventDefault();
-    const text = draft.trim();
+    // `let`: the replace path below folds the original prompt into a combined
+    // correction turn by reassigning this.
+    let text = (textOverride ?? draft).trim();
     // Allow attachment-only submits — the API route fills in a default
     // prompt server-side when text is empty.
-    if ((!text && !attachedFile) || sending) return;
+    if ((!text && !attachedFile) || supersedingRef.current) return;
+
+    // Idempotency key for this submit — lets the server replay (not re-run)
+    // the turn if the request is retried, so we never get duplicate file
+    // nodes / turns. Minted up front: the replace path below also stamps it
+    // onto the cancelled pair as `superseded_by`, and the two must agree.
+    const idempotencyKey = uuid();
+
+    if (sending) {
+      // A turn is already in flight. In streaming mode, a second Enter on a
+      // text-only pair becomes a REPLACE: stop the old turn, stamp its pair
+      // superseded, and fall through to send original + correction as one
+      // combined turn. Anywhere the gate fails, keep today's no-op.
+      if (
+        !canReplaceInFlightTurn({
+          streamingOn,
+          sending,
+          stopping,
+          activeTurnId,
+          hasAttachment: attachedFile != null,
+          lastTurnHadFile: lastTurnHadFileRef.current,
+        })
+      ) {
+        return;
+      }
+      // The durable row ids ride the turn-start event; a sub-second correction
+      // can beat it. One brief retry, then degrade to the old no-op (the draft
+      // stays put — the user can hit Enter again).
+      let inboundId = inboundIdRef.current;
+      let outboundId = outboundIdRef.current;
+      if (!inboundId || !outboundId) {
+        await new Promise((r) => setTimeout(r, 300));
+        inboundId = inboundIdRef.current;
+        outboundId = outboundIdRef.current;
+      }
+      if (!inboundId || !outboundId) return;
+      const turnToCancel = activeTurnId;
+      supersedingRef.current = true;
+      try {
+        // AWAIT the stamping cancel before sending the combined turn — this
+        // ordering is the race fix (see the cancel route): the pair is marked
+        // superseded before the new turn's context load can run, regardless of
+        // when the old turn's finalize lands.
+        await apiFetch(`/api/assistant/turn/${turnToCancel}/cancel`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            supersede: { inboundId, outboundId, newTurnId: idempotencyKey },
+          }),
+        });
+      } catch (err) {
+        // The old turn is still running untouched — surface it, keep the draft.
+        supersedingRef.current = false;
+        setError(err instanceof Error ? err.message : String(err));
+        return;
+      }
+      supersedingRef.current = false;
+      // Reflect the supersede locally: drop the old optimistic bubble (the
+      // durable pair reappears dimmed via syncLatest once it finalizes) and
+      // mark any already-merged pair rows. Ending the old turn's stream below
+      // also clears the streamed partial from the typing branch.
+      const oldOptimisticId = pendingTurnRef.current?.optimisticId;
+      setMessages((prev) =>
+        prev
+          .filter((m) => m.id !== oldOptimisticId)
+          .map((m) => (m.id === inboundId || m.id === outboundId ? { ...m, superseded: true } : m)),
+      );
+      pendingTurnRef.current = null;
+      setActiveTurnId(null);
+      setStopping(false);
+      text = combineCorrectedPrompt(lastPromptRef.current, text);
+    }
+
     setError(undefined);
     // Remember this turn's prompt so a Stop can drop it back into the composer.
     lastPromptRef.current = text;
@@ -804,10 +1001,9 @@ export function AssistantClient({
 
     const hasFile = attachedFile != null;
     const isImage = hasFile && attachedFile.type.startsWith('image/');
-    // Idempotency key for this submit — lets the server replay (not re-run)
-    // the turn if the request is retried, so we never get duplicate file
-    // nodes / turns.
-    const idempotencyKey = uuid();
+    // Whether THIS turn carries a file — read by a replace attempt while the
+    // turn streams (attachment turns keep today's behaviour).
+    lastTurnHadFileRef.current = hasFile;
     const optimisticId = `pending-${Date.now()}`;
     const optimistic: Message = {
       id: optimisticId,
@@ -839,6 +1035,8 @@ export function AssistantClient({
     setShowJump(false);
     setMessages((prev) => [...prev, optimistic]);
     setDraft('');
+    // This turn supersedes any follow-up chip (accepted or ignored alike).
+    dismissSuggestion();
     // Open the live status stream for this turn (same uuid the server keys it
     // on) the instant we start — before the POST — so we catch the early steps.
     setActiveTurnId(idempotencyKey);
@@ -921,6 +1119,9 @@ export function AssistantClient({
         if (data.warnings?.length) setError(data.warnings.join(' · '));
         setSending(false);
         setActiveTurnId(null);
+        // Blocking path finalizes the same durable row, so the suggestion (if
+        // the agent's toggle is on) lands there too, so fetch it the same way.
+        fetchSuggestion(data.outbound.id);
       } else {
         // NON-BLOCKING (202): the live stream now types the reply out; the phase
         // effect (and the safety poll) reconcile to the durable row on
@@ -1021,6 +1222,21 @@ export function AssistantClient({
 
   const lastTurnId = turns[turns.length - 1]?.id;
 
+  // The premature-Enter replace affordance: while a text-only turn streams and
+  // the user has typed a correction, the send slot becomes a "stop and resend"
+  // button (and Enter triggers it). Structurally impossible in blocking mode —
+  // `streamingOn` gates the whole thing. Reading `lastTurnHadFileRef` in render
+  // is safe: it's set synchronously in submit, before the `sending` re-render.
+  const replaceEligible = canReplaceInFlightTurn({
+    streamingOn,
+    sending,
+    stopping,
+    activeTurnId,
+    hasAttachment: attachedFile != null,
+    lastTurnHadFile: lastTurnHadFileRef.current,
+  });
+  const showReplace = replaceEligible && draft.trim().length > 0;
+
   return (
     <>
       <div className="relative flex min-h-0 flex-1 flex-col">
@@ -1085,6 +1301,10 @@ export function AssistantClient({
                   {turns.map((turn, idx) => {
                     const isLast = turn.id === lastTurnId;
                     const showTyping = isLast && sending && !turn.response;
+                    // A superseded pair (cancelled + re-sent with a correction)
+                    // stays visible but dimmed, tagged "replaced" on the prompt
+                    // card — a truthful record the model no longer sees.
+                    const replaced = !!(turn.prompt?.superseded || turn.response?.superseded);
                     return (
                       <li
                         key={turn.id}
@@ -1092,7 +1312,8 @@ export function AssistantClient({
                           'group/turn grid gap-x-10 gap-y-3 pb-10 @3xl/thread:grid-cols-[minmax(0,1fr)_300px]' +
                           // A thin divider between turns, in the agent's accent
                           // colour (the accent moved here from the old left border).
-                          (idx > 0 ? ' border-t pt-10' : '')
+                          (idx > 0 ? ' border-t pt-10' : '') +
+                          (replaced ? ' opacity-60' : '')
                         }
                         style={
                           idx > 0
@@ -1254,7 +1475,10 @@ export function AssistantClient({
                                       streamTrail.length > 0 ? 'mt-3' : ''
                                     }`}
                                   >
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    <ReactMarkdown
+                                      remarkPlugins={[remarkGfm]}
+                                      components={STREAM_MARKDOWN_COMPONENTS}
+                                    >
                                       {streamReply}
                                     </ReactMarkdown>
                                   </div>
@@ -1359,7 +1583,7 @@ export function AssistantClient({
                 it's unambiguous the assistant sees exactly what you selected.
                 Pick-mode chips come last and clear after a send. */}
             {(allContext.length > 0 || (surfaceSelection?.items.length ?? 0) > 0) && (
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto scrollbar-thin">
                 {allContext.map((c) => {
                   const pinned = pinnedContext.some((r) => r.id === c.id);
                   return (
@@ -1395,21 +1619,21 @@ export function AssistantClient({
                     </span>
                   );
                 })}
-                {surfaceSelection?.items.map((s) => (
+                {visibleMarks.map((s) => (
                   <span
                     key={`focus-${s.id}`}
                     className={
                       'inline-flex max-w-[16rem] items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 py-1 pl-2 text-xs text-foreground ' +
-                      (surfaceSelection.onRemove ? 'pr-1' : 'pr-2')
+                      (surfaceSelection?.onRemove ? 'pr-1' : 'pr-2')
                     }
-                    title={`Focused ${surfaceSelection.noun} — the assistant will work on exactly what you marked`}
+                    title={`Focused ${surfaceSelection?.noun} — the assistant will work on exactly what you marked`}
                   >
                     <Highlighter className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
                     <span className="truncate font-medium">{s.label}</span>
-                    {surfaceSelection.onRemove && (
+                    {surfaceSelection?.onRemove && (
                       <button
                         type="button"
-                        onClick={() => surfaceSelection.onRemove?.(s.id)}
+                        onClick={() => surfaceSelection?.onRemove?.(s.id)}
                         className="rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground"
                         title="Unmark"
                         aria-label={`Unmark ${s.label}`}
@@ -1419,6 +1643,26 @@ export function AssistantClient({
                     )}
                   </span>
                 ))}
+                {hiddenMarkCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllMarks(true)}
+                    className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+                    aria-label={`Show all ${markItems.length} marked sections`}
+                  >
+                    +{hiddenMarkCount} more
+                  </button>
+                )}
+                {showAllMarks && markItems.length > MARK_PILL_LIMIT && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllMarks(false)}
+                    className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+                    aria-label="Show fewer marked sections"
+                  >
+                    Show fewer
+                  </button>
+                )}
                 {(surfaceSelection?.items.length ?? 0) > 1 && surfaceSelection?.onClear && (
                   <button
                     type="button"
@@ -1428,6 +1672,33 @@ export function AssistantClient({
                     Clear {surfaceSelection.items.length} marked
                   </button>
                 )}
+              </div>
+            )}
+            {/* Follow-up suggestion chip (the suggester worker). One bounded
+                row above the input, respecting the composer-height lesson from
+                the marked-block pills. Enter (empty composer) or a click sends
+                it verbatim; ArrowRight loads it for editing; X dismisses. */}
+            {suggestion && !sending && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={(e) => void submit(e, suggestion)}
+                  disabled={!agentReady}
+                  className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 py-1 pl-2 pr-2.5 text-xs text-foreground transition-colors hover:bg-primary/20 disabled:opacity-40"
+                  title="Send this follow-up (Enter while the composer is empty); press → to edit it first"
+                >
+                  <CornerDownLeft className="size-3.5 shrink-0 text-primary-ink" aria-hidden />
+                  <span className="truncate font-medium">{suggestion}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissSuggestion}
+                  className="rounded p-1 text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                  title="Dismiss suggestion"
+                  aria-label="Dismiss suggested follow-up"
+                >
+                  <X className="size-3" aria-hidden />
+                </button>
               </div>
             )}
             <div className="flex gap-2">
@@ -1524,35 +1795,84 @@ export function AssistantClient({
                         ? 'Recording… press the stop button to transcribe.'
                         : transcribing
                           ? 'Transcribing your recording…'
-                          : 'Message your assistant — Enter to send, Shift+Enter for newline.'
+                          : replaceEligible
+                            ? 'Typed too soon? Add a correction — Enter stops and resends both; Esc clears.'
+                            : 'Message your assistant — Enter to send, Shift+Enter for newline.'
                 }
-                disabled={!agentReady || sending}
+                // In streaming mode the box stays live mid-turn so a correction
+                // can be typed (the premature-Enter flow); blocking mode keeps
+                // the old lock — it has no cancel primitive.
+                disabled={!agentReady || (sending && !streamingOn)}
                 rows={2}
                 className={`${COMPOSER_BOX} flex-1 resize-none rounded-md border-input bg-background px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  // Decision table lives in lib/composer-keys (pure + tested):
+                  // the chip claims Enter/ArrowRight STRICTLY when the draft is
+                  // empty, so Enter on anything the user typed (including a
+                  // Stop-restored prompt) always sends their text.
+                  const action = composerKeyAction(e, draft, suggestion);
+                  if (action === 'send-suggestion' && suggestion) {
+                    e.preventDefault();
+                    void submit(e, suggestion);
+                  } else if (action === 'edit-suggestion' && suggestion) {
+                    // Load the suggestion for editing: chip → draft, cursor to
+                    // the end (the textarea is already focused; the keystroke
+                    // landed here).
+                    e.preventDefault();
+                    const s = suggestion;
+                    dismissSuggestion();
+                    setDraft(s);
+                    requestAnimationFrame(() => {
+                      const el = textareaRef.current;
+                      if (el) el.setSelectionRange(el.value.length, el.value.length);
+                    });
+                  } else if (action === 'send-draft') {
                     e.preventDefault();
                     void submit(e);
+                    return;
+                  }
+                  // Opt out of a pending correction: Esc clears the draft.
+                  // stopPropagation keeps it from the panel's window-level
+                  // Esc-to-minimize; scoped to the replace affordance only, so
+                  // Esc behaves exactly as before everywhere else.
+                  if (e.key === 'Escape' && showReplace) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDraft('');
                   }
                 }}
               />
               {sending ? (
-                // Mid-turn the send button becomes a Stop button — one click aborts
-                // generation and keeps whatever partial reply has streamed.
-                <button
-                  type="button"
-                  onClick={stopTurn}
-                  aria-label="Stop"
-                  title="Stop generating"
-                  disabled={!activeTurnId || stopping}
-                  className="flex w-12 shrink-0 items-center justify-center self-stretch rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-40"
-                >
-                  {stopping ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden />
-                  ) : (
-                    <Square className="size-3.5 fill-current" aria-hidden />
+                // Mid-turn the send slot holds a Stop button — and, when a
+                // correction has been typed (streaming mode), a "stop and
+                // resend" button beside it: one press supersedes the in-flight
+                // turn and sends original + correction as one combined turn.
+                <div className="flex shrink-0 gap-2 self-stretch">
+                  {showReplace && (
+                    <button
+                      type="submit"
+                      aria-label="Stop and resend with this correction"
+                      title="Stop and resend with this correction (Enter) — Esc to discard it"
+                      className="flex w-12 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      <ListRestart className="size-4" aria-hidden />
+                    </button>
                   )}
-                </button>
+                  <button
+                    type="button"
+                    onClick={stopTurn}
+                    aria-label="Stop"
+                    title="Stop generating"
+                    disabled={!activeTurnId || stopping}
+                    className="flex w-12 items-center justify-center rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-40"
+                  >
+                    {stopping ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Square className="size-3.5 fill-current" aria-hidden />
+                    )}
+                  </button>
+                </div>
               ) : (
                 <button
                   type="submit"
@@ -1605,6 +1925,14 @@ function PromptCard({ message }: { message: Message }) {
             You
           </span>
           <ChannelBadge channel={message.channel} />
+          {message.superseded && (
+            <span
+              className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+              title="You stopped this turn and re-sent it with a correction — the combined message below replaced it."
+            >
+              replaced
+            </span>
+          )}
         </span>
         <span
           className="text-[10px] text-muted-foreground"

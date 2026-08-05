@@ -28,6 +28,7 @@ import {
   db,
   agents,
   assistantMessages,
+  notSuperseded,
   entities,
   facts,
   nodes,
@@ -113,7 +114,13 @@ export type ContextSnapshot = {
   chunkHits: { sent: SnapshotItem[]; dropped: SnapshotItem[]; cutoff: number };
   relations: string[];
   digests: { count: number; topics: string[] };
-  history: { count: number };
+  history: {
+    count: number;
+    /** How many outbound turns carried a [tool record: …] read-back suffix. */
+    toolRecords: number;
+    /** How many turns carried a [media record: …] read-back suffix. */
+    mediaRecords: number;
+  };
   personaNotes: { count: number };
   corpusMap: { count: number; truncated: boolean };
 };
@@ -150,6 +157,118 @@ const ANAPHORA =
 export function looksAnaphoricFollowup(text: string): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean);
   return words.length > 0 && words.length <= 8 && ANAPHORA.test(text);
+}
+
+// ─── Tool-outcome read-back (context-transfer audit, task 64170cb0) ─────────
+// History carries reply text only, so what a turn actually DID — which node it
+// wrote, what failed, what's parked behind approval — vanished unless the
+// prose restated it. The per-turn toolStats ledger persisted on
+// assistant_messages.data (see updateAssistantMessageOutcome) is rendered as a
+// compact one-line suffix on outbound history turns. Silent (returns null)
+// when the record adds nothing: all-success read-only turns and chat-only
+// turns stay byte-identical to before.
+
+const TOOL_RECORD_MAX_FAILURES = 2;
+const TOOL_RECORD_MAX_WRITES = 3;
+const TOOL_RECORD_ERR_SNIP = 60;
+
+/** Render an outbound turn's persisted toolStats as a `[tool record: …]`
+ *  history suffix, or null when there is nothing worth saying. Tolerant of
+ *  arbitrary `data` shapes — rows predate the ledger, and other writers own
+ *  keys on the same jsonb. */
+export function formatToolRecordSuffix(data: unknown): string | null {
+  if (data === null || typeof data !== 'object') return null;
+  const stats = (data as { toolStats?: unknown }).toolStats;
+  if (stats === null || typeof stats !== 'object') return null;
+  const s = stats as {
+    calls?: unknown;
+    failed?: unknown;
+    queued?: unknown;
+    failures?: unknown;
+    writes?: unknown;
+  };
+  const calls = typeof s.calls === 'number' ? s.calls : 0;
+  const failed = typeof s.failed === 'number' ? s.failed : 0;
+  const queued = typeof s.queued === 'number' ? s.queued : 0;
+  const writes = Array.isArray(s.writes)
+    ? (s.writes as Array<{ id?: unknown; title?: unknown }>).filter(
+        (w) => w && typeof w.id === 'string',
+      )
+    : [];
+  if (failed <= 0 && queued <= 0 && writes.length === 0) return null;
+
+  const parts: string[] = [`${calls} tool call${calls === 1 ? '' : 's'} ran`];
+  if (failed > 0) {
+    const failures = Array.isArray(s.failures)
+      ? (s.failures as Array<{ slug?: unknown; error?: unknown }>)
+          .filter((f) => f && typeof f.slug === 'string')
+          .slice(0, TOOL_RECORD_MAX_FAILURES)
+          .map(
+            (f) =>
+              `${f.slug}${
+                typeof f.error === 'string' && f.error
+                  ? ` (${f.error.slice(0, TOOL_RECORD_ERR_SNIP)})`
+                  : ''
+              }`,
+          )
+      : [];
+    parts.push(`${failed} FAILED${failures.length > 0 ? `: ${failures.join(', ')}` : ''}`);
+  }
+  if (queued > 0) parts.push(`${queued} queued for operator approval, not yet run`);
+  if (writes.length > 0) {
+    const shown = writes
+      .slice(0, TOOL_RECORD_MAX_WRITES)
+      .map((w) =>
+        typeof w.title === 'string' && w.title
+          ? `"${w.title}" (${(w.id as string).slice(0, 8)})`
+          : (w.id as string).slice(0, 8),
+      );
+    const more = writes.length > TOOL_RECORD_MAX_WRITES ? ` +${writes.length - 3} more` : '';
+    parts.push(`wrote: ${shown.join(', ')}${more}`);
+  }
+  return `[tool record: ${parts.join('; ')}]`;
+}
+
+// ─── Media read-back ────────────────────────────────────────────────────────
+// The twin of the tool-outcome read-back above, for the pictures a turn carried.
+// A turn's media lives in `assistant_messages.attachments`, which history never
+// replayed — so an image generated on turn 1 was, by turn 2, an object the model
+// could see in the transcript UI and not name. It went hunting: two searches
+// that couldn't match a fresh file node (no embedding yet, filename is one FTS
+// token), then a UUID rebuilt from the 8-char prefix the corpus map prints, and
+// a page stored with a dangling reference. Replaying the id costs one short line
+// on the turns that have media and nothing at all on the turns that don't.
+
+/** Attachments quoted per turn. Beyond a few, the reply prose is the better
+ *  record and the ids stop earning their bytes. */
+const MEDIA_RECORD_MAX = 3;
+const MEDIA_CAPTION_SNIP = 60;
+
+/** Render a turn's attachments as a `[media record: …]` history suffix, or null
+ *  when there is nothing referenceable to say. Tolerant of arbitrary `jsonb`
+ *  shapes — the column predates this and other writers own rows in it.
+ *
+ *  Only attachments carrying a `nodeId` are quoted: that is the id the
+ *  `media:<id>` dialect resolves. A transport-only handle (a Telegram
+ *  `fileId`) can't be referenced in a page or a reply, so quoting it would
+ *  spend tokens on something unusable. */
+export function formatMediaRecordSuffix(attachments: unknown): string | null {
+  if (!Array.isArray(attachments)) return null;
+  const usable = attachments
+    .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
+    .filter((a) => typeof a.nodeId === 'string' && a.nodeId.length > 0);
+  if (usable.length === 0) return null;
+
+  const shown = usable.slice(0, MEDIA_RECORD_MAX).map((a) => {
+    const kind = typeof a.kind === 'string' ? a.kind : 'file';
+    const caption = typeof a.caption === 'string' ? a.caption.replace(/\s+/g, ' ').trim() : '';
+    const label = caption
+      ? ` "${caption.length > MEDIA_CAPTION_SNIP ? `${caption.slice(0, MEDIA_CAPTION_SNIP)}…` : caption}"`
+      : '';
+    return `${kind}${label} = media:${a.nodeId as string}`;
+  });
+  const more = usable.length > MEDIA_RECORD_MAX ? ` +${usable.length - MEDIA_RECORD_MAX} more` : '';
+  return `[media record: ${shown.join('; ')}${more} — reference these by the id shown, copied whole]`;
 }
 
 /** How many section-level passages to auto-pull into context (the fine-grained
@@ -274,7 +393,24 @@ export async function updateAssistantMessageOutcome(args: {
     /** Confirm-gated calls parked behind operator approval — not yet run. */
     queued: number;
     failures: Array<{ slug: string; error: string }>;
+    /** Artifacts touched by successful write-style calls (see
+     *  summarizeToolOutcomes) — read back into the next turn's history. */
+    writes?: Array<{ slug: string; id: string; title?: string }>;
   };
+  /** Media the turn's tools produced (a `show_image` picture, a generated
+   *  image), persisted so the turn still renders them after a reload.
+   *
+   *  The live `artifacts` channel carries base64 bytes and is returned ONLY by
+   *  the legacy blocking response — the streaming path answers 202 with a turn
+   *  id and the client reconciles to this durable row, so an artifact that is
+   *  never written here is never seen at all. That is exactly what happened to
+   *  `show_image`: four successful calls, four artifacts built, and an empty
+   *  `attachments` column. Stores the node reference, never the bytes — the
+   *  client fetches them from /api/files/files/<nodeId>.
+   *
+   *  Omitted ⇒ column left untouched (an empty list must not clobber whatever
+   *  the insert already recorded). */
+  attachments?: ConversationAttachment[];
   tx?: Executor;
 }): Promise<AssistantMessage | null> {
   const exec = args.tx ?? db;
@@ -289,6 +425,9 @@ export async function updateAssistantMessageOutcome(args: {
       ...(args.text != null ? { text: args.text } : {}),
       ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.error !== undefined ? { error: args.error } : {}),
+      ...(args.attachments != null && args.attachments.length > 0
+        ? { attachments: args.attachments }
+        : {}),
       ...(Object.keys(dataPatch).length > 0
         ? {
             data: sql`${assistantMessages.data} || ${JSON.stringify(dataPatch)}::jsonb`,
@@ -298,6 +437,39 @@ export async function updateAssistantMessageOutcome(args: {
     .where(and(eq(assistantMessages.id, args.id), eq(assistantMessages.ownerId, args.ownerId)))
     .returning();
   return row ?? null;
+}
+
+/**
+ * Stamp both rows of a cancelled turn pair `data.superseded_by = newTurnId` —
+ * the premature-Enter correction flow (the user hit Enter too early, cancelled
+ * the streaming turn, and re-sent original + correction as one combined turn).
+ *
+ * Called SYNCHRONOUSLY by the cancel route BEFORE the cancel is published:
+ * the client awaits that response before POSTing the combined turn, so the new
+ * turn's context load excludes the pair regardless of when the old turn's
+ * finalize lands (finalize merges `data`, so the flag survives it). Owner-
+ * scoped, so ids guessed from another owner are no-ops. Returns the number of
+ * rows stamped (2 on the happy path).
+ */
+export async function markTurnSuperseded(args: {
+  ownerId: string;
+  inboundId: string;
+  outboundId: string;
+  newTurnId: string;
+}): Promise<number> {
+  const rows = await db
+    .update(assistantMessages)
+    .set({
+      data: sql`${assistantMessages.data} || ${JSON.stringify({ superseded_by: args.newTurnId })}::jsonb`,
+    })
+    .where(
+      and(
+        inArray(assistantMessages.id, [args.inboundId, args.outboundId]),
+        eq(assistantMessages.ownerId, args.ownerId),
+      ),
+    )
+    .returning({ id: assistantMessages.id });
+  return rows.length;
 }
 
 /**
@@ -759,10 +931,15 @@ export async function loadConversationContext(args: {
   // (no usable reply). Either would otherwise leak into a later turn's prompt as
   // an empty/garbage assistant message. Inbound rows are always 'complete', so
   // this filter keeps every user turn. See docs/live-turn-streaming.md §6.
+  // Superseded pairs (data.superseded_by — a turn the user cancelled mid-stream
+  // and re-sent with a correction) are ALSO excluded: both rows finalize
+  // 'complete', so without this the abandoned half-answer would leak back into
+  // the next prompt. Recall deliberately still sees them.
   const histConds = [
     eq(assistantMessages.ownerId, ownerId),
     eq(assistantMessages.agentId, agent.id),
     eq(assistantMessages.status, 'complete'),
+    notSuperseded(),
   ];
   if (args.excludeMessageId) histConds.push(ne(assistantMessages.id, args.excludeMessageId));
   if (args.before) histConds.push(lt(assistantMessages.createdAt, args.before));
@@ -777,14 +954,33 @@ export async function loadConversationContext(args: {
       direction: assistantMessages.direction,
       text: assistantMessages.text,
       createdAt: assistantMessages.createdAt,
+      data: assistantMessages.data,
+      attachments: assistantMessages.attachments,
     })
     .from(assistantMessages)
     .where(and(...histConds))
     .orderBy(desc(assistantMessages.createdAt))
     .limit(historyLimit);
-  const history: HistoryTurn[] = rows
-    .reverse()
-    .map((r) => ({ role: r.direction === 'outbound' ? 'assistant' : 'user', text: r.text }));
+  let historyToolRecords = 0;
+  let historyMediaRecords = 0;
+  const history: HistoryTurn[] = rows.reverse().map((r) => {
+    // Media read-back runs on BOTH directions: a picture the user uploaded is
+    // as re-referenceable as one a tool produced.
+    const media = formatMediaRecordSuffix(r.attachments);
+    if (media) historyMediaRecords++;
+    const withMedia = (text: string) => (media ? `${text}\n${media}` : text);
+    if (r.direction !== 'outbound') return { role: 'user', text: withMedia(r.text) };
+    // Tool-outcome read-back (context-transfer audit, dev-brain task
+    // 64170cb0): the ledger of what an assistant turn actually DID — failures,
+    // approval-queued calls, artifacts written — is otherwise invisible to the
+    // next turn unless the reply prose restated it, which is exactly what
+    // failed in the field ("Where did you update it?"). Appended only when the
+    // record says something the text may not, so chat-only and read-only turns
+    // cost nothing extra.
+    const suffix = formatToolRecordSuffix(r.data);
+    if (suffix) historyToolRecords++;
+    return { role: 'assistant', text: withMedia(suffix ? `${r.text}\n${suffix}` : r.text) };
+  });
 
   const snapshot: ContextSnapshot = {
     query: {
@@ -800,7 +996,11 @@ export async function loadConversationContext(args: {
       count: digests.length,
       topics: digests.map((d) => d.topic).filter((t): t is string => !!t),
     },
-    history: { count: history.length },
+    history: {
+      count: history.length,
+      toolRecords: historyToolRecords,
+      mediaRecords: historyMediaRecords,
+    },
     personaNotes: { count: personaNotes.length },
     corpusMap: { count: corpusMap.entries.length, truncated: corpusMap.truncated },
   };

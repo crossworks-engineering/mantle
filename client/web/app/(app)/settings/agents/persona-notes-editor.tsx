@@ -11,6 +11,8 @@
  */
 
 import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidateAgentQueries } from '@mantle/web-ui/agent-invalidation';
 import { sha256Hex } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import {
   Check,
@@ -73,6 +75,7 @@ export function PersonaNotesEditor({
   initialNotes: PersonaNoteDTO[];
 }) {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [notes, setNotes] = useState<PersonaNoteDTO[]>(initialNotes);
   const [busy, setBusy] = useState(false);
   const [showRetired, setShowRetired] = useState(false);
@@ -112,6 +115,10 @@ export function PersonaNotesEditor({
         body,
       );
       setNotes(data.agent?.personaNotes ?? []);
+      // Persona notes feed the composed prompt: refresh the agent-derived
+      // caches (['agents'], Studio's preview) while local state keeps the UI
+      // instant.
+      void invalidateAgentQueries(queryClient);
       return true;
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return false;

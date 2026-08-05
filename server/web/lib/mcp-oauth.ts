@@ -12,7 +12,7 @@
  * rest, constant-time comparisons. HTTPS enforcement lives in the route layer.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, lt } from 'drizzle-orm';
 import { bearerFrom } from './auth/request';
 import {
   db,
@@ -27,6 +27,11 @@ import { loadProfilePreferences, publicBaseUrl } from '@mantle/content';
 export const ACCESS_TTL_SEC = 60 * 60; // 1 hour
 export const REFRESH_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
 export const CODE_TTL_SEC = 60 * 5; // 5 minutes
+/** How long a refresh token stays usable AFTER it has been used once. Several
+ *  clients legitimately share one grant (claude.ai fans a connector out to many
+ *  agents/sessions), so concurrent refreshes must not brick the losers — see
+ *  refreshAccessToken. Standard rotation leeway, same idea as Auth0's. */
+export const REFRESH_GRACE_SEC = 120;
 /** Single default scope for now (full surface). A read-only scope is a deferred
  *  knob in the plan; the /api/mcp surface doesn't branch on it yet. */
 export const DEFAULT_SCOPE = 'mcp';
@@ -222,12 +227,35 @@ export async function exchangeAuthCode(input: {
   return { ok: true, tokens };
 }
 
-/** refresh_token grant: validate the refresh token (not revoked, not expired,
- *  client match) and rotate BOTH tokens in place on the same row. */
+/** refresh_token grant — concurrency-safe rotation.
+ *
+ *  More than one client can legitimately hold the same grant at once (claude.ai
+ *  fans one connector out to many agents and sessions), so a refresh must never
+ *  kill a sibling's credentials. The pre-v0.218 in-place rotation did exactly
+ *  that: the first refresh instantly invalidated both tokens, and the second
+ *  refresher got invalid_grant — a dead connector until manual re-auth.
+ *
+ *  Instead, each refresh FORKS the grant:
+ *  - a brand-new token row is minted for the caller;
+ *  - the old ACCESS token lives out its natural TTL (bearer-until-expiry is the
+ *    normal contract; instant revocation on rotation was overkill);
+ *  - the presented REFRESH token stays usable for REFRESH_GRACE_SEC after this
+ *    first use, so a concurrent refresher forks its own row instead of dying.
+ *    After the grace window it is dead for good. The window trades a sliver of
+ *    stolen-token replay detection for not bricking honest concurrent clients.
+ *  - rows that can never authenticate again (access AND refresh both expired)
+ *    are swept opportunistically, so forking doesn't accumulate rows.
+ *
+ *  Rejections log the client id: on the client side invalid_grant kills the
+ *  connector silently, so the server must at least say it happened. */
 export async function refreshAccessToken(input: {
   refreshToken: string;
   clientId: string;
 }): Promise<GrantResult> {
+  const fail = (why: string): GrantResult => {
+    console.warn(`[mcp-oauth] refresh rejected (${why}) client=${input.clientId}`);
+    return { ok: false, error: 'invalid_grant' };
+  };
   const [row] = await db
     .select()
     .from(oauthAccessTokens)
@@ -238,36 +266,44 @@ export async function refreshAccessToken(input: {
       ),
     )
     .limit(1);
-  if (!row) return { ok: false, error: 'invalid_grant' };
-  if (row.clientId !== input.clientId) return { ok: false, error: 'invalid_grant' };
+  if (!row) return fail('unknown or rotated-out refresh token');
+  if (row.clientId !== input.clientId) return fail('client mismatch');
   if (!row.refreshExpiresAt || row.refreshExpiresAt.getTime() < Date.now()) {
-    return { ok: false, error: 'invalid_grant' };
+    return fail('refresh token expired');
   }
 
-  const accessToken = randomToken(ACCESS_PREFIX);
-  const refreshToken = randomToken(REFRESH_PREFIX);
+  const tokens = await issueTokens(row.clientId, row.ownerId, row.scope);
+
+  // Shorten (never extend) the presented refresh token's remaining life to the
+  // grace window, and stamp the use. The old access token is left untouched.
   const now = Date.now();
+  const graceEnd = new Date(now + REFRESH_GRACE_SEC * 1000);
   await db
     .update(oauthAccessTokens)
     .set({
-      tokenHash: sha256Hex(accessToken),
-      refreshTokenHash: sha256Hex(refreshToken),
-      expiresAt: new Date(now + ACCESS_TTL_SEC * 1000),
-      refreshExpiresAt: new Date(now + REFRESH_TTL_SEC * 1000),
+      refreshExpiresAt:
+        row.refreshExpiresAt.getTime() > graceEnd.getTime() ? graceEnd : row.refreshExpiresAt,
       lastUsedAt: new Date(now),
     })
     .where(eq(oauthAccessTokens.id, row.id));
 
-  return {
-    ok: true,
-    tokens: {
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      token_type: 'Bearer',
-      expires_in: ACCESS_TTL_SEC,
-      scope: row.scope,
-    },
-  };
+  // Sweep this client's fully-dead rows (both tokens past expiry). Best-effort:
+  // a failed sweep must not fail the grant.
+  try {
+    await db
+      .delete(oauthAccessTokens)
+      .where(
+        and(
+          eq(oauthAccessTokens.clientId, row.clientId),
+          lt(oauthAccessTokens.expiresAt, new Date(now)),
+          lt(oauthAccessTokens.refreshExpiresAt, new Date(now)),
+        ),
+      );
+  } catch {
+    // swept next time
+  }
+
+  return { ok: true, tokens };
 }
 
 // ── Bearer validation (resource server) ──────────────────────────────────────

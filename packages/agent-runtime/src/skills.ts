@@ -144,25 +144,67 @@ export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): 
  * (heartbeats/fire), the Studio sandbox, and Studio's composed-prompt PREVIEW
  * all route through it. That is why the setting reaches page authoring when a
  * persona note cannot, and why the preview shows it (no hidden prompts).
+ *
+ * Being that seam is also why `{{name}}` resolves HERE rather than deeper in
+ * `renderPersonaBlock`: substituting later would make the model see a name the
+ * Studio preview does not, which is exactly the hidden prompt this seam exists
+ * to prevent. `agentName` is REQUIRED so a new call site cannot forget it and
+ * silently ship a literal token to a model.
  */
+export type ComposePromptOptions = {
+  /** The agent's display name — what `{{name}}` resolves to. */
+  agentName: string;
+  /** Owner's brain-level house style (Settings → Profile). */
+  houseStyle?: string;
+};
+
 export function composeSystemPromptWithSkills(
   basePrompt: string,
   skillsList: SkillForRuntime[],
-  houseStyle?: string,
+  opts: ComposePromptOptions,
 ): string {
   const blocks = skillsList
     .filter((s) => s.instructions.trim().length > 0)
     .map((s) => `## Skill: ${s.name}\n\n${s.instructions.trim()}`)
     .join('\n\n');
-  const style = houseStyle?.trim();
+  const style = opts.houseStyle?.trim();
   // Unset ⇒ emit nothing, so the cached prompt prefix stays byte-identical to
   // what a brain without a house style has always sent.
   const styleBlock = style
     ? `## House style\n\n${style}\n\nThis is the owner's own instruction and outranks any writing guidance above. It governs prose YOU author. Never apply it to material you are reproducing: quoted text, retrieved content, code, or a document you were asked to copy or edit verbatim.`
     : '';
   const tail = [blocks, styleBlock].filter(Boolean).join('\n\n');
-  if (!tail) return basePrompt;
-  return `${basePrompt.trim()}\n\n${tail}`;
+  const composed = tail ? `${basePrompt.trim()}\n\n${tail}` : basePrompt;
+  return applyAgentName(composed, opts.agentName);
+}
+
+/** The one token a prompt may use to mean "whatever this agent is called".
+ *
+ *  Deliberately NOT a general `{{…}}` expansion: `{{secret:service/label}}`
+ *  is a different mechanism, resolved much later in the HTTP tool dispatcher,
+ *  and its literal syntax appears in the toolsmith skill's own instructions.
+ *  A greedy matcher would eat those and hand the model a broken example. */
+export const AGENT_NAME_TOKEN = '{{name}}';
+
+/**
+ * Resolve `{{name}}` to the agent's actual name.
+ *
+ * Why a token instead of the name baked into the prompt text: the two are
+ * separate columns, and nothing kept them in step. `updateAgent` writes `name`
+ * and never touches `system_prompt`, so renaming an agent in /settings/agents
+ * left it introducing itself by its old name — and a per-login assistant
+ * (migration 0143), which is a COPY of another agent's prompt, answered as the
+ * agent it was copied from. One resolution point fixes both, permanently.
+ *
+ * A prompt with no token comes back byte-identical, so every existing brain's
+ * cached prefix (block 1 of buildChatMessages) is untouched until it opts in.
+ * A blank/whitespace name is left alone for the same reason — better a literal
+ * token the operator can see and fix than an agent that is nameless mid-prompt.
+ */
+export function applyAgentName(prompt: string, agentName: string): string {
+  const name = agentName?.trim();
+  if (!name || !prompt.includes(AGENT_NAME_TOKEN)) return prompt;
+  return prompt.split(AGENT_NAME_TOKEN).join(name);
 }
 
 /** Upper bound on the effective tool-slug union sent to a model. Agent slugs

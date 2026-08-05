@@ -34,7 +34,10 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { accountForChat, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
 import { createFolder, dashToLtree, fileById, readFileById, upsertFile } from '@mantle/files';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
+import type { ImageGenModelInfo, ImageGenParam, TtsParam } from '@mantle/voice';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
+import { registerDynamicSchema } from './dynamic-schema';
+import { notFound } from './errors';
 import { str } from './coerce';
 
 // ─── shared helpers ────────────────────────────────────────────────
@@ -171,13 +174,55 @@ const synthesize_speech: BuiltinToolDef = {
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+    // Same honesty split as generate_image. TTS providers diverge hard here:
+    // Gemini has no speed parameter at all, ElevenLabs takes a language code
+    // on some models and not others, tts-1 ignores style instructions. An
+    // operator who sets one of those in /settings/ai-workers and hears no
+    // difference deserves to be told which, rather than doubting their ears.
+    const ttsSupported = new Set<TtsParam>(adapter.supports);
+    const ttsWarned = new Map((synth.warnings ?? []).map((w) => [w.param, w.reason]));
+    const ttsIgnored: Array<{ key: string; value: string; reason?: string }> = [];
+    const noteTts = (param: TtsParam, value: unknown) => {
+      if (value === undefined || value === null || value === '') return;
+      const reason = ttsWarned.get(param);
+      if (!ttsSupported.has(param)) {
+        ttsIgnored.push({ key: param, value: String(value) });
+      } else if (reason) {
+        ttsIgnored.push({ key: param, value: String(value), reason });
+      }
+    };
+    noteTts('speed', params.speed);
+    noteTts('format', audioFormat);
+    noteTts('instructions', params.instructions);
+    noteTts('language', params.language);
+
     ctx.step?.setMeta({
       adapter: adapter.adapterName,
       bytes: synth.bytes.length,
       voice: voiceId,
       worker_slug: worker.slug,
       surface: ctx.surface.kind,
+      ...(ttsIgnored.length > 0
+        ? {
+            ignored_params: Object.fromEntries(
+              ttsIgnored.map((i) => [i.key, i.reason ? `${i.value} (${i.reason})` : i.value]),
+            ),
+          }
+        : {}),
     });
+    const ttsIgnoredOutput =
+      ttsIgnored.length > 0
+        ? {
+            ignoredParams: Object.fromEntries(
+              ttsIgnored.map((i) => [i.key, i.reason ? `${i.value} (${i.reason})` : i.value]),
+            ),
+            ignoredParamsNote: `${worker.provider}/${synth.model} did not apply ${ttsIgnored
+              .map((i) => i.key)
+              .join(
+                ', ',
+              )} from the worker's saved settings. Mention it if the user asks why the delivery didn't change; changing it means switching the tts worker at /settings/ai-workers.`,
+          }
+        : {};
 
     if (ctx.surface.kind === 'telegram') {
       try {
@@ -200,6 +245,7 @@ const synthesize_speech: BuiltinToolDef = {
             voice: voiceId,
             model: synth.model,
             bytes: synth.bytes.length,
+            ...ttsIgnoredOutput,
           },
         };
       } catch (err) {
@@ -227,6 +273,7 @@ const synthesize_speech: BuiltinToolDef = {
         voice: voiceId,
         model: synth.model,
         bytes: synth.bytes.length,
+        ...ttsIgnoredOutput,
       },
       artifacts: [artifact],
     };
@@ -594,24 +641,39 @@ const generate_image: BuiltinToolDef = {
         description:
           'The image prompt. Be specific — composition, subject, style, colour palette, lighting. Long prompts (300+ chars) are fine; the adapter trims if needed.',
       },
+      // Every option below is REPLACED at toolset-assembly time by what the
+      // owner's configured model actually accepts (see the dynamic-schema hook
+      // at the foot of this file): unsupported options are removed outright and
+      // the rest become enums. The static text here is the fallback for when
+      // that resolution fails, so it stays deliberately generic — a hardcoded
+      // per-provider list would go stale the moment a worker is switched.
       size: {
         type: 'string',
         description:
-          "Resolution like '1024x1024' or '1792x1024'. Provider-specific (OpenAI gpt-image-1: 1024x1024 / 1024x1536 / 1536x1024; DALL-E 3: 1024x1024 / 1024x1792 / 1792x1024; Imagen: 1024x1024 / 1408x768 / 768x1408). Adapter rejects unsupported sizes with a clear error.",
+          "Output dimensions. Omit to use the size saved on the image_gen worker — pass one ONLY when the user asked for a specific size or shape, e.g. 'a wide banner'.",
+      },
+      aspect_ratio: {
+        type: 'string',
+        description: "Shape, e.g. '16:9'. Use instead of `size` when the user named a shape.",
       },
       style: {
         type: 'string',
-        description: "Style hint, currently only honoured by DALL-E 3 ('vivid' | 'natural').",
+        description: 'Style steering, where the model offers it.',
       },
       quality: {
         type: 'string',
-        description:
-          "Quality tier — DALL-E 3: 'standard' | 'hd'; gpt-image-1: 'low' | 'medium' | 'high' | 'auto'.",
+        description: 'Quality tier. Higher tiers cost more and take longer.',
       },
       negative_prompt: {
         type: 'string',
+        description: 'What the image should NOT contain.',
+      },
+      input_image_ids: {
+        type: 'array',
+        items: { type: 'string', format: 'uuid' },
+        maxItems: 4,
         description:
-          'What the image should NOT contain. Honoured by Imagen + HF; OpenAI silently ignores.',
+          "File node ids of EXISTING images to edit or use as reference. Pass these to change a picture you already have ('make the sky orange', 'same house in winter') instead of describing it again from scratch — a fresh generation invents a different picture and bills for it. `prompt` then describes the CHANGE, not the whole scene.",
       },
     },
     required: ['prompt'],
@@ -633,9 +695,98 @@ const generate_image: BuiltinToolDef = {
 
     const params = (worker.params ?? {}) as {
       size?: string;
+      aspect_ratio?: string;
       style?: string;
       quality?: string;
     };
+
+    // Per-call arg wins, else the worker's saved default. `origin` is kept so
+    // the report below can distinguish "the model asked for this and it did
+    // not apply" (worth saying out loud) from "an operator default did not
+    // apply" (worth a trace line and a settings pointer).
+    const requested: Array<{
+      param: ImageGenParam;
+      key: string;
+      value: string;
+      fromCall: boolean;
+      /** Set when the ADAPTER rejected it for this model, not the caller. */
+      reason?: string;
+    }> = [];
+    const take = (param: ImageGenParam, key: string, callValue?: string, saved?: string) => {
+      const fromCall = callValue != null && callValue !== '';
+      const value = fromCall ? callValue : (saved ?? '');
+      if (value) requested.push({ param, key, value, fromCall });
+    };
+    take('size', 'size', strOpt(input.size), params.size);
+    take('aspectRatio', 'aspect_ratio', strOpt(input.aspect_ratio), params.aspect_ratio);
+    take('style', 'style', strOpt(input.style), params.style);
+    take('quality', 'quality', strOpt(input.quality), params.quality);
+    take('negativePrompt', 'negative_prompt', strOpt(input.negative_prompt));
+
+    // Precedence between the two SIZING options, resolved here because this is
+    // the only layer that knows where each value came from.
+    //
+    // `size` and `aspect_ratio` both describe the shape, and providers treat an
+    // explicit pixel size as authoritative (OpenRouter rejects a companion
+    // ratio outright). So a worker default of 1024x1024 would quietly outrank
+    // "make it a 16:9 banner" — which is what it did on the first real test:
+    // the request said 16:9, the trace claimed 16:9 applied, and the file came
+    // back square. A per-call argument must beat a saved default, never the
+    // other way round.
+    const supersede = (winner: ImageGenParam, loser: ImageGenParam) => {
+      const w = requested.find((r) => r.param === winner && r.fromCall);
+      const l = requested.find((r) => r.param === loser && !r.fromCall);
+      if (w && l) l.reason = `superseded by the ${w.key} you asked for (${w.value})`;
+    };
+    supersede('aspectRatio', 'size');
+    supersede('size', 'aspectRatio');
+
+    // The honesty split. An option the adapter does not forward must never
+    // look like it applied: an operator once had size/style/quality saved on
+    // an OpenRouter worker, all three shown in the UI, none of them sent, and
+    // nothing anywhere said so.
+    const supported = new Set<ImageGenParam>(adapter.supports);
+    // A superseded default is neither sent nor claimed as applied.
+    const sent = requested.filter((r) => supported.has(r.param) && !r.reason);
+    const ignored = requested.filter((r) => !supported.has(r.param) || r.reason);
+    const get = (param: ImageGenParam) => sent.find((a) => a.param === param)?.value;
+
+    // ── reference images (image-to-image) ──
+    // Refused BEFORE the request, not warned about after: an adapter that
+    // can't edit would happily generate something unrelated from the prompt
+    // and charge for it, and "make the sky orange" coming back as a different
+    // house is worse than an error.
+    const inputImageIds = Array.isArray(input.input_image_ids)
+      ? (input.input_image_ids as unknown[]).filter(
+          (v): v is string => typeof v === 'string' && v.length > 0,
+        )
+      : [];
+    const inputImages: Array<{ bytes: Buffer; mimeType: string; filename?: string }> = [];
+    if (inputImageIds.length > 0) {
+      if (!supported.has('inputImages')) {
+        return {
+          ok: false,
+          error:
+            `${worker.provider}/${worker.model} cannot edit an existing image, so nothing was generated ` +
+            `(generating from the prompt alone would produce a different picture, not an edit). ` +
+            `Switch the image_gen worker at /settings/ai-workers to OpenRouter, or to OpenAI with gpt-image-1.`,
+        };
+      }
+      for (const id of inputImageIds) {
+        const file = await fileById({ ownerId: ctx.ownerId, fileId: id });
+        if (!file) return notFound('file', id, 'file_list / search_nodes');
+        const mime = file.mimeType ?? 'application/octet-stream';
+        if (!mime.startsWith('image/')) {
+          return {
+            ok: false,
+            error: `'input_image_ids' entry ${id} is ${mime}, not an image. Pass the id of an image file (find it with file_list / search_nodes).`,
+          };
+        }
+        const fetched = await readFileById({ ownerId: ctx.ownerId, fileId: id });
+        if (!fetched) return { ok: false, error: `Couldn't read file ${id} from storage.` };
+        inputImages.push({ bytes: fetched.bytes, mimeType: mime, filename: file.filename });
+      }
+    }
 
     let result;
     try {
@@ -643,19 +794,43 @@ const generate_image: BuiltinToolDef = {
         apiKey,
         prompt,
         model: worker.model,
-        size: strOpt(input.size) ?? params.size,
-        style: strOpt(input.style) ?? params.style,
-        quality: strOpt(input.quality) ?? params.quality,
-        negativePrompt: strOpt(input.negative_prompt),
+        ...(inputImages.length > 0 ? { inputImages } : {}),
+        size: get('size'),
+        aspectRatio: get('aspectRatio'),
+        style: get('style'),
+        quality: get('quality'),
+        negativePrompt: get('negativePrompt'),
       });
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    // The adapter gets the last word. `supports` is per-provider, but several
+    // gates are per-MODEL (OpenAI takes `style` on dall-e-3 and not on
+    // gpt-image-1), and only the adapter knows which model ran. Anything it
+    // reports back moves from "applied" to "ignored" before we tell anyone
+    // the request was honoured.
+    const adapterWarned = new Map(
+      (result.warnings ?? []).map((w) => [w.param as ImageGenParam, w.reason]),
+    );
+    const applied = sent.filter((s) => !adapterWarned.has(s.param));
+    for (const s of sent) {
+      const reason = adapterWarned.get(s.param);
+      if (reason) ignored.push({ ...s, reason });
     }
 
     // Persist as a file node under /files/generated-images/<date>/.
     // Naming: <unix-ms>-<slug>.<ext>. The unix prefix keeps natural
     // sort = chronological; the slug gives a human-readable hint of
     // the prompt.
+    //
+    // Title + prompt are set explicitly because the filename alone makes the
+    // image UNFINDABLE. `nodes.search_tsv` weights title A and data B, but a
+    // slug filename tokenizes as ONE long hyphenated term, so an FTS query of
+    // the prompt's own words missed it; the vector arm can't help either until
+    // the extractor has run. A freshly generated image was therefore invisible
+    // to `search_nodes` on both arms in the very turn that most needs it — the
+    // follow-up "put that image in a page".
     let nodeId: string | null = null;
     let storagePath: string | null = null;
     try {
@@ -668,6 +843,13 @@ const generate_image: BuiltinToolDef = {
         filename,
         bytes: result.bytes,
         overwrite: false,
+        title: prompt.length > 120 ? `${prompt.slice(0, 120)}…` : prompt,
+        data: {
+          generated_by: 'generate_image',
+          prompt,
+          model: result.model,
+          ...(result.revisedPrompt ? { revised_prompt: result.revisedPrompt } : {}),
+        },
       });
       nodeId = file.id;
       storagePath = `${parentPath}/${filename}`;
@@ -713,6 +895,13 @@ const generate_image: BuiltinToolDef = {
       model: result.model,
       saved_as: storagePath,
       telegram_message_id: telegramMessageId,
+      ...(inputImages.length > 0 ? { edited_from: inputImageIds } : {}),
+      applied_params: Object.fromEntries(applied.map((a) => [a.key, a.value])),
+      // Present ONLY when something was asked for and not sent. An empty key
+      // here is the whole point: "no news" has to mean "everything applied".
+      ...(ignored.length > 0
+        ? { ignored_params: Object.fromEntries(ignored.map((i) => [i.key, i.value])) }
+        : {}),
     });
 
     // Emit the image as a sidecar artifact regardless of surface.
@@ -735,10 +924,41 @@ const generate_image: BuiltinToolDef = {
       output: {
         nodeId,
         storagePath,
+        // The exact string to paste to place this picture in a page or reply.
+        // Handing it over beats making the model reconstruct an id it can only
+        // see truncated elsewhere (the corpus map shows `file#<8 chars>`).
+        ...(nodeId
+          ? {
+              inlineRef: `![${prompt.slice(0, 80)}](media:${nodeId})`,
+              inlineRefNote:
+                'To place this image in a page or a later reply, paste inlineRef verbatim. Copy the id whole — never rebuild it from a shortened form.',
+            }
+          : {}),
         model: result.model,
         adapter: adapter.adapterName,
         mimeType: result.mimeType,
         bytes: result.bytes.length,
+        // A new file either way: an edit does not overwrite its reference, so
+        // the original is still there to go back to.
+        ...(inputImageIds.length > 0 ? { editedFrom: inputImageIds } : {}),
+        ...(applied.length > 0
+          ? { appliedParams: Object.fromEntries(applied.map((a) => [a.key, a.value])) }
+          : {}),
+        // Surfaced to the MODEL, not just the trace: if the user asked for a
+        // 16:9 banner and the configured model cannot do ratios, the reply has
+        // to say so rather than present a square image as what was asked for.
+        ...(ignored.length > 0
+          ? {
+              ignoredParams: Object.fromEntries(
+                ignored.map((i) => [i.key, i.reason ? `${i.value} (${i.reason})` : i.value]),
+              ),
+              ignoredParamsNote: `${worker.provider}/${worker.model} does not accept ${ignored
+                .map((i) => i.key)
+                .join(
+                  ', ',
+                )}, so ${ignored.some((i) => i.fromCall) ? 'the request was rendered without it — say so plainly rather than implying it applied' : 'the saved worker default had no effect'}. Change the image_gen worker at /settings/ai-workers to a model that supports it.`,
+            }
+          : {}),
         ...(result.revisedPrompt ? { revisedPrompt: result.revisedPrompt } : {}),
         ...(telegramMessageId != null ? { telegramMessageId, deliveredVia: 'telegram' } : {}),
         ...(ctx.surface?.kind === 'web'
@@ -749,6 +969,104 @@ const generate_image: BuiltinToolDef = {
     };
   },
 };
+
+// ─── generate_image: schema that matches the CONFIGURED model ───────
+//
+// Which sizes are valid depends on the owner's default image_gen worker, which
+// is runtime state the model cannot see. Stating the options in prose was the
+// old answer, and it failed in both directions: the prose went stale against
+// whatever worker was actually configured, and the model still had to guess
+// which provider it was talking to. Here the schema is rebuilt once per turn
+// from the worker's own catalog entry, so a wrong value is unrepresentable
+// rather than merely discouraged (the `invoke_agent` pattern — see
+// dynamic-schema.ts). A hook failure falls back to the static schema, so a
+// missing worker or an unwired provider never breaks a turn.
+
+/** Map a tool param key to the adapter capability that gates it. */
+const IMAGE_PARAM_BY_KEY: Readonly<Record<string, ImageGenParam>> = {
+  size: 'size',
+  aspect_ratio: 'aspectRatio',
+  style: 'style',
+  quality: 'quality',
+  negative_prompt: 'negativePrompt',
+  input_image_ids: 'inputImages',
+};
+
+/** Catalog enums, keyed by tool param. */
+function enumForKey(key: string, entry: ImageGenModelInfo | undefined): readonly string[] | null {
+  if (!entry) return null;
+  if (key === 'size') return entry.supportedSizes ?? null;
+  if (key === 'aspect_ratio') return entry.supportedAspectRatios ?? null;
+  if (key === 'style') return entry.supportedStyles ?? null;
+  if (key === 'quality') return entry.supportedQualities ?? null;
+  return null;
+}
+
+/** Options whose absence from a model's catalog entry means the MODEL has no
+ *  such control, so the option should vanish rather than appear unconstrained.
+ *
+ *  The distinction matters: an absent `supportedSizes` means "free-form, the
+ *  model decides" (HF repos), but an absent `supportedStyles` means "there is
+ *  no style knob here". Treating them alike is how a `style` stayed offered on
+ *  gpt-image-1 — `supports` is per-provider and OpenAI-the-provider does have
+ *  style, on a different model. The adapter would then drop it at request
+ *  time, which is a warning we can avoid ever needing. */
+const CATALOG_GATED = new Set(['style', 'quality', 'aspect_ratio']);
+
+/** Return a COPY of the generate_image parameters with every option the
+ *  configured model can't take REMOVED, and the rest constrained to its
+ *  catalog values. Copies rather than mutates: `inputSchema` is a module
+ *  singleton shared across every agent and turn. Exported for tests. */
+export function withImageModelSchema(
+  schema: Record<string, unknown>,
+  supports: readonly ImageGenParam[],
+  entry: ImageGenModelInfo | undefined,
+  label: string,
+): Record<string, unknown> {
+  const props = (schema.properties as Record<string, unknown> | undefined) ?? {};
+  const supported = new Set(supports);
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(props)) {
+    const param = IMAGE_PARAM_BY_KEY[key];
+    // `prompt` and anything unmapped is always kept.
+    if (!param) {
+      next[key] = value;
+      continue;
+    }
+    if (!supported.has(param)) continue; // the provider can't take it: don't offer it
+    const values = enumForKey(key, entry);
+    // Catalog-gated and this model lists none: it has no such knob. Only drop
+    // when the model IS in the catalog — an unknown model tells us nothing,
+    // and hiding every option on it would be worse than offering them.
+    if (!values && entry && CATALOG_GATED.has(key)) continue;
+    const base = (value as Record<string, unknown>) ?? {};
+    next[key] = values
+      ? {
+          ...base,
+          enum: [...values],
+          description:
+            `${String(base.description ?? '')} ${label} accepts: ${values.join(', ')}.`.trim(),
+        }
+      : base;
+  }
+  return { ...schema, properties: next };
+}
+
+registerDynamicSchema('generate_image', async (current, ctx) => {
+  const worker = await getDefaultWorker(ctx.ownerId, 'image_gen');
+  if (!worker) return null;
+  const adapter = getImageGenAdapter(worker.provider);
+  if (!adapter) return null;
+  const entry = adapter.staticCatalog().find((m) => m.id === worker.model);
+  return {
+    parameters: withImageModelSchema(
+      current.parameters,
+      adapter.supports,
+      entry,
+      `${worker.provider}/${worker.model}`,
+    ),
+  };
+});
 
 export const WORKER_DELEGATION_TOOLS: readonly BuiltinToolDef[] = [
   synthesize_speech,

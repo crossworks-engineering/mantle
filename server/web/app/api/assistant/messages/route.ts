@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
-import { assistantMessagesBefore, resolveAssistantAgent } from '@/lib/assistant';
+import { assistantMessagesBefore, resolveAgentForActor } from '@/lib/assistant';
 
 /**
  * Older page of assistant messages for scroll-up lazy loading. Returns up
@@ -28,7 +28,8 @@ export async function GET(req: NextRequest) {
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : PAGE;
   const slug = searchParams.get('agent') ?? undefined;
 
-  const agent = await resolveAssistantAgent(user.id, slug);
+  // No `?agent=` → this login's assigned assistant, else the brain default.
+  const agent = await resolveAgentForActor(user, slug);
   if (!agent) return NextResponse.json({ messages: [] });
 
   // Per-agent thread — no cross-agent or legacy fold-in. See migration

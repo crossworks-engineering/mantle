@@ -141,7 +141,10 @@ export const invokeAgent: AgentInvoker = async ({
   } catch (e) {
     console.warn('[invoke-agent] house style unavailable; composing without it', e);
   }
-  const systemPrompt = composeSystemPromptWithSkills(target.systemPrompt, skills, houseStyle);
+  const systemPrompt = composeSystemPromptWithSkills(target.systemPrompt, skills, {
+    agentName: target.name,
+    houseStyle,
+  });
   const initialMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: prompt },

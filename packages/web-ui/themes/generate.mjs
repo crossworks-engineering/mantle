@@ -480,14 +480,27 @@ export function generateCss() {
 }
 
 export function generateRegistry() {
+  const swatch = (seed, mode) => {
+    const m = generateMode(seed, { mode });
+    return [m.primary, m.accent, m.background].map((s) => `'${s}'`).join(', ');
+  };
   const rows = THEME_SEEDS.map((t) => {
-    const light = generateMode(t.light, { mode: 'light' });
-    const swatches = [light.primary, light.accent, light.background];
-    return `  { id: '${t.id}', label: '${t.label}', swatches: [${swatches.map((s) => `'${s}'`).join(', ')}] },`;
+    // Expanded object literals on purpose: prettier keeps an object multi-line
+    // when the source breaks after `{`, so the generated file is stable under
+    // `format:check` no matter how long a label or hex list gets.
+    return `  {
+    id: '${t.id}',
+    label: '${t.label}',
+    swatches: {
+      light: [${swatch(t.light, 'light')}],
+      dark: [${swatch(t.dark, 'dark')}],
+    },
+  },`;
   });
   return `/* GENERATED FILE — do not edit. \`pnpm themes:build\` regenerates it from
- * themes/seeds.mjs. Swatches are [primary, accent, background] of the
- * generated light mode, so the picker preview can never desync from the CSS. */
+ * themes/seeds.mjs. Swatches are [primary, accent, background] of the generated
+ * light AND dark modes, so the picker previews the theme you would actually get
+ * in the mode you are in, and can never desync from the CSS. */
 import type { ColorTheme } from './themes';
 
 export const GENERATED_COLOR_THEMES: ColorTheme[] = [

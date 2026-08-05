@@ -14,6 +14,7 @@
     "./journal-options": "./src/journal-options.ts",
     "./persona-bank": "./src/persona-bank.ts",
     "./onboarding-questions": "./src/onboarding-questions.ts",
+    "./thinking-tiers": "./src/thinking-tiers.ts",
     "./peers": "./src/peers.ts",
     "./peers-crypto": "./src/peers-crypto.ts",
     "./pages": "./src/pages.ts",
@@ -22,6 +23,7 @@
     "./table-model": "./src/table-model.ts",
     "./table-to-text": "./src/table-to-text.ts",
     "./markdown": "./src/markdown-to-doc.ts",
+    "./markdown-refs": "./src/markdown-refs.ts",
     "./doc-to-markdown": "./src/doc-to-markdown.ts",
     "./contacts-format": "./src/contacts-format.ts",
     "./block-ids": "./src/block-ids.ts",
@@ -46,6 +48,7 @@
   "dependencies": {
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/files": "workspace:*",
     "@mantle/search": "workspace:*",
     "@mantle/tabledb": "workspace:*",
     "docx": "^9.5.1",

@@ -73,13 +73,25 @@ describe('classifyChatError', () => {
     expect(classifyChatError({ status: 401 }).retry).toBe(false);
   });
   it('retries an empty/truncated JSON body (upstream stall → unparseable 2xx)', () => {
-    expect(classifyChatError(new SyntaxError('Unexpected end of JSON input')).retry).toBe(true);
-    expect(classifyChatError(new SyntaxError('Unexpected end of input')).retry).toBe(true);
+    // Real parse failures, not hand-written messages — see isEmptyJsonBodyError below.
+    for (const body of ['', '   ', '{"id":', '{"id":"ms']) {
+      let err: unknown;
+      try {
+        JSON.parse(body);
+      } catch (e) {
+        err = e;
+      }
+      expect(classifyChatError(err).retry, body || '(empty)').toBe(true);
+    }
   });
   it('does not retry a complete-but-malformed JSON body (real parse bug)', () => {
-    expect(
-      classifyChatError(new SyntaxError('Unexpected token x in JSON at position 0')).retry,
-    ).toBe(false);
+    let err: unknown;
+    try {
+      JSON.parse('{"id":,}');
+    } catch (e) {
+      err = e;
+    }
+    expect(classifyChatError(err).retry).toBe(false);
   });
   it('does not retry an ordinary error', () => {
     expect(classifyChatError(new Error('boom')).retry).toBe(false);
@@ -87,13 +99,50 @@ describe('classifyChatError', () => {
 });
 
 describe('isEmptyJsonBodyError', () => {
-  it('matches only the end-of-input SyntaxError family', () => {
-    expect(isEmptyJsonBodyError(new SyntaxError('Unexpected end of JSON input'))).toBe(true);
-    expect(isEmptyJsonBodyError(new SyntaxError('Unexpected end of input'))).toBe(true);
-    expect(isEmptyJsonBodyError(new SyntaxError('Unexpected token x in JSON'))).toBe(false);
+  /** The error a REAL `JSON.parse` throws for this body. Tests below assert
+   *  against actual V8 output rather than hand-written message strings — the
+   *  previous version of this suite asserted the strings, which is why it stayed
+   *  green while V8 changed its wording and quietly narrowed what was matched. */
+  const parseError = (body: string): unknown => {
+    try {
+      JSON.parse(body);
+      throw new Error(`expected ${JSON.stringify(body)} to be unparseable`);
+    } catch (e) {
+      return e;
+    }
+  };
+
+  it.each([
+    ['an empty body', ''],
+    ['a whitespace-only body', '   \n'],
+    ['a body cut where a value was expected', '{"id":'],
+    ['a body cut inside a string', '{"id":"ms'],
+    ['a body cut inside a nested string', '{"choices":[{"content":"par'],
+  ])('matches %s', (_label, body) => {
+    expect(isEmptyJsonBodyError(parseError(body))).toBe(true);
+  });
+
+  it.each([
+    ['a complete but malformed body', '{"id":,}'],
+    ['a bare token', 'nope'],
+  ])('does NOT match %s (a real bug, not a stall)', (_label, body) => {
+    expect(isEmptyJsonBodyError(parseError(body))).toBe(false);
+  });
+
+  it('does not match non-SyntaxError failures', () => {
     expect(isEmptyJsonBodyError(new TypeError('Unexpected end of JSON input'))).toBe(false);
     expect(isEmptyJsonBodyError(new Error('boom'))).toBe(false);
     expect(isEmptyJsonBodyError(null)).toBe(false);
+  });
+
+  it('documents the shapes we knowingly leave uncovered', () => {
+    // These fire for BOTH a mid-object truncation and a malformed-but-complete
+    // body, and the message can't distinguish them. Retrying a genuine parse bug
+    // is worse than missing a rarer stall shape, so they stay out — but they are
+    // pinned here so a future widening is a deliberate edit, not an accident.
+    expect(isEmptyJsonBodyError(parseError('{'))).toBe(false);
+    expect(isEmptyJsonBodyError(parseError('{"id":"m"'))).toBe(false);
+    expect(isEmptyJsonBodyError(parseError('{"n":12'))).toBe(false);
   });
 });
 

@@ -76,6 +76,15 @@ logs/
 .agents/
 skills-lock.json
 
+# Other agent-tooling trees that land in a working checkout. Same reasoning as
+# .agents/ above: locally installed, re-fetchable, never ours to ship. Only the
+# agent subdirs of .github/ are ignored — the workflows and FUNDING.yml next to
+# them ARE tracked, so this must stay path-specific and never become `.github/`.
+.codex/
+.github/agents/
+.github/hooks/
+.github/skills/
+
 # Recall-eval run snapshots — regenerated per run, contain personal queries.
 # The gold cases (recall-cases.json) and the runner ARE committed.
 server/web/scripts/eval/last-run.json

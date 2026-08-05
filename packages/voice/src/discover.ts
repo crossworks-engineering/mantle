@@ -44,7 +44,55 @@ export type DiscoveryResult<T> = {
   filtered: boolean;
   /** When `filtered=false`, the reason. Null on success. */
   error: string | null;
+  /**
+   * EVERY model id the provider reported, before we intersected it with our
+   * catalog. Optional: only the adapters that curate a static catalog and
+   * filter it need to set this.
+   *
+   * It exists because `available` answers "which of OUR models are live?" and
+   * deliberately discards the other half of the answer — "which of THEIRS
+   * aren't ours?" That discarded half is the only automatic signal that a
+   * catalog has gone stale, and we were computing it on every discovery call
+   * and dropping it. grok-4.5 shipped, our dropdown never mentioned it, and
+   * nothing anywhere could have said so.
+   *
+   * Consumed by `pnpm -C server/web models:drift`. See {@link catalogDrift}.
+   */
+  liveIds?: string[];
 };
+
+/**
+ * Compare what a provider serves against what we catalogue.
+ *
+ * `unlisted` = the provider has it, we don't offer it (a new model nobody can
+ * pick). `stale` = we offer it, the provider no longer lists it (a dead entry
+ * that 404s when someone picks it).
+ *
+ * `aliasOf` handles the one legitimate mismatch: Anthropic's Models API returns
+ * dated ids (`claude-haiku-4-5-20251001`) while our catalog holds the alias
+ * (`claude-haiku-4-5`). Without it every dated snapshot would report as drift
+ * forever, and a report that always cries wolf is a report nobody reads.
+ */
+export function catalogDrift(
+  liveIds: readonly string[],
+  catalogIds: readonly string[],
+  aliasOf?: (liveId: string) => string | undefined,
+): { unlisted: string[]; stale: string[] } {
+  const catalog = new Set(catalogIds);
+  const live = new Set(liveIds);
+  const unlisted: string[] = [];
+  for (const id of liveIds) {
+    if (catalog.has(id)) continue;
+    const alias = aliasOf?.(id);
+    if (alias && catalog.has(alias)) continue;
+    unlisted.push(id);
+  }
+  const aliased = new Set(
+    aliasOf ? liveIds.map((id) => aliasOf(id)).filter((v): v is string => Boolean(v)) : [],
+  );
+  const stale = catalogIds.filter((id) => !live.has(id) && !aliased.has(id));
+  return { unlisted: [...new Set(unlisted)].sort(), stale: stale.sort() };
+}
 
 /** Fetch the list of model ids the key has access to. Used by both
  *  TTS and STT discovery — single network round trip. */

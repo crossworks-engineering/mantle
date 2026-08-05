@@ -149,6 +149,7 @@ describe('CAPABILITY_FOR_KIND map', () => {
       'search',
       'search_advanced',
       'narrator',
+      'suggester',
     ];
     for (const k of kinds) {
       expect(CAPABILITY_FOR_KIND[k], `kind '${k}' has no capability mapping`).toBeTruthy();

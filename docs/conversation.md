@@ -170,6 +170,30 @@ loadConversationContext({ ownerId, agent, inboundText, queryVec? })
      digests = conversation-digest notes WHERE data.agent_id = agent.id
 ```
 
+History is reply text plus, on outbound turns whose persisted `toolStats` ledger
+says something the prose may not, a one-line `[tool record: …]` suffix: failures,
+approval-queued calls, and the artifacts written (id + title, captured from
+write-style tools' own success output). This is the tool-outcome read-back from
+the 2026-08 context-transfer audit (dev-brain task `64170cb0`): without it, "did
+that work?" and "where did you update it?" were unanswerable once the reply
+prose didn't restate the outcome. All-success read-only turns get no suffix, so
+chat-only history is byte-identical to before.
+
+Its twin is the **media read-back**: a turn carrying attachments gets a
+`[media record: image "caption" = media:<node-id>]` line, on inbound turns (the
+user's uploads) as well as outbound (what a tool produced). Same reasoning, same
+silence when there's nothing to say. Without it the `attachments` column was
+write-only as far as the model was concerned: an image generated on one turn
+could not be named on the next, and the field failure was a page stored with a
+`media:` id the model had rebuilt from the 8-char prefix the corpus map prints.
+Only attachments with a `nodeId` are quoted — a transport handle (a Telegram
+`fileId`) is not resolvable by the `media:` dialect, so quoting it would spend
+tokens on something unusable. Three per turn, then `+N more`.
+
+The write side is now gated too: every `media:` / `page:` / `mention:node:` id
+in a page body is checked against a real node before the write lands (the
+`markdown_refs` precondition, `packages/tools/src/preconditions.ts`).
+
 The "per-agent, cross-channel" semantics live here. The digest filter changes from
 `data.chat_id = chatPk` (Telegram) / `source = 'web'` (web) to a uniform
 `data.agent_id = <agent>`.
@@ -241,11 +265,76 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
   `conversation-digest` notes (they currently carry `data.chat_id` / `source`), or the
   responder briefly loses old digests after cutover.
 
+## 6a. Per-login assistants (migration 0143)
+
+Multi-admin logins (0111) share the anchor owner, so before 0143 every login
+resolved to the SAME default agent — two co-admins chatting at once interleaved
+in one thread, and each turn's history block fed the other person's words to the
+model.
+
+The fix rides on the split this document already established: because the stream
+is keyed `(owner_id, agent_id)` — and the `conversation_changed` NOTIFY payload
+(0091), read cursors (0090), digests and the inbox all key off the agent too —
+giving a login its own agent row splits every one of them for free.
+
+`agents.assigned_user_id` (nullable, `ON DELETE SET NULL`, partial-unique) binds
+an agent to one login. Moving parts:
+
+- **Clone** — `cloneAgentFields` (`server/web/lib/agent-clone.ts`, unit-tested)
+  copies the source's route, prompt, skills, tool groups and `delegate_to`.
+  It does NOT copy persona notes (they're about a different human) and cannot
+  copy a Telegram binding (`channels` rows key off `agent_id`). Priority lands
+  one BELOW the source, so `pickWebDefaultAgent`'s slug tiebreak can never let a
+  clone become the brain-wide default for headless callers (reminders,
+  heartbeats).
+- **Identity — the `{{name}}` token.** A copied prompt named its SOURCE: an
+  assistant called Tommy opened with *"You are Mira — an RBI specialist"*
+  (observed live at v0.220.0). `name` and `system_prompt` are separate columns
+  and nothing kept them in step — the same reason renaming any agent in
+  `/settings/agents` left it introducing its old name. So the name is now a
+  token, resolved once per turn:
+  - `composeSystemPromptWithSkills` (`packages/agent-runtime/src/skills.ts`)
+    substitutes `{{name}}` → `agents.name`. It resolves at that seam, not deeper
+    in `renderPersonaBlock`, so Studio's composed-prompt preview shows exactly
+    what the model sees (no hidden prompts). `agentName` is a REQUIRED option so
+    a new call site cannot forget it.
+  - The persona bank emits the token instead of interpolating a name, so fresh
+    installs are name-agnostic. `PERSONA_NAME_TOKEN` is declared separately in
+    `@mantle/content` (a browser-safe leaf that agent-runtime depends on —
+    importing back would cycle); `persona-bank-token.test.ts` is the tripwire
+    against drift.
+  - Cloning rewrites whole-word occurrences of the source's name to the token,
+    NOT to the new name — baking "Tommy" in would re-break on the next rename.
+  - A prompt with no token is byte-identical, so existing brains' cached
+    prefixes are untouched. `{{secret:service/label}}` is a different mechanism
+    resolved in the HTTP dispatcher and is never matched.
+- **Resolution** — `resolveAgentForActor` (`server/web/lib/assistant.ts`) at the
+  HTTP boundary: explicit slug → the login's assigned agent → the runtime's
+  brain default. `resolveAssistantAgent` in `@mantle/assistant-runtime` is
+  unchanged; it runs outside the request and must not learn about logins.
+- **Cookie handshake** — `mantle_assistant_agent` is per-browser and sticky, so
+  a co-admin already chatting to the shared agent would keep landing there. The
+  thread payload carries `assigned: {slug, assignedAt}`; the client adopts a
+  newer `assignedAt` once against a `localStorage` watermark.
+- **Not privacy.** Content stays keyed to the anchor, every login sees every
+  agent in the picker, and `recall_window` replays any thread. The brain is
+  still the trust boundary — this is thread separation only, and the UI says so.
+- **Releasing never deletes.** `DELETE /api/users/[id]/agent` only clears the
+  binding; the agent and its archive stay, per the reasoning in migration 0127.
+
 ## 7. Risks & call-outs
 
 - **Multiple Telegram chats on one agent interleave** in the single stream. For the
   single-user setup (one bot per responder, DMs only) this is correct and desired —
   noted, not partitioned.
+- **Reminders and heartbeats stay brain-wide** — they resolve one agent (the
+  pinned `reminderAgentSlug`, or `heartbeats.agent_slug`), so a per-login
+  assistant does not get its own reminders. Deliberate; per-login routing is
+  separate work.
+- **`/settings/config` "adopt" converges only the effective persona**
+  (`syncPersonaSkills`), so it won't reach clones. The boot reconcile does —
+  `reconcilePersonaCapabilitiesByRole` and `wireDelegation` both operate on every
+  enabled responder/assistant — so clones stay current across version bumps.
 - **Dual-write transactionality** — Telegram writes both `telegram_messages` and
   `assistant_messages`; wrap in one transaction so a crash can't half-record a turn.
 - **Digest re-keying** — see §6; old digests must gain `agent_id` or be migrated.

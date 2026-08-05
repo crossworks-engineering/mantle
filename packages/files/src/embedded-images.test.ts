@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
+import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import {
   buildImageFilename,
   buildImageTitles,
   describeImageBytes,
+  extractEmbeddedImages,
+  MAX_EMBEDDED_IMAGES_PER_DOC,
   MIN_IMAGE_DIMENSION,
   passesGate,
   type EmbeddedImage,
@@ -208,5 +211,57 @@ describe('buildImageFilename', () => {
     const a = buildImageFilename(img({ ordinal: 1, caption: 'Figure 4' }), 'm');
     const b = buildImageFilename(img({ ordinal: 1, caption: 'Figure 4 (revised)' }), 'm');
     expect(a).toBe(b);
+  });
+});
+
+describe('extractEmbeddedImages — the per-document cap', () => {
+  /** A deck of `count` distinct, gate-passing screenshots, one per slide, in
+   *  slide order. Stands in for the real shape that motivated the setting: a
+   *  product manual whose figures run far past the default ceiling. */
+  async function manual(count: number): Promise<Buffer> {
+    const zip = new JSZip();
+    for (let i = 1; i <= count; i++) {
+      zip.file(
+        `ppt/slides/slide${i}.xml`,
+        `<p:sld><p:pic><p:nvPicPr><p:cNvPr id="2" name="Picture 2"/></p:nvPicPr>` +
+          `<p:blipFill><a:blip r:embed="rId1"/></p:blipFill></p:pic></p:sld>`,
+      );
+      zip.file(
+        `ppt/slides/_rels/slide${i}.xml.rels`,
+        `<?xml version="1.0"?><Relationships>` +
+          `<Relationship Id="rId1" Target="../media/image${i}.png"/></Relationships>`,
+      );
+      const b = Buffer.alloc(2_048);
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+      b.write('IHDR', 12, 'latin1');
+      b.writeUInt32BE(600, 16);
+      b.writeUInt32BE(400, 20);
+      b.writeUInt32BE(i, 1_000); // unique payload, so dedupe can't collapse them
+      zip.file(`ppt/media/image${i}.png`, b);
+    }
+    return Buffer.from(await zip.generateAsync({ type: 'uint8array' }));
+  }
+
+  it('defaults to MAX_EMBEDDED_IMAGES_PER_DOC and reports the remainder as over_cap', async () => {
+    const bytes = await manual(MAX_EMBEDDED_IMAGES_PER_DOC + 12);
+    const result = await extractEmbeddedImages(bytes, 'pptx');
+    expect(result.images).toHaveLength(MAX_EMBEDDED_IMAGES_PER_DOC);
+    // The drop is counted, never silent — this is what makes a short backfill
+    // explainable from the trace instead of looking like "the doc had none".
+    expect(result.rejected.over_cap).toBe(12);
+  });
+
+  it('honours a raised cap, so a screenshot-heavy manual keeps its later figures', async () => {
+    const bytes = await manual(MAX_EMBEDDED_IMAGES_PER_DOC + 12);
+    const result = await extractEmbeddedImages(bytes, 'pptx', { maxImages: 200 });
+    expect(result.images).toHaveLength(MAX_EMBEDDED_IMAGES_PER_DOC + 12);
+    expect(result.rejected.over_cap).toBeUndefined();
+  });
+
+  it('keeps the FIRST N in reading order — the reason a low cap hides late answers', async () => {
+    const result = await extractEmbeddedImages(await manual(8), 'pptx', { maxImages: 3 });
+    expect(result.images.map((i) => i.bytes.readUInt32BE(1_000))).toEqual([1, 2, 3]);
+    // Ordinals stay dense over what survived, so "image 3 of 3" can be counted to.
+    expect(result.images.map((i) => i.ordinal)).toEqual([1, 2, 3]);
   });
 });

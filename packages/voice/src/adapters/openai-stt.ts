@@ -18,6 +18,10 @@ import type { SttDispatcher } from './types';
 export const openAiSttAdapter: SttDispatcher = {
   providerId: 'openai',
   adapterName: 'openai-stt',
+  // /v1/audio/transcriptions takes language, plus prompt/temperature/
+  // timestamp_granularities we don't model. verbose_json (which whisper-1 and
+  // the gpt-4o transcribe models all accept) gives us language + duration back.
+  supports: ['language'],
   async transcribe(audio, opts) {
     return transcribeAudio(audio, opts);
   },

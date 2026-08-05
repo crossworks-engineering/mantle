@@ -33,6 +33,7 @@ export const OPENAI_IMAGE_MODELS: readonly ImageGenModelInfo[] = [
     description:
       'Current OpenAI default. Best text-in-image rendering, strong instruction-following. Recommended.',
     supportedSizes: ['1024x1024', '1024x1536', '1536x1024'],
+    supportedQualities: ['low', 'medium', 'high', 'auto'],
     pricePerImage: 0.07,
     tier: 'balanced',
   },
@@ -43,6 +44,7 @@ export const OPENAI_IMAGE_MODELS: readonly ImageGenModelInfo[] = [
       'Steerable with style=vivid|natural. Good for stylised art; gpt-image-1 beats it for realism + text.',
     supportedSizes: ['1024x1024', '1024x1792', '1792x1024'],
     supportedStyles: ['vivid', 'natural'],
+    supportedQualities: ['standard', 'hd'],
     pricePerImage: 0.08,
     tier: 'quality',
   },

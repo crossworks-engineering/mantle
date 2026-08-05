@@ -4,6 +4,13 @@ Cookbook for adding a new provider (or a new capability to an existing one) to M
 
 For the conceptual deep-dive on how dispatch works, read [`docs/phase-3-retrospective.md` Part 1](./_archive/phase-3-retrospective.md) first (15 minutes — it'll save you from grepping). For the per-capability routing table, [`docs/ai-workers.md` §8.1](./ai-workers.md#81-provider-routing-today--what-goes-through-what).
 
+**Wrapping a `@ai-sdk/*` package instead of hand-writing the wire calls?** Read
+[`docs/adding-an-ai-sdk-provider.md`](./adding-an-ai-sdk-provider.md) — it has the
+route-choice guidance (the SDK is worth it for Bedrock/Azure-style auth, not for
+OpenAI-compat providers), the five frictions found during the Anthropic pilot, and
+the wire-diff technique for proving a new adapter emits the right request. Steps 1
+and 2 below still apply either way: the SDK supplies no catalogue and no discovery.
+
 ---
 
 ## The five steps
@@ -75,6 +82,26 @@ Shape per chat model:
 
 Also export the API base URL + any auth-header conventions (`<PROVIDER>_BASE_URL`, `<PROVIDER>_API_VERSION` if applicable) — the adapter imports these from the catalogue file so the URL lives in one place.
 
+### Keeping it current: set `liveIds`
+
+A static catalogue is a snapshot, and nothing ages it. xAI shipped grok-4.5 and our dropdown never mentioned it — which is invisible, because a model nobody can pick looks exactly like a model that doesn't exist.
+
+If your `discoverModels` **filters this catalogue against a live list** (rather than building its list from the provider, as OpenRouter and Copilot do), return the raw ids too:
+
+```ts
+const ids = new Set((parsed.data ?? []).map((m) => m.id));
+return {
+  available: CATALOG.filter((m) => ids.has(m.id)),
+  filtered: true,
+  error: null,
+  liveIds: [...ids], // ← the half that used to be discarded
+};
+```
+
+You are already computing that set in order to intersect with it. `available` answers "which of ours are live"; only the raw list answers "which of theirs aren't ours", which is the drift. `pnpm -C server/web models:drift` reports both directions and runs on the nightly sweep.
+
+Leave `liveIds` **absent** when the list call failed — the report distinguishes "we could not look" from "the provider serves nothing", and conflating them would read as the whole catalogue having gone stale.
+
 ---
 
 ## Step 3 — Write the adapter
@@ -107,14 +134,14 @@ Does the provider speak the OpenAI-compatible /v1/chat/completions wire shape?
 
 Whichever capability you're shipping, the adapter file MUST export a `Dispatcher` object matching the interface in [`packages/voice/src/adapters/types.ts`](../packages/voice/src/adapters/types.ts):
 
-| Capability | Interface | Required method | Reference adapter |
-|---|---|---|---|
-| Chat | `ChatDispatcher` | `chat(opts) → ChatResult` | `openrouter-chat.ts` (SDK), `anthropic-chat.ts` (native), `xai-chat.ts` (OAI-compat) |
-| Embedding | `EmbeddingDispatcher` | `embed(req) → EmbedResult` | `openai-embedding.ts` |
-| TTS | `TtsDispatcher` | `synthesize(opts) → SynthesizeResult` | `openai-tts.ts` (basic), `elevenlabs-tts.ts` (live voice fetch) |
-| STT | `SttDispatcher` | `transcribe(audio, opts) → TranscribeResult` | `openai-stt.ts`, `deepgram-stt.ts` |
-| Vision | `VisionDispatcher` | `extract(opts) → VisionExtractResult` | `openai-vision.ts`, `anthropic-vision.ts` |
-| Image-gen | `ImageGenDispatcher` | `generate(opts) → GenerateImageResult` | `openai-image.ts`, `xai-image.ts` |
+| Capability | Interface             | Required method                              | Reference adapter                                                                    |
+| ---------- | --------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Chat       | `ChatDispatcher`      | `chat(opts) → ChatResult`                    | `openrouter-chat.ts` (SDK), `anthropic-chat.ts` (native), `xai-chat.ts` (OAI-compat) |
+| Embedding  | `EmbeddingDispatcher` | `embed(req) → EmbedResult`                   | `openai-embedding.ts`                                                                |
+| TTS        | `TtsDispatcher`       | `synthesize(opts) → SynthesizeResult`        | `openai-tts.ts` (basic), `elevenlabs-tts.ts` (live voice fetch)                      |
+| STT        | `SttDispatcher`       | `transcribe(audio, opts) → TranscribeResult` | `openai-stt.ts`, `deepgram-stt.ts`                                                   |
+| Vision     | `VisionDispatcher`    | `extract(opts) → VisionExtractResult`        | `openai-vision.ts`, `anthropic-vision.ts`                                            |
+| Image-gen  | `ImageGenDispatcher`  | `generate(opts) → GenerateImageResult`       | `openai-image.ts`, `xai-image.ts`                                                    |
 
 Every dispatcher also carries `providerId` + `adapterName` (the `<provider>-<capability>` convention for logs/traces) and SHOULD implement `discoverModels(apiKey)` + `staticCatalog()` so the UI's model dropdown lights up.
 
@@ -139,6 +166,7 @@ If you skip any of these four, ONE of: (a) the runtime sends an unsupported shap
 ### Chat-specific: usage + cost
 
 Every chat adapter MUST populate `tokensIn` + `tokensOut` on `ChatResult` when the provider returns them. Optionally populate:
+
 - `cacheReadTokens` — billed at the reduced cache-read rate. Anthropic: `usage.cache_read_input_tokens`. OpenAI/xAI/HF: `usage.prompt_tokens_details.cached_tokens`. Google: `usageMetadata.cachedContentTokenCount`.
 - `cacheWriteTokens` — only Anthropic distinguishes this (`usage.cache_creation_input_tokens`, billed ~1.25× input).
 - `reportedCostUsd` — only OR has this (`usage.cost`, includes vendor surcharges).
@@ -162,10 +190,7 @@ registerChatAdapter(newProviderChatAdapter);
 export { newProviderChatAdapter } from './newprovider-chat';
 
 // 4. Re-export your catalogue from `../catalogs/newprovider`:
-export {
-  NEWPROVIDER_CHAT_MODELS,
-  NEWPROVIDER_BASE_URL,
-} from '../catalogs/newprovider';
+export { NEWPROVIDER_CHAT_MODELS, NEWPROVIDER_BASE_URL } from '../catalogs/newprovider';
 ```
 
 After save: the `findAdapterCatalogDrift` check at the bottom of the same file fires on next import. If your catalogue entry in `providers.ts` (step 1) doesn't list the right capability, you'll get a warning at module load + a CI test failure in [`catalog-consistency.test.ts`](../packages/voice/src/adapters/catalog-consistency.test.ts).
@@ -185,6 +210,7 @@ Two test files, both in `packages/voice/src/adapters/`:
 Copy from [`openrouter-chat.test.ts`](../packages/voice/src/adapters/openrouter-chat.test.ts) (vi.mock pattern for the SDK) or [`tool-translation.test.ts`](../packages/voice/src/adapters/tool-translation.test.ts) (`captureFetch` helper for native-shape providers).
 
 For a CHAT adapter, the minimum tests:
+
 - Tools array is forwarded in the provider's native shape
 - `assistant.toolCalls` round-trips back to the wire shape (e.g. assistant message with `tool_use` blocks on Anthropic)
 - Tool result messages translate correctly (assistant + paired tool result blocks)
@@ -255,7 +281,7 @@ After all the above, before commit:
 - [ ] `pnpm exec vitest run` from repo root — full monorepo, no regressions
 - [ ] [`catalog-consistency.test.ts`](../packages/voice/src/adapters/catalog-consistency.test.ts) passes — your provider's capabilities array matches what adapters you registered
 - [ ] The provider appears in `/settings/ai-workers` (or `/settings/agents`) dropdown after a dev-server restart
-- [ ] The Test affordance ([chat-test-button.tsx](../apps/web/app/(app)/settings/ai-workers/chat-test-button.tsx), or the equivalent for TTS / vision / etc.) returns a reply when clicked with a real key for your provider
+- [ ] The Test affordance ([chat-test-button.tsx](<../apps/web/app/(app)/settings/ai-workers/chat-test-button.tsx>), or the equivalent for TTS / vision / etc.) returns a reply when clicked with a real key for your provider
 
 The last bullet is the **only verification you can't do at the unit-test level** — it requires a real API key + a dev server. Worth doing before claiming the work is finished.
 

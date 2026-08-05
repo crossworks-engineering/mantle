@@ -109,6 +109,7 @@ export const WORKER_MODEL_KINDS = [
   'reflector',
   'document',
   'narrator',
+  'suggester',
 ] as const;
 
 /** Azure deployment name for a curated slug (`openai/gpt-5.4` → `gpt-5.4`). */

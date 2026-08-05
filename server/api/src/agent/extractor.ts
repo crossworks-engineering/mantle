@@ -73,7 +73,14 @@ import {
   schemaDigest,
   schemaToText,
 } from '@mantle/tabledb';
-import { currentTrace, recordIngest, recordSkippedTrace, startTrace, step } from '@mantle/tracing';
+import {
+  currentTrace,
+  recordIngest,
+  recordSkippedTrace,
+  startTrace,
+  step,
+  type StepHandle,
+} from '@mantle/tracing';
 import {
   chatWithFailover,
   documentWorkerPrefersNative,
@@ -568,6 +575,42 @@ const IMAGE_BEARING_EXTS = new Set([
 const EXTRACTED_IMAGE_TAG = 'extracted-image';
 
 /**
+ * Record a step, opening a trace first when none is active.
+ *
+ * `step()` bypasses entirely without a live trace — and this pass runs BEFORE
+ * `extractNode` opens its `extractor_run` trace, which on a re-notify never
+ * happens at all because the `already_extracted` guard returns first. So the
+ * `extract_images` steps below have never reached /traces on ANY path: a
+ * 453-image backfill on a live box produced zero of them, and the same zero on
+ * a second brain read as "these documents have no pictures". The step calls
+ * were written and simply evaporated.
+ *
+ * Opened LAZILY — only where there is something to record — so a text-only
+ * document cannot mint an empty trace just by being looked at. `startTrace`
+ * nests safely (it inherits turnId/label from a parent), so the normal
+ * fresh-ingest path, which DOES have a trace by the time anything is worth
+ * recording, keeps its single trace and gains a child step.
+ */
+async function stepInOwnTrace<T>(
+  ownerId: string,
+  node: typeof nodes.$inferSelect,
+  init: Parameters<typeof step<T>>[0],
+  body: (handle: StepHandle) => Promise<T>,
+): Promise<T> {
+  if (currentTrace()) return await step(init, body);
+  return await startTrace(
+    {
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      data: { nodeType: node.type, title: node.title, pass: 'embedded_images' },
+    },
+    () => step(init, body),
+  );
+}
+
+/**
  * Pull the diagrams and screenshots out of a document and save them as real
  * image files under `files/extracted-images/<document>/`.
  *
@@ -593,6 +636,7 @@ const EXTRACTED_IMAGE_TAG = 'extracted-image';
 async function maybeExtractEmbeddedImages(
   node: typeof nodes.$inferSelect,
   ownerId: string,
+  maxImages?: number | null,
 ): Promise<void> {
   if (node.type !== 'file') return;
   const data = (node.data ?? {}) as Record<string, unknown>;
@@ -618,16 +662,42 @@ async function maybeExtractEmbeddedImages(
   if (existing) return;
 
   const loaded = await loadFileBytes(node);
-  if (!loaded) return;
+  if (!loaded) {
+    // A byte-load failure used to return silently, which made it
+    // INDISTINGUISHABLE from "this document has no pictures" — both left no
+    // trace step at all. That ambiguity is the point of the fix: you could not
+    // tell a document that was read and held nothing from one the pass never
+    // opened, so a corpus whose bytes are unreachable (a half-finished sync, a
+    // missing object) looked exactly like a corpus with no diagrams in it.
+    await stepInOwnTrace(
+      ownerId,
+      node,
+      {
+        name: 'extract_images',
+        kind: 'compute',
+        input: { filename: nameForExt, sourceFileId: node.id },
+      },
+      async (h) => {
+        h.setMeta({ candidates: 0, kept: 0, bytes_available: false });
+        h.setError('could not load file bytes — image extraction never ran for this document');
+      },
+    );
+    return;
+  }
 
   const { extractEmbeddedImages, buildImageTitles, buildImageFilename } =
     await import('@mantle/files/embedded-images');
-  const result = await extractEmbeddedImages(loaded.bytes, loaded.ext);
+  const result = await extractEmbeddedImages(loaded.bytes, loaded.ext, {
+    // Blank/0 on the worker means "use the built-in default", not "keep none".
+    maxImages: maxImages && maxImages > 0 ? maxImages : undefined,
+  });
   if (result.images.length === 0) {
     // Still worth a step when there WERE candidates: "this manual produced no
     // images" should be explainable from /traces rather than mysterious.
     if (result.candidates > 0) {
-      await step(
+      await stepInOwnTrace(
+        ownerId,
+        node,
         { name: 'extract_images', kind: 'compute', input: { filename: loaded.filename } },
         async (h) => {
           h.setMeta({ candidates: result.candidates, kept: 0, rejected: result.rejected });
@@ -640,7 +710,9 @@ async function maybeExtractEmbeddedImages(
   const sourceSlug = slugifyFolder(loaded.filename.replace(/\.[a-z0-9]+$/i, '')) ?? 'document';
   const titles = buildImageTitles(result.images, node.title || loaded.filename);
 
-  await step(
+  await stepInOwnTrace(
+    ownerId,
+    node,
     {
       name: 'extract_images',
       kind: 'compute',
@@ -2873,17 +2945,18 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
     console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err),
   );
 
-  // Pull embedded diagrams/screenshots out into their own image files, on the
-  // same terms: independent of the text allowlist, best-effort, never fatal.
-  await maybeExtractEmbeddedImages(node, ownerId).catch((err) =>
-    console.error('[extractor] embedded images failed:', err instanceof Error ? err.message : err),
-  );
-
   // target_types is the new home for the type allowlist. We still
   // accept extract_types for legacy backfilled rows in the same
   // params blob — extractTypes prefers the new name.
   const params = (worker.params ?? {}) as ExtractorParams;
   const extractTypes = params.target_types ?? params.extract_types ?? DEFAULT_EXTRACT_TYPES;
+
+  // Pull embedded diagrams/screenshots out into their own image files, on the
+  // same terms: independent of the text allowlist, best-effort, never fatal.
+  // Read AFTER params so the per-document image cap is configurable.
+  await maybeExtractEmbeddedImages(node, ownerId, params.max_embedded_images_per_doc).catch((err) =>
+    console.error('[extractor] embedded images failed:', err instanceof Error ? err.message : err),
+  );
 
   // Brain depth: documentation collections default to 'retrieval' — index to
   // L5 (summary + embedding + chunks) but SKIP L4 (entity reconciliation,

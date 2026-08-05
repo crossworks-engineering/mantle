@@ -44,6 +44,7 @@ import {
 } from '../catalogs/huggingface';
 import {
   extractOpenAICompatToolCalls,
+  mapOpenAICompatFinishReason,
   streamOpenAICompatChat,
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
@@ -123,12 +124,14 @@ async function hfChat(opts: ChatOptions): Promise<ChatResult> {
   // HF serves open reasoning models that inline <think> in content — strip it.
   const text = scrubThinkBlocks(message?.content ?? '');
   const toolCalls = extractOpenAICompatToolCalls(message);
+  const finishReason = mapOpenAICompatFinishReason(parsed.choices?.[0]?.finish_reason);
   return {
     text: text.trim(),
     // Echo the model HF says it actually served — useful for /traces
     // when :fastest routes to different sub-providers across runs.
     model: parsed.model || model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usage?.prompt_tokens,
     tokensOut: parsed.usage?.completion_tokens,
     cacheReadTokens: parsed.usage?.prompt_tokens_details?.cached_tokens,
@@ -162,6 +165,7 @@ async function hfDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo
       available: available.length > 0 ? available : [...HUGGINGFACE_CHAT_MODELS],
       filtered: available.length > 0,
       error: null,
+      liveIds: [...ids],
     };
   } catch (err) {
     return {

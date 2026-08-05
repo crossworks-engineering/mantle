@@ -61,6 +61,13 @@ export const aiWorkerKind = pgEnum('ai_worker_kind', [
   // a terse phrase, a full sentence, or a short paragraph. Optional; when absent
   // the runtime falls back to the summarizer worker. See migration 0106.
   'narrator',
+  // Suggester: proposes ONE follow-up question after a completed assistant turn,
+  // rendered as an accept-with-Enter chip above the composer. A cheap, fast chat
+  // model, fire-and-forget off the turn's critical path; its system_prompt is the
+  // tuning knob (tone/length of the proposed question). Off by default per agent
+  // (agents.params.suggest_follow_up). Optional; when absent the runtime falls
+  // back to the narrator, then the summarizer. See migration 0142.
+  'suggester',
 ]);
 
 export type AiWorkerKind = (typeof aiWorkerKind.enumValues)[number];
@@ -188,13 +195,23 @@ export type ExtractorParams = ChatLlmParams & {
    *  trace cost exceeds this, remaining facts are dropped and a warning
    *  is logged. Null = no cap. */
   extract_cost_cap_micro_usd?: number | null;
+  /** Ceiling on embedded images kept per source document, applied AFTER the
+   *  dimension/byte/duplicate gate. Blank falls back to
+   *  MAX_EMBEDDED_IMAGES_PER_DOC (30), which is right for a mixed personal
+   *  corpus and far too low for a screenshot-heavy manual: a 259-screenshot
+   *  user guide keeps images 1-30 in reading order and drops the rest as
+   *  `over_cap`, so an answer living in the back half is invisible. Raise it
+   *  per brain, knowing each kept image costs one vision call. */
+  max_embedded_images_per_doc?: number | null;
 };
 
 /** Params for `kind='summarizer'`. The summarizer rolls up chat
  *  history into conversation digests. */
 export type SummarizerParams = ChatLlmParams & {
   /** Min undigested turns before we attempt to roll up a chat. Legacy
-   *  name kept since backfilled rows use this exact key. */
+   *  name kept since backfilled rows use this exact key. The effective
+   *  value is capped at max(agent history_limit, summarize_batch) so no
+   *  turn can age out of the live history window while still undigested. */
   summarize_threshold?: number;
   /** Max turns to include in one digest's LLM call. */
   summarize_batch?: number;
@@ -210,6 +227,11 @@ export type SummarizerParams = ChatLlmParams & {
  *  (phrase vs sentence vs paragraph) is governed by the worker's `system_prompt`
  *  plus `max_tokens` (raise both to let it say more). */
 export type NarratorParams = ChatLlmParams;
+
+/** Params for `kind='suggester'`. The suggester proposes one follow-up question
+ *  after a turn. Plain chat knobs; the behaviour lives in `system_prompt` plus
+ *  `max_tokens` (a suggestion is one short question, so the cap stays tiny). */
+export type SuggesterParams = ChatLlmParams;
 
 /** Params for `kind='embedding'`. Deliberately tiny — embedding is a pure
  *  text→vector transformation; there's no system_prompt, no temperature,
@@ -246,6 +268,7 @@ export type AiWorkerParams =
   | ExtractorParams
   | SummarizerParams
   | NarratorParams
+  | SuggesterParams
   | EmbeddingParams
   | SearchParams;
 

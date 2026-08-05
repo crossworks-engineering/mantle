@@ -86,29 +86,146 @@ describe('openrouter-image', () => {
     expect(a!.staticCatalog().length).toBeGreaterThan(0);
   });
 
-  it('uses chat/completions+modalities, decodes the data-URL image', async () => {
+  /** A `/api/v1/images` success body. */
+  const imagesResponse = (b64: string, mediaType = 'image/png') =>
+    new Response(JSON.stringify({ created: 1, data: [{ b64_json: b64, media_type: mediaType }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  it('uses the dedicated /images endpoint and decodes b64_json', async () => {
     const pngB64 = Buffer.from('fakepng').toString('base64');
-    const read = stubFetch(
-      new Response(
-        JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: 'here you go',
-                images: [{ image_url: { url: `data:image/png;base64,${pngB64}` } }],
-              },
-            },
-          ],
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
-    );
+    const read = stubFetch(imagesResponse(pngB64));
     const out = await getImageGenAdapter('openrouter')!.generate({ apiKey: 'k', prompt: 'a cat' });
     const { url, body } = read();
-    expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
-    expect(body.modalities).toEqual(['image', 'text']);
+    expect(url).toBe('https://openrouter.ai/api/v1/images');
+    expect(body.prompt).toBe('a cat');
     expect(out.mimeType).toBe('image/png');
     expect(out.bytes.toString()).toBe('fakepng');
-    expect(out.revisedPrompt).toBe('here you go');
+  });
+
+  // The regression this file now guards: the chat-completions path took a
+  // model and a prompt only, so an operator's saved size/quality never left
+  // the process and no trace said so.
+  it('forwards the sizing controls it declares support for', async () => {
+    const read = stubFetch(imagesResponse(Buffer.from('x').toString('base64')));
+    await getImageGenAdapter('openrouter')!.generate({
+      apiKey: 'k',
+      prompt: 'a cat',
+      size: '2K',
+      aspectRatio: '16:9',
+      quality: 'high',
+      seed: 7,
+    });
+    const { body } = read();
+    expect(body).toMatchObject({ size: '2K', aspect_ratio: '16:9', quality: 'high', seed: 7 });
+  });
+
+  // Explicit pixels are authoritative upstream; pairing them with a ratio is
+  // a 400, so exactly one sizing key goes on the wire.
+  it('drops aspect_ratio when size is explicit pixels', async () => {
+    const read = stubFetch(imagesResponse(Buffer.from('x').toString('base64')));
+    await getImageGenAdapter('openrouter')!.generate({
+      apiKey: 'k',
+      prompt: 'a cat',
+      size: '2048x2048',
+      aspectRatio: '16:9',
+    });
+    const { body } = read();
+    expect(body.size).toBe('2048x2048');
+    expect(body).not.toHaveProperty('aspect_ratio');
+  });
+
+  it('declares what it forwards, so the caller can report the rest', () => {
+    const a = getImageGenAdapter('openrouter')!;
+    expect([...a.supports].sort()).toEqual([
+      'aspectRatio',
+      'inputImages',
+      'quality',
+      'seed',
+      'size',
+    ]);
+    expect(a.supports).not.toContain('style');
+  });
+});
+
+/**
+ * Image-to-image. Without it, "make the sky orange in that one" can only be
+ * served by generating a DIFFERENT picture from a rewritten prompt.
+ */
+describe('openrouter-image editing', () => {
+  const okResponse = () =>
+    new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('x').toString('base64') }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  it('sends references as data URLs under input_references', async () => {
+    const read = stubFetch(okResponse());
+    await getImageGenAdapter('openrouter')!.generate({
+      apiKey: 'k',
+      prompt: 'make the sky orange',
+      inputImages: [{ bytes: Buffer.from('img'), mimeType: 'image/jpeg' }],
+    });
+    const { body } = read();
+    // Objects, not bare strings — a data-URL string is a 400 from OpenRouter
+    // ("expected object, received string"), which is how the first version
+    // shipped and how a live probe found it.
+    expect(body.input_references).toEqual([
+      {
+        type: 'image_url',
+        image_url: { url: `data:image/jpeg;base64,${Buffer.from('img').toString('base64')}` },
+      },
+    ]);
+  });
+
+  it('omits input_references entirely for a fresh generation', async () => {
+    const read = stubFetch(okResponse());
+    await getImageGenAdapter('openrouter')!.generate({ apiKey: 'k', prompt: 'a cat' });
+    expect(read().body).not.toHaveProperty('input_references');
+  });
+
+  it('declares the capability, so the caller can refuse before spending', () => {
+    expect(getImageGenAdapter('openrouter')!.supports).toContain('inputImages');
+    expect(getImageGenAdapter('xai')!.supports).not.toContain('inputImages');
+  });
+});
+
+/**
+ * Sizing precedence, found by a live probe: the request said "16:9", the trace
+ * claimed 16:9 applied, and the file came back 1024x1024. The worker's DEFAULT
+ * pixel size outranked the user's explicit ratio, and the drop was silent.
+ * The caller resolves provenance now; this is the adapter-side backstop.
+ */
+describe('openrouter-image sizing conflict', () => {
+  const okResponse = () =>
+    new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('x').toString('base64') }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  it('warns when an explicit pixel size forces the ratio to be dropped', async () => {
+    const read = stubFetch(okResponse());
+    const out = await getImageGenAdapter('openrouter')!.generate({
+      apiKey: 'k',
+      prompt: 'a lighthouse',
+      size: '1024x1024',
+      aspectRatio: '16:9',
+    });
+    expect(read().body).not.toHaveProperty('aspect_ratio');
+    expect(out.warnings?.[0]).toMatchObject({ param: 'aspectRatio' });
+    expect(out.warnings?.[0]!.reason).toContain('1024x1024');
+  });
+
+  it('says nothing when a TIER size and a ratio coexist happily', async () => {
+    const read = stubFetch(okResponse());
+    const out = await getImageGenAdapter('openrouter')!.generate({
+      apiKey: 'k',
+      prompt: 'a lighthouse',
+      size: '2K',
+      aspectRatio: '16:9',
+    });
+    expect(read().body).toMatchObject({ size: '2K', aspect_ratio: '16:9' });
+    expect(out.warnings).toBeUndefined();
   });
 });

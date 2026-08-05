@@ -69,8 +69,12 @@ export const oauthAuthCodes = pgTable(
 /**
  * An issued access token (and its optional refresh token), scoped to one owner
  * + client. Both are stored hashed. The access token is short-lived (1 h); the
- * refresh token (if issued) is long-lived and rotated in place on each refresh.
- * `revoked_at` kills both at once — that's the "Disconnect" in Settings.
+ * refresh token (if issued) is long-lived. A refresh FORKS a new row and puts
+ * the used refresh token on a short grace fuse (`refresh_expires_at`), so a
+ * client can hold several live rows at once — concurrent refreshers must not
+ * invalidate each other (see refreshAccessToken in server/web/lib/mcp-oauth.ts).
+ * `revoked_at` kills both tokens of a row at once — that's the "Disconnect" in
+ * Settings, which cascades via the client row.
  */
 export const oauthAccessTokens = pgTable(
   'oauth_access_tokens',

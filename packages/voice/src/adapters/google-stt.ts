@@ -82,6 +82,9 @@ function transcribePrompt(language: string | undefined): string {
 export const googleSttAdapter: SttDispatcher = {
   providerId: 'google',
   adapterName: 'google-stt',
+  // Gemini has no language PARAMETER: the hint goes into the prompt text
+  // ('The audio is in X'). Honoured, but as instruction rather than contract.
+  supports: ['language'],
   async transcribe(audio: Buffer, opts: TranscribeOptions): Promise<TranscribeResult> {
     if (!opts.apiKey) throw new Error('google-stt: apiKey required');
     if (!audio || audio.length === 0) {

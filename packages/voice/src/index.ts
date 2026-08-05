@@ -8,6 +8,9 @@ export type {
   SynthesizeOptions,
   SynthesizeResult,
   TtsVoice,
+  TtsParam,
+  SttParam,
+  TtsWarning,
 } from './types';
 
 export { TTS_VOICES } from './types';
@@ -26,7 +29,12 @@ export {
   type SttModelInfo,
 } from './catalog';
 
-export { discoverTtsModels, discoverSttModels, type DiscoveryResult } from './discover';
+export {
+  discoverTtsModels,
+  discoverSttModels,
+  catalogDrift,
+  type DiscoveryResult,
+} from './discover';
 
 export {
   SUPPORTED_PROVIDERS,
@@ -51,7 +59,7 @@ export * from './adapters';
 // which tags her TTS will honour) and by the text-out path (to
 // strip tags from replies that end up routed as plain text).
 export { composeAudioTagInstructions, stripAudioTags } from './audio-tags';
-export type { AudioTag, WrappingTag } from './adapters/types';
+export type { AudioTag, WrappingTag, ThinkingEffort } from './adapters/types';
 
 // ElevenLabs audio-tag catalog — exported so the UI can render the
 // hint list under the voice dropdown when the worker is on v3.

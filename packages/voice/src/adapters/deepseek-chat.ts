@@ -37,6 +37,7 @@ import type { DiscoveryResult } from '../discover';
 import { DEEPSEEK_BASE_URL, DEEPSEEK_CHAT_MODELS } from '../catalogs/deepseek';
 import {
   extractOpenAICompatToolCalls,
+  mapOpenAICompatFinishReason,
   streamOpenAICompatChat,
   toOpenAICompatMessages,
   type OpenAICompatChatResponse,
@@ -103,10 +104,12 @@ async function deepseekChat(opts: ChatOptions): Promise<ChatResult> {
   // <think> defensively (some routes/distills emit it in content).
   const text = scrubThinkBlocks(message?.content ?? '');
   const toolCalls = extractOpenAICompatToolCalls(message);
+  const finishReason = mapOpenAICompatFinishReason(parsed.choices?.[0]?.finish_reason);
   return {
     text: text.trim(),
     model: parsed.model || opts.model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usage?.prompt_tokens,
     tokensOut: parsed.usage?.completion_tokens,
     // DeepSeek-specific: cache hits come back as
@@ -142,6 +145,7 @@ async function deepseekDiscover(apiKey: string): Promise<DiscoveryResult<ChatMod
       available: available.length > 0 ? available : [...DEEPSEEK_CHAT_MODELS],
       filtered: available.length > 0,
       error: null,
+      liveIds: [...ids],
     };
   } catch (err) {
     return {
@@ -154,7 +158,13 @@ async function deepseekDiscover(apiKey: string): Promise<DiscoveryResult<ChatMod
 
 /** Streaming DeepSeek chat — OpenAI-compatible SSE (its reasoning models also
  *  stream a `reasoning_content` channel, which the shared streamer forwards as
- *  reasoning deltas). */
+ *  reasoning deltas).
+ *
+ *  The `cacheReadTokens` hook is not optional decoration: DeepSeek's cache hits
+ *  ride `usage.prompt_cache_hit_tokens`, not the OpenAI-compat
+ *  `prompt_tokens_details.cached_tokens` the shared streamer reads by default.
+ *  Without it the streaming path — the one the responder takes — recorded no
+ *  cache reads at all while `chat()` recorded them correctly. */
 function deepseekChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> {
   if (!opts.apiKey) throw new Error('deepseek-chat: apiKey required');
   if (!opts.model) throw new Error('deepseek-chat: model required');
@@ -164,6 +174,7 @@ function deepseekChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise
       url: `${DEEPSEEK_BASE_URL}/chat/completions`,
       headers: { Authorization: `Bearer ${opts.apiKey}`, 'content-type': 'application/json' },
       provider: 'deepseek',
+      cacheReadTokens: (u) => u.prompt_cache_hit_tokens ?? u.prompt_tokens_details?.cached_tokens,
     },
     onDelta,
   );

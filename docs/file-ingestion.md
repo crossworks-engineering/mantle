@@ -161,7 +161,24 @@ always happens; only survivors of the deterministic filters earn a vision call:
 - ≥ 1 KB. Deliberately LOW: flat line art compresses to ~2 KB, and an initial
   8 KB floor rejected exactly the diagrams this feature exists for
 - sha256 dedupe collapses the logo repeated on every slide
-- 30 per document (`MAX_EMBEDDED_IMAGES_PER_DOC`)
+- 30 per document (`MAX_EMBEDDED_IMAGES_PER_DOC`), **configurable** — see below
+
+**The per-document cap is a setting, and its default is wrong for manuals.**
+The ceiling is applied *after* the gate, keeping the first N in reading order
+and counting the rest as `over_cap`. Thirty suits a mixed personal corpus. It is
+badly wrong for a screenshot-heavy product manual: a 259-screenshot user guide
+keeps images 1-30 and silently drops the other ~229, so any answer living past
+the opening chapters is invisible no matter how good retrieval is. Raise it per
+brain in **Settings → AI workers → Extractor → "Embedded images per document"**
+(`ExtractorParams.max_embedded_images_per_doc`; blank or 0 means the default
+30). Each image kept is one vision call, so the number is a real spend decision.
+
+⚠️ **Set the cap BEFORE backfilling.** A document that has produced *any* image
+is skipped forever after — by the backfill's candidate query and again by
+`maybeExtractEmbeddedImages`'s own `sourceFileId` dedupe. Raising the cap later
+does **not** go back for the images a low first pass left behind; recovering
+them means deleting that document's extracted images so it becomes a candidate
+again.
 
 **Scanned PDFs are excluded by shape detection** (one image per page across the
 document) — those belong to the rasterize + OCR path above; extracting them
@@ -187,11 +204,22 @@ tags also feed the summarizer prompt, so provenance improves the summary too.
 
 ### Showing one
 
-- **Chat** — the `show_image` tool (`files` group) returns a
-  `ToolArtifact{kind:'image'}`; Telegram gets an explicit `sendPhoto`.
-- **Pages** — no tool: the agent writes `![alt](media:<file-id>)`.
+Two forms, and the difference is placement:
+
+- **Inline, where the picture belongs** — the agent writes
+  `![alt](media:<file-id>)` in the reply (or the page) and calls no tool. Both
+  surfaces render through the same TipTap schema, and `client/web/lib/rich-markdown.ts`
+  resolves the marker to the image node exactly as `markdownToDoc` does for
+  Pages. The two converters share the scheme (`@mantle/content/markdown-refs`)
+  and a drift test. This is the form for an illustrated walkthrough.
+- **Below the reply** — the `show_image` tool (`files` group) returns a
+  `ToolArtifact{kind:'image'}`, rendered as a strip under the whole answer.
+  Right for a one-off, and the only path that reaches Telegram (an explicit
+  `sendPhoto`; inline markers are stripped from outbound Telegram text).
+- Doing both for one file shows it once: the inline placement wins and the strip
+  copy is dropped at finalize (`packages/assistant-runtime/src/inline-images.ts`).
 - The `visual_answers` skill carries the judgment (show rather than narrate,
-  step-by-step images in order, never invent a file id).
+  which form to use, never invent a file id).
 
 ### Backfill
 

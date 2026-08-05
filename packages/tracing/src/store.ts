@@ -176,6 +176,18 @@ function nextTurnSeq(turnId: string): number {
   return n;
 }
 
+/** Mint a fresh seq for a LATE, out-of-band publish on `turnId`'s stream — e.g.
+ *  the narrated status upgrade, which resolves an LLM call after its step's own
+ *  seq has long been emitted. The SSE replay merger dedupes on a monotonic seq
+ *  and the replay buffer keys on `(turn_id, seq)`, so re-publishing under an
+ *  already-emitted seq is silently dropped at BOTH layers: a late event must
+ *  mint its seq at publish time, not reuse its trigger's. After the root trace
+ *  ends the cursor is gone and this restarts at 0 — callers should not publish
+ *  after the turn's terminal event anyway (the client has unsubscribed). */
+export function allocateTurnSeq(turnId: string): number {
+  return nextTurnSeq(turnId);
+}
+
 // ─── Per-turn abort registry (stop a streamed turn mid-flight) ───────────────
 //
 // A turn's LLM streaming call needs to be cancellable across the process

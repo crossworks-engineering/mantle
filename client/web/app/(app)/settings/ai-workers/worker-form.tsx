@@ -116,8 +116,9 @@ const PROVIDER_FOR_KIND: Record<AiWorkerKind, string> = {
   // Web search is Perplexity Sonar via OpenRouter — provider fixed to openrouter.
   search: 'openrouter',
   search_advanced: 'openrouter',
-  // Narrator runs on the cheap/fast OpenRouter workhorse by default.
+  // Narrator + suggester run on the cheap/fast OpenRouter workhorse by default.
   narrator: 'openrouter',
+  suggester: 'openrouter',
 };
 
 /** Suggested model per kind, used as the placeholder. */
@@ -207,6 +208,8 @@ const MODEL_HINT_FOR_KIND: Record<AiWorkerKind, string> = {
   search_advanced: 'perplexity/sonar-pro',
   // Cheap + fast — it runs once per tool step, off the critical path.
   narrator: 'google/gemini-3.1-flash-lite',
+  // Cheap + fast: one short question per turn, off the critical path.
+  suggester: 'google/gemini-3.1-flash-lite',
 };
 
 export function WorkerForm({
@@ -298,7 +301,11 @@ export function WorkerForm({
   // xAI and Hugging Face. OpenRouter chat doesn't go through this
   // registry; the user types model ids by hand for OpenRouter.
   const chatShaped =
-    kind === 'reflector' || kind === 'extractor' || kind === 'summarizer' || kind === 'narrator';
+    kind === 'reflector' ||
+    kind === 'extractor' ||
+    kind === 'summarizer' ||
+    kind === 'narrator' ||
+    kind === 'suggester';
   // Whether to show a model dropdown (vs. free-text) is gated on the SAME
   // wired-provider table that drives the "not wired yet" hint — WIRED_PROVIDERS
   // from @mantle/voice (the static mirror of the adapter registry). One source
@@ -359,7 +366,8 @@ export function WorkerForm({
       forKind === 'reflector' ||
       forKind === 'extractor' ||
       forKind === 'summarizer' ||
-      forKind === 'narrator'
+      forKind === 'narrator' ||
+      forKind === 'suggester'
     ) {
       if (forProvider === 'xai') return [...XAI_CHAT_MODELS];
       if (forProvider === 'huggingface') return [...HUGGINGFACE_CHAT_MODELS];
@@ -866,6 +874,7 @@ export function WorkerForm({
           {kind === 'extractor' && 'Extractor settings'}
           {kind === 'summarizer' && 'Summarizer settings'}
           {kind === 'narrator' && 'Narrator settings'}
+          {kind === 'suggester' && 'Suggester settings'}
           {kind === 'embedding' && 'Embedding settings'}
         </h2>
 
@@ -907,6 +916,14 @@ export function WorkerForm({
             params={params}
             systemPrompt={worker?.systemPrompt}
             kind="narrator"
+            provider={provider}
+          />
+        )}
+        {kind === 'suggester' && (
+          <LlmWorkerFields
+            params={params}
+            systemPrompt={worker?.systemPrompt}
+            kind="suggester"
             provider={provider}
           />
         )}
@@ -2098,11 +2115,20 @@ function LlmWorkerFields({
 }: {
   params: Record<string, unknown>;
   systemPrompt: string | null | undefined;
-  kind: 'reflector' | 'extractor' | 'summarizer' | 'narrator';
+  kind: 'reflector' | 'extractor' | 'summarizer' | 'narrator' | 'suggester';
   provider: string;
 }) {
   return (
     <div className="space-y-4">
+      {kind === 'suggester' && (
+        <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          The suggester proposes <strong>one follow-up question</strong> after each reply, shown as
+          an accept-with-Enter chip above the composer. The{' '}
+          <strong>system prompt below is the tuning knob</strong>: steer the tone or focus of the
+          question it proposes. It only runs for agents with “Suggest follow-ups” switched on, off
+          the turn’s critical path; if it’s slow or fails, no chip appears.
+        </p>
+      )}
       {kind === 'narrator' && (
         <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
           The narrator restyles the live “thought trail” into your assistant’s voice. The{' '}
@@ -2242,6 +2268,25 @@ function LlmWorkerFields({
                 warn="Blank means a bulk import extracts with no ceiling."
               >
                 Spend allowed on a single node before extraction gives up.
+              </FieldHint>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="max_embedded_images_per_doc">Embedded images per document</Label>
+              <Input
+                id="max_embedded_images_per_doc"
+                name="max_embedded_images_per_doc"
+                type="number"
+                min={0}
+                defaultValue={(params.max_embedded_images_per_doc as number | undefined) ?? ''}
+                placeholder="blank = 30"
+                aria-describedby={hintId('max_embedded_images_per_doc')}
+              />
+              <FieldHint
+                id="max_embedded_images_per_doc"
+                warn="Every image kept costs one vision call, so a big number across a big corpus is real money."
+              >
+                Diagrams and screenshots kept per document, in reading order. The default 30 suits a
+                mixed corpus; a screenshot-heavy manual needs more or its later figures are dropped.
               </FieldHint>
             </div>
           </div>

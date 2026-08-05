@@ -56,6 +56,8 @@ const Params = z
     temperature: z.number().min(0).max(2).optional(),
     max_tokens: z.number().int().min(1).max(1_000_000).optional(),
     top_p: z.number().min(0).max(1).optional(),
+    // Per-agent opt-in for the follow-up suggester worker (the composer chip).
+    suggest_follow_up: z.boolean().optional(),
   })
   .strict();
 

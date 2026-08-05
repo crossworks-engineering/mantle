@@ -26,6 +26,10 @@
  */
 import { Marked, type TokenizerAndRendererExtension } from 'marked';
 import { ensureBlockIds } from './block-ids';
+// The reference-link schemes live in their own leaf so the client converter
+// (client/web/lib/rich-markdown.ts) reads the SAME definitions. See
+// markdown-refs.ts for why, and rich-markdown.drift.test.ts for the guard.
+import { MENTION_HREF, MEDIA_HREF, PAGE_HREF } from './markdown-refs';
 
 type PMMark = { type: string; attrs?: Record<string, unknown> };
 type PMNode = {
@@ -267,12 +271,6 @@ function paragraphAndImages(tokens: Tok[] | undefined): PMNode[] {
   flush();
   return out;
 }
-
-/** Reference-link schemes (the round-trip forms docToMarkdown emits for
- *  app-native nodes — see rich-writing.md §2). */
-const MENTION_HREF = /^mention:(?:(node|entity):)?([^\s]+)$/;
-const MEDIA_HREF = /^media:([^\s]+)$/;
-const PAGE_HREF = /^page:([^\s]+)$/;
 
 /** A paragraph consisting solely of one link (whitespace allowed around it)
  *  returns that link token; used to lift [file](media:…) and [Title](page:…)

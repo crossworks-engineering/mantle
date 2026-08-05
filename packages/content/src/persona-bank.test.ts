@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PERSONA_NAMES,
+  PERSONA_NAME_TOKEN,
   PERSONA_PRESETS,
   buildPersonaPrompt,
   type PersonaPresetKey,
@@ -23,36 +24,44 @@ describe('PERSONA_PRESETS', () => {
 });
 
 describe('buildPersonaPrompt', () => {
-  it('embeds the chosen assistant name and renders for every preset', () => {
+  it('carries the NAME TOKEN, never a baked-in name, for every preset', () => {
     for (const key of KEYS) {
-      const prompt = buildPersonaPrompt(key, { assistantName: 'Aria', gender: 'female' });
-      expect(prompt).toContain('Aria');
+      const prompt = buildPersonaPrompt(key, { gender: 'female' });
+      expect(prompt).toContain(PERSONA_NAME_TOKEN);
       expect(prompt.length).toBeGreaterThan(200);
       // leans on the always-on identity block rather than hard-coding the user
       expect(prompt).toContain('About the user');
     }
   });
 
+  it('bakes in no default name either — including Saskia', () => {
+    // The regression this guards: a name interpolated at BUILD time and a name
+    // stored on the agent row are two columns nothing keeps in step. Renaming
+    // the agent left the prompt introducing the old name, and a cloned
+    // per-login assistant answered as the agent it was copied from.
+    for (const key of KEYS) {
+      for (const gender of ['female', 'male'] as const) {
+        const prompt = buildPersonaPrompt(key, { gender });
+        expect(prompt).not.toContain(DEFAULT_PERSONA_NAMES.female);
+        expect(prompt).not.toContain(DEFAULT_PERSONA_NAMES.male);
+      }
+    }
+  });
+
   it('reflects gender in the self-description and pronoun', () => {
-    const female = buildPersonaPrompt('warm', { assistantName: 'Saskia', gender: 'female' });
-    const male = buildPersonaPrompt('warm', { assistantName: 'Sebastian', gender: 'male' });
+    // Gender IS baked in: it is fixed when the persona is created and drives
+    // prose that has no single-token substitution (woman/man, her/him).
+    const female = buildPersonaPrompt('warm', { gender: 'female' });
+    const male = buildPersonaPrompt('warm', { gender: 'male' });
     expect(female).toContain('woman');
     expect(female).toContain(' her.');
     expect(male).toContain('man');
     expect(male).toContain(' him.');
   });
 
-  it('falls back to the default name for the gender when name is blank', () => {
-    const prompt = buildPersonaPrompt('warm', { assistantName: '   ', gender: 'male' });
-    expect(prompt).toContain(DEFAULT_PERSONA_NAMES.male);
-  });
-
   it('falls back to the warm preset for an unknown key', () => {
-    const warm = buildPersonaPrompt('warm', { assistantName: 'X', gender: 'female' });
-    const unknown = buildPersonaPrompt('nope' as PersonaPresetKey, {
-      assistantName: 'X',
-      gender: 'female',
-    });
+    const warm = buildPersonaPrompt('warm', { gender: 'female' });
+    const unknown = buildPersonaPrompt('nope' as PersonaPresetKey, { gender: 'female' });
     expect(unknown).toBe(warm);
   });
 });

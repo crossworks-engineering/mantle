@@ -14,6 +14,7 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateAgentQueries } from '@mantle/web-ui/agent-invalidation';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -385,10 +386,11 @@ export function StudioClient() {
 export function StudioView({ graph }: { graph: StudioGraph }) {
   const queryClient = useQueryClient();
   // After a prose/structure edit, re-fetch the server-computed graph so the
-  // composed-prompt preview re-assembles live. Client selection state survives
-  // the refetch because this component stays mounted across it.
+  // composed-prompt preview re-assembles live, plus every other agent-derived
+  // cache (settings list, assistant panel indicator). Client selection state
+  // survives the refetch because this component stays mounted across it.
   const onSaved = () => {
-    void queryClient.invalidateQueries({ queryKey: ['studio'] });
+    void invalidateAgentQueries(queryClient);
   };
   const personaSlug = graph.agents.find((a) => a.isPersona)?.slug ?? graph.agents[0]?.slug ?? '';
   const [selection, setSelection] = useState<string>(`agent:${personaSlug}`);

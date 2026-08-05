@@ -21,6 +21,8 @@
 
 import type {
   ChatDispatcher,
+  ChatFinishReason,
+  ReasoningDetail,
   ChatModelInfo,
   ChatOptions,
   ChatResult,
@@ -39,9 +41,15 @@ import { GOOGLE_BASE_URL, GOOGLE_CHAT_MODELS } from '../catalogs/google';
  *  - functionCall: the model's tool-call request (on a model-role content)
  *  - functionResponse: our tool result fed back (on a user-role content) */
 type GeminiPart =
-  | { text: string; thought?: boolean }
+  | { text: string; thought?: boolean; thoughtSignature?: string }
   | { inlineData: { mimeType: string; data: string } }
-  | { functionCall: { name: string; args: Record<string, unknown> } }
+  | {
+      functionCall: { name: string; args: Record<string, unknown> };
+      /** Sibling key on the PART, not a field inside functionCall. Gemini 3
+       *  validates it on replay and 400s a signed-thinking turn that comes
+       *  back without one. */
+      thoughtSignature?: string;
+    }
   | { functionResponse: { name: string; response: Record<string, unknown> } };
 
 type GeminiContent = {
@@ -68,6 +76,13 @@ type GeminiResponse = {
   usageMetadata?: {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
+    /** Thinking tokens, reported SEPARATELY from candidatesTokenCount and
+     *  billed at the output rate: "response pricing is the sum of output
+     *  tokens and thinking tokens". Reading only candidatesTokenCount
+     *  under-reports every thinking turn, which is the whole cost of a
+     *  reasoning model. See {@link googleOutputTokens}.
+     *  https://ai.google.dev/gemini-api/docs/generate-content/thinking */
+    thoughtsTokenCount?: number;
     /** Gemini 2.5+ models do implicit prompt caching automatically.
      *  When the request's prefix matches a previous call's prefix
      *  (within the 1-hour TTL), the cached portion is billed at ~25%
@@ -102,6 +117,77 @@ function nextSynthCallId(): string {
   return `gemini_call_${synthCallSeq}`;
 }
 
+/**
+ * Gemma models (served through the same Gemini endpoint) reject a top-level
+ * `systemInstruction` outright — the request 400s rather than degrading. The
+ * documented workaround is to prepend the system text to the first user turn
+ * instead. Detected by model-id prefix because that is the only signal the
+ * request carries.
+ *
+ * Reachability today is narrow: `googleDiscover` intersects the live model
+ * list against GOOGLE_CHAT_MODELS, which lists only `gemini-*`, so a Gemma id
+ * cannot be picked from the model dropdown. It can still arrive from a stored
+ * agent/worker row or a seeded config, which is exactly the path that would
+ * fail with no useful message. Cheap guard, so we take it.
+ */
+function isGemmaModel(model: string): boolean {
+  return model.toLowerCase().startsWith('gemma-');
+}
+
+/**
+ * Map Gemini's `finishReason` onto the normalised {@link ChatFinishReason}.
+ *
+ * The safety-ish family is deliberately collapsed to one value: callers act
+ * identically on all of them (the reply is unusable and was withheld), and
+ * the specific flavour is Google-internal detail. `STOP` is context-sensitive
+ * — with tool calls present it means "paused to call tools", not "done".
+ *
+ * Returns undefined when Gemini reported nothing, so the caller can leave the
+ * field absent rather than asserting a stop that never happened.
+ */
+function mapGoogleFinishReason(
+  raw: string | undefined,
+  hasToolCalls: boolean,
+): ChatFinishReason | undefined {
+  if (!raw) return undefined;
+  switch (raw) {
+    case 'STOP':
+      return hasToolCalls ? 'tool_calls' : 'stop';
+    case 'MAX_TOKENS':
+      return 'length';
+    // Every withheld-content variant Gemini can report.
+    case 'SAFETY':
+    case 'RECITATION':
+    case 'BLOCKLIST':
+    case 'PROHIBITED_CONTENT':
+    case 'SPII':
+    case 'IMAGE_SAFETY':
+      return 'content_filter';
+    case 'MALFORMED_FUNCTION_CALL':
+      return 'error';
+    default:
+      // FINISH_REASON_UNSPECIFIED, OTHER, and anything Google adds later.
+      return 'other';
+  }
+}
+
+/**
+ * Output tokens as Gemini bills them: the visible reply PLUS the thinking that
+ * produced it. The two arrive in separate counters and only their sum is what
+ * the response is priced on, so a thinking turn that reads only
+ * `candidatesTokenCount` under-reports — badly, since thinking is usually the
+ * larger half.
+ *
+ * Returns undefined when Gemini reported neither, so an absent usage block
+ * stays absent rather than becoming a confident zero.
+ */
+function googleOutputTokens(usage: GeminiResponse['usageMetadata']): number | undefined {
+  const text = usage?.candidatesTokenCount;
+  const thoughts = usage?.thoughtsTokenCount;
+  if (typeof text !== 'number' && typeof thoughts !== 'number') return undefined;
+  return (text ?? 0) + (thoughts ?? 0);
+}
+
 /** Translate an OpenAI-shape image_url into a Gemini inlineData part. Only
  *  `data:` URLs are handled (the responder always sends base64 data URLs); an
  *  http(s) URL returns null so the caller can warn + skip — the dedicated
@@ -134,8 +220,14 @@ function toGeminiInlineData(
  *   4. **Tool result** (`role:'tool'`) → user-role content with a
  *      functionResponse part. The result's text body becomes
  *      `response.result` (we wrap the string so the JSON parses).
+ *
+ * `model` is needed only to spot Gemma, which cannot take a systemInstruction
+ * at all — see {@link isGemmaModel}.
  */
-function splitSystemAndContents(messages: ChatOptions['messages']): {
+function splitSystemAndContents(
+  messages: ChatOptions['messages'],
+  model: string,
+): {
   systemInstruction?: { parts: GeminiPart[] };
   contents: GeminiContent[];
 } {
@@ -213,6 +305,14 @@ function splitSystemAndContents(messages: ChatOptions['messages']): {
       parts.push({ text: m.content });
     }
     if ('toolCalls' in m && Array.isArray(m.toolCalls)) {
+      // Signed reasoning replay: put each call's original thoughtSignature back
+      // on its part, or the documented sentinel when we have none and the model
+      // would otherwise reject the turn.
+      const sigs = signaturesForTurn(
+        m.toolCalls,
+        'reasoningDetails' in m ? m.reasoningDetails : undefined,
+        model,
+      );
       for (const tc of m.toolCalls) {
         let args: Record<string, unknown>;
         try {
@@ -221,7 +321,11 @@ function splitSystemAndContents(messages: ChatOptions['messages']): {
         } catch {
           args = {};
         }
-        parts.push({ functionCall: { name: tc.function.name, args } });
+        const sig = sigs.get(tc.id);
+        parts.push({
+          functionCall: { name: tc.function.name, args },
+          ...(sig ? { thoughtSignature: sig } : {}),
+        });
         toolCallNameById.set(tc.id, tc.function.name);
       }
     }
@@ -232,10 +336,22 @@ function splitSystemAndContents(messages: ChatOptions['messages']): {
     }
     contents.push({ role: 'model', parts });
   }
-  return {
-    ...(sys.length > 0 ? { systemInstruction: { parts: [{ text: sys.join('\n\n') }] } } : {}),
-    contents,
-  };
+  if (sys.length === 0) return { contents };
+  const systemText = sys.join('\n\n');
+
+  // Gemma: fold the system text into the first user turn instead of sending
+  // systemInstruction, which it rejects. If there is no user turn to fold into
+  // there is nowhere to put it, so fall through and send it the normal way —
+  // a 400 with the system text present beats silently discarding the persona.
+  if (isGemmaModel(model)) {
+    const firstUser = contents.find((c) => c.role === 'user');
+    if (firstUser) {
+      firstUser.parts.unshift({ text: `${systemText}\n\n` });
+      return { contents };
+    }
+  }
+
+  return { systemInstruction: { parts: [{ text: systemText }] }, contents };
 }
 
 /** Translate ChatOptions.tools → Gemini's functionDeclarations form. */
@@ -252,24 +368,112 @@ function buildGoogleTools(opts: ChatOptions): GeminiToolDeclaration[] | undefine
   ];
 }
 
+/** The documented escape hatch for replaying a Gemini 3 functionCall whose
+ *  signature we don't have. Without it the request 400s outright; with it the
+ *  model accepts the turn and simply skips signature validation.
+ *  https://ai.google.dev/gemini-api/docs/thought-signatures */
+const SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validator';
+
+/** Gemini 3+ is where thought-signature validation is enforced. Earlier models
+ *  ignore the field, so replaying it is harmless there and the sentinel is
+ *  never needed. Also selects the thinking knob — see
+ *  {@link geminiThinkingLevel}. */
+function isGemini3Model(model: string): boolean {
+  return /^gemini-3/i.test(model);
+}
+
+/**
+ * Gemini 3 replaced the token budget with a discrete depth: `thinkingLevel`
+ * rather than `thinkingBudget`. The old field is still ACCEPTED there for
+ * backwards compatibility, so this was never a 400 — it is documented to
+ * produce "unexpected performance" on Gemini 3 Pro instead, which is the worse
+ * failure because nothing surfaces it. Sending both at once IS a 400, so the
+ * two branches below are exclusive by construction.
+ *
+ * Our tiers are one step deeper than Gemini's at the top (`xhigh`/`max` have no
+ * counterpart) so both fold into 'high', the same collapse @ai-sdk/google
+ * makes. We never emit 'minimal': "off" is expressed by omitting thinking
+ * entirely, per the ThinkingEffort contract.
+ * https://ai.google.dev/gemini-api/docs/generate-content/thinking
+ */
+function geminiThinkingLevel(
+  effort: ChatOptions['thinkingEffort'],
+): 'low' | 'medium' | 'high' | undefined {
+  switch (effort) {
+    case 'low':
+      return 'low';
+    case 'medium':
+      return 'medium';
+    case 'high':
+    case 'xhigh':
+    case 'max':
+      return 'high';
+    default:
+      return undefined;
+  }
+}
+
 /** Walk parts[], surface every functionCall as a normalised ChatToolCall.
- *  Mints synthetic ids since Gemini's functionCall has no id field. */
-function extractGoogleToolCalls(parts: GeminiPart[] | undefined): ChatToolCall[] | undefined {
-  if (!parts) return undefined;
+ *  Mints synthetic ids since Gemini's functionCall has no id field.
+ *
+ *  Also returns the `thoughtSignature` that rode alongside each call, keyed by
+ *  the synthetic id we just minted, so the next request can put it back on the
+ *  right part. Pairing by id is what makes this safe across a multi-call turn.
+ */
+function extractGoogleToolCalls(parts: GeminiPart[] | undefined): {
+  toolCalls?: ChatToolCall[];
+  reasoningDetails?: ReasoningDetail[];
+} {
+  if (!parts) return {};
   const calls: ChatToolCall[] = [];
+  const details: ReasoningDetail[] = [];
   for (const p of parts) {
     if ('functionCall' in p) {
+      const id = nextSynthCallId();
       calls.push({
-        id: nextSynthCallId(),
+        id,
         type: 'function',
         function: {
           name: p.functionCall.name,
           arguments: JSON.stringify(p.functionCall.args ?? {}),
         },
       });
+      if (typeof p.thoughtSignature === 'string' && p.thoughtSignature.length > 0) {
+        // `id` pairs this back to its call. There is no text to carry: Gemini's
+        // signature is opaque and validated on its own.
+        details.push({ type: 'reasoning.signature', id, signature: p.thoughtSignature });
+      }
     }
   }
-  return calls.length > 0 ? calls : undefined;
+  return {
+    ...(calls.length > 0 ? { toolCalls: calls } : {}),
+    ...(details.length > 0 ? { reasoningDetails: details } : {}),
+  };
+}
+
+/** Attach the replayed `thoughtSignature` to each functionCall part of an
+ *  assistant turn we're sending back.
+ *
+ *  The parallel-call nuance matters: Gemini 3 returns ONE signature for a
+ *  multi-call response, on the first call, and the rest legitimately have
+ *  none. So the sentinel is only injected when the turn carries NO signature
+ *  at all — injecting it per-unsigned-call would override a turn that was
+ *  already validly signed. */
+function signaturesForTurn(
+  toolCalls: ChatToolCall[],
+  details: ReasoningDetail[] | undefined,
+  model: string,
+): Map<string, string> {
+  const byId = new Map<string, string>();
+  for (const d of details ?? []) {
+    if (typeof d.id === 'string' && typeof d.signature === 'string' && d.signature) {
+      byId.set(d.id, d.signature);
+    }
+  }
+  if (byId.size === 0 && isGemini3Model(model) && toolCalls.length > 0) {
+    for (const tc of toolCalls) byId.set(tc.id, SKIP_THOUGHT_SIGNATURE_VALIDATOR);
+  }
+  return byId;
 }
 
 /**
@@ -280,7 +484,7 @@ function extractGoogleToolCalls(parts: GeminiPart[] | undefined): ChatToolCall[]
  * endpoint.
  */
 function buildGoogleBody(opts: ChatOptions): Record<string, unknown> {
-  const { systemInstruction, contents } = splitSystemAndContents(opts.messages);
+  const { systemInstruction, contents } = splitSystemAndContents(opts.messages, opts.model);
 
   // Gemini packs generation knobs into a nested object — temperature,
   // maxOutputTokens (NOTE: not 'max_tokens'), topP all live here.
@@ -290,15 +494,26 @@ function buildGoogleBody(opts: ChatOptions): Record<string, unknown> {
   if (typeof opts.topP === 'number') generationConfig.topP = opts.topP;
 
   // Gemini 2.5+ native thinking: ask the model to reason first and return a
-  // thought summary (`includeThoughts`), surfaced as reasoning deltas. We don't
-  // replay Gemini's thought signatures across tool rounds, so the same guard as
-  // the direct-Anthropic path suppresses thinking on a tool continuation (first
-  // round still thinks). `thinkingBudget` is Gemini's own knob — pass it through.
-  if (wantGuardedThinking(opts) && typeof opts.thinkingBudget === 'number') {
-    generationConfig.thinkingConfig = {
-      thinkingBudget: Math.floor(opts.thinkingBudget),
-      includeThoughts: true,
-    };
+  // thought summary (`includeThoughts`, which both generations still take),
+  // surfaced as reasoning deltas. We don't replay Gemini's thought signatures
+  // across tool rounds, so the same guard as the direct-Anthropic path
+  // suppresses thinking on a tool continuation (first round still thinks).
+  //
+  // The depth knob is model-generation-specific: Gemini 3 takes `thinkingLevel`
+  // (see geminiThinkingLevel), 2.5 takes `thinkingBudget`. Gemini 3 falls back
+  // to the budget when the caller supplied no effort tier — that is exactly the
+  // pre-existing behaviour and the API still accepts it, so nothing regresses
+  // on a caller that only sets a budget.
+  if (wantGuardedThinking(opts)) {
+    const level = isGemini3Model(opts.model) ? geminiThinkingLevel(opts.thinkingEffort) : undefined;
+    if (level) {
+      generationConfig.thinkingConfig = { thinkingLevel: level, includeThoughts: true };
+    } else if (typeof opts.thinkingBudget === 'number') {
+      generationConfig.thinkingConfig = {
+        thinkingBudget: Math.floor(opts.thinkingBudget),
+        includeThoughts: true,
+      };
+    }
   }
 
   const tools = buildGoogleTools(opts);
@@ -355,13 +570,19 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
     .map((p) => ('text' in p && !p.thought ? p.text : ''))
     .filter(Boolean)
     .join('');
-  const toolCalls = extractGoogleToolCalls(parts);
+  const { toolCalls, reasoningDetails } = extractGoogleToolCalls(parts);
+  const finishReason = mapGoogleFinishReason(
+    parsed.candidates?.[0]?.finishReason,
+    !!toolCalls && toolCalls.length > 0,
+  );
   return {
     text: text.trim(),
     model: parsed.modelVersion || opts.model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(reasoningDetails ? { reasoningDetails } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn: parsed.usageMetadata?.promptTokenCount,
-    tokensOut: parsed.usageMetadata?.candidatesTokenCount,
+    tokensOut: googleOutputTokens(parsed.usageMetadata),
     cacheReadTokens: parsed.usageMetadata?.cachedContentTokenCount,
     // Gemini has no cache-write line item — implicit caching is
     // automatic and free to populate; explicit caching has its own
@@ -402,6 +623,9 @@ async function googleDiscover(apiKey: string): Promise<DiscoveryResult<ChatModel
       available: available.length > 0 ? available : [...GOOGLE_CHAT_MODELS],
       filtered: available.length > 0,
       error: null,
+      // Already filtered to generateContent-capable ids, so the drift report
+      // doesn't have to re-learn which of Gemini's models are chat models.
+      liveIds: [...ids],
     };
   } catch (err) {
     return {
@@ -447,6 +671,9 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
   let tokensIn: number | undefined;
   let tokensOut: number | undefined;
   let cacheRead: number | undefined;
+  // Gemini reports finishReason on the candidate, typically only on the final
+  // chunk — keep the last non-empty one we see.
+  let rawFinish: string | undefined;
   // Gemini streams complete functionCall parts (not arg fragments), so collect
   // them and run the same extractor the one-shot path uses.
   const fnParts: GeminiPart[] = [];
@@ -462,11 +689,14 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
       }
       if (chunk.modelVersion) model = chunk.modelVersion;
       if (chunk.usageMetadata) {
-        // Cumulative across the stream — last chunk's totals win.
+        // Cumulative across the stream — last chunk's totals win. Output is
+        // reply + thinking (googleOutputTokens); a chunk that carries usage but
+        // no output counters leaves the previous total standing.
         tokensIn = chunk.usageMetadata.promptTokenCount ?? tokensIn;
-        tokensOut = chunk.usageMetadata.candidatesTokenCount ?? tokensOut;
+        tokensOut = googleOutputTokens(chunk.usageMetadata) ?? tokensOut;
         cacheRead = chunk.usageMetadata.cachedContentTokenCount ?? cacheRead;
       }
+      if (chunk.candidates?.[0]?.finishReason) rawFinish = chunk.candidates[0].finishReason;
       const parts = chunk.candidates?.[0]?.content?.parts ?? [];
       for (const p of parts) {
         if ('text' in p && typeof p.text === 'string' && p.text.length > 0) {
@@ -491,11 +721,14 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
     return { text: text.trim(), model, tokensIn, tokensOut, cacheReadTokens: cacheRead };
   }
 
-  const toolCalls = extractGoogleToolCalls(fnParts);
+  const { toolCalls, reasoningDetails } = extractGoogleToolCalls(fnParts);
+  const finishReason = mapGoogleFinishReason(rawFinish, !!toolCalls && toolCalls.length > 0);
   return {
     text: text.trim(),
     model,
     ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+    ...(reasoningDetails ? { reasoningDetails } : {}),
+    ...(finishReason ? { finishReason } : {}),
     tokensIn,
     tokensOut,
     cacheReadTokens: cacheRead,

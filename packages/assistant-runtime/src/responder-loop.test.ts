@@ -57,7 +57,13 @@ vi.mock('@mantle/tracing', () => ({
   },
 }));
 
-import { EMPTY_REPLY_FALLBACK, emptyLoopResult, runResponderLoop } from './responder-loop';
+import {
+  BLOCKED_REPLY_FALLBACK,
+  EMPTY_REPLY_FALLBACK,
+  TRUNCATED_REPLY_NOTE,
+  emptyLoopResult,
+  runResponderLoop,
+} from './responder-loop';
 
 const AGENT = {
   id: 'agent-1',
@@ -177,6 +183,56 @@ describe('runResponderLoop', () => {
     const r = await runResponderLoop(baseOpts() as never);
     expect(r.reply).toBe(EMPTY_REPLY_FALLBACK);
     expect(r.emptyReplySubstituted).toBe(true);
+  });
+
+  // A provider content block is a different failure from a model fumble, and
+  // EMPTY_REPLY_FALLBACK's advice ("ask again, more narrowly") is wrong for it:
+  // the same question gets blocked the same way.
+  it('substitutes the BLOCKED fallback when the provider withheld the reply', async () => {
+    h.loopResult.reply = '';
+    h.loopResult.finishReason = 'content_filter';
+    const r = await runResponderLoop(baseOpts() as never);
+    expect(r.reply).toBe(BLOCKED_REPLY_FALLBACK);
+    expect(r.blockedByProvider).toBe(true);
+    expect(r.emptyReplySubstituted).toBe(true);
+  });
+
+  it('keeps the ordinary empty-reply fallback when no block was reported', async () => {
+    h.loopResult.reply = '';
+    const r = await runResponderLoop(baseOpts() as never);
+    expect(r.reply).toBe(EMPTY_REPLY_FALLBACK);
+    expect(r.blockedByProvider).toBe(false);
+  });
+
+  // Truncation keeps every word the model produced — the note is appended, the
+  // reply is never replaced.
+  it('appends the truncation note when the model hit its token ceiling', async () => {
+    h.loopResult.reply = 'The three options are, first';
+    h.loopResult.finishReason = 'length';
+    const r = await runResponderLoop(baseOpts() as never);
+    expect(r.truncated).toBe(true);
+    expect(r.reply).toBe('The three options are, first' + TRUNCATED_REPLY_NOTE);
+    expect(r.emptyReplySubstituted).toBe(false);
+  });
+
+  it('does not annotate a reply that finished normally', async () => {
+    h.loopResult.reply = 'all done';
+    h.loopResult.finishReason = 'stop';
+    const r = await runResponderLoop(baseOpts() as never);
+    expect(r.truncated).toBe(false);
+    expect(r.reply).toBe('all done');
+  });
+
+  // A user Stop legitimately ends a turn mid-sentence. Annotating it would
+  // blame the model for something the user did.
+  it('does not annotate a stopped turn even if the round reported length', async () => {
+    h.loopResult.reply = 'partial';
+    h.loopResult.finishReason = 'length';
+    const controller = new AbortController();
+    controller.abort();
+    const r = await runResponderLoop(baseOpts({ abortSignal: controller.signal }) as never);
+    expect(r.truncated).toBe(false);
+    expect(r.reply).toBe('partial');
   });
 
   it('a stopped (aborted) turn keeps its partial/empty reply — no substitution', async () => {

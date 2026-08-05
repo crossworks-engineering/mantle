@@ -12,20 +12,39 @@
  * Maintenance: when xAI ships a new Grok variant, add an entry here.
  * Anything missing falls through to plain text-input ("Custom model
  * id — make sure your key has access") rather than blocking the user.
+ * `pnpm -C server/web models:drift` reports what xAI serves that this
+ * file doesn't list — grok-4.5 went unlisted long enough to be found by
+ * reading @ai-sdk/xai's model union, which is what prompted that task.
  *
- * Pricing reference (May 2026 docs): grok-4.3 = $1.25/$2.50 per 1M
- * input/output tokens, 1M context window. Older grok-3 variants
- * redirect to grok-4.3 since May 15.
+ * ⚠️ Pricing here is the SUB-200k-prompt tier. xAI doubles both rates
+ * once the prompt crosses 200k tokens, and `ChatModelInfo` carries one
+ * rate per direction, so a long-context turn costs twice what the cost
+ * dashboard attributes to it. Noted per-model where the window makes
+ * that reachable.
+ *
+ * Pricing reference (August 2026 docs, https://docs.x.ai/docs/models):
+ * grok-4.5 = $2.00/$6.00 per 1M, 500k context. grok-4.3 = $1.25/$2.50,
+ * 1M context. Older grok-3 variants redirect to grok-4.3 since May 15.
  */
 
 import type { ChatModelInfo } from '../adapters/types';
 
 export const XAI_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
+    id: 'grok-4.5',
+    label: 'Grok 4.5',
+    description:
+      "xAI's most capable model. reasoning_effort steers depth here and cannot be disabled. Rates DOUBLE above a 200k-token prompt ($4.00/$12.00), which its 500k window makes easy to reach.",
+    contextTokens: 500_000,
+    capabilities: ['vision', 'function_calling', 'json_mode', 'reasoning'],
+    inputPricePer1M: 2.0,
+    outputPricePer1M: 6.0,
+  },
+  {
     id: 'grok-4.3',
     label: 'Grok 4.3',
     description:
-      'Current default. Most intelligent and fastest. Aliased from any deprecated grok-3/4 model id.',
+      'Aliased from any deprecated grok-3/4 model id. Rates double above a 200k-token prompt ($2.50/$5.00).',
     contextTokens: 1_000_000,
     capabilities: ['vision', 'function_calling', 'json_mode'],
     inputPricePer1M: 1.25,
@@ -34,7 +53,8 @@ export const XAI_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
     id: 'grok-4.20-0309-reasoning',
     label: 'Grok 4.20 (reasoning)',
-    description: 'Reasoning variant. Configure effort with reasoning_effort: low | medium | high.',
+    description:
+      'Reasoning variant — depth is fixed by the model id, not steerable with reasoning_effort.',
     contextTokens: 1_000_000,
     capabilities: ['reasoning', 'function_calling', 'json_mode'],
     inputPricePer1M: 1.25,
@@ -52,7 +72,8 @@ export const XAI_CHAT_MODELS: readonly ChatModelInfo[] = [
   {
     id: 'grok-4.20-multi-agent-0309',
     label: 'Grok 4.20 (multi-agent)',
-    description: '2M context, designed for multi-agent workflows with shared state.',
+    description:
+      '2M context, designed for multi-agent workflows with shared state. reasoning_effort selects the agent COUNT here (4 or 16), not depth.',
     contextTokens: 2_000_000,
     capabilities: ['function_calling', 'json_mode'],
     inputPricePer1M: 1.25,
@@ -240,7 +261,22 @@ export const XAI_IMAGE_MODELS: readonly ImageGenModelInfo[] = [
     label: 'Grok Imagine',
     description:
       'xAI image generator (Feb 2026+). Photo-realistic and editorial styles. Reuses your chat key.',
-    supportedSizes: ['1024x1024'],
+    // Grok Imagine steers by ASPECT RATIO, not pixel size (docs.x.ai, image
+    // generation, checked 2026-08). An earlier entry here claimed a fixed
+    // 1024x1024 and no steering at all, which is why the adapter forwarded
+    // nothing.
+    supportedAspectRatios: [
+      'auto',
+      '1:1',
+      '3:4',
+      '4:3',
+      '9:16',
+      '16:9',
+      '2:3',
+      '3:2',
+      '1:2',
+      '2:1',
+    ],
     pricePerImage: 0.07,
     tier: 'balanced',
   },

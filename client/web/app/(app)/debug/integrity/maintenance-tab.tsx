@@ -38,7 +38,7 @@ const KIND_LABELS: Record<(typeof KIND_ORDER)[number], string> = {
   recurring: 'Recurring hygiene',
   remedy: 'Remedies — run when a monitor flags drift',
   ops: 'Ops — deliberate events',
-  backfill: 'Retired backfills — historical, normally not re-run',
+  backfill: 'Backfills — one-off, run when it applies to this brain',
 };
 
 function CostBadge({ cost }: { cost: MaintenanceTaskInfo['cost'] }) {
@@ -296,25 +296,29 @@ export function MaintenanceView() {
         with output below. Preview is a dry-run; Apply performs the real operation.
       </p>
 
-      {KIND_ORDER.map((kind) => {
-        const group = tasks.filter((t) => t.kind === kind && (kind !== 'backfill' || showRetired));
-        if (kind === 'backfill' && !showRetired) {
-          return (
-            <div key={kind}>
-              <button
-                type="button"
-                onClick={() => setShowRetired(true)}
-                className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-              >
-                Show {tasks.filter((t) => t.kind === 'backfill').length} retired backfills…
-              </button>
-            </div>
-          );
-        }
+      {/* Retired-ness is `status`, not `kind`. Grouping the whole backfill kind
+          as retired hid a LIVE backfill (one nobody has run on this brain yet)
+          behind a "show retired" toggle, under a heading calling it historical. */}
+      {[
+        ...KIND_ORDER.map((kind) => ({
+          key: kind,
+          label: KIND_LABELS[kind],
+          group: tasks.filter((t) => t.kind === kind && t.status !== 'retired'),
+        })),
+        ...(showRetired
+          ? [
+              {
+                key: 'retired',
+                label: 'Retired backfills — historical, normally not re-run',
+                group: tasks.filter((t) => t.status === 'retired'),
+              },
+            ]
+          : []),
+      ].map(({ key, label, group }) => {
         if (group.length === 0) return null;
         return (
-          <section key={kind} className="space-y-2">
-            <h2 className="text-sm font-semibold text-foreground">{KIND_LABELS[kind]}</h2>
+          <section key={key} className="space-y-2">
+            <h2 className="text-sm font-semibold text-foreground">{label}</h2>
             <ul className="divide-y divide-border rounded-md border border-border bg-card">
               {group.map((t) => (
                 <li key={t.slug} className="flex items-start justify-between gap-4 p-3">
@@ -337,6 +341,18 @@ export function MaintenanceView() {
           </section>
         );
       })}
+
+      {showRetired ? null : (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowRetired(true)}
+            className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Show {tasks.filter((t) => t.status === 'retired').length} retired backfills…
+          </button>
+        </div>
+      )}
 
       {run ? (
         <section className="space-y-2">

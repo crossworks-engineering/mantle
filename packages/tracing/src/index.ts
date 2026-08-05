@@ -7,6 +7,7 @@ export {
   currentTrace,
   currentStep,
   setStepObserver,
+  allocateTurnSeq,
   setTurnDeltaObserver,
   isTurnStreaming,
   emitTurnDelta,

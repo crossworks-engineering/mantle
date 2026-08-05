@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateAgentQueries } from '@mantle/web-ui/agent-invalidation';
 import { ArrowRight, Check, Pencil, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Label } from '@mantle/web-ui/ui/label';
@@ -185,7 +186,7 @@ export function ModelsTab({
     if (failed === 0) toast.success(`Applied ${ok} model change${ok === 1 ? '' : 's'}`);
     else toast.error(`${ok} applied, ${failed} failed — failed rows stay staged`);
     // Both tabs read the same query; refetch so the matrix and the editor agree.
-    await queryClient.invalidateQueries({ queryKey: ['agents'] });
+    await invalidateAgentQueries(queryClient);
   };
 
   return (

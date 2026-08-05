@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@mantle/web-ui/ui/dropdown-menu';
 import { useColorTheme } from '@mantle/web-ui/color-theme-provider';
-import { RANDOM_THEME_INTERVALS } from '@mantle/web-ui/lib/themes';
+import { RANDOM_THEME_INTERVALS, themeLabel } from '@mantle/web-ui/lib/themes';
 import { cn } from '@mantle/web-ui/lib/utils';
 
 const OFF = 'off';
@@ -44,11 +44,13 @@ export function RandomThemeToggle() {
 
   return (
     <>
+      {/* One spelling of a theme's name everywhere: the picker says "Amethyst
+          Haze", so a shuffle landing on it must not report "amethyst-haze". */}
       <span
-        className="hidden select-none pr-2 font-mono text-xs lowercase text-muted-foreground/60 sm:inline"
+        className="hidden select-none pr-2 text-xs text-muted-foreground/70 sm:inline"
         title="Current theme"
       >
-        {colorTheme}
+        {themeLabel(colorTheme)}
       </span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

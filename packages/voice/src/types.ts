@@ -26,6 +26,10 @@ export type TranscribeOptions = {
   model?: string;
 };
 
+/** A transcription request option that may or may not reach the provider.
+ *  `model` is excluded: every STT API takes one. */
+export type SttParam = 'language';
+
 export type TranscribeResult = {
   /** Transcribed text — already trimmed. */
   text: string;
@@ -102,6 +106,23 @@ export type SynthesizeOptions = {
   language?: string;
 };
 
+/** A synthesis option that may or may not survive the trip to a provider.
+ *  `voice` and `model` are excluded on purpose: every TTS API has both, and a
+ *  request without them is meaningless rather than degraded. */
+export type TtsParam = 'speed' | 'format' | 'instructions' | 'language';
+
+/** One option the adapter chose not to send, and why. Same convention as
+ *  `ImageGenWarning` on the image side, for the same reason: the alternative
+ *  is an operator setting something in /settings/ai-workers, seeing it saved,
+ *  and never learning it does nothing. Providers differ enormously here —
+ *  Gemini TTS has no speed parameter at all, ElevenLabs takes a language code
+ *  on some models and rejects the idea on others — so the honest answer is
+ *  per-adapter and sometimes per-model. */
+export type TtsWarning = {
+  param: TtsParam;
+  reason: string;
+};
+
 export type SynthesizeResult = {
   /** Audio bytes in the requested format. */
   bytes: Buffer;
@@ -110,4 +131,7 @@ export type SynthesizeResult = {
   /** Voice + model used. Echoed back so /traces can record it. */
   voice: TtsVoice;
   model: string;
+  /** Options this MODEL had no use for. Absent ⇒ everything applied.
+   *  Per-model, so it complements the per-provider `TtsDispatcher.supports`. */
+  warnings?: readonly TtsWarning[];
 };

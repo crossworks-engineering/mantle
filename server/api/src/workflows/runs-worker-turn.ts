@@ -314,7 +314,9 @@ export async function runsWorkerTurnImpl(
         const skills = await resolveAgentSkills(run.ownerId, worker.skillSlugs ?? [], {
           toolGroupSlugs: worker.toolGroupSlugs ?? [],
         });
-        const systemPrompt = composeSystemPromptWithSkills(worker.systemPrompt, skills);
+        const systemPrompt = composeSystemPromptWithSkills(worker.systemPrompt, skills, {
+          agentName: worker.name,
+        });
         const payload = (item.payload ?? {}) as Record<string, unknown>;
         const initialMessages: ChatMessage[] = [
           { role: 'system', content: systemPrompt },

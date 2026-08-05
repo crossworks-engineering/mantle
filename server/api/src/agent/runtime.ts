@@ -48,6 +48,7 @@ import {
   sendVoice,
 } from '@mantle/telegram';
 import { loadProfilePreferences, noteInboundChannel } from '@mantle/content';
+import { stripInlineMediaImages } from '@mantle/content/markdown-refs';
 import { sweepLegacyTables } from '@mantle/content/table-storage';
 import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
@@ -1029,7 +1030,15 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
               // sense in a voice context. If the reply ends up here
               // (text-out, or TTS fallback after failure), bracketed
               // tags would otherwise appear as literal text.
-              const { text: textReply, stripped } = stripAudioTags(reply);
+              const { text: taggedReply, stripped } = stripAudioTags(reply);
+              // Inline `![alt](media:<file-id>)` markers place a stored picture
+              // in the WEB chat (RichText resolves them). Telegram sends plain
+              // text with no parse_mode, so a marker would arrive as literal
+              // `![…](media:…)` gibberish. Strip them, leaving any alt text
+              // behind. A picture reaches Telegram only via `show_image`'s
+              // sendPhoto, which is what the visual_answers skill tells her.
+              const { text: textReply, stripped: mediaStripped } =
+                stripInlineMediaImages(taggedReply);
               const ids = await sendMessage(account, row.telegramChatId, textReply, {
                 replyTo: row.telegramMessageId ?? undefined,
               });
@@ -1038,6 +1047,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
                 chunks: ids.length,
                 replyLength: textReply.length,
                 ...(stripped > 0 ? { audioTagsStripped: stripped } : {}),
+                ...(mediaStripped > 0 ? { inlineImagesStripped: mediaStripped } : {}),
               });
               return ids;
             },

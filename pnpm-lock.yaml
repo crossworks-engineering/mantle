@@ -9,6 +9,9 @@ overrides:
   '@napi-rs/canvas': 1.0.2
   pg: 8.22.0
 
+patchedDependencies:
+  katex@0.18.1: dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d
+
 importers:
 
   .:
@@ -46,6 +49,9 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@25.9.5)(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+      wawoff2:
+        specifier: ^2.0.1
+        version: 2.0.1
 
   client/desktop:
     dependencies:
@@ -130,7 +136,7 @@ importers:
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))
       '@tiptap/extension-mathematics':
         specifier: ^3.28.0
-        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1)
+        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d))
       '@tiptap/extension-mention':
         specifier: ^3.28.0
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/suggestion@3.28.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))
@@ -178,7 +184,7 @@ importers:
         version: 9.0.0
       katex:
         specifier: ^0.18.1
-        version: 0.18.1
+        version: 0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d)
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0
@@ -431,6 +437,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/files':
+        specifier: workspace:*
+        version: link:../files
       '@mantle/search':
         specifier: workspace:*
         version: link:../search
@@ -883,8 +892,8 @@ importers:
         specifier: workspace:*
         version: link:../voice
       '@openrouter/sdk':
-        specifier: ^1.0.0
-        version: 1.0.0
+        specifier: ^1.2.7
+        version: 1.2.7
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
@@ -937,8 +946,8 @@ importers:
         specifier: workspace:*
         version: link:../api-keys
       '@openrouter/sdk':
-        specifier: ^1.0.0
-        version: 1.0.0
+        specifier: ^1.2.7
+        version: 1.2.7
       undici:
         specifier: ^8.8.0
         version: 8.8.0
@@ -1023,7 +1032,7 @@ importers:
         version: 1.1.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       katex:
         specifier: ^0.18.1
-        version: 0.18.1
+        version: 0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d)
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0
@@ -1374,7 +1383,7 @@ importers:
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))
       '@tiptap/extension-mathematics':
         specifier: ^3.28.0
-        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1)
+        version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d))
       '@tiptap/extension-mention':
         specifier: ^3.28.0
         version: 3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/suggestion@3.28.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))
@@ -1458,7 +1467,7 @@ importers:
         version: 4.12.31
       katex:
         specifier: ^0.18.1
-        version: 0.18.1
+        version: 0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d)
       libsodium-wrappers:
         specifier: ^0.8.4
         version: 0.8.4
@@ -2745,8 +2754,8 @@ packages:
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
 
-  '@openrouter/sdk@1.0.0':
-    resolution: {integrity: sha512-FTZg35yWnNUjMCGrjBbsGw9WJhnleAWyJlON4ZQ7pxOKsqBrZo7Zzmc3OoJQFQ+39bsIcKMf3wRNNC9KLjihrw==}
+  '@openrouter/sdk@1.2.7':
+    resolution: {integrity: sha512-vpRo7QCmAePYNBhUPmimg20dDT3+2m6QUPLg3DL4kfmVqzkti32kGxAEgHsGgbmgQ5NlgvYL1X71ePeoRwIn0A==}
 
   '@oxc-project/types@0.139.0':
     resolution: {integrity: sha512-r9gHphtCs+1M7J0pw6Sn/hh/Wpa/iQrOOkrNAlVLF/gHq+/CJmHIWKKUUhdWjcD6CIa8idarspCsASiXCXvFUw==}
@@ -5087,6 +5096,7 @@ packages:
   cron-parser@5.6.2:
     resolution: {integrity: sha512-yJ/G1LVir6CnlkLI40CsampPLKl1SprGGlUagWtGJxewytRVYezv5xVyzzbT+Pvzx+VIRvZVF7/a0eEMTxdnTA==}
     engines: {node: '>=18'}
+    deprecated: 'Published tarball was built from a stale dist/ and is missing the fixes from #414 and #415 — its contents are effectively v5.6.1. Upgrade to v5.7.0.'
 
   cross-dirname@0.1.0:
     resolution: {integrity: sha512-+R08/oI0nl3vfPcqftZRpytksBXDzOUveBq/NBVx0sUp1axwzPQrKinNx5yd5sxPu8j1wIy8AfnVQ+5eFdha6Q==}
@@ -8115,6 +8125,10 @@ packages:
   w3c-keyname@2.2.8:
     resolution: {integrity: sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==}
 
+  wawoff2@2.0.1:
+    resolution: {integrity: sha512-r0CEmvpH63r4T15ebFqeOjGqU4+EgTx4I510NtK35EMciSdcTxCw3Byy3JnBonz7iyIFZ0AbVo0bbFpEVuhCYA==}
+    hasBin: true
+
   webcrypto-core@1.9.2:
     resolution: {integrity: sha512-gsXecm82UQNlTBURJGuqOWy1Ww08S3kZUcr3aOJS02Pk0xLtkfeUAVC0u0xhgdonFme80edSJUIJyuvL/7250Q==}
 
@@ -9365,7 +9379,7 @@ snapshots:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
 
-  '@openrouter/sdk@1.0.0':
+  '@openrouter/sdk@1.2.7':
     dependencies:
       zod: 4.4.3
 
@@ -10698,11 +10712,11 @@ snapshots:
       '@tiptap/core': 3.28.0(@tiptap/pm@3.28.0)
       '@tiptap/pm': 3.28.0
 
-  '@tiptap/extension-mathematics@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1)':
+  '@tiptap/extension-mathematics@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(katex@0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d))':
     dependencies:
       '@tiptap/core': 3.28.0(@tiptap/pm@3.28.0)
       '@tiptap/pm': 3.28.0
-      katex: 0.18.1
+      katex: 0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d)
 
   '@tiptap/extension-mention@3.28.0(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0)(@tiptap/suggestion@3.28.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.28.0(@tiptap/pm@3.28.0))(@tiptap/pm@3.28.0))':
     dependencies:
@@ -13033,7 +13047,7 @@ snapshots:
     dependencies:
       commander: 8.3.0
 
-  katex@0.18.1:
+  katex@0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d):
     dependencies:
       commander: 8.3.0
 
@@ -15215,6 +15229,10 @@ snapshots:
       - msw
 
   w3c-keyname@2.2.8: {}
+
+  wawoff2@2.0.1:
+    dependencies:
+      argparse: 2.0.1
 
   webcrypto-core@1.9.2:
     dependencies:

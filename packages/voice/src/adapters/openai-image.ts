@@ -18,12 +18,27 @@
  * The adapter normalises these so callers pass the same options shape
  * regardless of model. Adapter-side validation rejects sizes that
  * aren't in the model's supportedSizes list with a clear hint.
+ *
+ * Image-to-image (`inputImages`) goes to a second endpoint,
+ * POST /v1/images/edits, as multipart with the reference(s) as file parts.
+ * gpt-image-1 accepts several under a repeated `image[]`; dall-e-2 accepts
+ * one as `image`; dall-e-3 cannot edit at all and is refused before spending.
  */
 
-import type { GenerateImageOptions, GenerateImageResult, ImageGenDispatcher } from './types';
+import type {
+  GenerateImageOptions,
+  GenerateImageResult,
+  ImageGenDispatcher,
+  ImageGenWarning,
+} from './types';
 import { OPENAI_IMAGE_DEFAULT_MODEL, OPENAI_IMAGE_MODELS } from '../catalogs/openai-image';
 
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations';
+/** Editing is a DIFFERENT endpoint and a different encoding: multipart, with
+ *  the reference picture(s) as file parts. Only gpt-image-1 and dall-e-2 do
+ *  it; dall-e-3 is generate-only, which we catch before spending. */
+const OPENAI_IMAGE_EDITS_URL = 'https://api.openai.com/v1/images/edits';
+const OPENAI_EDIT_MODELS = ['gpt-image-1', 'dall-e-2'];
 
 type OpenAiImageResponse = {
   data?: Array<{
@@ -47,6 +62,10 @@ function validateSize(model: string, size: string | undefined): string | undefin
 export const openAiImageAdapter: ImageGenDispatcher = {
   providerId: 'openai',
   adapterName: 'openai-image',
+  // No negative prompt or seed on /v1/images/generations; `style` is
+  // dall-e-3 only and `quality` dall-e-3 + gpt-image-1, both narrowed
+  // per-model by the catalog's supportedStyles/supportedQualities.
+  supports: ['size', 'style', 'quality', 'inputImages'],
   async generate(opts: GenerateImageOptions): Promise<GenerateImageResult> {
     if (!opts.apiKey) throw new Error('openai-image: apiKey required');
     const prompt = opts.prompt?.trim();
@@ -67,20 +86,62 @@ export const openAiImageAdapter: ImageGenDispatcher = {
     if (model === 'dall-e-3' || model === 'dall-e-2') {
       body.response_format = 'b64_json';
     }
-    if (opts.quality && (model === 'dall-e-3' || model === 'gpt-image-1')) {
-      body.quality = opts.quality;
+    // Per-MODEL gates, which `supports` (per-provider) cannot express. What
+    // doesn't go on the wire is reported, not swallowed.
+    const warnings: ImageGenWarning[] = [];
+    if (opts.quality) {
+      if (model === 'dall-e-3' || model === 'gpt-image-1') body.quality = opts.quality;
+      else warnings.push({ param: 'quality', reason: `${model} has no quality tier` });
     }
-    if (opts.style && model === 'dall-e-3') {
-      body.style = opts.style;
+    if (opts.style) {
+      if (model === 'dall-e-3') body.style = opts.style;
+      else
+        warnings.push({
+          param: 'style',
+          reason: `${model} has no style steering (only dall-e-3 does)`,
+        });
     }
 
-    const res = await fetch(OPENAI_IMAGES_URL, {
+    // Editing swaps both the endpoint and the encoding. Everything above still
+    // applies (same size validation, same per-model warnings), so the split is
+    // as late as possible.
+    const inputs = opts.inputImages ?? [];
+    const editing = inputs.length > 0;
+    if (editing && !OPENAI_EDIT_MODELS.includes(model)) {
+      throw new Error(
+        `openai-image: model '${model}' cannot edit an existing image (generate-only). ` +
+          `Switch the image_gen worker to ${OPENAI_EDIT_MODELS.join(' or ')} at /settings/ai-workers.`,
+      );
+    }
+
+    let payload: BodyInit;
+    const headers: Record<string, string> = { Authorization: `Bearer ${opts.apiKey}` };
+    if (editing) {
+      const form = new FormData();
+      for (const [k, v] of Object.entries(body)) form.append(k, String(v));
+      // gpt-image-1 takes several references under the repeated `image[]`
+      // key; dall-e-2 takes exactly one as `image`.
+      const key = model === 'gpt-image-1' ? 'image[]' : 'image';
+      for (const [i, img] of inputs.entries()) {
+        form.append(
+          key,
+          new Blob([new Uint8Array(img.bytes)], { type: img.mimeType }),
+          img.filename ?? `reference-${i}.png`,
+        );
+      }
+      payload = form;
+      // Content-Type is deliberately unset: fetch derives it WITH the
+      // multipart boundary, and setting it by hand strips the boundary and
+      // the request fails to parse.
+    } else {
+      payload = JSON.stringify(body);
+      headers['Content-Type'] = 'application/json';
+    }
+
+    const res = await fetch(editing ? OPENAI_IMAGE_EDITS_URL : OPENAI_IMAGES_URL, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${opts.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+      headers,
+      body: payload,
       // Image generation can take 20-40s on dall-e-3 hd; give plenty.
       signal: AbortSignal.timeout(120_000),
     });
@@ -106,6 +167,7 @@ export const openAiImageAdapter: ImageGenDispatcher = {
           mimeType: imgRes.headers.get('content-type') || 'image/png',
           model,
           revisedPrompt: first.revised_prompt,
+          ...(warnings.length > 0 ? { warnings } : {}),
         };
       }
       throw new Error('openai-image: response had no b64_json or url');
@@ -115,6 +177,7 @@ export const openAiImageAdapter: ImageGenDispatcher = {
       mimeType: 'image/png',
       model,
       revisedPrompt: first.revised_prompt,
+      ...(warnings.length > 0 ? { warnings } : {}),
     };
   },
   staticCatalog() {

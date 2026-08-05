@@ -15,6 +15,13 @@
 // docs/versioning.md.
 //
 // Then commit and tag:  git tag v<new>
+//
+// GUARD: refuses to run on any branch other than main (--force overrides).
+// Bumping on a feature branch was the old ritual, and it made every concurrent
+// worktree edit the same 4 version lines — guaranteed conflicts whenever two
+// sessions were in flight. The bump now happens ON MAIN as part of the merge
+// (scripts/merge-branch.sh), where merges are serialized by construction.
+import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -30,9 +37,32 @@ const targets = [
   'client/desktop/package.json',
 ].map((p) => join(root, p));
 
-const arg = process.argv[2];
+const args = process.argv.slice(2);
+const force = args.includes('--force');
+const arg = args.find((a) => !a.startsWith('--'));
 if (!arg) {
-  console.error('usage: pnpm version:bump <patch|minor|major|x.y.z>');
+  console.error('usage: pnpm version:bump <patch|minor|major|x.y.z> [--force]');
+  process.exit(1);
+}
+
+// Main-only guard (see header). A detached HEAD (CI checkout) and a missing
+// git are both allowed through — the guard targets exactly one mistake:
+// bumping on a feature branch in a worktree.
+let branch = null;
+try {
+  branch = execSync('git rev-parse --abbrev-ref HEAD', {
+    cwd: root,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+    .toString()
+    .trim();
+} catch {
+  /* no git / not a repo — nothing to guard */
+}
+if (!force && branch && branch !== 'main' && branch !== 'HEAD') {
+  console.error(`✗ refusing to bump on branch "${branch}" — versions bump on main only.`);
+  console.error('  Land the branch with scripts/merge-branch.sh (it bumps as part of the');
+  console.error('  merge, where merges are serialized). Override with --force if you must.');
   process.exit(1);
 }
 

@@ -58,6 +58,7 @@ import {
   unregisterTurnAbort,
 } from '@mantle/tracing';
 import { pickWebDefaultAgent } from './select';
+import { artifactsNotPlacedInline } from './inline-images';
 import {
   assembleResponderTurn,
   base64Bytes,
@@ -90,6 +91,32 @@ export const CHATTABLE_ROLES: ('assistant' | 'responder' | 'custom')[] = [
   'responder',
   'custom',
 ];
+
+/** Everything the post-turn follow-up suggester needs. `stopped` marks a
+ *  user-Stop turn (which still finalizes 'complete' with its partial reply) so
+ *  the hook can decline to decorate an interrupted answer. */
+export type TurnSuggestionContext = {
+  ownerId: string;
+  agent: Agent;
+  /** The finalized outbound row's id, where the suggestion is persisted. */
+  outboundId: string;
+  /** What the user actually typed (displayText, not the LLM-augmented text). */
+  userText: string;
+  /** The finalized reply text. */
+  replyText: string;
+  stopped: boolean;
+};
+
+export type TurnSuggestionHook = (ctx: TurnSuggestionContext) => void;
+
+// Injectable post-finalize hook (same pattern as the tracing observers): this
+// package must not import server/api, so the api process installs the real
+// suggester at boot. Fired fire-and-forget AFTER the done emit; it must never
+// delay or fail the turn. Null (the default) costs nothing.
+let turnSuggestionHook: TurnSuggestionHook | null = null;
+export function setTurnSuggestionHook(fn: TurnSuggestionHook | null): void {
+  turnSuggestionHook = fn;
+}
 
 export type AssistantTurnResult = {
   inbound: AssistantMessage;
@@ -498,6 +525,8 @@ export async function runAssistantTurn(
         loop: emptyLoopResult(),
         reply: '',
         emptyReplySubstituted: false,
+        blockedByProvider: false,
+        truncated: false,
         persistedThoughts: [],
         toolStats: null,
         ctx,
@@ -532,6 +561,31 @@ export async function runAssistantTurn(
   // voice-mode reply would skip the strip.
   const reply = stripAudioTags(outcome.reply).text;
 
+  // Persist the turn's media onto the row. The live `artifacts` channel below
+  // carries the bytes, but it only reaches the client on the LEGACY BLOCKING
+  // response — with streaming on, the route answers 202 with a turn id and the
+  // client reconciles to this durable row instead. So an artifact not written
+  // here is never rendered at all: `show_image` was building four perfectly
+  // good artifacts a turn and landing an empty `attachments` column.
+  //
+  // Node reference only, never the base64 — StoredAttachmentView fetches from
+  // /api/files/files/<nodeId>, so an artifact WITHOUT a node id has nothing the
+  // client could load and is left to the live channel.
+  //
+  // A reply can PLACE a picture itself now, by writing `![alt](media:<id>)`
+  // where it belongs. Anything it placed must not ALSO appear in the strip
+  // below. See inline-images.ts for the rule.
+  const galleryArtifacts = artifactsNotPlacedInline(outcome.loop.artifacts, reply);
+
+  const durableAttachments: ConversationAttachment[] = galleryArtifacts
+    .filter((a) => typeof a.nodeId === 'string' && a.nodeId.length > 0)
+    .map((a) => ({
+      kind: a.kind,
+      nodeId: a.nodeId!,
+      ...(a.mimeType ? { mime: a.mimeType } : {}),
+      ...(a.caption ? { caption: a.caption } : {}),
+    }));
+
   // Finalize the pending outbound row: fill the composed reply + flip the status
   // to 'complete'. Journaled, so a crash-resume re-applies it idempotently.
   const { persistedThoughts, toolStats } = outcome;
@@ -544,6 +598,7 @@ export async function runAssistantTurn(
       model: agent.model,
       ...(persistedThoughts.length ? { thoughts: persistedThoughts } : {}),
       ...(toolStats ? { toolStats } : {}),
+      ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
     }),
   );
   // The row was inserted this same turn, so it should always still be there;
@@ -580,5 +635,27 @@ export async function runAssistantTurn(
     });
   }
 
-  return { inbound, outbound, reply, artifacts: outcome.loop.artifacts };
+  // Follow-up suggestion: strictly AFTER done, fire-and-forget, so it can
+  // never delay the turn. The hook itself guards (per-agent toggle, reply
+  // length, kill switch) and persists onto the outbound row's data; the client
+  // fetches it separately after done. A throwing hook is a bug, but even then
+  // the turn result must not be harmed.
+  if (turnSuggestionHook) {
+    try {
+      turnSuggestionHook({
+        ownerId,
+        agent,
+        outboundId: outboundPending.id,
+        userText: displayText,
+        replyText: reply,
+        stopped: abortController?.signal.aborted ?? false,
+      });
+    } catch (err) {
+      console.warn('[suggester] hook threw:', err instanceof Error ? err.message : err);
+    }
+  }
+
+  // `artifacts` is the LEGACY BLOCKING channel (streaming off): the client
+  // renders it directly, so it needs the same dedupe the durable row got.
+  return { inbound, outbound, reply, artifacts: galleryArtifacts };
 }

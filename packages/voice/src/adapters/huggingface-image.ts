@@ -47,6 +47,9 @@ function parseSize(size: string | undefined): { width: number; height: number } 
 export const huggingfaceImageAdapter: ImageGenDispatcher = {
   providerId: 'huggingface',
   adapterName: 'huggingface-image',
+  // width/height come straight from `size`; the inference API has no
+  // style or quality tier.
+  supports: ['size', 'negativePrompt', 'seed'],
   async generate(opts: GenerateImageOptions): Promise<GenerateImageResult> {
     if (!opts.apiKey) throw new Error('huggingface-image: apiKey required');
     const prompt = opts.prompt?.trim();

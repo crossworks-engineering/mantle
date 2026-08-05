@@ -71,10 +71,18 @@ Every task declares:
 | `requiresEnv`              | env vars beyond `DATABASE_URL` the script needs                                                                                                                                                |
 
 **Hard guardrail** (enforced by a runtime assertion at module load and by
-`registry.test.ts`): `schedulable` tasks must be `cost: 'sql'`, `status:
-'live'`, `kind: 'recurring'`, and dry-run-by-default. Per the standing
-cost-safety rule, **model-spending tasks can never be scheduled** — `re-embed`,
-`extract-backfill`, `relations-backfill` etc. stay manual forever.
+`registry.test.ts`): `schedulable` tasks must be free (`isFreeCost` — `sql` or
+`io`), `status: 'live'`, `kind: 'recurring'`, and either dry-run-by-default
+(`applyFlag`) or `readOnly`. Per the standing cost-safety rule, **model-spending
+tasks can never be scheduled** — `re-embed`, `extract-backfill`,
+`relations-backfill` etc. stay manual forever. `imap` stays barred too: it burns
+mailbox round-trips. `readOnly` is what lets a pure report be scheduled; a
+report the operator has to remember to run is exactly the failure it exists to
+catch.
+
+`registry.test.ts` also enforces that `schedulable: true` **is true** — that the
+task has an in-process sweep the cron will actually reach, and vice versa. See
+Phase 2 for the three tasks that silently didn't.
 
 ## Phase 1 — CLI (`pnpm maintain`) ✅
 
@@ -117,10 +125,24 @@ streams a run.
   pg-boss observability (`checkPgBoss`).
 - The handler runs `runScheduledSweeps` (`lib/maintenance/sweeps.ts`):
   iterates `schedulable` registry tasks and runs them **in-process** via a
-  slug→sweep map — never by spawning scripts. `entities-dedupe`'s tier merge
-  is lifted into a shared `runEntitiesDedupe()` used by BOTH the CLI script
-  and the cron, so the hygiene job has one definition. Belt-and-braces: the
-  sweep re-checks `cost === 'sql'` on top of the registry assertion.
+  slug→sweep map — never by spawning scripts. Each task's logic is lifted into
+  a shared function used by BOTH the CLI script and the cron, so a job has one
+  definition: `runEntitiesDedupe()`, `runDepsDrift()`, `runModelsDrift()`,
+  `reapAbandonedTracesAllOwners()`. Belt-and-braces: the sweep re-checks the
+  cost on top of the registry assertion, via the registry's own `isFreeCost`.
+
+  **That re-check used to be its own copy of the rule, and it silently ate
+  three tasks.** It hardcoded `cost === 'sql'`; when the registry widened to
+  `sql | io` for read-only reports the two disagreed, and `deps-drift` was
+  dropped on every run despite declaring `schedulable: true`. `traces-reap`
+  passed the cost gate but had no slug→sweep entry, so it was dropped too —
+  for months, while its own docstring said it ran nightly. Both failure modes
+  are silent by construction: the cron logs one `console.warn` at 03:30 UTC
+  and carries on. `registry.test.ts` now enforces the claim in both directions
+  (every schedulable task has a sweep; every sweep belongs to a schedulable
+  task the runner will reach), so `schedulable: true` cannot be decoration
+  again.
+
 - **`maintenance_runs`** (migration 0128): slug, source (`cli`/`ui`/`cron`),
   live, state, started/finished, exit code, summary. All three surfaces
   write it — the CLI best-effort (skipped without `DATABASE_URL`), the UI
@@ -139,8 +161,34 @@ streams a run.
   key, so CLI, UI, and cron (three different processes) can never merge
   concurrently — a contender fails fast with a clear message. Dry-runs skip
   the lock.
-- The schedule contains exactly one task: `entities-dedupe` (auto tier).
-  Backups stay on the `db-dump.sh` path — they are already scheduled there.
+- The schedule contains five tasks: `entities-dedupe` (auto tier),
+  `traces-reap` (all owners), and the three read-only reports `deps-drift`,
+  `models-drift` and `pinned-model-drift`. Backups stay on the `db-dump.sh`
+  path — they are already scheduled there.
+
+  The two model reports answer different questions and neither subsumes the
+  other. `models-drift` is CATALOGUE-level: does our onboarding dropdown still
+  offer what providers serve? It skips OpenRouter, whose list is built from the
+  provider and so cannot drift. `pinned-model-drift` is BRAIN-level: do the ids
+  `agents.model` / `ai_workers.model` actually send still exist, and has the
+  family moved on? A pin on OpenRouter absolutely can drift — a delisted slug
+  404s at turn time — so it covers precisely what the other one skips.
+
+  `pinned-model-drift` reports anything it cannot judge as **not checked, with
+  a reason**, never as missing. A provider with no list API, an absent key, and
+  a catalogue that does not cover the pin's modality all say nothing about
+  whether the pin is valid. That distinction is the whole report: the naive
+  version marked a healthy five-box fleet as three models retired, because
+  OpenRouter's `/models` enumerates chat only (so every TTS/STT worker read as
+  dead) and its auto-alias ids carry a leading `~`. A report that cries wolf
+  gets muted, and then the real delisting goes unread too.
+
+  The reports **summarise rather than fail**. A dependency publishing a patch,
+  or a provider shipping a model, is not a failed run; a sweep that goes red on
+  routine news gets muted within a week and then the signal is gone. Findings
+  land in the `maintenance_runs` summary (e.g. `137 packages checked — 72
+behind in range, 5 major(s) outside range`) and the Maintenance tab's History
+  table is where you read them.
 
 **Audited (2026-07-20):** two adversarial review passes (correctness/data +
 concurrency/lifecycle/ops) over the Phase-2 commit; no high-severity

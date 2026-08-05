@@ -192,6 +192,12 @@ void GOOGLE_AUDIO_TAGS;
 export const googleTtsAdapter: TtsDispatcher = {
   providerId: 'google',
   adapterName: 'google-tts',
+  // Gemini TTS has NO speed, instructions or language parameter (checked
+  // against ai.google.dev/gemini-api/docs/speech-generation, 2026-08):
+  // delivery is steered by natural-language prompt text and inline audio
+  // tags instead, which is what supportedAudioTags advertises. Only the
+  // output container is ours to pick.
+  supports: ['format'],
   synthesize: googleTtsSynthesize,
   discoverModels: googleTtsDiscover,
   voicesForModel: googleTtsVoicesForModel,

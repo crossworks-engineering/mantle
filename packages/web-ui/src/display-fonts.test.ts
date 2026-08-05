@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { DEFAULT_LOGO_FONT, DEFAULT_TITLE_FONT, resolveFontVars } from './display-fonts';
+import {
+  DEFAULT_LOGO_FONT,
+  DEFAULT_TITLE_FONT,
+  DISPLAY_FONTS,
+  displayFontFaceCss,
+  resolveFontVars,
+} from './display-fonts';
 import { resolveAppearanceAttrs } from './appearance';
 
 /**
@@ -75,4 +85,102 @@ describe('resolveAppearanceAttrs', () => {
     expect(attrs.fontVars.wordmark).toBeUndefined();
     expect(attrs.fontTitle).toBe('capriola');
   });
+});
+
+/**
+ * The registry names files by hand and TWO apps serve them from their own
+ * `public/` — so a font can be listed with no file behind it (picker offers a
+ * face that 404s and silently falls back), or a file can outlive the entry that
+ * pointed at it (dead weight in both images, nobody notices). Neither shows up
+ * in a typecheck. Both directions are asserted here, per app.
+ */
+const APPS = ['client', 'server'] as const;
+const publicDir = (app: string) =>
+  fileURLToPath(new URL(`../../../${app}/web/public`, import.meta.url));
+
+describe('display-font files', () => {
+  for (const app of APPS) {
+    it(`${app}/web ships a file for every registry entry`, () => {
+      const missing = DISPLAY_FONTS.filter((f) => f.file).filter(
+        (f) => !existsSync(`${publicDir(app)}${f.file}`),
+      );
+      expect(
+        missing.map((f) => f.file),
+        `listed in DISPLAY_FONTS but absent`,
+      ).toEqual([]);
+    });
+
+    it(`${app}/web ships no library face the registry dropped`, () => {
+      const listed = new Set(
+        DISPLAY_FONTS.map((f) => f.file?.split('/').pop()).filter(Boolean) as string[],
+      );
+      const orphans = readdirSync(`${publicDir(app)}/fonts/library`)
+        .filter((n) => /\.(ttf|otf|woff2?)$/.test(n))
+        .filter((n) => !listed.has(n));
+      expect(orphans, 'delete these, or add the registry entry back').toEqual([]);
+    });
+  }
+
+  it('declares each face with the format its file actually is', () => {
+    const css = displayFontFaceCss();
+    for (const f of DISPLAY_FONTS) {
+      if (!f.file || !f.family) continue;
+      const want = f.file.endsWith('.woff2') ? 'woff2' : 'truetype';
+      expect(css, `${f.key} declared with the wrong format()`).toContain(
+        `url("${f.file}") format("${want}")`,
+      );
+    }
+  });
+});
+
+/**
+ * Both apps carry their own copy of the font payload, on purpose: client/web
+ * serves it through `next start`, server/web through its own static layer
+ * (server/static.ts) for the public /s and /print surfaces. Each origin needs
+ * the bytes, so the duplication is load-bearing and stays.
+ *
+ * What must NOT happen is the two drifting. Update a face in one app and forget
+ * the other and nothing breaks loudly — the share page just quietly renders a
+ * different font from the app that authored it, on a surface nobody is looking
+ * at. Content hashes make that impossible to land.
+ *
+ * Adding or replacing a face means mirroring it into BOTH public dirs; see
+ * `scripts/fonts-to-woff2.mjs` and server/web/CLAUDE.md.
+ */
+function fingerprint(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (abs: string, rel: string) => {
+    for (const entry of readdirSync(abs, { withFileTypes: true })) {
+      const next = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(join(abs, entry.name), next);
+      else
+        out[next] = createHash('sha256')
+          .update(readFileSync(join(abs, entry.name)))
+          .digest('hex');
+    }
+  };
+  walk(dir, '');
+  return out;
+}
+
+describe('the two apps serve the same font payload', () => {
+  // Everything duplicated between them: the display library and its licenses,
+  // the Bukhari wordmark, and the Inter UI face.
+  for (const root of ['fonts', 'Inter'] as const) {
+    it(`public/${root} is byte-identical in client/web and server/web`, () => {
+      const client = fingerprint(`${publicDir('client')}/${root}`);
+      const server = fingerprint(`${publicDir('server')}/${root}`);
+
+      expect(
+        Object.keys(server).sort(),
+        `public/${root}: one app has files the other does not`,
+      ).toEqual(Object.keys(client).sort());
+
+      const differing = Object.keys(client).filter((f) => client[f] !== server[f]);
+      expect(
+        differing,
+        `public/${root}: same filename, different bytes — mirror the change`,
+      ).toEqual([]);
+    });
+  }
 });

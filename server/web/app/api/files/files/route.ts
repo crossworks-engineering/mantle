@@ -154,7 +154,13 @@ function tryUtf8Snippet(buf: Buffer): string | undefined {
   return text;
 }
 
-const BulkDeleteBody = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) });
+const BulkDeleteBody = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(500),
+  /** Confirmed cascade: also delete the nodes ingest derived from each file
+   *  (extracted images, imported tables, pages, notes). Without it, files
+   *  with derived nodes are refused and reported back for a confirm dialog. */
+  cascade: z.boolean().optional(),
+});
 
 export async function DELETE(req: Request) {
   const user = await getOwnerOr401();
@@ -166,6 +172,17 @@ export async function DELETE(req: Request) {
       { error: parsed.error.issues[0]?.message ?? 'invalid input' },
       { status: 400 },
     );
+  }
+  if (parsed.data.cascade) {
+    const { deleteFileWithDerived } = await import('@mantle/content');
+    let deleted = 0;
+    let reapedTotal = 0;
+    for (const id of parsed.data.ids) {
+      const res = await deleteFileWithDerived(user.id, id);
+      if (res.ok) deleted++;
+      reapedTotal += res.reaped.total;
+    }
+    return NextResponse.json({ deleted, hasDerived: [], reapedTotal });
   }
   const { bulkDeleteFiles } = await import('@/lib/files');
   const res = await bulkDeleteFiles({ ownerId: user.id, fileIds: parsed.data.ids });

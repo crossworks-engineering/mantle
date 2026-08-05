@@ -223,7 +223,16 @@ export async function deleteLandedNode(
 
   if (row.type === 'file') {
     const res = await deleteFileById({ ownerId, fileId: nodeId });
-    if (!res.ok) return { ok: false, type: row.type, error: 'file delete failed' };
+    if (!res.ok) {
+      // No silent cascade here: point the operator at the confirm flow.
+      const error =
+        res.reason === 'has_derived'
+          ? `file has ${res.derived?.total ?? 0} derived node(s) — delete it from /files, which confirms the cascade`
+          : res.reason === 'attachment'
+            ? 'file is an email attachment — delete it from the email'
+            : 'file delete failed';
+      return { ok: false, type: row.type, error };
+    }
     return { ok: true, type: row.type };
   }
 

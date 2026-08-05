@@ -11,14 +11,46 @@
  */
 
 import { and, desc, eq, inArray, lt } from 'drizzle-orm';
-import { db, agents, assistantMessages, type ConversationAttachment } from '@mantle/db';
-import { CHATTABLE_ROLES } from '@mantle/assistant-runtime';
+import { db, agents, assistantMessages, type Agent, type ConversationAttachment } from '@mantle/db';
+import {
+  CHATTABLE_ROLES,
+  resolveAssistantAgent as resolveAssistantAgentRuntime,
+} from '@mantle/assistant-runtime';
+import { getAssignedAgent } from './agents';
+import type { SessionUser } from './auth';
 
 export {
   runAssistantTurn,
   resolveAssistantAgent,
   type AssistantTurnResult,
 } from '@mantle/assistant-runtime';
+
+/**
+ * `resolveAssistantAgent`, but aware of WHICH LOGIN is asking.
+ *
+ * The runtime resolver only ever sees the anchor owner id — by design; it runs
+ * outside the request, from the durable runner as well as a route, and must not
+ * learn about logins. But since migration 0111 several logins share that anchor,
+ * so they all resolved to the same agent and their turns interleaved in one
+ * thread. Migration 0143 lets a login own an agent; this resolves it, at the
+ * HTTP boundary where `actor.id` is known.
+ *
+ * Order: an explicit slug always wins (the picker is the user's own choice) →
+ * the login's assigned assistant → today's brain-wide default. Every step falls
+ * through, so a brain with no assignments behaves exactly as before.
+ */
+export async function resolveAgentForActor(
+  user: SessionUser,
+  slug?: string,
+): Promise<Agent | null> {
+  if (!slug) {
+    // Returns the row, so this is one query — not a lookup followed by a
+    // re-fetch of the same agent by slug.
+    const assigned = await getAssignedAgent(user.id, user.actor.id);
+    if (assigned) return assigned;
+  }
+  return resolveAssistantAgentRuntime(user.id, slug);
+}
 
 export type AssistantTimelineRow = {
   id: string;
@@ -47,6 +79,11 @@ export type AssistantTimelineRow = {
    *  ledger, persisted at finalize. Drives the "N tool calls · M failed"
    *  footer so the record is independent of the reply's claims. */
   toolStats?: ToolOutcomeStatsRow;
+  /** True when this row belongs to a superseded (replaced) turn pair — the
+   *  user cancelled the turn mid-stream and re-sent original + correction as
+   *  one combined turn (data.superseded_by). The pair stays in the transcript,
+   *  rendered dimmed with a "replaced" tag; prompt history and digests skip it. */
+  superseded?: boolean;
   createdAt: string;
 };
 
@@ -70,6 +107,11 @@ function thoughtsFromData(data: unknown): AssistantTimelineRow['thoughts'] {
         Boolean(s) && typeof (s as { label?: unknown }).label === 'string',
     )
     .map((s) => ({ kind: String(s.kind ?? 'tool'), label: s.label, elapsedMs: s.elapsedMs }));
+}
+
+/** True when the row carries the supersede stamp (`data.superseded_by`). */
+function supersededFromData(data: unknown): boolean {
+  return Boolean((data as { superseded_by?: unknown } | null)?.superseded_by);
 }
 
 /** Pull the persisted tool-outcome tally out of a row's `data` jsonb. */
@@ -132,6 +174,7 @@ export async function recentAssistantMessages(
     attachments: r.attachments ?? [],
     ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
     ...(toolStatsFromData(r.data) ? { toolStats: toolStatsFromData(r.data) } : {}),
+    ...(supersededFromData(r.data) ? { superseded: true } : {}),
     createdAt: r.createdAt.toISOString(),
   }));
 }
@@ -182,6 +225,7 @@ export async function assistantMessagesBefore(
     attachments: r.attachments ?? [],
     ...(thoughtsFromData(r.data) ? { thoughts: thoughtsFromData(r.data) } : {}),
     ...(toolStatsFromData(r.data) ? { toolStats: toolStatsFromData(r.data) } : {}),
+    ...(supersededFromData(r.data) ? { superseded: true } : {}),
     createdAt: r.createdAt.toISOString(),
   }));
 }

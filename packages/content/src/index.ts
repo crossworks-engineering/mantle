@@ -21,6 +21,17 @@ export {
 } from './notes';
 
 export {
+  countDerivedFromFile,
+  describeDerivedCounts,
+  reapDerivedFromFile,
+  deleteFileWithDerived,
+  isPerDocumentExtractedImagesPath,
+  type DerivedCounts,
+  type ReapResult,
+  type CascadeDeleteResult,
+} from './derived';
+
+export {
   TASKS_ROOT_LABEL,
   TASK_STATUSES,
   TASK_PRIORITIES,
@@ -392,9 +403,13 @@ export {
   findBlock,
   replaceBlock,
   insertAfterBlock,
+  insertBeforeBlock,
+  appendBlocks,
+  wrapBlocks,
   deleteBlock,
   type FindResult,
   type PMBlockNode,
+  type WrapContainer,
 } from './block-edit';
 
 export { diffBlocks, type BlockDiff, type BlockChange } from './block-diff';
@@ -623,6 +638,11 @@ export {
   TEAM_PRIVATE_READ_SLUGS,
   resolveThinkingBudget,
   projectThinkingBudget,
+  resolveThinkingEffort,
+  thinkingEffortForBudget,
+  THINKING_EFFORTS,
+  THINKING_TIERS,
+  type ThinkingEffort,
   projectSiteName,
   projectPeerName,
   PEER_NAME_MAX,
@@ -800,6 +820,7 @@ export {
 export {
   PERSONA_PRESETS,
   DEFAULT_PERSONA_NAMES,
+  PERSONA_NAME_TOKEN,
   buildPersonaPrompt,
   type PersonaGender,
   type PersonaPresetKey,

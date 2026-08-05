@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentDTO } from '@mantle/client-types';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -13,7 +13,9 @@ import {
   type AgentParams,
   type PersonaNote,
 } from '@mantle/db';
+import { CHATTABLE_ROLES } from '@mantle/assistant-runtime';
 import { MANIFEST_AGENTS } from './system-manifest/manifest';
+import { cloneAgentFields, slugifyAgentName, uniqueAgentSlug } from './agent-clone';
 
 /**
  * Server-side CRUD wrapper for the `agents` table. Every call is owner-scoped
@@ -63,6 +65,13 @@ function toSummary(a: Agent): AgentSummary {
     params: a.params ?? {},
     avatar: a.avatar ?? null,
     personaNotes: (a.personaNotes ?? []) as PersonaNote[],
+    assignedUserId: a.assignedUserId ?? null,
+    // Deleting a login nulls assigned_user_id via the FK but can't touch
+    // assigned_at, so the row can carry a timestamp for an assignment that no
+    // longer exists. Derive rather than expose that: the DTO must never say
+    // "assigned at X" while saying "assigned to nobody", or a future reader
+    // keying off assignedAt alone inherits the inconsistency.
+    assignedAt: a.assignedUserId ? (a.assignedAt?.toISOString() ?? null) : null,
     priority: a.priority,
     enabled: a.enabled,
     manifestManaged: DEF_SYNCED_SLUGS.has(a.slug),
@@ -179,8 +188,17 @@ export type CreateAgentInput = {
   enabled?: boolean;
 };
 
-export async function createAgent(userId: string, input: CreateAgentInput): Promise<AgentSummary> {
-  const [row] = await db
+/** `db`, or a transaction handle standing in for it. Lets a caller compose
+ *  several writes atomically without re-implementing the insert mapping (the
+ *  pattern `packages/agent-runtime/src/conversation.ts` uses). */
+type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+export async function createAgent(
+  userId: string,
+  input: CreateAgentInput,
+  tx: Executor = db,
+): Promise<AgentSummary> {
+  const [row] = await tx
     .insert(agents)
     .values({
       ownerId: userId,
@@ -271,6 +289,166 @@ export async function setEnabled(
   enabled: boolean,
 ): Promise<AgentSummary | null> {
   return updateAgent(userId, id, { enabled });
+}
+
+/* ---------------------------------------------------------------------------
+ * Per-login assistants (migration 0143).
+ *
+ * `agents.assigned_user_id` binds an agent to ONE co-admin login and makes it
+ * that login's default chat target. Since `assistant_messages` is keyed
+ * (owner_id, agent_id) — and the live NOTIFY payload, read cursors, digests and
+ * the inbox all key off the agent too — that single pointer is what stops two
+ * people typing at once from landing in one interleaved thread.
+ *
+ * Thread separation, NOT privacy: `userId` here is still the anchor, every
+ * agent stays visible to every login, and recall_window replays any of them.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * The agent row assigned to a given LOGIN (`actor.id`), or null.
+ *
+ * Owner-scoped, enabled-only (a disabled assistant falls the caller back to the
+ * brain default rather than dead-ending them) and chattable-only — the role gate
+ * on creation should make that redundant, but this is the read every turn goes
+ * through, so it fails safe against a row that predates the gate or was edited
+ * to a worker role afterwards.
+ *
+ * Returns the ROW, not the DTO: this is the resolution path, and its callers
+ * need the same `Agent` the runtime resolver returns. `getAssignedAgentSummary`
+ * is the DTO-shaped wrapper for the routes that serialize it.
+ */
+export async function getAssignedAgent(userId: string, actorId: string): Promise<Agent | null> {
+  const [row] = await db
+    .select()
+    .from(agents)
+    .where(
+      and(
+        eq(agents.ownerId, userId),
+        eq(agents.assignedUserId, actorId),
+        eq(agents.enabled, true),
+        inArray(agents.role, CHATTABLE_ROLES),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/** `getAssignedAgent` as the wire DTO. */
+export async function getAssignedAgentSummary(
+  userId: string,
+  actorId: string,
+): Promise<AgentSummary | null> {
+  const row = await getAssignedAgent(userId, actorId);
+  return row ? toSummary(row) : null;
+}
+
+/** Thrown by `cloneAgentForUser` for a bad request (unknown or un-chattable
+ *  source), so the routes can answer 400 rather than treating every failure as
+ *  a 500. */
+export class CloneAgentError extends Error {}
+
+/**
+ * Clone `sourceAgentId` into a personal assistant for `actorId`.
+ *
+ * What is and isn't inherited lives in `cloneAgentFields` (pure, unit-tested);
+ * this is the DB half — resolve the source, mint a free slug, insert via the
+ * one `createAgent` path, then stamp the assignment.
+ *
+ * ONE TRANSACTION, and that matters in both directions:
+ *
+ *   - Releasing the login's previous assistant has to happen first, or the
+ *     partial unique index trips. Outside a transaction, a failure after the
+ *     release (a slug race, a rejected insert) would leave the login with NO
+ *     assistant and no error path back to the one it had.
+ *   - The free-slug read and the insert that consumes it are otherwise a
+ *     check-then-act race between two concurrent creates.
+ *
+ * The role gate is the correctness boundary the UI's narrower filter sits on
+ * top of: only an agent that can actually take a web turn may be cloned.
+ * Cloning a `worker` template (model `'inherit'`) or a summarizer would mint a
+ * default chat agent that cannot answer, and — since the assignment lookup
+ * doesn't filter by role — the login would land on it every time.
+ */
+export async function cloneAgentForUser(
+  userId: string,
+  input: { actorId: string; actorEmail: string; name: string; sourceAgentId: string },
+): Promise<AgentSummary> {
+  return db.transaction(async (tx) => {
+    const [source] = await tx
+      .select()
+      .from(agents)
+      .where(and(eq(agents.id, input.sourceAgentId), eq(agents.ownerId, userId)))
+      .limit(1);
+    if (!source) {
+      throw new CloneAgentError(`source agent ${input.sourceAgentId} not found`);
+    }
+    if (!(CHATTABLE_ROLES as readonly string[]).includes(source.role)) {
+      throw new CloneAgentError(
+        `agent '${source.slug}' is a ${source.role}, which can't answer a chat turn`,
+      );
+    }
+
+    const taken = await tx
+      .select({ slug: agents.slug })
+      .from(agents)
+      .where(eq(agents.ownerId, userId));
+    const slug = uniqueAgentSlug(
+      slugifyAgentName(input.name),
+      taken.map((r) => r.slug),
+    );
+
+    await tx
+      .update(agents)
+      .set({ assignedUserId: null, assignedAt: null, updatedAt: new Date() })
+      .where(and(eq(agents.ownerId, userId), eq(agents.assignedUserId, input.actorId)));
+
+    const created = await createAgent(
+      userId,
+      cloneAgentFields(toSummary(source), {
+        name: input.name,
+        slug,
+        assignedUserEmail: input.actorEmail,
+      }),
+      tx,
+    );
+    const [assigned] = await tx
+      .update(agents)
+      .set({ assignedUserId: input.actorId, assignedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(agents.id, created.id), eq(agents.ownerId, userId)))
+      .returning();
+    if (!assigned) throw new Error('failed to assign the cloned agent');
+    return toSummary(assigned);
+  });
+}
+
+/** Drop a login's assignment. The agent and its whole archive survive — it just
+ *  becomes a shared agent again (same reasoning as migration 0127). Returns the
+ *  released agent, or null when the login had none. */
+export async function releaseAssignedAgent(
+  userId: string,
+  actorId: string,
+): Promise<AgentSummary | null> {
+  const [row] = await db
+    .update(agents)
+    .set({ assignedUserId: null, assignedAt: null, updatedAt: new Date() })
+    .where(and(eq(agents.ownerId, userId), eq(agents.assignedUserId, actorId)))
+    .returning();
+  return row ? toSummary(row) : null;
+}
+
+/** Rename an already-assigned assistant in place (keeps its slug, and therefore
+ *  its thread — the client keys threads by slug). Null when unassigned. */
+export async function renameAssignedAgent(
+  userId: string,
+  actorId: string,
+  name: string,
+): Promise<AgentSummary | null> {
+  const [row] = await db
+    .update(agents)
+    .set({ name, updatedAt: new Date() })
+    .where(and(eq(agents.ownerId, userId), eq(agents.assignedUserId, actorId)))
+    .returning();
+  return row ? toSummary(row) : null;
 }
 
 export async function deleteAgent(userId: string, id: string): Promise<boolean> {

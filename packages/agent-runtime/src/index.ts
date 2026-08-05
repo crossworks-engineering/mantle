@@ -48,9 +48,12 @@ export {
   resolveAgentToolGroups,
   resolveToolGroupSkillSlugs,
   composeSystemPromptWithSkills,
+  applyAgentName,
+  AGENT_NAME_TOKEN,
   effectiveSkillSlugs,
   effectiveToolSlugs,
   type SkillForRuntime,
+  type ComposePromptOptions,
 } from './skills';
 
 export { invokeAgent } from './invoke-agent';
@@ -58,6 +61,7 @@ export { invokeAgent } from './invoke-agent';
 export {
   recordTurn,
   updateAssistantMessageOutcome,
+  markTurnSuperseded,
   loadConversationContext,
   looksAnaphoricFollowup,
   type ConversationContext,

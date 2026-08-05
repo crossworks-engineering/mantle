@@ -363,6 +363,69 @@ The `[VOICE]` opt-in marker is documented in Saskia's system prompt
 template — see [memory.md §6.2](./memory.md#62-the-agent-roles) for
 where that lives.
 
+### 5a″. Transcription (STT) options
+
+Thinner than TTS by nature: the normalized surface is a language hint and
+nothing else, so every wired adapter declares `supports: ['language']`. What
+diverges is what each provider hands BACK.
+
+| adapter | language hint | returns detected language | returns duration |
+|---|---|---|---|
+| `openai-stt` | ✅ | ✅ (`verbose_json`) | ✅ |
+| `elevenlabs-stt` | ✅ `language_code` | ✅ | ✗ (needs word timestamps) |
+| `deepgram-stt` | ✅, else `detect_language=true` | ✅ | ✅ |
+| `assemblyai-stt` | ✅ `language_code`, else `language_detection` | ✅ | ✅ |
+| `xai-stt` | ✅ | ✅ | ✅ |
+| `openrouter-stt` | ✅ | ✗ (response is text + usage) | ✗ |
+| `google-stt` | prompt text, not a parameter | ✗ | ✗ |
+
+The 2026-08 docs sweep found two faults, both in `xai-stt`, both of the same
+kind as the TTS ones — a comment asserting something about someone else's API
+that had stopped being true:
+
+- `format=true` (punctuation and capitalisation) **requires** `language`. It
+  was sent unconditionally, so the common auto-detect path carried a flag the
+  request could not satisfy. Formatting is now enabled only alongside a
+  language.
+- The response carries `{text, language, duration, words[], channels[]}`. A
+  comment claimed it echoed neither language nor duration and both were
+  discarded, so an auto-detected language never reached `/traces` and the
+  duration cap had nothing to check. Both are now read, and the cap applies.
+
+`whisper-1` stays the OpenAI default deliberately. The gpt-4o transcribe models
+are newer, but they reject the ogg/webm containers that Telegram voice notes
+and browser recordings arrive in, which is our main inbound path.
+
+### 5a′. Which speech options actually reach the provider
+
+The normalized option set (`SynthesizeOptions`) is `text`, `voice`, `model`,
+`speed`, `format`, `instructions`, `language`. That set is stable — the AI
+SDK's `generateSpeech` arrived at the same seven independently — but **who
+honours what is not**, so each adapter declares `TtsDispatcher.supports` and
+the caller reports the rest. Checked against each provider's own docs,
+2026-08:
+
+| adapter | forwards | notes |
+|---|---|---|
+| `openai-tts` | speed, format, instructions | no language field at all; `instructions` is ignored by `tts-1` / `tts-1-hd`, which warns per-model |
+| `openrouter-tts` | speed, format, instructions | OpenAI-compatible `/audio/speech` |
+| `elevenlabs-tts` | speed, format, language | speed rides inside `voice_settings`; `language_code` is refused by the `multilingual_v2` family, which warns per-model |
+| `xai-tts` | speed, format, language | speed band is 0.7–1.5, narrower than OpenAI's; out-of-band values clamp and warn |
+| `google-tts` | format | Gemini TTS has **no** speed, instructions or language parameter: delivery is steered by prompt text and inline audio tags |
+
+Two corrections that came out of that check, both of which had made an
+operator's saved setting silently inert:
+
+- `xai-tts` carried a comment asserting "the speed knob doesn't exist on Grok
+  TTS" and never sent the field. It does exist.
+- `elevenlabs-tts` never sent `language_code`, and our own option doc said
+  ElevenLabs ignored language outright. That is true only of the model we
+  happened to default to.
+
+Anything requested and not forwarded comes back as `ignoredParams` on the tool
+result and `ignored_params` in the trace step, same convention as image
+generation.
+
 ### 5a. Speech tags — inline + wrapping
 
 Voice models expose two tag vocabularies, and the framework treats both
@@ -570,18 +633,18 @@ entire text + vision brain is functional.
 | Embeddings | ✅ | `openrouter-embedding` adapter |
 | Vision (image OCR) | ✅ | `openrouter-vision.extract` — `image_url` content |
 | Document (native PDF) | ✅ | `openrouter-vision.extractDocument` — OR `file-parser` plugin |
-| **TTS (voice out)** | ❌ | OpenRouter does **not** proxy audio synthesis |
-| **STT (voice in)** | ❌ | OpenRouter does **not** proxy transcription |
-| **Image generation** | ❌ | OpenRouter does **not** proxy image generation |
+| TTS (voice out) | ✅ | `openrouter-tts` — `POST /api/v1/audio/speech` |
+| STT (voice in) | ✅ | `openrouter-stt` — OpenAI-compatible transcription |
+| Image generation | ✅ | `openrouter-image` — `POST /api/v1/images` |
 
-**The audio/image-gen limitation is real, not an oversight.** OpenRouter is a
-chat/embedding/multimodal-text aggregator — it has no TTS, STT, or image-gen
-endpoints. So voice replies, voice messages, and `generate_image` need a
-**direct** provider key (OpenAI for Whisper/TTS/DALL-E, ElevenLabs/Deepgram/etc.
-for voice, xAI/Google/HF for images). The provider catalogue reflects this:
-OpenRouter declares `capabilities: ['chat', 'embedding', 'vision']` only. These
-are *enhancements*, not core — an OR-only Mantle reads, writes, searches,
-remembers, and extracts documents; it just can't talk out loud or draw.
+**This table used to read ❌ on the last three rows**, and the prose called the
+gap "real, not an oversight". It is no longer either: OpenRouter has since
+shipped speech, transcription and a dedicated images endpoint, all three are
+wired as adapters, and the provider catalogue declares
+`capabilities: ['chat', 'embedding', 'vision', 'tts', 'stt', 'image_gen']`. A
+single OpenRouter key now covers every worker kind Mantle has. Direct provider
+keys remain useful for quality or price (ElevenLabs voices, Deepgram
+transcription, Imagen), not because anything is missing.
 
 ---
 
@@ -596,8 +659,71 @@ tool resolves the default image_gen worker, calls the adapter, and:
 - On /assistant surface: emits an image artifact the chat page renders
   inline in the reply bubble.
 - Returns to the LLM: `{nodeId, storagePath, model, adapter, mimeType,
-  bytes, revisedPrompt?}` — enough metadata for Saskia to mention what
-  she sent.
+  bytes, revisedPrompt?, inlineRef, appliedParams, ignoredParams?}` — enough
+  metadata for Saskia to mention what she sent, and `inlineRef` is the
+  paste-ready `![alt](media:<id>)` for placing it in a reply or a page.
+
+### Who decides size, style and quality
+
+Two layers, and the split is deliberate.
+
+1. **The worker's saved `params`** (`/settings/ai-workers`) are the operator's
+   defaults and apply to every generation.
+2. **A per-call argument** overrides them for one image, and Saskia is taught
+   (skill `visual_answers`) to pass one ONLY when the user asked for it in that
+   conversation. A standing preference is a settings change, not an argument.
+
+**What the model is allowed to pass is computed, not described.** A dynamic
+schema hook (`registerDynamicSchema('generate_image', …)`, see
+`packages/tools/src/dynamic-schema.ts`) rebuilds the tool's parameters once per
+turn from the configured worker: options the adapter does not forward are
+REMOVED, and the rest become `enum`s of that model's catalog values. So a wrong
+size is unrepresentable rather than merely discouraged, and the prose can never
+go stale against the worker actually installed.
+
+**Every adapter declares what it forwards** via `ImageGenDispatcher.supports`:
+
+| adapter | forwards |
+|---|---|
+| `openai-image` | size, style (dall-e-3), quality (dall-e-3 + gpt-image-1), input images |
+| `openrouter-image` | size (pixels or a `1K`/`2K`/`4K` tier), aspect ratio, quality, seed, input images |
+| `google-image` | size (snapped to a ratio), aspect ratio, negative prompt, seed |
+| `huggingface-image` | size (as width/height), negative prompt, seed |
+| `xai-image` | aspect ratio only (no size / style / quality / seed) |
+
+Per-PROVIDER is the wrong grain for some of these, so an adapter may also
+return `warnings` from a call — the per-MODEL truth only it knows (OpenAI takes
+`style` on dall-e-3 and not on gpt-image-1). The tool promotes those from
+applied to ignored before reporting.
+
+Anything requested outside that set is reported, never dropped in silence: it
+lands in the trace step as `ignored_params` and goes back to the model as
+`ignoredParams` so the reply can say what did not apply. This exists because it
+already failed the other way — an OpenRouter worker had size, style and quality
+saved and displayed, the old chat-completions code path sent none of them, and
+nothing recorded the gap.
+
+### Editing an existing image
+
+`input_image_ids` (file node ids, max 4) turns a call into an **edit**: the
+prompt then describes the change, not the whole scene. Reaching for a fresh
+generation instead does not modify the user's picture, it invents a different
+one and bills for it.
+
+- **OpenRouter** sends the references as data URLs in `input_references` on the
+  same `/api/v1/images` call.
+- **OpenAI** switches endpoint and encoding: `POST /v1/images/edits` as
+  multipart, several references under a repeated `image[]` for gpt-image-1, one
+  as `image` for dall-e-2. **dall-e-3 cannot edit** and is refused before the
+  request goes out.
+- Everyone else declares no `inputImages` support, and the tool refuses with a
+  pointer at what to switch to. This is the one case that is a hard error
+  rather than a warning: silently generating something unrelated is worse than
+  failing.
+
+The result is always a NEW file node; an edit never overwrites its reference,
+so the original stays available. `editedFrom` on the output and `edited_from`
+in the trace record the lineage.
 
 DALL-E 3 surfaces a `revised_prompt` field when the model rewrites
 the prompt for safety/quality; this rides through as

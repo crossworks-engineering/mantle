@@ -54,9 +54,11 @@ import { db, pendingToolCalls, type Tool, type AgentParams } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
 import {
   type ChatDispatcher,
+  type ChatFinishReason,
   type ChatOptions,
   type ChatResult,
   type ChatToolDefinition,
+  type ThinkingEffort,
 } from '@mantle/voice';
 import { recordChatUsage } from './llm-usage';
 import { isChatFailover } from './chat-failover';
@@ -246,6 +248,10 @@ export type ToolOutcomeStats = {
   queued: number;
   /** Up to 5 distinct handler failures, slug + truncated error. */
   failures: Array<{ slug: string; error: string }>;
+  /** Up to 5 distinct artifacts touched by successful write-style calls
+   *  (ToolCallRecord.target, deduped by id) — read back into the next turn's
+   *  history so "where did you update it?" is answerable. */
+  writes?: Array<{ slug: string; id: string; title?: string }>;
 };
 
 export function summarizeToolOutcomes(records: readonly ToolCallRecord[]): ToolOutcomeStats {
@@ -254,11 +260,21 @@ export function summarizeToolOutcomes(records: readonly ToolCallRecord[]): ToolO
   let skipped = 0;
   let queued = 0;
   const failures: Array<{ slug: string; error: string }> = [];
+  const writes: Array<{ slug: string; id: string; title?: string }> = [];
+  const writeIds = new Set<string>();
   for (const r of records) {
     if (r.error === 'queued_for_approval') {
       queued++;
     } else if (r.status === 'success') {
       succeeded++;
+      if (r.target && writes.length < 5 && !writeIds.has(r.target.id)) {
+        writeIds.add(r.target.id);
+        writes.push({
+          slug: r.slug,
+          id: r.target.id,
+          ...(r.target.title ? { title: r.target.title } : {}),
+        });
+      }
     } else if (r.error !== undefined && SKIP_REASONS.has(r.error)) {
       skipped++;
     } else {
@@ -269,7 +285,67 @@ export function summarizeToolOutcomes(records: readonly ToolCallRecord[]): ToolO
       }
     }
   }
-  return { calls: records.length, succeeded, failed, skipped, queued, failures };
+  return {
+    calls: records.length,
+    succeeded,
+    failed,
+    skipped,
+    queued,
+    failures,
+    ...(writes.length > 0 ? { writes } : {}),
+  };
+}
+
+// ── Write-target capture ──
+// There is no mutation flag on tool rows, so write-style calls are recognised
+// by slug verb (the builtin naming convention is consistent: page_create,
+// table_row_add, page_update_draft, …). A miss just means no target is
+// recorded — never a wrong claim, since the id/title come from the tool's own
+// success output.
+const WRITE_VERBS = new Set([
+  'create',
+  'update',
+  'add',
+  'set',
+  'delete',
+  'commit',
+  'move',
+  'rename',
+  'upsert',
+  'apply',
+  'split',
+  'replace',
+  'edit',
+  'send',
+  'share',
+  'unshare',
+  'upload',
+  'insert',
+]);
+
+/** True when any underscore segment of the slug is a write verb
+ *  (`table_row_add` → add, `page_update_draft` → update). */
+export function looksLikeWriteTool(slug: string): boolean {
+  return slug.split('_').some((seg) => WRITE_VERBS.has(seg));
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Pull `{id, title}` out of a successful write tool's output. Builtins return
+ *  the touched artifact at the top level (`{id, url, title}`) or under
+ *  `output`; only a UUID-shaped id is accepted so prose fields can't leak in. */
+export function extractWriteTarget(output: unknown): { id: string; title?: string } | null {
+  if (output === null || typeof output !== 'object') return null;
+  const rec = output as Record<string, unknown>;
+  const id = typeof rec.id === 'string' && UUID_RE.test(rec.id) ? rec.id : null;
+  if (!id) return null;
+  const title =
+    typeof rec.title === 'string' && rec.title.trim()
+      ? rec.title.trim().slice(0, 80)
+      : typeof rec.name === 'string' && rec.name.trim()
+        ? rec.name.trim().slice(0, 80)
+        : undefined;
+  return { id, ...(title ? { title } : {}) };
 }
 
 /** One-line rendering of the stats for the model-facing nudges. */
@@ -337,6 +413,16 @@ export type ToolLoopResult = {
    *  /assistant surfaces it in the turn's `done` event so the live status
    *  footer can show the real count once the turn lands. */
   tokensOut: number;
+  /** Why the FINAL model round stopped, when the adapter reported it.
+   *  Undefined means the provider said nothing — not that it finished
+   *  cleanly. Only the last round is carried: an intermediate round always
+   *  stops for `tool_calls`, which says nothing about the answer the user
+   *  ends up seeing.
+   *
+   *  The two values callers act on are `'length'` (the reply is cut off
+   *  mid-thought) and `'content_filter'` (the provider withheld it). Both
+   *  otherwise arrive as an ordinary successful turn. */
+  finishReason?: ChatFinishReason;
 };
 
 export type ToolLoopArgs = {
@@ -406,6 +492,12 @@ export type ToolLoopArgs = {
    *  this via the invoke_agent tool-context bridge and re-clamp against their
    *  own max_tokens — see invoke-agent.ts. */
   thinkingBudget?: number;
+  /** Thinking EFFORT tier — the control the providers actually honour (see
+   *  ChatOptions.thinkingEffort). Travels alongside `thinkingBudget`: the budget
+   *  still drives the max_tokens headroom maths and the Anthropic-direct on/off
+   *  signal, while this is what OpenRouter puts on the wire. Undefined ⇒ no
+   *  reasoning requested. */
+  thinkingEffort?: ThinkingEffort;
   /** Initial messages: system + any history + the new user turn. */
   initialMessages: ChatMessage[];
   /** Tool rows the agent is permitted to use. Empty array → no tools sent. */
@@ -743,6 +835,13 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           // markers ignore this — see ChatCacheControl docs.
           cacheControl: { systemPrompt: true, lastUserMessage: true },
           ...(thinkingBudget > 0 ? { thinkingBudget } : {}),
+          // Gated on the CLAMPED budget, not the raw effort: when the clamp
+          // drops thinking (budget below the provider floor for this agent's
+          // max_tokens) the effort must drop with it, or the request would ask
+          // for reasoning the token ceiling can't accommodate.
+          ...(thinkingBudget > 0 && args.thinkingEffort
+            ? { thinkingEffort: args.thinkingEffort }
+            : {}),
           ...(thinkingBudget === 0 && typeof args.params.temperature === 'number'
             ? { temperature: args.params.temperature }
             : {}),
@@ -824,7 +923,14 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     if (!calls || calls.length === 0) {
       // Final text response. Done.
       let text = result.text;
-      if (!text.trim() && !turnAborted()) text = await retryEmptyReply('final_round_empty');
+      // An empty reply usually means the model fumbled, and one nudge fixes it.
+      // A content_filter block is the exception: the provider withheld the text
+      // deliberately, so re-asking spends a second call to be refused again.
+      // Skip the retry there and let the caller degrade with an honest message.
+      const blocked = result.finishReason === 'content_filter';
+      if (!text.trim() && !turnAborted() && !blocked) {
+        text = await retryEmptyReply('final_round_empty');
+      }
       messages.push({ role: 'assistant', content: text });
       return {
         reply: text,
@@ -834,6 +940,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         pendingIds,
         artifacts,
         tokensOut,
+        ...(result.finishReason ? { finishReason: result.finishReason } : {}),
       };
     }
 
@@ -1213,12 +1320,17 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         outcome.output !== null &&
         typeof outcome.output === 'object' &&
         (outcome.output as { status?: unknown }).status === 'queued_for_approval';
+      const writeTarget =
+        outcome.ok && !queuedForApproval && looksLikeWriteTool(slug)
+          ? extractWriteTarget(outcome.output)
+          : null;
       toolCalls.push({
         slug,
         argsJson: call.function.arguments ?? '{}',
         durationMs: duration,
         status: queuedForApproval ? 'skipped' : outcome.ok ? 'success' : 'error',
         error: queuedForApproval ? 'queued_for_approval' : outcome.ok ? undefined : outcome.error,
+        ...(writeTarget ? { target: writeTarget } : {}),
       });
 
       // Harvest any sidecar artifacts the tool emitted (audio bytes,
@@ -1431,7 +1543,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     },
   );
   let text = finalResult.text;
-  if (!text.trim() && !turnAborted()) text = await retryEmptyReply('force_final_empty');
+  // Same reasoning as the normal exit above: a withheld reply won't un-withhold
+  // itself on a second ask.
+  const finalBlocked = finalResult.finishReason === 'content_filter';
+  if (!text.trim() && !turnAborted() && !finalBlocked) {
+    text = await retryEmptyReply('force_final_empty');
+  }
   messages.push({ role: 'assistant', content: text });
   return {
     reply: text,
@@ -1441,5 +1558,6 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     pendingIds,
     artifacts,
     tokensOut,
+    ...(finalResult.finishReason ? { finishReason: finalResult.finishReason } : {}),
   };
 }

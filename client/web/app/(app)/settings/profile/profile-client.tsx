@@ -40,25 +40,39 @@ import { AvatarPicker, type AvatarValue } from '@/components/avatar-picker';
 // the barrel pulls backup.ts (node:os) + identity-context (@mantle/db) into the
 // client bundle. The type is erased, so it's safe from the barrel.
 import { PURPOSE_ARCHETYPES } from '@mantle/content/onboarding-questions';
+// Same leaf rule as above: thinking-tiers.ts has no imports at all, whereas
+// profile-preferences.ts (which re-exports it) pulls in @mantle/db.
+import { THINKING_TIERS, thinkingEffortForBudget } from '@mantle/content/thinking-tiers';
 import type { ProfilePreferences } from '@mantle/content';
 
 /** Sentinel for "no pinned responder" — Radix Select can't use an empty-string
  *  value, so we map this to '' before submitting. */
 const REMINDER_AUTO = '__auto__';
 
-/** Thinking-budget tiers (token values) the dropdown offers: Off/Low/Medium/High.
- *  High stays below the default responder's max_tokens (16000) so the stock
- *  config never needs the turn-time clamp; the clamp still protects agents whose
- *  max_tokens was edited down. */
-const THINKING_TIERS = [0, 1024, 4096, 8000] as const;
-
 /** Snap a stored budget (which an operator/API may have set off-tier) to the
  *  nearest dropdown value, so the Select always shows a populated option instead
- *  of rendering blank for an unlisted number. 0/unset ⇒ Off. */
+ *  of rendering blank for an unlisted number. 0/unset ⇒ Off.
+ *
+ *  Tiers come from `@mantle/content` rather than a copy here: that module also
+ *  maps each one to the effort actually sent to the provider, so a local list
+ *  could drift into showing a label the runtime does not honour. */
 function snapThinkingTier(v: number | undefined): number {
   if (!v || v <= 0) return 0;
-  return THINKING_TIERS.reduce((best, t) => (Math.abs(t - v) < Math.abs(best - v) ? t : best), 0);
+  return THINKING_TIERS.reduce(
+    (best, t) => (Math.abs(t.budget - v) < Math.abs(best.budget - v) ? t : best),
+    THINKING_TIERS[0]!,
+  ).budget;
 }
+
+/** What each effort costs the user, in plain terms. Only the tiers that
+ *  meaningfully change spend or latency say anything — a warning on every option
+ *  is a warning on none. */
+const THINKING_EFFORT_WARNINGS: Partial<Record<string, string>> = {
+  high: 'High makes the model reason at length before answering. Expect noticeably slower replies and materially higher token spend on every turn — reasoning tokens are billed as output.',
+  xhigh:
+    'Very high spends far more reasoning tokens than High, on every turn. Best reserved for genuinely hard work, not everyday chat.',
+  max: 'Maximum tells the model to reason as deeply as it can, on every turn. This is the most expensive and slowest setting by a wide margin — use it deliberately.',
+};
 
 /** `GET /api/profile` payload. */
 type ProfileData = {
@@ -138,6 +152,11 @@ function ProfileForm({ data }: { data: ProfileData }) {
   const [thinkingBudget, setThinkingBudget] = useState<number>(
     snapThinkingTier(defaults.thinkingBudget),
   );
+  // Cost/latency warning for the selected tier, if that tier has one. Suppressed
+  // while the live-thinking switch is off, since nothing is being spent then.
+  const thinkingEffortWarning = streamThoughts
+    ? THINKING_EFFORT_WARNINGS[thinkingEffortForBudget(thinkingBudget) ?? '']
+    : undefined;
   const [error, setError] = useState<string | null>(null);
 
   // Live "now in your settings" preview from the chosen tz/locale — same output
@@ -471,7 +490,7 @@ function ProfileForm({ data }: { data: ProfileData }) {
           <div className="space-y-1">
             <div className="flex items-center justify-between gap-4">
               <Label htmlFor="thinkingBudget" className={cn(!streamThoughts && 'opacity-50')}>
-                Thinking budget
+                Thinking effort
               </Label>
               <Select
                 value={String(thinkingBudget)}
@@ -482,17 +501,25 @@ function ProfileForm({ data }: { data: ProfileData }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="0">Off</SelectItem>
-                  <SelectItem value="1024">Low</SelectItem>
-                  <SelectItem value="4096">Medium</SelectItem>
-                  <SelectItem value="8000">High</SelectItem>
+                  {/* Rendered from the canonical tier list so the labels here and
+                      the effort actually sent can never drift apart. */}
+                  {THINKING_TIERS.map((t) => (
+                    <SelectItem key={t.budget} value={String(t.budget)}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <p className="text-xs text-muted-foreground">
-              How hard the model reasons before answering. Needs live thinking on and a budget above
-              Off. Off = no extra thinking. Large budgets are trimmed to leave room for the reply.
+              How hard the model reasons before answering. Needs live thinking on and an effort
+              above Off. Off = no extra reasoning.
             </p>
+            {thinkingEffortWarning && (
+              <p className="text-xs text-warning-ink" role="status">
+                {thinkingEffortWarning}
+              </p>
+            )}
           </div>
         </div>
       </section>
