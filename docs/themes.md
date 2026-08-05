@@ -19,8 +19,8 @@ role is derived. That is the whole design — everything below is mechanism.
 | `packages/web-ui/themes/model.mjs` | Colour maths: OKLab/OKLCH, WCAG contrast measured on the emitted 8-bit hex, the anchored solver (`solveText`), the fill+foreground joint solver (`solvePair`). |
 | `packages/web-ui/themes/generate.mjs` | Seeds → full token scale → emits `styles/themes.css` + `src/lib/theme-registry.gen.ts`. Also `--check` (drift) and `--report` (ΔE vs a baseline css). |
 | `packages/web-ui/styles/themes.css` | **Generated. Never edit.** The drift test fails CI if it disagrees with the seeds. |
-| `packages/web-ui/src/lib/theme-registry.gen.ts` | Generated picker registry — swatches can't desync from the CSS. |
-| `packages/web-ui/themes/preview.html` | Zero-build visual harness: `python3 -m http.server -d packages/web-ui 4173` → `/themes/preview.html` (or the `theme-preview` entry in `.claude/launch.json`). |
+| `packages/web-ui/src/lib/theme-registry.gen.ts` | Generated picker registry — `[primary, accent, background]` for **both** modes, so swatches can't desync from the CSS and the picker never advertises light-mode dots to someone browsing in the dark. |
+| `packages/web-ui/themes/preview.html` | Zero-build visual harness: `python3 -m http.server -d packages/web-ui 4173` → `/themes/preview.html`. (`.claude/launch.json` is gitignored, so a `theme-preview` entry there is yours to add locally, not something the clone ships.) |
 
 ## Workflow
 
@@ -73,6 +73,11 @@ Three test layers, deliberately redundant:
    decision. Computed values (`color-mix()`, literal hex) **fail loudly**
    unless allowlisted with a reason; the `KNOWN_UNSAFE` baseline is empty and
    shrink-only.
+4. `client/web/components/theme-preview/color-palette.test.ts` — same
+   discover-don't-declare trick pointed at the **Color Palette tab**: every
+   colour token `:root` ships must be visible there. Adding a role is one line
+   in `ROLE_HUES` and one `@theme inline` mapping, neither of which passes
+   near that component, so without this a new role would just be invisible.
 
 Plus the ESLint pair (`mantle/pair-fill-foreground`,
 `mantle/use-ink-for-text`): a fill wearing a foreign foreground, or a bare

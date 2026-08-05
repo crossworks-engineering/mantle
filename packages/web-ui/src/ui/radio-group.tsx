@@ -42,4 +42,35 @@ function RadioGroupItem({
   );
 }
 
-export { RadioGroup, RadioGroupItem };
+/**
+ * A radio whose whole surface is the control, for pickers where the option's
+ * own appearance IS the label (theme swatches, mode icons) and a dot beside it
+ * would be noise. Same roving focus, arrow-key movement and `radio` semantics
+ * as `RadioGroupItem` — one tab stop for the group instead of one per option.
+ *
+ * Deliberately skin-free past the skeleton: callers style the selected and
+ * hover states with `data-[state=checked]:` so a card can look like whatever
+ * its surface needs, while focus and disabled stay consistent.
+ */
+function RadioGroupCard({
+  className,
+  ...props
+}: React.ComponentProps<typeof RadioGroupPrimitive.Item>) {
+  return (
+    <RadioGroupPrimitive.Item
+      data-slot="radio-group-card"
+      className={cn(
+        'rounded-lg border text-left transition-colors outline-none',
+        // Offset so focus stays legible against a checked state that is itself
+        // usually a ring in the same brand colour — a detached halo reads as
+        // "you are here", a hugging one as "this is the selection".
+        'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export { RadioGroup, RadioGroupItem, RadioGroupCard };

@@ -4,13 +4,17 @@
  * `theme-registry.gen.ts`, and the drift test keeps them in lockstep. This
  * module owns the TYPE, the default, and the random-theme behaviour toggles.
  *
- * Swatches ([primary, accent, background], light mode) drive the picker
- * preview only.
+ * Swatches ([primary, accent, background], per mode) drive the picker preview
+ * only. Both modes ship because the picker sits inside the app it is theming:
+ * showing light-mode dots to someone browsing in dark mode advertises colours
+ * they would not get.
  */
+export type ThemeSwatches = readonly [string, string, string];
+
 export type ColorTheme = {
   id: string;
   label: string;
-  swatches: [string, string, string];
+  swatches: { light: ThemeSwatches; dark: ThemeSwatches };
 };
 
 import { GENERATED_COLOR_THEMES } from './theme-registry.gen';
@@ -18,6 +22,13 @@ import { GENERATED_COLOR_THEMES } from './theme-registry.gen';
 export const COLOR_THEMES: ColorTheme[] = GENERATED_COLOR_THEMES;
 
 export const DEFAULT_COLOR_THEME = 'clean-slate';
+
+/** The human label for a theme id — one spelling of a theme's name across the
+ *  whole product. Falls back to the id so an unknown/retired id still reads. */
+export function themeLabel(id: string): string {
+  return COLOR_THEMES.find((t) => t.id === id)?.label ?? id;
+}
+
 // (No storage key for the theme itself: the choice lives on the anchor
 // owner's profile row and is server-rendered into <html data-color-theme> —
 // see @mantle/web-ui/appearance. The RANDOM_* keys below are genuinely
