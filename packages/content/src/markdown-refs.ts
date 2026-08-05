@@ -63,6 +63,53 @@ export function inlineMediaImageIds(source: string | undefined | null): Set<stri
   return ids;
 }
 
+/** A reference-link target found in a markdown source: which scheme it used,
+ *  the id it points at, and the node type that scheme requires (unset ⇒ any
+ *  node). `nodeType` is what makes a wrong-type reference reportable. */
+export type MarkdownRef = {
+  scheme: 'media' | 'page' | 'mention';
+  id: string;
+  nodeType?: 'file' | 'page';
+};
+
+/** Any markdown link or image, capturing the href. */
+const REF_LINK_RE = /!?\[[^\]]*\]\(\s*([^\s)]+)\s*\)/g;
+
+/**
+ * Every app-native reference a markdown source points at, deduped. The write
+ * path checks these against real nodes before storing the body — a dangling
+ * `media:` id renders as nothing at all, silently, and the model that wrote it
+ * gets no feedback (see packages/tools/src/preconditions.ts).
+ *
+ * `mention:entity:<id>` is deliberately NOT returned: entities live outside the
+ * node table, so there is no node id to check. Only the explicit
+ * `mention:node:<id>` form yields a ref.
+ */
+export function markdownRefs(source: string | undefined | null): MarkdownRef[] {
+  const out: MarkdownRef[] = [];
+  if (!source) return out;
+  const seen = new Set<string>();
+  for (const m of source.matchAll(REF_LINK_RE)) {
+    const href = m[1];
+    if (!href) continue;
+    let ref: MarkdownRef | null = null;
+    const media = MEDIA_HREF.exec(href);
+    if (media?.[1]) ref = { scheme: 'media', id: media[1], nodeType: 'file' };
+    const page = PAGE_HREF.exec(href);
+    if (page?.[1]) ref = { scheme: 'page', id: page[1], nodeType: 'page' };
+    const mention = MENTION_HREF.exec(href);
+    // Bare `mention:<id>` defaults to an entity — skip; only `mention:node:` is
+    // a node reference.
+    if (mention?.[1] === 'node' && mention[2]) ref = { scheme: 'mention', id: mention[2] };
+    if (!ref) continue;
+    const key = `${ref.scheme}:${ref.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(ref);
+  }
+  return out;
+}
+
 /**
  * Drop inline `![alt](media:<id>)` image markers from a markdown source, for a
  * surface that cannot render them (Telegram sends plain text, so the marker

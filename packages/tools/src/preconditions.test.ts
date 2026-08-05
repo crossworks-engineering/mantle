@@ -88,3 +88,104 @@ describe('checkToolPreconditions', () => {
     expect(res).toBeNull();
   });
 });
+
+/**
+ * markdown_refs: the ids that ride inside a body. The regression these pin is
+ * a real one — a page was stored with `media:2153d1f2-8b39-…`, a UUID the model
+ * built out of the 8-char prefix the corpus map displays, and the write
+ * succeeded, so the page rendered a blank where the picture belonged.
+ */
+const FILE_ID = '2153d1f2-c8ed-4bcf-bb76-b99b10f5c077';
+const FABRICATED_ID = '2153d1f2-8b39-4f0a-9c65-6c8b6e7f4e5f';
+
+const MD_PRE: readonly ToolPrecondition[] = [{ kind: 'markdown_refs', param: 'markdown' }];
+
+describe('checkToolPreconditions — markdown_refs', () => {
+  it('passes a body whose media ref names a real file', async () => {
+    const res = await checkToolPreconditions(
+      MD_PRE,
+      { markdown: `![house](media:${FILE_ID})` },
+      'o1',
+      async () => 'file',
+    );
+    expect(res).toBeNull();
+  });
+
+  it('refuses a fabricated media id and says not to rebuild ids from prefixes', async () => {
+    const res = await checkToolPreconditions(
+      MD_PRE,
+      { markdown: `![house](media:${FABRICATED_ID})\n\nThe story.` },
+      'o1',
+      async () => null,
+    );
+    expect(res?.ok).toBe(false);
+    if (res && !res.ok) {
+      expect(res.error).toContain(FABRICATED_ID);
+      expect(res.error).toContain('no such node');
+      expect(res.error).toContain('Nothing was written');
+      expect(res.error).toContain('file#2153d1f2');
+      expect(res.error).toContain('file_list / search_nodes');
+    }
+  });
+
+  it('refuses a non-UUID media id without hitting the lookup', async () => {
+    const lookup = vi.fn(async () => 'file');
+    const res = await checkToolPreconditions(MD_PRE, { markdown: '![a](media:f-1)' }, 'o1', lookup);
+    expect(res?.ok).toBe(false);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('reports every bad ref in ONE error, so a bad page costs one retry', async () => {
+    const other = '3153d1f2-8b39-4f0a-9c65-6c8b6e7f4e5f';
+    const res = await checkToolPreconditions(
+      MD_PRE,
+      { markdown: `![a](media:${FABRICATED_ID})\n\n[Spec](page:${other})` },
+      'o1',
+      async () => null,
+    );
+    expect(res?.ok).toBe(false);
+    if (res && !res.ok) {
+      expect(res.error).toContain('references 2 ids that do not exist');
+      expect(res.error).toContain(`media:${FABRICATED_ID}`);
+      expect(res.error).toContain(`page:${other}`);
+    }
+  });
+
+  it('catches a wrong-type ref (a page id used as an image)', async () => {
+    const res = await checkToolPreconditions(
+      MD_PRE,
+      { markdown: `![a](media:${FILE_ID})` },
+      'o1',
+      async () => 'page',
+    );
+    expect(res?.ok).toBe(false);
+    if (res && !res.ok) expect(res.error).toContain('that id is a page, not a file');
+  });
+
+  it('reads markdown out of an ops array (page_blocks_apply)', async () => {
+    const opsPre: readonly ToolPrecondition[] = [
+      { kind: 'markdown_refs', param: 'ops', itemKey: 'markdown' },
+    ];
+    const input = {
+      ops: [
+        { op: 'delete', block_id: 'b1' },
+        { op: 'update', block_id: 'b2', markdown: `![a](media:${FABRICATED_ID})` },
+      ],
+    };
+    const res = await checkToolPreconditions(opsPre, input, 'o1', async () => null);
+    expect(res?.ok).toBe(false);
+    if (res && !res.ok) expect(res.error).toContain("'ops[].markdown'");
+  });
+
+  it('leaves a body with no app-native refs alone', async () => {
+    const lookup = vi.fn(async () => 'file');
+    const res = await checkToolPreconditions(
+      MD_PRE,
+      { markdown: '# Title\n\nProse with a [link](https://example.com).' },
+      'o1',
+      lookup,
+    );
+    expect(res).toBeNull();
+    expect(lookup).not.toHaveBeenCalled();
+  });
+});

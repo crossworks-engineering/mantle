@@ -162,15 +162,27 @@ export type BuiltinToolHandler = (
  *  node the owner holds — and of the given type when set. Produces uniform
  *  teaching errors (malformed id / missing / wrong node type); the
  *  handler's own checks remain as backstops. */
-export type ToolPrecondition = {
-  kind: 'node_exists';
-  /** Top-level input key holding the node id. Skipped when absent/empty. */
-  param: string;
-  /** Expected node type ('page', 'table', 'note', …). Unset ⇒ any node. */
-  nodeType?: string;
-  /** Lookup tools quoted in the teaching error, e.g. 'page_list / search_nodes'. */
-  lookup: string;
-};
+export type ToolPrecondition =
+  | {
+      kind: 'node_exists';
+      /** Top-level input key holding the node id. Skipped when absent/empty. */
+      param: string;
+      /** Expected node type ('page', 'table', 'note', …). Unset ⇒ any node. */
+      nodeType?: string;
+      /** Lookup tools quoted in the teaching error, e.g. 'page_list / search_nodes'. */
+      lookup: string;
+    }
+  | {
+      /** Every `media:` / `page:` / `mention:node:` reference inside a markdown
+       *  body must name a real node of the right type. A dangling one renders
+       *  as nothing, so without this the model gets no signal at all. */
+      kind: 'markdown_refs';
+      /** Top-level input key holding the markdown, or an array of op objects. */
+      param: string;
+      /** When `param` is an array, the key on each item holding the markdown
+       *  (e.g. `ops[].markdown` for page_blocks_apply). */
+      itemKey?: string;
+    };
 
 /** A registered built-in: the handler + the definition the seed step
  *  upserts into the `tools` table. */

@@ -656,6 +656,14 @@ const generate_image: BuiltinToolDef = {
     // Naming: <unix-ms>-<slug>.<ext>. The unix prefix keeps natural
     // sort = chronological; the slug gives a human-readable hint of
     // the prompt.
+    //
+    // Title + prompt are set explicitly because the filename alone makes the
+    // image UNFINDABLE. `nodes.search_tsv` weights title A and data B, but a
+    // slug filename tokenizes as ONE long hyphenated term, so an FTS query of
+    // the prompt's own words missed it; the vector arm can't help either until
+    // the extractor has run. A freshly generated image was therefore invisible
+    // to `search_nodes` on both arms in the very turn that most needs it — the
+    // follow-up "put that image in a page".
     let nodeId: string | null = null;
     let storagePath: string | null = null;
     try {
@@ -668,6 +676,13 @@ const generate_image: BuiltinToolDef = {
         filename,
         bytes: result.bytes,
         overwrite: false,
+        title: prompt.length > 120 ? `${prompt.slice(0, 120)}…` : prompt,
+        data: {
+          generated_by: 'generate_image',
+          prompt,
+          model: result.model,
+          ...(result.revisedPrompt ? { revised_prompt: result.revisedPrompt } : {}),
+        },
       });
       nodeId = file.id;
       storagePath = `${parentPath}/${filename}`;
@@ -735,6 +750,16 @@ const generate_image: BuiltinToolDef = {
       output: {
         nodeId,
         storagePath,
+        // The exact string to paste to place this picture in a page or reply.
+        // Handing it over beats making the model reconstruct an id it can only
+        // see truncated elsewhere (the corpus map shows `file#<8 chars>`).
+        ...(nodeId
+          ? {
+              inlineRef: `![${prompt.slice(0, 80)}](media:${nodeId})`,
+              inlineRefNote:
+                'To place this image in a page or a later reply, paste inlineRef verbatim. Copy the id whole — never rebuild it from a shortened form.',
+            }
+          : {}),
         model: result.model,
         adapter: adapter.adapterName,
         mimeType: result.mimeType,

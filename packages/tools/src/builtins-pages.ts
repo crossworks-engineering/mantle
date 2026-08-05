@@ -68,12 +68,19 @@ const FILE_ID_PRE: readonly ToolPrecondition[] = [
 const NOTE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'note_id', nodeType: 'note', lookup: 'note_list / search_nodes' },
 ];
+// Every `media:` / `page:` / `mention:node:` id inside the body must name a real
+// node before we store it. A dangling ref renders blank and reports nothing, so
+// this is the only rung that can catch it (see preconditions.ts).
+const MARKDOWN_REFS_PRE: readonly ToolPrecondition[] = [
+  { kind: 'markdown_refs', param: 'markdown' },
+];
 
 const MARKDOWN_HINT =
   'Rich-markdown body. GFM markdown plus: callouts (`:::info` … `:::`, variants info|success|warning|danger), asides (`:::aside` … `:::`, a themed-gradient box; optional colour `:::aside chart-3`), columns (`:::columns` … `+++` … `:::`, 2+ parts), task lists (`- [ ]` / `- [x]`), tables, `==highlight==`, coloured spans (`[text]{color=chart-2}` / `[text]{highlight=chart-4}`, accents chart-1…chart-5), KaTeX math (`$E=mc^2$` inline, `$$` … `$$` block), diagrams (a ```mermaid fence renders as a real themed diagram), and reference links that keep rich chips intact (`[Label](mention:entity:<id>)`, `![alt](media:<file-id>)`, `[name](media:<file-id>)`, `[Title](page:<page-id>)` — real ids only, standalone lines for the block forms). Same dialect you write replies in.';
 
 const page_create: BuiltinToolDef = {
   slug: 'page_create',
+  preconditions: MARKDOWN_REFS_PRE,
   name: 'Create a page',
   description:
     "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. To make a SUB-PAGE, pass `parent_id` (an existing page's id); omit for a top-level page. Prefer this over `note_create` when the content is long-form or structured (a plan, a doc, a comparison); use `note_create` for quick plain-text captures. **For importing an existing file use `page_from_file` instead — re-emitting the file body in `markdown` truncates silently above ~6 K output tokens. When the content already lives in a NOTE, use `page_from_note` — it copies the body server-side.**",
@@ -260,7 +267,7 @@ const page_replace_from_file: BuiltinToolDef = {
 const page_update: BuiltinToolDef = {
   slug: 'page_update',
   name: 'Update a page',
-  preconditions: PAGE_NODE_ID_PRE,
+  preconditions: [...PAGE_NODE_ID_PRE, ...MARKDOWN_REFS_PRE],
   description:
     "Update an existing page by id. **Pass ONLY the fields you're changing — every other field is left untouched.** Fixing the title? Pass `{ id, title }`, nothing else. Pass `markdown` ONLY when you intend to REPLACE the whole body in one shot (re-converted, page re-indexed) — re-emitting it just to bundle a metadata fix is wasted output tokens and risks truncation. Use `page_get` first if you need the current content before crafting a replacement. **For styling/restyling/reformatting an existing page (callouts, columns, restructure), DELEGATE to the `pages` agent via `invoke_agent` instead — the pages agent writes to draft_doc only and won't silently overwrite the live page on a bad transform.**",
   inputSchema: {
@@ -306,7 +313,7 @@ const page_update: BuiltinToolDef = {
 
 const page_update_draft: BuiltinToolDef = {
   slug: 'page_update_draft',
-  preconditions: PAGE_NODE_ID_PRE,
+  preconditions: [...PAGE_NODE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Update a page (draft-only)',
   description:
     "Update an existing page WITHOUT publishing. Body changes (`markdown`) go to `draft_doc` — the published `doc` and its brain index are untouched until the operator opens the editor and commits. Metadata (`title` / `tags` / `icon`) updates apply directly (easily reversible if wrong). **The Pages agent uses this instead of `page_update` so a misbehaving transform can never silently overwrite the published page.** Pass ONLY the fields you're changing — every other field is left untouched. Returns a hint telling the user where to review the draft.",
@@ -1350,7 +1357,7 @@ const page_block_get: BuiltinToolDef = {
 
 const page_block_update: BuiltinToolDef = {
   slug: 'page_block_update',
-  preconditions: PAGE_ID_PRE,
+  preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Replace one block in a page',
   description:
     "Replace one block (by id) with new content (markdown). The first new block INHERITS the target's id so the next page_blocks_list still addresses the same logical slot. If your markdown produces multiple blocks (e.g. you wrap a paragraph in a heading + paragraph), they're all spliced in; subsequent blocks get fresh ids. Writes to DRAFT only — the published page is untouched until the user commits. **Output bytes are proportional to the new block, not the whole page** — this is the scalable edit path for TARGETED edits on large pages. **For a restructure touching more than ~10 blocks (resequencing / renumbering / merging sections), switch to ONE whole-body `page_update_draft` call instead — block-by-block surgery at that scale exhausts the turn's tool-call budget and strands the draft half-edited.** " +
@@ -1435,7 +1442,7 @@ const page_block_update: BuiltinToolDef = {
 
 const page_block_insert_after: BuiltinToolDef = {
   slug: 'page_block_insert_after',
-  preconditions: PAGE_ID_PRE,
+  preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Insert blocks after a target block',
   description:
     'Insert one or more new blocks (parsed from markdown) directly after the block with the given id. Useful for adding a callout after a quote, or a new section heading after the previous section ends. Writes to DRAFT only. New blocks get fresh ids on save.',
@@ -1512,7 +1519,7 @@ const page_block_insert_after: BuiltinToolDef = {
 
 const page_block_insert_before: BuiltinToolDef = {
   slug: 'page_block_insert_before',
-  preconditions: PAGE_ID_PRE,
+  preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Insert blocks before a target block',
   description:
     'Insert one or more new blocks (parsed from markdown) directly before the block with the given id: an intro above an existing section, a heading over an orphaned paragraph. Writes to DRAFT only. New blocks get fresh ids on save. Counterpart of `page_block_insert_after`; for the very start or end of the page `page_block_append` needs no anchor at all, and for 3+ insertions batch them in one `page_blocks_apply` call.',
@@ -1590,7 +1597,7 @@ const page_block_insert_before: BuiltinToolDef = {
 
 const page_block_append: BuiltinToolDef = {
   slug: 'page_block_append',
-  preconditions: PAGE_ID_PRE,
+  preconditions: [...PAGE_ID_PRE, ...MARKDOWN_REFS_PRE],
   name: 'Add blocks at the start or end of a page',
   description:
     'Add one or more new blocks (parsed from markdown) at the very start or end of a page: no anchor id needed, so it works without a `page_blocks_list` first. The go-to for "append a section to my notes" or prepending an intro. Writes to DRAFT only. New blocks get fresh ids on save. To place blocks relative to existing content use `page_block_insert_after` / `page_block_insert_before`; for 3+ edits batch them in one `page_blocks_apply` call.',
@@ -1738,7 +1745,7 @@ const MAX_APPLY_OPS = 50;
 
 const page_blocks_apply: BuiltinToolDef = {
   slug: 'page_blocks_apply',
-  preconditions: PAGE_ID_PRE,
+  preconditions: [...PAGE_ID_PRE, { kind: 'markdown_refs', param: 'ops', itemKey: 'markdown' }],
   name: 'Apply a batch of block edits to a page (atomic)',
   description:
     "Apply MANY block edits to one page in a SINGLE atomic call — the batch path between one-off block tools and a whole-body `page_update_draft` rewrite. `ops` is an ordered list of `{ op: 'update' | 'insert_before' | 'insert_after' | 'delete' | 'wrap', block_id?, markdown?, block_ids?, container?, variant? }` applied sequentially against the editing baseline; the draft is saved ONCE at the end, so the batch is all-or-nothing: if any op fails (unknown block id, bad markdown, refused delete or wrap) NOTHING is saved and the error names the failing op's index. " +

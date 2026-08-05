@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import {
   fileRawSrc,
   inlineMediaImageIds,
+  markdownRefs,
   mediaFileId,
   stripInlineMediaImages,
 } from './markdown-refs';
@@ -76,5 +77,43 @@ describe('stripInlineMediaImages', () => {
 
   it('is a no-op on text with no markers', () => {
     expect(stripInlineMediaImages('Just prose.')).toEqual({ text: 'Just prose.', stripped: 0 });
+  });
+});
+
+describe('markdownRefs', () => {
+  it('collects media, page and explicit node mentions with their required type', () => {
+    const refs = markdownRefs(
+      'Intro\n\n![a](media:f-1)\n\n[Spec](page:p-2) and [Bob](mention:node:n-3).',
+    );
+    expect(refs).toEqual([
+      { scheme: 'media', id: 'f-1', nodeType: 'file' },
+      { scheme: 'page', id: 'p-2', nodeType: 'page' },
+      { scheme: 'mention', id: 'n-3' },
+    ]);
+  });
+
+  it('treats a media file-EMBED link the same as an image — both need a real id', () => {
+    expect(markdownRefs('[spec.pdf](media:f-2)')).toEqual([
+      { scheme: 'media', id: 'f-2', nodeType: 'file' },
+    ]);
+  });
+
+  it('skips entity mentions, which name no node', () => {
+    expect(markdownRefs('[Acme](mention:entity:e-1) and [Acme](mention:e-2)')).toEqual([]);
+  });
+
+  it('ignores ordinary links and images', () => {
+    expect(markdownRefs('[docs](https://x/y) ![pic](https://x/y.png) ![a](media:')).toEqual([]);
+  });
+
+  it('dedupes a ref used twice', () => {
+    expect(markdownRefs('![a](media:f-1)\n\n![again](media:f-1)')).toEqual([
+      { scheme: 'media', id: 'f-1', nodeType: 'file' },
+    ]);
+  });
+
+  it('is safe on empty input', () => {
+    expect(markdownRefs('')).toEqual([]);
+    expect(markdownRefs(null)).toEqual([]);
   });
 });
