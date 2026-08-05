@@ -20,7 +20,12 @@
  * aren't in the model's supportedSizes list with a clear hint.
  */
 
-import type { GenerateImageOptions, GenerateImageResult, ImageGenDispatcher } from './types';
+import type {
+  GenerateImageOptions,
+  GenerateImageResult,
+  ImageGenDispatcher,
+  ImageGenWarning,
+} from './types';
 import { OPENAI_IMAGE_DEFAULT_MODEL, OPENAI_IMAGE_MODELS } from '../catalogs/openai-image';
 
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations';
@@ -71,11 +76,20 @@ export const openAiImageAdapter: ImageGenDispatcher = {
     if (model === 'dall-e-3' || model === 'dall-e-2') {
       body.response_format = 'b64_json';
     }
-    if (opts.quality && (model === 'dall-e-3' || model === 'gpt-image-1')) {
-      body.quality = opts.quality;
+    // Per-MODEL gates, which `supports` (per-provider) cannot express. What
+    // doesn't go on the wire is reported, not swallowed.
+    const warnings: ImageGenWarning[] = [];
+    if (opts.quality) {
+      if (model === 'dall-e-3' || model === 'gpt-image-1') body.quality = opts.quality;
+      else warnings.push({ param: 'quality', reason: `${model} has no quality tier` });
     }
-    if (opts.style && model === 'dall-e-3') {
-      body.style = opts.style;
+    if (opts.style) {
+      if (model === 'dall-e-3') body.style = opts.style;
+      else
+        warnings.push({
+          param: 'style',
+          reason: `${model} has no style steering (only dall-e-3 does)`,
+        });
     }
 
     const res = await fetch(OPENAI_IMAGES_URL, {
@@ -110,6 +124,7 @@ export const openAiImageAdapter: ImageGenDispatcher = {
           mimeType: imgRes.headers.get('content-type') || 'image/png',
           model,
           revisedPrompt: first.revised_prompt,
+          ...(warnings.length > 0 ? { warnings } : {}),
         };
       }
       throw new Error('openai-image: response had no b64_json or url');
@@ -119,6 +134,7 @@ export const openAiImageAdapter: ImageGenDispatcher = {
       mimeType: 'image/png',
       model,
       revisedPrompt: first.revised_prompt,
+      ...(warnings.length > 0 ? { warnings } : {}),
     };
   },
   staticCatalog() {

@@ -638,6 +638,20 @@ export interface ImageGenModelInfo {
 export type ImageGenParam =
   'size' | 'aspectRatio' | 'style' | 'quality' | 'negativePrompt' | 'seed';
 
+/** One option the adapter chose not to send, and why.
+ *
+ *  `supports` is declared per PROVIDER, but the real gate is often per MODEL:
+ *  the OpenAI images endpoint takes `style` on dall-e-3 and not on
+ *  gpt-image-1, `quality` on those two and not on dall-e-2. A provider-level
+ *  list cannot express that, so the adapter — the only layer that knows which
+ *  model it is actually talking to — reports the difference here rather than
+ *  dropping it. (Same role as `warnings` on the AI SDK's image result.) */
+export type ImageGenWarning = {
+  param: ImageGenParam;
+  /** Model-specific reason, phrased for a reader deciding what to do next. */
+  reason: string;
+};
+
 export interface GenerateImageOptions {
   apiKey: string;
   /** Free-form prompt. No length cap at the interface layer; per-
@@ -676,6 +690,11 @@ export interface GenerateImageResult {
   mimeType: string;
   /** Model id that did the work. Echoed back for traces. */
   model: string;
+  /** Options the adapter deliberately did NOT send, because this MODEL has
+   *  no such control. Empty/absent means everything the caller passed went on
+   *  the wire. Callers must surface these rather than let a requested option
+   *  look like it applied. */
+  warnings?: readonly ImageGenWarning[];
   /** Provider's revised prompt, when it returns one (DALL-E 3 rewrites
    *  the user prompt for safety+quality and surfaces the revision).
    *  Caller can pass this back as `revised_prompt` metadata on the

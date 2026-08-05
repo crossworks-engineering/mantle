@@ -657,6 +657,8 @@ const generate_image: BuiltinToolDef = {
       key: string;
       value: string;
       fromCall: boolean;
+      /** Set when the ADAPTER rejected it for this model, not the caller. */
+      reason?: string;
     }> = [];
     const take = (param: ImageGenParam, key: string, callValue?: string, saved?: string) => {
       const fromCall = callValue != null && callValue !== '';
@@ -674,9 +676,9 @@ const generate_image: BuiltinToolDef = {
     // an OpenRouter worker, all three shown in the UI, none of them sent, and
     // nothing anywhere said so.
     const supported = new Set<ImageGenParam>(adapter.supports);
-    const applied = requested.filter((r) => supported.has(r.param));
+    const sent = requested.filter((r) => supported.has(r.param));
     const ignored = requested.filter((r) => !supported.has(r.param));
-    const get = (param: ImageGenParam) => applied.find((a) => a.param === param)?.value;
+    const get = (param: ImageGenParam) => sent.find((a) => a.param === param)?.value;
 
     let result;
     try {
@@ -692,6 +694,20 @@ const generate_image: BuiltinToolDef = {
       });
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    // The adapter gets the last word. `supports` is per-provider, but several
+    // gates are per-MODEL (OpenAI takes `style` on dall-e-3 and not on
+    // gpt-image-1), and only the adapter knows which model ran. Anything it
+    // reports back moves from "applied" to "ignored" before we tell anyone
+    // the request was honoured.
+    const adapterWarned = new Map(
+      (result.warnings ?? []).map((w) => [w.param as ImageGenParam, w.reason]),
+    );
+    const applied = sent.filter((s) => !adapterWarned.has(s.param));
+    for (const s of sent) {
+      const reason = adapterWarned.get(s.param);
+      if (reason) ignored.push({ ...s, reason });
     }
 
     // Persist as a file node under /files/generated-images/<date>/.
@@ -820,7 +836,9 @@ const generate_image: BuiltinToolDef = {
         // to say so rather than present a square image as what was asked for.
         ...(ignored.length > 0
           ? {
-              ignoredParams: Object.fromEntries(ignored.map((i) => [i.key, i.value])),
+              ignoredParams: Object.fromEntries(
+                ignored.map((i) => [i.key, i.reason ? `${i.value} (${i.reason})` : i.value]),
+              ),
               ignoredParamsNote: `${worker.provider}/${worker.model} does not accept ${ignored
                 .map((i) => i.key)
                 .join(
@@ -870,6 +888,17 @@ function enumForKey(key: string, entry: ImageGenModelInfo | undefined): readonly
   return null;
 }
 
+/** Options whose absence from a model's catalog entry means the MODEL has no
+ *  such control, so the option should vanish rather than appear unconstrained.
+ *
+ *  The distinction matters: an absent `supportedSizes` means "free-form, the
+ *  model decides" (HF repos), but an absent `supportedStyles` means "there is
+ *  no style knob here". Treating them alike is how a `style` stayed offered on
+ *  gpt-image-1 — `supports` is per-provider and OpenAI-the-provider does have
+ *  style, on a different model. The adapter would then drop it at request
+ *  time, which is a warning we can avoid ever needing. */
+const CATALOG_GATED = new Set(['style', 'quality', 'aspect_ratio']);
+
 /** Return a COPY of the generate_image parameters with every option the
  *  configured model can't take REMOVED, and the rest constrained to its
  *  catalog values. Copies rather than mutates: `inputSchema` is a module
@@ -890,8 +919,12 @@ export function withImageModelSchema(
       next[key] = value;
       continue;
     }
-    if (!supported.has(param)) continue; // the model can't take it: don't offer it
+    if (!supported.has(param)) continue; // the provider can't take it: don't offer it
     const values = enumForKey(key, entry);
+    // Catalog-gated and this model lists none: it has no such knob. Only drop
+    // when the model IS in the catalog — an unknown model tells us nothing,
+    // and hiding every option on it would be worse than offering them.
+    if (!values && entry && CATALOG_GATED.has(key)) continue;
     const base = (value as Record<string, unknown>) ?? {};
     next[key] = values
       ? {

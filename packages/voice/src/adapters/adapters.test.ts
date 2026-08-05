@@ -13,9 +13,10 @@
  *      runtime hot-swaps if we ever build them).
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SUPPORTED_PROVIDERS, getProvider } from '../providers';
 import {
+  getImageGenAdapter,
   getSttAdapter,
   getTtsAdapter,
   isProviderWired,
@@ -187,5 +188,65 @@ describe('wiredCapabilitiesFor', () => {
         `provider '${p.id}' is catalogued but has no registered adapter`,
       ).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * Per-MODEL gates the provider-level `supports` list cannot express. The
+ * caller promotes these warnings from "applied" to "ignored", so an option
+ * the adapter quietly declined never reads as honoured.
+ */
+describe('openai-image per-model warnings', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const capture = () => {
+    let body: Record<string, unknown> = {};
+    vi.stubGlobal('fetch', async (_u: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body));
+      return new Response(
+        JSON.stringify({ data: [{ b64_json: Buffer.from('x').toString('base64') }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    return () => body;
+  };
+
+  it('warns instead of silently dropping style on gpt-image-1', async () => {
+    const read = capture();
+    const out = await getImageGenAdapter('openai')!.generate({
+      apiKey: 'k',
+      prompt: 'a cat',
+      model: 'gpt-image-1',
+      style: 'vivid',
+      quality: 'high',
+    });
+    expect(read()).not.toHaveProperty('style');
+    expect(read().quality).toBe('high');
+    expect(out.warnings?.map((w) => w.param)).toEqual(['style']);
+    expect(out.warnings?.[0]!.reason).toContain('dall-e-3');
+  });
+
+  it('warns on quality for dall-e-2, which has no tier', async () => {
+    const read = capture();
+    const out = await getImageGenAdapter('openai')!.generate({
+      apiKey: 'k',
+      prompt: 'a cat',
+      model: 'dall-e-2',
+      quality: 'hd',
+    });
+    expect(read()).not.toHaveProperty('quality');
+    expect(out.warnings?.map((w) => w.param)).toEqual(['quality']);
+  });
+
+  it('says nothing when everything applied', async () => {
+    capture();
+    const out = await getImageGenAdapter('openai')!.generate({
+      apiKey: 'k',
+      prompt: 'a cat',
+      model: 'dall-e-3',
+      style: 'vivid',
+      quality: 'hd',
+    });
+    expect(out.warnings).toBeUndefined();
   });
 });

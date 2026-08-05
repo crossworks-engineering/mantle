@@ -89,3 +89,40 @@ describe('withImageModelSchema', () => {
     expect(Object.keys(props(out))).toEqual(['prompt', 'size']);
   });
 });
+
+const GPT_IMAGE_1: ImageGenModelInfo = {
+  id: 'gpt-image-1',
+  label: 'gpt-image-1',
+  description: '',
+  supportedSizes: ['1024x1024', '1024x1536', '1536x1024'],
+  supportedQualities: ['low', 'medium', 'high', 'auto'],
+  // no supportedStyles: this model has no style knob at all
+};
+
+describe('withImageModelSchema — catalog-gated options', () => {
+  it('drops style on a model that lists none, even though the PROVIDER has it', () => {
+    // `supports` is per-provider and OpenAI does offer style, on dall-e-3.
+    // Offering it on gpt-image-1 would produce a request the adapter then
+    // has to warn about.
+    const out = withImageModelSchema(
+      SCHEMA,
+      ['size', 'style', 'quality'],
+      GPT_IMAGE_1,
+      'openai/gpt-image-1',
+    );
+    expect(props(out)).not.toHaveProperty('style');
+    expect(props(out).quality!.enum).toEqual(['low', 'medium', 'high', 'auto']);
+  });
+
+  it('keeps a free-form size, because absent sizes mean "the model decides"', () => {
+    const hf: ImageGenModelInfo = { id: 'flux', label: 'FLUX', description: '' };
+    const out = withImageModelSchema(SCHEMA, ['size', 'negativePrompt'], hf, 'huggingface/flux');
+    expect(props(out)).toHaveProperty('size');
+    expect(props(out).size).not.toHaveProperty('enum');
+  });
+
+  it('offers everything supported when the model is unknown to the catalog', () => {
+    const out = withImageModelSchema(SCHEMA, ['size', 'style'], undefined, 'openai/brand-new');
+    expect(Object.keys(props(out))).toEqual(['prompt', 'size', 'style']);
+  });
+});
