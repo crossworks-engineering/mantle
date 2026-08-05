@@ -34,7 +34,9 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { accountForChat, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
 import { createFolder, dashToLtree, fileById, readFileById, upsertFile } from '@mantle/files';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
+import type { ImageGenModelInfo, ImageGenParam } from '@mantle/voice';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
+import { registerDynamicSchema } from './dynamic-schema';
 import { str } from './coerce';
 
 // ─── shared helpers ────────────────────────────────────────────────
@@ -594,24 +596,32 @@ const generate_image: BuiltinToolDef = {
         description:
           'The image prompt. Be specific — composition, subject, style, colour palette, lighting. Long prompts (300+ chars) are fine; the adapter trims if needed.',
       },
+      // Every option below is REPLACED at toolset-assembly time by what the
+      // owner's configured model actually accepts (see the dynamic-schema hook
+      // at the foot of this file): unsupported options are removed outright and
+      // the rest become enums. The static text here is the fallback for when
+      // that resolution fails, so it stays deliberately generic — a hardcoded
+      // per-provider list would go stale the moment a worker is switched.
       size: {
         type: 'string',
         description:
-          "Resolution like '1024x1024' or '1792x1024'. Provider-specific (OpenAI gpt-image-1: 1024x1024 / 1024x1536 / 1536x1024; DALL-E 3: 1024x1024 / 1024x1792 / 1792x1024; Imagen: 1024x1024 / 1408x768 / 768x1408). Adapter rejects unsupported sizes with a clear error.",
+          "Output dimensions. Omit to use the size saved on the image_gen worker — pass one ONLY when the user asked for a specific size or shape, e.g. 'a wide banner'.",
+      },
+      aspect_ratio: {
+        type: 'string',
+        description: "Shape, e.g. '16:9'. Use instead of `size` when the user named a shape.",
       },
       style: {
         type: 'string',
-        description: "Style hint, currently only honoured by DALL-E 3 ('vivid' | 'natural').",
+        description: 'Style steering, where the model offers it.',
       },
       quality: {
         type: 'string',
-        description:
-          "Quality tier — DALL-E 3: 'standard' | 'hd'; gpt-image-1: 'low' | 'medium' | 'high' | 'auto'.",
+        description: 'Quality tier. Higher tiers cost more and take longer.',
       },
       negative_prompt: {
         type: 'string',
-        description:
-          'What the image should NOT contain. Honoured by Imagen + HF; OpenAI silently ignores.',
+        description: 'What the image should NOT contain.',
       },
     },
     required: ['prompt'],
@@ -633,9 +643,40 @@ const generate_image: BuiltinToolDef = {
 
     const params = (worker.params ?? {}) as {
       size?: string;
+      aspect_ratio?: string;
       style?: string;
       quality?: string;
     };
+
+    // Per-call arg wins, else the worker's saved default. `origin` is kept so
+    // the report below can distinguish "the model asked for this and it did
+    // not apply" (worth saying out loud) from "an operator default did not
+    // apply" (worth a trace line and a settings pointer).
+    const requested: Array<{
+      param: ImageGenParam;
+      key: string;
+      value: string;
+      fromCall: boolean;
+    }> = [];
+    const take = (param: ImageGenParam, key: string, callValue?: string, saved?: string) => {
+      const fromCall = callValue != null && callValue !== '';
+      const value = fromCall ? callValue : (saved ?? '');
+      if (value) requested.push({ param, key, value, fromCall });
+    };
+    take('size', 'size', strOpt(input.size), params.size);
+    take('aspectRatio', 'aspect_ratio', strOpt(input.aspect_ratio), params.aspect_ratio);
+    take('style', 'style', strOpt(input.style), params.style);
+    take('quality', 'quality', strOpt(input.quality), params.quality);
+    take('negativePrompt', 'negative_prompt', strOpt(input.negative_prompt));
+
+    // The honesty split. An option the adapter does not forward must never
+    // look like it applied: an operator once had size/style/quality saved on
+    // an OpenRouter worker, all three shown in the UI, none of them sent, and
+    // nothing anywhere said so.
+    const supported = new Set<ImageGenParam>(adapter.supports);
+    const applied = requested.filter((r) => supported.has(r.param));
+    const ignored = requested.filter((r) => !supported.has(r.param));
+    const get = (param: ImageGenParam) => applied.find((a) => a.param === param)?.value;
 
     let result;
     try {
@@ -643,10 +684,11 @@ const generate_image: BuiltinToolDef = {
         apiKey,
         prompt,
         model: worker.model,
-        size: strOpt(input.size) ?? params.size,
-        style: strOpt(input.style) ?? params.style,
-        quality: strOpt(input.quality) ?? params.quality,
-        negativePrompt: strOpt(input.negative_prompt),
+        size: get('size'),
+        aspectRatio: get('aspectRatio'),
+        style: get('style'),
+        quality: get('quality'),
+        negativePrompt: get('negativePrompt'),
       });
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -728,6 +770,12 @@ const generate_image: BuiltinToolDef = {
       model: result.model,
       saved_as: storagePath,
       telegram_message_id: telegramMessageId,
+      applied_params: Object.fromEntries(applied.map((a) => [a.key, a.value])),
+      // Present ONLY when something was asked for and not sent. An empty key
+      // here is the whole point: "no news" has to mean "everything applied".
+      ...(ignored.length > 0
+        ? { ignored_params: Object.fromEntries(ignored.map((i) => [i.key, i.value])) }
+        : {}),
     });
 
     // Emit the image as a sidecar artifact regardless of surface.
@@ -764,6 +812,22 @@ const generate_image: BuiltinToolDef = {
         adapter: adapter.adapterName,
         mimeType: result.mimeType,
         bytes: result.bytes.length,
+        ...(applied.length > 0
+          ? { appliedParams: Object.fromEntries(applied.map((a) => [a.key, a.value])) }
+          : {}),
+        // Surfaced to the MODEL, not just the trace: if the user asked for a
+        // 16:9 banner and the configured model cannot do ratios, the reply has
+        // to say so rather than present a square image as what was asked for.
+        ...(ignored.length > 0
+          ? {
+              ignoredParams: Object.fromEntries(ignored.map((i) => [i.key, i.value])),
+              ignoredParamsNote: `${worker.provider}/${worker.model} does not accept ${ignored
+                .map((i) => i.key)
+                .join(
+                  ', ',
+                )}, so ${ignored.some((i) => i.fromCall) ? 'the request was rendered without it — say so plainly rather than implying it applied' : 'the saved worker default had no effect'}. Change the image_gen worker at /settings/ai-workers to a model that supports it.`,
+            }
+          : {}),
         ...(result.revisedPrompt ? { revisedPrompt: result.revisedPrompt } : {}),
         ...(telegramMessageId != null ? { telegramMessageId, deliveredVia: 'telegram' } : {}),
         ...(ctx.surface?.kind === 'web'
@@ -774,6 +838,88 @@ const generate_image: BuiltinToolDef = {
     };
   },
 };
+
+// ─── generate_image: schema that matches the CONFIGURED model ───────
+//
+// Which sizes are valid depends on the owner's default image_gen worker, which
+// is runtime state the model cannot see. Stating the options in prose was the
+// old answer, and it failed in both directions: the prose went stale against
+// whatever worker was actually configured, and the model still had to guess
+// which provider it was talking to. Here the schema is rebuilt once per turn
+// from the worker's own catalog entry, so a wrong value is unrepresentable
+// rather than merely discouraged (the `invoke_agent` pattern — see
+// dynamic-schema.ts). A hook failure falls back to the static schema, so a
+// missing worker or an unwired provider never breaks a turn.
+
+/** Map a tool param key to the adapter capability that gates it. */
+const IMAGE_PARAM_BY_KEY: Readonly<Record<string, ImageGenParam>> = {
+  size: 'size',
+  aspect_ratio: 'aspectRatio',
+  style: 'style',
+  quality: 'quality',
+  negative_prompt: 'negativePrompt',
+};
+
+/** Catalog enums, keyed by tool param. */
+function enumForKey(key: string, entry: ImageGenModelInfo | undefined): readonly string[] | null {
+  if (!entry) return null;
+  if (key === 'size') return entry.supportedSizes ?? null;
+  if (key === 'aspect_ratio') return entry.supportedAspectRatios ?? null;
+  if (key === 'style') return entry.supportedStyles ?? null;
+  if (key === 'quality') return entry.supportedQualities ?? null;
+  return null;
+}
+
+/** Return a COPY of the generate_image parameters with every option the
+ *  configured model can't take REMOVED, and the rest constrained to its
+ *  catalog values. Copies rather than mutates: `inputSchema` is a module
+ *  singleton shared across every agent and turn. Exported for tests. */
+export function withImageModelSchema(
+  schema: Record<string, unknown>,
+  supports: readonly ImageGenParam[],
+  entry: ImageGenModelInfo | undefined,
+  label: string,
+): Record<string, unknown> {
+  const props = (schema.properties as Record<string, unknown> | undefined) ?? {};
+  const supported = new Set(supports);
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(props)) {
+    const param = IMAGE_PARAM_BY_KEY[key];
+    // `prompt` and anything unmapped is always kept.
+    if (!param) {
+      next[key] = value;
+      continue;
+    }
+    if (!supported.has(param)) continue; // the model can't take it: don't offer it
+    const values = enumForKey(key, entry);
+    const base = (value as Record<string, unknown>) ?? {};
+    next[key] = values
+      ? {
+          ...base,
+          enum: [...values],
+          description:
+            `${String(base.description ?? '')} ${label} accepts: ${values.join(', ')}.`.trim(),
+        }
+      : base;
+  }
+  return { ...schema, properties: next };
+}
+
+registerDynamicSchema('generate_image', async (current, ctx) => {
+  const worker = await getDefaultWorker(ctx.ownerId, 'image_gen');
+  if (!worker) return null;
+  const adapter = getImageGenAdapter(worker.provider);
+  if (!adapter) return null;
+  const entry = adapter.staticCatalog().find((m) => m.id === worker.model);
+  return {
+    parameters: withImageModelSchema(
+      current.parameters,
+      adapter.supports,
+      entry,
+      `${worker.provider}/${worker.model}`,
+    ),
+  };
+});
 
 export const WORKER_DELEGATION_TOOLS: readonly BuiltinToolDef[] = [
   synthesize_speech,

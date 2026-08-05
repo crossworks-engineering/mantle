@@ -7,10 +7,12 @@
  * The xAI image API is OpenAI-shaped with two specifics:
  *   - `response_format` MUST be 'b64_json' to get bytes (default
  *     is 'url' which we have to fetch separately).
- *   - Style + quality + size hints are ignored — Grok 2 Image only
- *     supports 1024x1024 and has no style steering today. We send
- *     them anyway and let xAI's server drop unknown fields; the
- *     adapter's job is to be uniform, not pedantic.
+ *   - Style, quality, size, negative prompt and seed are NOT sent: Grok
+ *     Imagine is fixed at 1024x1024 with no steering. (An older comment
+ *     here claimed they were forwarded and left to the server to drop.
+ *     They never were.) The adapter declares `supports: []` so the caller
+ *     reports the gap instead of the operator wondering why a saved size
+ *     changed nothing.
  */
 
 import type { GenerateImageOptions, GenerateImageResult, ImageGenDispatcher } from './types';
@@ -32,6 +34,9 @@ type XaiImageResponse = {
 export const xaiImageAdapter: ImageGenDispatcher = {
   providerId: 'xai',
   adapterName: 'xai-image',
+  // Nothing but model + prompt: Grok Imagine is fixed at 1024x1024 with no
+  // style, quality, negative-prompt or seed control.
+  supports: [],
   async generate(opts: GenerateImageOptions): Promise<GenerateImageResult> {
     if (!opts.apiKey) throw new Error('xai-image: apiKey required');
     const prompt = opts.prompt?.trim();

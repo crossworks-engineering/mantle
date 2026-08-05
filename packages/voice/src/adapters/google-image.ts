@@ -66,13 +66,18 @@ type ImagenResponse = {
 export const googleImageAdapter: ImageGenDispatcher = {
   providerId: 'google',
   adapterName: 'google-image',
+  // Imagen steers by aspect ratio; `size` is accepted and MAPPED to one.
+  // No style or quality controls on :predict.
+  supports: ['size', 'aspectRatio', 'negativePrompt', 'seed'],
   async generate(opts: GenerateImageOptions): Promise<GenerateImageResult> {
     if (!opts.apiKey) throw new Error('google-image: apiKey required');
     const prompt = opts.prompt?.trim();
     if (!prompt) throw new Error('google-image: empty prompt');
 
     const model = opts.model || GOOGLE_IMAGE_DEFAULT_MODEL;
-    const aspectRatio = aspectRatioFor(opts.size);
+    // An explicit ratio is the direct expression of what Imagen wants; the
+    // size→ratio snap is the fallback for callers that only think in pixels.
+    const aspectRatio = opts.aspectRatio || aspectRatioFor(opts.size);
 
     const body = {
       instances: [{ prompt }],

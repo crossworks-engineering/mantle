@@ -613,11 +613,30 @@ export interface ImageGenModelInfo {
   /** Steerable styles, when the model supports them (DALL-E 3:
    *  'vivid' | 'natural'). Undefined = no style steering. */
   supportedStyles?: readonly string[];
+  /** Quality tiers the model accepts. Genuinely provider-specific:
+   *  DALL-E 3 takes 'standard' | 'hd', gpt-image-1 takes
+   *  'low' | 'medium' | 'high' | 'auto', OpenRouter normalizes to the
+   *  latter. Undefined = no quality control. */
+  supportedQualities?: readonly string[];
+  /** Aspect ratios the model accepts, for providers that steer by ratio
+   *  rather than by pixel size. Undefined = not ratio-steerable. */
+  supportedAspectRatios?: readonly string[];
   /** USD per image at default size. UI hint only. */
   pricePerImage?: number;
   /** Latency tier — useful when picking between same-provider models. */
   tier?: 'fast' | 'balanced' | 'quality';
 }
+
+/** A request option an image-gen adapter may or may not forward.
+ *
+ *  Declared per adapter so an option that will not survive the trip is
+ *  REPORTED rather than silently discarded. Silent drop is the failure this
+ *  interface exists to kill: an operator set size/style/quality on an
+ *  OpenRouter worker, the UI showed them saved, and the adapter sent
+ *  neither — with nothing in the trace to say so. See
+ *  {@link ImageGenDispatcher.supports}. */
+export type ImageGenParam =
+  'size' | 'aspectRatio' | 'style' | 'quality' | 'negativePrompt' | 'seed';
 
 export interface GenerateImageOptions {
   apiKey: string;
@@ -627,8 +646,13 @@ export interface GenerateImageOptions {
   /** Model id. Defaults to the adapter's documented default. */
   model?: string;
   /** Native resolution, e.g. '1024x1024' or '1792x1024'. Adapters
-   *  validate against ImageGenModelInfo.supportedSizes. */
+   *  validate against ImageGenModelInfo.supportedSizes. OpenRouter also
+   *  accepts a tier ('1K' / '2K' / '4K'). */
   size?: string;
+  /** Aspect ratio, e.g. '16:9'. The natural control for providers that
+   *  steer by ratio (Imagen) or normalize across them (OpenRouter);
+   *  ignored by the fixed-size APIs. */
+  aspectRatio?: string;
   /** Style hint (provider-specific: DALL-E 3 = 'vivid'/'natural';
    *  others may ignore). */
   style?: string;
@@ -661,6 +685,13 @@ export interface GenerateImageResult {
 }
 
 export interface ImageGenDispatcher extends AdapterMeta {
+  /** The subset of {@link GenerateImageOptions} this adapter actually puts
+   *  on the wire. REQUIRED, and it must be honest: the caller reports every
+   *  requested option outside this set back to the model and into the trace
+   *  rather than pretending it applied. An adapter that starts forwarding a
+   *  new option must add it here in the same commit. */
+  supports: readonly ImageGenParam[];
+
   /** Generate an image from a prompt. Throws on auth/network/quota
    *  errors with the provider's verbatim message slice — same
    *  convention as the other dispatchers. */

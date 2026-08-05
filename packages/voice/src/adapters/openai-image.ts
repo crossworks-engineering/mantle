@@ -47,6 +47,10 @@ function validateSize(model: string, size: string | undefined): string | undefin
 export const openAiImageAdapter: ImageGenDispatcher = {
   providerId: 'openai',
   adapterName: 'openai-image',
+  // No negative prompt or seed on /v1/images/generations; `style` is
+  // dall-e-3 only and `quality` dall-e-3 + gpt-image-1, both narrowed
+  // per-model by the catalog's supportedStyles/supportedQualities.
+  supports: ['size', 'style', 'quality'],
   async generate(opts: GenerateImageOptions): Promise<GenerateImageResult> {
     if (!opts.apiKey) throw new Error('openai-image: apiKey required');
     const prompt = opts.prompt?.trim();

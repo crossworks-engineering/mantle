@@ -168,6 +168,7 @@ export {
   type VisionModelInfo,
   type ImageGenDispatcher,
   type ImageGenModelInfo,
+  type ImageGenParam,
   type GenerateImageOptions,
   type GenerateImageResult,
   type EmbeddingDispatcher,

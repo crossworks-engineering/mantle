@@ -570,18 +570,18 @@ entire text + vision brain is functional.
 | Embeddings | ✅ | `openrouter-embedding` adapter |
 | Vision (image OCR) | ✅ | `openrouter-vision.extract` — `image_url` content |
 | Document (native PDF) | ✅ | `openrouter-vision.extractDocument` — OR `file-parser` plugin |
-| **TTS (voice out)** | ❌ | OpenRouter does **not** proxy audio synthesis |
-| **STT (voice in)** | ❌ | OpenRouter does **not** proxy transcription |
-| **Image generation** | ❌ | OpenRouter does **not** proxy image generation |
+| TTS (voice out) | ✅ | `openrouter-tts` — `POST /api/v1/audio/speech` |
+| STT (voice in) | ✅ | `openrouter-stt` — OpenAI-compatible transcription |
+| Image generation | ✅ | `openrouter-image` — `POST /api/v1/images` |
 
-**The audio/image-gen limitation is real, not an oversight.** OpenRouter is a
-chat/embedding/multimodal-text aggregator — it has no TTS, STT, or image-gen
-endpoints. So voice replies, voice messages, and `generate_image` need a
-**direct** provider key (OpenAI for Whisper/TTS/DALL-E, ElevenLabs/Deepgram/etc.
-for voice, xAI/Google/HF for images). The provider catalogue reflects this:
-OpenRouter declares `capabilities: ['chat', 'embedding', 'vision']` only. These
-are *enhancements*, not core — an OR-only Mantle reads, writes, searches,
-remembers, and extracts documents; it just can't talk out loud or draw.
+**This table used to read ❌ on the last three rows**, and the prose called the
+gap "real, not an oversight". It is no longer either: OpenRouter has since
+shipped speech, transcription and a dedicated images endpoint, all three are
+wired as adapters, and the provider catalogue declares
+`capabilities: ['chat', 'embedding', 'vision', 'tts', 'stt', 'image_gen']`. A
+single OpenRouter key now covers every worker kind Mantle has. Direct provider
+keys remain useful for quality or price (ElevenLabs voices, Deepgram
+transcription, Imagen), not because anything is missing.
 
 ---
 
@@ -596,8 +596,44 @@ tool resolves the default image_gen worker, calls the adapter, and:
 - On /assistant surface: emits an image artifact the chat page renders
   inline in the reply bubble.
 - Returns to the LLM: `{nodeId, storagePath, model, adapter, mimeType,
-  bytes, revisedPrompt?}` — enough metadata for Saskia to mention what
-  she sent.
+  bytes, revisedPrompt?, inlineRef, appliedParams, ignoredParams?}` — enough
+  metadata for Saskia to mention what she sent, and `inlineRef` is the
+  paste-ready `![alt](media:<id>)` for placing it in a reply or a page.
+
+### Who decides size, style and quality
+
+Two layers, and the split is deliberate.
+
+1. **The worker's saved `params`** (`/settings/ai-workers`) are the operator's
+   defaults and apply to every generation.
+2. **A per-call argument** overrides them for one image, and Saskia is taught
+   (skill `visual_answers`) to pass one ONLY when the user asked for it in that
+   conversation. A standing preference is a settings change, not an argument.
+
+**What the model is allowed to pass is computed, not described.** A dynamic
+schema hook (`registerDynamicSchema('generate_image', …)`, see
+`packages/tools/src/dynamic-schema.ts`) rebuilds the tool's parameters once per
+turn from the configured worker: options the adapter does not forward are
+REMOVED, and the rest become `enum`s of that model's catalog values. So a wrong
+size is unrepresentable rather than merely discouraged, and the prose can never
+go stale against the worker actually installed.
+
+**Every adapter declares what it forwards** via `ImageGenDispatcher.supports`:
+
+| adapter | forwards |
+|---|---|
+| `openai-image` | size, style (dall-e-3), quality (dall-e-3 + gpt-image-1) |
+| `openrouter-image` | size (pixels or a `1K`/`2K`/`4K` tier), aspect ratio, quality, seed |
+| `google-image` | size (snapped to a ratio), aspect ratio, negative prompt, seed |
+| `huggingface-image` | size (as width/height), negative prompt, seed |
+| `xai-image` | nothing: Grok Imagine is fixed at 1024x1024 |
+
+Anything requested outside that set is reported, never dropped in silence: it
+lands in the trace step as `ignored_params` and goes back to the model as
+`ignoredParams` so the reply can say what did not apply. This exists because it
+already failed the other way — an OpenRouter worker had size, style and quality
+saved and displayed, the old chat-completions code path sent none of them, and
+nothing recorded the gap.
 
 DALL-E 3 surfaces a `revised_prompt` field when the model rewrites
 the prompt for safety/quality; this rides through as
