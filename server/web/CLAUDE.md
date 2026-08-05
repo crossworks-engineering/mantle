@@ -45,10 +45,15 @@ Non-negotiables (full detail in the guide):
   HTML), not the client editor.
 - **Fonts**: Inter everywhere (auto) is the UI body font — don't change that.
   The **wordmark + header page-title** are user-selectable from a display-font
-  library (Settings → Appearance → Fonts); to add one, drop a face in
-  `public/fonts/library/<key>.ttf` and add a row to `lib/display-fonts.ts` (the
-  single registry — it drives the `@font-face` block, both pickers, and the
-  runtime CSS-var override). Defaults: Bukhari wordmark, sans title.
+  library (Settings → Appearance → Fonts). The single registry is
+  `packages/web-ui/src/display-fonts.ts` — it drives the `@font-face` block, both
+  pickers, and the runtime CSS-var override. To add a face: drop it in
+  `public/fonts/library/`, run `node scripts/fonts-to-woff2.mjs --prune <file>`,
+  mirror the `.woff2` into **both** apps' public dirs (`client/web` + `server/web`
+  each serve their own), then add a row keyed `<key>.woff2`. **woff2 only** — a
+  `.ttf` left behind fails `display-fonts.test.ts`, which asserts registry and
+  shipped files agree in both directions, per app. Defaults: Bukhari wordmark,
+  sans title.
 - **Tailwind v4**: no dynamically built class names (use literal-string arrays).
 - **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
   with **no agent co-authorship trailers** (repo rule — see the root CLAUDE.md; a

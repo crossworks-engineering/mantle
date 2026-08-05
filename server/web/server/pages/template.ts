@@ -33,7 +33,7 @@ export function scriptSafeJson(value: unknown): string {
 const FONT_CSS = `
 @font-face{font-family:'InterVariable';font-style:normal;font-weight:100 900;font-display:swap;src:url('/Inter/Inter-VariableFont_opsz,wght.woff2') format('woff2')}
 @font-face{font-family:'InterVariable';font-style:italic;font-weight:100 900;font-display:swap;src:url('/Inter/Inter-Italic-VariableFont_opsz,wght.woff2') format('woff2')}
-@font-face{font-family:'Bukhari Script';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/BukhariScript-Regular.ttf') format('truetype')}
+@font-face{font-family:'Bukhari Script';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/BukhariScript-Regular.woff2') format('woff2')}
 :root{--font-sans:'InterVariable',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif;--font-logo:'Bukhari Script'}
 `.trim();
 
