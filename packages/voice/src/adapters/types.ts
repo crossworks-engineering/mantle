@@ -30,6 +30,7 @@ import type {
   SynthesizeResult,
   TranscribeOptions,
   TranscribeResult,
+  TtsParam,
 } from '../types';
 import type { TtsModelInfo, SttModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
@@ -86,6 +87,15 @@ export type WrappingTag = {
 };
 
 export interface TtsDispatcher extends AdapterMeta {
+  /** The subset of {@link SynthesizeOptions} this adapter actually puts on the
+   *  wire, excluding `voice`/`model`/`text` which every provider takes.
+   *  REQUIRED and it must be honest: the caller reports every requested option
+   *  outside this set rather than letting it look like it applied. Where the
+   *  gate is per-MODEL instead of per-provider, the adapter additionally
+   *  returns `warnings` from the call. Same contract as
+   *  {@link ImageGenDispatcher.supports}. */
+  supports: readonly TtsParam[];
+
   /** Synthesise speech and return audio bytes. The runtime then hands
    *  these to Telegram's sendVoice (when format='opus') or to an
    *  `<audio>` element on the web. */

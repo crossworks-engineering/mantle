@@ -8,6 +8,8 @@ export type {
   SynthesizeOptions,
   SynthesizeResult,
   TtsVoice,
+  TtsParam,
+  TtsWarning,
 } from './types';
 
 export { TTS_VOICES } from './types';

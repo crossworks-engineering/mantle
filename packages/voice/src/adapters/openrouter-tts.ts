@@ -78,6 +78,9 @@ async function fetchSpeechModels(): Promise<OrSpeechModel[]> {
 export const openrouterTtsAdapter: TtsDispatcher = {
   providerId: 'openrouter',
   adapterName: 'openrouter-tts',
+  // OpenAI-compatible speech endpoint: response_format, speed and
+  // instructions all forward. No language field.
+  supports: ['speed', 'format', 'instructions'],
   async synthesize(opts: SynthesizeOptions): Promise<SynthesizeResult> {
     if (!opts.apiKey) throw new Error('openrouter-tts: apiKey required');
     const raw = (opts.text ?? '').trim();

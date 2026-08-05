@@ -34,7 +34,7 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { accountForChat, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
 import { createFolder, dashToLtree, fileById, readFileById, upsertFile } from '@mantle/files';
 import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } from '@mantle/voice';
-import type { ImageGenModelInfo, ImageGenParam } from '@mantle/voice';
+import type { ImageGenModelInfo, ImageGenParam, TtsParam } from '@mantle/voice';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
 import { registerDynamicSchema } from './dynamic-schema';
 import { notFound } from './errors';
@@ -174,13 +174,55 @@ const synthesize_speech: BuiltinToolDef = {
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
+    // Same honesty split as generate_image. TTS providers diverge hard here:
+    // Gemini has no speed parameter at all, ElevenLabs takes a language code
+    // on some models and not others, tts-1 ignores style instructions. An
+    // operator who sets one of those in /settings/ai-workers and hears no
+    // difference deserves to be told which, rather than doubting their ears.
+    const ttsSupported = new Set<TtsParam>(adapter.supports);
+    const ttsWarned = new Map((synth.warnings ?? []).map((w) => [w.param, w.reason]));
+    const ttsIgnored: Array<{ key: string; value: string; reason?: string }> = [];
+    const noteTts = (param: TtsParam, value: unknown) => {
+      if (value === undefined || value === null || value === '') return;
+      const reason = ttsWarned.get(param);
+      if (!ttsSupported.has(param)) {
+        ttsIgnored.push({ key: param, value: String(value) });
+      } else if (reason) {
+        ttsIgnored.push({ key: param, value: String(value), reason });
+      }
+    };
+    noteTts('speed', params.speed);
+    noteTts('format', audioFormat);
+    noteTts('instructions', params.instructions);
+    noteTts('language', params.language);
+
     ctx.step?.setMeta({
       adapter: adapter.adapterName,
       bytes: synth.bytes.length,
       voice: voiceId,
       worker_slug: worker.slug,
       surface: ctx.surface.kind,
+      ...(ttsIgnored.length > 0
+        ? {
+            ignored_params: Object.fromEntries(
+              ttsIgnored.map((i) => [i.key, i.reason ? `${i.value} (${i.reason})` : i.value]),
+            ),
+          }
+        : {}),
     });
+    const ttsIgnoredOutput =
+      ttsIgnored.length > 0
+        ? {
+            ignoredParams: Object.fromEntries(
+              ttsIgnored.map((i) => [i.key, i.reason ? `${i.value} (${i.reason})` : i.value]),
+            ),
+            ignoredParamsNote: `${worker.provider}/${synth.model} did not apply ${ttsIgnored
+              .map((i) => i.key)
+              .join(
+                ', ',
+              )} from the worker's saved settings. Mention it if the user asks why the delivery didn't change; changing it means switching the tts worker at /settings/ai-workers.`,
+          }
+        : {};
 
     if (ctx.surface.kind === 'telegram') {
       try {
@@ -203,6 +245,7 @@ const synthesize_speech: BuiltinToolDef = {
             voice: voiceId,
             model: synth.model,
             bytes: synth.bytes.length,
+            ...ttsIgnoredOutput,
           },
         };
       } catch (err) {
@@ -230,6 +273,7 @@ const synthesize_speech: BuiltinToolDef = {
         voice: voiceId,
         model: synth.model,
         bytes: synth.bytes.length,
+        ...ttsIgnoredOutput,
       },
       artifacts: [artifact],
     };

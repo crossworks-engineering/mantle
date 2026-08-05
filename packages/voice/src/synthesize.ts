@@ -17,7 +17,7 @@
  * bubble (with the play/scrub UI), not as a generic audio file.
  */
 
-import type { SynthesizeOptions, SynthesizeResult, TtsVoice } from './types';
+import type { SynthesizeOptions, SynthesizeResult, TtsVoice, TtsWarning } from './types';
 import { TTS_VOICES } from './types';
 
 const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
@@ -86,10 +86,11 @@ export async function synthesizeSpeech(opts: SynthesizeOptions): Promise<Synthes
       input: text,
       response_format: format,
       speed,
-      // Style instructions are only honoured by gpt-4o-mini-tts.
-      // Older models (tts-1, tts-1-hd) silently ignore the field,
-      // so it's safe to send unconditionally when the operator
-      // configured one.
+      // Style instructions are only honoured by gpt-4o-mini-tts; tts-1 and
+      // tts-1-hd ignore the field (OpenAI's own reference says so outright).
+      // Sending it regardless is safe, and it stays that way — but "safe" is
+      // not "applied", so a request against those models is warned about
+      // below rather than left to look like it worked.
       ...(opts.instructions ? { instructions: opts.instructions } : {}),
     }),
   });
@@ -101,10 +102,18 @@ export async function synthesizeSpeech(opts: SynthesizeOptions): Promise<Synthes
   if (buffer.length === 0) {
     throw new Error('openai tts: empty response');
   }
+  const warnings: TtsWarning[] = [];
+  if (opts.instructions && (model === 'tts-1' || model === 'tts-1-hd')) {
+    warnings.push({
+      param: 'instructions',
+      reason: `${model} ignores style instructions (use gpt-4o-mini-tts for steerable delivery)`,
+    });
+  }
   return {
     bytes: buffer,
     mimeType: mimeForFormat(format),
     voice,
     model,
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }

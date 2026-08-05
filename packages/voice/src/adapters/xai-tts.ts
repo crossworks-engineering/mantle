@@ -24,7 +24,7 @@
  * bubble UI until xAI adds Opus output.
  */
 
-import type { SynthesizeOptions, SynthesizeResult } from '../types';
+import type { SynthesizeOptions, SynthesizeResult, TtsWarning } from '../types';
 import type { TtsDispatcher } from './types';
 import type { TtsModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
@@ -59,6 +59,10 @@ function xaiCodecFor(format: string | undefined): {
   }
 }
 
+/** Grok TTS speed band, narrower than OpenAI's 0.25-4.0. */
+const XAI_SPEED_MIN = 0.7;
+const XAI_SPEED_MAX = 1.5;
+
 async function xaiTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeResult> {
   if (!opts.apiKey) throw new Error('xai-tts: apiKey required');
   let text = (opts.text ?? '').trim();
@@ -89,13 +93,29 @@ async function xaiTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeResu
   const language =
     typeof opts.language === 'string' && opts.language.length > 0 ? opts.language : 'auto';
 
+  // Speed DOES exist on Grok TTS, in a narrower band than OpenAI's: 0.7 to
+  // 1.5, default 1.0 (docs.x.ai, text-to-speech, checked 2026-08). An earlier
+  // comment here asserted the knob did not exist and the field was never sent,
+  // so an operator's saved speed was silently inert on this provider.
+  const warnings: TtsWarning[] = [];
+  let speed: number | undefined;
+  if (typeof opts.speed === 'number' && opts.speed !== 1.0) {
+    speed = Math.min(Math.max(opts.speed, XAI_SPEED_MIN), XAI_SPEED_MAX);
+    if (speed !== opts.speed) {
+      warnings.push({
+        param: 'speed',
+        reason: `clamped ${opts.speed} to ${speed} (Grok TTS accepts ${XAI_SPEED_MIN} to ${XAI_SPEED_MAX})`,
+      });
+    }
+  }
+
   const body: Record<string, unknown> = {
     text,
     voice_id: voiceId,
     language,
     output_format: { codec },
-    // text_normalization is on by default (numbers/abbreviations);
-    // leaving it default. The speed knob doesn't exist on Grok TTS.
+    ...(speed != null ? { speed } : {}),
+    // text_normalization is on by default (numbers/abbreviations); left alone.
   };
 
   const res = await fetch(`${XAI_BASE_URL}/tts`, {
@@ -118,6 +138,7 @@ async function xaiTtsSynthesize(opts: SynthesizeOptions): Promise<SynthesizeResu
   return {
     bytes,
     mimeType: mime,
+    ...(warnings.length > 0 ? { warnings } : {}),
     // Echo back the voice id as the result's `voice` field. Same cast
     // pattern as the ElevenLabs adapter — the TtsVoice union is
     // OpenAI-shaped; consumers reading this field should treat it as
@@ -158,6 +179,10 @@ async function xaiTtsVoicesForModel(
 export const xaiTtsAdapter: TtsDispatcher = {
   providerId: 'xai',
   adapterName: 'xai-tts',
+  // /v1/tts takes language (required, 'auto' or BCP-47), output_format
+  // {codec,...} and speed. It has no prose style parameter: delivery is
+  // steered by the inline + wrapping speech tags below.
+  supports: ['speed', 'format', 'language'],
   synthesize: xaiTtsSynthesize,
   discoverModels: xaiTtsDiscover,
   voicesForModel: xaiTtsVoicesForModel,

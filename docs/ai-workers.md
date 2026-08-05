@@ -363,6 +363,36 @@ The `[VOICE]` opt-in marker is documented in Saskia's system prompt
 template — see [memory.md §6.2](./memory.md#62-the-agent-roles) for
 where that lives.
 
+### 5a′. Which speech options actually reach the provider
+
+The normalized option set (`SynthesizeOptions`) is `text`, `voice`, `model`,
+`speed`, `format`, `instructions`, `language`. That set is stable — the AI
+SDK's `generateSpeech` arrived at the same seven independently — but **who
+honours what is not**, so each adapter declares `TtsDispatcher.supports` and
+the caller reports the rest. Checked against each provider's own docs,
+2026-08:
+
+| adapter | forwards | notes |
+|---|---|---|
+| `openai-tts` | speed, format, instructions | no language field at all; `instructions` is ignored by `tts-1` / `tts-1-hd`, which warns per-model |
+| `openrouter-tts` | speed, format, instructions | OpenAI-compatible `/audio/speech` |
+| `elevenlabs-tts` | speed, format, language | speed rides inside `voice_settings`; `language_code` is refused by the `multilingual_v2` family, which warns per-model |
+| `xai-tts` | speed, format, language | speed band is 0.7–1.5, narrower than OpenAI's; out-of-band values clamp and warn |
+| `google-tts` | format | Gemini TTS has **no** speed, instructions or language parameter: delivery is steered by prompt text and inline audio tags |
+
+Two corrections that came out of that check, both of which had made an
+operator's saved setting silently inert:
+
+- `xai-tts` carried a comment asserting "the speed knob doesn't exist on Grok
+  TTS" and never sent the field. It does exist.
+- `elevenlabs-tts` never sent `language_code`, and our own option doc said
+  ElevenLabs ignored language outright. That is true only of the model we
+  happened to default to.
+
+Anything requested and not forwarded comes back as `ignoredParams` on the tool
+result and `ignored_params` in the trace step, same convention as image
+generation.
+
 ### 5a. Speech tags — inline + wrapping
 
 Voice models expose two tag vocabularies, and the framework treats both
@@ -626,7 +656,7 @@ go stale against the worker actually installed.
 | `openrouter-image` | size (pixels or a `1K`/`2K`/`4K` tier), aspect ratio, quality, seed, input images |
 | `google-image` | size (snapped to a ratio), aspect ratio, negative prompt, seed |
 | `huggingface-image` | size (as width/height), negative prompt, seed |
-| `xai-image` | nothing: Grok Imagine is fixed at 1024x1024 |
+| `xai-image` | aspect ratio only (no size / style / quality / seed) |
 
 Per-PROVIDER is the wrong grain for some of these, so an adapter may also
 return `warnings` from a call — the per-MODEL truth only it knows (OpenAI takes

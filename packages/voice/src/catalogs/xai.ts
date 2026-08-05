@@ -261,7 +261,22 @@ export const XAI_IMAGE_MODELS: readonly ImageGenModelInfo[] = [
     label: 'Grok Imagine',
     description:
       'xAI image generator (Feb 2026+). Photo-realistic and editorial styles. Reuses your chat key.',
-    supportedSizes: ['1024x1024'],
+    // Grok Imagine steers by ASPECT RATIO, not pixel size (docs.x.ai, image
+    // generation, checked 2026-08). An earlier entry here claimed a fixed
+    // 1024x1024 and no steering at all, which is why the adapter forwarded
+    // nothing.
+    supportedAspectRatios: [
+      'auto',
+      '1:1',
+      '3:4',
+      '4:3',
+      '9:16',
+      '16:9',
+      '2:3',
+      '3:2',
+      '1:2',
+      '2:1',
+    ],
     pricePerImage: 0.07,
     tier: 'balanced',
   },

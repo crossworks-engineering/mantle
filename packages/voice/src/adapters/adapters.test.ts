@@ -120,6 +120,7 @@ describe('registerTtsAdapter', () => {
     const fake: TtsDispatcher = {
       providerId: 'huggingface' as const,
       adapterName: 'hf-test',
+      supports: [],
       async synthesize() {
         return {
           bytes: Buffer.from('fake'),
