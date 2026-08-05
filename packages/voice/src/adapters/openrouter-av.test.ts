@@ -168,8 +168,14 @@ describe('openrouter-image editing', () => {
       inputImages: [{ bytes: Buffer.from('img'), mimeType: 'image/jpeg' }],
     });
     const { body } = read();
+    // Objects, not bare strings — a data-URL string is a 400 from OpenRouter
+    // ("expected object, received string"), which is how the first version
+    // shipped and how a live probe found it.
     expect(body.input_references).toEqual([
-      `data:image/jpeg;base64,${Buffer.from('img').toString('base64')}`,
+      {
+        type: 'image_url',
+        image_url: { url: `data:image/jpeg;base64,${Buffer.from('img').toString('base64')}` },
+      },
     ]);
   });
 

@@ -126,11 +126,17 @@ export const openrouterImageAdapter: ImageGenDispatcher = {
     const body: Record<string, unknown> = {
       model,
       prompt,
+      // Each reference is an OBJECT, chat-content-part shaped. Sending bare
+      // data-URL strings (the obvious guess, and what shipped first) is a 400:
+      //   input_references[0]: expected object, received string
+      // The url may be http(s) or a data URL; ours are always data URLs
+      // because the source is a file node only we can serve.
       ...(inputs.length > 0
         ? {
-            input_references: inputs.map(
-              (i) => `data:${i.mimeType};base64,${i.bytes.toString('base64')}`,
-            ),
+            input_references: inputs.map((i) => ({
+              type: 'image_url',
+              image_url: { url: `data:${i.mimeType};base64,${i.bytes.toString('base64')}` },
+            })),
           }
         : {}),
       ...(opts.size ? { size: opts.size } : {}),
