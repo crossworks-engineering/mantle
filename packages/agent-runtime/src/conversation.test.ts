@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { formatToolRecordSuffix, looksAnaphoricFollowup } from './conversation';
+import {
+  formatMediaRecordSuffix,
+  formatToolRecordSuffix,
+  looksAnaphoricFollowup,
+} from './conversation';
 
 describe('looksAnaphoricFollowup', () => {
   it('flags short referential follow-ups (enrich the retrieval embedding)', () => {
@@ -112,5 +116,61 @@ describe('formatToolRecordSuffix', () => {
       toolStats: { calls: 1, succeeded: 0, failed: 0, skipped: 1, queued: 1, failures: [] },
     });
     expect(s).toBe('[tool record: 1 tool call ran; 1 queued for operator approval, not yet run]');
+  });
+});
+
+/**
+ * Media read-back. The regression: an image generated on one turn was
+ * unreferenceable on the next, because history replayed reply text and left the
+ * `attachments` column behind. The model reconstructed a UUID from a display
+ * prefix and wrote a page with a dangling image.
+ */
+describe('formatMediaRecordSuffix', () => {
+  const IMG = '2153d1f2-c8ed-4bcf-bb76-b99b10f5c077';
+
+  it('is silent for turns with no media, and for foreign shapes', () => {
+    expect(formatMediaRecordSuffix([])).toBeNull();
+    expect(formatMediaRecordSuffix(null)).toBeNull();
+    expect(formatMediaRecordSuffix(undefined)).toBeNull();
+    expect(formatMediaRecordSuffix({ kind: 'image' })).toBeNull();
+    expect(formatMediaRecordSuffix([null, 'x', 7])).toBeNull();
+  });
+
+  it('quotes the full node id, so the next turn never rebuilds one', () => {
+    const out = formatMediaRecordSuffix([
+      { kind: 'image', nodeId: IMG, caption: 'A beautiful house surrounded by flowers' },
+    ]);
+    expect(out).toBe(
+      '[media record: image "A beautiful house surrounded by flowers" = ' +
+        `media:${IMG} — reference these by the id shown, copied whole]`,
+    );
+  });
+
+  it('skips a transport-only handle, which media: cannot resolve', () => {
+    expect(formatMediaRecordSuffix([{ kind: 'image', fileId: 'AgACAgQAAx' }])).toBeNull();
+  });
+
+  it('handles a missing caption', () => {
+    expect(formatMediaRecordSuffix([{ kind: 'audio', nodeId: IMG }])).toContain(
+      `audio = media:${IMG}`,
+    );
+  });
+
+  it('snips a long caption but never the id', () => {
+    const out = formatMediaRecordSuffix([{ kind: 'image', nodeId: IMG, caption: 'x'.repeat(200) }]);
+    expect(out).toContain('…');
+    expect(out).toContain(`media:${IMG}`);
+    expect(out!.length).toBeLessThan(200);
+  });
+
+  it('caps the list and says how many it dropped', () => {
+    const many = Array.from({ length: 5 }, (_, i) => ({
+      kind: 'image',
+      nodeId: `${i}153d1f2-c8ed-4bcf-bb76-b99b10f5c077`,
+    }));
+    const out = formatMediaRecordSuffix(many);
+    expect(out).toContain('+2 more');
+    expect(out).toContain('0153d1f2');
+    expect(out).not.toContain('4153d1f2');
   });
 });

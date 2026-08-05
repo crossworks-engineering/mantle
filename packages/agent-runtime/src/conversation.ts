@@ -118,6 +118,8 @@ export type ContextSnapshot = {
     count: number;
     /** How many outbound turns carried a [tool record: …] read-back suffix. */
     toolRecords: number;
+    /** How many turns carried a [media record: …] read-back suffix. */
+    mediaRecords: number;
   };
   personaNotes: { count: number };
   corpusMap: { count: number; truncated: boolean };
@@ -225,6 +227,48 @@ export function formatToolRecordSuffix(data: unknown): string | null {
     parts.push(`wrote: ${shown.join(', ')}${more}`);
   }
   return `[tool record: ${parts.join('; ')}]`;
+}
+
+// ─── Media read-back ────────────────────────────────────────────────────────
+// The twin of the tool-outcome read-back above, for the pictures a turn carried.
+// A turn's media lives in `assistant_messages.attachments`, which history never
+// replayed — so an image generated on turn 1 was, by turn 2, an object the model
+// could see in the transcript UI and not name. It went hunting: two searches
+// that couldn't match a fresh file node (no embedding yet, filename is one FTS
+// token), then a UUID rebuilt from the 8-char prefix the corpus map prints, and
+// a page stored with a dangling reference. Replaying the id costs one short line
+// on the turns that have media and nothing at all on the turns that don't.
+
+/** Attachments quoted per turn. Beyond a few, the reply prose is the better
+ *  record and the ids stop earning their bytes. */
+const MEDIA_RECORD_MAX = 3;
+const MEDIA_CAPTION_SNIP = 60;
+
+/** Render a turn's attachments as a `[media record: …]` history suffix, or null
+ *  when there is nothing referenceable to say. Tolerant of arbitrary `jsonb`
+ *  shapes — the column predates this and other writers own rows in it.
+ *
+ *  Only attachments carrying a `nodeId` are quoted: that is the id the
+ *  `media:<id>` dialect resolves. A transport-only handle (a Telegram
+ *  `fileId`) can't be referenced in a page or a reply, so quoting it would
+ *  spend tokens on something unusable. */
+export function formatMediaRecordSuffix(attachments: unknown): string | null {
+  if (!Array.isArray(attachments)) return null;
+  const usable = attachments
+    .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
+    .filter((a) => typeof a.nodeId === 'string' && a.nodeId.length > 0);
+  if (usable.length === 0) return null;
+
+  const shown = usable.slice(0, MEDIA_RECORD_MAX).map((a) => {
+    const kind = typeof a.kind === 'string' ? a.kind : 'file';
+    const caption = typeof a.caption === 'string' ? a.caption.replace(/\s+/g, ' ').trim() : '';
+    const label = caption
+      ? ` "${caption.length > MEDIA_CAPTION_SNIP ? `${caption.slice(0, MEDIA_CAPTION_SNIP)}…` : caption}"`
+      : '';
+    return `${kind}${label} = media:${a.nodeId as string}`;
+  });
+  const more = usable.length > MEDIA_RECORD_MAX ? ` +${usable.length - MEDIA_RECORD_MAX} more` : '';
+  return `[media record: ${shown.join('; ')}${more} — reference these by the id shown, copied whole]`;
 }
 
 /** How many section-level passages to auto-pull into context (the fine-grained
@@ -911,14 +955,21 @@ export async function loadConversationContext(args: {
       text: assistantMessages.text,
       createdAt: assistantMessages.createdAt,
       data: assistantMessages.data,
+      attachments: assistantMessages.attachments,
     })
     .from(assistantMessages)
     .where(and(...histConds))
     .orderBy(desc(assistantMessages.createdAt))
     .limit(historyLimit);
   let historyToolRecords = 0;
+  let historyMediaRecords = 0;
   const history: HistoryTurn[] = rows.reverse().map((r) => {
-    if (r.direction !== 'outbound') return { role: 'user', text: r.text };
+    // Media read-back runs on BOTH directions: a picture the user uploaded is
+    // as re-referenceable as one a tool produced.
+    const media = formatMediaRecordSuffix(r.attachments);
+    if (media) historyMediaRecords++;
+    const withMedia = (text: string) => (media ? `${text}\n${media}` : text);
+    if (r.direction !== 'outbound') return { role: 'user', text: withMedia(r.text) };
     // Tool-outcome read-back (context-transfer audit, dev-brain task
     // 64170cb0): the ledger of what an assistant turn actually DID — failures,
     // approval-queued calls, artifacts written — is otherwise invisible to the
@@ -928,7 +979,7 @@ export async function loadConversationContext(args: {
     // cost nothing extra.
     const suffix = formatToolRecordSuffix(r.data);
     if (suffix) historyToolRecords++;
-    return { role: 'assistant', text: suffix ? `${r.text}\n${suffix}` : r.text };
+    return { role: 'assistant', text: withMedia(suffix ? `${r.text}\n${suffix}` : r.text) };
   });
 
   const snapshot: ContextSnapshot = {
@@ -945,7 +996,11 @@ export async function loadConversationContext(args: {
       count: digests.length,
       topics: digests.map((d) => d.topic).filter((t): t is string => !!t),
     },
-    history: { count: history.length, toolRecords: historyToolRecords },
+    history: {
+      count: history.length,
+      toolRecords: historyToolRecords,
+      mediaRecords: historyMediaRecords,
+    },
     personaNotes: { count: personaNotes.length },
     corpusMap: { count: corpusMap.entries.length, truncated: corpusMap.truncated },
   };

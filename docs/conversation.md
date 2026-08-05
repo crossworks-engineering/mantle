@@ -179,6 +179,21 @@ that work?" and "where did you update it?" were unanswerable once the reply
 prose didn't restate the outcome. All-success read-only turns get no suffix, so
 chat-only history is byte-identical to before.
 
+Its twin is the **media read-back**: a turn carrying attachments gets a
+`[media record: image "caption" = media:<node-id>]` line, on inbound turns (the
+user's uploads) as well as outbound (what a tool produced). Same reasoning, same
+silence when there's nothing to say. Without it the `attachments` column was
+write-only as far as the model was concerned: an image generated on one turn
+could not be named on the next, and the field failure was a page stored with a
+`media:` id the model had rebuilt from the 8-char prefix the corpus map prints.
+Only attachments with a `nodeId` are quoted — a transport handle (a Telegram
+`fileId`) is not resolvable by the `media:` dialect, so quoting it would spend
+tokens on something unusable. Three per turn, then `+N more`.
+
+The write side is now gated too: every `media:` / `page:` / `mention:node:` id
+in a page body is checked against a real node before the write lands (the
+`markdown_refs` precondition, `packages/tools/src/preconditions.ts`).
+
 The "per-agent, cross-channel" semantics live here. The digest filter changes from
 `data.chat_id = chatPk` (Telegram) / `source = 'web'` (web) to a uniform
 `data.agent_id = <agent>`.
