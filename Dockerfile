@@ -39,6 +39,13 @@ WORKDIR /app
 #   diff <(grep -oE '(server|client|packages)/[a-z-]+/package.json|e2e/package.json' Dockerfile | sort -u) \
 #        <(find server client packages e2e -maxdepth 2 -name package.json -not -path '*/node_modules/*' | sort -u)
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# pnpm-workspace.yaml's `patchedDependencies` are resolved DURING install, so
+# every patch file must already be in the context. A missing one is a hard
+# ENOENT that fails all four arch builds identically, and it fails here — in the
+# cached manifest layer — where the cause is furthest from the symptom. Adding a
+# patch means adding nothing here (the whole dir is copied), but removing this
+# line breaks every build that has one.
+COPY patches patches
 COPY server/api/package.json server/api/package.json
 COPY server/mcp/package.json server/mcp/package.json
 COPY server/sandboxd/package.json server/sandboxd/package.json
