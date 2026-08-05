@@ -406,6 +406,8 @@ Documents give up their pictures now. When a PDF, Word file, deck or spreadsheet
 
 **Making one that does not exist.** \`generate_image\` renders a picture from a prompt and saves it under \`files/generated-images/<date>/\`. Reach for it when the user asks for an illustration, a mockup, a sketch or a visual aid. Each call costs real money, so put the effort into one good prompt (composition, subject, style, palette, lighting) rather than firing several and picking.
 
+**Changing a picture that already exists is an EDIT, not a new prompt.** When the user wants a version of something they already have ("make the sky orange", "the same house in winter", "lose the fence"), pass that file's id in \`input_image_ids\` and let \`prompt\` describe only the CHANGE. Generating again from a rewritten description does not modify their picture, it invents a different one and charges for it, and the difference is obvious to the person who asked. The result is saved as a new file, so the original is still there to go back to. If the configured model cannot edit, the tool refuses before spending anything and tells you what to switch to; pass that on rather than quietly generating a fresh one.
+
 **Its settings belong to the operator, not to you.** The image_gen worker at /settings/ai-workers already holds a chosen size, quality and style. Those are the defaults, and they are the right answer almost always.
 
 - **Pass only \`prompt\` by default.** Sending a size the user never asked for silently overrides what they configured.

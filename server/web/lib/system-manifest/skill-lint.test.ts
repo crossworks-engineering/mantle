@@ -40,6 +40,7 @@ const NOT_A_TOOL_SLUG = new Set<string>([
   'dimension_issues', // formula_get result field (formula_use / formula_authoring)
   'linked_to', // table column-type term (table_authoring)
   'total_matches', // table_query result-meta field (table_authoring)
+  'input_image_ids', // generate_image param, the image-to-image path (visual_answers)
   'purge_files', // sandbox_rm param (sandbox-work)
   'timeout_seconds', // sandbox_exec param (sandbox-work)
   // Deliberate non-tools named in prose

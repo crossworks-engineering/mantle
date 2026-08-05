@@ -37,6 +37,7 @@ import { getChatAdapter, getImageGenAdapter, getTtsAdapter, getVisionAdapter } f
 import type { ImageGenModelInfo, ImageGenParam } from '@mantle/voice';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
 import { registerDynamicSchema } from './dynamic-schema';
+import { notFound } from './errors';
 import { str } from './coerce';
 
 // ─── shared helpers ────────────────────────────────────────────────
@@ -623,6 +624,13 @@ const generate_image: BuiltinToolDef = {
         type: 'string',
         description: 'What the image should NOT contain.',
       },
+      input_image_ids: {
+        type: 'array',
+        items: { type: 'string', format: 'uuid' },
+        maxItems: 4,
+        description:
+          "File node ids of EXISTING images to edit or use as reference. Pass these to change a picture you already have ('make the sky orange', 'same house in winter') instead of describing it again from scratch — a fresh generation invents a different picture and bills for it. `prompt` then describes the CHANGE, not the whole scene.",
+      },
     },
     required: ['prompt'],
   },
@@ -680,12 +688,50 @@ const generate_image: BuiltinToolDef = {
     const ignored = requested.filter((r) => !supported.has(r.param));
     const get = (param: ImageGenParam) => sent.find((a) => a.param === param)?.value;
 
+    // ── reference images (image-to-image) ──
+    // Refused BEFORE the request, not warned about after: an adapter that
+    // can't edit would happily generate something unrelated from the prompt
+    // and charge for it, and "make the sky orange" coming back as a different
+    // house is worse than an error.
+    const inputImageIds = Array.isArray(input.input_image_ids)
+      ? (input.input_image_ids as unknown[]).filter(
+          (v): v is string => typeof v === 'string' && v.length > 0,
+        )
+      : [];
+    const inputImages: Array<{ bytes: Buffer; mimeType: string; filename?: string }> = [];
+    if (inputImageIds.length > 0) {
+      if (!supported.has('inputImages')) {
+        return {
+          ok: false,
+          error:
+            `${worker.provider}/${worker.model} cannot edit an existing image, so nothing was generated ` +
+            `(generating from the prompt alone would produce a different picture, not an edit). ` +
+            `Switch the image_gen worker at /settings/ai-workers to OpenRouter, or to OpenAI with gpt-image-1.`,
+        };
+      }
+      for (const id of inputImageIds) {
+        const file = await fileById({ ownerId: ctx.ownerId, fileId: id });
+        if (!file) return notFound('file', id, 'file_list / search_nodes');
+        const mime = file.mimeType ?? 'application/octet-stream';
+        if (!mime.startsWith('image/')) {
+          return {
+            ok: false,
+            error: `'input_image_ids' entry ${id} is ${mime}, not an image. Pass the id of an image file (find it with file_list / search_nodes).`,
+          };
+        }
+        const fetched = await readFileById({ ownerId: ctx.ownerId, fileId: id });
+        if (!fetched) return { ok: false, error: `Couldn't read file ${id} from storage.` };
+        inputImages.push({ bytes: fetched.bytes, mimeType: mime, filename: file.filename });
+      }
+    }
+
     let result;
     try {
       result = await adapter.generate({
         apiKey,
         prompt,
         model: worker.model,
+        ...(inputImages.length > 0 ? { inputImages } : {}),
         size: get('size'),
         aspectRatio: get('aspectRatio'),
         style: get('style'),
@@ -786,6 +832,7 @@ const generate_image: BuiltinToolDef = {
       model: result.model,
       saved_as: storagePath,
       telegram_message_id: telegramMessageId,
+      ...(inputImages.length > 0 ? { edited_from: inputImageIds } : {}),
       applied_params: Object.fromEntries(applied.map((a) => [a.key, a.value])),
       // Present ONLY when something was asked for and not sent. An empty key
       // here is the whole point: "no news" has to mean "everything applied".
@@ -828,6 +875,9 @@ const generate_image: BuiltinToolDef = {
         adapter: adapter.adapterName,
         mimeType: result.mimeType,
         bytes: result.bytes.length,
+        // A new file either way: an edit does not overwrite its reference, so
+        // the original is still there to go back to.
+        ...(inputImageIds.length > 0 ? { editedFrom: inputImageIds } : {}),
         ...(applied.length > 0
           ? { appliedParams: Object.fromEntries(applied.map((a) => [a.key, a.value])) }
           : {}),
@@ -876,6 +926,7 @@ const IMAGE_PARAM_BY_KEY: Readonly<Record<string, ImageGenParam>> = {
   style: 'style',
   quality: 'quality',
   negative_prompt: 'negativePrompt',
+  input_image_ids: 'inputImages',
 };
 
 /** Catalog enums, keyed by tool param. */

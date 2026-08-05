@@ -636,7 +636,7 @@ export interface ImageGenModelInfo {
  *  neither — with nothing in the trace to say so. See
  *  {@link ImageGenDispatcher.supports}. */
 export type ImageGenParam =
-  'size' | 'aspectRatio' | 'style' | 'quality' | 'negativePrompt' | 'seed';
+  'size' | 'aspectRatio' | 'style' | 'quality' | 'negativePrompt' | 'seed' | 'inputImages';
 
 /** One option the adapter chose not to send, and why.
  *
@@ -652,11 +652,28 @@ export type ImageGenWarning = {
   reason: string;
 };
 
+/** A picture handed IN to a generation: the reference for an edit or a
+ *  variation. Bytes rather than a URL, because the source is a file node in
+ *  the owner's own store and providers take base64 or multipart, never a link
+ *  only we can reach. */
+export interface ImageGenInput {
+  bytes: Buffer;
+  mimeType: string;
+  /** Original filename, used where the provider takes multipart. */
+  filename?: string;
+}
+
 export interface GenerateImageOptions {
   apiKey: string;
   /** Free-form prompt. No length cap at the interface layer; per-
    *  provider limits get enforced inside the adapter. */
   prompt: string;
+  /** Reference images. Present ⇒ this is an EDIT, not a fresh generation:
+   *  "make the sky orange in this one". An adapter that does not declare
+   *  `inputImages` in `supports` must never be handed these — generating from
+   *  scratch when an edit was asked for produces a confidently wrong picture
+   *  and bills for it, so the caller refuses BEFORE spending. */
+  inputImages?: readonly ImageGenInput[];
   /** Model id. Defaults to the adapter's documented default. */
   model?: string;
   /** Native resolution, e.g. '1024x1024' or '1792x1024'. Adapters

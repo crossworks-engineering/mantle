@@ -170,6 +170,7 @@ export {
   type ImageGenModelInfo,
   type ImageGenParam,
   type ImageGenWarning,
+  type ImageGenInput,
   type GenerateImageOptions,
   type GenerateImageResult,
   type EmbeddingDispatcher,

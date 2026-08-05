@@ -126,3 +126,26 @@ describe('withImageModelSchema — catalog-gated options', () => {
     expect(Object.keys(props(out))).toEqual(['prompt', 'size', 'style']);
   });
 });
+
+describe('withImageModelSchema — editing', () => {
+  const SCHEMA_WITH_INPUTS = {
+    ...SCHEMA,
+    properties: {
+      ...SCHEMA.properties,
+      input_image_ids: { type: 'array', description: 'Existing images to edit.' },
+    },
+  };
+
+  it('offers input_image_ids only when the adapter can edit', () => {
+    const canEdit = withImageModelSchema(
+      SCHEMA_WITH_INPUTS,
+      ['size', 'inputImages'],
+      undefined,
+      'openrouter/gemini',
+    );
+    expect(props(canEdit)).toHaveProperty('input_image_ids');
+
+    const cannot = withImageModelSchema(SCHEMA_WITH_INPUTS, ['size'], undefined, 'xai/grok');
+    expect(props(cannot)).not.toHaveProperty('input_image_ids');
+  });
+});

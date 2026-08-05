@@ -138,7 +138,49 @@ describe('openrouter-image', () => {
 
   it('declares what it forwards, so the caller can report the rest', () => {
     const a = getImageGenAdapter('openrouter')!;
-    expect([...a.supports].sort()).toEqual(['aspectRatio', 'quality', 'seed', 'size']);
+    expect([...a.supports].sort()).toEqual([
+      'aspectRatio',
+      'inputImages',
+      'quality',
+      'seed',
+      'size',
+    ]);
     expect(a.supports).not.toContain('style');
+  });
+});
+
+/**
+ * Image-to-image. Without it, "make the sky orange in that one" can only be
+ * served by generating a DIFFERENT picture from a rewritten prompt.
+ */
+describe('openrouter-image editing', () => {
+  const okResponse = () =>
+    new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('x').toString('base64') }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  it('sends references as data URLs under input_references', async () => {
+    const read = stubFetch(okResponse());
+    await getImageGenAdapter('openrouter')!.generate({
+      apiKey: 'k',
+      prompt: 'make the sky orange',
+      inputImages: [{ bytes: Buffer.from('img'), mimeType: 'image/jpeg' }],
+    });
+    const { body } = read();
+    expect(body.input_references).toEqual([
+      `data:image/jpeg;base64,${Buffer.from('img').toString('base64')}`,
+    ]);
+  });
+
+  it('omits input_references entirely for a fresh generation', async () => {
+    const read = stubFetch(okResponse());
+    await getImageGenAdapter('openrouter')!.generate({ apiKey: 'k', prompt: 'a cat' });
+    expect(read().body).not.toHaveProperty('input_references');
+  });
+
+  it('declares the capability, so the caller can refuse before spending', () => {
+    expect(getImageGenAdapter('openrouter')!.supports).toContain('inputImages');
+    expect(getImageGenAdapter('xai')!.supports).not.toContain('inputImages');
   });
 });

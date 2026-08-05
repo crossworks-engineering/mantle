@@ -622,11 +622,16 @@ go stale against the worker actually installed.
 
 | adapter | forwards |
 |---|---|
-| `openai-image` | size, style (dall-e-3), quality (dall-e-3 + gpt-image-1) |
-| `openrouter-image` | size (pixels or a `1K`/`2K`/`4K` tier), aspect ratio, quality, seed |
+| `openai-image` | size, style (dall-e-3), quality (dall-e-3 + gpt-image-1), input images |
+| `openrouter-image` | size (pixels or a `1K`/`2K`/`4K` tier), aspect ratio, quality, seed, input images |
 | `google-image` | size (snapped to a ratio), aspect ratio, negative prompt, seed |
 | `huggingface-image` | size (as width/height), negative prompt, seed |
 | `xai-image` | nothing: Grok Imagine is fixed at 1024x1024 |
+
+Per-PROVIDER is the wrong grain for some of these, so an adapter may also
+return `warnings` from a call — the per-MODEL truth only it knows (OpenAI takes
+`style` on dall-e-3 and not on gpt-image-1). The tool promotes those from
+applied to ignored before reporting.
 
 Anything requested outside that set is reported, never dropped in silence: it
 lands in the trace step as `ignored_params` and goes back to the model as
@@ -634,6 +639,28 @@ lands in the trace step as `ignored_params` and goes back to the model as
 already failed the other way — an OpenRouter worker had size, style and quality
 saved and displayed, the old chat-completions code path sent none of them, and
 nothing recorded the gap.
+
+### Editing an existing image
+
+`input_image_ids` (file node ids, max 4) turns a call into an **edit**: the
+prompt then describes the change, not the whole scene. Reaching for a fresh
+generation instead does not modify the user's picture, it invents a different
+one and bills for it.
+
+- **OpenRouter** sends the references as data URLs in `input_references` on the
+  same `/api/v1/images` call.
+- **OpenAI** switches endpoint and encoding: `POST /v1/images/edits` as
+  multipart, several references under a repeated `image[]` for gpt-image-1, one
+  as `image` for dall-e-2. **dall-e-3 cannot edit** and is refused before the
+  request goes out.
+- Everyone else declares no `inputImages` support, and the tool refuses with a
+  pointer at what to switch to. This is the one case that is a hard error
+  rather than a warning: silently generating something unrelated is worse than
+  failing.
+
+The result is always a NEW file node; an edit never overwrites its reference,
+so the original stays available. `editedFrom` on the output and `edited_from`
+in the trace record the lineage.
 
 DALL-E 3 surfaces a `revised_prompt` field when the model rewrites
 the prompt for safety/quality; this rides through as

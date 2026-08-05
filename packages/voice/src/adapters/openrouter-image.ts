@@ -94,7 +94,7 @@ export const openrouterImageAdapter: ImageGenDispatcher = {
   adapterName: 'openrouter-image',
   // No style steering (OpenRouter has no equivalent of DALL-E's vivid/natural)
   // and no negative prompt on this endpoint.
-  supports: ['size', 'aspectRatio', 'quality', 'seed'],
+  supports: ['size', 'aspectRatio', 'quality', 'seed', 'inputImages'],
   async generate(opts: GenerateImageOptions): Promise<GenerateImageResult> {
     if (!opts.apiKey) throw new Error('openrouter-image: apiKey required');
     const prompt = opts.prompt?.trim();
@@ -105,9 +105,22 @@ export const openrouterImageAdapter: ImageGenDispatcher = {
     // Explicit pixels are authoritative and reject a companion aspect_ratio
     // with a 400, so an explicit size wins and the ratio is left off.
     const explicitPixels = !!opts.size && PIXEL_SIZE_RE.test(opts.size);
+    // Image-to-image: the references ride as data URLs, same encoding the
+    // response comes back in. With these present the model EDITS rather than
+    // invents, which is what makes "change the sky in that one" possible
+    // without paying for a fresh unrelated picture.
+    const inputs = opts.inputImages ?? [];
+
     const body: Record<string, unknown> = {
       model,
       prompt,
+      ...(inputs.length > 0
+        ? {
+            input_references: inputs.map(
+              (i) => `data:${i.mimeType};base64,${i.bytes.toString('base64')}`,
+            ),
+          }
+        : {}),
       ...(opts.size ? { size: opts.size } : {}),
       ...(opts.aspectRatio && !explicitPixels ? { aspect_ratio: opts.aspectRatio } : {}),
       ...(opts.quality ? { quality: opts.quality } : {}),

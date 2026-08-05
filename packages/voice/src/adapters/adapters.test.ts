@@ -250,3 +250,73 @@ describe('openai-image per-model warnings', () => {
     expect(out.warnings).toBeUndefined();
   });
 });
+
+describe('openai-image editing', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const captureEdit = () => {
+    let url = '';
+    let form: FormData | null = null;
+    vi.stubGlobal('fetch', async (u: string, init: RequestInit) => {
+      url = u;
+      form = init.body as FormData;
+      return new Response(
+        JSON.stringify({ data: [{ b64_json: Buffer.from('x').toString('base64') }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    return () => ({ url, form: form! });
+  };
+
+  const REF = { bytes: Buffer.from('img'), mimeType: 'image/png', filename: 'house.png' };
+
+  it('switches to the edits endpoint and sends the reference as a file part', async () => {
+    const read = captureEdit();
+    await getImageGenAdapter('openai')!.generate({
+      apiKey: 'k',
+      prompt: 'orange sky',
+      model: 'gpt-image-1',
+      inputImages: [REF],
+    });
+    const { url, form } = read();
+    expect(url).toBe('https://api.openai.com/v1/images/edits');
+    // gpt-image-1 takes several references under a repeated key.
+    expect(form.getAll('image[]')).toHaveLength(1);
+    expect(form.get('prompt')).toBe('orange sky');
+  });
+
+  it('uses the single-file key for dall-e-2', async () => {
+    const read = captureEdit();
+    await getImageGenAdapter('openai')!.generate({
+      apiKey: 'k',
+      prompt: 'orange sky',
+      model: 'dall-e-2',
+      inputImages: [REF],
+    });
+    expect(read().form.getAll('image')).toHaveLength(1);
+  });
+
+  // Refuse before spending: a generate-only model would return a DIFFERENT
+  // picture rather than an edit, and bill for it.
+  it('refuses to "edit" with dall-e-3, which cannot', async () => {
+    captureEdit();
+    await expect(
+      getImageGenAdapter('openai')!.generate({
+        apiKey: 'k',
+        prompt: 'orange sky',
+        model: 'dall-e-3',
+        inputImages: [REF],
+      }),
+    ).rejects.toThrow(/cannot edit/i);
+  });
+
+  it('still uses the generations endpoint with no references', async () => {
+    const read = captureEdit();
+    await getImageGenAdapter('openai')!.generate({
+      apiKey: 'k',
+      prompt: 'a cat',
+      model: 'gpt-image-1',
+    });
+    expect(read().url).toBe('https://api.openai.com/v1/images/generations');
+  });
+});
