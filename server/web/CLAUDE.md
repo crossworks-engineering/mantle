@@ -64,6 +64,15 @@ Non-negotiables (full detail in the guide):
   shipped files agree in both directions, per app. Defaults: Bukhari wordmark,
   sans title.
 - **Tailwind v4**: no dynamically built class names (use literal-string arrays).
+- **Editing CSS in `packages/web-ui/styles/` needs a dev-server RESTART.** HMR
+  does not reliably pick up changes to the shared stylesheets, and the failure is
+  silent: the app keeps serving the PREVIOUS build of `app.css`/`themes.css`, so
+  a new rule simply does nothing while the source plainly contains it. Symptom is
+  always "my CSS change had no effect". Confirm before you go debugging the
+  feature — `curl` the `/_next/static/**.css` chunk and grep for your selector,
+  or check `document.styleSheets` in the console. If it is absent there but
+  present on disk, it is staleness: restart `pnpm dev` (clear `.next` if it
+  persists), don't rewrite the rule.
 - **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
   with **no agent co-authorship trailers** (repo rule — see the root CLAUDE.md; a
   commit-msg hook strips them); don't push unless asked. `pnpm dev:fe` now runs the
