@@ -5,7 +5,12 @@ import { useTheme } from 'next-themes';
 import { cn } from './lib/utils';
 import { useColorTheme } from './color-theme-provider';
 import { useAvatarStyle } from './avatar-style-provider';
-import { renderAvatarSvg } from './avatar';
+import {
+  isAvatarStyleReady,
+  loadAvatarStyle,
+  renderAvatarSvgSync,
+  type AvatarTint,
+} from './avatar';
 
 /**
  * The generated avatar, themed to the live palette.
@@ -18,6 +23,13 @@ import { renderAvatarSvg } from './avatar';
  * theme, and SVG fill attributes can't resolve `var()`, so the resolved values
  * have to be passed in. themes.css emits every token as hex, which is exactly
  * what DiceBear accepts.
+ *
+ * The style's JSON is fetched on demand (see avatar.ts — 50 styles are 2.47 MB,
+ * far too much to put in every page's bundle for one 32px circle), so the first
+ * render of a not-yet-loaded style draws an empty circle of the right size and
+ * swaps in the artwork when the chunk lands. Reserving the box rather than
+ * rendering nothing keeps avatars from shifting the layout as they arrive. In
+ * practice this costs one fetch per session: the whole app draws ONE style.
  */
 
 /** Clean Slate (the default theme) `--chart-1..5`, light mode — used for the
@@ -45,6 +57,7 @@ function readChartRamp(key: string): string[] {
 
 export function GeneratedAvatar({
   style,
+  tint: tintOverride,
   seed,
   size = 40,
   className,
@@ -55,6 +68,8 @@ export function GeneratedAvatar({
    *  per-entity style is exactly the jumble this replaced. Legacy
    *  boring-avatars ids still resolve. */
   style?: string | null;
+  /** Override the brain's tint — previews only, same rule as `style`. */
+  tint?: AvatarTint;
   /** Stable per-entity value — agent slug, user id, or a stored random seed.
    *  This is what makes one avatar differ from the next. */
   seed: string;
@@ -66,8 +81,9 @@ export function GeneratedAvatar({
 }) {
   const { resolvedTheme } = useTheme();
   const { colorTheme } = useColorTheme();
-  const { avatarStyle } = useAvatarStyle();
+  const { avatarStyle, avatarTint } = useAvatarStyle();
   const effectiveStyle = style ?? avatarStyle;
+  const tint = tintOverride ?? avatarTint;
   // Both inputs land on <html> as a class/attribute, so re-read whenever either
   // changes. Server render and first paint use the fallback; the effect swaps in
   // the real ramp once the document is readable.
@@ -76,9 +92,31 @@ export function GeneratedAvatar({
     setRamp(readChartRamp(`${colorTheme}:${resolvedTheme}`));
   }, [colorTheme, resolvedTheme]);
 
+  // Re-render once the style's chunk arrives. `ready` starts true when the
+  // style is already cached (the common case after the first avatar), so a
+  // populated list paints in one pass rather than flashing empty circles.
+  const [ready, setReady] = React.useState(() => isAvatarStyleReady(effectiveStyle));
+  React.useEffect(() => {
+    if (isAvatarStyleReady(effectiveStyle)) {
+      setReady(true);
+      return;
+    }
+    let live = true;
+    setReady(false);
+    loadAvatarStyle(effectiveStyle).then(
+      () => live && setReady(true),
+      // Chunk failed to load — leave the placeholder rather than throwing an
+      // avatar through an error boundary and taking the screen with it.
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [effectiveStyle]);
+
   const svg = React.useMemo(
-    () => renderAvatarSvg({ style: effectiveStyle, seed, size, background: ramp }),
-    [effectiveStyle, seed, size, ramp],
+    () => (ready ? renderAvatarSvgSync({ style: effectiveStyle, seed, size, ramp, tint }) : null),
+    [ready, effectiveStyle, seed, size, ramp],
   );
 
   return (
@@ -93,7 +131,7 @@ export function GeneratedAvatar({
       style={{ width: size, height: size, ...containerStyle }}
       aria-hidden
       // Generated from a seed by DiceBear — not user-supplied markup.
-      dangerouslySetInnerHTML={{ __html: svg }}
+      {...(svg ? { dangerouslySetInnerHTML: { __html: svg } } : {})}
     />
   );
 }

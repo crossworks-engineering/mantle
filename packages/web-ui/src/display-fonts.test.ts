@@ -61,6 +61,7 @@ describe('resolveAppearanceAttrs', () => {
         fontLogo: null,
         fontTitle: null,
         avatarStyle: null,
+        avatarTint: null,
       }),
     ).toEqual({ fontVars: {} });
   });
@@ -71,6 +72,7 @@ describe('resolveAppearanceAttrs', () => {
       fontLogo: 'bungee-shade',
       fontTitle: 'capriola',
       avatarStyle: null,
+      avatarTint: null,
     });
     expect(attrs.colorTheme).toBe('amethyst-haze');
     expect(attrs.fontLogo).toBe('bungee-shade');
@@ -87,6 +89,7 @@ describe('resolveAppearanceAttrs', () => {
       fontLogo: 'ghost-font',
       fontTitle: 'capriola',
       avatarStyle: null,
+      avatarTint: null,
     });
     expect(attrs.fontLogo).toBeUndefined();
     expect(attrs.fontVars.wordmark).toBeUndefined();

@@ -42,13 +42,14 @@ describe('BRAIN_PREFERENCE_KEYS', () => {
     expect(BRAIN_PREFERENCE_KEYS).toContain('purposeArchetype');
   });
 
-  it('shares the avatar STYLE but not the avatar', () => {
+  it('shares the avatar STYLE and TINT but not the avatar', () => {
     // The style is the visual language every generated avatar in the brain is
     // drawn in — branding, like the theme and the fonts, and set in the same
     // Appearance screen. Personal, it would mean one admin's pick silently
     // failed to apply to the agents everyone sees. The SEED stays personal, so
     // two admins still share a style and never an avatar.
     expect(BRAIN_PREFERENCE_KEYS).toContain('avatarStyle');
+    expect(BRAIN_PREFERENCE_KEYS).toContain('avatarTint');
     expect(BRAIN_PREFERENCE_KEYS).not.toContain('avatarSeed');
   });
 

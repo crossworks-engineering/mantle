@@ -1,15 +1,20 @@
 import { DEFAULT_COLOR_THEME } from './lib/themes';
-import { DEFAULT_AVATAR_STYLE, resolveAvatarStyle } from './avatar';
+import {
+  DEFAULT_AVATAR_STYLE,
+  DEFAULT_AVATAR_TINT,
+  resolveAvatarStyle,
+  resolveAvatarTint,
+} from './avatar';
 import { fontByKey, resolveFontVars, type ResolvedFontVars } from './display-fonts';
 
 /**
  * The brain's system-wide appearance — colour theme, the two display fonts and
- * the avatar style — as it travels from the anchor owner's profile row to a
+ * the avatar style and tint — as it travels from the anchor owner's profile row to a
  * rendered document.
  *
  * There is ONE delivery mechanism: the values are rendered into the `<html>`
  * tag as attributes (`data-color-theme`, `data-font-logo`, `data-font-title`,
- * `data-avatar-style`)
+ * `data-avatar-style`, `data-avatar-tint`)
  * plus the two font CSS vars as inline style, server-side, on every surface —
  * the client app's root layout (fed by the public GET /api/appearance) and the
  * server-rendered share/print pages (read straight from the DB). No before-
@@ -26,6 +31,7 @@ export type BrainAppearance = {
   fontLogo: string | null;
   fontTitle: string | null;
   avatarStyle: string | null;
+  avatarTint: string | null;
 };
 
 export type AppearanceAttrs = {
@@ -36,6 +42,8 @@ export type AppearanceAttrs = {
   fontTitle?: string;
   /** Non-default avatar style id — the client provider's initial state. */
   avatarStyle?: string;
+  /** Non-default avatar tint — same contract. */
+  avatarTint?: string;
   /** Resolved font-family values for the two CSS vars (inline style on <html>). */
   fontVars: ResolvedFontVars;
 };
@@ -55,6 +63,10 @@ export function resolveAppearanceAttrs(a: BrainAppearance | null | undefined): A
   if (a.avatarStyle) {
     const resolved = resolveAvatarStyle(a.avatarStyle);
     if (resolved !== DEFAULT_AVATAR_STYLE) out.avatarStyle = resolved;
+  }
+  if (a.avatarTint) {
+    const resolved = resolveAvatarTint(a.avatarTint);
+    if (resolved !== DEFAULT_AVATAR_TINT) out.avatarTint = resolved;
   }
   return out;
 }

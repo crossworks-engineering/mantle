@@ -46,6 +46,12 @@ export type ProfilePreferences = {
    *  in `avatarSeed`, which stays personal. See @mantle/web-ui/avatar for the
    *  registry; unknown ids resolve to the default rather than stranding. */
   avatarStyle?: string;
+  /** How much of the theme generated avatars take on: 'native' (the style's own
+   *  palette), 'mixed' (themed background, original artwork — the default) or
+   *  'theme' (theme colours throughout). Brain-level for the same reason as
+   *  avatarStyle: it describes how this brain's avatars look, not one login's
+   *  taste. Read via projectAvatarTint, never raw. */
+  avatarTint?: string;
   /** Seed for THIS user's avatar; the UI defaults it to the user id when unset
    *  so an avatar still renders. Personal — two admins share the brain's style
    *  but never the same avatar. */
@@ -387,6 +393,16 @@ export function projectAvatarStyle(raw: unknown): string | undefined {
   return /^[a-z0-9][a-z0-9-]{0,63}$/.test(t) ? t : undefined;
 }
 
+/** Project a stored `avatarTint`. Unlike the style this IS a closed set, so it
+ *  is validated by value: an unknown tint would change how every avatar in the
+ *  brain looks, and there is no registry in the web layer to fall back through.
+ *  Anything else stores as unset ⇒ the default ('mixed'). */
+export function projectAvatarTint(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim().toLowerCase();
+  return t === 'native' || t === 'mixed' || t === 'theme' ? t : undefined;
+}
+
 /** Effective per-turn thinking budget in tokens — gated by BOTH the live-thinking
  *  switch (`streamThoughts`) AND a positive `thinkingBudget`. Returns 0 when
  *  either is missing, so real reasoning is requested only when the user has
@@ -535,6 +551,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
         ? prefs.locale
         : DEFAULT_PREFERENCES.locale,
     avatarStyle: projectAvatarStyle(prefs.avatarStyle),
+    avatarTint: projectAvatarTint(prefs.avatarTint),
     avatarSeed:
       typeof prefs.avatarSeed === 'string' && prefs.avatarSeed.length > 0
         ? prefs.avatarSeed
@@ -730,6 +747,7 @@ export async function updateProfilePreferences(
     lastAutoTimezone: merged.lastAutoTimezone || undefined,
     locale: merged.locale ?? DEFAULT_PREFERENCES.locale,
     avatarStyle: projectAvatarStyle(merged.avatarStyle),
+    avatarTint: projectAvatarTint(merged.avatarTint),
     avatarSeed: merged.avatarSeed || undefined,
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
@@ -798,6 +816,7 @@ export const BRAIN_PREFERENCE_KEYS = [
   // cannot be one admin's private choice. `avatarSeed` stays personal — that
   // is what still makes each person's avatar theirs.
   'avatarStyle',
+  'avatarTint',
   'logoKey',
   'logoType',
   'logoDarkKey',

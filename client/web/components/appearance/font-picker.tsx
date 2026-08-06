@@ -19,16 +19,19 @@ export function FontPicker({
   sample,
   value,
   onChange,
-  tall = false,
+  unbounded = false,
 }: {
   title: string;
   /** Text shown in each font as the preview (e.g. the site name for the wordmark). */
   sample: string;
   value: string;
   onChange: (key: string) => void;
-  /** Column layout (the Logo tab): let the list run tall instead of the
-   *  compact sidebar cap, so the whole library reads at a glance. */
-  tall?: boolean;
+  /** Let the list run its FULL height with no inner scroller, so the page is
+   *  the only thing that scrolls. A capped, scrollable column nested inside a
+   *  scrollable page gives you two scrollbars fighting over the same gesture,
+   *  which reads as broken. Used by the Appearance brand panel, where the whole
+   *  face library should just read down the page. */
+  unbounded?: boolean;
 }) {
   const idx = Math.max(
     0,
@@ -70,8 +73,9 @@ export function FontPicker({
 
       <div
         className={cn(
-          'scrollbar-thin space-y-1.5 overflow-y-auto pr-1',
-          tall ? 'max-h-[70vh]' : 'max-h-72',
+          'space-y-1.5 pr-1',
+          // Only the compact form scrolls itself; unbounded defers to the page.
+          !unbounded && 'scrollbar-thin max-h-72 overflow-y-auto',
         )}
       >
         {DISPLAY_FONTS.map((f) => {

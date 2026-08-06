@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { getOwnerOr401 } from '@/lib/auth';
 import { loadProfilePreferences } from '@mantle/content';
-import { renderAvatarSvg } from '@mantle/web-ui/avatar';
+import { renderAvatarSvg, resolveAvatarTint } from '@mantle/web-ui/avatar';
 import { db, agents } from '@mantle/db';
 
 // Server-render the agent's avatar SVG so non-web clients (the mobile
@@ -15,10 +15,11 @@ import { db, agents } from '@mantle/db';
 // that used to live in lib/avatar-svg.ts is gone. One implementation, so the
 // companion and the browser cannot drift.
 //
-// The style is the BRAIN's (Settings → Appearance), not the agent's — the
-// stored per-agent style is legacy and deliberately ignored, so every avatar
-// in a brain is one visual family. The background takes the theme's chart
-// ramp; a client with no theme context still gets a coherent avatar.
+// The style and tint are the BRAIN's (Settings → Appearance), not the agent's —
+// the stored per-agent style is legacy and deliberately ignored, so every
+// avatar in a brain is one visual family. A client with no theme context still
+// gets a coherent avatar, because the ramp below is a fixed brand default
+// rather than something the caller has to supply.
 //
 // This sits under the existing `[id]` segment (Next forbids a sibling `[slug]`
 // segment). The companion calls it with a slug; the web app could pass a uuid —
@@ -55,15 +56,19 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   // Fail soft: a brain with unreadable prefs still serves an avatar in the
   // default style rather than 500-ing over branding.
-  const style = await loadProfilePreferences(owner.id)
-    .then((p) => p.avatarStyle)
-    .catch(() => undefined);
+  const prefs = await loadProfilePreferences(owner.id).catch(() => undefined);
+  const style = prefs?.avatarStyle;
+  const tint = resolveAvatarTint(prefs?.avatarTint);
 
-  const svg = renderAvatarSvg({
+  // Async because style JSON is fetched on demand (avatar.ts) — 50 styles are
+  // far too much to hold resident just to serve one avatar. Cached after the
+  // first request, and a brain draws one style.
+  const svg = await renderAvatarSvg({
     style,
     seed: agent.avatar.seed || agent.slug,
     size,
-    background: PALETTE,
+    ramp: PALETTE,
+    tint,
   });
 
   return new Response(svg, {

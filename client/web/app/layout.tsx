@@ -62,6 +62,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       data-font-logo={appearance.fontLogo}
       data-font-title={appearance.fontTitle}
       data-avatar-style={appearance.avatarStyle}
+      data-avatar-tint={appearance.avatarTint}
       style={fontStyle as React.CSSProperties}
     >
       <head>

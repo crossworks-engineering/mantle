@@ -18,7 +18,13 @@ import { loadProfilePreferences } from '@mantle/content';
  * branding changes seldom. An admin's change shows up within the window.
  */
 export async function GET() {
-  const empty = { colorTheme: null, fontLogo: null, fontTitle: null, avatarStyle: null };
+  const empty = {
+    colorTheme: null,
+    fontLogo: null,
+    fontTitle: null,
+    avatarStyle: null,
+    avatarTint: null,
+  };
   const headers = { 'Cache-Control': 'public, max-age=30' };
 
   // The whole body is fail-soft: resolveSingleOwnerId THROWS on a corrupt
@@ -35,6 +41,7 @@ export async function GET() {
         fontLogo: prefs.fontLogo ?? null,
         fontTitle: prefs.fontTitle ?? null,
         avatarStyle: prefs.avatarStyle ?? null,
+        avatarTint: prefs.avatarTint ?? null,
       },
       { headers },
     );
