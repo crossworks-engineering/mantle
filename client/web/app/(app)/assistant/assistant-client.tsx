@@ -27,7 +27,7 @@ import {
   X,
 } from 'lucide-react';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
-import { agentAccent, agentInitials } from '@/lib/agent-color';
+import { agentAccent } from '@/lib/agent-color';
 import { composerKeyAction } from '@/lib/composer-keys';
 import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { RichText } from '@/components/assistant/rich-text';
@@ -242,13 +242,13 @@ export function AssistantClient({
   agentSlug?: string;
   /** Display name of the active agent — drives the bubble avatar + greeting. */
   agentName?: string;
-  /** Avatar {style, seed} for the active agent; falls back to initials. */
+  /** Stored avatar for the active agent. Optional: with no record the avatar is
+   *  seeded from the slug, so there is always one. */
   agentAvatar?: { style: string; seed: string } | null;
 }) {
   // Per-agent visual identity: a stable colour + monogram so it's obvious
   // which agent you're talking to when you switch.
   const accent = agentAccent(agentSlug ?? 'assistant');
-  const initials = agentInitials(agentName ?? 'Assistant');
   // Turns run through the app-wide dock provider, so a long turn keeps going
   // (and stays visible in the floating dock) when you navigate away mid-answer.
   const {
@@ -1255,27 +1255,12 @@ export function AssistantClient({
           <div ref={contentRef}>
             {turns.length === 0 ? (
               <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
-                {agentAvatar ? (
-                  <GeneratedAvatar
-                    seed={agentAvatar.seed}
-                    size={48}
-                    className="ring-2"
-                    containerStyle={{ '--tw-ring-color': accent.border } as React.CSSProperties}
-                  />
-                ) : (
-                  <span
-                    className="flex h-12 w-12 items-center justify-center rounded-full text-base font-semibold text-white ring-2"
-                    style={
-                      {
-                        backgroundColor: accent.solid,
-                        '--tw-ring-color': accent.border,
-                      } as React.CSSProperties
-                    }
-                    aria-hidden
-                  >
-                    {initials}
-                  </span>
-                )}
+                <GeneratedAvatar
+                  seed={agentAvatar?.seed || agentSlug || 'assistant'}
+                  size={48}
+                  className="ring-2"
+                  containerStyle={{ '--tw-ring-color': accent.border } as React.CSSProperties}
+                />
                 <p className="text-sm text-muted-foreground">
                   No messages yet. Say hi to{' '}
                   <span className="font-medium text-foreground">

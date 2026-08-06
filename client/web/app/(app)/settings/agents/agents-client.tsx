@@ -43,7 +43,6 @@ import { ToggleList, type ToggleListItem } from '@/components/toggle-list';
 import { TelegramBotSection } from '@/components/telegram/telegram-bot-section';
 import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { useAvatarStyle } from '@mantle/web-ui/avatar-style-provider';
-import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
 import { PersonaNotesEditor } from './persona-notes-editor';
 import { ChatTestButton } from '@/components/settings/chat-test-button';
@@ -991,17 +990,13 @@ export function AgentsClient() {
                         )}
                       >
                         <div className="flex items-center gap-2.5">
-                          {a.avatar ? (
-                            <GeneratedAvatar seed={a.avatar.seed} size={32} />
-                          ) : (
-                            <span
-                              className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-                              style={{ backgroundColor: agentAccent(a.slug).solid }}
-                              aria-hidden
-                            >
-                              {agentInitials(a.name)}
-                            </span>
-                          )}
+                          {/* Every agent gets an avatar, stored record or not:
+                              the STYLE is the brain's, so all a per-agent record
+                              adds is a rerolled seed. Falling back to the slug
+                              means a fresh brain looks right immediately, rather
+                              than showing initials until each agent is opened and
+                              saved one by one. */}
+                          <GeneratedAvatar seed={a.avatar?.seed || a.slug} size={32} />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
                               <span className="truncate text-sm font-medium">{a.name}</span>
@@ -1184,10 +1179,13 @@ export function AgentsClient() {
                               }))
                             }
                             fallbackSeed={form.slug || form.name || 'agent'}
+                            clearLabel="Reset to default"
                           />
                           <FieldHint>
-                            Shown beside this agent&apos;s replies and in the list. Drawn in the
-                            brain&apos;s avatar style — change that in Appearance.
+                            Shown beside this agent&apos;s replies and in the list, drawn in the
+                            brain&apos;s avatar style (change that in Appearance). Every agent has
+                            one already, seeded from its slug — Randomize just picks a different
+                            one.
                           </FieldHint>
                         </div>
 
