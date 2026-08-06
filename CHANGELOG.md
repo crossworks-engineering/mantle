@@ -106,6 +106,35 @@ One judgement is stated wherever the output is read rather than buried in the
 source: version segments compare as integers, so `4.20` is newer than `4.5`,
 matching how these vendors number releases rather than how decimals sort.
 
+## Unreleased — Links that survive the split (branch feat/companion-split-fix)
+
+**A stored link is permanent, so it has to be right on the day it is written.**
+`nodeUrl()` mints `${MANTLE_PUBLIC_URL}/n/<id>` and hands it to the assistant on
+every tool result; the assistant writes those links into chat replies, pages,
+forum answers and outbound email, and nothing ever re-resolves them. But
+`MANTLE_PUBLIC_URL` has to be the **server** origin — `/s/<token>` share links
+and the Microsoft OAuth callback are served there — while `/n/[id]` itself moved
+to `client/web` in the v0.200.0 split. On a deployment that gives the owner app
+its own vhost, every one of those links was a 404, and each one was written into
+the brain to stay.
+
+`/n/*` now forwards to `MANTLE_CLIENT_ORIGIN`, joining the `/login`, `/hub` and
+`/team` stubs. Keeping the minted link canonical and redirecting at the edge is
+what makes one stored URL correct under either topology; rewriting the minter to
+point at the client origin would have broken it the other way. With no client
+origin configured it explains itself instead of looping, same as its siblings.
+
+Single-host installs — where one hostname fronts both stacks — never saw this,
+which is exactly why it stayed hidden.
+
+Also: `GET /api/assistant/thread` takes `?withMessages=0`, returning the agent
+picker list and the resolved active agent without the 100-message thread. The
+mobile companion needs both at launch — it holds no agent cookie, so the
+server's resolution *is* its default, and that resolution is what now respects
+`agents.assigned_user_id` — but it pages its own history from the local cache,
+so the thread was fetched and dropped on every cold start. Opt-out, so every
+existing caller is untouched.
+
 ## Unreleased — An assistant that answers to its own name (branch feat/agent-name-token)
 
 **A copied assistant introduced itself as the one it was copied from.** Give a

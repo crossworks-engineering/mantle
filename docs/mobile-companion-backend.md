@@ -1,6 +1,6 @@
 # Mobile Companion: backend additions
 
-_Last updated: 2026-07-19._
+_Last updated: 2026-08-06._
 
 API + schema added to Mantle to support the **Mantle Companion** mobile app
 (Flutter; repo `~/Projects/mantle-companion`). Single-user/self-hosted, so the
@@ -230,3 +230,64 @@ offer a real search screen without routing queries through a chat turn.
   the list endpoints for time-windowed queries); treat `supersededBy` as
   "show the successor"; expect FTS-quality results when the embedding
   worker is down rather than an error (nodes mode).
+
+## The frontend/server split (v0.200.0–v0.202.0) — what it means here
+
+`apps/*` became `server/*`, the owner UI was carved into `client/web`, and the
+routes moved off Next onto Hono. **The companion's contract is unchanged**, and
+that is deliberate rather than lucky: the mobile bearer was the mechanism the
+split was designed around (`frontend-backend-split.md` §Auth). Specifically:
+
+- **Every route above still exists at the same path**, served by `server/web`.
+- `server/web/server/middleware/gate.ts` is a faithful port of the old Edge
+  middleware. It accepts `Authorization: Bearer <mobile token>`, and an
+  `/api/**` request without (or with an invalid) credential gets a clean
+  **401 `{error:'unauthorized'}`** — never an HTML redirect. The app's
+  "401 OR 3xx→/login" rule still holds; in practice only the 401 arm fires now.
+- **CORS does not apply to the app.** It engages only when a request carries an
+  `Origin` header, which a native client doesn't send. `MANTLE_API_CORS_ORIGINS`
+  is for the detached web/Electron client.
+- **`POST /api/auth/mobile-login` is frozen** — path, response shape and the
+  original 1-year TTL — because every shipped companion build depends on it.
+  The web client got `/api/auth/token` (30-day + `/refresh`) instead; the
+  companion deliberately does not use it.
+- **`TURN_EVENT_SCHEMA_VERSION` is still `1`.** The app's `v` tripwire is
+  untouched by the seam swap.
+
+**Two vhosts, and which one the app wants.** The shipped Caddyfile serves the
+server on `MANTLE_SITE_ADDRESS` and the owner UI on `MANTLE_CLIENT_SITE_ADDRESS`
+(`app.<domain>`). **The companion must point at the SERVER address** — the
+client origin carries no `/api` at all. The setup screen detects a client origin
+and recovers the right one: `client/web` serves `/env.js` (public) advertising
+`serverOrigin`, so the app names the brain instead of just failing.
+
+A **single-host** install — one hostname path-routing `/api` to the server and
+everything else to the client, which is how `dev` and `jason-prod` run — needs
+none of this: `/api/version` answers on the address the user typed. Note those
+boxes still set `MANTLE_SERVER_ORIGIN` to their own hostname, so `/env.js`
+advertises the same origin it is served from; the app rejects a self-pointing
+(or empty) `serverOrigin` rather than re-probing an address it just found dead.
+
+**`/n/<id>` links.** `nodeUrl()` builds against `MANTLE_PUBLIC_URL` (the server
+origin), but `/n/[id]` lives in the client app — so `server/web` forwards
+`/n/*` to `MANTLE_CLIENT_ORIGIN`. This matters to the companion twice: the `url`
+on every `/api/search` hit (the "Open in Mantle" action) and every node link the
+assistant writes into a chat reply. **Set `MANTLE_CLIENT_ORIGIN` on any box
+running a separate client vhost**, or both go nowhere.
+
+## `GET /api/assistant/thread?withMessages=0` — the app's launch bundle
+
+The route returns `{agents, agent, messages, assigned}`. `?withMessages=0`
+suppresses only `messages` (opt-out, so existing callers are unaffected); the
+companion uses it at launch for the two rules it must not re-implement:
+
+- **`agents`** is `listAssistantAgents` — conversational roles **and**
+  `enabled`. `GET /api/agents` filters roles but **not** `enabled`, so an agent
+  disabled in the web picker would otherwise still appear on the phone. The app
+  keeps the rich `/api/agents` rows (avatar) and intersects on these slugs.
+- **`agent`** is `resolveAgentForActor`, which since v0.224 prefers the agent
+  bound to this login (`agents.assigned_user_id`, migration 0143) over the
+  brain-wide priority default. The web needs the `assigned.assignedAt`
+  watermark because it holds a sticky `mantle_assistant_agent` cookie; the app
+  holds no such cookie, so the resolved agent is simply its default — and a
+  turn that omits `agentSlug` resolves the same way server-side.

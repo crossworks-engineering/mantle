@@ -72,4 +72,32 @@ export function mountStubs(app: Hono): void {
   };
   app.get('/team', teamStub);
   app.get('/team/*', teamStub);
+
+  // /n/<id> — the canonical node permalink, which lives in the CLIENT app.
+  //
+  // Unlike the stubs above this one is not merely a bookmark courtesy: nodeUrl()
+  // mints `${publicBaseUrl()}/n/<id>` and publicBaseUrl() resolves to
+  // MANTLE_PUBLIC_URL — the SERVER origin, because /s/<token> share links and
+  // the Microsoft OAuth callback are served here. Every tool result hands the
+  // assistant one of these links and the assistant writes them into content
+  // that is STORED (chat replies, pages, forum answers, emails, and the `url`
+  // on every /api/search hit the mobile companion offers as "Open in Mantle").
+  // Nothing re-resolves them later, so without this stub a split deployment
+  // bakes permanent 404s into the brain. Keeping the link canonical and
+  // forwarding here is what makes it survive either topology.
+  app.get('/n/*', async (c) => {
+    const origin = clientOrigin();
+    const url = new URL(c.req.url);
+    if (origin) return c.redirect(`${origin}${url.pathname}${url.search}`, 307);
+    const { htmlPage } = await import('./template');
+    return c.html(
+      htmlPage(
+        { title: 'Item' },
+        movedCard(
+          'This item lives in the app',
+          'This brain serves its workspace from a separate app address. Ask the brain&rsquo;s admin for the current link.',
+        ),
+      ),
+    );
+  });
 }
