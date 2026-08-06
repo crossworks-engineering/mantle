@@ -8,7 +8,7 @@ import { UI_FONTS, UI_FONT_SIZES, type UiFontSize } from '@mantle/web-ui/display
 import { useFonts } from '@mantle/web-ui/font-provider';
 import { FontPicker } from '@/components/appearance/font-picker';
 import { LogoControl } from '@/components/appearance/logo-control';
-import { AvatarStyleGallery } from '@/components/appearance/avatar-style-gallery';
+import { AvatarStyleControls, AvatarStyleList } from '@/components/appearance/avatar-style-gallery';
 import { ColorPalette } from '@/components/theme-preview/color-palette';
 
 /**
@@ -18,9 +18,12 @@ import { ColorPalette } from '@/components/theme-preview/color-palette';
  * three components is how the arrangement drifts out of step with itself.
  *
  * THREE equal columns. The first stacks everything that governs the INTERFACE —
- * logo, size, the interface font, the avatar style — while the two display faces
- * take a column each. Grouping by what a control does beats giving every list
- * its own column.
+ * logo, size, the interface font, and the avatar style's controls — while the
+ * two display faces take a column each. Grouping by what a control does beats
+ * giving every list its own column.
+ *
+ * The avatar STYLE LIST is the exception and sits full-width below the grid: 50
+ * cards of four live previews each is the one thing here that needs the width.
  *
  * The colour palette sits full-width beneath: it is a wide token table, and it
  * is a readout rather than a setting. It stays because its test discovers the
@@ -104,7 +107,7 @@ export function AppearanceContent() {
             unbounded
           />
 
-          <AvatarStyleGallery />
+          <AvatarStyleControls />
         </div>
 
         <FontPicker
@@ -122,6 +125,11 @@ export function AppearanceContent() {
           unbounded
         />
       </div>
+
+      {/* Full-width: 50 style cards, each carrying four live previews, is the one
+          thing on this screen that genuinely needs the room. Its heading and the
+          tint live up in the interface column with the other settings. */}
+      <AvatarStyleList />
 
       <ColorPalette />
     </div>

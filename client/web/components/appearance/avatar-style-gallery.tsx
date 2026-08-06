@@ -23,13 +23,13 @@ import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
  * not how pretty a style is on its own but how far apart it pushes two
  * different entities — that is the whole job of an avatar.
  *
- * Tint sits above the list rather than beside the style, because it changes
- * every swatch below it and you need to see them move.
+ * Split in two, because the two halves want different widths. The CONTROLS
+ * (what the setting is, and the tint) sit in the Appearance grid's interface
+ * column beside the other interface settings; the LIST is a browsing surface for
+ * 50 styles and takes a full-width row of its own beneath the grid.
  *
- * Everything here is a SINGLE column: this panel lives in one third of the
- * Appearance grid, and Tailwind's breakpoints are viewport-based, not
- * container-based — an `xl:grid-cols-3` inside a narrow column would happily
- * split it into three unreadable slivers on a wide screen.
+ * They share no local state — the filter belongs to the list, and the selection
+ * lives in the provider — so the split costs nothing to keep in step.
  *
  * Creator and licence sit on the card rather than in a footnote: 14 of these
  * are CC BY 4.0, which requires attribution, and the honest place to say whose
@@ -43,33 +43,48 @@ const PREVIEW_SEEDS = ['aurora', 'basalt', 'cinder', 'dovetail'];
 /** Fold to letters+digits so "pixel art", "Pixel Art" and "pixel-art" match. */
 const fold = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-/** Tint — how much of the theme the avatars take on. Sits above the grid
- *  because it changes every swatch below it, so it has to be visible while you
- *  compare them. Previews follow it live. */
-function TintControl() {
+/**
+ * The avatar SETTING: what it is, and how much theme it takes on. Lives in the
+ * interface column; the styles themselves are browsed in AvatarStyleList below.
+ * Tint sits with the controls rather than over the list because it restyles
+ * every swatch, and previews follow it live.
+ */
+export function AvatarStyleControls() {
   const { avatarTint, setAvatarTint } = useAvatarStyle();
   return (
-    <RadioGroup
-      value={avatarTint}
-      onValueChange={(v) => setAvatarTint(v as (typeof AVATAR_TINTS)[number]['id'])}
-      aria-label="Avatar colour"
-      className="gap-2"
-    >
-      {AVATAR_TINTS.map((t) => (
-        <RadioGroupCard
-          key={t.id}
-          value={t.id}
-          className={cn(
-            'flex flex-col items-start gap-1 border-border p-2.5 text-left',
-            'hover:bg-accent/40',
-            'data-[state=checked]:border-primary data-[state=checked]:bg-accent/50 data-[state=checked]:ring-1 data-[state=checked]:ring-primary',
-          )}
-        >
-          <span className="text-sm font-medium text-foreground">{t.label}</span>
-          <span className="text-xs leading-snug text-muted-foreground">{t.hint}</span>
-        </RadioGroupCard>
-      ))}
-    </RadioGroup>
+    <section className="space-y-2">
+      <h2
+        id="avatar-style-heading"
+        className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+      >
+        Avatar style
+      </h2>
+      <p className="text-xs text-muted-foreground">
+        Every generated avatar in this brain — yours and each agent&rsquo;s — is drawn in one style;
+        the seed is what makes each one different. Pick the style below.
+      </p>
+      <RadioGroup
+        value={avatarTint}
+        onValueChange={(v) => setAvatarTint(v as (typeof AVATAR_TINTS)[number]['id'])}
+        aria-label="Avatar colour"
+        className="gap-2"
+      >
+        {AVATAR_TINTS.map((t) => (
+          <RadioGroupCard
+            key={t.id}
+            value={t.id}
+            className={cn(
+              'flex flex-col items-start gap-0.5 border-border p-2 text-left',
+              'hover:bg-accent/40',
+              'data-[state=checked]:border-primary data-[state=checked]:bg-accent/50 data-[state=checked]:ring-1 data-[state=checked]:ring-primary',
+            )}
+          >
+            <span className="text-sm font-medium text-foreground">{t.label}</span>
+            <span className="text-xs leading-snug text-muted-foreground">{t.hint}</span>
+          </RadioGroupCard>
+        ))}
+      </RadioGroup>
+    </section>
   );
 }
 
@@ -102,7 +117,12 @@ function StyleCard({ style, active }: { style: AvatarStyleMeta; active: boolean 
   );
 }
 
-export function AvatarStyleGallery() {
+/**
+ * Browsing surface for the 50 styles: filter, then a card per style grouped by
+ * shelf. Full-width by design — it is the one thing on this screen that genuinely
+ * needs the room, and the cards each carry four live previews.
+ */
+export function AvatarStyleList() {
   const { avatarStyle, setAvatarStyle } = useAvatarStyle();
   const [query, setQuery] = useState('');
   const needle = fold(query);
@@ -122,39 +142,26 @@ export function AvatarStyleGallery() {
 
   return (
     <section className="space-y-3">
-      <div>
-        <div className="flex items-baseline justify-between gap-2">
-          <h2
-            id="avatar-style-heading"
-            className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-          >
-            Avatar style
-          </h2>
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {needle ? `${matches.length} of ${AVATAR_STYLES.length}` : AVATAR_STYLES.length}
-          </span>
+      {/* The count belongs with the filter that changes it, not up with the
+          setting's heading — which lives in the other column entirely. */}
+      <div className="flex items-center gap-3">
+        <div className="relative max-w-xs flex-1">
+          <Search
+            className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter styles"
+            aria-label="Filter avatar styles"
+            className="h-8 rounded-lg pl-8 pr-2"
+          />
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Every generated avatar in this brain — yours and each agent&rsquo;s — is drawn in this
-          style; the seed is what makes each one different.
-        </p>
-      </div>
-
-      <TintControl />
-
-      <div className="relative">
-        <Search
-          className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter styles"
-          aria-label="Filter avatar styles"
-          className="h-8 rounded-lg pl-8 pr-2"
-        />
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {needle ? `${matches.length} of ${AVATAR_STYLES.length}` : AVATAR_STYLES.length}
+        </span>
       </div>
 
       {matches.length === 0 ? (
@@ -174,7 +181,7 @@ export function AvatarStyleGallery() {
             return (
               <div key={cat.id} className="space-y-2">
                 <h3 className="text-xs font-medium text-muted-foreground">{cat.label}</h3>
-                <div className="grid gap-2">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                   {inCat.map((s) => (
                     <StyleCard key={s.id} style={s} active={avatarStyle === s.id} />
                   ))}
