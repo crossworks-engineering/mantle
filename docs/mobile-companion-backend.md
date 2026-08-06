@@ -138,7 +138,16 @@ enrollment ticket), `POST|GET /api/push/subscriptions`, `DELETE
 LISTENs `conversation_changed` (migration 0091) and forwards each outbound turn's
 **libsodium-sealed** teaser to the relay's `/notify`. Full design +
 relay/app halves: `../../mantle-companion/docs/push-notifications.md`. The relay
-is live at `https://push.crossworks.network` (mock provider until APNs/FCM creds).
+is live at `https://push.crossworks.network` and **now on real providers** —
+`/healthz` reports `{"ok":true,"provider":"live"}` (checked 2026-08-06); the
+"mock provider until APNs/FCM creds" caveat this line used to carry is retired.
+
+The split left this path alone: `worker_push` still runs from the server image
+(`server/web/workers/push-notify.ts`) and the relay URL is per-instance state
+in `push_instance`, not env. Nothing here is keyed by app package or bundle id
+— `push_subscriptions` stores `platform` + `routing_token` only — so a client
+rename never reaches the server. What is not portable is the relay's FCM
+service account, which is scoped to one Firebase **project**.
 
 ## Location (v0.27.0)
 
