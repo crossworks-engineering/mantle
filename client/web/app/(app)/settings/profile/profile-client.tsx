@@ -37,6 +37,8 @@ import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
 import Link from 'next/link';
 import { AvatarPicker, type AvatarValue } from '@/components/avatar-picker';
+import { Avatar, AvatarFallback } from '@mantle/web-ui/ui/avatar';
+import { agentInitials } from '@/lib/agent-color';
 // Import the value from the browser-safe LEAF, not the @mantle/content barrel —
 // the barrel pulls backup.ts (node:os) + identity-context (@mantle/db) into the
 // client bundle. The type is erased, so it's safe from the barrel.
@@ -225,14 +227,30 @@ function ProfileForm({ data }: { data: ProfileData }) {
 
       <section className="space-y-2">
         <Label>Avatar</Label>
-        <AvatarPicker value={avatar} onChange={setAvatar} fallbackSeed={userId} />
+        <AvatarPicker
+          value={avatar}
+          onChange={setAvatar}
+          fallbackSeed={userId}
+          // With no seed stored the header draws INITIALS, so that is what the
+          // preview has to show. Drawing a generated avatar here instead made
+          // Save look broken: it showed a face, but there was nothing to save
+          // until Randomize was pressed, so nothing changed anywhere.
+          emptyPreview={
+            <Avatar className="size-16 border">
+              <AvatarFallback className="text-lg">
+                {agentInitials(defaults.displayName || 'You')}
+              </AvatarFallback>
+            </Avatar>
+          }
+        />
         <input type="hidden" name="avatarSeed" value={avatar?.seed ?? ''} />
         <p className="text-xs text-muted-foreground">
           Generated from a seed, drawn in the brain&rsquo;s avatar style (
           <Link href="/settings/appearance" className="underline underline-offset-2">
             Appearance
           </Link>
-          ). Shows in the header and across the app; clear it to fall back to your initials.
+          ). Shows in the header and across the app. No avatar yet means your initials are used
+          &mdash; press Randomize to get one.
         </p>
       </section>
 
