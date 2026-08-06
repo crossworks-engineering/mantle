@@ -1,10 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { useTheme } from 'next-themes';
 import { cn } from './lib/utils';
-import { useColorTheme } from './color-theme-provider';
 import { useAvatarStyle } from './avatar-style-provider';
+import { useChartRamp } from './theme-ramp';
 import {
   isAvatarStyleReady,
   loadAvatarStyle,
@@ -18,11 +17,10 @@ import {
  * The theme tints the BACKGROUND only — the artwork keeps its style's native
  * colours. See avatar.ts for why that split is what makes seeds tell apart.
  *
- * Colours come from the active theme's `--chart-1..5`, read off the document
- * rather than imported: those tokens change with BOTH the mode and the colour
- * theme, and SVG fill attributes can't resolve `var()`, so the resolved values
- * have to be passed in. themes.css emits every token as hex, which is exactly
- * what DiceBear accepts.
+ * Colours come from the active theme's `--chart-1..5` via `useChartRamp` — see
+ * theme-ramp.ts for why they are read off the document rather than imported.
+ * That hook is shared with the generated backdrop so the two can never end up
+ * on different palettes.
  *
  * The style's JSON is fetched on demand (see avatar.ts — 50 styles are 2.47 MB,
  * far too much to put in every page's bundle for one 32px circle), so the first
@@ -31,29 +29,6 @@ import {
  * rendering nothing keeps avatars from shifting the layout as they arrive. In
  * practice this costs one fetch per session: the whole app draws ONE style.
  */
-
-/** Clean Slate (the default theme) `--chart-1..5`, light mode — used for the
- *  first paint before the live tokens can be read, so the default theme never
- *  flashes. Values are GENERATED (themes/seeds.mjs → `pnpm themes:build`); if
- *  the ramp recipe changes, refresh them from `:root` in themes.css. */
-const FALLBACK_RAMP = ['#666ed1', '#ae467f', '#ad5700', '#4b830f', '#00889b'];
-
-// A list of 40 agents would otherwise run 40 identical getComputedStyle reads
-// on mount. The ramp only depends on (colour theme, mode), so cache on that.
-const rampCache = new Map<string, string[]>();
-
-function readChartRamp(key: string): string[] {
-  const hit = rampCache.get(key);
-  if (hit) return hit;
-  if (typeof document === 'undefined') return FALLBACK_RAMP;
-  const cs = getComputedStyle(document.documentElement);
-  const vals = [1, 2, 3, 4, 5]
-    .map((i) => cs.getPropertyValue(`--chart-${i}`).trim())
-    .filter((v) => v.length > 0);
-  const ramp = vals.length >= 2 ? vals : FALLBACK_RAMP;
-  rampCache.set(key, ramp);
-  return ramp;
-}
 
 export function GeneratedAvatar({
   style,
@@ -79,18 +54,10 @@ export function GeneratedAvatar({
   className?: string;
   containerStyle?: React.CSSProperties;
 }) {
-  const { resolvedTheme } = useTheme();
-  const { colorTheme } = useColorTheme();
   const { avatarStyle, avatarTint } = useAvatarStyle();
   const effectiveStyle = style ?? avatarStyle;
   const tint = tintOverride ?? avatarTint;
-  // Both inputs land on <html> as a class/attribute, so re-read whenever either
-  // changes. Server render and first paint use the fallback; the effect swaps in
-  // the real ramp once the document is readable.
-  const [ramp, setRamp] = React.useState<string[]>(FALLBACK_RAMP);
-  React.useEffect(() => {
-    setRamp(readChartRamp(`${colorTheme}:${resolvedTheme}`));
-  }, [colorTheme, resolvedTheme]);
+  const ramp = useChartRamp();
 
   // Re-render once the style's chunk arrives. `ready` starts true when the
   // style is already cached (the common case after the first avatar), so a

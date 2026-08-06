@@ -535,8 +535,15 @@ export function avatarStyleMeta(id: string): AvatarStyleMeta {
   return AVATAR_STYLES.find((s) => s.id === resolved) ?? AVATAR_STYLES[0]!;
 }
 
-/** A parsed style plus the colour groups `theme` tint may safely override. */
-type Loaded = { style: Style; tintGroups: string[] };
+/** A parsed style, the colour groups `theme` tint may safely override, and the
+ *  component variants the style declares. */
+export type Loaded = {
+  style: Style;
+  tintGroups: string[];
+  /** component name → the variant names it offers, e.g. `rotation` →
+   *  `['quarter', 'none', 'free']`. Empty for styles that declare none. */
+  variants: Record<string, string[]>;
+};
 
 /**
  * Which of a style's declared colour groups the `theme` tint is allowed to
@@ -563,6 +570,25 @@ function tintableGroups(json: unknown): string[] {
     .map(([name]) => name);
 }
 
+/**
+ * The component variants a style declares, as `{ component: [variant, …] }`.
+ *
+ * DiceBear validates options against a fixed set of patterns and THROWS on an
+ * unknown key, so `rotationVariant` may only be passed to a style that actually
+ * has a `rotation` component. Reading the declaration is the only way to know;
+ * guessing by style id would break the moment a style is added or renamed.
+ */
+function componentVariants(json: unknown): Record<string, string[]> {
+  const components = (json as { components?: Record<string, unknown> } | null)?.components;
+  if (!components) return {};
+  const out: Record<string, string[]> = {};
+  for (const [name, spec] of Object.entries(components)) {
+    const variants = (spec as { variants?: Record<string, unknown> } | null)?.variants;
+    if (variants) out[name] = Object.keys(variants);
+  }
+  return out;
+}
+
 // `Style` parses and validates the JSON once; building one per render would
 // re-do that for every avatar in a list. Populated by loadAvatarStyle and kept
 // for the life of the process — a style is a few hundred KB at most and the
@@ -574,6 +600,13 @@ const INFLIGHT = new Map<string, Promise<Loaded>>();
  *  has already been fetched). React uses this to decide whether to await. */
 export function isAvatarStyleReady(id: string | null | undefined): boolean {
   return STYLES.has(resolveAvatarStyle(id));
+}
+
+/** The parsed style, if its JSON chunk has already been fetched. Lets callers
+ *  that render something other than an avatar (the backdrop) reuse this
+ *  module's one cache rather than parsing the same JSON a second time. */
+export function loadedAvatarStyle(id: string | null | undefined): Loaded | null {
+  return STYLES.get(resolveAvatarStyle(id)) ?? null;
 }
 
 /** Fetch and parse a style's JSON. Idempotent, and concurrent calls for the
@@ -594,6 +627,7 @@ export function loadAvatarStyle(id: string | null | undefined): Promise<Loaded> 
       const loaded: Loaded = {
         style: new Style(json as ConstructorParameters<typeof Style>[0]),
         tintGroups: tintableGroups(json),
+        variants: componentVariants(json),
       };
       STYLES.set(key, loaded);
       INFLIGHT.delete(key);
