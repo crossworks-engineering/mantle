@@ -254,7 +254,7 @@ provably stale, never a number someone typed once.
 | 📐 &nbsp;TypeScript (excl. tests) | **251,113** lines in 1,504 files |
 | 🧪 &nbsp;Test suite | **3,476** cases in 308 files |
 | ⚖️ &nbsp;Test weight | 49,465 lines — 1 for every 5.1 of source |
-| 🗂️ &nbsp;Tracked files | 2,690 |
+| 🗂️ &nbsp;Tracked files | 2,691 |
 | 🐘 &nbsp;SQL migrations | 144, replayed in order on every boot |
 | 📚 &nbsp;Docs | 110 engineering docs, 76 user-guide pages, 215 changelog entries (45,914 lines) |
 | 🐳 &nbsp;Compose services | 25 (core + opt-in profiles) |
@@ -270,7 +270,7 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.224.28, 2,378 commits and 172 releases since 2026-05-14 (85 days, ~28.0 commits/day).
+**Velocity** — v0.224.29, 2,379 commits and 172 releases since 2026-05-14 (85 days, ~28.0 commits/day).
 
 ```
 commits/week, last 13 weeks   ▁▄▇▆▄▁▃█▄▃▅▆▅   peak 377
