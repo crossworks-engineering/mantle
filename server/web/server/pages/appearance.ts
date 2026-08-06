@@ -2,7 +2,8 @@ import { loadProfilePreferences } from '@mantle/content';
 import { resolveAppearanceAttrs, type AppearanceAttrs } from '@mantle/web-ui/appearance';
 
 /**
- * The brain's stored appearance — colour theme + the two display fonts — as
+ * The brain's stored appearance — colour theme, the two display fonts and
+ * the avatar style — as
  * `<html>` attributes for htmlPage(), resolved server-side from the anchor
  * owner's preferences.
  *
@@ -22,6 +23,10 @@ export async function loadAppearanceAttrs(ownerId: string): Promise<AppearanceAt
       colorTheme: prefs.colorTheme ?? null,
       fontLogo: prefs.fontLogo ?? null,
       fontTitle: prefs.fontTitle ?? null,
+      avatarStyle: prefs.avatarStyle ?? null,
+      avatarTint: prefs.avatarTint ?? null,
+      fontUi: prefs.fontUi ?? null,
+      fontSize: prefs.fontSize ?? null,
     });
   } catch {
     // prefs unavailable — fall back to the defaults rather than failing

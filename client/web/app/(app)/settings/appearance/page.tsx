@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { Check, Moon, Search, Sun, Monitor, type LucideIcon } from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
@@ -9,7 +9,7 @@ import { COLOR_THEMES, type ThemeSwatches } from '@mantle/web-ui/lib/themes';
 import { Input } from '@mantle/web-ui/ui/input';
 import { RadioGroup, RadioGroupCard } from '@mantle/web-ui/ui/radio-group';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { PreviewTabs } from '@/components/theme-preview/preview-tabs';
+import { AppearanceContent } from '@/components/appearance/appearance-content';
 
 const MODES: Array<{ id: string; label: string; icon: LucideIcon }> = [
   { id: 'light', label: 'Light', icon: Sun },
@@ -46,10 +46,6 @@ function Controls() {
   const { theme, setTheme } = useTheme();
   const { colorTheme, setColorTheme } = useColorTheme();
   const [query, setQuery] = useState('');
-  const listRef = useRef<HTMLDivElement>(null);
-  const activeRef = useRef<HTMLButtonElement>(null);
-  // Once the visitor drives the list themselves, stop moving it under them.
-  const touched = useRef(false);
 
   const needle = fold(query);
   const matches = useMemo(
@@ -59,22 +55,6 @@ function Controls() {
         : COLOR_THEMES,
     [needle],
   );
-
-  // ~40 themes do not fit the column: bring the active one into view instead of
-  // leaving the visitor to scroll for the row that is already theirs. Runs on
-  // the id settling too (the provider reads it off <html> after mount), which
-  // is why it keys on colorTheme rather than mounting once.
-  useEffect(() => {
-    const el = activeRef.current;
-    const box = listRef.current;
-    if (touched.current || !el || !box) return;
-    const scroller = box.closest<HTMLElement>('[data-theme-scroller]');
-    if (!scroller || scroller.scrollHeight <= scroller.clientHeight) return;
-    const item = el.getBoundingClientRect();
-    const view = scroller.getBoundingClientRect();
-    if (item.top >= view.top && item.bottom <= view.bottom) return;
-    scroller.scrollTop += item.top - view.top - (view.height - item.height) / 2;
-  }, [colorTheme]);
 
   return (
     <div className="space-y-6">
@@ -134,10 +114,7 @@ function Controls() {
           <Input
             type="search"
             value={query}
-            onChange={(e) => {
-              touched.current = true;
-              setQuery(e.target.value);
-            }}
+            onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter themes"
             aria-label="Filter themes"
             className="h-8 rounded-lg pl-8 pr-2"
@@ -150,12 +127,8 @@ function Controls() {
           </p>
         ) : (
           <RadioGroup
-            ref={listRef}
             value={colorTheme}
-            onValueChange={(id) => {
-              touched.current = true;
-              setColorTheme(id);
-            }}
+            onValueChange={setColorTheme}
             aria-labelledby="color-theme-heading"
             className="gap-1.5"
           >
@@ -164,7 +137,6 @@ function Controls() {
               return (
                 <RadioGroupCard
                   key={t.id}
-                  ref={active ? activeRef : undefined}
                   value={t.id}
                   className={cn(
                     'flex w-full items-center justify-between gap-2 border-border p-2 text-sm',
@@ -192,14 +164,16 @@ export default function AppearancePage() {
     <div>
       <SetPageTitle title="Appearance" />
       <div className="flex flex-col gap-6 px-6 py-6 lg:flex-row">
-        <aside
-          data-theme-scroller
-          className="scrollbar-thin shrink-0 lg:sticky lg:top-0 lg:max-h-[calc(100vh-4rem)] lg:w-1/5 lg:min-w-[220px] lg:self-start lg:overflow-y-auto lg:pr-1"
-        >
+        {/* No cap and no scroller of its own: a column that scrolls inside a
+            page that also scrolls is two scrollbars competing for one gesture.
+            The ~40 themes simply run their full height and the page scrolls —
+            which is also why the "bring the active theme into view" effect is
+            gone, since there is no longer a viewport to bring it into. */}
+        <aside className="shrink-0 lg:w-1/5 lg:min-w-[220px] lg:self-start">
           <Controls />
         </aside>
         <div className="min-w-0 flex-1">
-          <PreviewTabs />
+          <AppearanceContent />
         </div>
       </div>
     </div>

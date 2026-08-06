@@ -29,14 +29,20 @@ at the time you actually meant.
 
 Purely cosmetic; change it whenever.
 
-## Settings → Security
+## Settings → Logins
 
-- **Change your password.**
+- **Reset a password** — including your own; there's no recovery mail in the loop,
+  so setting a new one directly is the whole flow.
+- **Devices** — the live sessions signed in as that login. Revoke one to end it
+  immediately.
 
-Mantle is single-user with a simple, private sign-in — there's no signup, OAuth, or
-multi-user roles to manage. Your session lasts a long time, so you rarely re-enter
-your password. If you ever need to invalidate every session at once, that's an
-operator action (rotating the server's session secret), not a button here.
+A brain has one owner and one set of data; a login is a way *in*, not a separate
+world, and there are no permission tiers to manage. Sessions last a long time, so
+you rarely re-enter a password. To invalidate every session at once, that's still
+an operator action (rotating the server's session secret), not a button here.
+
+There used to be a separate **Security** screen. Its password form duplicated the
+reset on this screen, so both halves now live here.
 
 ---
 

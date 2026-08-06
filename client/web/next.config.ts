@@ -18,6 +18,16 @@ const rootPkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), '
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@mantle/web-ui'],
+  // Pin the dev/build root to THIS checkout. Without it Turbopack infers the
+  // root by scanning upward for lockfiles, finds the integrator clone's, and
+  // roots there — and since `.claude/worktrees/` lives INSIDE that clone, every
+  // sibling worktree falls under the root and becomes fair game to compile.
+  // The failure is spectacular and easy to misread: a dev server in worktree A
+  // serves chunks built from worktree B, the module factories don't exist
+  // ("module factory is not available"), and the dev overlay hard-reloads to
+  // recover — forever. It presents as an infinite refresh loop, not as a
+  // resolution error. Same guess `outputFileTracingRoot` below already guards.
+  turbopack: { root: join(__dirname, '../..') },
   // Desktop shell (client/desktop) embeds this app as a self-contained node
   // server. Opt-in so image builds keep today's output. The tracing root is
   // pinned to the monorepo root so the standalone tree resolves workspace deps

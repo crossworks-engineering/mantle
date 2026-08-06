@@ -4,39 +4,50 @@ import * as React from 'react';
 import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { Button } from '@mantle/web-ui/ui/button';
-import { DISPLAY_FONTS, fontFamilyValue } from '@mantle/web-ui/display-fonts';
+import { DISPLAY_FONTS, fontFamilyValue, type DisplayFont } from '@mantle/web-ui/display-fonts';
 
 /**
  * One font selector — the sample text rendered in each candidate face (the live
  * preview), the family name beneath it, prev/next arrows to cycle, click to
  * select. Selecting calls `onChange` (the FontProvider), which repaints the
- * wordmark/title instantly. Used twice on the Appearance screen (wordmark +
- * title), driven off the shared `DISPLAY_FONTS` registry so adding a font here
- * needs no change to this component.
+ * wordmark/title instantly.
+ *
+ * Used three times on the Appearance screen — wordmark, peer name, and the
+ * INTERFACE font — as three equal columns. The list is a prop for exactly that
+ * reason: the interface font deserves the same treatment as the two display
+ * faces, and a second near-identical picker would have been a copy that drifts.
+ * Adding a font to either registry needs no change here.
  */
 export function FontPicker({
   title,
   sample,
   value,
   onChange,
-  tall = false,
+  fonts = DISPLAY_FONTS,
+  unbounded = false,
 }: {
   title: string;
   /** Text shown in each font as the preview (e.g. the site name for the wordmark). */
   sample: string;
   value: string;
   onChange: (key: string) => void;
-  /** Column layout (the Logo tab): let the list run tall instead of the
-   *  compact sidebar cap, so the whole library reads at a glance. */
-  tall?: boolean;
+  /** Which registry to offer. Defaults to the display faces (wordmark / peer
+   *  name); the interface picker passes UI_FONTS. */
+  fonts?: DisplayFont[];
+  /** Let the list run its FULL height with no inner scroller, so the page is
+   *  the only thing that scrolls. A capped, scrollable column nested inside a
+   *  scrollable page gives you two scrollbars fighting over the same gesture,
+   *  which reads as broken. Used by the Appearance brand panel, where the whole
+   *  face library should just read down the page. */
+  unbounded?: boolean;
 }) {
   const idx = Math.max(
     0,
-    DISPLAY_FONTS.findIndex((f) => f.key === value),
+    fonts.findIndex((f) => f.key === value),
   );
   const step = (dir: number) => {
-    const n = (idx + dir + DISPLAY_FONTS.length) % DISPLAY_FONTS.length;
-    const next = DISPLAY_FONTS[n];
+    const n = (idx + dir + fonts.length) % fonts.length;
+    const next = fonts[n];
     if (next) onChange(next.key);
   };
 
@@ -70,11 +81,12 @@ export function FontPicker({
 
       <div
         className={cn(
-          'scrollbar-thin space-y-1.5 overflow-y-auto pr-1',
-          tall ? 'max-h-[70vh]' : 'max-h-72',
+          'space-y-1.5 pr-1',
+          // Only the compact form scrolls itself; unbounded defers to the page.
+          !unbounded && 'scrollbar-thin max-h-72 overflow-y-auto',
         )}
       >
-        {DISPLAY_FONTS.map((f) => {
+        {fonts.map((f) => {
           const active = f.key === value;
           return (
             <button
@@ -102,6 +114,9 @@ export function FontPicker({
                 </span>
                 <span className="mt-1 block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
                   {f.label}
+                  {/* UI faces carry a shelf (sans / mono / character); display
+                      faces don't, and get nothing rather than a filler word. */}
+                  {f.category ? ` · ${f.category}` : ''}
                 </span>
               </span>
               {active && <Check className="size-4 shrink-0 text-primary-ink" aria-hidden />}

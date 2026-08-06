@@ -83,6 +83,9 @@ export function AppShell(props: {
   contextCard: React.ReactNode;
   initialNavCollapsed?: boolean;
   initialActivityCollapsed?: boolean;
+  /** Nav groups the user last left unfolded, seeded from the cookie so a
+   *  folded group never flashes open on first paint. */
+  initialExpandedGroups?: string[];
   children: React.ReactNode;
 }) {
   // Providers only — the frame itself lives in <ShellFrame/>, which sits INSIDE
@@ -108,12 +111,14 @@ function ShellFrame({
   contextCard,
   initialNavCollapsed = false,
   initialActivityCollapsed = true,
+  initialExpandedGroups = [],
   children,
 }: {
   email: string | null;
   contextCard: React.ReactNode;
   initialNavCollapsed?: boolean;
   initialActivityCollapsed?: boolean;
+  initialExpandedGroups?: string[];
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -272,6 +277,12 @@ function ShellFrame({
       {contextCard}
       <UpdateBanner onNavigate={onNavigate} />
       <SidebarNav
+        initialExpandedGroups={initialExpandedGroups}
+        onRequestExpandRail={() => {
+          if (!navCollapsed) return;
+          setNavCollapsed(false);
+          writeCookie(NAV_COOKIE, false);
+        }}
         pendingApprovals={pendingApprovals}
         onNavigate={onNavigate}
         collapsed={collapsed}

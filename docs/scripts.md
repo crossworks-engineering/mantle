@@ -599,6 +599,7 @@ because they're wired into `predev` / `prebuild` / `pretypecheck`.
 | `packages/app-build/scripts/build-runtime.ts` | the shared mini-app runtime into each app's `public/app-runtime/` | `predev`/`prebuild` in both `server/web` and `client/web` |
 | `packages/web-ui/themes/generate.mjs` | `styles/themes.css` + the picker registry from `seeds.mjs` | `pnpm themes:build`; `--check` fails on drift (CI), `--report` prints per-token ΔE against a baseline |
 | `scripts/generate-notices.mjs` | `THIRD-PARTY-NOTICES.md` from the production dependency tree, with verbatim license texts | `pnpm licenses:notices` — re-run after any dependency change |
+| `scripts/readme-stats.mjs` | the **By the numbers** block in `README.md` (between the `<!-- stats:start -->` markers) — LOC, test cases, migrations, manifest counts, commit cadence, the LOC-by-area pie | `pnpm readme:stats`; auto-run by `version:bump`, so every `release:` commit carries fresh numbers |
 
 **Never hand-edit theme colours** — `themes.css` is generated. See
 [themes.md](./themes.md).
@@ -621,6 +622,12 @@ git commit -am "release: v<new>" && git tag v<new>
 
 Bump before every merge to main so the version climbs. See
 [versioning.md](./versioning.md).
+
+It also regenerates the README's counted stats block
+(`scripts/readme-stats.mjs`, §8) — `merge-branch.sh` stages `README.md` with the
+version files, so the numbers ride along in the same `release:` commit. A stats
+failure warns and never blocks the bump; run `pnpm readme:stats` by hand if it
+does, and `pnpm readme:stats --check` to see whether the block is stale.
 
 ### `pnpm verify` and the git hooks
 

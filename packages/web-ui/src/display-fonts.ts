@@ -23,6 +23,9 @@
 
 export type FontFallback = 'sans-serif' | 'serif' | 'cursive' | 'monospace';
 
+/** Which shelf of the UI-font picker a face sits on. */
+export type UiFontCategory = 'sans' | 'mono' | 'character';
+
 export type DisplayFont = {
   /** Stable slug stored in preferences + used as the file basename. */
   key: string;
@@ -35,7 +38,18 @@ export type DisplayFont = {
   fallback: FontFallback;
   /** Public path to the face file, or null for the built-in defaults. */
   file: string | null;
+  /** VARIABLE faces must declare their weight range in `@font-face`, or the
+   *  browser treats the file as a single 400 and SYNTHESISES bold — which on a
+   *  UI font shows up everywhere as smeared headings and buttons. Declared wider
+   *  than any real axis on purpose: a range beyond the font's own is clamped to
+   *  what the file has, so one honest value beats eleven guesses at each axis. */
+  weight?: string;
+  /** UI fonts only — the picker's grouping. */
+  category?: UiFontCategory;
 };
+
+/** Every UI face here is a VARIABLE font, so one file carries every weight. */
+const VARIABLE = '100 900';
 
 /** Default wordmark = the existing Bukhari face; default title = the UI sans. */
 export const DEFAULT_LOGO_FONT = 'bukhari';
@@ -45,7 +59,7 @@ const LIB = '/fonts/library';
 
 export const DISPLAY_FONTS: DisplayFont[] = [
   // Built-in defaults (no library file).
-  { key: 'sans', label: 'System (Inter)', family: null, fallback: 'sans-serif', file: null },
+  { key: 'sans', label: 'Interface font', family: null, fallback: 'sans-serif', file: null },
   {
     key: 'bukhari',
     label: 'Bukhari Script',
@@ -204,7 +218,157 @@ export const DISPLAY_FONTS: DisplayFont[] = [
   },
 ];
 
-const BY_KEY = new Map(DISPLAY_FONTS.map((f) => [f.key, f]));
+/**
+ * The UI body font — what the whole interface is set in (Settings → Appearance).
+ *
+ * Separate list from DISPLAY_FONTS because the job is different: those are
+ * decorative faces for two words of wordmark, these have to stay legible in a
+ * 13px table cell at 400 and a button at 600. They share the pipeline, though —
+ * same `@font-face` emitter, same lazy loading, same var-override mechanism.
+ *
+ * `inter` is the default and carries no file: it is the always-loaded next/font
+ * face (lib/fonts.ts), which is right for the font every page paints. The rest
+ * are opt-in and fetched only when actually selected.
+ */
+export const DEFAULT_UI_FONT = 'inter';
+
+export const UI_FONTS: DisplayFont[] = [
+  {
+    key: 'inter',
+    label: 'Inter',
+    family: null,
+    fallback: 'sans-serif',
+    file: null,
+    category: 'sans',
+  },
+  // ── sans ──────────────────────────────────────────────────────────────────
+  {
+    key: 'geist',
+    label: 'Geist',
+    family: 'Geist',
+    fallback: 'sans-serif',
+    file: `${LIB}/geist.woff2`,
+    weight: VARIABLE,
+    category: 'sans',
+  },
+  {
+    key: 'plus-jakarta-sans',
+    label: 'Plus Jakarta Sans',
+    family: 'Plus Jakarta Sans',
+    fallback: 'sans-serif',
+    file: `${LIB}/plus-jakarta-sans.woff2`,
+    weight: VARIABLE,
+    category: 'sans',
+  },
+  {
+    key: 'manrope',
+    label: 'Manrope',
+    family: 'Manrope',
+    fallback: 'sans-serif',
+    file: `${LIB}/manrope.woff2`,
+    weight: VARIABLE,
+    category: 'sans',
+  },
+  {
+    key: 'figtree',
+    label: 'Figtree',
+    family: 'Figtree',
+    fallback: 'sans-serif',
+    file: `${LIB}/figtree.woff2`,
+    weight: VARIABLE,
+    category: 'sans',
+  },
+  {
+    key: 'ibm-plex-sans',
+    label: 'IBM Plex Sans',
+    family: 'IBM Plex Sans',
+    fallback: 'sans-serif',
+    file: `${LIB}/ibm-plex-sans.woff2`,
+    weight: VARIABLE,
+    category: 'sans',
+  },
+  // Designed by the Braille Institute for low-vision readability: every glyph
+  // is drawn to be unmistakable for another (1/l/I, 0/O, rn/m). The one face
+  // here chosen for legibility rather than looks — it pairs with the size
+  // control, which is the other half of the same accessibility answer.
+  {
+    key: 'atkinson-hyperlegible',
+    label: 'Atkinson Hyperlegible',
+    family: 'Atkinson Hyperlegible Next',
+    fallback: 'sans-serif',
+    file: `${LIB}/atkinson-hyperlegible.woff2`,
+    weight: VARIABLE,
+    category: 'sans',
+  },
+  // ── mono ──────────────────────────────────────────────────────────────────
+  {
+    key: 'jetbrains-mono',
+    label: 'JetBrains Mono',
+    family: 'JetBrains Mono',
+    fallback: 'monospace',
+    file: `${LIB}/jetbrains-mono.woff2`,
+    weight: VARIABLE,
+    category: 'mono',
+  },
+  {
+    key: 'geist-mono',
+    label: 'Geist Mono',
+    family: 'Geist Mono',
+    fallback: 'monospace',
+    file: `${LIB}/geist-mono.woff2`,
+    weight: VARIABLE,
+    category: 'mono',
+  },
+  // ── character ─────────────────────────────────────────────────────────────
+  // Fraunces ships a literal WONK axis; Bricolage and Space Grotesk are the
+  // quiet-but-odd end. Legible enough to live in, strange enough to be a choice.
+  {
+    key: 'fraunces',
+    label: 'Fraunces',
+    family: 'Fraunces',
+    fallback: 'serif',
+    file: `${LIB}/fraunces.woff2`,
+    weight: VARIABLE,
+    category: 'character',
+  },
+  {
+    key: 'bricolage-grotesque',
+    label: 'Bricolage Grotesque',
+    family: 'Bricolage Grotesque',
+    fallback: 'sans-serif',
+    file: `${LIB}/bricolage-grotesque.woff2`,
+    weight: VARIABLE,
+    category: 'character',
+  },
+  {
+    key: 'space-grotesk',
+    label: 'Space Grotesk',
+    family: 'Space Grotesk',
+    fallback: 'sans-serif',
+    file: `${LIB}/space-grotesk.woff2`,
+    weight: VARIABLE,
+    category: 'character',
+  },
+];
+
+/** UI font size. Scales the ROOT font-size, and because the shell is rem-based
+ *  (h-16 header, rem paddings) the whole interface scales with it rather than
+ *  just the letters — the same thing OS display scaling does. */
+export type UiFontSize = 'small' | 'medium' | 'large';
+export const UI_FONT_SIZES: Array<{ id: UiFontSize; label: string; hint: string }> = [
+  { id: 'small', label: 'Small', hint: 'Denser — more on screen' },
+  { id: 'medium', label: 'Medium', hint: 'Default' },
+  { id: 'large', label: 'Large', hint: 'Roomier — easier to read' },
+];
+export const DEFAULT_UI_FONT_SIZE: UiFontSize = 'medium';
+
+export function resolveUiFontSize(v: string | null | undefined): UiFontSize {
+  return v === 'small' || v === 'large' || v === 'medium' ? v : DEFAULT_UI_FONT_SIZE;
+}
+
+// Both lists share one lookup: keys are unique across them (asserted in
+// display-fonts.test.ts), so a stored key resolves wherever it came from.
+const BY_KEY = new Map([...DISPLAY_FONTS, ...UI_FONTS].map((f) => [f.key, f]));
 
 export function fontByKey(key: string | null | undefined): DisplayFont | undefined {
   return key ? BY_KEY.get(key) : undefined;
@@ -218,22 +382,31 @@ export function fontByKey(key: string | null | undefined): DisplayFont | undefin
 export function fontFamilyValue(key: string | null | undefined): string | null {
   const f = fontByKey(key);
   if (!f) return null;
+  // 'sans' means "follow the interface font, whatever it is" — it is the
+  // display default, so a wordmark set to it tracks the UI choice.
   if (f.key === 'sans') return 'var(--font-sans, ui-sans-serif, sans-serif)';
+  // 'inter' is a CONCRETE face, not "the current one". It must not resolve
+  // through --font-sans: that var is what the interface choice overrides, so an
+  // Inter row would preview in whichever font is selected — Geist under a label
+  // saying Inter. `--font-sans-base` always holds the next/font Inter family,
+  // set unconditionally in the root layout precisely so this stays truthful.
+  if (f.key === DEFAULT_UI_FONT) return 'var(--font-sans-base, ui-sans-serif, sans-serif)';
   if (!f.family) return null;
   return `"${f.family}", ${f.fallback}`;
 }
 
 /**
- * `@font-face` rules for every library face — injected once server-side in the
- * root layout so the declarations are present on first paint (no FOUT wait) yet
- * the files stay lazily fetched. Deterministic (no runtime state) so it's safe
- * to render into a <style>.
+ * `@font-face` rules for every library face — display AND UI — injected once
+ * server-side in the root layout so the declarations are present on first paint
+ * (no FOUT wait) yet the files stay lazily fetched. Deterministic (no runtime
+ * state) so it's safe to render into a <style>.
  */
 export function displayFontFaceCss(): string {
-  return DISPLAY_FONTS.filter((f) => f.file && f.family)
+  return [...DISPLAY_FONTS, ...UI_FONTS]
+    .filter((f) => f.file && f.family)
     .map(
       (f) =>
-        `@font-face{font-family:"${f.family}";src:url("${f.file}") format("${fileFormat(f.file!)}");font-display:swap;font-style:normal;}`,
+        `@font-face{font-family:"${f.family}";src:url("${f.file}") format("${fileFormat(f.file!)}");font-display:swap;font-style:normal;${f.weight ? `font-weight:${f.weight};` : ''}}`,
     )
     .join('\n');
 }
@@ -257,10 +430,11 @@ function fileFormat(file: string): string {
  * correct, and the client providers read the rendered attributes back as
  * their initial state.
  */
-export type ResolvedFontVars = { wordmark?: string; pageTitle?: string };
+export type ResolvedFontVars = { wordmark?: string; pageTitle?: string; ui?: string };
 export function resolveFontVars(
   logo: string | null | undefined,
   title: string | null | undefined,
+  ui?: string | null | undefined,
 ): ResolvedFontVars {
   const out: ResolvedFontVars = {};
   if (logo && logo !== DEFAULT_LOGO_FONT) {
@@ -270,6 +444,15 @@ export function resolveFontVars(
   if (title && title !== DEFAULT_TITLE_FONT) {
     const v = fontFamilyValue(title);
     if (v) out.pageTitle = v;
+  }
+  // The UI font overrides `--font-sans` itself rather than introducing a var of
+  // its own, so everything that already resolves it — the `font-sans` utility
+  // and every element inheriting from the root — follows the choice with no
+  // further wiring. Custom properties inherit, so setting it once at the root
+  // is the whole mechanism.
+  if (ui && ui !== DEFAULT_UI_FONT) {
+    const v = fontFamilyValue(ui);
+    if (v) out.ui = v;
   }
   return out;
 }

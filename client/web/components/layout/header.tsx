@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@mantle/web-ui/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@mantle/web-ui/ui/avatar';
-import { BoringAvatar } from '@/components/boring-avatar';
+import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { ThemeToggle } from '@mantle/web-ui/theme-toggle';
 import { RandomThemeToggle } from '@/components/random-theme-toggle';
 import { serverUrl } from '@mantle/web-ui/runtime-env';
@@ -153,7 +153,7 @@ export function Header({
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-10 gap-2 px-2">
               {userAvatar ? (
-                <BoringAvatar variant={userAvatar.style} seed={userAvatar.seed} size={32} />
+                <GeneratedAvatar seed={userAvatar.seed} size={32} />
               ) : (
                 <Avatar className="size-8">
                   <AvatarFallback className="text-xs">{initials}</AvatarFallback>

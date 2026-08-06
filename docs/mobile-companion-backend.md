@@ -91,25 +91,33 @@ so each route works unchanged from web and mobile.
 ## Agent avatar image
 
 - `GET /api/agents/[id]/avatar?size=` (`app/api/agents/[id]/avatar/route.ts`) —
-  server-renders the agent's boring-avatars SVG so non-web clients can show the
-  same avatar. `runtime = 'nodejs'`. Returns `image/svg+xml`; **404** when the
-  agent has no `avatar` (client falls back to initials). The key resolves as a
-  **uuid when it looks like one, else as a slug** — so the companion's
+  server-renders the agent's avatar SVG so non-web clients can show the same
+  avatar. `runtime = 'nodejs'`. Returns `image/svg+xml`; **404** when the agent
+  has no `avatar` (client falls back to initials). The key resolves as a **uuid
+  when it looks like one, else as a slug** — so the companion's
   `/api/agents/<slug>/avatar` calls work unchanged.
-- Palette is the **hex** Clean-Slate chart ramp (`#6366F1 …`), not the theme's
-  oklch tokens, because SVG consumers like `flutter_svg` can't parse `oklch()`.
-- **Two gotchas hit (and fixed) during smoke-testing:**
-  1. **Segment-name conflict.** The route was first added at `[slug]/avatar`, but
-     `agents/[id]/…` already exists. Next forbids two different dynamic slug names
-     at one level and silently 404s *both*. Fix: nest under the existing `[id]`.
-  2. **`react-dom/server` can't render the boring-avatars component here.** It
+- It calls the SHARED generator, `@mantle/web-ui/avatar` — the very same module
+  the browser renders with, so the companion and the web app cannot drift.
+- The **style** is the brain's (Settings → Appearance), not the agent's: the
+  per-agent `avatar.style` is legacy and ignored. The **seed** is what makes each
+  agent's avatar its own.
+- Palette is the **hex** Clean-Slate chart ramp, applied to the BACKGROUND only.
+  Hex because DiceBear validates colours as hex and rejects anything else — which
+  also keeps SVG consumers like `flutter_svg` happy, since they can't parse
+  `oklch()`.
+- **Two gotchas hit during smoke-testing — one still live, one now designed out:**
+  1. **Segment-name conflict (still live).** The route was first added at
+     `[slug]/avatar`, but `agents/[id]/…` already exists. Next forbids two
+     different dynamic slug names at one level and silently 404s *both*. Fix:
+     nest under the existing `[id]`.
+  2. **`react-dom/server` couldn't render the old boring-avatars component.** It
      calls `useId()`, and in a Next route the bundled React runtime and an
      imported `react-dom/server` are **two different React instances**, so the
      hook dispatcher is null → `Cannot read properties of null (reading 'useId')`.
-     Fix: **`lib/avatar-svg.ts`**, a pure-string port of boring-avatars v2 (no
-     React, no hooks; works in any runtime). Byte-for-byte colour+geometry parity
-     with the library is pinned by `lib/avatar-svg.test.ts` (every variant × 8
-     seeds) so it can't drift on a `boring-avatars` upgrade.
+     That forced `lib/avatar-svg.ts`, a 300-line hand-port of boring-avatars v2
+     kept honest by a byte-for-byte parity test. **Both are gone** since the move
+     to DiceBear v10, whose styles are plain JSON and whose renderer is a plain
+     function — no React, nothing to port, one implementation for both tiers.
 
 ## Migrations
 

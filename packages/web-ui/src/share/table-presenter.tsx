@@ -76,7 +76,13 @@ export function TablePresenter({
       setTotal(tab.rowCount);
       void fetchPage(0, tab.id);
     }
-  }, [tab?.id]); // deliberately narrower than exhaustive-deps: tab identity only
+    // Deliberately narrower than exhaustive-deps: refetch when the SELECTED TAB
+    // changes, not when the tab object or `fetchPage` is re-created. `fetchPage`
+    // is useCallback([token]) and a share page's token never changes, and `tab`
+    // comes from a static view — so the wider deps would only ever cause a
+    // redundant refetch that resets the reader's scroll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab?.id]);
 
   // Memoized so the `?? []` fallback doesn't mint a fresh array each render and
   // re-run the numericCols useMemo below (react-hooks/exhaustive-deps).

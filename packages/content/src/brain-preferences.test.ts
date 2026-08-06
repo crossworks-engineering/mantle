@@ -20,6 +20,8 @@ describe('BRAIN_PREFERENCE_KEYS', () => {
       'colorTheme',
       'fontLogo',
       'fontTitle',
+      'fontUi',
+      'fontSize',
       'logoKey',
       'logoType',
       'logoDarkKey',
@@ -42,13 +44,23 @@ describe('BRAIN_PREFERENCE_KEYS', () => {
     expect(BRAIN_PREFERENCE_KEYS).toContain('purposeArchetype');
   });
 
+  it('shares the avatar STYLE and TINT but not the avatar', () => {
+    // The style is the visual language every generated avatar in the brain is
+    // drawn in — branding, like the theme and the fonts, and set in the same
+    // Appearance screen. Personal, it would mean one admin's pick silently
+    // failed to apply to the agents everyone sees. The SEED stays personal, so
+    // two admins still share a style and never an avatar.
+    expect(BRAIN_PREFERENCE_KEYS).toContain('avatarStyle');
+    expect(BRAIN_PREFERENCE_KEYS).toContain('avatarTint');
+    expect(BRAIN_PREFERENCE_KEYS).not.toContain('avatarSeed');
+  });
+
   it('leaves genuinely personal preferences alone', () => {
     // How ONE person works — two admins in different timezones, with
     // different avatars and reminder routing, must not fight over these.
     for (const k of [
       'timezone',
       'locale',
-      'avatarStyle',
       'avatarSeed',
       'displayName',
       'reminderAgentSlug',

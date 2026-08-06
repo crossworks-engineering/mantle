@@ -4,10 +4,10 @@ import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { GitCompareArrows, Highlighter, MapPin, Minus } from 'lucide-react';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
-import { agentAccent, agentInitials } from '@/lib/agent-color';
+import { agentAccent } from '@/lib/agent-color';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { Button } from '@mantle/web-ui/ui/button';
-import { BoringAvatar } from '@/components/boring-avatar';
+import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { ActiveRunsStrip } from '@/components/runs/active-runs-strip';
 import { PendingQuestionsStrip } from '@/components/pending/pending-questions-strip';
@@ -92,30 +92,15 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-6 py-3">
         <div className="flex items-center gap-3">
-          {agent && agent.avatar ? (
-            <BoringAvatar
-              variant={agent.avatar.style}
-              seed={agent.avatar.seed}
+          {/* No initials branch: the agent always has an avatar now — the seed
+              falls back to its slug when no record is stored. */}
+          {agent && (
+            <GeneratedAvatar
+              seed={agent.avatar?.seed || agent.slug}
               size={40}
               className="ring-2"
-              style={{ '--tw-ring-color': accent?.border } as React.CSSProperties}
+              containerStyle={{ '--tw-ring-color': accent?.border } as React.CSSProperties}
             />
-          ) : (
-            agent &&
-            accent && (
-              <span
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white ring-2"
-                style={
-                  {
-                    backgroundColor: accent.solid,
-                    '--tw-ring-color': accent.border,
-                  } as React.CSSProperties
-                }
-                aria-hidden
-              >
-                {agentInitials(agent.name)}
-              </span>
-            )
           )}
           <div>
             <p className="text-xs text-muted-foreground">

@@ -43,9 +43,18 @@ Non-negotiables (full detail in the guide):
   must scroll itself (`h-dvh overflow-y-auto`) because globals.css pins `html/body` to
   `overflow:hidden` for the shell. Pages render via the server `renderPageDoc` (sanitized
   HTML), not the client editor.
-- **Fonts**: Inter everywhere (auto) is the UI body font — don't change that.
-  The **wordmark + header page-title** are user-selectable from a display-font
-  library (Settings → Appearance → Fonts). The single registry is
+- **Fonts**: Inter is the DEFAULT UI body font, and the only one that is always
+  loaded (next/font). It is no longer pinned: the **interface font** is
+  user-selectable too (Settings → Appearance → Interface font), as are the
+  **wordmark + header page-title**, from the same display-font library. A UI
+  choice overrides `--font-sans` on `<html>` — which is why the next/font
+  variable CLASSES live on `<html>` and not `<body>`, since inline style only
+  outranks a class on the SAME element. Alongside it, **Interface size**
+  (small/medium/large) sets the ROOT font-size via `html[data-font-size]` in
+  `app.css`, so the rem-based shell scales whole rather than just the type.
+  Every selectable UI face is a VARIABLE font and MUST carry a `weight` range in
+  the registry, or the browser synthesises bold across the entire app.
+  The single registry is
   `packages/web-ui/src/display-fonts.ts` — it drives the `@font-face` block, both
   pickers, and the runtime CSS-var override. To add a face: drop it in
   `public/fonts/library/`, run `node scripts/fonts-to-woff2.mjs --prune <file>`,
@@ -55,6 +64,15 @@ Non-negotiables (full detail in the guide):
   shipped files agree in both directions, per app. Defaults: Bukhari wordmark,
   sans title.
 - **Tailwind v4**: no dynamically built class names (use literal-string arrays).
+- **Editing CSS in `packages/web-ui/styles/` needs a dev-server RESTART.** HMR
+  does not reliably pick up changes to the shared stylesheets, and the failure is
+  silent: the app keeps serving the PREVIOUS build of `app.css`/`themes.css`, so
+  a new rule simply does nothing while the source plainly contains it. Symptom is
+  always "my CSS change had no effect". Confirm before you go debugging the
+  feature — `curl` the `/_next/static/**.css` chunk and grep for your selector,
+  or check `document.styleSheets` in the console. If it is absent there but
+  present on disk, it is staleness: restart `pnpm dev` (clear `.next` if it
+  persists), don't rewrite the rule.
 - **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
   with **no agent co-authorship trailers** (repo rule — see the root CLAUDE.md; a
   commit-msg hook strips them); don't push unless asked. `pnpm dev:fe` now runs the

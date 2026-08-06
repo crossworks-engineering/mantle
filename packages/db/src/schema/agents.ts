@@ -36,8 +36,12 @@ export const agentRole = pgEnum('agent_role', [
   'worker',
 ]);
 
-/** Avatar selection for an agent: a style id + seed (boring-avatars).
- *  Rendered on the fly in the UI (see apps/web/lib/avatar-svg.ts). Null =
+/** Avatar selection for an agent. `seed` is what makes this agent's avatar its
+ *  own; `style` is LEGACY and ignored on render — since the DiceBear move the
+ *  style is one brain-level choice (Settings → Appearance) so every avatar in a
+ *  brain is one visual family. The field stays for API compatibility and is
+ *  stamped with the brain's current style on save. Rendered on the fly by
+ *  @mantle/web-ui/avatar, in the browser and in the avatar route alike. Null =
  *  fall back to the derived initials/accent avatar. */
 export type AgentAvatar = {
   style: string;

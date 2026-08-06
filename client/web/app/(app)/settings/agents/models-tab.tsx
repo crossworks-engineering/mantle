@@ -28,8 +28,7 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { ModelSelect } from '@/components/ui/model-select';
-import { BoringAvatar } from '@/components/boring-avatar';
-import { agentAccent, agentInitials } from '@/lib/agent-color';
+import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { getProvider, isProviderWired, providersForCapability } from '@mantle/voice/client';
 import type { ExplorerModel } from '@server/lib/model-explorer';
 import type { AgentDTO } from '@mantle/client-types';
@@ -223,21 +222,7 @@ export function ModelsTab({
                 <TableRow key={agent.id} className={cn(!agent.enabled && 'opacity-60')}>
                   <TableCell>
                     <div className="flex items-center gap-2.5">
-                      {agent.avatar ? (
-                        <BoringAvatar
-                          variant={agent.avatar.style}
-                          seed={agent.avatar.seed}
-                          size={28}
-                        />
-                      ) : (
-                        <span
-                          className="flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                          style={{ backgroundColor: agentAccent(agent.slug).solid }}
-                          aria-hidden
-                        >
-                          {agentInitials(agent.name)}
-                        </span>
-                      )}
+                      <GeneratedAvatar seed={agent.avatar?.seed || agent.slug} size={28} />
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <span className="truncate text-sm font-medium">{agent.name}</span>

@@ -1,25 +1,14 @@
-import { SetPageTitle } from '@/components/layout/page-title';
-import { ChangePasswordForm } from './change-password-form';
-import { DevicesPanel } from './devices-panel';
+import { redirect } from 'next/navigation';
 
-export default async function SecuritySettingsPage() {
-  return (
-    <div className="mx-auto max-w-md space-y-6 px-6 py-8">
-      <SetPageTitle title="Security" />
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Change password
-        </h2>
-        <ChangePasswordForm />
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Signed-in devices
-        </h2>
-        <DevicesPanel />
-      </section>
-    </div>
-  );
+/**
+ * Settings → Security was folded into Settings → Logins. Its two panels went
+ * different ways: the self-serve password change was a duplicate of the Logins
+ * password reset (same `updatePassword`, differing only in the old-password
+ * challenge), and the signed-in devices list moved to the Logins detail panel,
+ * where it can be read per login instead of only for the caller.
+ *
+ * Kept as a stub because the route was linked from help text and bookmarks.
+ */
+export default function SecuritySettingsRedirect() {
+  redirect('/settings/users');
 }

@@ -38,11 +38,23 @@ export type ProfilePreferences = {
    *  format-datetime behaviour, so existing UI doesn't shift for
    *  users who haven't visited /settings/profile yet. */
   locale: string;
-  /** Avatar style id (boring-avatars; see apps/web/lib/avatar). Undefined →
-   *  the UI falls back to an initials avatar. */
+  /** Avatar style id — the BRAIN's avatar visual language, applied to every
+   *  generated avatar (the owner's and every agent's). Brain-level alongside
+   *  colorTheme and the display fonts, because it is a branding choice, not a
+   *  personal one: one style with a different seed per entity reads as one
+   *  product, six unrelated styles at once read as noise. Individuality lives
+   *  in `avatarSeed`, which stays personal. See @mantle/web-ui/avatar for the
+   *  registry; unknown ids resolve to the default rather than stranding. */
   avatarStyle?: string;
-  /** Seed for the avatar; the UI defaults it to the user id when unset so an
-   *  avatar still renders. */
+  /** How much of the theme generated avatars take on: 'native' (the style's own
+   *  palette), 'mixed' (themed background, original artwork — the default) or
+   *  'theme' (theme colours throughout). Brain-level for the same reason as
+   *  avatarStyle: it describes how this brain's avatars look, not one login's
+   *  taste. Read via projectAvatarTint, never raw. */
+  avatarTint?: string;
+  /** Seed for THIS user's avatar; the UI defaults it to the user id when unset
+   *  so an avatar still renders. Personal — two admins share the brain's style
+   *  but never the same avatar. */
   avatarSeed?: string;
   /** Slug of the responder agent whose Telegram bot delivers event reminders.
    *  Unset → the reminder worker falls back to the most-recently-active allowed
@@ -96,6 +108,14 @@ export type ProfilePreferences = {
   /** Selectable header page-TITLE font key — same contract as `fontLogo`.
    *  Unset ⇒ the default UI sans. Read via projectFontKey, never raw. */
   fontTitle?: string;
+  /** The INTERFACE font key — what the whole UI is set in, not just a header
+   *  ornament. Same contract as `fontLogo`; unset ⇒ Inter (the always-loaded
+   *  next/font face). Read via projectFontKey, never raw. */
+  fontUi?: string;
+  /** UI scale: 'small' | 'medium' | 'large'. Drives the ROOT font-size, so the
+   *  rem-based shell scales with it rather than only the letters. Unset ⇒
+   *  'medium'. Read via projectFontSize, never raw. */
+  fontSize?: string;
   /** Brand logo: the content-addressed storage key of the uploaded image
    *  (attachments/aa/bb/<sha256> — @mantle/storage contentKey). Set/cleared
    *  ONLY via PUT/DELETE /api/profile/logo, which validates the bytes; when
@@ -369,6 +389,37 @@ export function projectFontKey(raw: unknown): string | undefined {
   return /^[a-z0-9][a-z0-9-]{0,63}$/.test(t) ? t : undefined;
 }
 
+/** Project a stored `avatarStyle` — a slug-shaped avatar style id, or undefined
+ *  for unset/garbage. Same lenient contract as projectColorTheme: the style
+ *  REGISTRY lives in the web layer (@mantle/web-ui/avatar), so the server only
+ *  shape-checks. That is deliberate — it also lets the legacy boring-avatars
+ *  ids ('beam', 'marble', …) survive storage untouched and be translated to a
+ *  shipped style on read, so no stored avatar had to be migrated. */
+export function projectAvatarStyle(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9-]{0,63}$/.test(t) ? t : undefined;
+}
+
+/** Project a stored `fontSize`. A closed set like avatarTint, validated by
+ *  value: an unknown size would rescale the entire interface and there is no
+ *  registry to fall back through. Anything else ⇒ unset ⇒ 'medium'. */
+export function projectFontSize(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim().toLowerCase();
+  return t === 'small' || t === 'medium' || t === 'large' ? t : undefined;
+}
+
+/** Project a stored `avatarTint`. Unlike the style this IS a closed set, so it
+ *  is validated by value: an unknown tint would change how every avatar in the
+ *  brain looks, and there is no registry in the web layer to fall back through.
+ *  Anything else stores as unset ⇒ the default ('mixed'). */
+export function projectAvatarTint(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim().toLowerCase();
+  return t === 'native' || t === 'mixed' || t === 'theme' ? t : undefined;
+}
+
 /** Effective per-turn thinking budget in tokens — gated by BOTH the live-thinking
  *  switch (`streamThoughts`) AND a positive `thinkingBudget`. Returns 0 when
  *  either is missing, so real reasoning is requested only when the user has
@@ -516,10 +567,8 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
       typeof prefs.locale === 'string' && prefs.locale.length > 0
         ? prefs.locale
         : DEFAULT_PREFERENCES.locale,
-    avatarStyle:
-      typeof prefs.avatarStyle === 'string' && prefs.avatarStyle.length > 0
-        ? prefs.avatarStyle
-        : undefined,
+    avatarStyle: projectAvatarStyle(prefs.avatarStyle),
+    avatarTint: projectAvatarTint(prefs.avatarTint),
     avatarSeed:
       typeof prefs.avatarSeed === 'string' && prefs.avatarSeed.length > 0
         ? prefs.avatarSeed
@@ -539,6 +588,8 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     colorTheme: projectColorTheme(prefs.colorTheme),
     fontLogo: projectFontKey(prefs.fontLogo),
     fontTitle: projectFontKey(prefs.fontTitle),
+    fontUi: projectFontKey(prefs.fontUi),
+    fontSize: projectFontSize(prefs.fontSize),
     logoKey: projectLogoKey(prefs.logoKey),
     logoType: projectLogoType(prefs.logoType),
     logoDarkKey: projectLogoKey(prefs.logoDarkKey),
@@ -714,7 +765,8 @@ export async function updateProfilePreferences(
     timezone: merged.timezone ?? DEFAULT_PREFERENCES.timezone,
     lastAutoTimezone: merged.lastAutoTimezone || undefined,
     locale: merged.locale ?? DEFAULT_PREFERENCES.locale,
-    avatarStyle: merged.avatarStyle || undefined,
+    avatarStyle: projectAvatarStyle(merged.avatarStyle),
+    avatarTint: projectAvatarTint(merged.avatarTint),
     avatarSeed: merged.avatarSeed || undefined,
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
@@ -725,6 +777,8 @@ export async function updateProfilePreferences(
     colorTheme: projectColorTheme(merged.colorTheme),
     fontLogo: projectFontKey(merged.fontLogo),
     fontTitle: projectFontKey(merged.fontTitle),
+    fontUi: projectFontKey(merged.fontUi),
+    fontSize: projectFontSize(merged.fontSize),
     logoKey: projectLogoKey(merged.logoKey),
     logoType: projectLogoType(merged.logoType),
     logoDarkKey: projectLogoKey(merged.logoDarkKey),
@@ -778,6 +832,14 @@ export const BRAIN_PREFERENCE_KEYS = [
   'colorTheme',
   'fontLogo',
   'fontTitle',
+  'fontUi',
+  'fontSize',
+  // The avatar STYLE is branding, like the theme and the fonts: it sets the
+  // visual language every generated avatar in the brain is drawn in, so it
+  // cannot be one admin's private choice. `avatarSeed` stays personal — that
+  // is what still makes each person's avatar theirs.
+  'avatarStyle',
+  'avatarTint',
   'logoKey',
   'logoType',
   'logoDarkKey',

@@ -35,6 +35,7 @@ import {
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
+import Link from 'next/link';
 import { AvatarPicker, type AvatarValue } from '@/components/avatar-picker';
 // Import the value from the browser-safe LEAF, not the @mantle/content barrel —
 // the barrel pulls backup.ts (node:os) + identity-context (@mantle/db) into the
@@ -124,10 +125,10 @@ function ProfileForm({ data }: { data: ProfileData }) {
   const [reminderChannel, setReminderChannel] = useState<string>(
     defaults.reminderChannel ?? 'telegram',
   );
+  // Seed only — the STYLE is the brain's, set in Settings → Appearance. A
+  // stored seed is what makes this avatar this person's.
   const [avatar, setAvatar] = useState<AvatarValue | null>(
-    defaults.avatarStyle
-      ? { style: defaults.avatarStyle, seed: defaults.avatarSeed || userId }
-      : null,
+    defaults.avatarSeed ? { seed: defaults.avatarSeed } : null,
   );
   const [purpose, setPurpose] = useState(defaults.purpose ?? '');
   const [houseStyle, setHouseStyle] = useState(defaults.houseStyle ?? '');
@@ -200,7 +201,6 @@ function ProfileForm({ data }: { data: ProfileData }) {
     save.mutate({
       timezone: tz,
       locale: loc,
-      avatarStyle: avatar?.style ?? '',
       avatarSeed: avatar?.seed ?? '',
       reminderAgentSlug: reminderAgent === REMINDER_AUTO ? '' : reminderAgent,
       reminderChannel,
@@ -226,11 +226,13 @@ function ProfileForm({ data }: { data: ProfileData }) {
       <section className="space-y-2">
         <Label>Avatar</Label>
         <AvatarPicker value={avatar} onChange={setAvatar} fallbackSeed={userId} />
-        <input type="hidden" name="avatarStyle" value={avatar?.style ?? ''} />
         <input type="hidden" name="avatarSeed" value={avatar?.seed ?? ''} />
         <p className="text-xs text-muted-foreground">
-          A geometric avatar generated from a style + seed. Shows in the header and across the app;
-          clear it to fall back to your initials.
+          Generated from a seed, drawn in the brain&rsquo;s avatar style (
+          <Link href="/settings/appearance" className="underline underline-offset-2">
+            Appearance
+          </Link>
+          ). Shows in the header and across the app; clear it to fall back to your initials.
         </p>
       </section>
 

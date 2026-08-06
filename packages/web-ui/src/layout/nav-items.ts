@@ -26,7 +26,6 @@ import {
   Inbox,
   LayoutDashboard,
   ListTree,
-  KeyRound,
   Key,
   Plug,
   Lock,
@@ -65,7 +64,34 @@ export type NavItem = {
   exact?: boolean;
 };
 
-export type NavGroup = { label: string; items: NavItem[] };
+export type NavGroup = {
+  label: string;
+  items: NavItem[];
+  /**
+   * Collapsible groups fold to a usage-ranked *head* — the few destinations
+   * this owner actually returns to — with the rest one disclosure away.
+   *
+   * Which groups get this is a statement about how they're used, not how big
+   * they are. Workspace and Review are the daily surfaces and stay whole even
+   * though Workspace is the larger of the two; Settings and System are a short
+   * head and a long tail, so folding them costs nothing and buys back most of
+   * the sidebar's height.
+   *
+   * Folded, never removed: the sidebar is how someone learns what this product
+   * can do, so every destination stays reachable from it without knowing its
+   * name.
+   */
+  collapsible?: boolean;
+  /** Items shown when collapsed. Ignored unless `collapsible`. */
+  headSize?: number;
+  /**
+   * Cold-start head, by href, in order — what a brain with no usage history
+   * shows. It doubles as the tie-break for equal counts, so a fresh install
+   * renders exactly this list and then drifts toward real behaviour without a
+   * second code path.
+   */
+  defaultHead?: string[];
+};
 
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -94,18 +120,27 @@ export const NAV_GROUPS: NavGroup[] = [
       { name: 'Discover', href: '/settings/discover', icon: UserCheck },
       { name: 'Team', href: '/team-admin', icon: MessagesSquare },
       { name: 'Pending', href: '/pending', icon: ClipboardCheck },
+      // Was its own 'External' group for this one item — a header earning a row
+      // for a single link. It belongs here on the merits anyway: like Team and
+      // Discover it's owner-space pointed at people who are not the owner, and
+      // it points at the in-shell /team-portal rather than /team (outside the
+      // shell, member credential, no way back).
+      { name: 'Team Portal', href: '/team-portal', icon: DoorOpen },
     ],
   },
   {
-    // Surfaces that face people who are NOT the owner. The screens here are
-    // still owner-space — they're the front door to an outside surface, not
-    // the surface itself, which is why Team Portal points at /team-portal and
-    // not at /team (outside the shell, member credential, no way back).
-    label: 'External',
-    items: [{ name: 'Team Portal', href: '/team-portal', icon: DoorOpen }],
-  },
-  {
     label: 'Settings',
+    // Twenty-four screens, and the owner returns to a handful. Folded to a head
+    // of five; the cold-start list is the setup path a new brain walks.
+    collapsible: true,
+    headSize: 5,
+    defaultHead: [
+      '/settings/accounts',
+      '/settings/profile',
+      '/settings/appearance',
+      '/settings/agents',
+      '/settings/keys',
+    ],
     items: [
       { name: 'Appearance', href: '/settings/appearance', icon: Palette },
       { name: 'Accounts', href: '/settings/accounts', icon: Settings },
@@ -129,13 +164,18 @@ export const NAV_GROUPS: NavGroup[] = [
       { name: 'PDF passwords', href: '/settings/pdf-passwords', icon: Lock },
       { name: 'Backups', href: '/settings/backups', icon: DatabaseBackup },
       { name: 'Updates', href: '/settings/updates', icon: ArrowUpCircle },
-      { name: 'Security', href: '/settings/security', icon: KeyRound },
+      // Security was folded into Logins: its password change duplicated the
+      // per-login reset, and its device list now reads per login on that screen.
       { name: 'Logins', href: '/settings/users', icon: Users },
       { name: 'Audit log', href: '/settings/audit', icon: ScrollText },
     ],
   },
   {
     label: 'System',
+    // Diagnostics and machinery: reached deliberately, never browsed.
+    collapsible: true,
+    headSize: 3,
+    defaultHead: ['/studio', '/traces', '/debug'],
     items: [
       { name: 'Studio', href: '/studio', icon: Waypoints },
       { name: 'API Console', href: '/dev-tools', icon: TerminalSquare },

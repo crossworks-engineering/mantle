@@ -49,7 +49,11 @@ export async function GET() {
 const Body = z.object({
   timezone: z.string().max(120).optional(),
   locale: z.string().max(64).optional(),
-  // Always present (possibly empty = clear to the initials fallback).
+  // The avatar SEED is this user's own (empty = clear to the initials
+  // fallback). The STYLE is brain-level and belongs to Settings → Appearance
+  // (PUT /api/profile/avatar-style) — it is accepted here only for older
+  // clients, and OMITTING it must leave the brain's style alone rather than
+  // clear it, which is why it is spread conditionally below.
   avatarStyle: z.string().max(64).optional(),
   avatarSeed: z.string().max(200).optional(),
   // Empty = "most recent chat" (unset).
@@ -115,7 +119,7 @@ export async function PUT(req: Request) {
     const preferences = await savePreferencesFor(user.id, {
       ...(tz ? { timezone: tz } : {}),
       ...(loc ? { locale: loc } : {}),
-      avatarStyle: (avatarStyle ?? '').trim(),
+      ...(avatarStyle !== undefined ? { avatarStyle: avatarStyle.trim() } : {}),
       avatarSeed: (avatarSeed ?? '').trim(),
       reminderAgentSlug: (reminderAgentSlug ?? '').trim(),
       ...(isReminderChannel((reminderChannel ?? '').trim())

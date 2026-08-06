@@ -21,8 +21,18 @@ export async function GET() {
     isOnboarded(user.id, prefs),
     countPending(user.id),
   ]);
-  const avatar = prefs.avatarStyle
-    ? { style: prefs.avatarStyle, seed: prefs.avatarSeed || user.id }
+  // Gated on the SEED, which is this user's own, not on the style, which is the
+  // brain's. It used to gate on the style back when that was personal too, and
+  // moving the style to brain level broke both directions of this: with a style
+  // set on the brain, a user who chose "use initials instead" still got an
+  // avatar (their opt-out did nothing); with no style ever set, NO user got one
+  // even though the default style exists and every agent renders in it.
+  //
+  // The seed is the honest test of "has this person chosen an avatar" — unlike
+  // an agent, a human opting out to initials is a real choice the profile
+  // screen offers, so absence here means initials rather than a default seed.
+  const avatar = prefs.avatarSeed
+    ? { style: prefs.avatarStyle ?? '', seed: prefs.avatarSeed }
     : null;
   // Short-lived asset-access token so a detached client's <img>/<iframe>/download
   // srcs (which can't carry a bearer) can load `?raw=1` files + attachments. The

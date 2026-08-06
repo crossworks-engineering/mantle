@@ -88,4 +88,15 @@ for (const file of targets) {
 }
 
 console.log(`✔ ${current} → ${next}  (updated ${targets.length} package.json files)`);
+
+// The README's "By the numbers" block quotes the version alongside counted repo
+// stats. Regenerating it here means every release commit carries fresh numbers
+// instead of a block that silently ages. Cheap (git + fs, no network) and never
+// fatal — a stats failure must not block a release.
+try {
+  execSync('node scripts/readme-stats.mjs', { cwd: root, stdio: 'inherit' });
+} catch {
+  console.warn('⚠ README stats not regenerated (run `pnpm readme:stats` by hand)');
+}
+
 console.log(`  Next:  git commit -am "release: v${next}" && git tag v${next}`);

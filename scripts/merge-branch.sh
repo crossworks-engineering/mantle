@@ -82,7 +82,8 @@ fi
 echo "→ version bump ($kind) on main"
 node scripts/bump-version.mjs "$kind"
 next="$(node -p "require('./package.json').version")"
-git add package.json server/web/package.json client/web/package.json client/desktop/package.json
+# README.md rides along: bump-version.mjs regenerates its counted stats block.
+git add package.json server/web/package.json client/web/package.json client/desktop/package.json README.md
 git commit -m "release: v$next"
 
 cat <<EOF
