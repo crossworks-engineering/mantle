@@ -27,6 +27,7 @@
     "apps:push": "pnpm -C server/web apps:push",
     "themes:build": "pnpm -C packages/web-ui themes:build",
     "licenses:notices": "node scripts/generate-notices.mjs",
+    "readme:stats": "node scripts/readme-stats.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"{server,client,packages,e2e,scripts}/**/*.{ts,tsx,mjs,cjs}\" \"*.{ts,tsx,mjs,cjs}\"",
     "format:check": "prettier --check \"{server,client,packages,e2e,scripts}/**/*.{ts,tsx,mjs,cjs}\" \"*.{ts,tsx,mjs,cjs}\"",
