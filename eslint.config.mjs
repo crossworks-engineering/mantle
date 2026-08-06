@@ -102,7 +102,18 @@ export default tseslint.config(
     // old `next lint` setup, and add real value (hook-deps, next foot-guns).
     // exhaustive-deps backlog triaged + burned down (audit #4) — now `error`;
     // intentional omissions carry an inline `eslint-disable` with a reason.
-    files: ['server/web/**/*.{ts,tsx}', 'client/web/**/*.{ts,tsx}'],
+    //
+    // packages/web-ui IS included, and was the gap that proved it matters: the
+    // shared components moved there over time while this glob still named only
+    // the two apps, so ~30 hook-using components — every provider, the sandbox,
+    // the share presenters — were silently unlinted. A missing `tint` dep in
+    // the avatar component shipped a picker whose previews never repainted:
+    // the state changed, the memo did not.
+    files: [
+      'server/web/**/*.{ts,tsx}',
+      'client/web/**/*.{ts,tsx}',
+      'packages/web-ui/**/*.{ts,tsx}',
+    ],
     plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
     rules: {
       'react-hooks/rules-of-hooks': 'warn',

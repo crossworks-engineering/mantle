@@ -114,9 +114,12 @@ export function GeneratedAvatar({
     };
   }, [effectiveStyle]);
 
+  // EVERY input the render reads must be in here. Miss one and the avatar keeps
+  // handing back the previously-drawn SVG while the rest of the app has already
+  // moved on — the picker looks dead because the memo, not the state, is stale.
   const svg = React.useMemo(
     () => (ready ? renderAvatarSvgSync({ style: effectiveStyle, seed, size, ramp, tint }) : null),
-    [ready, effectiveStyle, seed, size, ramp],
+    [ready, effectiveStyle, tint, seed, size, ramp],
   );
 
   return (
