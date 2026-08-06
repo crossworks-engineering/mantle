@@ -1,6 +1,6 @@
 {
   "name": "@mantle/client-desktop",
-  "version": "0.224.16",
+  "version": "0.224.17",
   "private": true,
   "productName": "Mantle Desktop",
   "homepage": "https://github.com/crossworks-engineering/mantle",
