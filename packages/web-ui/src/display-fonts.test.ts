@@ -7,10 +7,16 @@ import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_LOGO_FONT,
   DEFAULT_TITLE_FONT,
+  DEFAULT_UI_FONT,
   DISPLAY_FONTS,
+  UI_FONTS,
   displayFontFaceCss,
   resolveFontVars,
 } from './display-fonts';
+
+/** Both registries ship out of the same library dir and the same @font-face
+ *  block, so every file-level invariant below covers the pair. */
+const ALL_FONTS = [...DISPLAY_FONTS, ...UI_FONTS];
 import { resolveAppearanceAttrs } from './appearance';
 
 /**
@@ -62,6 +68,8 @@ describe('resolveAppearanceAttrs', () => {
         fontTitle: null,
         avatarStyle: null,
         avatarTint: null,
+        fontUi: null,
+        fontSize: null,
       }),
     ).toEqual({ fontVars: {} });
   });
@@ -73,6 +81,8 @@ describe('resolveAppearanceAttrs', () => {
       fontTitle: 'capriola',
       avatarStyle: null,
       avatarTint: null,
+      fontUi: null,
+      fontSize: null,
     });
     expect(attrs.colorTheme).toBe('amethyst-haze');
     expect(attrs.fontLogo).toBe('bungee-shade');
@@ -90,6 +100,8 @@ describe('resolveAppearanceAttrs', () => {
       fontTitle: 'capriola',
       avatarStyle: null,
       avatarTint: null,
+      fontUi: null,
+      fontSize: null,
     });
     expect(attrs.fontLogo).toBeUndefined();
     expect(attrs.fontVars.wordmark).toBeUndefined();
@@ -108,21 +120,71 @@ const APPS = ['client', 'server'] as const;
 const publicDir = (app: string) =>
   fileURLToPath(new URL(`../../../${app}/web/public`, import.meta.url));
 
+/**
+ * The UI font is the face the whole app is read in, so it carries invariants
+ * the decorative faces do not.
+ */
+describe('UI fonts', () => {
+  it('shares no key with the display registry', () => {
+    // One lookup map is built from both lists, so a duplicate key would make a
+    // stored choice resolve to the WRONG face depending on list order.
+    const keys = ALL_FONTS.map((f) => f.key);
+    expect(new Set(keys).size, 'duplicate font key across the two registries').toBe(keys.length);
+  });
+
+  it('declares a weight range on every face with a file', () => {
+    // These are all VARIABLE fonts. Without `font-weight` in @font-face the
+    // browser takes the file as a single 400 and SYNTHESISES bold — smeared
+    // headings and buttons everywhere, on the one font that is always on screen.
+    for (const f of UI_FONTS) {
+      if (!f.file) continue;
+      expect(f.weight, `${f.key} would render synthesised bold`).toBeTruthy();
+    }
+    const css = displayFontFaceCss();
+    for (const f of UI_FONTS) {
+      if (!f.file || !f.family) continue;
+      expect(css, `${f.key} weight range missing from @font-face`).toContain(
+        `font-weight:${f.weight};`,
+      );
+    }
+  });
+
+  it('has a default that is the built-in face, carrying no file', () => {
+    const def = UI_FONTS.find((f) => f.key === DEFAULT_UI_FONT);
+    expect(def, 'the default UI font must be in the registry').toBeTruthy();
+    // Inter is the always-loaded next/font face — it must not ALSO be shipped
+    // as a library file, or every visitor pays for it twice.
+    expect(def!.file).toBeNull();
+  });
+
+  it('groups every face under a known category', () => {
+    for (const f of UI_FONTS) {
+      expect(['sans', 'mono', 'character'], f.key).toContain(f.category);
+    }
+  });
+
+  it('resolves as the --font-sans override, and the default resolves to nothing', () => {
+    expect(resolveFontVars(undefined, undefined, DEFAULT_UI_FONT).ui).toBeUndefined();
+    expect(resolveFontVars(undefined, undefined, 'not-a-font').ui).toBeUndefined();
+    expect(resolveFontVars(undefined, undefined, 'geist').ui).toBe('"Geist", sans-serif');
+  });
+});
+
 describe('display-font files', () => {
   for (const app of APPS) {
     it(`${app}/web ships a file for every registry entry`, () => {
-      const missing = DISPLAY_FONTS.filter((f) => f.file).filter(
+      const missing = ALL_FONTS.filter((f) => f.file).filter(
         (f) => !existsSync(`${publicDir(app)}${f.file}`),
       );
       expect(
         missing.map((f) => f.file),
-        `listed in DISPLAY_FONTS but absent`,
+        `listed in a font registry but absent`,
       ).toEqual([]);
     });
 
     it(`${app}/web ships no library face the registry dropped`, () => {
       const listed = new Set(
-        DISPLAY_FONTS.map((f) => f.file?.split('/').pop()).filter(Boolean) as string[],
+        ALL_FONTS.map((f) => f.file?.split('/').pop()).filter(Boolean) as string[],
       );
       const orphans = readdirSync(`${publicDir(app)}/fonts/library`)
         .filter((n) => /\.(ttf|otf|woff2?)$/.test(n))
@@ -133,7 +195,7 @@ describe('display-font files', () => {
 
   it('declares each face with the format its file actually is', () => {
     const css = displayFontFaceCss();
-    for (const f of DISPLAY_FONTS) {
+    for (const f of ALL_FONTS) {
       if (!f.file || !f.family) continue;
       const want = f.file.endsWith('.woff2') ? 'woff2' : 'truetype';
       expect(css, `${f.key} declared with the wrong format()`).toContain(

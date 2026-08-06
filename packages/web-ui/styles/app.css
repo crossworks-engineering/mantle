@@ -34,6 +34,23 @@
   body {
     overflow: hidden;
   }
+  /* UI scale (Settings → Appearance). Setting the ROOT font-size scales every
+     rem in the app, and the shell is rem-based throughout — h-16 header, rem
+     paddings, rem control heights — so Large is a genuinely roomier interface
+     rather than bigger text crammed into the same boxes. That is what OS
+     display scaling does, and it is why this is one declaration instead of a
+     type scale.
+
+     Percentages, not px, so a visitor who has raised their browser's default
+     font size keeps that as the baseline and this stays relative to it —
+     hard-coding 18px would quietly OVERRIDE an accessibility setting with our
+     own. 'medium' is the absence of the attribute. */
+  html[data-font-size='small'] {
+    font-size: 93.75%; /* 15px at a 16px default */
+  }
+  html[data-font-size='large'] {
+    font-size: 112.5%; /* 18px at a 16px default */
+  }
   body {
     @apply bg-background text-foreground;
     letter-spacing: var(--tracking-normal);

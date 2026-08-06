@@ -20,6 +20,8 @@ describe('BRAIN_PREFERENCE_KEYS', () => {
       'colorTheme',
       'fontLogo',
       'fontTitle',
+      'fontUi',
+      'fontSize',
       'logoKey',
       'logoType',
       'logoDarkKey',

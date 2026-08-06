@@ -43,9 +43,18 @@ Non-negotiables (full detail in the guide):
   must scroll itself (`h-dvh overflow-y-auto`) because globals.css pins `html/body` to
   `overflow:hidden` for the shell. Pages render via the server `renderPageDoc` (sanitized
   HTML), not the client editor.
-- **Fonts**: Inter everywhere (auto) is the UI body font — don't change that.
-  The **wordmark + header page-title** are user-selectable from a display-font
-  library (Settings → Appearance → Fonts). The single registry is
+- **Fonts**: Inter is the DEFAULT UI body font, and the only one that is always
+  loaded (next/font). It is no longer pinned: the **interface font** is
+  user-selectable too (Settings → Appearance → Interface font), as are the
+  **wordmark + header page-title**, from the same display-font library. A UI
+  choice overrides `--font-sans` on `<html>` — which is why the next/font
+  variable CLASSES live on `<html>` and not `<body>`, since inline style only
+  outranks a class on the SAME element. Alongside it, **Interface size**
+  (small/medium/large) sets the ROOT font-size via `html[data-font-size]` in
+  `app.css`, so the rem-based shell scales whole rather than just the type.
+  Every selectable UI face is a VARIABLE font and MUST carry a `weight` range in
+  the registry, or the browser synthesises bold across the entire app.
+  The single registry is
   `packages/web-ui/src/display-fonts.ts` — it drives the `@font-face` block, both
   pickers, and the runtime CSS-var override. To add a face: drop it in
   `public/fonts/library/`, run `node scripts/fonts-to-woff2.mjs --prune <file>`,

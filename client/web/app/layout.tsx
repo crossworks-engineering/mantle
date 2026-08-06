@@ -52,10 +52,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const fontStyle: Record<string, string> = {};
   if (appearance.fontVars.wordmark) fontStyle['--font-wordmark'] = appearance.fontVars.wordmark;
   if (appearance.fontVars.pageTitle) fontStyle['--font-page-title'] = appearance.fontVars.pageTitle;
+  // The UI font overrides `--font-sans`, which next/font declares via the
+  // `fontSans.variable` CLASS — so both have to sit on the SAME element for
+  // inline style to win. Hence the font classes moved from <body> to <html>
+  // (which is also what next/font documents); on <body> the class would
+  // redeclare the var below this override and quietly win it back.
+  if (appearance.fontVars.ui) fontStyle['--font-sans'] = appearance.fontVars.ui;
   return (
     <html
       lang="en"
-      className="h-full"
+      className={`${fontSans.variable} ${fontLogo.variable} h-full`}
       suppressHydrationWarning
       data-color-theme={appearance.colorTheme}
       data-color-theme-owner={memberSurface ? '1' : undefined}
@@ -63,6 +69,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       data-font-title={appearance.fontTitle}
       data-avatar-style={appearance.avatarStyle}
       data-avatar-tint={appearance.avatarTint}
+      data-font-size={appearance.fontSize}
       style={fontStyle as React.CSSProperties}
     >
       <head>
@@ -70,11 +77,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             flags) must exist before any bundle code runs. Served per-request by
             app/env.js/route.ts from process.env: one image, any server origin. */}
         <Script src="/env.js" strategy="beforeInteractive" />
-        {/* Selectable wordmark/title fonts: @font-face declarations (lazy — a
-            file downloads only when a face is actually painted). */}
+        {/* Selectable wordmark/title/UI fonts: @font-face declarations (lazy —
+            a file downloads only when a face is actually painted). */}
         <style dangerouslySetInnerHTML={{ __html: displayFontFaceCss() }} />
       </head>
-      <body className={`${fontSans.variable} ${fontLogo.variable} h-full font-sans antialiased`}>
+      <body className="h-full font-sans antialiased">
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
