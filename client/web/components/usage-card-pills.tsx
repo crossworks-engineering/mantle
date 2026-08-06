@@ -1,7 +1,5 @@
 'use client';
 
-import { useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import type { SpendRange } from '@server/lib/metrics';
 
 const COOKIE = 'mantle_spend_range';
@@ -13,14 +11,27 @@ const PILLS: { value: SpendRange; label: string }[] = [
   { value: 'month', label: 'M' },
 ];
 
-export function UsageCardPills({ current }: { current: SpendRange }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-
+/**
+ * Day/week/month picker for the sidebar usage card.
+ *
+ * The cookie is still written, but only so the server layout can seed the
+ * first paint without a flash. The card itself is a client component fetching
+ * over HTTP now, so the pick is reported up via `onPick` rather than through
+ * the `router.refresh()` this used when the card was server-rendered.
+ */
+export function UsageCardPills({
+  current,
+  onPick,
+  pending,
+}: {
+  current: SpendRange;
+  onPick: (range: SpendRange) => void;
+  pending?: boolean;
+}) {
   function pick(range: SpendRange) {
     if (range === current) return;
     document.cookie = `${COOKIE}=${range}; path=/; max-age=${ONE_YEAR_SECONDS}; samesite=lax`;
-    startTransition(() => router.refresh());
+    onPick(range);
   }
 
   return (
