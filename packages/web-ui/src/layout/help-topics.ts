@@ -63,7 +63,6 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/settings/pdf-passwords', 'pdf-passwords'],
   ['/settings/backups', 'backups'],
   ['/settings/updates', 'updates'],
-  ['/settings/security', 'security'],
   ['/settings/users', 'users'],
   ['/settings/audit', 'audit'],
 

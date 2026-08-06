@@ -61,7 +61,7 @@ export async function POST(req: Request) {
   // single-user invariant). The conditional INSERT…SELECT is atomic.
   try {
     // is_owner: the first-run account is the ANCHOR — the identity all brain
-    // content is keyed to. Later co-admin logins (Settings → Users) are not.
+    // content is keyed to. Later co-admin logins (Settings → Logins) are not.
     const inserted = await db.execute(sql`
       INSERT INTO auth.users (id, email, password_hash, is_owner)
       SELECT ${id}, ${email}, ${passwordHash}, true

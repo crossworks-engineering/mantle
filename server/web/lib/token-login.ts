@@ -16,7 +16,7 @@ import { clientIp, rateLimit } from '@/lib/rate-limit';
  *
  * Same credentials as the cookie login, but the response body carries a
  * per-device kind-'m' bearer (hashed-by-id row in mobile_tokens, revocable
- * per device from Settings → Security).
+ * per device from Settings → Logins).
  */
 const Body = z.object({
   email: z.string().email(),

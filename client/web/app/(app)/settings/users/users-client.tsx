@@ -3,7 +3,17 @@
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Anchor, Bot, KeyRound, Plus, Trash2, Users } from 'lucide-react';
+import {
+  Anchor,
+  Bot,
+  KeyRound,
+  Monitor,
+  MonitorSmartphone,
+  Plus,
+  Smartphone,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { Badge } from '@mantle/web-ui/ui/badge';
@@ -24,6 +34,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from '@mantle/web-ui/ui/alert-dialog';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
@@ -331,6 +342,133 @@ function UserDetail({
           </Button>
         </div>
       </div>
+
+      <DevicesCard user={user} isSelf={isSelf} />
+    </div>
+  );
+}
+
+type Device = {
+  id: string;
+  label: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string;
+  current: boolean;
+};
+
+/**
+ * This login's live bearer sessions (mobile companion, detached web client),
+ * revocable one at a time. Moved here from the retired Settings → Security
+ * screen so that cutting someone off — delete the login, sign its devices out —
+ * is one screen's work rather than two.
+ *
+ * The session COOKIE isn't listed: it has no row (it's stateless), so a
+ * password reset and sign-out are what govern it.
+ */
+function DevicesCard({ user, isSelf }: { user: UserRow; isSelf: boolean }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const devicesQuery = useQuery({
+    queryKey: ['users', user.id, 'devices'],
+    queryFn: () => apiFetch<{ devices: Device[] }>(`/api/users/${user.id}/devices`),
+  });
+
+  const revoke = async (device: Device) => {
+    try {
+      await apiSend(`/api/users/${user.id}/devices/${device.id}`, 'DELETE');
+      toast.success(`Signed out “${device.label}”.`);
+      void queryClient.invalidateQueries({ queryKey: ['users', user.id, 'devices'] });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not revoke that device.');
+    }
+  };
+
+  const devices = devicesQuery.data?.devices ?? [];
+
+  return (
+    <div className="max-w-md space-y-3 rounded-md border border-border p-4">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <MonitorSmartphone className="size-4 text-muted-foreground" /> Devices
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Live sessions signed in as {isSelf ? 'you' : user.email}. Signing one out revokes its
+          token immediately — the next request from it fails.
+        </p>
+      </div>
+
+      {devicesQuery.isPending ? (
+        <p className="text-sm text-muted-foreground">Loading devices…</p>
+      ) : devicesQuery.isError ? (
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">Couldn&apos;t load devices.</p>
+          <Button variant="outline" size="sm" onClick={() => devicesQuery.refetch()}>
+            Retry
+          </Button>
+        </div>
+      ) : devices.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No signed-in devices. Sessions from the mobile companion or a detached client appear here.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {devices.map((d) => (
+            <div
+              key={d.id}
+              className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2"
+            >
+              {/Web client/i.test(d.label) ? (
+                <Monitor className="size-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <Smartphone className="size-4 shrink-0 text-muted-foreground" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm text-foreground">
+                  {d.label}
+                  {d.current && (
+                    <Badge variant="secondary" className="ml-2">
+                      This device
+                    </Badge>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {d.lastUsedAt
+                    ? `Last used ${formatDateTime(d.lastUsedAt)}`
+                    : `Added ${formatDateTime(d.createdAt)}`}
+                  {' · '}expires {formatDateTime(d.expiresAt)}
+                </p>
+              </div>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    Revoke
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Sign out “{d.label}”?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      The device&apos;s token is revoked immediately — its next request fails and it
+                      must sign in again.
+                      {d.current ? ' This is the device you are using right now.' : ''}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={() => void revoke(d)}
+                    >
+                      Revoke device
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

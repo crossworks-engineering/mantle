@@ -8,7 +8,7 @@ import { cloneAgentForUser } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 
 /**
- * Co-admin login management (Settings → Users). Logins are NOT tenants: every
+ * Co-admin login management (Settings → Logins). Logins are NOT tenants: every
  * account operates on the one brain (content stays keyed to the anchor); a row
  * here is just an identity for the audit trail.
  *

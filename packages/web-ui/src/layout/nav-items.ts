@@ -26,7 +26,6 @@ import {
   Inbox,
   LayoutDashboard,
   ListTree,
-  KeyRound,
   Key,
   Plug,
   Lock,
@@ -129,7 +128,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { name: 'PDF passwords', href: '/settings/pdf-passwords', icon: Lock },
       { name: 'Backups', href: '/settings/backups', icon: DatabaseBackup },
       { name: 'Updates', href: '/settings/updates', icon: ArrowUpCircle },
-      { name: 'Security', href: '/settings/security', icon: KeyRound },
+      // Security was folded into Logins: its password change duplicated the
+      // per-login reset, and its device list now reads per login on that screen.
       { name: 'Logins', href: '/settings/users', icon: Users },
       { name: 'Audit log', href: '/settings/audit', icon: ScrollText },
     ],

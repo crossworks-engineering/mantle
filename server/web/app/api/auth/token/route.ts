@@ -5,7 +5,7 @@ import { handleTokenLogin } from '@/lib/token-login';
  * Web-client token login — the owner UI's credential→bearer exchange for the
  * two-origin (split) topology, where the client origin can't use the session
  * cookie. 30-day TTL, rotated opportunistically via /api/auth/token/refresh;
- * revocable per device (Settings → Security → Signed-in devices).
+ * revocable per device (Settings → Logins → Devices).
  *
  * Lives under the public /api/auth prefix. CORS: the middleware refuses a
  * wildcard MANTLE_API_CORS_ORIGINS on /api/auth/* — the client origin must be
