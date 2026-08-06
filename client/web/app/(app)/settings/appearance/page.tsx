@@ -9,9 +9,7 @@ import { COLOR_THEMES, type ThemeSwatches } from '@mantle/web-ui/lib/themes';
 import { Input } from '@mantle/web-ui/ui/input';
 import { RadioGroup, RadioGroupCard } from '@mantle/web-ui/ui/radio-group';
 import { SetPageTitle } from '@/components/layout/page-title';
-import { AvatarStyleGallery } from '@/components/appearance/avatar-style-gallery';
-import { ColorPalette } from '@/components/theme-preview/color-palette';
-import { TypographyPanel } from '@/components/appearance/typography-panel';
+import { AppearanceContent } from '@/components/appearance/appearance-content';
 
 const MODES: Array<{ id: string; label: string; icon: LucideIcon }> = [
   { id: 'light', label: 'Light', icon: Sun },
@@ -174,10 +172,8 @@ export default function AppearancePage() {
         <aside className="shrink-0 lg:w-1/5 lg:min-w-[220px] lg:self-start">
           <Controls />
         </aside>
-        <div className="min-w-0 flex-1 space-y-8">
-          <TypographyPanel />
-          <AvatarStyleGallery />
-          <ColorPalette />
+        <div className="min-w-0 flex-1">
+          <AppearanceContent />
         </div>
       </div>
     </div>

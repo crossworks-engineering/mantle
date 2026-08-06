@@ -23,8 +23,13 @@ import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
  * not how pretty a style is on its own but how far apart it pushes two
  * different entities — that is the whole job of an avatar.
  *
- * Tint sits above the grid rather than beside the style, because it changes
+ * Tint sits above the list rather than beside the style, because it changes
  * every swatch below it and you need to see them move.
+ *
+ * Everything here is a SINGLE column: this panel lives in one third of the
+ * Appearance grid, and Tailwind's breakpoints are viewport-based, not
+ * container-based — an `xl:grid-cols-3` inside a narrow column would happily
+ * split it into three unreadable slivers on a wide screen.
  *
  * Creator and licence sit on the card rather than in a footnote: 14 of these
  * are CC BY 4.0, which requires attribution, and the honest place to say whose
@@ -48,7 +53,7 @@ function TintControl() {
       value={avatarTint}
       onValueChange={(v) => setAvatarTint(v as (typeof AVATAR_TINTS)[number]['id'])}
       aria-label="Avatar colour"
-      className="grid-cols-3 gap-2 sm:max-w-lg"
+      className="gap-2"
     >
       {AVATAR_TINTS.map((t) => (
         <RadioGroupCard
@@ -117,27 +122,27 @@ export function AvatarStyleGallery() {
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
+      <div>
+        <div className="flex items-baseline justify-between gap-2">
           <h2
             id="avatar-style-heading"
             className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
           >
             Avatar style
           </h2>
-          <p className="mt-1 max-w-prose text-xs text-muted-foreground">
-            Every generated avatar in this brain — yours and each agent&rsquo;s — is drawn in this
-            style; the seed is what makes each one different.
-          </p>
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {needle ? `${matches.length} of ${AVATAR_STYLES.length}` : AVATAR_STYLES.length}
+          </span>
         </div>
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {needle ? `${matches.length} of ${AVATAR_STYLES.length}` : AVATAR_STYLES.length}
-        </span>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Every generated avatar in this brain — yours and each agent&rsquo;s — is drawn in this
+          style; the seed is what makes each one different.
+        </p>
       </div>
 
       <TintControl />
 
-      <div className="relative max-w-xs">
+      <div className="relative">
         <Search
           className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
           aria-hidden
@@ -169,7 +174,7 @@ export function AvatarStyleGallery() {
             return (
               <div key={cat.id} className="space-y-2">
                 <h3 className="text-xs font-medium text-muted-foreground">{cat.label}</h3>
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-2">
                   {inCat.map((s) => (
                     <StyleCard key={s.id} style={s} active={avatarStyle === s.id} />
                   ))}
