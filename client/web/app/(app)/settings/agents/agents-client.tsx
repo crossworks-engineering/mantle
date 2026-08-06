@@ -41,7 +41,8 @@ import { AvatarPicker } from '@/components/avatar-picker';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { ToggleList, type ToggleListItem } from '@/components/toggle-list';
 import { TelegramBotSection } from '@/components/telegram/telegram-bot-section';
-import { BoringAvatar } from '@/components/boring-avatar';
+import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
+import { useAvatarStyle } from '@mantle/web-ui/avatar-style-provider';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@mantle/web-ui/ui/tabs';
 import { PersonaNotesEditor } from './persona-notes-editor';
@@ -422,6 +423,9 @@ function tempDescriptor(t: number): { word: string; hint: string } {
 export function AgentsClient() {
   const queryClient = useQueryClient();
   const toast = useToast();
+  // The brain's avatar style — stamped onto avatars this screen saves so the
+  // stored row matches what everything actually renders.
+  const { avatarStyle } = useAvatarStyle();
   const [deleteTarget, setDeleteTarget] = useState<AgentSummary | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -988,7 +992,7 @@ export function AgentsClient() {
                       >
                         <div className="flex items-center gap-2.5">
                           {a.avatar ? (
-                            <BoringAvatar variant={a.avatar.style} seed={a.avatar.seed} size={32} />
+                            <GeneratedAvatar seed={a.avatar.seed} size={32} />
                           ) : (
                             <span
                               className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
@@ -1168,11 +1172,22 @@ export function AgentsClient() {
                           <Label>Avatar</Label>
                           <AvatarPicker
                             value={form.avatar}
-                            onChange={(v) => setForm((f) => ({ ...f, avatar: v }))}
+                            onChange={(v) =>
+                              // The stored shape still carries a style for API
+                              // compatibility, but rendering ignores it — the
+                              // brain's style (Appearance) is what every avatar
+                              // is drawn in. Stamp the current one so the row
+                              // stays coherent rather than storing a stale id.
+                              setForm((f) => ({
+                                ...f,
+                                avatar: v ? { style: avatarStyle, seed: v.seed } : null,
+                              }))
+                            }
                             fallbackSeed={form.slug || form.name || 'agent'}
                           />
                           <FieldHint>
-                            Shown beside this agent&apos;s replies and in the list.
+                            Shown beside this agent&apos;s replies and in the list. Drawn in the
+                            brain&apos;s avatar style — change that in Appearance.
                           </FieldHint>
                         </div>
 

@@ -2,7 +2,7 @@
   "name": "@mantle/web-ui",
   "version": "0.0.1",
   "private": true,
-  "description": "Shared web UI layer \u2014 the shadcn kit, theme CSS, api-fetch/asset-url transport, app-sandbox, and the app-bridge protocol. Consumed as raw TS by both Next apps via transpilePackages.",
+  "description": "Shared web UI layer — the shadcn kit, theme CSS, api-fetch/asset-url transport, app-sandbox, and the app-bridge protocol. Consumed as raw TS by both Next apps via transpilePackages.",
   "type": "module",
   "exports": {
     "./agent-invalidation": "./src/agent-invalidation.ts",
@@ -17,12 +17,15 @@
     "./app-sandbox/highlight": "./src/app-sandbox/highlight.tsx",
     "./aside-style": "./src/aside-style.ts",
     "./asset-url": "./src/asset-url.ts",
+    "./avatar": "./src/avatar.ts",
+    "./avatar-style-provider": "./src/avatar-style-provider.tsx",
     "./color-theme-provider": "./src/color-theme-provider.tsx",
     "./copy-button": "./src/copy-button.tsx",
     "./display-fonts": "./src/display-fonts.ts",
     "./docs-labels": "./src/docs-labels.ts",
     "./font-provider": "./src/font-provider.tsx",
     "./forum-meta": "./src/forum-meta.tsx",
+    "./generated-avatar": "./src/generated-avatar.tsx",
     "./highlight-colors": "./src/highlight-colors.ts",
     "./hooks/use-media-query": "./src/hooks/use-media-query.tsx",
     "./hooks/use-mobile": "./src/hooks/use-mobile.tsx",
@@ -123,6 +126,8 @@
     "react-dom": "^19.2.7"
   },
   "dependencies": {
+    "@dicebear/core": "^10.4.0",
+    "@dicebear/styles": "^10.3.0",
     "@mantle/content": "workspace:*",
     "@radix-ui/react-alert-dialog": "^1.1.20",
     "@radix-ui/react-avatar": "^1.2.3",
@@ -160,9 +165,9 @@
   },
   "devDependencies": {
     "@types/katex": "^0.16.8",
-    "typescript": "^5.7.2",
+    "@types/node": "^22.20.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@types/node": "^22.20.1"
+    "typescript": "^5.7.2"
   }
 }

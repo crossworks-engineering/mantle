@@ -38,11 +38,17 @@ export type ProfilePreferences = {
    *  format-datetime behaviour, so existing UI doesn't shift for
    *  users who haven't visited /settings/profile yet. */
   locale: string;
-  /** Avatar style id (boring-avatars; see apps/web/lib/avatar). Undefined →
-   *  the UI falls back to an initials avatar. */
+  /** Avatar style id — the BRAIN's avatar visual language, applied to every
+   *  generated avatar (the owner's and every agent's). Brain-level alongside
+   *  colorTheme and the display fonts, because it is a branding choice, not a
+   *  personal one: one style with a different seed per entity reads as one
+   *  product, six unrelated styles at once read as noise. Individuality lives
+   *  in `avatarSeed`, which stays personal. See @mantle/web-ui/avatar for the
+   *  registry; unknown ids resolve to the default rather than stranding. */
   avatarStyle?: string;
-  /** Seed for the avatar; the UI defaults it to the user id when unset so an
-   *  avatar still renders. */
+  /** Seed for THIS user's avatar; the UI defaults it to the user id when unset
+   *  so an avatar still renders. Personal — two admins share the brain's style
+   *  but never the same avatar. */
   avatarSeed?: string;
   /** Slug of the responder agent whose Telegram bot delivers event reminders.
    *  Unset → the reminder worker falls back to the most-recently-active allowed
@@ -369,6 +375,18 @@ export function projectFontKey(raw: unknown): string | undefined {
   return /^[a-z0-9][a-z0-9-]{0,63}$/.test(t) ? t : undefined;
 }
 
+/** Project a stored `avatarStyle` — a slug-shaped avatar style id, or undefined
+ *  for unset/garbage. Same lenient contract as projectColorTheme: the style
+ *  REGISTRY lives in the web layer (@mantle/web-ui/avatar), so the server only
+ *  shape-checks. That is deliberate — it also lets the legacy boring-avatars
+ *  ids ('beam', 'marble', …) survive storage untouched and be translated to a
+ *  shipped style on read, so no stored avatar had to be migrated. */
+export function projectAvatarStyle(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9-]{0,63}$/.test(t) ? t : undefined;
+}
+
 /** Effective per-turn thinking budget in tokens — gated by BOTH the live-thinking
  *  switch (`streamThoughts`) AND a positive `thinkingBudget`. Returns 0 when
  *  either is missing, so real reasoning is requested only when the user has
@@ -516,10 +534,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
       typeof prefs.locale === 'string' && prefs.locale.length > 0
         ? prefs.locale
         : DEFAULT_PREFERENCES.locale,
-    avatarStyle:
-      typeof prefs.avatarStyle === 'string' && prefs.avatarStyle.length > 0
-        ? prefs.avatarStyle
-        : undefined,
+    avatarStyle: projectAvatarStyle(prefs.avatarStyle),
     avatarSeed:
       typeof prefs.avatarSeed === 'string' && prefs.avatarSeed.length > 0
         ? prefs.avatarSeed
@@ -714,7 +729,7 @@ export async function updateProfilePreferences(
     timezone: merged.timezone ?? DEFAULT_PREFERENCES.timezone,
     lastAutoTimezone: merged.lastAutoTimezone || undefined,
     locale: merged.locale ?? DEFAULT_PREFERENCES.locale,
-    avatarStyle: merged.avatarStyle || undefined,
+    avatarStyle: projectAvatarStyle(merged.avatarStyle),
     avatarSeed: merged.avatarSeed || undefined,
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
@@ -778,6 +793,11 @@ export const BRAIN_PREFERENCE_KEYS = [
   'colorTheme',
   'fontLogo',
   'fontTitle',
+  // The avatar STYLE is branding, like the theme and the fonts: it sets the
+  // visual language every generated avatar in the brain is drawn in, so it
+  // cannot be one admin's private choice. `avatarSeed` stays personal — that
+  // is what still makes each person's avatar theirs.
+  'avatarStyle',
   'logoKey',
   'logoType',
   'logoDarkKey',

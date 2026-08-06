@@ -56,7 +56,12 @@ describe('resolveAppearanceAttrs', () => {
   it('null / all-default input resolves to no attributes', () => {
     expect(resolveAppearanceAttrs(null)).toEqual({ fontVars: {} });
     expect(
-      resolveAppearanceAttrs({ colorTheme: 'clean-slate', fontLogo: null, fontTitle: null }),
+      resolveAppearanceAttrs({
+        colorTheme: 'clean-slate',
+        fontLogo: null,
+        fontTitle: null,
+        avatarStyle: null,
+      }),
     ).toEqual({ fontVars: {} });
   });
 
@@ -65,6 +70,7 @@ describe('resolveAppearanceAttrs', () => {
       colorTheme: 'amethyst-haze',
       fontLogo: 'bungee-shade',
       fontTitle: 'capriola',
+      avatarStyle: null,
     });
     expect(attrs.colorTheme).toBe('amethyst-haze');
     expect(attrs.fontLogo).toBe('bungee-shade');
@@ -80,6 +86,7 @@ describe('resolveAppearanceAttrs', () => {
       colorTheme: null,
       fontLogo: 'ghost-font',
       fontTitle: 'capriola',
+      avatarStyle: null,
     });
     expect(attrs.fontLogo).toBeUndefined();
     expect(attrs.fontVars.wordmark).toBeUndefined();

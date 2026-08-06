@@ -29,7 +29,7 @@ import {
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { composerKeyAction } from '@/lib/composer-keys';
-import { BoringAvatar } from '@/components/boring-avatar';
+import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { RichText } from '@/components/assistant/rich-text';
 import { CopyButton } from '@mantle/web-ui/copy-button';
 import ReactMarkdown from 'react-markdown';
@@ -1256,12 +1256,11 @@ export function AssistantClient({
             {turns.length === 0 ? (
               <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
                 {agentAvatar ? (
-                  <BoringAvatar
-                    variant={agentAvatar.style}
+                  <GeneratedAvatar
                     seed={agentAvatar.seed}
                     size={48}
                     className="ring-2"
-                    style={{ '--tw-ring-color': accent.border } as React.CSSProperties}
+                    containerStyle={{ '--tw-ring-color': accent.border } as React.CSSProperties}
                   />
                 ) : (
                   <span

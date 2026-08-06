@@ -1,22 +1,34 @@
 import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { getOwnerOr401 } from '@/lib/auth';
-import { renderAvatarSvg } from '@/lib/avatar-svg';
+import { loadProfilePreferences } from '@mantle/content';
+import { renderAvatarSvg } from '@mantle/web-ui/avatar';
 import { db, agents } from '@mantle/db';
 
-// Server-render the agent's boring-avatars SVG so non-web clients (the mobile
-// companion) can show the same avatar. We render via a pure string generator
-// (lib/avatar-svg.ts) rather than the React `boring-avatars` component: that
-// component uses `useId()`, which crashes under react-dom/server inside a route
-// handler (mismatched React instances). We pass an explicit hex palette (the
-// Clean Slate chart ramp) rather than the theme's oklch tokens, since SVG
-// consumers like flutter_svg can't parse oklch.
+// Server-render the agent's avatar SVG so non-web clients (the mobile
+// companion) show the same one the web app does.
+//
+// This calls the SHARED generator — the very same module the browser renders
+// with. That is what the DiceBear move bought: its styles are plain data and
+// its renderer is a plain function, so there is no React and no `useId()` to
+// crash under a route handler, and the 300-line hand-port of boring-avatars
+// that used to live in lib/avatar-svg.ts is gone. One implementation, so the
+// companion and the browser cannot drift.
+//
+// The style is the BRAIN's (Settings → Appearance), not the agent's — the
+// stored per-agent style is legacy and deliberately ignored, so every avatar
+// in a brain is one visual family. The background takes the theme's chart
+// ramp; a client with no theme context still gets a coherent avatar.
 //
 // This sits under the existing `[id]` segment (Next forbids a sibling `[slug]`
 // segment). The companion calls it with a slug; the web app could pass a uuid —
 // so the key is resolved as id when it looks like a uuid, else as slug.
 
-const PALETTE = ['#6366F1', '#4F46E5', '#4338CA', '#3730A3', '#312E81'];
+// Clean Slate's --chart-1..5 (light). The companion has no theme, so it gets
+// the default brand ramp. Hex because DiceBear validates colours as hex and
+// rejects anything else — which is also why passing the oklch-era tokens here
+// would throw. themes.css emits hex, so these stay in step by construction.
+const PALETTE = ['#666ed1', '#ae467f', '#ad5700', '#4b830f', '#00889b'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -41,11 +53,17 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return new Response('no_avatar', { status: 404 });
   }
 
+  // Fail soft: a brain with unreadable prefs still serves an avatar in the
+  // default style rather than 500-ing over branding.
+  const style = await loadProfilePreferences(owner.id)
+    .then((p) => p.avatarStyle)
+    .catch(() => undefined);
+
   const svg = renderAvatarSvg({
-    name: agent.avatar.seed || agent.slug,
-    variant: agent.avatar.style,
+    style,
+    seed: agent.avatar.seed || agent.slug,
     size,
-    colors: PALETTE,
+    background: PALETTE,
   });
 
   return new Response(svg, {

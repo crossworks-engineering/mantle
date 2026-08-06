@@ -3,8 +3,8 @@ import { resolveSingleOwnerId } from '@mantle/db';
 import { loadProfilePreferences } from '@mantle/content';
 
 /**
- * GET /api/appearance — the brain's SYSTEM-WIDE appearance: colour theme and
- * the two display fonts. Deliberately unauthenticated (in PUBLIC_PATHS).
+ * GET /api/appearance — the brain's SYSTEM-WIDE appearance: colour theme, the
+ * two display fonts and the avatar style. Deliberately unauthenticated (in PUBLIC_PATHS).
  *
  * Why public: the client app is a separate origin after the carve and is
  * zero-secret, so it cannot read prefs from the DB — but it must know the
@@ -18,7 +18,7 @@ import { loadProfilePreferences } from '@mantle/content';
  * branding changes seldom. An admin's change shows up within the window.
  */
 export async function GET() {
-  const empty = { colorTheme: null, fontLogo: null, fontTitle: null };
+  const empty = { colorTheme: null, fontLogo: null, fontTitle: null, avatarStyle: null };
   const headers = { 'Cache-Control': 'public, max-age=30' };
 
   // The whole body is fail-soft: resolveSingleOwnerId THROWS on a corrupt
@@ -34,6 +34,7 @@ export async function GET() {
         colorTheme: prefs.colorTheme ?? null,
         fontLogo: prefs.fontLogo ?? null,
         fontTitle: prefs.fontTitle ?? null,
+        avatarStyle: prefs.avatarStyle ?? null,
       },
       { headers },
     );

@@ -28,7 +28,7 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { ModelSelect } from '@/components/ui/model-select';
-import { BoringAvatar } from '@/components/boring-avatar';
+import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { agentAccent, agentInitials } from '@/lib/agent-color';
 import { getProvider, isProviderWired, providersForCapability } from '@mantle/voice/client';
 import type { ExplorerModel } from '@server/lib/model-explorer';
@@ -224,11 +224,7 @@ export function ModelsTab({
                   <TableCell>
                     <div className="flex items-center gap-2.5">
                       {agent.avatar ? (
-                        <BoringAvatar
-                          variant={agent.avatar.style}
-                          seed={agent.avatar.seed}
-                          size={28}
-                        />
+                        <GeneratedAvatar seed={agent.avatar.seed} size={28} />
                       ) : (
                         <span
                           className="flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"

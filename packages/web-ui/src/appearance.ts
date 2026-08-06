@@ -1,12 +1,15 @@
 import { DEFAULT_COLOR_THEME } from './lib/themes';
+import { DEFAULT_AVATAR_STYLE, resolveAvatarStyle } from './avatar';
 import { fontByKey, resolveFontVars, type ResolvedFontVars } from './display-fonts';
 
 /**
- * The brain's system-wide appearance — colour theme + the two display fonts —
- * as it travels from the anchor owner's profile row to a rendered document.
+ * The brain's system-wide appearance — colour theme, the two display fonts and
+ * the avatar style — as it travels from the anchor owner's profile row to a
+ * rendered document.
  *
  * There is ONE delivery mechanism: the values are rendered into the `<html>`
- * tag as attributes (`data-color-theme`, `data-font-logo`, `data-font-title`)
+ * tag as attributes (`data-color-theme`, `data-font-logo`, `data-font-title`,
+ * `data-avatar-style`)
  * plus the two font CSS vars as inline style, server-side, on every surface —
  * the client app's root layout (fed by the public GET /api/appearance) and the
  * server-rendered share/print pages (read straight from the DB). No before-
@@ -22,6 +25,7 @@ export type BrainAppearance = {
   colorTheme: string | null;
   fontLogo: string | null;
   fontTitle: string | null;
+  avatarStyle: string | null;
 };
 
 export type AppearanceAttrs = {
@@ -30,6 +34,8 @@ export type AppearanceAttrs = {
   /** Non-default, registry-known font keys — the client providers' initial state. */
   fontLogo?: string;
   fontTitle?: string;
+  /** Non-default avatar style id — the client provider's initial state. */
+  avatarStyle?: string;
   /** Resolved font-family values for the two CSS vars (inline style on <html>). */
   fontVars: ResolvedFontVars;
 };
@@ -43,5 +49,12 @@ export function resolveAppearanceAttrs(a: BrainAppearance | null | undefined): A
   // must not become provider state a picker would then display.
   if (out.fontVars.wordmark && a.fontLogo && fontByKey(a.fontLogo)) out.fontLogo = a.fontLogo;
   if (out.fontVars.pageTitle && a.fontTitle && fontByKey(a.fontTitle)) out.fontTitle = a.fontTitle;
+  // Same contract: only a known, non-default style travels. A legacy
+  // boring-avatars id stored before the DiceBear move resolves to a shipped
+  // style here, so the attribute is always something the picker can show.
+  if (a.avatarStyle) {
+    const resolved = resolveAvatarStyle(a.avatarStyle);
+    if (resolved !== DEFAULT_AVATAR_STYLE) out.avatarStyle = resolved;
+  }
   return out;
 }

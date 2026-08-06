@@ -8,6 +8,9 @@ import { useColorTheme } from '@mantle/web-ui/color-theme-provider';
 import { COLOR_THEMES, type ThemeSwatches } from '@mantle/web-ui/lib/themes';
 import { Input } from '@mantle/web-ui/ui/input';
 import { RadioGroup, RadioGroupCard } from '@mantle/web-ui/ui/radio-group';
+import { AVATAR_STYLES } from '@mantle/web-ui/avatar';
+import { useAvatarStyle } from '@mantle/web-ui/avatar-style-provider';
+import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PreviewTabs } from '@/components/theme-preview/preview-tabs';
 
@@ -39,6 +42,65 @@ function Swatches({ swatches }: { swatches: { light: ThemeSwatches; dark: ThemeS
       <span className="flex dark:hidden">{dots(swatches.light)}</span>
       <span className="hidden dark:flex">{dots(swatches.dark)}</span>
     </span>
+  );
+}
+
+/** Seeds for the style previews — four fixed, unrelated strings so a row shows
+ *  how far apart the style pushes different entities, which is the whole point
+ *  of the choice. Fixed rather than the real agent names: the picker must look
+ *  the same on every brain. */
+const PREVIEW_SEEDS = ['aurora', 'basalt', 'cinder', 'dovetail'];
+
+/** The brain's avatar style. One style, one seed per entity — see
+ *  @mantle/web-ui/avatar. Each row previews the same four seeds so the styles
+ *  are compared on the thing that matters: how distinct two avatars look. */
+function AvatarStyleSection() {
+  const { avatarStyle, setAvatarStyle } = useAvatarStyle();
+
+  return (
+    <section className="space-y-2">
+      <h2
+        id="avatar-style-heading"
+        className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+      >
+        Avatar style
+      </h2>
+      <p className="text-xs text-muted-foreground">
+        Every generated avatar in this brain — yours and each agent&rsquo;s — is drawn in this
+        style. The theme tints the background; the seed makes each one different.
+      </p>
+      <RadioGroup
+        value={avatarStyle}
+        onValueChange={setAvatarStyle}
+        aria-labelledby="avatar-style-heading"
+        className="gap-1.5"
+      >
+        {AVATAR_STYLES.map((s) => {
+          const active = avatarStyle === s.id;
+          return (
+            <RadioGroupCard
+              key={s.id}
+              value={s.id}
+              className={cn(
+                'flex w-full items-center justify-between gap-2 border-border p-2 text-sm',
+                'hover:bg-accent/40',
+                'data-[state=checked]:border-primary data-[state=checked]:ring-1 data-[state=checked]:ring-primary',
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="flex shrink-0 gap-1" aria-hidden>
+                  {PREVIEW_SEEDS.map((seed) => (
+                    <GeneratedAvatar key={seed} style={s.id} seed={seed} size={22} />
+                  ))}
+                </span>
+                <span className="truncate font-medium text-foreground">{s.label}</span>
+              </span>
+              {active && <Check className="size-4 shrink-0 text-primary-ink" aria-hidden />}
+            </RadioGroupCard>
+          );
+        })}
+      </RadioGroup>
+    </section>
   );
 }
 
@@ -110,6 +172,10 @@ function Controls() {
           })}
         </RadioGroup>
       </section>
+
+      {/* Above the theme list on purpose: that list is ~40 rows and scrolls, so
+          anything after it is effectively hidden. */}
+      <AvatarStyleSection />
 
       {/* Brand identity (logo + wordmark/peer-name fonts) lives in the LOGO
           tab of the preview strip, not here — the sidebar is mode + theme. */}

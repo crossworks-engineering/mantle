@@ -3,8 +3,8 @@
 import type { BrainAppearance } from '@mantle/web-ui/appearance';
 
 /**
- * Server-side loader for the brain's system-wide appearance (colour theme +
- * display fonts), fetched from the server tier's public GET /api/appearance.
+ * Server-side loader for the brain's system-wide appearance (colour theme,
+ * display fonts, avatar style), fetched from the server tier's public GET /api/appearance.
  * The root layout awaits this and renders the values straight into the
  * `<html>` tag — the ONLY delivery path; there are no before-paint scripts and
  * no localStorage cache (see @mantle/web-ui/appearance).

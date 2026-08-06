@@ -8,6 +8,7 @@ import 'katex/dist/katex.min.css';
 import { fontSans, fontLogo } from '@/lib/fonts';
 import { ThemeProvider } from '@mantle/web-ui/theme-provider';
 import { ColorThemeProvider } from '@mantle/web-ui/color-theme-provider';
+import { AvatarStyleProvider } from '@mantle/web-ui/avatar-style-provider';
 import { FontProvider } from '@mantle/web-ui/font-provider';
 import { QueryProvider } from '@mantle/web-ui/query-provider';
 import { displayFontFaceCss } from '@mantle/web-ui/display-fonts';
@@ -20,7 +21,8 @@ import { MEMBER_SURFACE_HEADER } from '@/lib/member-surface';
  * the static default (the server app's logged-in metadata personalization
  * doesn't apply here; the shell adopts siteName client-side after /api/shell).
  *
- * The brain's SYSTEM-WIDE appearance (colour theme + display fonts) is
+ * The brain's SYSTEM-WIDE appearance (colour theme, display fonts, avatar
+ * style) is
  * rendered straight into the <html> tag: attributes for the ids and inline
  * style for the two font vars, fetched server-to-server from the public
  * GET /api/appearance (cached in lib/appearance.ts). The document arrives
@@ -59,6 +61,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       data-color-theme-owner={memberSurface ? '1' : undefined}
       data-font-logo={appearance.fontLogo}
       data-font-title={appearance.fontTitle}
+      data-avatar-style={appearance.avatarStyle}
       style={fontStyle as React.CSSProperties}
     >
       <head>
@@ -79,7 +82,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         >
           <ColorThemeProvider>
             <FontProvider>
-              <QueryProvider>{children}</QueryProvider>
+              <AvatarStyleProvider>
+                <QueryProvider>{children}</QueryProvider>
+              </AvatarStyleProvider>
             </FontProvider>
           </ColorThemeProvider>
         </ThemeProvider>
