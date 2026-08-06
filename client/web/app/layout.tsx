@@ -58,6 +58,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // (which is also what next/font documents); on <body> the class would
   // redeclare the var below this override and quietly win it back.
   if (appearance.fontVars.ui) fontStyle['--font-sans'] = appearance.fontVars.ui;
+  // Always published, override or not: the picker's own "Inter" row previews
+  // through this, and resolving it through --font-sans would make that row
+  // render in whatever face is currently chosen instead of in Inter.
+  fontStyle['--font-sans-base'] = fontSans.style.fontFamily;
   return (
     <html
       lang="en"

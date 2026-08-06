@@ -11,8 +11,7 @@ import { RadioGroup, RadioGroupCard } from '@mantle/web-ui/ui/radio-group';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { AvatarStyleGallery } from '@/components/appearance/avatar-style-gallery';
 import { ColorPalette } from '@/components/theme-preview/color-palette';
-import { BrandPanel } from '@/components/appearance/brand-panel';
-import { InterfaceTypePanel } from '@/components/appearance/interface-type-panel';
+import { TypographyPanel } from '@/components/appearance/typography-panel';
 
 const MODES: Array<{ id: string; label: string; icon: LucideIcon }> = [
   { id: 'light', label: 'Light', icon: Sun },
@@ -176,8 +175,7 @@ export default function AppearancePage() {
           <Controls />
         </aside>
         <div className="min-w-0 flex-1 space-y-8">
-          <InterfaceTypePanel />
-          <BrandPanel />
+          <TypographyPanel />
           <AvatarStyleGallery />
           <ColorPalette />
         </div>

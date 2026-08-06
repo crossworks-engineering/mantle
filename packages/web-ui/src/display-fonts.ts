@@ -59,7 +59,7 @@ const LIB = '/fonts/library';
 
 export const DISPLAY_FONTS: DisplayFont[] = [
   // Built-in defaults (no library file).
-  { key: 'sans', label: 'System (Inter)', family: null, fallback: 'sans-serif', file: null },
+  { key: 'sans', label: 'Interface font', family: null, fallback: 'sans-serif', file: null },
   {
     key: 'bukhari',
     label: 'Bukhari Script',
@@ -382,7 +382,15 @@ export function fontByKey(key: string | null | undefined): DisplayFont | undefin
 export function fontFamilyValue(key: string | null | undefined): string | null {
   const f = fontByKey(key);
   if (!f) return null;
+  // 'sans' means "follow the interface font, whatever it is" — it is the
+  // display default, so a wordmark set to it tracks the UI choice.
   if (f.key === 'sans') return 'var(--font-sans, ui-sans-serif, sans-serif)';
+  // 'inter' is a CONCRETE face, not "the current one". It must not resolve
+  // through --font-sans: that var is what the interface choice overrides, so an
+  // Inter row would preview in whichever font is selected — Geist under a label
+  // saying Inter. `--font-sans-base` always holds the next/font Inter family,
+  // set unconditionally in the root layout precisely so this stays truthful.
+  if (f.key === DEFAULT_UI_FONT) return 'var(--font-sans-base, ui-sans-serif, sans-serif)';
   if (!f.family) return null;
   return `"${f.family}", ${f.fallback}`;
 }

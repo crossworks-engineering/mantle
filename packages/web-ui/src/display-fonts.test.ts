@@ -11,6 +11,7 @@ import {
   DISPLAY_FONTS,
   UI_FONTS,
   displayFontFaceCss,
+  fontFamilyValue,
   resolveFontVars,
 } from './display-fonts';
 
@@ -161,6 +162,17 @@ describe('UI fonts', () => {
     for (const f of UI_FONTS) {
       expect(['sans', 'mono', 'character'], f.key).toContain(f.category);
     }
+  });
+
+  // The picker previews each row in its own face. 'inter' must therefore NOT
+  // resolve through --font-sans — that is the var the interface choice
+  // overrides, so the Inter row would render in whatever face is selected.
+  it('previews Inter through the base var, not the overridable one', () => {
+    expect(fontFamilyValue(DEFAULT_UI_FONT)).toBe(
+      'var(--font-sans-base, ui-sans-serif, sans-serif)',
+    );
+    // ...while the DISPLAY default 'sans' deliberately does follow the UI font.
+    expect(fontFamilyValue('sans')).toBe('var(--font-sans, ui-sans-serif, sans-serif)');
   });
 
   it('resolves as the --font-sans override, and the default resolves to nothing', () => {
