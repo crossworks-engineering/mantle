@@ -43,7 +43,20 @@
 
 import { Avatar, Style } from '@dicebear/core';
 
-export type AvatarStyleCategory = 'minimalist' | 'characters' | 'scenes';
+/**
+ * What a style is FOR.
+ *
+ * The catalogue used to be split by look (minimalist / characters / scenes),
+ * which described the artwork but not the job. Since the same generator now
+ * draws both 32px avatars and full-panel backgrounds (see backdrop.ts), the
+ * useful split is by PURPOSE — a portrait makes a poor wallpaper, and a field
+ * of waves makes an unrecognisable avatar.
+ *
+ * `initials`, `initial-face`, `glyphs` and `icons` sit under `avatars` despite
+ * being minimal: they encode an identity, which is an avatar's whole job and
+ * meaningless spread across a sidebar.
+ */
+export type AvatarStyleCategory = 'avatars' | 'backgrounds';
 
 export type AvatarStyleMeta = {
   id: string;
@@ -59,9 +72,8 @@ export type AvatarStyleMeta = {
 
 /** Human-readable category names, in picker order. */
 export const AVATAR_CATEGORIES: Array<{ id: AvatarStyleCategory; label: string }> = [
-  { id: 'minimalist', label: 'Minimalist' },
-  { id: 'characters', label: 'Characters' },
-  { id: 'scenes', label: 'Scenes' },
+  { id: 'avatars', label: 'Avatars' },
+  { id: 'backgrounds', label: 'Backgrounds' },
 ];
 
 /** Licences that impose no attribution duty. Anything else is credited in the
@@ -74,83 +86,11 @@ export function requiresAttribution(style: AvatarStyleMeta): boolean {
 }
 
 export const AVATAR_STYLES: AvatarStyleMeta[] = [
-  // ── minimalist ──────────────────────────────────────────────────
-  {
-    id: 'shapes',
-    label: 'Shapes',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/shapes.json'),
-  },
-  {
-    id: 'identicon',
-    label: 'Identicon',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/identicon.json'),
-  },
-  {
-    id: 'loops',
-    label: 'Loops',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/loops.json'),
-  },
-  {
-    id: 'rings',
-    label: 'Rings',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/rings.json'),
-  },
-  {
-    id: 'squircles',
-    label: 'Squircles',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/squircles.json'),
-  },
-  {
-    id: 'shape-grid',
-    label: 'Shape Grid',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/shape-grid.json'),
-  },
-  {
-    id: 'glass',
-    label: 'Glass',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/glass.json'),
-  },
-  {
-    id: 'blobs',
-    label: 'Blobs',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/blobs.json'),
-  },
-  {
-    id: 'disco',
-    label: 'Disco',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/disco.json'),
-  },
+  // ── avatars ─────────────────────────────────────────────────────
   {
     id: 'glyphs',
     label: 'Glyphs',
-    category: 'minimalist',
+    category: 'avatars',
     creator: 'Matt Houser',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/glyphs.json'),
@@ -158,7 +98,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'icons',
     label: 'Icons',
-    category: 'minimalist',
+    category: 'avatars',
     creator: 'The Bootstrap Authors',
     license: 'MIT',
     load: () => import('@dicebear/styles/icons.json'),
@@ -166,7 +106,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'initial-face',
     label: 'Initial Face',
-    category: 'minimalist',
+    category: 'avatars',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/initial-face.json'),
@@ -174,48 +114,15 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'initials',
     label: 'Initials',
-    category: 'minimalist',
+    category: 'avatars',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/initials.json'),
   },
   {
-    id: 'stripes',
-    label: 'Stripes',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/stripes.json'),
-  },
-  {
-    id: 'triangles',
-    label: 'Triangles',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/triangles.json'),
-  },
-  {
-    id: 'waves',
-    label: 'Waves',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/waves.json'),
-  },
-  {
-    id: 'weave',
-    label: 'Weave',
-    category: 'minimalist',
-    creator: 'DiceBear',
-    license: 'CC0 1.0',
-    load: () => import('@dicebear/styles/weave.json'),
-  },
-  // ── characters ──────────────────────────────────────────────────
-  {
     id: 'thumbs',
     label: 'Thumbs',
-    category: 'characters',
+    category: 'avatars',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/thumbs.json'),
@@ -223,7 +130,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'notionists',
     label: 'Notionists',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Zoish',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/notionists.json'),
@@ -231,7 +138,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'notionists-neutral',
     label: 'Notionists Neutral',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Zoish',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/notionists-neutral.json'),
@@ -239,7 +146,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'lorelei',
     label: 'Lorelei',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Lisa Wischofsky',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/lorelei.json'),
@@ -247,7 +154,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'lorelei-neutral',
     label: 'Lorelei Neutral',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Lisa Wischofsky',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/lorelei-neutral.json'),
@@ -255,7 +162,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'open-peeps',
     label: 'Open Peeps',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Pablo Stanley',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/open-peeps.json'),
@@ -263,7 +170,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'pixel-art',
     label: 'Pixel Art',
-    category: 'characters',
+    category: 'avatars',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/pixel-art.json'),
@@ -271,7 +178,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'pixel-art-neutral',
     label: 'Pixel Art Neutral',
-    category: 'characters',
+    category: 'avatars',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/pixel-art-neutral.json'),
@@ -279,7 +186,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'pixelbot',
     label: 'Pixelbot',
-    category: 'characters',
+    category: 'avatars',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/pixelbot.json'),
@@ -287,7 +194,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'bottts',
     label: 'Bottts',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Pablo Stanley',
     license: 'Free for personal and commercial use',
     load: () => import('@dicebear/styles/bottts.json'),
@@ -295,7 +202,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'bottts-neutral',
     label: 'Bottts Neutral',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Pablo Stanley',
     license: 'Free for personal and commercial use',
     load: () => import('@dicebear/styles/bottts-neutral.json'),
@@ -303,7 +210,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'avataaars',
     label: 'Avataaars',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Pablo Stanley',
     license: 'Free for personal and commercial use',
     load: () => import('@dicebear/styles/avataaars.json'),
@@ -311,7 +218,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'avataaars-neutral',
     label: 'Avataaars Neutral',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Pablo Stanley',
     license: 'Free for personal and commercial use',
     load: () => import('@dicebear/styles/avataaars-neutral.json'),
@@ -319,7 +226,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'adventurer',
     label: 'Adventurer',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Lisa Wischofsky',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/adventurer.json'),
@@ -327,7 +234,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'adventurer-neutral',
     label: 'Adventurer Neutral',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Lisa Wischofsky',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/adventurer-neutral.json'),
@@ -335,7 +242,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'big-ears',
     label: 'Big Ears',
-    category: 'characters',
+    category: 'avatars',
     creator: 'The Visual Team',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/big-ears.json'),
@@ -343,7 +250,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'big-ears-neutral',
     label: 'Big Ears Neutral',
-    category: 'characters',
+    category: 'avatars',
     creator: 'The Visual Team',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/big-ears-neutral.json'),
@@ -351,7 +258,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'big-smile',
     label: 'Big Smile',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Ashley Seo',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/big-smile.json'),
@@ -359,7 +266,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'clay',
     label: 'Clay',
-    category: 'characters',
+    category: 'avatars',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/clay.json'),
@@ -367,7 +274,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'critters',
     label: 'Critters',
-    category: 'characters',
+    category: 'avatars',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/critters.json'),
@@ -375,7 +282,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'croodles',
     label: 'Croodles',
-    category: 'characters',
+    category: 'avatars',
     creator: 'vijay verma',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/croodles.json'),
@@ -383,7 +290,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'croodles-neutral',
     label: 'Croodles Neutral',
-    category: 'characters',
+    category: 'avatars',
     creator: 'vijay verma',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/croodles-neutral.json'),
@@ -391,7 +298,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'dylan',
     label: 'Dylan',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Natalia Spivak',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/dylan.json'),
@@ -399,7 +306,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'fun-emoji',
     label: 'Fun Emoji',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Davis Uche',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/fun-emoji.json'),
@@ -407,7 +314,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'micah',
     label: 'Micah',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Micah Lanier',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/micah.json'),
@@ -415,7 +322,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'miniavs',
     label: 'Miniavs',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Webpixels',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/miniavs.json'),
@@ -423,7 +330,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'moods',
     label: 'Moods',
-    category: 'characters',
+    category: 'avatars',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/moods.json'),
@@ -431,7 +338,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'personas',
     label: 'Personas',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Draftbit - draftbit.com',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/personas.json'),
@@ -439,7 +346,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'sprouts',
     label: 'Sprouts',
-    category: 'characters',
+    category: 'avatars',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/sprouts.json'),
@@ -447,16 +354,120 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'toon-head',
     label: 'Toon Head',
-    category: 'characters',
+    category: 'avatars',
     creator: 'Johan Melin',
     license: 'CC BY 4.0',
     load: () => import('@dicebear/styles/toon-head.json'),
   },
-  // ── scenes ──────────────────────────────────────────────────────
+  // ── backgrounds ─────────────────────────────────────────────────
+  {
+    id: 'shapes',
+    label: 'Shapes',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/shapes.json'),
+  },
+  {
+    id: 'identicon',
+    label: 'Identicon',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/identicon.json'),
+  },
+  {
+    id: 'loops',
+    label: 'Loops',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/loops.json'),
+  },
+  {
+    id: 'rings',
+    label: 'Rings',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/rings.json'),
+  },
+  {
+    id: 'squircles',
+    label: 'Squircles',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/squircles.json'),
+  },
+  {
+    id: 'shape-grid',
+    label: 'Shape Grid',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/shape-grid.json'),
+  },
+  {
+    id: 'glass',
+    label: 'Glass',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/glass.json'),
+  },
+  {
+    id: 'blobs',
+    label: 'Blobs',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/blobs.json'),
+  },
+  {
+    id: 'disco',
+    label: 'Disco',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/disco.json'),
+  },
+  {
+    id: 'stripes',
+    label: 'Stripes',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/stripes.json'),
+  },
+  {
+    id: 'triangles',
+    label: 'Triangles',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/triangles.json'),
+  },
+  {
+    id: 'waves',
+    label: 'Waves',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/waves.json'),
+  },
+  {
+    id: 'weave',
+    label: 'Weave',
+    category: 'backgrounds',
+    creator: 'DiceBear',
+    license: 'CC0 1.0',
+    load: () => import('@dicebear/styles/weave.json'),
+  },
   {
     id: 'constellation',
     label: 'Constellation',
-    category: 'scenes',
+    category: 'backgrounds',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/constellation.json'),
@@ -464,7 +475,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'landscape',
     label: 'Landscape',
-    category: 'scenes',
+    category: 'backgrounds',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/landscape.json'),
@@ -472,7 +483,7 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
   {
     id: 'planets',
     label: 'Planets',
-    category: 'scenes',
+    category: 'backgrounds',
     creator: 'DiceBear',
     license: 'CC0 1.0',
     load: () => import('@dicebear/styles/planets.json'),
@@ -480,7 +491,24 @@ export const AVATAR_STYLES: AvatarStyleMeta[] = [
 ];
 export const AVATAR_STYLE_IDS: readonly string[] = AVATAR_STYLES.map((s) => s.id);
 
-export const DEFAULT_AVATAR_STYLE = 'shapes';
+/** The styles the AVATAR picker offers. */
+export const AVATAR_PICKER_STYLES: AvatarStyleMeta[] = AVATAR_STYLES.filter(
+  (s) => s.category === 'avatars',
+);
+
+/** The styles a BACKGROUND picker offers. */
+export const BACKGROUND_STYLES: AvatarStyleMeta[] = AVATAR_STYLES.filter(
+  (s) => s.category === 'backgrounds',
+);
+
+/**
+ * Was `shapes`, which is now a background. Nothing was migrated: a brain that
+ * explicitly saved a style keeps it, and `resolveAvatarStyle` still resolves
+ * every id in the registry regardless of category — rendering never cared about
+ * the split. Only a brain that never chose one moves, and it moves to a style
+ * that is actually an avatar.
+ */
+export const DEFAULT_AVATAR_STYLE = 'thumbs';
 
 /**
  * How much of the theme an avatar takes on.

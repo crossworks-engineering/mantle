@@ -26,7 +26,13 @@
  */
 
 import { Avatar } from '@dicebear/core';
-import { loadAvatarStyle, loadedAvatarStyle, resolveAvatarStyle, type Loaded } from './avatar';
+import {
+  BACKGROUND_STYLES,
+  loadAvatarStyle,
+  loadedAvatarStyle,
+  resolveAvatarStyle,
+  type Loaded,
+} from './avatar';
 
 /** Waves is the default because its layered bands degrade the most gracefully
  *  under a heavy crop — at panel scale you see two or three sweeping edges
@@ -34,22 +40,14 @@ import { loadAvatarStyle, loadedAvatarStyle, resolveAvatarStyle, type Loaded } f
 export const DEFAULT_BACKDROP_STYLE = 'waves';
 
 /**
- * Styles that earn their keep at panel size.
+ * Styles that earn their keep at panel size — the registry's `backgrounds`
+ * category, not a second hand-kept list that could drift out of step with it.
  *
- * Not a hard restriction — `renderBackdropSvg` will draw any style in the
- * avatar registry — but a character style stretched across a sidebar is a giant
- * face, not a background, so these are what a picker should offer.
+ * Not a hard restriction: `renderBackdropSvg` will draw ANY style in the
+ * registry, so a stored value that predates a recategorisation still renders.
+ * It is what a picker should OFFER.
  */
-export const BACKDROP_STYLE_IDS: readonly string[] = [
-  'waves',
-  'landscape',
-  'constellation',
-  'stripes',
-  'weave',
-  'shape-grid',
-  'glass',
-  'blobs',
-];
+export const BACKDROP_STYLE_IDS: readonly string[] = BACKGROUND_STYLES.map((s) => s.id);
 
 /**
  * Rewrite the root `<svg>` so it fills its box instead of sizing itself.

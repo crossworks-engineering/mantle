@@ -9,6 +9,7 @@ import { useFonts } from '@mantle/web-ui/font-provider';
 import { FontPicker } from '@/components/appearance/font-picker';
 import { LogoControl } from '@/components/appearance/logo-control';
 import { AvatarStyleControls, AvatarStyleList } from '@/components/appearance/avatar-style-gallery';
+import { BackgroundGallery } from '@/components/appearance/background-gallery';
 import { ColorPalette } from '@/components/theme-preview/color-palette';
 
 /**
@@ -130,6 +131,10 @@ export function AppearanceContent() {
           thing on this screen that genuinely needs the room. Its heading and the
           tint live up in the interface column with the other settings. */}
       <AvatarStyleList />
+
+      {/* Full-width for the same reason: one scrollable row per area, and the
+          rows only read as a comparison at their natural width. */}
+      <BackgroundGallery />
 
       <ColorPalette />
     </div>

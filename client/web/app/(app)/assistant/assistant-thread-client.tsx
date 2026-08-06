@@ -8,6 +8,7 @@ import { agentAccent } from '@/lib/agent-color';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { Button } from '@mantle/web-ui/ui/button';
 import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
+import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
 import { ActiveRunsStrip } from '@/components/runs/active-runs-strip';
 import { PendingQuestionsStrip } from '@/components/pending/pending-questions-strip';
@@ -89,7 +90,13 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
   const accent = agent ? agentAccent(agent.slug) : null;
 
   return (
-    <div className="flex h-full flex-col">
+    // `relative isolate` is what makes the backdrop below safe: unlike the
+    // shell's panels this root is statically positioned, so without a stacking
+    // context of its own a `-z-10` child would slip behind the page background
+    // and vanish. `isolate` contains it.
+    <div className="relative isolate flex h-full flex-col">
+      {/* Renders nothing when the chat area is switched off. */}
+      <AreaBackdrop area="chat" className="-z-10" />
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-6 py-3">
         <div className="flex items-center gap-3">
           {/* No initials branch: the agent always has an avatar now — the seed

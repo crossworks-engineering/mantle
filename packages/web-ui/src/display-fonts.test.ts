@@ -71,6 +71,7 @@ describe('resolveAppearanceAttrs', () => {
         avatarTint: null,
         fontUi: null,
         fontSize: null,
+        backgrounds: null,
       }),
     ).toEqual({ fontVars: {} });
   });
@@ -84,6 +85,7 @@ describe('resolveAppearanceAttrs', () => {
       avatarTint: null,
       fontUi: null,
       fontSize: null,
+      backgrounds: null,
     });
     expect(attrs.colorTheme).toBe('amethyst-haze');
     expect(attrs.fontLogo).toBe('bungee-shade');
@@ -103,6 +105,7 @@ describe('resolveAppearanceAttrs', () => {
       avatarTint: null,
       fontUi: null,
       fontSize: null,
+      backgrounds: null,
     });
     expect(attrs.fontLogo).toBeUndefined();
     expect(attrs.fontVars.wordmark).toBeUndefined();

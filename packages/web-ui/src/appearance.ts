@@ -5,6 +5,7 @@ import {
   resolveAvatarStyle,
   resolveAvatarTint,
 } from './avatar';
+import { decodeBackgrounds, encodeBackgrounds } from './backgrounds';
 import {
   DEFAULT_UI_FONT,
   DEFAULT_UI_FONT_SIZE,
@@ -41,6 +42,7 @@ export type BrainAppearance = {
   avatarTint: string | null;
   fontUi: string | null;
   fontSize: string | null;
+  backgrounds: string | null;
 };
 
 export type AppearanceAttrs = {
@@ -58,6 +60,10 @@ export type AppearanceAttrs = {
   /** Non-default UI size ('small' | 'large') — drives the root font-size rule
    *  in app.css. 'medium' is the absence of the attribute. */
   fontSize?: string;
+  /** Non-default per-area generated backgrounds, as `menu=waves,header=off`.
+   *  Areas on their default are omitted, so the attribute is absent entirely on
+   *  a brain that has never chosen. */
+  backgrounds?: string;
   /** Resolved font-family values for the two CSS vars (inline style on <html>). */
   fontVars: ResolvedFontVars;
 };
@@ -88,6 +94,13 @@ export function resolveAppearanceAttrs(a: BrainAppearance | null | undefined): A
   if (a.avatarTint) {
     const resolved = resolveAvatarTint(a.avatarTint);
     if (resolved !== DEFAULT_AVATAR_TINT) out.avatarTint = resolved;
+  }
+  // Round-tripped through decode/encode rather than passed along: that drops
+  // unknown areas and unknown styles, and re-omits anything sitting on its
+  // default. What reaches the document is always something the picker can show.
+  if (a.backgrounds) {
+    const encoded = encodeBackgrounds(decodeBackgrounds(a.backgrounds));
+    if (encoded) out.backgrounds = encoded;
   }
   return out;
 }

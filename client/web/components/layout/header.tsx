@@ -17,6 +17,7 @@ import {
 import { Avatar, AvatarFallback } from '@mantle/web-ui/ui/avatar';
 import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { ThemeToggle } from '@mantle/web-ui/theme-toggle';
+import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
 import { RandomThemeToggle } from '@/components/random-theme-toggle';
 import { serverUrl } from '@mantle/web-ui/runtime-env';
 
@@ -60,6 +61,11 @@ export function Header({
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b bg-background bg-gradient-to-b from-primary/10 to-background px-4 md:px-6">
+      {/* `-z-10` rather than making every one of the header's many children
+          `relative`: the header is `fixed z-40`, so it owns a stacking context,
+          and a negative-z child paints ABOVE its background but BELOW all of
+          them. Renders nothing when the header area is switched off. */}
+      <AreaBackdrop area="header" className="-z-10" />
       <Button
         variant="ghost"
         size="icon"

@@ -26,6 +26,7 @@ export async function GET() {
     avatarTint: null,
     fontUi: null,
     fontSize: null,
+    backgrounds: null,
   };
   const headers = { 'Cache-Control': 'public, max-age=30' };
 
@@ -46,6 +47,7 @@ export async function GET() {
         avatarTint: prefs.avatarTint ?? null,
         fontUi: prefs.fontUi ?? null,
         fontSize: prefs.fontSize ?? null,
+        backgrounds: prefs.backgrounds ?? null,
       },
       { headers },
     );

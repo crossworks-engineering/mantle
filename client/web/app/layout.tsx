@@ -9,6 +9,7 @@ import { fontSans, fontLogo } from '@/lib/fonts';
 import { ThemeProvider } from '@mantle/web-ui/theme-provider';
 import { ColorThemeProvider } from '@mantle/web-ui/color-theme-provider';
 import { AvatarStyleProvider } from '@mantle/web-ui/avatar-style-provider';
+import { BackgroundProvider } from '@mantle/web-ui/background-provider';
 import { FontProvider } from '@mantle/web-ui/font-provider';
 import { QueryProvider } from '@mantle/web-ui/query-provider';
 import { displayFontFaceCss } from '@mantle/web-ui/display-fonts';
@@ -74,6 +75,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       data-avatar-style={appearance.avatarStyle}
       data-avatar-tint={appearance.avatarTint}
       data-font-size={appearance.fontSize}
+      data-backgrounds={appearance.backgrounds}
       style={fontStyle as React.CSSProperties}
     >
       <head>
@@ -95,7 +97,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <ColorThemeProvider>
             <FontProvider>
               <AvatarStyleProvider>
-                <QueryProvider>{children}</QueryProvider>
+                <BackgroundProvider>
+                  <QueryProvider>{children}</QueryProvider>
+                </BackgroundProvider>
               </AvatarStyleProvider>
             </FontProvider>
           </ColorThemeProvider>

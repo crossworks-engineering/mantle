@@ -52,6 +52,13 @@ export type ProfilePreferences = {
    *  avatarStyle: it describes how this brain's avatars look, not one login's
    *  taste. Read via projectAvatarTint, never raw. */
   avatarTint?: string;
+  /** Which generated background each area of the shell shows, as
+   *  `area=style` pairs (`menu=waves,header=off`). Brain-level for the same
+   *  reason as avatarStyle and colorTheme: it is the look of the product.
+   *  `off` is a real, storable choice — see @mantle/web-ui/backgrounds. Areas
+   *  on their default are omitted, so a default change still reaches brains
+   *  that never chose. Read via projectBackgrounds, never raw. */
+  backgrounds?: string;
   /** Seed for THIS user's avatar; the UI defaults it to the user id when unset
    *  so an avatar still renders. Personal — two admins share the brain's style
    *  but never the same avatar. */
@@ -401,6 +408,29 @@ export function projectAvatarStyle(raw: unknown): string | undefined {
   return /^[a-z0-9][a-z0-9-]{0,63}$/.test(t) ? t : undefined;
 }
 
+/**
+ * Project a stored `backgrounds` map — `area=style` pairs, comma separated.
+ *
+ * Shape-checked only, exactly like projectAvatarStyle and for the same reason:
+ * the AREA and STYLE registries both live in the web layer
+ * (@mantle/web-ui/backgrounds), and duplicating either here would create two
+ * lists to keep in step. Unknown areas and unknown styles are dropped on READ
+ * by `decodeBackgrounds`, so a value that survives storage can still never
+ * reach the document unvalidated.
+ *
+ * The cap is a storage guard, not a semantic one: a handful of areas exist, and
+ * an unbounded string on a preferences row is somebody else's outage.
+ */
+export const BACKGROUNDS_MAX = 200;
+
+export function projectBackgrounds(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim().toLowerCase();
+  if (!t) return undefined;
+  if (t.length > BACKGROUNDS_MAX) return undefined;
+  return /^[a-z0-9-]+=[a-z0-9-]+(,[a-z0-9-]+=[a-z0-9-]+)*$/.test(t) ? t : undefined;
+}
+
 /** Project a stored `fontSize`. A closed set like avatarTint, validated by
  *  value: an unknown size would rescale the entire interface and there is no
  *  registry to fall back through. Anything else ⇒ unset ⇒ 'medium'. */
@@ -569,6 +599,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
         : DEFAULT_PREFERENCES.locale,
     avatarStyle: projectAvatarStyle(prefs.avatarStyle),
     avatarTint: projectAvatarTint(prefs.avatarTint),
+    backgrounds: projectBackgrounds(prefs.backgrounds),
     avatarSeed:
       typeof prefs.avatarSeed === 'string' && prefs.avatarSeed.length > 0
         ? prefs.avatarSeed
@@ -767,6 +798,7 @@ export async function updateProfilePreferences(
     locale: merged.locale ?? DEFAULT_PREFERENCES.locale,
     avatarStyle: projectAvatarStyle(merged.avatarStyle),
     avatarTint: projectAvatarTint(merged.avatarTint),
+    backgrounds: projectBackgrounds(merged.backgrounds),
     avatarSeed: merged.avatarSeed || undefined,
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
@@ -840,6 +872,9 @@ export const BRAIN_PREFERENCE_KEYS = [
   // is what still makes each person's avatar theirs.
   'avatarStyle',
   'avatarTint',
+  // Same argument as avatarStyle: which surfaces carry a generated background
+  // is the brain's look, not one admin's preference.
+  'backgrounds',
   'logoKey',
   'logoType',
   'logoDarkKey',

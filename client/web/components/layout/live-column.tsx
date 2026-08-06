@@ -13,6 +13,7 @@ import {
   useLiveActivity,
 } from '@/components/journey/use-live-activity';
 import type { ActivityItem } from '@server/lib/journey';
+import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
 import { formatElapsed } from './elapsed';
 
 /**
@@ -61,6 +62,10 @@ export function LiveColumn({ collapsed, onToggle }: { collapsed: boolean; onTogg
 
   return (
     <aside className="fixed top-0 bottom-[var(--footer-h)] right-0 z-30 hidden w-[var(--activity-w)] flex-col border-l bg-sidebar pt-16 transition-[width] duration-200 ease-in-out lg:flex">
+      {/* `-z-10`: the aside is `fixed z-30` and so owns a stacking context, in
+          which a negative-z child paints above its background but below the
+          content. Renders nothing when the activity area is switched off. */}
+      <AreaBackdrop area="activity" className="-z-10" />
       {collapsed ? (
         <CollapsedRail
           active={active.length}

@@ -27,6 +27,7 @@ export async function loadAppearanceAttrs(ownerId: string): Promise<AppearanceAt
       avatarTint: prefs.avatarTint ?? null,
       fontUi: prefs.fontUi ?? null,
       fontSize: prefs.fontSize ?? null,
+      backgrounds: prefs.backgrounds ?? null,
     });
   } catch {
     // prefs unavailable — fall back to the defaults rather than failing

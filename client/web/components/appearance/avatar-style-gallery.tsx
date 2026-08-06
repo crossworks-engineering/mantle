@@ -6,9 +6,9 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import { Input } from '@mantle/web-ui/ui/input';
 import { RadioGroup, RadioGroupCard } from '@mantle/web-ui/ui/radio-group';
 import {
-  AVATAR_CATEGORIES,
-  AVATAR_STYLES,
+  AVATAR_PICKER_STYLES,
   AVATAR_TINTS,
+  avatarStyleMeta,
   requiresAttribution,
   type AvatarStyleMeta,
 } from '@mantle/web-ui/avatar';
@@ -127,17 +127,33 @@ export function AvatarStyleList() {
   const [query, setQuery] = useState('');
   const needle = fold(query);
 
+  /**
+   * The offered list is the `avatars` category only — the background styles
+   * moved to their own gallery below.
+   *
+   * A brain that chose one BEFORE the split (the old default, `shapes`, was one
+   * of them) keeps rendering it, so its current style is prepended rather than
+   * dropped: a picker that shows nothing selected reads as broken, and the only
+   * way back would be to pick something else.
+   */
+  const offered = useMemo(() => {
+    const current = avatarStyleMeta(avatarStyle);
+    return AVATAR_PICKER_STYLES.some((s) => s.id === current.id)
+      ? AVATAR_PICKER_STYLES
+      : [current, ...AVATAR_PICKER_STYLES];
+  }, [avatarStyle]);
+
   const matches = useMemo(
     () =>
       needle
-        ? AVATAR_STYLES.filter(
+        ? offered.filter(
             (s) =>
               fold(s.label).includes(needle) ||
               fold(s.id).includes(needle) ||
               fold(s.creator).includes(needle),
           )
-        : AVATAR_STYLES,
-    [needle],
+        : offered,
+    [needle, offered],
   );
 
   return (
@@ -160,7 +176,7 @@ export function AvatarStyleList() {
           />
         </div>
         <span className="text-xs tabular-nums text-muted-foreground">
-          {needle ? `${matches.length} of ${AVATAR_STYLES.length}` : AVATAR_STYLES.length}
+          {needle ? `${matches.length} of ${offered.length}` : offered.length}
         </span>
       </div>
 
@@ -175,20 +191,14 @@ export function AvatarStyleList() {
           aria-labelledby="avatar-style-heading"
           className="gap-5"
         >
-          {AVATAR_CATEGORIES.map((cat) => {
-            const inCat = matches.filter((s) => s.category === cat.id);
-            if (inCat.length === 0) return null;
-            return (
-              <div key={cat.id} className="space-y-2">
-                <h3 className="text-xs font-medium text-muted-foreground">{cat.label}</h3>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                  {inCat.map((s) => (
-                    <StyleCard key={s.id} style={s} active={avatarStyle === s.id} />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+          {/* One flat grid — since the split there is only one category here,
+              and a lone "Avatars" heading over the whole list says nothing the
+              section heading has not already said. */}
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            {matches.map((s) => (
+              <StyleCard key={s.id} style={s} active={avatarStyle === s.id} />
+            ))}
+          </div>
         </RadioGroup>
       )}
     </section>

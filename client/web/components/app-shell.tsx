@@ -9,7 +9,7 @@ import { useFonts } from '@mantle/web-ui/font-provider';
 import { COLOR_THEMES } from '@mantle/web-ui/lib/themes';
 import { setAssetToken } from '@mantle/web-ui/asset-url';
 import { maybeRefreshToken } from '@mantle/web-ui/token-refresh';
-import { GeneratedBackdrop } from '@mantle/web-ui/generated-backdrop';
+import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
 import { Header } from '@/components/layout/header';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { ChangelogLink } from '@/components/layout/changelog-link';
@@ -325,16 +325,10 @@ function ShellFrame({
       {/* Desktop sidebar — ends above the footer bar, which now owns the
             collapse toggle (see <FooterBar/>). */}
       <aside className="fixed top-0 bottom-[var(--footer-h)] left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar pt-16 transition-[width] duration-200 ease-in-out md:flex">
-        {/* EXPERIMENTAL: generated Waves backdrop, themed from --chart-1..5 and
-              seeded by the brain's name, so every brain gets its own. Anchored
-              to the bottom (xMidYMax) because that is where the wave crests
-              sit, and masked away toward the top so it never sits behind the
-              nav labels. Purely decorative — see generated-backdrop.tsx. */}
-        <GeneratedBackdrop
-          style="waves"
-          seed={shellQuery.data?.siteName ?? 'mantle'}
-          position="xMidYMax"
-        />
+        {/* Generated backdrop for this area — renders nothing when Settings →
+              Appearance has the menu switched off. See
+              @mantle/web-ui/area-backdrop. */}
+        <AreaBackdrop area="menu" />
         {/* `relative` is load-bearing: the backdrop is absolutely positioned and
               would otherwise paint OVER this in-flow content regardless of DOM
               order. */}
