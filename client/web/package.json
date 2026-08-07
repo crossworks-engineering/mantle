@@ -5,9 +5,10 @@
   "description": "Mantle owner UI — the zero-secret client Next app. Talks to the server origin via bearer + CORS; holds no SESSION_SECRET, no DB, no server packages.",
   "scripts": {
     "app-runtime": "node ../../packages/app-build/scripts/build-runtime.ts client/web",
-    "predev": "pnpm run app-runtime",
+    "excalidraw-assets": "node scripts/copy-excalidraw-assets.mjs",
+    "predev": "pnpm run app-runtime && pnpm run excalidraw-assets",
     "dev": "next dev",
-    "prebuild": "pnpm run app-runtime",
+    "prebuild": "pnpm run app-runtime && pnpm run excalidraw-assets",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"
@@ -17,6 +18,7 @@
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@excalidraw/excalidraw": "0.18.1",
     "@mantle/agent-runtime": "workspace:*",
     "@mantle/client-types": "workspace:*",
     "@mantle/content": "workspace:*",
