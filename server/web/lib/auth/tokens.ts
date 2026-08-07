@@ -180,8 +180,9 @@ export function mobileTokenJti(token: string): string | null {
 
 // ── Asset access tokens (`k:'a'`) ────────────────────────────────────────────
 // Short-lived, owner-scoped, stateless token for browser-native asset sources —
-// `<img>`/`<iframe>`/download `src`s to `/api/files/files/[id]?raw=1` and
-// `/api/attachments/[id]` — which CANNOT carry an Authorization header, so a
+// `<img>`/`<iframe>`/download `src`s to `/api/files/files/[id]?raw=1`,
+// `/api/attachments/[id]` and `/api/export/[id]` — which CANNOT carry an
+// Authorization header, so a
 // detached/Electron client (cross-origin, no cookie) can't otherwise load them.
 // Delivered in the URL (`?at=`), so the TTL is deliberately short to bound a
 // leaked URL; no revocation row (unlike mobile tokens) — TTL + secret rotation

@@ -1,7 +1,8 @@
 /**
  * Client-side resolver for browser-native asset sources — the `<img>`/`<iframe>`/
- * download `src`s pointing at `/api/files/files/[id]?raw=1` and
- * `/api/attachments/[id]`. Those loaders can't send the `Authorization` header
+ * download `src`s pointing at `/api/files/files/[id]?raw=1`,
+ * `/api/attachments/[id]` and `/api/export/[id]` (the download-anchor export
+ * surface). Those loaders can't send the `Authorization` header
  * that `apiFetch` uses, so in a detached/Electron client (cross-origin, no
  * session cookie) they'd 401.
  *

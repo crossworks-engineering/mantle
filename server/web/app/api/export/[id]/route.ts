@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { buildInternalRenderCookie, getOwnerOr401 } from '@/lib/auth';
+import { buildInternalRenderCookie, getOwnerForAsset } from '@/lib/auth';
 import { resolveExport, getPage } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
@@ -24,7 +24,10 @@ const Format = z.enum(['md', 'docx', 'pdf', 'csv', 'xlsx']);
  * is the save path).
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
+  // getOwnerForAsset (not getOwnerOr401): these downloads are plain <a href>
+  // anchors that can't carry a bearer, so a detached client authenticates via
+  // the `?at=` asset token (see ExportMenu → assetUrl). Session still wins.
+  const user = await getOwnerForAsset(req);
   if (user instanceof Response) return user;
   const parsed = IdParams.safeParse(await ctx.params);
   if (!parsed.success) {

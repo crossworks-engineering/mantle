@@ -27,6 +27,7 @@ function makeApp() {
   app.get('/api/auth/me', (c) => c.json({ me: true })); // public prefix
   app.get('/api/files/files/f1', (c) => c.json({ bytes: true }));
   app.get('/api/attachments/a1', (c) => c.json({ bytes: true }));
+  app.get('/api/export/e1', (c) => c.json({ bytes: true }));
   app.get('/s/tok123/bundle', (c) => c.json({ broker: true }));
   app.get('/settings', (c) => c.text('page'));
   return app;
@@ -98,6 +99,7 @@ describe('gate: session & bearer', () => {
     const at = mint({ exp: future(), k: 'a' });
     expect((await app.request(`/api/files/files/f1?at=${at}`)).status).toBe(200);
     expect((await app.request(`/api/attachments/a1?at=${at}`)).status).toBe(200);
+    expect((await app.request(`/api/export/e1?at=${at}&format=md`)).status).toBe(200);
     // Wrong path
     expect((await app.request(`/api/notes?at=${at}`)).status).toBe(401);
     // Wrong kind

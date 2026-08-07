@@ -10,6 +10,7 @@ import {
   Table2,
   type LucideIcon,
 } from 'lucide-react';
+import { assetUrl } from '@mantle/web-ui/asset-url';
 import { Button } from '@mantle/web-ui/ui/button';
 import {
   DropdownMenu,
@@ -23,7 +24,9 @@ type ExportItem = { format: string; label: string; Icon: LucideIcon };
 // Pages/notes → Markdown, Word, PDF. Tables → Excel, Markdown table, CSV. Each
 // item is a plain download link to `/api/export/<id>?format=…`; the route
 // generates bytes on the fly and the resolver picks what the node kind
-// supports (PDF via headless Chromium).
+// supports (PDF via headless Chromium). Hrefs go through assetUrl(): an anchor
+// can't carry a bearer, so a detached client targets the server origin with
+// the short-lived `?at=` asset token (same-origin passes through unchanged).
 const ITEMS: Record<'page' | 'table', ExportItem[]> = {
   page: [
     { format: 'md', label: 'Markdown', Icon: FileText },
@@ -55,7 +58,7 @@ export function ExportMenu({ nodeId, kind = 'page' }: { nodeId: string; kind?: '
       <DropdownMenuContent align="end">
         {ITEMS[kind].map(({ format, label, Icon }) => (
           <DropdownMenuItem key={format} asChild>
-            <a href={`/api/export/${nodeId}?format=${format}`} download>
+            <a href={assetUrl(`/api/export/${nodeId}?format=${format}`)} download>
               <Icon />
               {label}
             </a>
