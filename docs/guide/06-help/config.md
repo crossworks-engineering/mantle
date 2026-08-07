@@ -4,8 +4,8 @@ title: Config
 
 ## Config
 
-A sanity check. It diffs your brain's live configuration — agents, skills, tool
-groups, workers — against the template the product ships, and tells you per item
+A sanity check. It diffs your brain's live configuration, agents, skills, tool
+groups, workers, against the template the product ships, and tells you per item
 whether it's **OK**, **missing**, **modified** or **added**.
 
 This is the screen that answers "did that upgrade actually land?" and "what have
@@ -23,7 +23,7 @@ After an upgrade, and when something behaves oddly for no reason you can find.
 
 Read the four states as intent, not as errors. **Missing** usually means a new
 default arrived that your brain never got. **Modified** usually means *you*
-changed it on purpose — adopting would overwrite your version, so that's the one
+changed it on purpose; adopting would overwrite your version, so that's the one
 to think about rather than click through. **Added** is your own work and is
 supposed to be there.
 
@@ -36,7 +36,7 @@ The comparison is anchored on the **effective persona** rather than a fixed
 slug, so a brain whose assistant was renamed still compares against the right
 template instead of reporting everything as missing.
 
-The shipped template is the system manifest — one declaration of the default
+The shipped template is the system manifest, one declaration of the default
 agent, skill, tool-group and worker graph, with three consumers: a drift test in
 CI, the seeder that provisions a fresh brain, and the checker behind this
 screen. That's why the diff is trustworthy: it's comparing against the same
@@ -47,5 +47,5 @@ anything else, so adopting a skill won't silently re-grant tool groups you
 removed on purpose.
 
 Content is never part of this. Your notes, pages, tables and seeded example
-material are owner space — the manifest governs the system graph and stops at
+material are owner space, the manifest governs the system graph and stops at
 the boundary of things you wrote.

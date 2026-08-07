@@ -1,7 +1,7 @@
-# Mantle — your own AI brain
+# Mantle: your own AI brain
 
 Mantle is a **self-hosted AI brain**: one private place that remembers your whole
-life — emails, files, notes, documents, photos, conversations — and an assistant
+life (emails, files, notes, documents, photos, conversations) and an assistant
 that can actually *use* what it remembers. You talk to it like a person; it
 answers from everything you've ever given it, and it can cite exactly where each
 answer came from.
@@ -20,38 +20,38 @@ opposite way: **memory is the product.**
 - **It remembers everything, and never makes you repeat yourself.** There are no
   sessions to start or threads to manage. You mention your "Lister gantry rebuild"
   once; weeks later you say "that printer project" and it knows. Conversations are
-  continuous — you pick up wherever you left off.
+  continuous; you pick up wherever you left off.
 
 - **It cites its receipts.** Every fact it tells you traces back to the email,
-  note, or file it came from. The assistant doesn't hallucinate your life — it
+  note, or file it came from. The assistant doesn't hallucinate your life; it
   reads it. When it says "your passport expires in June," it can show you the
   document that says so.
 
 - **It has a real memory architecture, not a bigger prompt.** Under the hood,
-  everything you add is distilled into layered memory — short-term conversation,
+  everything you add is distilled into layered memory, short-term conversation,
   long-term facts, a searchable index of every document, and a **knowledge graph**
   of the people, places, and projects in your life and how they connect. See
   [The brain](02-concepts/01-the-brain.md).
 
 - **It comes to you.** Talk to it in the web app, or over **Telegram** from your
-  phone — by text *or voice note*. It transcribes what you say and can reply out
+  phone, by text *or voice note*. It transcribes what you say and can reply out
   loud. Same assistant, same memory, wherever you are.
 
 - **It's proactive when you want it to be.** Standing instructions called
-  *heartbeats* let it check in, follow up, and run recurring routines on its own —
+  *heartbeats* let it check in, follow up, and run recurring routines on its own,
   then stop when the job's done.
 
 - **It reads what you throw at it.** Forward an email, drop a PDF invoice, snap a
-  photo of a whiteboard — Mantle ingests it, extracts the text (OCR included), and
+  photo of a whiteboard, Mantle ingests it, extracts the text (OCR included), and
   files it into memory so you can ask about it later.
 
-- **You choose the models — local or cloud.** Run everything on a local model on
+- **You choose the models, local or cloud.** Run everything on a local model on
   your own hardware for total privacy and zero per-token cost, or use a frontier
   cloud model, or mix the two with automatic failover. Embeddings run locally and
   free by default.
 
 - **It can learn any API.** Point the built-in **Toolsmith** agent at a service's
-  API documentation — maps, weather, your accounting system — and it builds,
+  API documentation (maps, weather, your accounting system) and it builds,
   tests, and grants your assistant a new tool for it. From then on it's just
   conversation: "how long will I drive to the airport?" gets a live answer. See
   [API Console & Toolsmith](04-configuring/07-api-console-and-toolsmith.md).
@@ -72,20 +72,20 @@ opposite way: **memory is the product.**
 ## Who it's for
 
 Mantle is a **single-owner** system, built for one person who wants a private,
-durable, queryable record of their life and work — and an assistant that treats
+durable, queryable record of their life and work, and an assistant that treats
 that record as its memory. It's self-hosted by design: if you can run a small
 server (or even a spare box at home), you can own your own brain.
 
 One brain can still serve a team: you can mark trusted contacts as **team
 members**, who get a read-only chat with the brain and access to apps you share
-with them — identified, audited, and revocable, while you remain the only
+with them, identified, audited, and revocable, while you remain the only
 owner. See [Team Chat](03-using/07-team-chat.md).
 
 ---
 
 ## Where to go next
 
-- **Setting it up?** See [Installation](01-installation.md) — run it locally or on a server.
+- **Setting it up?** See [Installation](01-installation.md), run it locally or on a server.
 - **New here?** Start with [Getting started](01-getting-started.md).
 - **Want to understand the magic?** Read [The brain](02-concepts/01-the-brain.md).
 - **Configuring the assistant?** See [Agents, skills & tools](02-concepts/02-agents-skills-tools.md).

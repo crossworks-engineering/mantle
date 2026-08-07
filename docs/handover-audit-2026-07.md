@@ -1,8 +1,8 @@
-# Session handover — pre-Pinnacle audit (2026-07-16/17)
+# Session handover: pre-Pinnacle audit (2026-07-16/17)
 
 **Branch `feat/audit-fixes`** (worktree `.claude/worktrees/audit-fixes`), 7
 commits on top of `7ff039cd` (v0.140.0). Typecheck clean, ESLint 0 errors,
-Prettier clean, **2161 tests green**. **NOT merged, NOT pushed, NOT released** —
+Prettier clean, **2161 tests green**. **NOT merged, NOT pushed, NOT released**,
 Jason decides. Full audit report: dev-brain page `754184b8` (shared link
 `https://dev.crossworks.network/s/f8dZCX1_jLnRWqGV8qIFXQ`). Running log +
 complete remaining list: dev-brain task `de19ce14` (tag `audit`). Overall
@@ -19,8 +19,8 @@ items tracked in `de19ce14`.
 | --------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `732e3898`            | data-integrity / backups | `app-broker` anchors the `APP_DB_DIR` fallback to the monorepo root (kills the dev split-brain that produced the NATREF table-500s; parity with `tabledb/paths.ts`). Scheduled backups now snapshot per-app SQLite (`app-dbs`) beside `pg_dump` + `table-dbs`, with rotation + status counts; `docker-compose.yml` mounts `table-dbs` + `app-dbs` into `worker_events` (which runs the backup tick) so the snapshot passes see real files. Mini-app schema DDL wrapped in a transaction (no half-applied/bricked schema).                                                                                                                                                                                                                                                                                             |
 | `732e3898`            | reliability              | `worker_push` gets the `unhandledRejection` keep-alive backstop the other workers already had; `markPushed` hardened so a transient DB blip can't kill the worker mid-batch. `docker-compose.yml` gets `json-file` log rotation (10m×3) on every long-running service (disk-fill outage guard).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `0bc290bf` `d885ddb0` | CI quality gate          | The repo shipped a `.prettierrc.json` but was never formatted to it (785 files drifted) and ESLint had **no config** and never ran in CI. Now: full Prettier reformat (mechanical), `eslint.config.mjs` flat config (`@eslint/js` + `typescript-eslint` recommended, syntactic; react-hooks/@next wired for `apps/web`), and `Lint` + `Format check` steps in `build-check.yml`. The gate immediately caught a latent bug — a `tabledb` test wrote `.toBeNull` (property access, never called → dead assertion); corrected to `.toBeUndefined()`.                                                                                                                                                                                                                                                                     |
-| `8e93248d` `f1212499` | performance              | Entity resolution was seq-scanning the owner's entity set per query and, at ingest, per @-mention. Trigram fuzzy now uses `name % $q` so the trigram GIN prefilters; the exact-resolve alias branch switched from `q = any(aliases)` to the containment form `aliases @> array[q]` so the array GIN is actually used (**live-verified via EXPLAIN — the scalar form does not use the index**). Redundant per-mention duplicate-probe dropped (`reconcileEntity` returns `{entity, created}`). Migration `0121` adds a GIN on `entities.aliases` + a partial `entity_edges (owner_id, relation) WHERE valid_to IS NULL`. Dashboard: unbounded `embedding_cache count(*)` → planner `reltuples` estimate (no scan); `/api/dashboard` bundle memoized per-user 5s. All plans confirmed against the local dev DB (54323). |
+| `0bc290bf` `d885ddb0` | CI quality gate          | The repo shipped a `.prettierrc.json` but was never formatted to it (785 files drifted) and ESLint had **no config** and never ran in CI. Now: full Prettier reformat (mechanical), `eslint.config.mjs` flat config (`@eslint/js` + `typescript-eslint` recommended, syntactic; react-hooks/@next wired for `apps/web`), and `Lint` + `Format check` steps in `build-check.yml`. The gate immediately caught a latent bug, a `tabledb` test wrote `.toBeNull` (property access, never called → dead assertion); corrected to `.toBeUndefined()`.                                                                                                                                                                                                                                                                     |
+| `8e93248d` `f1212499` | performance              | Entity resolution was seq-scanning the owner's entity set per query and, at ingest, per @-mention. Trigram fuzzy now uses `name % $q` so the trigram GIN prefilters; the exact-resolve alias branch switched from `q = any(aliases)` to the containment form `aliases @> array[q]` so the array GIN is actually used (**live-verified via EXPLAIN; the scalar form does not use the index**). Redundant per-mention duplicate-probe dropped (`reconcileEntity` returns `{entity, created}`). Migration `0121` adds a GIN on `entities.aliases` + a partial `entity_edges (owner_id, relation) WHERE valid_to IS NULL`. Dashboard: unbounded `embedding_cache count(*)` → planner `reltuples` estimate (no scan); `/api/dashboard` bundle memoized per-user 5s. All plans confirmed against the local dev DB (54323). |
 
 ## What's left
 
@@ -31,7 +31,7 @@ Ordered by value for the Pinnacle pitch. None of these are started.
 The notification channels (Telegram, email) exist, but **nothing pushes an
 alert** when a scheduled backup fails, a worker goes unhealthy, or the disk
 fills. An enterprise operator expects to be told, not to discover it on the
-settings page. Also: automated backups default to `enabled: false` — flip them
+settings page. Also: automated backups default to `enabled: false`, flip them
 on during onboarding.
 
 - Wire backup-failure / staleness + worker-unhealthy + disk-pressure signals
@@ -54,7 +54,7 @@ on during onboarding.
 
 ### 3. Page draft concurrency (now multi-person-reachable)
 
-Page drafts have **no concurrency control** — `saveDraft` unconditionally
+Page drafts have **no concurrency control**: `saveDraft` unconditionally
 overwrites `draft_doc`, `commitPage` clears it unconditionally. Two autosaves
 (desktop + phone, or a user + the Pages agent) interleave into a silent
 last-write-wins lost update. Tables already solved this with a `draft_rev`
@@ -65,9 +65,9 @@ now that team-shares make pages multi-person.
 ### 4. Lint backlog burn-down, then ratchet
 
 The gate ships green with **78 warnings** deliberately non-blocking: 61
-`no-unused-vars` (real dead code — `noUnusedLocals` is off in tsconfig, so
+`no-unused-vars` (real dead code, `noUnusedLocals` is off in tsconfig, so
 ESLint is the only thing catching it), 13 `react-hooks/exhaustive-deps`
-(vestigial suppressions worth re-triaging — each is a potential stale-closure
+(vestigial suppressions worth re-triaging; each is a potential stale-closure
 bug), 4 `no-explicit-any`. Burn these down, then flip the cleanup rules from
 `warn` to `error` in `eslint.config.mjs` so CI blocks new drift. Follow-up:
 add the type-aware rules (`no-floating-promises`, `no-misused-promises`) once
@@ -95,13 +95,13 @@ no test net (`packages/microsoft` 1 test file / 17 source; `packages/calendar`
 0 / 5). Highest-leverage place to add coverage before Pinnacle usage grows.
 
 > A few additional hardening follow-ups (not in this handover) are tracked in
-> dev-brain task `de19ce14` — check there for the complete list before
+> dev-brain task `de19ce14`, check there for the complete list before
 > considering the audit closed.
 
 ## Deploy caveats when this branch ships
 
 1. **`docker-compose.yml` changed** (the `worker_events` mounts + the
-   `x-logging` anchor) — boxes on a tag-only `registry-pull` will NOT pick these
+   `x-logging` anchor), boxes on a tag-only `registry-pull` will NOT pick these
    up. Needs a **compose refresh**, same drift class as the original table-dbs
    mount (see memory `mantle-deploy-compose-drift`).
 2. **Migration `0121`** applies two forward-only indexes (`create index if not
@@ -116,5 +116,5 @@ exists`, non-CONCURRENTLY, tiny lock on small tables). Back up first per the
 
 Review the branch (or run `/code-review` again), then merge `--no-ff` from the
 integrator and cut a release. Start the remaining list at **#1 (ops alerting)**
-— it's the single highest-trust item for the pitch and reuses infrastructure
+; it's the single highest-trust item for the pitch and reuses infrastructure
 that already exists.

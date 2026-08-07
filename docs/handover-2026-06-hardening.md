@@ -1,4 +1,4 @@
-# Handover — security hardening, positioning, prod health (2026-06-12)
+# Handover: security hardening, positioning, prod health (2026-06-12)
 
 A continue-from-here brief after the v0.23.0 hardening pass, the README/site
 positioning refresh, and a live prod health trace. Read top-to-bottom once; the
@@ -8,7 +8,7 @@ positioning refresh, and a live prod health trace. Read top-to-bottom once; the
 
 ## Where things stand
 
-- **v0.23.0 is live** — image on Docker Hub (`titanwest/mantle:v0.23.0` + `:latest`,
+- **v0.23.0 is live**: image on Docker Hub (`titanwest/mantle:v0.23.0` + `:latest`,
   multi-arch), GitHub Release cut, and **production rolled** (`jason.crossworks.network`,
   `/api/version` → `0.23.0`, gitSha `b3a50cd`). No DB migrations in this release.
 - **`main` is one commit ahead of the v0.23.0 tag**: `6e8cf36`
@@ -16,7 +16,7 @@ positioning refresh, and a live prod health trace. Read top-to-bottom once; the
   live to the prod DB** (the `rich_writing` skill row) but is **not in a tagged
   release yet**. See *Open items #2*.
 - **Marketing site** (`mantle-ai.tech`) updated to the new positioning and deployed.
-- **Brain health: clean.** Full read-only trace done post-deploy — 0 container
+- **Brain health: clean.** Full read-only trace done post-deploy, 0 container
   restarts, ~2.4 GB idle, 0 orphaned chunks, no trace errors in 24h, clean logs
   since the roll. One real fault found and fixed (below).
 
@@ -43,7 +43,7 @@ autonomous-execution core. All in commit `22503be`. Highlights:
   re-checked per hop). `web_fetch` now goes through the guard.
 - **Toolsmith privilege:** tool-group/grant tools refuse non-http tools + self-grants;
   `api_tool_update` can't disarm shell tools or lower a confirm gate.
-- **"Require approval for agent-built tools"** preference (**default OFF**) —
+- **"Require approval for agent-built tools"** preference (**default OFF**),
   Settings → Tools switch. ON ⇒ agent-authored tools start confirm-gated.
   `packages/content/src/profile-preferences.ts`, `tools-client.tsx`.
 - **Prompt-injection containment:** retrieved content (facts/hits/relations/
@@ -56,7 +56,7 @@ autonomous-execution core. All in commit `22503be`. Highlights:
   JSON-tree paging, save-tool plaintext warning, MCP-bridge respawn-on-crash,
   file-serving XSS headers (`safe-download.ts`), tools-editor `timeoutMs` keep.
 
-**Caveat carried over:** the changed paths are real-data-light in prod so far —
+**Caveat carried over:** the changed paths are real-data-light in prod so far,
 verify by *using* them (a couple of real chat turns; the page re-test below).
 
 ---
@@ -65,14 +65,14 @@ verify by *using* them (a couple of real chat turns; the page re-test below).
 
 You asked Saskia to save a sermon summary "as a page"; it landed as a **Note**.
 Root cause (traced in prod): the responder is intentionally granted **no page
-tools** (P6 — authoring is the Pages specialist's job), but the `rich_writing`
+tools** (P6; authoring is the Pages specialist's job), but the `rich_writing`
 skill still told her to use `page_create` herself. So the call hit an allowlist
 refusal and she **silently fell back to a note**.
 
 Fixed: rewrote the skill to **delegate page authoring to the Pages specialist**
 and to refuse the silent note-downgrade. Applied to the live prod skill row +
 committed (`6e8cf36`). **Your summary is safe** as the note *"Jase's Gospel
-Foundation: A Summary from His Sermons"* — nothing lost.
+Foundation: A Summary from His Sermons"*; nothing lost.
 
 ---
 
@@ -83,14 +83,14 @@ Foundation: A Summary from His Sermons"* — nothing lost.
    `/pages`. (Claude can re-trace the turn to confirm she delegated, not downgraded.)
 2. **Optional `v0.23.1`** to realign image ↔ DB. The deployed v0.23.0 image still
    carries the *old* `rich_writing` text in its manifest; prod's DB has the fix.
-   Default (gap-fill) seeds won't revert it — only a manual `overwrite` seed from
+   Default (gap-fill) seeds won't revert it, only a manual `overwrite` seed from
    the old image would. Low urgency; cut v0.23.1 when batching the next change.
-3. **Deferred hardening** (not done, by choice — all localized):
+3. **Deferred hardening** (not done, by choice, all localized):
    - Cross-agent grant confirmation (only *self*-grant is blocked today).
    - Fence `web_fetch`/search **tool results** (only auto-injected retrieval is
      fenced; the agent-pulled path isn't).
    - Opt-in hard egress-gate for heartbeats (force-confirm email/web on unattended
-     fires) — would tie to a preference like the authored-tools switch.
+     fires), would tie to a preference like the authored-tools switch.
    - Tier-3 latent footguns: `getApiKeyById` owner predicate, federation
      rate-limit + XFF-trust, session `tokenVersion`/`passwordChangedAt` revoke,
      `recordContactSent` `| string`, CSP on `/s`.
@@ -100,23 +100,23 @@ Foundation: A Summary from His Sermons"* — nothing lost.
 ## Tracing the brain (the reusable part)
 
 ### In-app (browser)
-- **`/debug`** — system vitals (Embedder + Tailnet pills, connections, versions).
-- **`/debug/integrity`** — the corpus audit: half-indexed nodes, stale backups,
+- **`/debug`**: system vitals (Embedder + Tailnet pills, connections, versions).
+- **`/debug/integrity`**: the corpus audit: half-indexed nodes, stale backups,
   dead-lettered jobs, with how-to-heal for each finding. Policy-aware (media/empty
   items that legitimately don't embed are classified OK, not drift).
-- **Traces view** — the live "what did the brain just do" journey: every ingest,
+- **Traces view**: the live "what did the brain just do" journey: every ingest,
   extraction, tool call, and model invocation as a trace with cost attribution.
   Filter to a `responder_turn` to see the exact tool sequence + errors of a chat.
 
 ### Docs
 - [`observability.md`](./observability.md) / [`data-flow-tracing.md`](./data-flow-tracing.md)
-  — the trace model + verifying ingest by hand.
-- [`journey.md`](./journey.md) — every way content enters and what reacts.
-- [`system-integrity.md`](./system-integrity.md) — the declarative manifest + the
+, the trace model + verifying ingest by hand.
+- [`journey.md`](./journey.md), every way content enters and what reacts.
+- [`system-integrity.md`](./system-integrity.md), the declarative manifest + the
   standing integrity checks behind `/debug/integrity`.
-- [`memory.md`](./memory.md) §7 — as-built prompt assembly (where the new
+- [`memory.md`](./memory.md) §7, as-built prompt assembly (where the new
   content-fence lives).
-- [`update-prod.md`](./update-prod.md) — the prod update loop + its **Verify** block.
+- [`update-prod.md`](./update-prod.md), the prod update loop + its **Verify** block.
 
 ### Read-only health probe (SSH + psql)
 The box: `ssh cwe@mcp.crossworks.network`, install dir `~/mantle`. A psql helper:
@@ -152,7 +152,7 @@ PSQL "select ordinal, name, kind, status from trace_steps where trace_id='<TRACE
 PSQL "select error from trace_steps where trace_id='<TRACE_ID>' and ordinal=<N>"        # a failed step's error
 ```
 > Note: `trace_step_kind` enum is `{db_read,db_write,llm_call,embed,http,notify,compute,send}`
-> — tool calls show as `compute`/`db_write` with the tool name in `name`
+>, tool calls show as `compute`/`db_write` with the tool name in `name`
 > (e.g. `tool: page_create`). `input`/`output`/`meta` are jsonb (cast carefully).
 
 ---
@@ -161,7 +161,7 @@ PSQL "select error from trace_steps where trace_id='<TRACE_ID>' and ordinal=<N>"
 
 - **App release:** `pnpm version:bump <minor|patch>` → `git commit -am "release: vX"`
   → `git tag vX && git push origin main vX`. The tag triggers CI (multi-arch image
-  + GitHub Release). **CI does not run tests** — `vitest run` + `pnpm -r typecheck`
+  + GitHub Release). **CI does not run tests**: `vitest run` + `pnpm -r typecheck`
   are the local gate.
 - **Prod update (registry-pull, now viable post multi-arch CI):**
   ```bash
@@ -176,5 +176,5 @@ PSQL "select error from trace_steps where trace_id='<TRACE_ID>' and ordinal=<N>"
   had none, so rollback is just re-pulling the old image).
 
 ## Local artifacts (this machine)
-- `/tmp/rich_writing.prod-backup` — the **old** `rich_writing` skill text (pre-fix),
+- `/tmp/rich_writing.prod-backup`, the **old** `rich_writing` skill text (pre-fix),
   in case the persona delegation change needs reverting.

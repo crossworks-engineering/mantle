@@ -1,12 +1,12 @@
 # Mantle UI / Theme Style Guide
 
 A rulebook for keeping the `apps/web` front-end consistent. Read this before
-doing any styling work. When in doubt, **match an existing screen** — Notes and
+doing any styling work. When in doubt, **match an existing screen**: Notes and
 the settings screens (Agents, Tools, API keys, …) are the reference
 **master-detail** implementations (§8); Appearance is the reference for theme
 widgets.
 
-> TL;DR — shadcn primitives, semantic theme tokens only (pair every fill with
+> TL;DR, shadcn primitives, semantic theme tokens only (pair every fill with
 > its OWN `-foreground`, never mix pairs), never native `prompt/confirm/alert`,
 > bare icons inside buttons, toasts for feedback, and reuse the shared patterns
 > below instead of reinventing them.
@@ -32,7 +32,7 @@ widgets.
 
 Use Tailwind utilities backed by the theme CSS variables (mapped in the
 `@theme inline` block of `@mantle/web-ui/styles/themes.css`). **Never** put a
-hex/oklch literal in a component. The theme CSS itself is **generated** —
+hex/oklch literal in a component. The theme CSS itself is **generated**,
 seeds in `packages/web-ui/themes/`, every text token solved to AA at build
 time; see [themes.md](themes.md) before touching any theme colour.
 
@@ -56,19 +56,19 @@ time; see [themes.md](themes.md) before touching any theme colour.
 Rules:
 - **A fill is not an ink. Use `text-primary-ink` / `text-destructive-ink` for
   text.** `--primary` and `--destructive` are tuned to sit BEHIND their own
-  `-foreground`, which makes them dark/saturated — and frequently illegible when
+  `-foreground`, which makes them dark/saturated, and frequently illegible when
   used as text on a neutral surface. Measured across the presets on 2026-07-27:
   47 such pairs below 2:1, one of them rendering a Delete label at 1.05:1 and one
   theme whose text and surface were literally the same hex. A single token cannot
-  do both jobs — as a fill it wants to be dark, as ink on a dark surface it wants
+  do both jobs, as a fill it wants to be dark, as ink on a dark surface it wants
   to be light, and in dark mode those are irreconcilable (~25% of themes had no
   solution). So the ink is its own token, free to differ, and it defaults to the
   fill wherever the fill already clears AA. `themes.test.ts` asserts every
   `-ink` token against every surface in every theme; `mantle/use-ink-for-text`
   fails the build on a bare `text-primary` / `text-destructive`.
-  `bg-primary`+`text-primary-foreground` is unchanged — that pairing was never
+  `bg-primary`+`text-primary-foreground` is unchanged, that pairing was never
   the problem.
-- **Pair a fill with its OWN foreground — never mix pairs.** Each surface token
+- **Pair a fill with its OWN foreground, never mix pairs.** Each surface token
   has a guaranteed-contrast partner; use them together:
   `bg-primary`+`text-primary-foreground`, `bg-secondary`+`text-secondary-foreground`,
   `bg-accent`+`text-accent-foreground`, `bg-destructive`+`text-destructive-foreground`,
@@ -81,51 +81,51 @@ Rules:
   a fill on a row whose meta text is `text-muted-foreground`, flip it with
   `group-hover:text-accent-foreground`). Swept app-wide 2026-06-03.
 
-  **Which fill where** — what each surface pair is *for* (reach for the right one,
+  **Which fill where**: what each surface pair is *for* (reach for the right one,
   then text it with its own foreground):
 
   | Fill | Use it for |
   |---|---|
   | `bg-background` / `text-foreground` | the page itself |
   | `bg-card` / `text-card-foreground` | neutral raised panels, cards |
-  | `bg-accent` / `text-accent-foreground` | a **soft highlighted surface** — accent cards, hover/active rows, chips that set BOTH tokens |
+  | `bg-accent` / `text-accent-foreground` | a **soft highlighted surface**: accent cards, hover/active rows, chips that set BOTH tokens |
   | `bg-secondary` / `text-secondary-foreground` | a quieter filled chip / segmented control |
   | `bg-muted` / `text-muted-foreground` | the most subdued surface + secondary text on `background` |
-  | `bg-primary` / `text-primary-foreground` | the single brand/action accent — primary buttons, the one thing that should pop. Don't tile large areas with it (it's saturated). |
+  | `bg-primary` / `text-primary-foreground` | the single brand/action accent, primary buttons, the one thing that should pop. Don't tile large areas with it (it's saturated). |
   | `bg-destructive` / `text-destructive-foreground` | errors / destructive actions only |
 
   Rule of thumb: **`accent` is the "card accent"; `primary` is the single pop on
   top; `muted`/`secondary` are the quiet fills.** For a tinted-but-not-filled
-  emphasis, a faint `bg-primary/10` (contrast-checked) is fine — but a *filled*
+  emphasis, a faint `bg-primary/10` (contrast-checked) is fine, but a *filled*
   coloured surface must bring its matching `-foreground`.
 - **Semantic action colours come from tokens, not literal green/red.** Affirmative
   = `primary`, dangerous/removing = `destructive`; status = `success` /
   `warning` / `info` (first-class roles beside `destructive`, each with a
   `-foreground` for on-fill text and an `-ink` for text on neutral surfaces).
   A hardcoded `bg-green-600`/`bg-red-600` ignores the theme.
-- **Opacity via the `/NN` modifier** (`bg-primary/10`, `border-chart-2/30`) —
+- **Opacity via the `/NN` modifier** (`bg-primary/10`, `border-chart-2/30`),
   works through `color-mix`, fully theme-aware.
-- **`chart-1..5` is DATA ink, nothing else** — categorical series in actual
+- **`chart-1..5` is DATA ink, nothing else**: categorical series in actual
   charts, tag-pill tints, avatar palettes. It is generated at a 3:1 non-text
   bar and is NOT legible as text (`text-chart-N` on prose shipped function
   names at 1.02:1 once). Status colours are `success`/`warning`/`info`; code
   colours are `code-*`; both are AA-guaranteed inks. Don't use `primary` for
   categorical sets.
-- **Selected / active state — mark it with an ACCENT, not a background fill.**
+- **Selected / active state, mark it with an ACCENT, not a background fill.**
   For list selection use a **left accent bar only**: `border-l-[3px]
   border-l-primary` (keep a visible `border-l-border` at rest so radius doesn't
   break; flip only the colour on select). **Do not add a `bg-accent` fill on the
-  selected or hovered row** — in many themes `accent` is saturated and the row's
+  selected or hovered row**, in many themes `accent` is saturated and the row's
   text is `foreground`/`muted-foreground` (not `accent-foreground`), so the text
   becomes unreadable. For hover use a neutral `hover:bg-muted/50`. (Swept
   app-wide 2026-06-02; the borderless Contacts rows use a `border-l-2
   border-l-transparent` base so the accent bar doesn't shift text.) `bg-accent`
   is fine where text is paired with `accent-foreground` (e.g. a chip that sets
   both), and a faint `bg-primary/10` tint is acceptable when contrast is
-  verified — but the default selection idiom is border-only.
+  verified, but the default selection idiom is border-only.
 - **Hover on a `bg-sidebar` surface (Activity column, nav):** `--sidebar` equals
   `--muted` in some themes, so `hover:bg-muted` is invisible there. Use a neutral
-  overlay `hover:bg-foreground/[0.06]` — it differs from any sidebar value in
+  overlay `hover:bg-foreground/[0.06]`; it differs from any sidebar value in
   light + dark and, being neutral, keeps grey `muted-foreground` text legible
   (a coloured `accent` tint muddies it).
 - Light/dark is handled by `next-themes`; the color theme by
@@ -133,11 +133,11 @@ Rules:
   `packages/web-ui/styles/themes.css`, registry in
   `packages/web-ui/src/lib/themes.ts`). Don't fork theme logic.
 - **Adding a hand-authored theme** (as opposed to the imported tweakcn presets):
-  a token has to clear contrast in *both* the roles the app uses it in — `--primary`
+  a token has to clear contrast in *both* the roles the app uses it in, `--primary`
   is a fill under `--primary-foreground` **and** ink as `text-primary` on
   `--background`/`--card`/`--sidebar`, same for `--destructive`. A mid-tone brand
   colour usually satisfies neither; shade it for light mode and let the brand hex
-  itself carry dark mode (over near-black ink). `themes.test.ts` asserts the pairs —
+  itself carry dark mode (over near-black ink). `themes.test.ts` asserts the pairs,
   extend its `describe` rather than eyeballing a new palette.
 
 ---
@@ -145,19 +145,19 @@ Rules:
 ## 3. Typography & fonts
 
 - **Sans (everything):** Inter, self-hosted, wired as `--font-sans` on
-  `<body>` via `lib/fonts.ts`. Just use default text — don't set font-family.
+  `<body>` via `lib/fonts.ts`. Just use default text, don't set font-family.
 - **Logo / wordmark only:** Bukhari Script via `font-logo` (`--font-logo`).
-  Do **not** use it for anything else — the centered top-bar page title is
+  Do **not** use it for anything else, the centered top-bar page title is
   Inter (`text-lg font-bold text-chart-2`).
 - `--font-serif` / `--font-mono` are fallback strings only (mono is fine for
   code/`font-mono`); no serif font is actually loaded.
 - **Do not add per-theme fonts.** All themes share Inter by design.
-- Headings: page title lives in the **top bar** (see §8) — don't add a big
+- Headings: page title lives in the **top bar** (see §8): don't add a big
   on-page `<h1>` that duplicates it. Section headings: `h2`,
   `text-base`/`text-lg font-semibold`.
-- **Sizing — keep it readable.** Primary text `text-sm`, secondary/meta
+- **Sizing, keep it readable.** Primary text `text-sm`, secondary/meta
   `text-xs`. Avoid `text-[10px]`/`text-[11px]` except for tiny corner
-  tags/badges — list/table meta was deliberately bumped up a notch this round.
+  tags/badges, list/table meta was deliberately bumped up a notch this round.
 
 ---
 
@@ -173,14 +173,14 @@ Prefer these over hand-rolled markup:
 
 Shared app-level patterns (`components/`):
 
-- **`layout/back-link.tsx`** — `<BackLink href>` standard detail-page back link.
-- **`layout/page-title.tsx`** — `<SetPageTitle title>` sets the centered top-bar
+- **`layout/back-link.tsx`**: `<BackLink href>` standard detail-page back link.
+- **`layout/page-title.tsx`**: `<SetPageTitle title>` sets the centered top-bar
   title (no on-page duplicate needed).
-- **`tag-pill.tsx`** — `<TagPill tag>` + `tagColorClass()` (themed tag color).
-- **`tag-input.tsx`** — `<TagInput value onChange>` pill tag editor (`string[]`).
-- **`markdown-editor.tsx`** — `<MarkdownEditor value onChange>` toolbar +
+- **`tag-pill.tsx`**: `<TagPill tag>` + `tagColorClass()` (themed tag color).
+- **`tag-input.tsx`**: `<TagInput value onChange>` pill tag editor (`string[]`).
+- **`markdown-editor.tsx`**: `<MarkdownEditor value onChange>` toolbar +
   split/preview editor.
-- **`ui/toast.tsx`** — `useToast()` for all feedback.
+- **`ui/toast.tsx`**: `useToast()` for all feedback.
 
 ---
 
@@ -191,7 +191,7 @@ Shared app-level patterns (`components/`):
   `<Button asChild><Link …/></Button>`.
 - **Icons inside buttons are bare:** `<Button><Plus /> New</Button>`. The
   Button base already supplies `gap-2` spacing and auto-sizes SVGs to `size-4`.
-  **Do NOT** add `mr-*`/`ml-*` or `h-*/w-*` to an icon inside a Button — it
+  **Do NOT** add `mr-*`/`ml-*` or `h-*/w-*` to an icon inside a Button; it
   double-spaces and fights the base. (Standalone icons outside buttons may keep
   margins/sizes.)
 - **Heights line up at `h-9`:** `Button size="sm"` is `h-9`; the matching
@@ -206,21 +206,21 @@ Shared app-level patterns (`components/`):
 
 - `Label` + field wrapped in `space-y-1.5`; stack fields with `space-y-4`.
 - Use `Input`, `Textarea` (not raw elements). Tag fields use `<TagInput>`.
-- **Every settings field carries a `<FieldHint>`** (`ui/field-hint.tsx`) — the
+- **Every settings field carries a `<FieldHint>`** (`ui/field-hint.tsx`): the
   dimmed one-liner under the control. Not decoration: a number with no stated
   effect is a number nobody dares change.
   - **Say the effect, not the value.** "Default 3" tells the operator nothing.
     Lead with what moving the field *does*, and fold the default into that
-    sentence ("…; 20 is plenty"). Read defaults from source — never guess them.
+    sentence ("…; 20 is plenty"). Read defaults from source, never guess them.
   - **Two sentences, ~120 chars, no jargon that isn't already on screen.**
-  - **`warn` is for fields where excess bites** — money, box load, or answer
+  - **`warn` is for fields where excess bites**: money, box load, or answer
     quality. It renders in `warning-ink` after the description, so the hint
     reads in two tones. Most fields have no `warn`; using it everywhere makes
     it invisible where it counts.
   - **Wire it up for screen readers**: give the hint the field's `id` and put
     `aria-describedby={hintId(id)}` on the input.
   - **Field hints only.** A `<fieldset>` intro that explains a whole section
-    stays a plain `<p className="text-xs text-muted-foreground">` — it isn't
+    stays a plain `<p className="text-xs text-muted-foreground">`; it isn't
     describing one control, so it takes no `id` and no `aria-describedby`.
     Don't restate the section intro on each field inside it.
 
@@ -232,26 +232,26 @@ Shared app-level patterns (`components/`):
   </FieldHint>
   ```
 - **Date / time entry uses `<DateTimePicker value onChange clearable?>`**
-  (`components/ui/date-time-picker.tsx`) — the shadcn Calendar in a popover +
+  (`components/ui/date-time-picker.tsx`), the shadcn Calendar in a popover +
   a time field. Don't use the native `datetime-local` input (used by events +
   heartbeats; value is a `Date | null`).
 - **Every form submit uses `<SubmitButton>`** (`components/ui/submit-button.tsx`)
-  — never a bare `<Button type="submit">`. It standardises the two things a
+, never a bare `<Button type="submit">`. It standardises the two things a
   save button must do:
-  - **Descriptive label — verb + noun.** "Save agent", "Save profile",
-    "Create event", "Save key" — never a bare "Save"/"Create", and the label
+  - **Descriptive label, verb + noun.** "Save agent", "Save profile",
+    "Create event", "Save key", never a bare "Save"/"Create", and the label
     does **not** change while saving (no "Saving…" text-swap). The user should
     always read *what* the button persists.
   - **In-flight feedback.** While the submit runs the button disables itself
     and shows a leading spinner; the label stays put (no layout reflow).
-  - **Driving the busy state:** client forms (the common case — `fetch` +
+  - **Driving the busy state:** client forms (the common case, `fetch` +
     `useState`/`useTransition`) pass `pending={saving}`. Server-action forms
-    (`<form action={…}>`) pass nothing — `SubmitButton` reads `useFormStatus`.
+    (`<form action={…}>`) pass nothing, `SubmitButton` reads `useFormStatus`.
   - For create/edit dialogs, switch the label on mode:
     `{mode === 'create' ? 'Create agent' : 'Save agent'}`.
 - **Multi-select → `<ToggleList>`** (`components/toggle-list.tsx`), not a wall of
   pills. Each row is a non-interactive container (name + description + a real
-  shadcn `<Switch>`); **the Switch is the only control — clicking the row body
+  shadcn `<Switch>`); **the Switch is the only control, clicking the row body
   does nothing** (explicit toggle, no whole-row click) and there is **no hover
   fill** (on-state shows a `border-l-primary` bar). Optional `group` clusters rows
   under sub-headers. It flows inline in the page (no inner scroll); pass
@@ -289,7 +289,7 @@ The left nav and right Activity column collapse to a 3.5rem icon rail. Their
 live widths are published by `AppShell` as the `--nav-w` / `--activity-w` CSS
 variables on the shell root (with matching `data-{nav,activity}-collapsed`).
 **Any element that frames the content by offsetting against a rail must use the
-vars, never a hardcoded `md:left-64` / `lg:right-80`** — e.g. `md:left-[var(--nav-w)]
+vars, never a hardcoded `md:left-64` / `lg:right-80`**, e.g. `md:left-[var(--nav-w)]
 lg:right-[var(--activity-w)]` (see `main`, `FleetLayout`, the mail shell). A new
 full-screen fixed overlay that hardcodes the width will silently break collapse.
 Descendants that need to restyle when collapsed key off the root via
@@ -303,30 +303,30 @@ A full-width bottom bar (`FooterBar`, `components/layout/footer-bar.tsx`) is the
 shell's single control strip. Height is published as **`--footer-h`** on the
 shell root, and **every full-height fixed region must end at
 `bottom-[var(--footer-h)]`** (not `bottom-0`) so its content never hides behind
-the bar — `main`, the sidebar, the Activity rail, the assistant panel,
+the bar, `main`, the sidebar, the Activity rail, the assistant panel,
 `FleetLayout`, and the mail shell all do. Layout: **start** = sidebar collapse
-toggle (⌘B), **centre** = the five most-used menus (ranked from local usage —
+toggle (⌘B), **centre** = the five most-used menus (ranked from local usage,
 `lib/nav-usage.ts`, keyed off the shared nav list in `layout/nav-items.ts`),
 **end** = the Highlight-content + Assistant launchers, the full-display ⇄
 side-column dock toggle (only while the assistant is open), then the Activity
 collapse toggle (⌘J). The two collapse toggles live here, not on the rails they
-control — icon-only, mirrored so they read as a symmetric pair.
+control, icon-only, mirrored so they read as a symmetric pair.
 
 ### Full-height pages
 The app `<main>` is a fixed, full-height `overflow-y-auto scrollbar-thin`
 region. For full-height screens the **page wrapper returns the client directly**
 (no `max-w` box; just `<><SetPageTitle/><Client/></>`) and the root takes the
-height. **Every flex/grid scroll pane must carry `min-h-0`** — grid items and
+height. **Every flex/grid scroll pane must carry `min-h-0`**: grid items and
 flex children default to `min-height:auto`, so without it the pane grows to its
 content and `<main>` scrolls *behind* it (the dreaded double scrollbar / bottom
 gap / cut-off). `min-h-0` is necessary but **not sufficient**: a correctly-sized
 but `position:static` `overflow-y-auto` pane still leaks its scrollable overflow
-into `<main>` when its content is far taller than the viewport — so the actual
+into `<main>` when its content is far taller than the viewport, so the actual
 scroll container (the detail pane) must also be `relative` (see the master-detail
 rules below). Use `scrollbar-thin` on scroll areas (`scrollbar-hidden` also
 exists; both are utilities in `globals.css`).
 
-### Master-detail — THE pattern for list+editor screens
+### Master-detail: THE pattern for list+editor screens
 Used by **Notes, Traces, Secrets, Events, Tasks**, and every settings list
 screen: **Accounts, Agents, AI workers, Heartbeats, Skills, Tools, API keys.**
 Left = scrollable list of **accent cards**; right = detail/form for the selected
@@ -355,17 +355,17 @@ item. Proven scaffold (double-scrollbar-free):
 Rules:
 - **Both panes need `md:min-h-0`** (see double-scrollbar note above). Left is a
   flex column; only its list div scrolls (`md:flex-1 md:overflow-y-auto`).
-- **The scrolling detail pane needs `relative`** (`position` only — no other
+- **The scrolling detail pane needs `relative`** (`position` only, no other
   effect). `min-h-0` correctly sizes the pane to the grid track, but a
   `position:static` `overflow-y-auto` pane still lets its *scrollable overflow*
-  propagate up to `<main>` when its content is much taller than the viewport —
+  propagate up to `<main>` when its content is much taller than the viewport,
   producing a **second, outer scrollbar** that overlaps and clips the editor.
   Making the pane a positioned element (`relative`) closes that boundary so only
   the pane scrolls. Symptom: two stacked scrollbars on the right pane, the outer
   one cutting off text. This bit tool-groups/skills/tools (whose tall tool-picker
-  lists pushed content to ~8000px) — agents never had it because its pane was
+  lists pushed content to ~8000px); agents never had it because its pane was
   already `relative`. Always include `relative` on the detail pane.
-- **Accent card** (selectable list item) — keep the left border *visible* so
+- **Accent card** (selectable list item): keep the left border *visible* so
   rounded corners don't break; only its colour flips on select:
   ```tsx
   <button className={cn(
@@ -380,8 +380,8 @@ Rules:
   top-right holds boolean flags as shadcn **`Switch`es** (Enabled,
   Default-for-kind, …) and a ghost **Delete** (`text-destructive`). Form body
   has the rest; Save/Cancel footer. Delete → `AlertDialog`. Don't put the
-  Enabled toggle in the form body — it lives in the header.
-- **Selection model — pick one:**
+  Enabled toggle in the form body; it lives in the header.
+- **Selection model, pick one:**
   - *Client state* when the list rows already hold everything the detail needs
     (e.g. Notes rows include content) → instant, no fetch. `useState` for
     selection; re-derive the selected object from fresh props each render so
@@ -403,13 +403,13 @@ Rules:
   uses the **`useListNav()`** hook (`go(patch)` merges into the query string;
   `null` clears a key, and filter/search changes pass `page: null` to reset),
   a debounced search input, and **`<ListPager>`** (footer count + prev/next,
-  shown whenever there are rows). Don't filter a loaded list in `useMemo` —
+  shown whenever there are rows). Don't filter a loaded list in `useMemo`,
   paginating a client-filtered slice is wrong.
 
 ### Detail (deep-link) pages
 Start with `<BackLink href>`; title via `<SetPageTitle>`. **Keep these working
 as deep links** even after a master-detail supersedes the in-app navigation
-(e.g. `/traces/[id]`, `/settings/accounts/[id]/*`) — other screens link to them.
+(e.g. `/traces/[id]`, `/settings/accounts/[id]/*`), other screens link to them.
 
 ### Radius / spacing
 `rounded-md` (controls), `rounded-lg` (cards); gaps in multiples of `0.25rem`
@@ -420,9 +420,9 @@ as deep links** even after a master-detail supersedes the in-app navigation
 ## 9. Tags
 
 - Stored and passed as `string[]` (not comma strings).
-- **Edit:** `<TagInput value onChange>` — comma/Enter commits a pill, Backspace
+- **Edit:** `<TagInput value onChange>`, comma/Enter commits a pill, Backspace
   removes last, paste splits on commas; normalizes lowercase + dedupes.
-- **Display:** `<TagPill tag>` — deterministic color from `chart-1..5` via
+- **Display:** `<TagPill tag>`, deterministic color from `chart-1..5` via
   `tagColorClass(tag)` (same tag → same color, recolors with the theme).
 
 ---
@@ -432,7 +432,7 @@ as deep links** even after a master-detail supersedes the in-app navigation
 - **Editing:** `<MarkdownEditor>` (toolbar + Edit/Split/Preview + live preview).
 - **Rendering:** `ReactMarkdown` + `remarkGfm` inside
   `prose prose-sm dark:prose-invert max-w-none`.
-- **Theme-accented prose — add `prose-accent`** next to `prose` to brighten the
+- **Theme-accented prose, add `prose-accent`** next to `prose` to brighten the
   flat black-and-white markdown with theme tokens: `primary-ink` h1/h2/h3 (+ h2
   divider), `info-ink` h4, primary links,
   tinted inline-code chips, accent-bar blockquote, coloured list markers, gradient
@@ -440,10 +440,10 @@ as deep links** even after a master-detail supersedes the in-app navigation
   every theme × light/dark). It's **opt-in**: docs reader, Notes (read + public
   share), and Pages (editor + read + public) add it; the Pages editor surface is
   `prose` **and** `ProseMirror`, so it also picks up Pages-only `.ProseMirror`
-  polish — code-block cards (`--muted` panel + 3px `primary` spine), a `primary`
+  polish, code-block cards (`--muted` panel + 3px `primary` spine), a `primary`
   caret (which keeps the *transparent* gradient h1 editable), and a themed text
   selection. Selectors are class+element so they outrank Typography's `:where()`
-  rules without `!important`. Don't hand-style headings per-surface — add the class.
+  rules without `!important`. Don't hand-style headings per-surface, add the class.
 
 ---
 
@@ -454,7 +454,7 @@ as deep links** even after a master-detail supersedes the in-app navigation
   `tag-pill.tsx`'s `TAG_COLORS`) and index into it.
 - Content is auto-detected (no `tailwind.config`); literal classes anywhere in
   source are picked up.
-- Opacity modifiers on theme tokens work via `color-mix` — safe to use.
+- Opacity modifiers on theme tokens work via `color-mix`, safe to use.
 
 ---
 
@@ -463,7 +463,7 @@ as deep links** even after a master-detail supersedes the in-app navigation
 - Icon-only buttons/links need `aria-label`; decorative icons get `aria-hidden`.
 - Confirm destructive actions (AlertDialog), don't rely on hover-only controls
   as the sole affordance.
-- Respect focus rings (`focus-visible:ring-*` is built into the primitives —
+- Respect focus rings (`focus-visible:ring-*` is built into the primitives,
   don't strip it).
 
 ---
@@ -475,7 +475,7 @@ as deep links** even after a master-detail supersedes the in-app navigation
 - Work in a git worktree; auto commit + ff-merge into `main` after each change.
   **Don't push unless asked.** Commit messages end with the project's
   `Co-Authored-By` trailer.
-- Remove dead code you replace (unused imports, orphaned components) — e.g.
+- Remove dead code you replace (unused imports, orphaned components), e.g.
   the old `PageHeader` and `tree-rail` were deleted when superseded.
 - Prefer extracting a reusable component (like `BackLink`, `TagPill`) the
   second time a pattern appears, then adopt it everywhere for consistency.
@@ -485,15 +485,15 @@ as deep links** even after a master-detail supersedes the in-app navigation
 ## 14. Anti-patterns (don't do these)
 
 - ❌ Hardcoded colors (`#fff`, `text-[oklch(...)]`, `bg-gray-200`), including
-  literal `bg-green-600`/`bg-red-600` for approve/deny — use `primary`/`destructive` (§2).
-- ❌ Mixing a fill with a foreign foreground — `bg-accent text-foreground`,
-  `hover:bg-accent hover:text-foreground` — pair each fill with its own
+  literal `bg-green-600`/`bg-red-600` for approve/deny, use `primary`/`destructive` (§2).
+- ❌ Mixing a fill with a foreign foreground, `bg-accent text-foreground`,
+  `hover:bg-accent hover:text-foreground`, pair each fill with its own
   `-foreground` (§2). Breaks on light-accent themes.
-- ❌ A coloured-`accent` hover on a `bg-sidebar` surface (muddies grey text) —
+- ❌ A coloured-`accent` hover on a `bg-sidebar` surface (muddies grey text),
   use a neutral `hover:bg-foreground/[0.06]` (§2).
 - ❌ `window.prompt/confirm/alert`.
 - ❌ A bare `<Button type="submit">` in a form, a bare "Save"/"Create" label,
-  or a "Saving…" text-swap — use `<SubmitButton pending={…}>Save <noun></SubmitButton>` (§6).
+  or a "Saving…" text-swap, use `<SubmitButton pending={…}>Save <noun></SubmitButton>` (§6).
 - ❌ `mr-1 h-3.5 w-3.5` (or any margin/size) on an icon inside a `<Button>`.
 - ❌ Native `<select>`/`<input type=checkbox>` when `Select`/`Checkbox` exist.
 - ❌ Inline error banners for transient failures (use toasts).
@@ -501,7 +501,7 @@ as deep links** even after a master-detail supersedes the in-app navigation
 - ❌ Per-theme or decorative fonts beyond Inter + the Bukhari logo.
 - ❌ Dynamically built Tailwind class names.
 - ❌ A flex/grid scroll pane without `min-h-0`, or a master-detail detail pane
-  without `relative` (either causes a second, outer scrollbar — see §8).
+  without `relative` (either causes a second, outer scrollbar, see §8).
 - ❌ `text-[10px]`/`text-[11px]` for normal list/table text (use `text-xs`+).
-- ❌ The Enabled toggle buried in the form body on a master-detail editor — it
+- ❌ The Enabled toggle buried in the form body on a master-detail editor; it
   goes top-right in the header as a `Switch`.

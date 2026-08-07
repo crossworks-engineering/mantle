@@ -4,7 +4,7 @@ title: Studio
 
 ## Studio
 
-The overview editor for the whole agent graph — who delegates to whom, which
+The overview editor for the whole agent graph, who delegates to whom, which
 skills hang off which agent, which tool groups grant what, and how it all
 composes into the prompt a model actually receives.
 
@@ -14,8 +14,8 @@ the other way round.
 
 Its governing rule is worth stating outright: **no hidden prompts.** Wherever an
 instruction is given as human-written prose, it must be visible here, including
-its composition. The composed-prompt preview shows the assembled text — the
-agent's own prompt plus each attached skill, in order — which is the only place
+its composition. The composed-prompt preview shows the assembled text, the
+agent's own prompt plus each attached skill, in order, which is the only place
 in the system that answers "what did the model literally read?"
 
 ## When to use this
@@ -26,7 +26,7 @@ teaching something that contradicts the prompt, a delegate that was never wired,
 a group granted to the wrong agent.
 
 Use the sandbox before saving. It runs a real multi-turn conversation against
-the composed prompt and **persists nothing** — no messages, no memory, no
+the composed prompt and **persists nothing**: no messages, no memory, no
 extraction. It's the way to find out whether a prompt edit helped without
 putting the result into your brain.
 
@@ -35,7 +35,7 @@ going back is one click.
 
 ## Technical
 
-The canvas is drawn from the live database rows, not from the manifest — so it
+The canvas is drawn from the live database rows, not from the manifest, so it
 shows your brain as it is, including everything you've changed. The manifest is
 the factory default, and the integrity check is the linter that lights each node
 and edge against it.
@@ -45,8 +45,8 @@ the capability question visual: every path from a tool to an agent is a drawn
 line. Skill nodes read as teaching and have no such edges, because skills carry
 no tools.
 
-Structure editing here writes the same rows the settings screens write — model,
-parameters, attached skills, delegates — with a reset-to-default that pulls the
+Structure editing here writes the same rows the settings screens write, model,
+parameters, attached skills, delegates, with a reset-to-default that pulls the
 manifest's version of that one item.
 
 Prompt versions are stored per agent, so history survives model changes,

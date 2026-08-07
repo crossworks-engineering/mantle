@@ -1,4 +1,4 @@
-# Files — the host-mirrored filesystem
+# Files: the host-mirrored filesystem
 
 How Mantle stores user-managed files. Companion to
 [`architecture.md`](./architecture.md) and [`memory.md`](./memory.md).
@@ -9,7 +9,7 @@ files automatically. PDFs upload + display but ingestion is wired
 behind a parser hook that ships in a follow-up.
 
 A file can be shared read-only via a public link (`/s/[token]`), which serves
-its bytes through a token-scoped asset route with a media-appropriate viewer —
+its bytes through a token-scoped asset route with a media-appropriate viewer,
 see [`sharing.md`](./sharing.md). Pages reuse the same upload/serve pipeline for
 embedded image/file nodes.
 
@@ -40,10 +40,10 @@ DB-only. The Telegram, email, and digest branches don't touch disk.
 
 Three reasons:
 
-1. **The user owns the files.** `cat`, `vim`, `cp`, Syncthing — all
+1. **The user owns the files.** `cat`, `vim`, `cp`, Syncthing, all
    work as expected. Nothing's trapped behind an API.
 2. **External edits round-trip cleanly** once a rescan is wired in (not
-   built yet — manual import via the UI for now).
+   built yet, manual import via the UI for now).
 3. **Backup is a folder copy.** No special tooling needed.
 
 The tradeoff is that the DB and disk must stay paired. Every write
@@ -57,15 +57,15 @@ file isn't).
 
 ## 3. The package layout
 
-- [`packages/files`](../packages/files) — host fs ops + slug helpers
+- [`packages/files`](../packages/files), host fs ops + slug helpers
   + the high-level operations (`createFolder`, `upsertFile`,
   `deleteFolder`, `listFiles`, …). Pure logic, no HTTP, no UI.
-- [`apps/web/lib/files.ts`](../apps/web/lib/files.ts) — thin re-export
+- [`apps/web/lib/files.ts`](../apps/web/lib/files.ts), thin re-export
   so the web's API routes can import from `@/lib/files` (convention).
-- [`apps/web/app/api/files/**`](../apps/web/app/api/files/) — REST API.
-- [`apps/web/app/(app)/files/`](../apps/web/app/(app)/files/) — UI.
-- [`apps/mcp/src/server.ts`](../apps/mcp/src/server.ts) — MCP tools.
-- [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts) —
+- [`apps/web/app/api/files/**`](../apps/web/app/api/files/), REST API.
+- [`apps/web/app/(app)/files/`](../apps/web/app/(app)/files/), UI.
+- [`apps/mcp/src/server.ts`](../apps/mcp/src/server.ts), MCP tools.
+- [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts),
   `readNodeBody` falls back to disk for `type='file'` nodes whose
   `data.content` wasn't cached.
 
@@ -85,11 +85,11 @@ client-side hint.
 
 **Folders are not renameable.** Renaming a folder would cascade ltree
 path updates across every descendant node + reshuffle the on-disk
-tree. Skipped for the same reason `branch` paths are unique-indexed —
+tree. Skipped for the same reason `branch` paths are unique-indexed,
 a rename would either break the index or require a transactional
 rewrite of every descendant. Make a new folder + move files instead.
 
-**Files are renameable**, basename only — the extension is preserved.
+**Files are renameable**, basename only; the extension is preserved.
 
 ---
 
@@ -159,7 +159,7 @@ which:
    `data.content` first (the cached copy for editable text); if absent,
    falls back to reading the on-disk file by `INGESTABLE_EXTS`
    extension allowlist.
-3. Skips silently when the body is too short (< 20 chars) — that's
+3. Skips silently when the body is too short (< 20 chars), that's
    how binaries fall through.
 4. Runs the summary + facts + entities pipeline as for any other node.
 
@@ -184,7 +184,7 @@ Wired in [`apps/mcp/src/server.ts`](../apps/mcp/src/server.ts):
 | `file_read` | File metadata + bytes (utf-8 for text, base64 for binary) |
 | `file_delete` | Delete a file (both DB row and disk) |
 
-Same auth model as the other MCP tools — every query is scoped to
+Same auth model as the other MCP tools; every query is scoped to
 `OWNER_ID = process.env.ALLOWED_USER_ID`.
 
 ---
@@ -201,9 +201,9 @@ drops a new PDF into the folder, the row updates without any UI action.
 
 | chokidar event | What the watcher does                                         |
 |----------------|---------------------------------------------------------------|
-| `add`          | `syncFileFromDisk` — insert a `file` node (or no-op if same sha256). |
-| `change`       | `syncFileFromDisk` — update node, clear embedding, re-fire `node_ingested`. |
-| `unlink`       | `deleteFileByPath` — drop the DB row.                         |
+| `add`          | `syncFileFromDisk`, insert a `file` node (or no-op if same sha256). |
+| `change`       | `syncFileFromDisk`, update node, clear embedding, re-fire `node_ingested`. |
+| `unlink`       | `deleteFileByPath`, drop the DB row.                         |
 
 **Loop prevention** is built in: `syncFileFromDisk` only ever reads the
 disk, never writes back. So when the UI uploads a file, it updates the
@@ -232,7 +232,7 @@ recommended path for renames.
   complexity disproportionate to the value at this scale.
 - **No file versioning.** Edits overwrite; the old content is gone.
   Git the folder if you care.
-- **Scanned PDFs return empty text.** No OCR — they fall through the
+- **Scanned PDFs return empty text.** No OCR; they fall through the
   20-char guard and get skipped.
 - **Concurrent writes**: two simultaneous saves on the same file
   race at the disk layer. Single-user system, fine for now.

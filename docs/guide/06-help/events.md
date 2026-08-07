@@ -5,7 +5,7 @@ toolGroups: [events]
 
 ## Events
 
-Calendar entries — one-off or recurring — with optional reminders that reach you
+Calendar entries (one-off or recurring) with optional reminders that reach you
 on Telegram.
 
 Two kinds live here. Events you create in Mantle, which it owns and can change;
@@ -18,14 +18,14 @@ copies of a feed someone else controls.
 - "What's on this week?"
 - "Move Thursday's meeting to Friday."
 
-Ask about your week in plain language rather than by date — it resolves
+Ask about your week in plain language rather than by date; it resolves
 "tomorrow", "next Tuesday" and "the week after" against your profile timezone.
 
 ## Technical
 
 Events are nodes with start/end timestamps, recurrence, and a reminder offset.
 Reminders are delivered by a worker that wakes on schedule and sends through your
-configured channel — so a reminder only arrives if that worker is running, which
+configured channel, so a reminder only arrives if that worker is running, which
 is worth remembering on a local stack.
 
 Subscribed calendars sync over iCal on a timer. That direction is strictly

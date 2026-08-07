@@ -2,28 +2,28 @@
 
 How to wire Claude Desktop or Claude Code onto your Mantle so Claude can
 search your brain, read mail, manage tasks/notes/events, walk the entity
-graph, and answer Telegram — using the bundled MCP server. One-time setup
+graph, and answer Telegram, using the bundled MCP server. One-time setup
 per client machine; after that the tools are simply present every launch.
 
 **What this is (and isn't).** [`apps/mcp`](../apps/mcp/src/server.ts) is a
 **tool surface**, not a chat channel: ~70 tools of raw, persona-less access to
-your data — including the full Toolsmith set (`api_tool_*`, `web_fetch`,
+your data, including the full Toolsmith set (`api_tool_*`, `web_fetch`,
 groups + grants), so a Claude Code session can read a service's API docs and
 author/test/deploy new agent tools on your own subscription instead of
 Mantle's metered key. See [`toolsmith.md`](./toolsmith.md). A conversation you have in Claude Desktop does *not* enter the
-unified conversation stream ([`conversation.md`](./conversation.md)) — your
+unified conversation stream ([`conversation.md`](./conversation.md)), your
 in-app assistant won't "remember" the chat itself. But everything Claude
 *writes* through it (a note, a task, a memory) is a real brain write: the
 extractor ingests, embeds, and indexes it like any other content. Logging a
 `journal` from Claude Desktop literally teaches your in-app assistant who you
 are.
 
-## The security model — read this first
+## The security model: read this first
 
 The server is **stdio-only, on purpose**. There is no port, no token, no
 login: *whoever can spawn the process gets the owner's full data access.*
 That makes the setup below trivially simple and safe on machines you control
-— and means you must **never** wrap it in a network listener "to make it
+, and means you must **never** wrap it in a network listener "to make it
 easier". The remote shape below uses SSH precisely so your existing SSH key
 remains the entire auth layer. (An HTTP transport with a real auth layer is
 the documented future path for phones / one-click connectors; it is
@@ -55,12 +55,12 @@ Code in the repo; for Claude Desktop point it at the same entry:
 ```
 
 Requires the local stack up (Postgres, and the local embedder for semantic
-search — a failed embed degrades `search` to keyword-only, not an error).
+search, a failed embed degrades `search` to keyword-only, not an error).
 
 ### B. Docker stack on the same machine
 
 The production image keeps the full workspace + `tsx` by design, so the
-server runs inside the existing `mantle_web` container — no extra install:
+server runs inside the existing `mantle_web` container, no extra install:
 
 ```json
 {
@@ -120,7 +120,7 @@ claude mcp add mantle -- ssh my-mantle docker exec -i mantle_web pnpm -C apps/mc
 
 ## Verify without Claude
 
-One line proves the whole path (SSH → container → server → DB) — expect a
+One line proves the whole path (SSH → container → server → DB), expect a
 `serverInfo: "mantle"` JSON reply within a few seconds:
 
 ```bash
@@ -128,8 +128,8 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol
   | ssh my-mantle 'docker exec -i mantle_web pnpm -C apps/mcp start' | head -1
 ```
 
-If instead you see `No account yet` — sign up in the web app first. If
-`ALLOWED_USER_ID ... does not match` — the env points at a deleted user.
+If instead you see `No account yet`, sign up in the web app first. If
+`ALLOWED_USER_ID ... does not match`, the env points at a deleted user.
 
 ## What you get
 
@@ -154,12 +154,12 @@ memory: …"*, *"approve the pending tool calls if they look sane"*.
 Everything above is *persona-less* raw data access. `respond_as_agent` is the
 exception: it lets Claude send a message **as if it were the user talking to
 one of your responder agents**, and runs ONE real turn of that agent's
-pipeline — its composed persona (identity + skills), real memory retrieval,
+pipeline, its composed persona (identity + skills), real memory retrieval,
 and its real granted tools, which **execute** (delegation via `invoke_agent`
 included). It's the "Agent Studio sandbox, but with the real tool loop".
 
 The one thing it does *not* do is persist: **nothing is written to the
-agent's conversation history** — no inbound/outbound rows, no usage bump — so
+agent's conversation history** (no inbound/outbound rows, no usage bump) so
 you can probe a responder repeatedly without polluting its memory of talking
 to you. Tool **side effects still happen** (a note gets created; a
 confirm-gated call lands on `/pending`, returned as `pending_ids`), and the
@@ -181,5 +181,5 @@ makes a plain model call with tools and memory OFF.
   Desktop is the same row the web app shows, and the extractor will index
   whatever Claude writes.
 - **One config per client machine.** stdio means there's nothing to
-  centrally provision — each device that should reach the Mantle needs SSH
+  centrally provision; each device that should reach the Mantle needs SSH
   access and the config blob once.

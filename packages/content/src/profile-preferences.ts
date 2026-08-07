@@ -55,7 +55,7 @@ export type ProfilePreferences = {
   /** Which generated background each area of the shell shows, as
    *  `area=style` pairs (`menu=waves,header=off`). Brain-level for the same
    *  reason as avatarStyle and colorTheme: it is the look of the product.
-   *  `off` is a real, storable choice — see @mantle/web-ui/backgrounds. Areas
+   *  `off` is a real, storable choice, see @mantle/web-ui/backgrounds. Areas
    *  on their default are omitted, so a default change still reaches brains
    *  that never chose. Read via projectBackgrounds, never raw. */
   backgrounds?: string;
@@ -409,7 +409,7 @@ export function projectAvatarStyle(raw: unknown): string | undefined {
 }
 
 /**
- * Project a stored `backgrounds` map — `area=style` pairs, comma separated.
+ * Project a stored `backgrounds` map, `area=style` pairs, comma separated.
  *
  * Shape-checked only, exactly like projectAvatarStyle and for the same reason:
  * the AREA and STYLE registries both live in the web layer

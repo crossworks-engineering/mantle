@@ -5,7 +5,7 @@ toolGroups: [memory-core]
 
 ## Docs
 
-Markdown files on disk, readable here and — once you enable them — searchable by
+Markdown files on disk, readable here and (once you enable them) searchable by
 the assistant. The sidebar browses; this pane is where you decide what gets
 indexed.
 
@@ -43,7 +43,7 @@ from content chunks split on headings.
 
 Re-indexing is cheap by construction. A file-level content hash skips unchanged
 files entirely, and the chunk-level embedding cache makes unchanged sections
-free even when a file did change — so editing one paragraph in a long document
+free even when a file did change, so editing one paragraph in a long document
 costs one paragraph's worth of work, not the document's.
 
 A background watcher follows the enabled collections' directories and re-syncs
@@ -51,7 +51,7 @@ on change; it refreshes which collections are enabled every minute, so toggling
 one here takes effect without a restart. Enabling also reconciles immediately,
 which is why a newly enabled collection is searchable straight away.
 
-Two guards worth knowing. **Disabling a collection purges its indexed nodes** —
+Two guards worth knowing. **Disabling a collection purges its indexed nodes**,
 that's why it asks first. And if a collection's directory turns up empty,
 reconcile skips rather than deleting everything, so an unmounted disk doesn't
 silently wipe the index.

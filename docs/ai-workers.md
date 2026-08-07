@@ -3,8 +3,8 @@
 > The deep dive on how Mantle handles "one-shot AI jobs" (reflector,
 > extractor, summarizer, TTS, STT, vision, image-gen) and the adapter
 > layer that lets any of them point at any provider. For the bigger
-> picture — how this fits with `agents`, the responder, memory, and
-> the rest of the stack — start at [architecture.md §9d](./architecture.md#9d-ai-workers--provider-adapter-framework).
+> picture, how this fits with `agents`, the responder, memory, and
+> the rest of the stack, start at [architecture.md §9d](./architecture.md#9d-ai-workers--provider-adapter-framework).
 
 ## 1. Why this exists
 
@@ -20,7 +20,7 @@ calls an LLM." Two things became obvious:
    that share five fields with real agents and ignore the other ten.
 
 2. **Voice / vision / image-gen don't fit either.** They're
-   transformations too, but they don't even call chat models — they
+   transformations too, but they don't even call chat models; they
    call dedicated provider APIs (Whisper transcription, TTS speech
    synthesis, vision-LLMs, DALL-E). Adding them to `agents` would
    compound the mismatch.
@@ -67,7 +67,7 @@ ai_workers (
 )
 ```
 
-**One default per `(owner, kind)`** — enforced by a partial unique
+**One default per `(owner, kind)`**: enforced by a partial unique
 index on `is_default = true`. The runtime calls
 `getDefaultWorker(ownerId, kind)` and gets the default (or falls back
 to highest-priority enabled row, or null).
@@ -79,7 +79,7 @@ can pin which voice it speaks with via `agents.tts_worker_id`, chosen in
 model + key; the agent only references it. The reply path resolves it
 through **`getAgentTtsWorker(ownerId, agent.ttsWorkerId)`** (`@mantle/db`):
 the pinned worker if it's still owned + enabled, otherwise it falls back
-to `getDefaultWorker(ownerId, 'tts')` — so a deleted/disabled/unset pin
+to `getDefaultWorker(ownerId, 'tts')`, so a deleted/disabled/unset pin
 degrades to the default rather than going silent. `ON DELETE SET NULL`
 means deleting a voice reverts the agents that used it back to the
 default.
@@ -165,7 +165,7 @@ handle the translation.
 
 ### 3.2 Registry
 
-`packages/voice/src/adapters/registry.ts` — a `Map<ProviderId,
+`packages/voice/src/adapters/registry.ts`, a `Map<ProviderId,
 Dispatcher>` per capability. Built-in adapters self-register on
 module load:
 
@@ -189,27 +189,27 @@ The runtime looks up `getChatAdapter(worker.provider)` /
 `getTtsAdapter(worker.provider)` / etc. and calls the right interface.
 
 `isProviderWired(providerId, capability)` reports whether an adapter
-is registered for that combination — drives the "not yet wired" hint
+is registered for that combination, drives the "not yet wired" hint
 in the UI dropdown.
 
 ### 3.3 Currently shipped adapters
 
 | Provider | Chat | Embedding | TTS | STT | Vision | Image-gen |
 |---|---|---|---|---|---|---|
-| OpenRouter | ✅ (direct SDK¹) | ✅ openrouter-embedding (only multimodal-capable adapter) | — | — | ✅ openrouter-vision (+ native PDF) | — |
+| OpenRouter | ✅ (direct SDK¹) | ✅ openrouter-embedding (only multimodal-capable adapter) |, |, | ✅ openrouter-vision (+ native PDF) |, |
 | OpenAI | via OpenRouter¹ | ✅ openai-embedding | ✅ openai-tts | ✅ openai-stt | ✅ openai-vision | ✅ openai-image (gpt-image-1 / DALL-E 3 / DALL-E 2) |
-| xAI (Grok) | ✅ xai-chat | — | ✅ xai-tts | ✅ xai-stt | ✅ xai-vision | ✅ xai-image (grok-imagine-image) |
-| Hugging Face | ✅ huggingface-chat | — | — | — | — | ✅ huggingface-image (FLUX-1, SDXL, SD 3.5) |
-| Anthropic (direct) | ✅ anthropic-chat¹ | — *(provider defers to Voyage AI)* | — | — | ✅ anthropic-vision | — |
+| xAI (Grok) | ✅ xai-chat |, | ✅ xai-tts | ✅ xai-stt | ✅ xai-vision | ✅ xai-image (grok-imagine-image) |
+| Hugging Face | ✅ huggingface-chat |, |, |, |, | ✅ huggingface-image (FLUX-1, SDXL, SD 3.5) |
+| Anthropic (direct) | ✅ anthropic-chat¹ |, *(provider defers to Voyage AI)* |, |, | ✅ anthropic-vision |, |
 | Google (Gemini) | ✅ google-chat | ✅ google-embedding | ✅ google-tts | ✅ google-stt | ✅ google-vision | ✅ google-image (Imagen 3 / 4) |
-| DeepSeek | ✅ deepseek-chat | — | — | — | — | — |
-| Mistral | — | ✅ mistral-embedding | — | — | — | — |
-| Cohere | — | ✅ cohere-embedding | — | — | — | — |
-| ElevenLabs | — | — | ✅ elevenlabs-tts | ✅ elevenlabs-stt (Scribe v1) | — | — |
-| Deepgram | — | — | — | ✅ deepgram-stt | — | — |
-| AssemblyAI | — | — | — | ✅ assemblyai-stt | — | — |
+| DeepSeek | ✅ deepseek-chat |, |, |, |, |, |
+| Mistral |, | ✅ mistral-embedding |, |, |, |, |
+| Cohere |, | ✅ cohere-embedding |, |, |, |, |
+| ElevenLabs |, |, | ✅ elevenlabs-tts | ✅ elevenlabs-stt (Scribe v1) |, |, |
+| Deepgram |, |, |, | ✅ deepgram-stt |, |, |
+| AssemblyAI |, |, |, | ✅ assemblyai-stt |, |, |
 
-¹ **Every chat provider has a registered adapter — including OpenRouter
+¹ **Every chat provider has a registered adapter, including OpenRouter
 itself (`openrouter-chat`, since Pre-work B of Phase 3).** The runtime
 dispatches via `getChatAdapter(worker.provider).chat({...})` for every
 chat-shaped worker (extractor / summarizer / reflector) AND for every
@@ -227,14 +227,14 @@ the **Document (PDF) `kind`** provider set; adapters with `extractDocument`
 §5b′. With only an OpenRouter key the whole text+vision brain works; TTS/STT/
 image-gen still need a direct provider (§5b″).
 
-Image-gen providers power **Saskia's `generate_image` tool** —
+Image-gen providers power **Saskia's `generate_image` tool**,
 generated images land both inline in the chat (Telegram `sendPhoto`
 on Telegram, base64 artifact in /assistant) and as a file node under
 `/files/generated-images/<yyyy-mm-dd>/`.
 
 ### 3.4 The provider catalogue
 
-`packages/voice/src/providers.ts` — closed-set list of every provider
+`packages/voice/src/providers.ts`, closed-set list of every provider
 Mantle knows about (12 today). Each entry has `id`, `label`,
 `description`, `capabilities[]`, `signupUrl`, `docsUrl`,
 `isAggregator?`. Drives:
@@ -244,7 +244,7 @@ Mantle knows about (12 today). Each entry has `id`, `label`,
   kind via `providersForCapability(cap)`)
 - The signup-link hint shown when a provider is selected
 
-Adding a provider — five steps:
+Adding a provider, five steps:
 
 1. Add an entry to `SUPPORTED_PROVIDERS`. Provider appears in
    dropdowns immediately (with "not yet wired" hint).
@@ -256,7 +256,7 @@ Adding a provider — five steps:
 5. Add wire-shape tests (`adapters/<provider>-<capability>.test.ts`)
    so the audit-caught silent-drop patterns don't recur.
 
-UI lights up automatically once the adapter registers — "not yet
+UI lights up automatically once the adapter registers, "not yet
 wired" disappears, model dropdown populates, test buttons work.
 
 **For the cookbook with per-capability templates, the OpenAI-compat-
@@ -268,7 +268,7 @@ auto-loaded from
 
 ---
 
-## 4. Discovery — finding which models your key can use
+## 4. Discovery: finding which models your key can use
 
 Static catalogs say "here are the models this provider has published."
 But your specific key might not have access to all of them (free
@@ -303,7 +303,7 @@ in the provider console, pick it up now."
 
 ---
 
-## 5. Voice in/out — end-to-end
+## 5. Voice in/out: end-to-end
 
 The voice-modality pipeline is the most worked-out example of how
 `ai_workers` + adapters compose with the responder. Inbound and
@@ -360,7 +360,7 @@ Saskia's voice from Nova to a cloned ElevenLabs voice is:
 3. Next voice message uses the new voice. No code change, no restart.
 
 The `[VOICE]` opt-in marker is documented in Saskia's system prompt
-template — see [memory.md §6.2](./memory.md#62-the-agent-roles) for
+template, see [memory.md §6.2](./memory.md#62-the-agent-roles) for
 where that lives.
 
 ### 5a″. Transcription (STT) options
@@ -380,7 +380,7 @@ diverges is what each provider hands BACK.
 | `google-stt` | prompt text, not a parameter | ✗ | ✗ |
 
 The 2026-08 docs sweep found two faults, both in `xai-stt`, both of the same
-kind as the TTS ones — a comment asserting something about someone else's API
+kind as the TTS ones, a comment asserting something about someone else's API
 that had stopped being true:
 
 - `format=true` (punctuation and capitalisation) **requires** `language`. It
@@ -399,8 +399,8 @@ and browser recordings arrive in, which is our main inbound path.
 ### 5a′. Which speech options actually reach the provider
 
 The normalized option set (`SynthesizeOptions`) is `text`, `voice`, `model`,
-`speed`, `format`, `instructions`, `language`. That set is stable — the AI
-SDK's `generateSpeech` arrived at the same seven independently — but **who
+`speed`, `format`, `instructions`, `language`. That set is stable, the AI
+SDK's `generateSpeech` arrived at the same seven independently, but **who
 honours what is not**, so each adapter declares `TtsDispatcher.supports` and
 the caller reports the rest. Checked against each provider's own docs,
 2026-08:
@@ -426,16 +426,16 @@ Anything requested and not forwarded comes back as `ignoredParams` on the tool
 result and `ignored_params` in the trace step, same convention as image
 generation.
 
-### 5a. Speech tags — inline + wrapping
+### 5a. Speech tags: inline + wrapping
 
 Voice models expose two tag vocabularies, and the framework treats both
-uniformly (see `packages/voice/src/adapters/types.ts` — `AudioTag` and
+uniformly (see `packages/voice/src/adapters/types.ts`, `AudioTag` and
 `WrappingTag`):
 
-- **Inline tags** — point-in-time cues in square brackets: `[laughs]`,
+- **Inline tags**: point-in-time cues in square brackets: `[laughs]`,
   `[sigh]`, `[pause]`. Advertised per-model via
   `TtsDispatcher.supportedAudioTags(model)`.
-- **Wrapping tags** — angle-bracket pairs that style a whole phrase:
+- **Wrapping tags**: angle-bracket pairs that style a whole phrase:
   `<whisper>it's a secret</whisper>`, `<soft>…</soft>`, `<slow>…</slow>`.
   Advertised via `TtsDispatcher.supportedWrappingTags(model)`. **xAI
   Grok voice** is the provider that ships these today (volume / pitch /
@@ -447,7 +447,7 @@ Both flow the same way each turn:
 
 1. The runtime asks the active TTS adapter for both sets and folds them
    into Saskia's system prompt via `composeAudioTagInstructions(inline,
-   wrapping)` — one combined paragraph, grouped by category, so she only
+   wrapping)`, one combined paragraph, grouped by category, so she only
    emits tags this model will render.
 2. On voice-out, the tags ride through to the synthesizer untouched.
 3. On text-out (or TTS fallback), `stripAudioTags` removes inline tags
@@ -468,9 +468,9 @@ Operators see both lists under the voice dropdown at
 > [`file-ingestion.md`](./file-ingestion.md). This section is the vision/worker
 > view.
 
-Every file that enters Mantle — uploaded via the Files UI, attached to a
+Every file that enters Mantle, uploaded via the Files UI, attached to a
 `/assistant` turn, sent to the Telegram bot, dropped on disk, or pushed
-through MCP — is handled by **two cleanly-separated responsibilities**:
+through MCP, is handled by **two cleanly-separated responsibilities**:
 
 1. **Durable indexing (universal, async).** Save bytes → `node_ingested` →
    the **extractor** is the *single* producer of durable metadata
@@ -479,22 +479,22 @@ through MCP — is handled by **two cleanly-separated responsibilities**:
    `data.content`. This runs for every file regardless of how it arrived.
 2. **Live answer (conversational surfaces only, sync, ephemeral).** The web
    `/assistant` and Telegram run a **question-aware** read of the attachment
-   for the immediate reply — never persisted. Both call the one shared helper.
+   for the immediate reply, never persisted. Both call the one shared helper.
 
 ### The shared primitives (no duplication)
 
-- `parseDocumentBytes(bytes, ext)` — `@mantle/files`. The one place that maps
+- `parseDocumentBytes(bytes, ext)`, `@mantle/files`. The one place that maps
   format → parser. Used by the extractor and the live-answer helper.
-- `runVisionWorker({ ownerId, bytes, mimeType, filename, prompt? })` —
+- `runVisionWorker({ ownerId, bytes, mimeType, filename, prompt? })`,
   `@mantle/agent-runtime`. Resolves the owner's default vision worker,
   transcodes HEIC, runs the adapter. Best-effort: returns `ran:false` + a note
   rather than throwing. Used by the extractor (neutral) and the live-answer
   helper (question-aware).
 - `extractAttachmentForTurn({ ownerId, bytes, mimeType, filename, question? })`
-  — `@mantle/agent-runtime`. The conversational helper: image → vision, doc →
+, `@mantle/agent-runtime`. The conversational helper: image → vision, doc →
   `parseDocumentBytes` (capped at `DOC_TEXT_MAX` 24K), returns
   `{ kind, text, note }`. Used by both `/assistant` and Telegram.
-- `buildAttachmentContextText(text, { kind, transcript, note, nodeId })` —
+- `buildAttachmentContextText(text, { kind, transcript, note, nodeId })`,
   folds the extracted text into the turn with the file node id surfaced so
   Saskia can re-read the original (`extract_from_image` for images,
   `file_read` for documents).
@@ -509,24 +509,24 @@ through MCP — is handled by **two cleanly-separated responsibilities**:
 - **Telegram** (`handleMessage`): a `photo` OR `document` attachment →
   `downloadTelegramFile` → save to `/files/telegram-uploads/<date>/` →
   `extractAttachmentForTurn` → fall through to the responder. **Full parity
-  with the web** — documents are no longer dropped. (`voice` still routes
+  with the web**; documents are no longer dropped. (`voice` still routes
   through STT; `audio`/`video` are not yet handled.)
-- **Files UI / disk-watcher / MCP**: save only — no inline pass. The extractor
+- **Files UI / disk-watcher / MCP**: save only, no inline pass. The extractor
   picks them up and produces the durable index (images via `runVisionWorker`,
   docs via `parseDocumentBytes`).
 
 **Transcript-default + reliability.** The responder prefers the extracted
 text; for an *image* with no transcript it falls back to inlining the raw
 pixels only when the model is vision-capable and the image is within the
-provider's per-image limit (`maxImageBytesFor` — guards Bedrock's opaque
+provider's per-image limit (`maxImageBytesFor`, guards Bedrock's opaque
 "Could not process image" on oversized photos). On any responder error with an
 image attached, the web turn retries once text-only. Extraction failures fall
 back to a `[… couldn't be read: <reason>]` marker. A misconfigured/missing
 vision worker leaves an image findable by filename and records the reason on
-the `photo_ingest` trace — the system stays up; enrichment is best-effort.
+the `photo_ingest` trace; the system stays up; enrichment is best-effort.
 
 **HEIC/HEIF (iPhone default).** Vision providers can't read HEIC, so
-`runVisionWorker` runs `transcodeImageForVision` (`@mantle/files`) first —
+`runVisionWorker` runs `transcodeImageForVision` (`@mantle/files`) first,
 HEIC/HEIF → JPEG via `heic-convert` (libheif WASM, no native dep), passthrough
 otherwise. Lazy-imported; on a decode failure it returns the original bytes and
 degrades as before. `heic-convert` is in `serverExternalPackages` so Next
@@ -544,15 +544,15 @@ scanned invoice" into "Mantle reads every line."
 
 You pick the *image* model and the *document* model differently. A cheap model
 (`gpt-4o-mini`) is fine for "describe this photo"; an invoice or statement wants
-a strong document model (Claude / Gemini) that reads the **whole PDF natively** —
+a strong document model (Claude / Gemini) that reads the **whole PDF natively**,
 real layout, real tables. Forcing one worker to serve both means either
 overpaying for photo describe or under-reading documents. So `document` is its
 own kind with its own provider / model / prompt. Migration `0051` adds it to the
 `ai_worker_kind` enum; `DocumentParams` carries `extraction_prompt`,
-`max_tokens` (default **8000** — the whole doc transcribes in one call, so the
+`max_tokens` (default **8000**: the whole doc transcribes in one call, so the
 per-image vision default is far too small), and `prefer_native`.
 
-### Native PDF vs rasterize — and why native is better
+### Native PDF vs rasterize: and why native is better
 
 Two ways to turn a PDF into text for a vision model:
 
@@ -561,7 +561,7 @@ Two ways to turn a PDF into text for a vision model:
    the vision worker per page. Works anywhere, but loses cross-page table
    coherence, repeats page headers/footers, and costs N calls.
 2. **Native PDF** (the upgrade): hand the *whole* PDF to a document-capable
-   model in **one** call — it reads the text layer AND the rendered pages with
+   model in **one** call; it reads the text layer AND the rendered pages with
    whole-document context. Better fidelity on dense tables, fewer calls, no
    PNG-conversion loss.
 
@@ -573,7 +573,7 @@ to Claude/Gemini under the hood). Providers without it (OpenAI, xAI) omit the
 method and the caller **falls back to rasterize → page OCR** automatically.
 
 `runDocumentWorker` (`@mantle/agent-runtime/attachments`) resolves a `document`
-worker first, **falling back to the `vision` worker** when none is configured —
+worker first, **falling back to the `vision` worker** when none is configured,
 so PDFs keep working out of the box; the dedicated worker is purely additive.
 
 ### Where it's wired (both layers)
@@ -586,12 +586,12 @@ so PDFs keep working out of the box; the dedicated worker is purely additive.
   flagged `native_pdf: true` (not `ocr`, which means page-OCR).
 
 **The bug this fixed.** Before this, the live turn ran *text-only* PDF parsing
-with no OCR fallback — a scanned invoice (no text layer) came back "No text
+with no OCR fallback, a scanned invoice (no text layer) came back "No text
 could be extracted," even though the indexer already rasterized+OCR'd it. The
 asymmetry was real and trace-confirmed (`parse_document chars_out:0` → dead end
 on the live path). Native PDF + the OCR fallback closes it on both layers.
 
-### `prefer_native` — for digital PDFs with messy tables
+### `prefer_native`: for digital PDFs with messy tables
 
 By default native/OCR only fires when there's **no text layer** (digital PDFs
 use the cheap text path). But a digital invoice can have a *complete but
@@ -599,30 +599,30 @@ scrambled* text layer that mangles columns. The document worker's
 `prefer_native` toggle says "always send PDFs to the model, even with a text
 layer." Honoured on **both** the live turn and the indexer (the latter via
 `documentWorkerPrefersNative` → `ocrIngestPdfNode` on text-layer PDFs, keeping
-the text body if native yields nothing). Off by default — it costs one LLM call
+the text body if native yields nothing). Off by default; it costs one LLM call
 per PDF.
 
 ### Cost
 
 A scanned ~5-page invoice on `claude-sonnet-4-6` is ~$0.06 per native
 extraction (≈8 K in / 2.4 K out). Note: each upload extracts twice (the live
-turn for the immediate reply, the indexer for the durable copy) — consistent
+turn for the immediate reply, the indexer for the durable copy), consistent
 with the two-layer design images already use. Direct-provider vision/document
 calls pass the **bare** model id (`claude-sonnet-4-6`), so `pricing.ts` keys
-both the bare ids and the dotted OpenRouter slugs — otherwise spend read $0 in
+both the bare ids and the dotted OpenRouter slugs, otherwise spend read $0 in
 `/debug`.
 
 ### The native-capability source of truth
 
 "Which providers read PDFs natively?" is a fact about **our adapter code**, not
 something a provider API advertises. `nativeDocumentProviders()`
-(`adapters/registry.ts`) derives it live from the registry — the providers whose
+(`adapters/registry.ts`) derives it live from the registry, the providers whose
 vision adapter implements `extractDocument`. Computed server-side, passed to the
 worker form, which badges non-native providers `— page-OCR fallback`. Add a new
-adapter's `extractDocument` and it appears automatically — no second list to
+adapter's `extractDocument` and it appears automatically, no second list to
 keep in sync. Today: `['anthropic', 'openrouter']`.
 
-## 5b″. OpenRouter coverage — "one key, the whole brain"
+## 5b″. OpenRouter coverage: "one key, the whole brain"
 
 OpenRouter is the lowest-friction setup: with **only** an OpenRouter key, the
 entire text + vision brain is functional.
@@ -631,11 +631,11 @@ entire text + vision brain is functional.
 |---|---|---|
 | Chat (responder, extractor, summarizer, reflector) | ✅ | `openrouter-chat` adapter |
 | Embeddings | ✅ | `openrouter-embedding` adapter |
-| Vision (image OCR) | ✅ | `openrouter-vision.extract` — `image_url` content |
-| Document (native PDF) | ✅ | `openrouter-vision.extractDocument` — OR `file-parser` plugin |
-| TTS (voice out) | ✅ | `openrouter-tts` — `POST /api/v1/audio/speech` |
-| STT (voice in) | ✅ | `openrouter-stt` — OpenAI-compatible transcription |
-| Image generation | ✅ | `openrouter-image` — `POST /api/v1/images` |
+| Vision (image OCR) | ✅ | `openrouter-vision.extract`, `image_url` content |
+| Document (native PDF) | ✅ | `openrouter-vision.extractDocument`, OR `file-parser` plugin |
+| TTS (voice out) | ✅ | `openrouter-tts`, `POST /api/v1/audio/speech` |
+| STT (voice in) | ✅ | `openrouter-stt`, OpenAI-compatible transcription |
+| Image generation | ✅ | `openrouter-image`, `POST /api/v1/images` |
 
 **This table used to read ❌ on the last three rows**, and the prose called the
 gap "real, not an oversight". It is no longer either: OpenRouter has since
@@ -648,7 +648,7 @@ transcription, Imagen), not because anything is missing.
 
 ---
 
-## 5c. Image generation — out
+## 5c. Image generation: out
 
 Saskia generates images via the `generate_image` builtin tool. The
 tool resolves the default image_gen worker, calls the adapter, and:
@@ -659,7 +659,7 @@ tool resolves the default image_gen worker, calls the adapter, and:
 - On /assistant surface: emits an image artifact the chat page renders
   inline in the reply bubble.
 - Returns to the LLM: `{nodeId, storagePath, model, adapter, mimeType,
-  bytes, revisedPrompt?, inlineRef, appliedParams, ignoredParams?}` — enough
+  bytes, revisedPrompt?, inlineRef, appliedParams, ignoredParams?}`, enough
   metadata for Saskia to mention what she sent, and `inlineRef` is the
   paste-ready `![alt](media:<id>)` for placing it in a reply or a page.
 
@@ -692,14 +692,14 @@ go stale against the worker actually installed.
 | `xai-image` | aspect ratio only (no size / style / quality / seed) |
 
 Per-PROVIDER is the wrong grain for some of these, so an adapter may also
-return `warnings` from a call — the per-MODEL truth only it knows (OpenAI takes
+return `warnings` from a call, the per-MODEL truth only it knows (OpenAI takes
 `style` on dall-e-3 and not on gpt-image-1). The tool promotes those from
 applied to ignored before reporting.
 
 Anything requested outside that set is reported, never dropped in silence: it
 lands in the trace step as `ignored_params` and goes back to the model as
 `ignoredParams` so the reply can say what did not apply. This exists because it
-already failed the other way — an OpenRouter worker had size, style and quality
+already failed the other way; an OpenRouter worker had size, style and quality
 saved and displayed, the old chat-completions code path sent none of them, and
 nothing recorded the gap.
 
@@ -732,28 +732,28 @@ rendered against.
 
 ---
 
-## 5d. Tool-delegation surface — Saskia can call workers explicitly
+## 5d. Tool-delegation surface: Saskia can call workers explicitly
 
 Workers have **four invocation paths**, deliberately:
 
-1. **Automatic pipeline** — modality-matched (voice-in → voice-out,
+1. **Automatic pipeline**: modality-matched (voice-in → voice-out,
    photo → vision ingest, node-save → extractor).
-2. **Tool-mediated** — Saskia chooses to invoke a worker mid-turn via
+2. **Tool-mediated**: Saskia chooses to invoke a worker mid-turn via
    one of these builtins:
-     - `synthesize_speech(text)` — TTS for explicit "send me a voice
+     - `synthesize_speech(text)`, TTS for explicit "send me a voice
        note" requests. Telegram → `sendVoice`; web → audio artifact
        rendered as `<audio controls>` in the reply.
-     - `extract_from_image(node_id | telegram_file_id, prompt?)` —
+     - `extract_from_image(node_id | telegram_file_id, prompt?)`,
        run vision on a previously-uploaded image or a Telegram file
        reference.
-     - `summarize_text(text | node_id, focus?, max_words?)` — run the
+     - `summarize_text(text | node_id, focus?, max_words?)`, run the
        default summarizer worker over inline text or a note body.
      - `generate_image(prompt, size?, style?, quality?, negative_prompt?)`
-       — image generation as documented above.
-3. **UI test buttons** — `/settings/ai-workers/<id>` has per-kind
+, image generation as documented above.
+3. **UI test buttons**: `/settings/ai-workers/<id>` has per-kind
    test surfaces (record mic, pick image, type prompt) so operators
    can verify config without invoking Saskia.
-4. **Heartbeat-driven** — a [heartbeat](./heartbeats.md) fires on
+4. **Heartbeat-driven**: a [heartbeat](./heartbeats.md) fires on
    schedule and runs the agent's normal tool loop. The agent then
    freely calls any of the above tools (TTS, image-gen, summarizer)
    from inside the synthetic-prompt fire. The 5 extra
@@ -772,11 +772,11 @@ can run for the same worker without conflicting.
 
 ---
 
-## 5e. Embedding — the cross-cutting kind
+## 5e. Embedding: the cross-cutting kind
 
 > **⚠ SUPERSEDED (migration 0061).** Embedding is **no longer an ai-worker
-> kind**. It moved to a dedicated singleton — the `embedding_config` row, edited
-> at `/settings/embedding` — with one model, one dimension, and a primary +
+> kind**. It moved to a dedicated singleton, the `embedding_config` row, edited
+> at `/settings/embedding`, with one model, one dimension, and a primary +
 > same-model **backup route** (failover). The per-agent / per-extractor /
 > env overrides described below are all **removed**; `resolveEmbeddingConfig`
 > reads only the one row. The adapter-dispatch, cache, and discovery mechanics
@@ -785,34 +785,34 @@ can run for the same worker without conflicting.
 > **historical**. The current operator guide is [`docs/embeddings.md`](./embeddings.md)
 > (see "The one config: /settings/embedding" and "Primary + backup routes").
 
-This section covers the runtime mechanics — how dispatch resolves, how
+This section covers the runtime mechanics, how dispatch resolves, how
 the cache works, what the rebuild button is wired to. For **which
 embedding model to pick and why** (operator-facing decision guide,
 local Gemma vs cloud large/gemini/cohere with the benchmark numbers + the
 768-dim constraint), see [`docs/embeddings.md`](./embeddings.md).
 
 Added in migration `0047_ai_worker_kind_embedding.sql`. Unlike the
-other worker kinds (which are each triggered by one signal — `tts` by
+other worker kinds (which are each triggered by one signal, `tts` by
 voice replies, `extractor` by `pg_notify('node_ingested')`, etc.),
 **embedding is read by every memory layer in the stack**:
 
-1. **Extractor write path** — every `node_ingested` produces a vector
+1. **Extractor write path**: every `node_ingested` produces a vector
    on `nodes.embedding`, `entities.embedding`, `facts.embedding`.
-2. **Responder + assistant** — embed the inbound message to retrieve
+2. **Responder + assistant**: embed the inbound message to retrieve
    semantic memory.
-3. **`recall_window` builtin (Remy)** — embeds the query for
+3. **`recall_window` builtin (Remy)**: embeds the query for
    time-windowed semantic search.
-4. **MCP `search_chunks`** — Claude Desktop's tool call.
-5. **Tool-result spill store `read_result query`** — embeds the query
+4. **MCP `search_chunks`**: Claude Desktop's tool call.
+5. **Tool-result spill store `read_result query`**: embeds the query
    against the spilled artifact's chunks (`tool_result_chunks`).
-6. **Assistant per-turn retrieval** — same embed-and-search pattern as
+6. **Assistant per-turn retrieval**: same embed-and-search pattern as
    the responder.
 
 Before this kind existed, the model was either env-implicit
 (`MANTLE_EMBEDDING_MODEL` or the hardcoded fallback) or set as a
 per-worker override on the extractor only. The override field covered
-just one of those six call sites — a misleading "this is THE knob"
-shape — so embedding got promoted to a first-class kind.
+just one of those six call sites, a misleading "this is THE knob"
+shape, so embedding got promoted to a first-class kind.
 
 ### 5e.1 Resolution chain
 
@@ -832,12 +832,12 @@ Any code calling embed() / embedBatch()
 
 Lives in [`packages/embeddings/src/index.ts`](../packages/embeddings/src/index.ts).
 The resolver returns the FULL config (model + provider + apiKeyId), not
-just the model slug — because dispatch needs all three to talk to the
+just the model slug, because dispatch needs all three to talk to the
 right adapter with the right key. A backward-compat `resolveEmbeddingModel`
 remains as a thin wrapper for the few callers that only need the model
 (the reembed script's logging line).
 
-The resolver caches per-ownerId in-process for 60s — necessary because
+The resolver caches per-ownerId in-process for 60s, necessary because
 the extractor batches embed many texts per ingest, and recall + spill
 embed per query. The cache is dropped on `clearEmbeddingModelCache(ownerId)`
 which the workers form mutations call after every save / setDefault /
@@ -847,7 +847,7 @@ the next ingest / recall, not after a TTL.
 ### 5e.2 Adapter dispatch (Stage 1 of the runtime-honesty push)
 
 `@mantle/embeddings#embed()` was originally hardcoded to OpenRouter's
-endpoint with `getApiKey(ownerId, 'openrouter')` — even though the
+endpoint with `getApiKey(ownerId, 'openrouter')`, even though the
 worker schema carried `provider` and `apiKeyId` fields. **The Stage 1
 work landed in [`5dc3984`](https://github.com/crossworks-engineering/mantle/commit/5dc3984)
 makes embedding genuinely multi-provider**: the runtime dispatches
@@ -865,12 +865,12 @@ Five embedding adapters in [`packages/voice/src/adapters/`](../packages/voice/sr
 | `cohere-embedding` | `/v2/embed` (own shape: `texts`, `input_type`, `embedding_types`) | text-only | filtered `/v1/models` |
 
 Each adapter implements:
-- `embed(req)` — translates the unified `EmbedRequest` to the provider's
+- `embed(req)`, translates the unified `EmbedRequest` to the provider's
   native shape, parses the response back to `EmbedResult`.
-- `acceptsInput(item)` — text-only adapters return `false` on
+- `acceptsInput(item)`, text-only adapters return `false` on
   multimodal items so the caller surfaces a clear "use OpenRouter for
   multimodal" error rather than letting the upstream API reject it.
-- `discoverModels(apiKey)` — per-provider catalog fetch, falls back to
+- `discoverModels(apiKey)`, per-provider catalog fetch, falls back to
   `staticCatalog()` if the API call fails.
 
 The runtime path in [`packages/embeddings/src/index.ts`](../packages/embeddings/src/index.ts):
@@ -890,10 +890,10 @@ embed(ownerId, text) → embedBatch → embedMultimodal
 The cache stays keyed on `(model, content_hash)` so two providers
 serving the same slug share entries. Different slugs (OR's
 `openai/text-embedding-3-small` vs OpenAI direct's
-`text-embedding-3-small`) cache separately — they produce identical
+`text-embedding-3-small`) cache separately; they produce identical
 vectors but a cache miss on first use after a provider swap is acceptable.
 
-### 5e.3 Discovery — per-provider
+### 5e.3 Discovery: per-provider
 
 OpenRouter splits its catalog: chat + image at `/api/v1/models`,
 **embeddings at `/api/v1/embeddings/models`** (the main catalog
@@ -913,19 +913,19 @@ encapsulates:
 The `/models` page's OpenRouter view fetches both
 `/v1/models` and `/v1/embeddings/models` in parallel via
 `Promise.allSettled` (so a flake on one doesn't blank the page) and
-concatenates — [`apps/web/lib/model-explorer.ts`](../apps/web/lib/model-explorer.ts).
+concatenates, [`apps/web/lib/model-explorer.ts`](../apps/web/lib/model-explorer.ts).
 
 Heuristic gotcha worth knowing: 13 of OR's 25 embedding models lack
 `embed` in their slug (sentence-transformers, GTE, E5, BGE, MiniLM,
 MPNet, paraphrase families). The /models fetcher overrides
 `kind: 'embedding'` on the embeddings-endpoint branch unconditionally
-— the URL is the source of truth, not the slug pattern.
+; the URL is the source of truth, not the slug pattern.
 
 ### 5e.4 Two cliffs, both handled in the form
 
 A model swap can fail in two distinct ways. The form surfaces both:
 
-**(a) Dimension mismatch — column rejects the insert.** Since migration
+**(a) Dimension mismatch, column rejects the insert.** Since migration
 `0060` the brain has `vector(768)` columns (`nodes.embedding`,
 `entities.embedding`, `facts.embedding`, `content_chunks.embedding`,
 `tool_result_chunks.embedding`). Switching to a model that emits
@@ -938,18 +938,18 @@ The form has a **"Test dimensions" button** that embeds the string
 vector length. The result populates a per-slug detected-dim cache and
 also drives a hand-curated `KNOWN_DIMS` allow-list as a fallback. When
 dim is **known and ≠ 768**, the Save button is hard-blocked with a
-destructive-banner explanation — switching to a non-768 model needs a
+destructive-banner explanation, switching to a non-768 model needs a
 schema migration on every vector column, which isn't a button.
 
 > **⚠ Known gap (2026-05-31):** the form's guard (`COLUMN_DIMS` /
 > `KNOWN_DIMS` in [`worker-form.tsx`](../apps/web/app/(app)/settings/ai-workers/worker-form.tsx))
-> and the per-agent embedding dropdown still hardcode **1536**, not 768 —
+> and the per-agent embedding dropdown still hardcode **1536**, not 768,
 > they were not flipped during the 0060 migration. Until fixed, the guard
 > is inverted: it blocks the live 768 model and permits the old 1536 ones.
 > The runtime is correct (the DB worker row is `local`/768); only the UI is
 > stale.
 
-**(b) Vector-space drift — column accepts, retrieval silently breaks.**
+**(b) Vector-space drift, column accepts, retrieval silently breaks.**
 Two embedding models with the same dim produce vectors in
 *completely different coordinate systems*. Cosine similarity across
 spaces is meaningless: existing vectors embedded with model A return
@@ -962,7 +962,7 @@ The form has a **"Rebuild Index" button** (edit mode only, gated on
 The helper walks `nodes`, `entities`, `facts`; re-embeds every row
 against the current resolver value; idempotent under the
 `embedding_cache` so re-running against the same model is free. Per-owner
-in-flight Map prevents double-click / multi-tab waste — the cache key
+in-flight Map prevents double-click / multi-tab waste, the cache key
 includes `(ownerId, model, dryRun)`.
 
 The CLI `pnpm re-embed` shares the same code path. The script became a
@@ -974,7 +974,7 @@ without leaving the browser.
 `ExtractorParams.embedding_model` predates this kind. Now relabelled
 "Embedding model override (advanced)" with a pointer at the canonical
 worker. Kept functional for niche cases (cache preservation during a
-migration, historical reproduction) but discouraged — mismatched
+migration, historical reproduction) but discouraged, mismatched
 embedders across consumers produce silent retrieval degradation, which
 is a bigger UX failure than a missing per-worker knob. Same applies to
 `agents.memory_config.embedding_model` (responder / assistant per-turn
@@ -985,7 +985,7 @@ blank. The resolver picks it up everywhere.
 
 ---
 
-## 5f. `max_tokens` — what the 1500 default actually means
+## 5f. `max_tokens`: what the 1500 default actually means
 
 Background note for when we revisit the worker form. The `Max tokens`
 input on chat-shaped workers (reflector / extractor / summarizer)
@@ -1023,15 +1023,15 @@ summaries and extractions well below what the model could do.
 
 **Why we don't auto-cap from the model catalog (yet).** OpenRouter's
 public `/api/v1/models` exposes `context_length` (total input+output)
-but **not** `max_completion_tokens` — the field isn't in the response
+but **not** `max_completion_tokens`; the field isn't in the response
 shape cached by [`model-context.ts`](../packages/tracing/src/model-context.ts).
 The per-provider story:
 
 | Provider | Max output knowable from a public endpoint? |
 |---|---|
-| Anthropic | Yes — in Anthropic's `/v1/models` (e.g. Sonnet/Opus 4.x = 64K) |
+| Anthropic | Yes, in Anthropic's `/v1/models` (e.g. Sonnet/Opus 4.x = 64K) |
 | OpenAI | Per-model, documented but not in `/v1/models` |
-| Google (Gemini) | Yes — `models.get` returns `outputTokenLimit` |
+| Google (Gemini) | Yes, `models.get` returns `outputTokenLimit` |
 | xAI / DeepSeek / Mistral | Documented, not in `/v1/models` |
 | HuggingFace | Model-card dependent |
 
@@ -1041,20 +1041,20 @@ reads where `discoverModels()` returns the field (Google does).
 **When we come back to this.** Three sized options, in order of
 return-on-effort:
 
-1. **S — drop the 1500 placeholder** (~10 LOC). Leave the chat-worker
+1. **S, drop the 1500 placeholder** (~10 LOC). Leave the chat-worker
    field empty by default, matching the agents form. Adapters already
    omit `max_tokens` when unset; the provider picks. Existing workers
    keep their saved value; only new ones change. Highest signal-to-cost.
 
-2. **M — slider against `context_length / 2`** (~80 LOC). Show a
-   slider whose max is `Math.min(contextLength * 0.5, 32768)` — a
+2. **M, slider against `context_length / 2`** (~80 LOC). Show a
+   slider whose max is `Math.min(contextLength * 0.5, 32768)`, a
    defensible heuristic since output rarely exceeds half the context
    window. Reads `contextLimitFor(model)` from the already-cached live
    catalog; no new fetch, no curated table. A tooltip explains "Most
    providers cap below this; we'll surface the real cap once the
    catalog exposes it."
 
-3. **L — true per-provider `max_completion_tokens`** (~250 LOC).
+3. **L, true per-provider `max_completion_tokens`** (~250 LOC).
    Extend `LiveModelInfo` with `maxCompletionTokens?: number`. Curated
    table for the 10–15 model slugs people actually use (Sonnet 4.x =
    64K, Gemini 2.5 Pro = 65K, GPT-4o = 16K, Haiku 4.5 = 8K, …). Where
@@ -1064,12 +1064,12 @@ return-on-effort:
 Recommendation when we get to it: do **S** first (clears the
 misleading number), then **M** (gives operators a visible ceiling that
 doesn't lie). Defer **L** until a surprising real-world cap actually
-bites — the curated table is the part that goes stale; the slider
+bites; the curated table is the part that goes stale; the slider
 against `context_length` doesn't.
 
 **Chunking is not affected by this knob.** Worth repeating because the
-question came up: the chunking that *does* happen — summarizer
-batching, tool-result spill, content_chunks at ingest — all use their
+question came up: the chunking that *does* happen, summarizer
+batching, tool-result spill, content_chunks at ingest, all use their
 own size knobs (turn count, byte size, character count), none of which
 read `max_tokens`. So this work is purely about "let the model say
 more in one reply when it wants to," not about how content gets
@@ -1089,7 +1089,7 @@ Each worker kind has a test button in `/settings/ai-workers/<id>`:
 - **Vision:** pick an image from disk; runs through the worker's
   vision adapter and shows the extracted text, the model that ran it,
   token counts, and the model's revised prompt (when applicable).
-  Doesn't persist — for iterating on the per-image prompt before
+  Doesn't persist, for iterating on the per-image prompt before
   pointing the ingest pipeline at it.
 - **Image-gen:** type a prompt; renders the generated image inline
   with model + adapter info. Also doesn't persist; the production
@@ -1104,7 +1104,7 @@ All test buttons route through the same adapter the runtime uses, so
 a successful test means production will also work.
 
 `/settings/api-keys` also has a per-key **Test** button that runs the
-adapter's `discoverModels` as an auth probe — instant green/red on
+adapter's `discoverModels` as an auth probe, instant green/red on
 whether the key is alive without needing to also configure a worker.
 
 ---
@@ -1124,7 +1124,7 @@ A short list of intentional escapes worth knowing:
   chat-shaped worker. The OR SDK's response shape carries the per-search
   surcharge on `usage.cost`, which `captureLlmUsage` (the raw-response
   helper) reads natively. Migrating this to the chat adapter would gain
-  nothing — there's no "switch Perplexity to a different provider" story.
+  nothing; there's no "switch Perplexity to a different provider" story.
 
 - **The OpenAI carve-out in `isProviderWired('openai', 'chat')`.** Returns
   true even though no `openai-chat` adapter exists. OpenAI chat is
@@ -1145,14 +1145,14 @@ Phase 3 stage history (kept for archaeology):
 - **Phase 3 Pre-work C** (`4f95681`): recordChatUsage helper for
   the typed ChatResult shape.
 - **Phase 3a** (`652ba19`): chat-shaped workers migrated.
-- **Phase 3b** (`148d423`): tool loop refactored — adapter dispatch
+- **Phase 3b** (`148d423`): tool loop refactored, adapter dispatch
   + normalised tool calls across Anthropic / Google / OpenAI shapes.
 - **Phase 3c** (`3581f61`): `agents.provider` column (migration 0048).
 - **Phase 3d** (`38e2cbc`): forms unclamped. Operators can now
   configure responder + workers for direct Anthropic / Google /
   xAI / HF.
 
-Vision and image-gen adapters have been live since May 2026 — see §3.3
+Vision and image-gen adapters have been live since May 2026, see §3.3
 for the matrix. Vision plugs into both Telegram photo ingest (automatic)
 and Saskia's `extract_from_image` tool (on-demand). Image-gen plugs into
 Saskia's `generate_image` tool. Both are wired for OpenAI, xAI, Google,
@@ -1165,47 +1165,47 @@ generation.
 
 > Full implementation deep-dive: [`docs/chat-failover.md`](./chat-failover.md).
 
-Every **agent** and chat-shaped **ai_worker** can carry a second chat route — a
+Every **agent** and chat-shaped **ai_worker** can carry a second chat route, a
 `backup_provider` / `backup_model` / `backup_api_key_id` (+ `backup_enabled`)
 alongside the active `provider` / `model` / `api_key_id` (migration `0062`). The
 active columns are always "the primary"; a "make backup primary" UI swap just
 exchanges the two sets of values, so the runtime needs no precedence logic.
 
 **Unlike embeddings, the backup may be a DIFFERENT model.** Chat has no
-vector-space lock — answering a turn on another model has no correctness cost.
+vector-space lock, answering a turn on another model has no correctness cost.
 That's the enabler for running a **local** model (e.g. gemma-3 via LM Studio /
 Ollama) as the primary for the summarizer / extractor / reflector with a cloud
 model as the safety net (or the reverse).
 
 **Failover policy** (in [`packages/agent-runtime/src/chat-failover.ts`](../packages/agent-runtime/src/chat-failover.ts)):
 - **Triggers:** a route-DOWN error (connection refused / DNS / timeout), **429**
-  rate-limit, or **5xx** — classified by reusing `@mantle/voice`'s
+  rate-limit, or **5xx**: classified by reusing `@mantle/voice`'s
   `classifyChatError` (the same transient/permanent split the per-adapter retry
   wrapper uses). The primary's own internal retries run first; failover only
   fires once those are exhausted.
-- **No failover on 4xx** (bad input, context-length, auth) — the backup would
+- **No failover on 4xx** (bad input, context-length, auth): the backup would
   fail identically, so those rethrow.
 - **Single-shot workers** (extractor / summarizer / reflector) use
-  `chatWithFailover(ownerId, routes, opts)` — try primary, on a trigger call the
+  `chatWithFailover(ownerId, routes, opts)`, try primary, on a trigger call the
   backup. Each invocation starts on the primary again (optimistic, stateless).
 - **Tool-loop agents** (responder / assistant / heartbeat / invoke_agent):
   `runToolLoop` takes an optional `backup` route and holds an active-route
   pointer. On a mid-loop trigger it flips to the backup **for the rest of that
-  turn** (sticky — no flip-flopping models mid-reasoning); the next turn starts
+  turn** (sticky, no flip-flopping models mid-reasoning); the next turn starts
   on the primary again. A broken backup never breaks the primary path
   (`resolveBackupAdapter` returns `undefined` and logs).
 
 There is **no circuit breaker** (decision: start simple). A primary that
 *refuses fast* (box off) costs ~nothing per turn; a primary that *hangs* costs
-one timeout per turn until it recovers — add a breaker later only if that bites.
+one timeout per turn until it recovers, add a breaker later only if that bites.
 
 **Operator UI + local models (shipped 2026-06-01).** The backup route is
-configured from the worker form — a "Backup route" section (provider/model/key +
+configured from the worker form, a "Backup route" section (provider/model/key +
 enable switch) with a **"Make backup primary"** swap. For a `local` route, a
 base-URL field + a "Reach via Tailscale" toggle appear (migration `0063`); the
 base URL autocompletes from your tailnet peers. So a chat-shaped worker
 (summarizer / extractor / reflector) can run a **local model** (e.g. gemma via
-Ollama / LM Studio) as its primary with a cloud model as the backup — entirely
+Ollama / LM Studio) as its primary with a cloud model as the backup, entirely
 from the UI. The `local` provider is **keyless**: key resolution flows through
 the shared `resolveChatKey` (pinned → service → `local` sentinel), so a local
 worker needs no API key and isn't skipped for the lack of one. Full reference:
@@ -1218,43 +1218,43 @@ worker needs no API key and isn't skipped for the lack of one. Full reference:
 What an operator needs to do to make every capability work:
 
 1. **At `/settings/api-keys`**, add keys for the providers you want:
-   - OpenRouter (required — covers chat for the responder, extractor,
+   - OpenRouter (required, covers chat for the responder, extractor,
      summarizer, reflector by default)
    - OpenAI (required if you want voice in/out, since the default STT
      and TTS workers point here)
    - Anthropic / Google / xAI / Hugging Face / ElevenLabs as desired
 
 2. **At `/settings/agents`**, configure the conversational agent:
-   - Responder (Telegram) — the persona the user actually talks to.
+   - Responder (Telegram), the persona the user actually talks to.
      Sets persona, memory depth, system prompt, tool allowlist,
      skills. Points at an OpenRouter key + model by default.
    - Optionally a separate Assistant (web `/assistant`). Falls back
      to responder if not set.
 
 3. **At `/settings/ai-workers`**, configure the one-shot workers:
-   - **Reflector** — appends to responder's persona_notes from
+   - **Reflector**: appends to responder's persona_notes from
      recent dialog. Backfilled from `agents` if you had one.
-   - **Extractor** — runs on every `node_ingested`. Backfilled.
-   - **Summarizer** — rolls Telegram conversation history into digest
+   - **Extractor**: runs on every `node_ingested`. Backfilled.
+   - **Summarizer**: rolls Telegram conversation history into digest
      nodes. Backfilled.
-   - **TTS** — required for voice replies on Telegram. Default:
+   - **TTS**: required for voice replies on Telegram. Default:
      OpenAI gpt-4o-mini-tts with voice=nova.
-   - **STT** — required for voice-message transcription. Default:
+   - **STT**: required for voice-message transcription. Default:
      OpenAI whisper-1.
-   - **Embedding** — the brain ships configured for `local` /
+   - **Embedding**: the brain ships configured for `local` /
      `embeddinggemma:latest` (768-dim, keyless, via Ollama). Keep this
      worker row present: without it the resolver falls through env →
      hardcoded `openai/text-embedding-3-small` (1536), which would crash
      ingest against the `vector(768)` columns. The worker row makes the
      model an explicit DB choice and unlocks the form's Test / Rebuild
      affordances. See §5e. *(Note: that cloud fallback default is itself
-     a latent footgun post-768 — see the §5e.4 known-gap note.)*
-   - Vision / image-gen — config saved but dispatch not yet wired.
+     a latent footgun post-768, see the §5e.4 known-gap note.)*
+   - Vision / image-gen, config saved but dispatch not yet wired.
 
 Each worker has its own model, API key, params. Multiple workers per
 kind are allowed (priority + is_default flag picks the winner).
 
-### 8.1 Provider routing today — what goes through what
+### 8.1 Provider routing today: what goes through what
 
 Every kind dispatches the same way: through the adapter registry, with
 the worker's (or agent's) `provider` field driving which adapter
@@ -1262,10 +1262,10 @@ resolves. Phase 3 (commits 97298a5 through 38e2cbc) unified the model.
 
 | Kind | Runtime path | `provider` field | `apiKeyId` field | API key dropdown filter |
 |---|---|---|---|---|
-| **TTS / STT / Vision / Image-gen** | Adapter registry — `getXxxAdapter(worker.provider)` | ✅ honoured — picks the adapter | ✅ honoured | filtered to keys whose service ∈ providers declaring this capability |
-| **Embedding** | Adapter registry — `getEmbeddingAdapter(worker.provider)` (Stage 1, §5e.2) | ✅ honoured — picks the adapter | ✅ honoured | filtered to keys whose service ∈ {openrouter, openai, google, mistral, cohere} |
-| **Reflector / Extractor / Summarizer** | Adapter registry — `getChatAdapter(worker.provider).chat({...})` (Phase 3a) | ✅ honoured — picks the adapter | ✅ honoured | filtered to keys whose service matches the selected provider |
-| **Agents** (responder / assistant / custom / heartbeat / invoke_agent) | Adapter registry — `getChatAdapter(agent.provider).chat({...})` via `runToolLoop` (Phase 3b) | ✅ honoured — `agents.provider` column added in migration 0048 | ✅ honoured | filtered to keys whose service matches the selected provider |
+| **TTS / STT / Vision / Image-gen** | Adapter registry, `getXxxAdapter(worker.provider)` | ✅ honoured, picks the adapter | ✅ honoured | filtered to keys whose service ∈ providers declaring this capability |
+| **Embedding** | Adapter registry, `getEmbeddingAdapter(worker.provider)` (Stage 1, §5e.2) | ✅ honoured, picks the adapter | ✅ honoured | filtered to keys whose service ∈ {openrouter, openai, google, mistral, cohere} |
+| **Reflector / Extractor / Summarizer** | Adapter registry, `getChatAdapter(worker.provider).chat({...})` (Phase 3a) | ✅ honoured, picks the adapter | ✅ honoured | filtered to keys whose service matches the selected provider |
+| **Agents** (responder / assistant / custom / heartbeat / invoke_agent) | Adapter registry, `getChatAdapter(agent.provider).chat({...})` via `runToolLoop` (Phase 3b) | ✅ honoured, `agents.provider` column added in migration 0048 | ✅ honoured | filtered to keys whose service matches the selected provider |
 
 **What this enables, concretely:**
 - An extractor pointed at `provider='anthropic'` + `model='claude-haiku-4-5'`
@@ -1274,7 +1274,7 @@ resolves. Phase 3 (commits 97298a5 through 38e2cbc) unified the model.
 - The responder configured for `provider='google'` + `model='gemini-2.5-pro'`
   emits `functionCall` parts for tool use, gets `cachedContentTokenCount`
   from Gemini's implicit caching on /traces.
-- OpenRouter is no longer the special case — `openrouter-chat` is just
+- OpenRouter is no longer the special case, `openrouter-chat` is just
   another adapter (with the OR SDK as its HTTP layer + cache markers
   flowing through via the SDK's typed `cacheControl` field).
 
@@ -1284,25 +1284,25 @@ resolves. Phase 3 (commits 97298a5 through 38e2cbc) unified the model.
 
 If you're reading the code, the canonical files to start with are:
 
-1. `packages/db/src/schema/ai-workers.ts` — schema + param types
-2. `packages/db/src/ai-workers-resolve.ts` — `getDefaultWorker`,
+1. `packages/db/src/schema/ai-workers.ts`, schema + param types
+2. `packages/db/src/ai-workers-resolve.ts`, `getDefaultWorker`,
    `bumpWorkerUsage` (shared between apps/web and apps/agent)
-3. `packages/voice/src/providers.ts` — provider catalogue
-4. `packages/voice/src/adapters/types.ts` — dispatcher interfaces
-5. `packages/voice/src/adapters/registry.ts` — registry + lookups
-6. `packages/voice/src/adapters/openai-tts.ts` — reference adapter
-7. `packages/voice/src/adapters/anthropic-chat.ts` — adapter with
+3. `packages/voice/src/providers.ts`, provider catalogue
+4. `packages/voice/src/adapters/types.ts`, dispatcher interfaces
+5. `packages/voice/src/adapters/registry.ts`, registry + lookups
+6. `packages/voice/src/adapters/openai-tts.ts`, reference adapter
+7. `packages/voice/src/adapters/anthropic-chat.ts`, adapter with
    non-trivial translation (system field, max_tokens required)
-8. `packages/voice/src/adapters/elevenlabs-tts.ts` — adapter with
+8. `packages/voice/src/adapters/elevenlabs-tts.ts`, adapter with
    live voice discovery
-9. `apps/web/app/(app)/settings/ai-workers/worker-form.tsx` — UI
+9. `apps/web/app/(app)/settings/ai-workers/worker-form.tsx`, UI
    that ties it all together; reactive provider/model/voice dropdowns
 10. `apps/agent/src/main.ts` (search for `getSttAdapter` /
-    `getTtsAdapter`) — runtime integration for voice in/out
-11. `packages/embeddings/src/index.ts` — `resolveEmbeddingModel`,
+    `getTtsAdapter`), runtime integration for voice in/out
+11. `packages/embeddings/src/index.ts`, `resolveEmbeddingModel`,
     `embed`, `embedBatch`, `clearEmbeddingModelCache`. The resolver
     chain + per-ownerId cache.
-12. `packages/embeddings/src/reembed.ts` — `runReembed`, used by both
+12. `packages/embeddings/src/reembed.ts`, `runReembed`, used by both
     the CLI script (`pnpm re-embed`) and the workers form's
     Rebuild Index button.
 
@@ -1310,7 +1310,7 @@ If you're reading the code, the canonical files to start with are:
 
 ## 10. Future shape
 
-### 10.1 Phase 3 — Direct-provider routing for chat-shaped workers + agents
+### 10.1 Phase 3: Direct-provider routing for chat-shaped workers + agents
 
 **Status: SHIPPED (May 2026). The work is preserved here for archaeology;
 §7 has the final stage list with commit shas. For the post-Phase-3
@@ -1321,8 +1321,8 @@ cost math, known sharp edges, reusable patterns), see
 **What's outstanding.** The chat-shaped workers (reflector / extractor /
 summarizer) and all agents (responder / assistant / custom) still
 construct `new OpenRouter({apiKey})` directly instead of going through
-the chat adapter registry. The forms reflect this honestly today —
-clamped to `service='openrouter'` keys with explanatory copy — but
+the chat adapter registry. The forms reflect this honestly today,
+clamped to `service='openrouter'` keys with explanatory copy, but
 that's the *less ambitious* end-state. The bigger move is to migrate
 the runtime so the `provider` field actually controls dispatch, the
 same way TTS / STT / Vision / Image-gen / Embedding already do.
@@ -1332,7 +1332,7 @@ same way TTS / STT / Vision / Image-gen / Embedding already do.
 OpenRouter's chat margin is in the low single digits, the engineering
 effort is ~800-1000 LOC, and the user-facing experience already works.
 Stage 2 of the runtime-honesty push made the forms honest about the
-status quo so an open-source contributor doesn't get confused — that's
+status quo so an open-source contributor doesn't get confused, that's
 the immediate UX win. Phase 3 is the structural move that follows when
 either (a) operators ask for direct-Anthropic / direct-OpenAI routing
 for cost reasons, (b) a multi-provider failover story becomes useful,
@@ -1348,15 +1348,15 @@ Five sub-pieces, mergeable in order. Each is independently shippable.
 `getChatAdapter(worker.provider).chat({...})`. The chat dispatchers
 already exist (xai-chat, huggingface-chat, anthropic-chat, google-chat
 in `packages/voice/src/adapters/`), they just aren't called from
-production. The extractor's chat call is a single turn — no tool
-loop — so the call-site change is mechanical. Same for
+production. The extractor's chat call is a single turn, no tool
+loop, so the call-site change is mechanical. Same for
 [`apps/agent/src/summarizer.ts`](../apps/agent/src/summarizer.ts) and
-[`apps/agent/src/reflector.ts`](../apps/agent/src/reflector.ts) — same
+[`apps/agent/src/reflector.ts`](../apps/agent/src/reflector.ts), same
 shape, same fix.
 
 **3b. Tool loop refactor** (~400-500 LOC, the hard piece).
 [`packages/agent-runtime/src/tool-loop.ts`](../packages/agent-runtime/src/tool-loop.ts)
-currently calls `client.chat.send()` on the OpenRouter SDK — tightly
+currently calls `client.chat.send()` on the OpenRouter SDK, tightly
 coupled to OR's response shape. Migrating means:
 - The chat adapters need to expose tool-call info on `ChatResult`
   (today their `chat()` returns just `{text, model, tokensIn, tokensOut}`).
@@ -1366,14 +1366,14 @@ coupled to OR's response shape. Migrating means:
   on `parts[]`. Each adapter has to normalise to a single shape that
   `runToolLoop` can iterate.
 - Streaming was previously deferred (see [the streaming feasibility
-  conversation](https://github.com/crossworks-engineering/mantle/commits/main) —
+  conversation](https://github.com/crossworks-engineering/mantle/commits/main),
   search for "Assistant streaming"); not in scope for Phase 3 either.
   Keep one-shot calls for now.
 
 **3c. Add `provider` column to `agents` table** (~100 LOC). New migration
 (`0048_agents_provider.sql`), Drizzle schema update, agents-client.tsx
 gets a provider dropdown. Same `RUNTIME_OR_ONLY_KINDS`-equivalent
-mechanism the workers form uses — except inverted: now that the
+mechanism the workers form uses, except inverted: now that the
 runtime supports direct providers, the form unlocks the dropdown.
 
 **3d. Unclamp the workers + agents forms** (~50 LOC). Remove the
@@ -1381,7 +1381,7 @@ runtime supports direct providers, the form unlocks the dropdown.
 [`apps/web/app/(app)/settings/ai-workers/worker-form.tsx`](../apps/web/app/(app)/settings/ai-workers/worker-form.tsx).
 Remove the `service === 'openrouter'` filter in
 [`apps/web/app/(app)/settings/agents/agents-client.tsx`](../apps/web/app/(app)/settings/agents/agents-client.tsx).
-The KeyValidityHint and capability filters take over from there —
+The KeyValidityHint and capability filters take over from there,
 they already work for the other kinds.
 
 **3e. Docs cleanup** (~30 LOC). Update §8.1 routing table to flip
@@ -1395,34 +1395,34 @@ directly" entry.
 
 Recommended sequence (each commit-sized, independently mergeable):
 
-1. **3a first** — easiest, validates the chat adapter framework end-to-end
+1. **3a first**: easiest, validates the chat adapter framework end-to-end
    against real production traffic without touching the tool loop.
    Single-turn chat is the unit test of the adapter; if Anthropic-direct
    works for the extractor, it'll work everywhere.
-2. **3b next** — the tool loop refactor. Most of the engineering risk
+2. **3b next**: the tool loop refactor. Most of the engineering risk
    is here.
-3. **3c then 3d together** — schema change + form unlock. Trivial after
+3. **3c then 3d together**: schema change + form unlock. Trivial after
    the runtime supports it.
-4. **3e last** — docs cleanup once the migration is durable.
+4. **3e last**: docs cleanup once the migration is durable.
 
 #### Risk surfaces a fresh session should look at carefully
 
 - **Cache key sensitivity in tool-loop steps.** Anthropic's prompt
   caching (the `cache_control: { type: 'ephemeral' }` markers on the
   system block + digest block) is emitted by the OpenRouter SDK
-  call. The chat adapters need to honour it too — `ChatOptions` should
+  call. The chat adapters need to honour it too, `ChatOptions` should
   grow a `cacheControl?` option or the adapters should detect it from
   message metadata. Worth tracing through carefully because cache hits
   are the dominant cost-saving on the responder path.
 - **Tool-call reassembly.** Streaming is out of scope (per the
   deferred streaming discussion), so this is simpler than it could
-  be — but each provider's response format still differs. Anthropic's
+  be, but each provider's response format still differs. Anthropic's
   `tool_use` blocks have `input` as a parsed object; OpenAI's
   `tool_calls[].function.arguments` is a JSON string. The adapter
   layer has to normalise.
 - **Usage capture.** `captureLlmUsage` reads `result.usage` to bill
   token counts to the trace. Every chat adapter needs to populate
-  `ChatResult.tokensIn` / `tokensOut` consistently — the existing
+  `ChatResult.tokensIn` / `tokensOut` consistently, the existing
   OpenRouter SDK path is the reference shape.
 - **Trace prompt-cache breakpoints.** When migrating, verify
   `read_result` / tool-result spill still triggers the right break-

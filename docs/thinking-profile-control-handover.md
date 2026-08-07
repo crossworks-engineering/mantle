@@ -1,7 +1,7 @@
-# Handover — per-user thinking control (switch + budget) in Profile
+# Handover: per-user thinking control (switch + budget) in Profile
 
 **Status:** investigation complete, **no code written yet**. Pick up here.
-**Worktree:** `.claude/worktrees/thinking-profile-control` — branch `feat/thinking-profile-control` (forked from `main`, clean). Do the work HERE, not the integrator.
+**Worktree:** `.claude/worktrees/thinking-profile-control`, branch `feat/thinking-profile-control` (forked from `main`, clean). Do the work HERE, not the integrator.
 **Date:** 2026-06-30.
 
 ## The ask (Jason, verbatim)
@@ -16,9 +16,9 @@ The whole real-thinking pipeline + GitHub Copilot provider is merged + released 
 
 ## Correction worth knowing
 
-`streamThoughts` is **NOT a no-op** (an earlier claim in this thread was wrong). It's consumed via the `isStreamThoughtsEnabled(prefs)` helper in the **server turn routes** — so it already gates the live *display*:
-- `apps/web/app/api/assistant/turn/route.ts:297` — `isTurnStreamingEnabled() && isStreamThoughtsEnabled(await loadProfilePreferences(user.id))` → 202-stream vs blocking.
-- `apps/web/app/api/assistant/turn/[turnId]/stream/route.ts:52` — SSE route 404s when off (client falls back to poll).
+`streamThoughts` is **NOT a no-op** (an earlier claim in this thread was wrong). It's consumed via the `isStreamThoughtsEnabled(prefs)` helper in the **server turn routes**: so it already gates the live *display*:
+- `apps/web/app/api/assistant/turn/route.ts:297`, `isTurnStreamingEnabled() && isStreamThoughtsEnabled(await loadProfilePreferences(user.id))` → 202-stream vs blocking.
+- `apps/web/app/api/assistant/turn/[turnId]/stream/route.ts:52`, SSE route 404s when off (client falls back to poll).
 
 ⇒ The switch already controls the streaming display. **We only need to add the thinking-REQUEST gate.** No client-side gating to add.
 
@@ -48,18 +48,18 @@ The whole real-thinking pipeline + GitHub Copilot provider is merged + released 
     return typeof b === 'number' && b > 0 ? Math.floor(b) : 0;
   }
   ```
-  ⚠️ Name `resolveThinkingBudget` collides with the env one in `tool-loop.ts` — that env one is being DELETED (step 4), so no conflict after.
+  ⚠️ Name `resolveThinkingBudget` collides with the env one in `tool-loop.ts`, that env one is being DELETED (step 4), so no conflict after.
 - Add a test in `profile-preferences.test.ts` (switch off → 0; switch on + budget 0/unset → 0; switch on + budget>0 → budget).
 
 ### 2. `apps/web/app/api/profile/route.ts`
 - zod schema (~line 52): add `thinkingBudget: z.number().int().min(0).max(64000).optional(),`
 - destructure (~line 74) + pass to `updateProfilePreferences` (~line 102): `...(thinkingBudget !== undefined ? { thinkingBudget } : {}),`
-- GET already returns the full `preferences`, so `defaults.thinkingBudget` reaches the UI — no GET change.
+- GET already returns the full `preferences`, so `defaults.thinkingBudget` reaches the UI, no GET change.
 
 ### 3. `apps/web/app/(app)/settings/profile/profile-client.tsx`
 - `Select` is already imported (`@/components/ui/select`).
 - State (~line 113, beside `replaceTrail`): `const [thinkingBudget, setThinkingBudget] = useState<number>(defaults.thinkingBudget ?? 0);`
-- UI: add a "Thinking budget" sub-option inside the sub-options block (after `persistThoughts`, ~line 394+), mirroring the `replaceTrail`/`persistThoughts` pattern — `Label` with `className={cn(!streamThoughts && 'opacity-50')}` + a `Select` `disabled={!streamThoughts}`. Tiers → token values:
+- UI: add a "Thinking budget" sub-option inside the sub-options block (after `persistThoughts`, ~line 394+), mirroring the `replaceTrail`/`persistThoughts` pattern, `Label` with `className={cn(!streamThoughts && 'opacity-50')}` + a `Select` `disabled={!streamThoughts}`. Tiers → token values:
   - Off `0`, Low `1024`, Medium `4096`, High `16000`.
   - Select values are strings; store the numeric token value (`onValueChange={(v) => setThinkingBudget(Number(v))}`, `value={String(thinkingBudget)}`).
   - Helper text: "How hard the model reasons before answering. Needs live thinking ON and a budget above Off. Off = no extra thinking."
@@ -75,28 +75,28 @@ The whole real-thinking pipeline + GitHub Copilot provider is merged + released 
 - Add `resolveThinkingBudget` to that `@mantle/content` import.
 - At the `runToolLoop({...})` call (~lines 605–635) add: `thinkingBudget: resolveThinkingBudget(prefs),` (reuse the already-loaded `prefs`).
 
-### 6. `packages/agent-runtime/src/invoke-agent.ts` — delegated specialists (OPEN QUESTION)
+### 6. `packages/agent-runtime/src/invoke-agent.ts`: delegated specialists (OPEN QUESTION)
 - `invoke-agent.ts:158` calls `runToolLoop` for the child. To let delegated specialists inherit thinking it needs the budget.
-- `agent-runtime` does **not** currently import `@mantle/content` (grep was empty), so calling `loadProfilePreferences` there adds a new dep (check for a cycle — content almost certainly doesn't depend on agent-runtime, so probably fine, but verify package.json).
+- `agent-runtime` does **not** currently import `@mantle/content` (grep was empty), so calling `loadProfilePreferences` there adds a new dep (check for a cycle; content almost certainly doesn't depend on agent-runtime, so probably fine, but verify package.json).
 - **PREFERRED:** thread the parent's budget down instead of re-loading prefs. The `invokeAgent` handler (`async ({ ownerId, depth, ... })`, invoke-agent.ts:46) is dispatched by the tool-loop, which has `args.thinkingBudget`. Find where the tool-loop calls the AgentInvoker (grep around tool-loop.ts:719 where `ownerId: args.ownerId` is passed into the handler bridge), add `thinkingBudget: args.thinkingBudget` to that call + to the `AgentInvoker` param type, and forward it in invoke-agent's `runToolLoop({...})` call.
-- **FALLBACK (acceptable for v1):** leave specialists at budget 0 (no thinking). The responder — the main path — works regardless. Don't block on this.
+- **FALLBACK (acceptable for v1):** leave specialists at budget 0 (no thinking). The responder (the main path) works regardless. Don't block on this.
 
 ---
 
 ## Env gate disposition
-- Drop the env `MANTLE_THINKING_BUDGET` read from `tool-loop.ts` (now per-user). This also dissolves the earlier "must add a compose passthrough" gap — no longer needed.
+- Drop the env `MANTLE_THINKING_BUDGET` read from `tool-loop.ts` (now per-user). This also dissolves the earlier "must add a compose passthrough" gap, no longer needed.
 - Update `docs/hermes-thinking-and-providers-handover.md` §6: thinking is enabled **per user in Settings → Profile** (switch ON + budget), not via env.
 
 ## Still-required streaming carriers (unchanged, default ON)
 The switch+budget only controls the thinking **request**. For reasoning to STREAM to the UI you still need the carriers on (they default on):
-- `MANTLE_TURN_TOKENS` (apps/api) — installs the delta observer; if `=0` the loop uses non-streaming `chat()` and NO reasoning streams.
-- `MANTLE_TURN_STREAMING` (apps/web) — the SSE master gate.
+- `MANTLE_TURN_TOKENS` (apps/api), installs the delta observer; if `=0` the loop uses non-streaming `chat()` and NO reasoning streams.
+- `MANTLE_TURN_STREAMING` (apps/web), the SSE master gate.
 
 ## Verify
 - typecheck: `@mantle/content`, `@mantle/agent-runtime`, `@mantle/assistant-runtime`, `@mantle/web`.
 - tests: `pnpm exec vitest run packages/content packages/agent-runtime packages/voice` (+ new resolveThinkingBudget test).
 - browser: Settings → Profile shows "Thinking budget" under the switch, greys out when the switch is off; set switch ON + Medium, run a turn that calls a tool, confirm the collapsible "Thinking" trace populates and no 400 on round 2.
-- The live OpenRouter→Anthropic signature round-trip (thinking + tools) is still only provable live — same pending smoke test as the parent work.
+- The live OpenRouter→Anthropic signature round-trip (thinking + tools) is still only provable live, same pending smoke test as the parent work.
 
 ## Key file:line map (from this investigation)
 ```

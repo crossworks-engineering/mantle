@@ -4,7 +4,7 @@ title: Embedding
 
 ## Embedding
 
-The model that turns your content into vectors — the thing that makes "find me
+The model that turns your content into vectors; the thing that makes "find me
 that note about the pump" work when you never wrote the word "pump".
 
 There is exactly **one** embedding configuration for the whole brain, and that
@@ -19,12 +19,12 @@ vectors wouldn't sit anywhere near the primary's.
 ## Before you change anything
 
 Don't switch without a reason. Changing the model means re-embedding the entire
-corpus, and while that runs your search results are drawn from a mixed space —
+corpus, and while that runs your search results are drawn from a mixed space,
 degraded, not broken, but noticeably worse until it finishes.
 
 Good reasons exist. Heavily multilingual content is the main one; a model
 trained for cross-language matching genuinely finds things an English-first
-model misses. Wanting no cloud calls at all is another — a local embedder keeps
+model misses. Wanting no cloud calls at all is another; a local embedder keeps
 the corpus entirely on your hardware.
 
 The dimension is the hard constraint. Every vector column in the database is
@@ -36,7 +36,7 @@ the ones offered.
 
 Embeddings are cached by a hash of the model plus the text, which is what makes
 re-indexing cheap: change one paragraph in a long document and only that
-paragraph is re-embedded. It's also why switching models is expensive — a new
+paragraph is re-embedded. It's also why switching models is expensive, a new
 model invalidates every cache entry at once.
 
 Semantic search is only half of retrieval. Full-text search runs alongside it,
@@ -47,7 +47,7 @@ meaning, and the system uses both.
 The local option runs the model on your own hardware and needs no key, which is
 also the pre-onboarding fallback so a fresh install boots without credentials.
 Semantic search stays off until the configuration is completed one way or the
-other — the corpus is stored, just not yet findable by meaning.
+other; the corpus is stored, just not yet findable by meaning.
 
 If retrieval quality is what you're actually worried about, the scheduled recall
 evaluation scores it against a fixed question set, so a change here can be

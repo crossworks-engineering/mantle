@@ -1,10 +1,10 @@
 # Tracing data through the 6-layer brain
 
-How to verify, by hand, that a piece of content landed where it should —
+How to verify, by hand, that a piece of content landed where it should,
 from the raw `nodes` row all the way through summary, embedding, facts,
 entities, and the trace trail. Written for an operator (or a future
 Claude session) sitting in front of the running dev stack who needs to
-answer *"I sent X in — did the system actually digest it, and if not,
+answer *"I sent X in, did the system actually digest it, and if not,
 where did it stall?"*
 
 Companion to [`memory.md`](./memory.md) (what the six layers *are*),
@@ -38,7 +38,7 @@ container's version.
 
 **Read-only discipline.** Tracing is observation. Stick to `select`.
 The only write you ever need for verification is re-firing a single
-node's pipeline (§6) — and that's a `pg_notify`, not a row mutation.
+node's pipeline (§6), and that's a `pg_notify`, not a row mutation.
 
 ---
 
@@ -72,7 +72,7 @@ row.
 Substitute the node id for `$N`. Or just run
 `scripts/trace-node.sh $N`.
 
-### L6 — content_store
+### L6: content_store
 
 ```sql
 -- core node
@@ -89,7 +89,7 @@ select direction, text from telegram_messages where node_id = '$N';
 `touched_by_extractor` (updated_at > created_at) is a quick "did anything
 run after insert" tell.
 
-### L5 — content_index
+### L5: content_index
 
 ```sql
 select left(data->>'summary', 120)                       as summary,
@@ -102,14 +102,14 @@ from nodes where id = '$N';
 ```
 
 Healthy: `summary` non-empty, `emb_dims = 768`, `n_entities ≥ 1`,
-`has_tsv = t`. (**768, not 1536** — the brain migrated to local
+`has_tsv = t`. (**768, not 1536**: the brain migrated to local
 EmbeddingGemma-300m on 2026-05-31; every `vector` column is now
 `vector(768)`. See [`embeddings.md`](./embeddings.md).) **Watch the
-empty-string trap** — `data->>'summary'` can
+empty-string trap**, `data->>'summary'` can
 be `''` (key present, value blank) which is *not* NULL. Always check the
 text, or wrap in `nullif(data->>'summary','')`.
 
-### L4 — profile (facts)
+### L4: profile (facts)
 
 ```sql
 select kind, content, confidence,
@@ -121,7 +121,7 @@ from facts where source_node_id = '$N' order by kind;
 Each fact should be embedded (`emb = t`) and usually entity-linked.
 `kind` ∈ `factual | episodic | semantic | preference`.
 
-### Graph — entity edges
+### Graph: entity edges
 
 ```sql
 -- Edges point ENTITY → NODE with relation 'mentioned_in' (this is the
@@ -133,7 +133,7 @@ where ed.target_id = '$N' and ed.relation = 'mentioned_in';
 
 Edge count should match `n_entities` from L5.
 
-### Observability — the trace trail
+### Observability: the trace trail
 
 ```sql
 select kind, status, coalesce(data->>'disposition','-') as disposition,
@@ -155,21 +155,21 @@ A healthy extractor run is 8 steps:
 
 ---
 
-## 4. Signature guide — reading the result
+## 4. Signature guide: reading the result
 
 Three outcomes you'll see, and how to tell them apart at a glance:
 
 | Signature | What it means |
 |---|---|
 | `extractor_run` **success** + summary set + facts > 0 + edges > 0 | **Healthy.** Content reached the brain. |
-| `extractor_run` **skipped**, disposition `body_too_short` | Declined, by design. < 20 chars of body — an unsupported file type or a title-only node. 0 facts/edges expected. |
+| `extractor_run` **skipped**, disposition `body_too_short` | Declined, by design. < 20 chars of body, an unsupported file type or a title-only node. 0 facts/edges expected. |
 | `extractor_run` **skipped**, disposition `no_text_layer` | A scanned/image-only PDF whose OCR fallback also produced nothing (no/unwired vision worker, unrenderable PDF, or blank scan). Look for a preceding `photo_ingest` (`mode=pdf_ocr`) trace showing the rasterize + vision attempt. 0 facts/edges. |
-| `extractor_run` **skipped**, disposition `already_extracted` | Declined — node already had `data.summary` + `embedding`. Re-fires no-op. |
-| `extractor_run` **success** but summary **empty** + 0 facts | **Silent miss.** The LLM ran (cost was spent) but its output couldn't be used — historically a JSON-parse failure where the model appended prose after the object (fixed in `extractor-parse.ts`, but the *signature* is the diagnostic). Check the agent console for `[extractor] LLM returned non-JSON`. |
-| `extractor_run` **success**, summary set, entities > 0, but **0 facts** + `process_facts` step **skipped** (`fact_cost_cap`) | **Cost-cap drop.** The model produced facts but the per-node budget (`extract_cost_cap_micro_usd`) was exhausted, so they were discarded before persisting. The run still succeeds (index/entities landed); only the `process_facts` step is amber. A cap of `0`/negative means *unlimited* — a positive cap set too low is the usual culprit. Surfaced in `/debug` → "Facts dropped to cost cap". Raise the cap (or null it) and re-fire (§6) to recover. |
+| `extractor_run` **skipped**, disposition `already_extracted` | Declined; node already had `data.summary` + `embedding`. Re-fires no-op. |
+| `extractor_run` **success** but summary **empty** + 0 facts | **Silent miss.** The LLM ran (cost was spent) but its output couldn't be used, historically a JSON-parse failure where the model appended prose after the object (fixed in `extractor-parse.ts`, but the *signature* is the diagnostic). Check the agent console for `[extractor] LLM returned non-JSON`. |
+| `extractor_run` **success**, summary set, entities > 0, but **0 facts** + `process_facts` step **skipped** (`fact_cost_cap`) | **Cost-cap drop.** The model produced facts but the per-node budget (`extract_cost_cap_micro_usd`) was exhausted, so they were discarded before persisting. The run still succeeds (index/entities landed); only the `process_facts` step is amber. A cap of `0`/negative means *unlimited*, a positive cap set too low is the usual culprit. Surfaced in `/debug` → "Facts dropped to cost cap". Raise the cap (or null it) and re-fire (§6) to recover. |
 
 > **Known observability gap:** the silent-miss case records a `success`
-> trace, not `error`/`skipped`, so it's invisible in `/traces` — only the
+> trace, not `error`/`skipped`, so it's invisible in `/traces`, only the
 > console log betrays it. A future improvement is to mark empty-output
 > runs distinctly.
 
@@ -202,7 +202,7 @@ from nodes order by created_at desc limit 10;
 ## 6. Re-running extraction on ONE node (safely)
 
 To re-test the pipeline on a node that already exists (e.g. after a code
-fix), re-fire its trigger — **for that single node only**:
+fix), re-fire its trigger, **for that single node only**:
 
 ```sql
 select pg_notify('node_ingested', '<node-id>');
@@ -212,12 +212,12 @@ The extractor re-runs *iff* the node is still eligible: the
 already-extracted guard is `if (data.summary && embedding)`, and an
 **empty-string summary is falsy**, so a node that previously silent-missed
 is re-processed. A node with a real summary will skip
-(`already_extracted`) — clear `data.summary` first if you truly need to
+(`already_extracted`), clear `data.summary` first if you truly need to
 force it.
 
 > **Do NOT confuse this with a backlog.** `pg_notify('node_ingested', id)`
 > is one node. A full re-process of history is
-> `pnpm -C apps/web extract:backfill` — that one *does* sweep old content
+> `pnpm -C apps/web extract:backfill`, that one *does* sweep old content
 > (and spend LLM budget). Never run the backfill to test a single change.
 > Old **emails** are never re-pulled by anything short of the IMAP cursor
 > resetting; restarting the stack does not re-ingest mail.
@@ -229,21 +229,21 @@ force it.
 - **The agent must run the code you're testing.** The dev stack runs from
   the **main** worktree, and `tsx --watch` does *not* reliably reload
   workspace-package (`packages/*`) changes. After editing a package or
-  merging, **restart `apps/agent`** — otherwise you're tracing stale code.
+  merging, **restart `apps/agent`**: otherwise you're tracing stale code.
 - **New deps need `pnpm install` in the worktree the stack runs from**
   (main), then a restart, before a dynamically-imported parser resolves.
 - **Empty string ≠ NULL** for `data.summary` (see §3). This trips up
   "has it been extracted?" checks constantly.
 - **Edge direction is entity → node** (`mentioned_in`). Querying
   `source_id = node` finds nothing; the node is the `target_id`.
-- **Emails get an `extractor_run` trace but no `content_ingest` trace** —
+- **Emails get an `extractor_run` trace but no `content_ingest` trace**,
   the IMAP path doesn't call `recordIngest`. So the node-biography anchor
   is absent for mail; `extractor_run` is the only trace.
 - **Attachments are real `file` nodes** under `inbox.<user>.attachments`,
   linked back via `email_attachments.file_node_id`. They extract through
   the same path as any file (PDF via pdf-parse, Word via mammoth, Excel
   via SheetJS). A **scanned / image-only PDF** (no text layer) is
-  rasterized to PNG and run through the vision worker (OCR) — a
+  rasterized to PNG and run through the vision worker (OCR), a
   `photo_ingest` trace with `data.mode='pdf_ocr'`, page-capped at
   `MAX_OCR_PAGES`; only if OCR yields nothing does the extractor record
   `skipped: no_text_layer`. Standalone **photos** still go through the

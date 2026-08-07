@@ -1,11 +1,11 @@
-# Rich writing — Saskia writes Notion-style documents
+# Rich writing: Saskia writes Notion-style documents
 
-> The web `/assistant` renders Saskia's replies as rich documents — callouts,
-> columns, tables, to-do lists, highlights — through the **same TipTap engine
+> The web `/assistant` renders Saskia's replies as rich documents, callouts,
+> columns, tables, to-do lists, highlights, through the **same TipTap engine
 > the Pages feature uses**. Her ability to *author* that formatting is a
 > **skill** (`rich_writing`); the chat's ability to *render* it is a small
 > markdown→HTML bridge into the Pages schema. With the same dialect she can also
-> **create/update/delete real Pages** via the `page_*` tools — a saved page
+> **create/update/delete real Pages** via the `page_*` tools, a saved page
 > renders identically to the reply she showed.
 >
 > Companion docs: [`pages.md`](./pages.md) (the editor schema + custom nodes),
@@ -17,15 +17,15 @@
 
 Two independent pieces, deliberately:
 
-1. **The skill** — teaches the agent *what* to write. Its body lives in the
+1. **The skill**: teaches the agent *what* to write. Its body lives in the
    system manifest (`SKILL_INSTRUCTIONS['rich_writing']` in
-   [`server/web/lib/system-manifest/prompts.ts`](../server/web/lib/system-manifest/prompts.ts) —
+   [`server/web/lib/system-manifest/prompts.ts`](../server/web/lib/system-manifest/prompts.ts),
    the single source of truth; `server/web/scripts/seed-rich-writing-skill.ts`
    force-pushes it to one brain). Instructions are appended to the agent's
    system prompt by `composeSystemPromptWithSkills`
    ([`lib/skills.ts`](../server/web/lib/skills.ts)), attached via skill links.
    Toggle/edit it at `/settings/skills`.
-2. **The renderer** — makes the chat *show* it. `richMarkdownToHtml`
+2. **The renderer**: makes the chat *show* it. `richMarkdownToHtml`
    ([`lib/rich-markdown.ts`](../client/web/lib/rich-markdown.ts)) converts the
    dialect to HTML; `<RichText>`
    ([`components/assistant/rich-text.tsx`](../client/web/components/assistant/rich-text.tsx))
@@ -80,7 +80,7 @@ This is destructive — there's no undo.
 - Containers don't nest (no callout/aside-in-callout/aside, no columns-in-columns).
 - `:::columns` needs ≥2 parts split by a lone `+++`, else it degrades to plain.
 - Every `:::` block must be closed on its own line.
-- Rich rendering is **web-only**. Telegram/voice surfaces stay plain text — the
+- Rich rendering is **web-only**. Telegram/voice surfaces stay plain text, the
   skill says so explicitly.
 
 ---
@@ -110,7 +110,7 @@ The `/assistant` page is a **document canvas**, not a chat transcript
 - Each turn is a grid row: Saskia's response is the wide reading column (the
   document); the user's prompt floats in a **right margin** (`lg:col-start-2`),
   anchored to the response it produced (sticky within its turn).
-- The composer docks right on wide screens — the user's side of the page.
+- The composer docks right on wide screens, the user's side of the page.
 - Stacks (prompt above response) below `lg`.
 
 ---
@@ -118,8 +118,8 @@ The `/assistant` page is a **document canvas**, not a chat transcript
 ## 5. Page authoring tools
 
 Saskia can create/update/delete real Pages from the same dialect. The bridge is
-`markdownToDoc` ([`packages/content/src/markdown-to-doc.ts`](../packages/content/src/markdown-to-doc.ts)) —
-the inverse of `docToText` — which converts the dialect to the ProseMirror JSON
+`markdownToDoc` ([`packages/content/src/markdown-to-doc.ts`](../packages/content/src/markdown-to-doc.ts)),
+the inverse of `docToText`, which converts the dialect to the ProseMirror JSON
 pages store (`pages.doc`). The builtins live in
 [`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts):
 
@@ -129,11 +129,11 @@ pages store (`pages.doc`). The builtins live in
 | `page_update` | `id, markdown? \| title? \| tags? \| icon?` | `markdown` replaces the whole body + re-indexes |
 | `page_get` | `id` | returns title/tags/summary + body as plaintext |
 | `page_list` | `query?, tag?, limit?` | newest first, bodies omitted |
-| `page_delete` | `id` | `requires_confirm` (irreversible) — pauses for approval |
+| `page_delete` | `id` | `requires_confirm` (irreversible), pauses for approval |
 
 Because both the chat renderer and `markdownToDoc` parse the *same dialect*, a
-saved page looks identical to the reply Saskia showed. (Two parsers today —
-chat→HTML, page→JSON — kept in sync by this doc; unifying on `markdownToDoc` for
+saved page looks identical to the reply Saskia showed. (Two parsers today,
+chat→HTML, page→JSON, kept in sync by this doc; unifying on `markdownToDoc` for
 both is a future cleanup.)
 
 ---
@@ -147,10 +147,10 @@ ALLOWED_USER_ID=<uuid> AGENT_SLUG=saskia pnpm --filter @mantle/web run seed:rich
 ```
 
 Idempotent. The script now also `seedBuiltinTools` (so the `page_*` rows exist)
-and the `rich_writing` skill carries the page tool slugs in its `tool_slugs` —
+and the `rich_writing` skill carries the page tool slugs in its `tool_slugs`,
 so attaching the skill **also grants the page tools** (via `effectiveToolSlugs`).
 Auto-targets the highest-priority enabled `assistant` (falls back to a
-`responder`). No agent restart needed for the web surface — tools are read from
+`responder`). No agent restart needed for the web surface; tools are read from
 the table per turn.
 
 ---
@@ -158,15 +158,15 @@ the table per turn.
 ## 7. Known edges / deferred
 
 - **Mentions are now authorable** via the reference-link form
-  (`[Label](mention:<ref>:<id>)`, §2) — the skill requires REAL ids from tools
+  (`[Label](mention:<ref>:<id>)`, §2), the skill requires REAL ids from tools
   (search, page lists), never invented ones. The chat parser renders the
   reference schemes (`mention:`/`media:`/`page:`) and ` ```mermaid ` fences as
-  plain links / code — they become rich chips and diagrams only on the Pages
+  plain links / code; they become rich chips and diagrams only on the Pages
   parser, by design.
 - **One TipTap editor per Saskia turn.** Fine for normal threads; if very long
   histories feel heavy, switch `<RichText>` to a static `generateHTML` pass +
   callout CSS (loses the live NodeView, gains speed).
 - **Two dialect parsers** (chat HTML vs page JSON). Unify both on `markdownToDoc`
   + `<PageView>` JSON rendering when convenient.
-- **`page_update` replaces the whole body.** No partial/section edit — the agent
+- **`page_update` replaces the whole body.** No partial/section edit, the agent
   reads with `page_get` then sends a full revised body.

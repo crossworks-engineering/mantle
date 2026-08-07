@@ -8,7 +8,7 @@ import { useColorTheme } from './color-theme-provider';
  * The active theme's `--chart-1..5`, resolved to hex.
  *
  * Extracted from generated-avatar so the avatar and the backdrop read the ramp
- * the same way — they must agree, or a themed backdrop and the avatars sitting
+ * the same way; they must agree, or a themed backdrop and the avatars sitting
  * on it drift onto two different palettes.
  *
  * Read off the document rather than imported: these tokens change with BOTH the
@@ -17,7 +17,7 @@ import { useColorTheme } from './color-theme-provider';
  * themes.css emits every token as hex, which is exactly what DiceBear accepts.
  */
 
-/** Clean Slate (the default theme) `--chart-1..5`, light mode — used for the
+/** Clean Slate (the default theme) `--chart-1..5`, light mode, used for the
  *  first paint before the live tokens can be read, so the default theme never
  *  flashes. Values are GENERATED (themes/seeds.mjs → `pnpm themes:build`); if
  *  the ramp recipe changes, refresh them from `:root` in themes.css. */

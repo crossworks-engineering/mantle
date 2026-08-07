@@ -1,4 +1,4 @@
-# Runner queues — slice 3 build handover for final audit
+# Runner queues: slice 3 build handover for final audit
 
 Written 2026-07-21 for an independent implementation audit of the slice-3
 BUILD. Self-contained: the auditor works from this document plus the repo.
@@ -11,13 +11,13 @@ audit happens before first dogfood and before any push/deploy.
   `git diff 381f330b..af61d42c` is the full audited surface (381f330b =
   the amended plan, v0.157.7).
 - Binding specs, in authority order:
-  1. [runs-slice-3-plan.md](runs-slice-3-plan.md) — the AUDITED plan:
+  1. [runs-slice-3-plan.md](runs-slice-3-plan.md), the AUDITED plan:
      §1 restated principle, §3 verdicts, **§4 amendments (bindings)**, §8
      outcome + deferred items + build record. The build claims to
      implement every §4 binding as written.
-  2. [adr-runs-durable-execution.md](adr-runs-durable-execution.md) —
+  2. [adr-runs-durable-execution.md](adr-runs-durable-execution.md),
      incl. the WP2 acceptance-gate consequence.
-  3. [runs-audit-handover.md](runs-audit-handover.md) §2 — the slices-1+2
+  3. [runs-audit-handover.md](runs-audit-handover.md) §2, the slices-1+2
      invariant list STILL GOVERNS (nothing in slice 3 may weaken it); §8
      records the fixes whose ordering rules slice 3 must preserve
      (run-row-first locks, claim-after-preconditions).
@@ -26,7 +26,7 @@ audit happens before first dogfood and before any push/deploy.
 
 ## 1. What slice 3 added, per package
 
-**WP1 — worker turns as DBOS workflows (0.157.8).** The runs worker's
+**WP1, worker turns as DBOS workflows (0.157.8).** The runs worker's
 `mantle.run.worker` lane is claim-context only: `claimWorkerItem` (engine
 unchanged) then enqueue `runsWorkerTurnWorkflow` by name on the shared
 RUNNER_QUEUE via a worker-safe `DBOSClient` seam and ack. The whole slice-2
@@ -40,24 +40,24 @@ The workflow re-stamps `deadline_at` at execution start (queue wait is not
 execution budget); an enqueued-but-never-started workflow times out on the
 claim's stamp. Flag off in apps/api → `failed(disabled)`, counter-driving.
 
-**WP2 — resume turns as DBOS workflows (0.157.9).**
+**WP2, resume turns as DBOS workflows (0.157.9).**
 `apps/web/lib/runs/resume.ts` DELETED; body moved to
 `apps/api/src/workflows/runs-resume-turn.ts`. The two boundaries the plan
 audit found missing are explicit journaled steps: `claim_resume` placed
-AFTER the fallible preconditions (agent/key/adapter/assembly — the
+AFTER the fallible preconditions (agent/key/adapter/assembly, the
 v0.157.5 ordering) and BEFORE the loop; `record_outbound` journaled (no
 double-post on replay). Enqueue uses `deduplicationID = groupId` and
-deliberately NO fixed workflowID — a workflow that errors WITHOUT claiming
+deliberately NO fixed workflowID, a workflow that errors WITHOUT claiming
 must stay rescuable by the sweep's re-send (a fixed id would dedupe the
 rescue into a no-op against the terminal row). The pg-boss resume lane is
-a relay (peek `resumed_at`, enqueue, ack; enqueue failure just acks — the
+a relay (peek `resumed_at`, enqueue, ack; enqueue failure just acks, the
 sweep re-sends).
 
-**WP3 — ask_human (0.157.10).** Seq-only `{kind:'ask_human', question,
+**WP3, ask_human (0.157.10).** Seq-only `{kind:'ask_human', question,
 options?, timeout_seconds?}` leaves. Promote: `queued → ready`, NEVER
 dispatched; deadline stamped at promote ONLY when dated; a
 `pending_tool_calls` row (toolSlug `ask_human`, args carry
-question/options/run_id/item_id, agent_id NULL — real FK vs soft ref) is
+question/options/run_id/item_id, agent_id NULL, real FK vs soft ref) is
 the surface. `pending_approve` gained optional free-text `answer` (MCP +
 PATCH /api/pending/[id]); approve/reject branch BEFORE tool resolution
 into `applyHumanAnswer` (`done` with `result.answer`, default
@@ -67,7 +67,7 @@ duty 2 excludes ask_human; NEW duty 4 janitors pending rows whose item
 went terminal; an answer landing on a terminal item flips the row
 `expired` with a teaching error.
 
-**WP4 — budget/item-cap auto-pause (0.157.11, migration 0132).**
+**WP4, budget/item-cap auto-pause (0.157.11, migration 0132).**
 `runs.spent_micro_usd` + `paused_at` + status `'paused'`. `completeItem`
 adds cost under the already-held run lock, ONLY when the item CAS landed;
 the pause CAS runs AFTER `onTerminal` (a run finished in the same txn is
@@ -85,17 +85,17 @@ Sweep duties 2/2b skip paused runs; janitor 4b expires moot `run_budget`
 rows. `item_cap`: `createRun`/`appendChildren` count nodes under the run
 lock, `ItemCapError` teaching error. `run_plan` gained `budget_usd`.
 
-**WP5 — worker groups / panels (0.157.12, migration 0133).**
+**WP5, worker groups / panels (0.157.12, migration 0133).**
 `agent_groups` (owner-scoped slugs, `member_slugs text[]` SOFT refs) +
 `worker_group_ensure`/`worker_group_list` MCP tools. Parser accepts
 `group:'<slug>'` on worker_invoke (seq-only, exclusive with `worker`),
 stores a `panel_group` marker; `expandWorkerGroups` (before routing
 resolution) replaces the leaf with `par(one worker_invoke per member)` +
-an `audit {panel:true}` — the engine only sees known shapes.
+an `audit {panel:true}`, the engine only sees known shapes.
 `isPanelAudit`/`findPanelWorkerItems` (nearest preceding sibling
 `group_par` → its terminal worker children); `applyAuditVerdict` panel
 branch: pass = directive-as-synthesis with `audited_items`; blocking
-verdict → `failed(needs_human)` — panels NEVER rerun automatically.
+verdict → `failed(needs_human)`, panels NEVER rerun automatically.
 Panel resume prompt fences every attempt separately.
 
 **Riding-alongs (0.157.12, migration 0134).** `runs.origin_channel`
@@ -108,9 +108,9 @@ Stop: `/debug/runs` Cancel button (AlertDialog) → `POST
 /api/debug/runs/:id {action:'cancel'}` → the same `cancelRun` (live with
 flag off). Flag plumbing: the compose `app-env` anchor now passes
 `MANTLE_RUNS` (+ `MANTLE_RUNS_WORKER_CONCURRENCY`) to web, worker_runs
-AND api — previously it reached no container at all.
+AND api, previously it reached no container at all.
 
-## 2. The acceptance gate — what was actually proven
+## 2. The acceptance gate: what was actually proven
 
 The plan-§8 gate ("kill between the journaled record_outbound and workflow
 completion; exactly one outbound row after recovery") was run 2026-07-21
@@ -127,17 +127,17 @@ handover-§5 resume-loss gap is claimed CLOSED.
 **Judge the fidelity**: the gate exercised the exact mechanism and step
 SHAPE, not the real `runsResumeTurnWorkflow` (which needs a live LLM). The
 claim's validity rests on the workflow's boundaries matching the harness
-shape — verify by reading `runs-resume-turn.ts` against `crashResumeImpl`.
+shape, verify by reading `runs-resume-turn.ts` against `crashResumeImpl`.
 
 > **AUDIT CORRECTION (2026-07-21, v0.157.14).** The final audit REFUTED the
 > closure claim as built at `af61d42c`: the harness omitted the workflow's
 > non-journaled pre-claim duplicate check, and the kill point (post-outbound)
 > was the already-benign window. On DBOS recovery the glue re-read
-> `resumed_at` — set by the workflow's OWN claim — and exited 'duplicate',
+> `resumed_at` (set by the workflow's OWN claim) and exited 'duplicate',
 > losing every post-claim wake-up (reproduced empirically against scratch
 > DBs). FIXED in v0.157.14: all pre-claim decisions live in one journaled
 > `resume_preflight` step; the gate now runs at BOTH kill points
-> (`CRASH_POINT=post_claim` — the loss window — and post_outbound) and
+> (`CRASH_POINT=post_claim` (the loss window) and post_outbound) and
 > passes both. The gap is closed as of v0.157.14, not v0.157.12.
 
 Reproduce (any Postgres you can create databases on):
@@ -179,7 +179,7 @@ DATABASE_URL=<same> DBOS_SYSTEM_DATABASE_URL=<same> \
 - **workflowID asymmetry**: workers `itemId:attempt` (idempotent per
   semantic attempt + row-derivable); resumes NO fixed id +
   `deduplicationID = groupId` (a failed-without-claiming workflow must
-  stay rescuable — a fixed id would dedupe the rescue into a no-op).
+  stay rescuable; a fixed id would dedupe the rescue into a no-op).
 - **Decrypted api key never journaled** (no plaintext secrets in the DBOS
   system DB): replay re-resolves it as glue → a post-claim crash plus a
   simultaneous decrypt outage can still lose one wake-up. Accepted.
@@ -188,17 +188,17 @@ DATABASE_URL=<same> DBOS_SYSTEM_DATABASE_URL=<same> \
   cost on the item row. Mirrors the assistant turn. Accepted, documented.
 - **Budget raise is deterministic** (+one original budget on top of
   spent); no free-text amount parsing. Reject = cancel.
-- **Pause gates claims only** — promote and append proceed (the
+- **Pause gates claims only**: promote and append proceed (the
   anti-wedge amendment); slot-release wake-ups still fire while paused
   (claims refuse; harmless).
-- **Panels never rerun** — blocking panel verdict → `needs_human`.
+- **Panels never rerun**: blocking panel verdict → `needs_human`.
 - **`agent_id` NULL on runs-created pending rows** (`runs.agent_id` is a
   soft ref; `pending_tool_calls.agent_id` is a real FK).
-- **ask_human undated by default** and exempt from every sweep duty —
+- **ask_human undated by default** and exempt from every sweep duty,
   waiting indefinitely is the feature.
 - **Enqueue rejection fails the item immediately** (`dispatch_failed`);
   the sweep covers only the crash-between-claim-and-enqueue window.
-- **`requires_confirm` items still refuse** — the consent pattern is an
+- **`requires_confirm` items still refuse**: the consent pattern is an
   ask_human gate + the responder running the gated tool inline at resume.
 - **Gate fidelity** (§2): harness-shape proof, not a live-LLM kill.
   Judged sufficient at build time; the audit may disagree.
@@ -206,7 +206,7 @@ DATABASE_URL=<same> DBOS_SYSTEM_DATABASE_URL=<same> \
   RUNNER_QUEUE FIFO with interactive turns; split/deprioritize when
   observed (plan §8).
 
-## 5. Known gaps (acknowledged, non-blocking — verify containment)
+## 5. Known gaps (acknowledged, non-blocking: verify containment)
 
 - Chat run card + mid-run `run_append` UX not built (UI package); the
   cancel actuator exists only on `/debug/runs`. The web `/pending` UI has
@@ -224,7 +224,7 @@ DATABASE_URL=<same> DBOS_SYSTEM_DATABASE_URL=<same> \
 
 ## 6. Test coverage & how to run
 
-`packages/runs/src/engine.test.ts` — 34 DB-backed tests (22 from slices
+`packages/runs/src/engine.test.ts`, 34 DB-backed tests (22 from slices
 1+2, +5 ask_human, +6 budget/pause/cap, +1 panel), gated on
 `RUNS_TEST_DATABASE_URL` (role must CREATE DATABASE; the suite provisions
 scratch `mantle_runs_engine_test`, applies 0129/0130/0132/0134 + a minimal
@@ -242,7 +242,7 @@ reject-cancels + not-paused refusal, ready-audit deadline shift, item-cap
 refusals; panel pass-synthesis + blocking-escalates with counter
 integrity. `pnpm verify` (typecheck, lint, format, 2445 unit tests) green
 at `af61d42c`. NOT covered: everything in §5's LLM-dependent list, the
-pending.ts branches (no DB-backed test — they compose applyHumanAnswer/
+pending.ts branches (no DB-backed test; they compose applyHumanAnswer/
 applyBudgetDecision which are), the MCP tools, the cancel route/button.
 
 ## 7. Suggested audit focus
@@ -250,7 +250,7 @@ applyBudgetDecision which are), the MCP tools, the cancel route/button.
 1. **Amendment compliance**: diff every §4 binding in the amended plan
    against the code. The build CLAIMS 1:1 implementation.
 2. **Cross-runtime races (WP1/WP2)**: sweep timeout vs a live workflow's
-   late completion; duplicate resume workflows (dedup clears at dequeue —
+   late completion; duplicate resume workflows (dedup clears at dequeue,
    two live workflows serialize only on the claim CAS); the deadline
    re-stamp racing the sweep; enqueue-failure paths on both lanes.
 3. **The pause matrix beyond the tests**: pause racing `appendChildren`;
@@ -259,7 +259,7 @@ applyBudgetDecision which are), the MCP tools, the cancel route/button.
 4. **ask_human/run_budget cross-store consistency**: every item-killing
    path vs its pending row; answer/raise racing cancel/sweep; the
    `settle*` update-after-CAS windows in pending.ts (row claimed
-   `approved` but the item settle fails mid-way — what does the operator
+   `approved` but the item settle fails mid-way; what does the operator
    see, can anything be double-applied?).
 5. **Panel shape edge cases**: expansion inside nested groups; a group
    leaf appended via `run_append` (wrapper-kind vs target-group kind);
@@ -268,7 +268,7 @@ applyBudgetDecision which are), the MCP tools, the cancel route/button.
    preceding par.
 6. **Authorization + injection**: the answer path's owner scoping vs
    run_audit's precedent; `worker_group_ensure` inputs; the cancel route;
-   `origin_channel` provenance (ctx.surface is runtime-populated — can
+   `origin_channel` provenance (ctx.surface is runtime-populated, can
    any caller forge it? What does the MCP transport set?); the operator's
    free-text `answer` riding into the compiled state and later prompts.
 7. **Flag discipline**: with `MANTLE_RUNS` unset everywhere, prove no

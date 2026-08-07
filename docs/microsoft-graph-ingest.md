@@ -1,21 +1,21 @@
-# Microsoft Graph ingestion — design
+# Microsoft Graph ingestion: design
 
-**Status:** M0 (OAuth) + M1 (SharePoint/OneDrive) + M2 (Outlook mail) built — migrations `0100`–`0103` pending apply. **M3 (calendar) HELD** — superseded by the provider-agnostic calendar pipeline (`docs/calendar-ingest.md`); M3 becomes "implement `CalendarProvider` for Graph `/me/calendarView/delta`", reusing `ms_accounts` tokens, exactly as Outlook mail reused the email pipeline.
+**Status:** M0 (OAuth) + M1 (SharePoint/OneDrive) + M2 (Outlook mail) built, migrations `0100`–`0103` pending apply. **M3 (calendar) HELD**: superseded by the provider-agnostic calendar pipeline (`docs/calendar-ingest.md`); M3 becomes "implement `CalendarProvider` for Graph `/me/calendarView/delta`", reusing `ms_accounts` tokens, exactly as Outlook mail reused the email pipeline.
 **Author:** drafted 2026-06-24
 
 > **M2 follow-up (2026-07-15).** Three of the v1 simplifications below are
 > closed:
-> - **Outbound send** — `outlook/send.ts` (`sendViaGraph`) sends via Graph
+> - **Outbound send**: `outlook/send.ts` (`sendViaGraph`) sends via Graph
 >   `sendMail`; `Mail.Send` joined `MS_SCOPES` and send is gated on the
 >   *granted* scopes (`ms_accounts.scopes`, `msAccountCanSend`) with a
 >   reconnect nudge in the mail card. Dispatch (SMTP vs Graph) lives in
 >   `@mantle/tools` `builtins-email.ts`. See `docs/email-send.md`.
-> - **Sender-approval backfill** — `enqueueBackfill` now routes companion
+> - **Sender-approval backfill**: `enqueueBackfill` now routes companion
 >   accounts to `mantle.microsoft.backfill`, consumed by the microsoft-sync
 >   worker via `backfillMatch(account, graphMailProvider, target)`. Domain
 >   wildcards page recent mail newest-first (Graph can't filter by sender
 >   domain) and match caller-side, bounded at 20 pages.
-> - **`/settings/discover`** — the live peek is provider-aware
+> - **`/settings/discover`**: the live peek is provider-aware
 >   (`PeekProviderResolver` injected by the API route), so Microsoft
 >   mailboxes are scanned alongside IMAP.
 > Still open from v1: Inbox folder only.
@@ -33,12 +33,12 @@
 >
 > **Cursor:** monotonic `receivedDateTime` watermark in
 > `email_accounts.sync_state.graph.mail.since` (mirrors IMAP's UID watermark);
-> `ge` re-yields the boundary message, deduped. Delta (deletion-aware) not used —
+> `ge` re-yields the boundary message, deduped. Delta (deletion-aware) not used,
 > the email pipeline is append-only like IMAP.
 >
 > **v1 simplifications:** Inbox folder only (other folders later, like IMAP
 > discovery); mail respects the SAME contact gate (only approved senders
-> ingested — zero contacts = nothing); sender-approval backfill not wired for
+> ingested, zero contacts = nothing); sender-approval backfill not wired for
 > Microsoft accounts (new mail still flows via the watermark).
 
 > **M1 build notes (2026-06-24).** Shipped: `@mantle/microsoft/drives/`
@@ -55,10 +55,10 @@
 > (`sharepoint`/`onedrive`). Dedup is owner-scoped by sha256 (a file shared with
 > an email attachment is one node).
 >
-> **v1 simplifications (noted for later):** flat layout — all of a drive's files
+> **v1 simplifications (noted for later):** flat layout, all of a drive's files
 > land under one branch (`<acct>.<driveLabel>`), folder tree not mirrored into
 > ltree (SharePoint path kept in `web_url`); `graphGetAll` loads a delta page set
-> into memory (fine for bounded libraries — see "Large libraries"); files over
+> into memory (fine for bounded libraries, see "Large libraries"); files over
 > `MAX_UPLOAD_BYTES` skipped; changed-content leaves the old node until GC.
 > Discovery covers OneDrive + *followed* SharePoint sites (manual add-by-URL
 > later).
@@ -77,9 +77,9 @@
 > precedence; the redirect URI is stored explicitly and surfaced in the form to
 > copy into Azure (no `NEXT_PUBLIC_APP_URL` dependency).
 >
-> **Not yet done:** apply migrations `0100`+`0101` (DATABASE_URL is prod — needs
+> **Not yet done:** apply migrations `0100`+`0101` (DATABASE_URL is prod, needs
 > a `pg_dump` backup + go-ahead first), and the Azure app registration itself
-> (admin consent). After the migrations land, an admin just fills in the form —
+> (admin consent). After the migrations land, an admin just fills in the form,
 > no env or restart needed. Browser end-to-end verification is blocked on the
 > migrations (the page queries both new tables).
 **Decision context:** Multiple users will need to connect Microsoft 365 sources.
@@ -124,7 +124,7 @@ effort piece and it is net-new. Everything else is "copy the email connector."
 Note: [packages/db/src/schema/emails.ts:24](../packages/db/src/schema/emails.ts)
 still carries `email_provider = ['gmail','microsoft','imap']` and
 [apps/web/workers/email-sync.ts:42](../apps/web/workers/email-sync.ts) explicitly
-throws on `microsoft` — "we shipped OAuth then ripped it out." This design puts
+throws on `microsoft`, "we shipped OAuth then ripped it out." This design puts
 it back, properly, as a shared foundation rather than email-only.
 
 ---
@@ -151,7 +151,7 @@ packages/microsoft/src/
 A single OAuth + client core; each surface is a thin sync module. Adding Teams
 later = one more folder, no core changes.
 
-### OAuth2 module (`oauth.ts` + `token-store.ts`) — the hard part
+### OAuth2 module (`oauth.ts` + `token-store.ts`): the hard part
 
 Delegated **Authorization Code flow with PKCE**:
 
@@ -174,7 +174,7 @@ row id. Access **and** refresh tokens sealed; only non-secret metadata
 (expiry, scope, `upn`) kept plaintext so the scheduler can reason without
 unsealing.
 
-**Azure app config** (shared, per-deployment, in env — not per user):
+**Azure app config** (shared, per-deployment, in env, not per user):
 
 ```
 MS_CLIENT_ID=…
@@ -240,23 +240,23 @@ ms_drive_items(
 // keyed like { "drive:<driveId>": "<deltaLink>", "mail": "<deltaLink>", ... }
 ```
 
-Outlook mail reuses the existing `emails` table — `provider_msg_id` already
+Outlook mail reuses the existing `emails` table, `provider_msg_id` already
 documents "Graph message id" as an intended value
 ([emails.ts:122](../packages/db/src/schema/emails.ts)). We add a `microsoft`-
 provider branch to the email insert path rather than a parallel table. Add
 `'sharepoint_file' | 'onedrive_file'` to the node-type enum (or carry source in
-`nodes.data.source` — decide in build; node-type is cleaner for provenance
+`nodes.data.source`, decide in build; node-type is cleaner for provenance
 filtering).
 
-### Drive discovery — the Follow rule
+### Drive discovery: the Follow rule
 
 What "Refresh drives" lists (`drives/discover.ts`) is exactly the union of:
 
-1. **The account's own OneDrive** — `GET /me/drive`. Included whenever the
+1. **The account's own OneDrive**: `GET /me/drive`. Included whenever the
    account has one provisioned (non-fatal if not).
-2. **Every document library of every SharePoint site the user *follows*** —
+2. **Every document library of every SharePoint site the user *follows***,
    `GET /me/followedSites`, then `GET /sites/{id}/drives` per site. "Follows"
-   is the star/Follow button on the site in SharePoint — the list under
+   is the star/Follow button on the site in SharePoint, the list under
    "Following" on the SharePoint start page.
 
 Consequences worth stating plainly (this is the #1 "why isn't my site
@@ -266,7 +266,7 @@ showing?" question):
   is invisible to discovery. The fix is: Follow the site in SharePoint, then
   hit Refresh drives.
 - **Each followed site contributes ALL of its document libraries**, and most
-  sites have a default library named just "Documents" — several same-named
+  sites have a default library named just "Documents", several same-named
   entries means several followed sites (the UI shows `siteName` to
   disambiguate; the branch label carries a drive-id hash so they never
   collide).
@@ -277,7 +277,7 @@ showing?" question):
 
 Discovery only *catalogs*: every found drive is upserted **disabled**, and
 re-running refreshes display metadata without touching `enabled`/`delta_link`
-— a re-discover never disrupts an active sync.
+, a re-discover never disrupts an active sync.
 
 ### Sync workers (delta queries)
 
@@ -305,15 +305,15 @@ New worker `apps/web/workers/microsoft-sync.ts`, structured exactly like
 Email has a hard **contact gate** (only approved senders ingested). Drives
 have two opt-in layers, mirroring that stance:
 
-1. **Per-drive toggle** — discovery upserts every drive *disabled*; nothing
+1. **Per-drive toggle**: discovery upserts every drive *disabled*; nothing
    syncs until a drive is switched on.
-2. **Per-drive scopes** (`ms_drive_scopes`) — the "Choose content" picker on
+2. **Per-drive scopes** (`ms_drive_scopes`): the "Choose content" picker on
    any drive, enabled or not (the safe first-connect flow for a big OneDrive
    is: choose content while the drive is still OFF, then enable). No selections = the whole drive syncs; selections =
    only files under ticked folders (after-`root:` path prefix) or exactly
    ticked files sync. Graph only supports delta from the drive **root** on
    OneDrive for Business/SharePoint, so scoping is a client-side filter over
-   the root delta feed (`drives/scope.ts` — same cursor, no extra API cost).
+   the root delta feed (`drives/scope.ts`, same cursor, no extra API cost).
    Saving a scope set clears `delta_link`; the next sync full-walks, ingesting
    newly-in-scope files and pruning ingested files now out of scope. File
    scopes match by item id (rename-stable); folder scopes by path prefix, so
@@ -321,7 +321,7 @@ have two opt-in layers, mirroring that stance:
 
 ### Permissions fidelity
 
-Delegated tokens already scope reads to what the user can see — the simplest and
+Delegated tokens already scope reads to what the user can see, the simplest and
 safest baseline. v1 flattens ownership to the connecting Mantle user (no
 mirroring of per-item SharePoint ACLs into Mantle's sharing model). Revisit only
 if multi-user sharing of ingested SharePoint content becomes a requirement.
@@ -340,7 +340,7 @@ This is the long-pole approval, independent of our code. Start it **day one**.
    `Files.Read.All`, `Sites.Read.All`, `Mail.Read`, `Calendars.Read`.
 5. **Admin consent:** some orgs require a tenant admin to consent once before
    individual users can connect. If a target org locks this down, that approval
-   can take longer than the build — flag it early.
+   can take longer than the build, flag it early.
 
 ## Security notes
 
@@ -357,17 +357,17 @@ This is the long-pole approval, independent of our code. Start it **day one**.
 
 | Milestone | Scope | Proves |
 |---|---|---|
-| **M0 — OAuth core** | `@mantle/microsoft` oauth + token-store + client; connect/callback UI; refresh single-flight | A user can connect M365 and we hold a self-refreshing token. *The risky part, done first.* |
-| **M1 — SharePoint/OneDrive** | `drives/sync` + `ms_drive_items` + drives worker + site/folder gate | Documents land as file nodes and become searchable end-to-end. |
-| **M2 — Outlook mail** | `outlook/mail` reusing the `emails` path; flip the dead `microsoft` provider on | M365 mail without IMAP app passwords. |
-| **M3 — Calendar** | `outlook/calendar` → event nodes | Calendar in the graph. |
+| **M0, OAuth core** | `@mantle/microsoft` oauth + token-store + client; connect/callback UI; refresh single-flight | A user can connect M365 and we hold a self-refreshing token. *The risky part, done first.* |
+| **M1, SharePoint/OneDrive** | `drives/sync` + `ms_drive_items` + drives worker + site/folder gate | Documents land as file nodes and become searchable end-to-end. |
+| **M2, Outlook mail** | `outlook/mail` reusing the `emails` path; flip the dead `microsoft` provider on | M365 mail without IMAP app passwords. |
+| **M3, Calendar** | `outlook/calendar` → event nodes | Calendar in the graph. |
 
-Each milestone is independently shippable. M0 is the gate — if OAuth refresh is
+Each milestone is independently shippable. M0 is the gate; if OAuth refresh is
 solid, M1–M3 are mechanical applications of the email pattern.
 
 ## Open questions
 
-- **Node-type vs `data.source`** for drive-file provenance — lean node-type for
+- **Node-type vs `data.source`** for drive-file provenance, lean node-type for
   filterable provenance; confirm against the enum's migration cost.
 - **Webhooks vs polling:** Graph change notifications (subscriptions) would beat
   2-min polling but add a public webhook endpoint + subscription-renewal cron.

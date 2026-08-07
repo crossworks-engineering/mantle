@@ -3,7 +3,7 @@ import { BACKDROP_STYLE_IDS, DEFAULT_BACKDROP_STYLE, fitSvg, renderBackdropSvg }
 import { AVATAR_STYLE_IDS } from './avatar';
 
 /**
- * The backdrop is decorative, so the risk is not that it looks wrong — it is
+ * The backdrop is decorative, so the risk is not that it looks wrong; it is
  * that it THROWS and takes the app shell with it, or that it silently stops
  * filling its box. These cover both, plus the two things that make it a
  * backdrop rather than a big avatar: the fit rewrite and the upright crop.

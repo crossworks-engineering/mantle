@@ -6,7 +6,7 @@ toolGroups: [formulas, formulas-eval, calculator]
 ## Formulas
 
 A formula here is not an expression string. It's a **model of a calculation
-taken from a published standard** — and a real engineering calculation is never
+taken from a published standard**, and a real engineering calculation is never
 just arithmetic.
 
 One stored formula can hold four different kinds of thing at once: the
@@ -28,7 +28,7 @@ actually needs.
 - "Which of my formulas have unverified equations?"
 
 Two habits are worth having. Ask what a formula **needs** before asking for the
-number — the assistant can read the input list, units and legal rating values
+number; the assistant can read the input list, units and legal rating values
 straight off the contract. And expect the derivation, not just the answer: every
 evaluation returns a trace of which branch was taken, which lookup row matched
 and what each symbol resolved to. An engineering number you cannot explain isn't
@@ -40,7 +40,7 @@ assistant.
 
 ## Technical
 
-A formula is an ordinary node with the validated spec in `data.spec` — no
+A formula is an ordinary node with the validated spec in `data.spec`, no
 sidecar table, since a spec is a few kilobytes of JSON. Evaluation is a pure
 function: no database, no clock, no network.
 
@@ -49,7 +49,7 @@ failure modes differ. **It fails loud.** A broken spreadsheet cell renders blank
 and you move on; a blank release rate reads as a small number, and an unresolved
 symbol silently reading as zero is how a calculation gets quietly wrong for a
 year. Every failure returns an explicit error instead. And **symbols are
-case-sensitive** — in the vapour equations `k` is the specific heat ratio and
+case-sensitive**, in the vapour equations `k` is the specific heat ratio and
 `K` is a correction factor, so a near-miss has to be an error rather than a
 guess.
 
@@ -60,7 +60,7 @@ missing combination is invisible until it yields a silent zero.
 
 Dimensional checking evaluates each expression with unit-bearing quantities and
 compares the result against the declared unit. It catches what proofreading
-doesn't — a term dropped inside a square root, a constant labelled with the
+doesn't, a term dropped inside a square root, a constant labelled with the
 wrong dimension. Coverage gaps and dimension issues are reported *separately*
 from validation, because an incomplete table is a fact about the source
 document, not a malformed spec.

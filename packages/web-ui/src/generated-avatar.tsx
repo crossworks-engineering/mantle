@@ -17,7 +17,7 @@ import {
  * The theme tints the BACKGROUND only — the artwork keeps its style's native
  * colours. See avatar.ts for why that split is what makes seeds tell apart.
  *
- * Colours come from the active theme's `--chart-1..5` via `useChartRamp` — see
+ * Colours come from the active theme's `--chart-1..5` via `useChartRamp`, see
  * theme-ramp.ts for why they are read off the document rather than imported.
  * That hook is shared with the generated backdrop so the two can never end up
  * on different palettes.

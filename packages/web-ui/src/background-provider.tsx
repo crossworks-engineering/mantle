@@ -22,7 +22,7 @@ import {
  * no localStorage. A default is the ABSENCE of the pair.
  *
  * A provider rather than props because the four areas are in four different
- * corners of the shell — sidebar, header, chat, activity column — and the
+ * corners of the shell (sidebar, header, chat, activity column) and the
  * Appearance picker has to repaint all of them live.
  */
 type Ctx = {
@@ -57,7 +57,7 @@ export function BackgroundProvider({ children }: { children: React.ReactNode }) 
         else delete document.documentElement.dataset.backgrounds;
       }
       // The DB copy is the source of truth; the next full load renders it into
-      // the HTML. Fire-and-forget — a failed write costs only the sync.
+      // the HTML. Fire-and-forget; a failed write costs only the sync.
       void apiSend('/api/profile/backgrounds', 'PUT', { backgrounds: encoded }).catch(() => {});
       return next;
     });

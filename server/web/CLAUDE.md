@@ -1,4 +1,4 @@
-# server/web — UI conventions
+# server/web: UI conventions
 
 **Before any styling/UI work, read [`docs/ui-style-guide.md`](../../docs/ui-style-guide.md).**
 It's the rulebook; match existing screens (Notes + the settings screens) when unsure.
@@ -11,35 +11,35 @@ Non-negotiables (full detail in the guide):
   Enabled/flags as header `Switch`es top-right + ghost Delete; auto-select first row.
   **Every scroll pane needs `min-h-0`** or `<main>` double-scrolls. See guide §8.
 
-- **shadcn-first** — compose from `components/ui/*`; avoid raw `<button>`/`<input>`/`<select>`.
-- **Theme tokens only** — `bg-background`, `text-foreground`, `text-muted-foreground`,
+- **shadcn-first**: compose from `components/ui/*`; avoid raw `<button>`/`<input>`/`<select>`.
+- **Theme tokens only**: `bg-background`, `text-foreground`, `text-muted-foreground`,
   `bg-card`, `border-border`, `bg-primary`, `bg-accent`, `bg-destructive`; status =
   `success`/`warning`/`info` (+`-ink` for text); `chart-1..5` = chart data ONLY (3:1,
-  not legible as text — use the `-ink` roles or `code-*` instead).
+  not legible as text, use the `-ink` roles or `code-*` instead).
   **Never hardcode colors**; opacity via `/NN`. Hardcoded colors break the ~40 themes.
   The theme CSS is GENERATED from `packages/web-ui/themes/seeds.mjs` (`pnpm themes:build`,
-  docs/themes.md) — never edit `themes.css` by hand.
+  docs/themes.md), never edit `themes.css` by hand.
   **Pair every fill with its OWN `-foreground`** (`bg-accent`+`text-accent-foreground`,
-  `bg-primary`+`text-primary-foreground`, …) — never mix pairs like `bg-accent text-foreground`
+  `bg-primary`+`text-primary-foreground`, …), never mix pairs like `bg-accent text-foreground`
   (no contrast guarantee; breaks on light-accent themes). Same for hover/active fills. On a
   `bg-sidebar` surface use `hover:bg-foreground/[0.06]` (muted == sidebar in some themes). See
   style guide §2. Themed markdown: add `prose-accent` beside `prose` (§10).
-- **No `window.prompt/confirm/alert`** — create/edit → `Dialog`; destructive confirm →
+- **No `window.prompt/confirm/alert`**: create/edit → `Dialog`; destructive confirm →
   `AlertDialog` (red action); feedback → `useToast()` (not inline error banners).
-- **Bare icons inside `<Button>`** — no `mr-*`/`h-*/w-*` (base gives `gap-2` + `size-4`).
+- **Bare icons inside `<Button>`**: no `mr-*`/`h-*/w-*` (base gives `gap-2` + `size-4`).
   `Button size="sm"` is `h-9`; match it with `ToggleGroup size="default"`.
-- **Form submits use `<SubmitButton>`** (never bare `<Button type="submit">`) — descriptive
+- **Form submits use `<SubmitButton>`** (never bare `<Button type="submit">`): descriptive
   verb+noun label ("Save agent", "Create event"; not "Save"), no "Saving…" text-swap; pass
   `pending={…}` for client forms, nothing for server-action forms. See style guide §6.
-- **Reuse shared patterns** — `<BackLink>` (detail back link), `<SetPageTitle>` (centered
+- **Reuse shared patterns**: `<BackLink>` (detail back link), `<SetPageTitle>` (centered
   top-bar title; no duplicate on-page `<h1>`), `<TagInput>`/`<TagPill>` (tags as `string[]`,
   themed colors), `<MarkdownEditor>` (edit) / `ReactMarkdown`+`prose` (render),
   `<ShareControl nodeId>` (read-only public-link toggle on any shareable detail header;
-  pass `beforeEnable` to publish first — pages pass `commit`). See [`docs/sharing.md`](../../docs/sharing.md).
-- **List search/filter/pagination is URL-driven (SSR)** — server page reads `q`/`page`/filters,
+  pass `beforeEnable` to publish first, pages pass `commit`). See [`docs/sharing.md`](../../docs/sharing.md).
+- **List search/filter/pagination is URL-driven (SSR)**: server page reads `q`/`page`/filters,
   calls `list({…,limit,offset})` + `count*()`; client uses `useListNav()` (`go(patch)`) +
   `<ListPager>`. Don't client-filter a loaded list. Reference: `/pages` (mirrored by tasks/events/secrets).
-- **Public surface (`/s/[token]`)** lives outside the `(app)` group — no app shell, and it
+- **Public surface (`/s/[token]`)** lives outside the `(app)` group, no app shell, and it
   must scroll itself (`h-dvh overflow-y-auto`) because globals.css pins `html/body` to
   `overflow:hidden` for the shell. Pages render via the server `renderPageDoc` (sanitized
   HTML), not the client editor.
@@ -47,7 +47,7 @@ Non-negotiables (full detail in the guide):
   loaded (next/font). It is no longer pinned: the **interface font** is
   user-selectable too (Settings → Appearance → Interface font), as are the
   **wordmark + header page-title**, from the same display-font library. A UI
-  choice overrides `--font-sans` on `<html>` — which is why the next/font
+  choice overrides `--font-sans` on `<html>`, which is why the next/font
   variable CLASSES live on `<html>` and not `<body>`, since inline style only
   outranks a class on the SAME element. Alongside it, **Interface size**
   (small/medium/large) sets the ROOT font-size via `html[data-font-size]` in
@@ -55,11 +55,11 @@ Non-negotiables (full detail in the guide):
   Every selectable UI face is a VARIABLE font and MUST carry a `weight` range in
   the registry, or the browser synthesises bold across the entire app.
   The single registry is
-  `packages/web-ui/src/display-fonts.ts` — it drives the `@font-face` block, both
+  `packages/web-ui/src/display-fonts.ts`; it drives the `@font-face` block, both
   pickers, and the runtime CSS-var override. To add a face: drop it in
   `public/fonts/library/`, run `node scripts/fonts-to-woff2.mjs --prune <file>`,
   mirror the `.woff2` into **both** apps' public dirs (`client/web` + `server/web`
-  each serve their own), then add a row keyed `<key>.woff2`. **woff2 only** — a
+  each serve their own), then add a row keyed `<key>.woff2`. **woff2 only**: a
   `.ttf` left behind fails `display-fonts.test.ts`, which asserts registry and
   shipped files agree in both directions, per app. Defaults: Bukhari wordmark,
   sans title.
@@ -69,26 +69,26 @@ Non-negotiables (full detail in the guide):
   silent: the app keeps serving the PREVIOUS build of `app.css`/`themes.css`, so
   a new rule simply does nothing while the source plainly contains it. Symptom is
   always "my CSS change had no effect". Confirm before you go debugging the
-  feature — `curl` the `/_next/static/**.css` chunk and grep for your selector,
+  feature, `curl` the `/_next/static/**.css` chunk and grep for your selector,
   or check `document.styleSheets` in the console. If it is absent there but
   present on disk, it is staleness: restart `pnpm dev` (clear `.next` if it
   persists), don't rewrite the rule.
 - **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
-  with **no agent co-authorship trailers** (repo rule — see the root CLAUDE.md; a
+  with **no agent co-authorship trailers** (repo rule, see the root CLAUDE.md; a
   commit-msg hook strips them); don't push unless asked. `pnpm dev:fe` now runs the
   owner UI (`client/web`) detached against a deployed brain
-  ([docs/db-less-dev.md](../../docs/db-less-dev.md)) — so it browser-checks **client**
+  ([docs/db-less-dev.md](../../docs/db-less-dev.md)), so it browser-checks **client**
   changes, not this tier. `server/web` runs under `tsx` (`pnpm -C server/web dev`, no
   `next build`); its own render surfaces (`/s` shares, `/print`) need a running brain
   with a DB to view.
 - **Detached dev is a `client/web` concern now**: `server/web` is the backend + render-surface
-  tier — its `/s` and `/print` renderers run on the brain **with** the DB, so the old
+  tier, its `/s` and `/print` renderers run on the brain **with** the DB, so the old
   "gate DB reads behind `isDetachedDev()` or `pnpm dev:fe` 500s" rule no longer applies
   here. The zero-secret owner UI in `client/web` has no server-side DB path at all; it
   fetches every screen over HTTP via `apiFetch`/`apiSend`/`apiEventStream` (never raw
   same-origin `fetch` for data) against `MANTLE_SERVER_ORIGIN`.
 
-**Team surfaces** — since the member carve, the `/team` + `/hub` + `/team-admin`
+**Team surfaces**: since the member carve, the `/team` + `/hub` + `/team-admin`
 UI lives in `client/web` (this app keeps redirect stubs + the `/api/team*` data
 plane and the `/s` share brokers; member credential model:
 [`docs/team-chat.md`](../../docs/team-chat.md) topology note). The hub-app
@@ -98,7 +98,7 @@ protocol (`@mantle/web-ui/app-bridge/protocol`) and the `@host` kit string
 (`packages/app-build/src/kit.ts`) MUST stay mirrored (tripwire: `kit.test.ts`).
 
 **Changing what a brain ships with** (default agents, skills, tool groups, workers,
-the persona) — there is ONE source of truth: the system manifest. Read
+the persona); there is ONE source of truth: the system manifest. Read
 [`lib/system-manifest/CLAUDE.md`](lib/system-manifest/CLAUDE.md) first. Never
 hardcode a model, prompt, grant, or worker in onboarding, a seed script, or the
 runtime; change `lib/system-manifest/` and it propagates to fresh AND existing

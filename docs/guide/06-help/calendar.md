@@ -5,7 +5,7 @@ toolGroups: [events]
 
 ## Calendars
 
-Subscriptions to external calendars by ICS link — a work calendar, a shared
+Subscriptions to external calendars by ICS link, a work calendar, a shared
 family one, a booking system's feed.
 
 These are **read-only**. A subscribed calendar's events appear alongside your
@@ -24,7 +24,7 @@ produce edits that silently vanish at the next sync.
 - "Book the site visit for Tuesday at nine."
 
 Worth knowing which calendar a new event lands in. The assistant creates events
-in *your* calendar, never in a subscribed one — so "move the dentist appointment"
+in *your* calendar, never in a subscribed one, so "move the dentist appointment"
 works if you made it and doesn't if it arrived from a feed.
 
 ## Technical
@@ -44,5 +44,5 @@ rather than deleting them. A dead link is far more often a temporary outage than
 a cancelled year, and silently emptying your calendar would be the worse failure.
 
 The URL is stored as given. Most providers' "secret address in iCal format" links
-are credentials in their own right — anyone with the URL can read the calendar —
+are credentials in their own right (anyone with the URL can read the calendar) 
 so treat one like a password when copying it around.

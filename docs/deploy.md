@@ -1,6 +1,6 @@
 # Deploying Mantle to production (Docker Hub → VPS)
 
-The production stack is `docker-compose.yml` — built images, a migrate gate,
+The production stack is `docker-compose.yml`, built images, a migrate gate,
 healthchecks, restart policies, the bundled embedder (Ollama) + Tika, and an
 optional Tailscale profile. This runbook covers the **build → push → deploy**
 loop and the **one-time data migration** from your dev brain.
@@ -10,7 +10,7 @@ Companion: [`docker-compose.yml`](../docker-compose.yml) header comments,
 [`scripts/`](../scripts).
 
 > **Just want to run Mantle from the published image?** Most installs don't
-> build anything — see [`self-hosting.md`](./self-hosting.md) for the one-line
+> build anything, see [`self-hosting.md`](./self-hosting.md) for the one-line
 > installer (`install.sh`), updating (`docker compose pull` or the in-app
 > **Settings → Updates** button), and rollback. This file is the **builder /
 > operator** reference: building your own image, the CI release pipeline, and
@@ -35,30 +35,30 @@ Persistent data is **bind-mounted** under `MANTLE_DATA_DIR` (default `./data`):
 `postgres/`, `minio/`, `files/`. The Ollama model cache + Tailscale identity stay
 as named volumes (re-pullable / re-auth on a new host).
 
-## 0a. VPS sizing — measured, not guessed
+## 0a. VPS sizing: measured, not guessed
 
 Numbers from the author's production box (Contabo, **6 vCPU / 12 GB RAM /
 96 GB disk**, 2026-06-11): the full 13-container stack idles at **~2.5 GB
 RAM** total and **<5% CPU**; Ollama loads the embedder on demand (idle
 ~40 MB, ~1 GB while embedding); the Mantle image is ~1.7 GB plus the infra
 images (Postgres, MinIO, Ollama, Tika, Caddy). What actually spikes a small
-box is not steady state — it's two specific events:
+box is not steady state; it's two specific events:
 
 1. **`next build`** during a **build-on-VPS** deploy (multi-GB RSS for
    minutes). The registry-pull flow (§5) skips this entirely.
 2. **CPU-only embedding** during ingest bursts (a big document re-index).
-   Correct on any CPU since the sub-batched local adapter (v0.20.58) — just
+   Correct on any CPU since the sub-batched local adapter (v0.20.58), just
    slower on fewer cores. No GPU is needed at personal scale.
 
 | Profile | vCPU | RAM | Disk | Notes |
 |---|---|---|---|---|
 | **Minimum** (registry-pull deploys) | 2 | 4 GB | 40 GB | Steady state fits with room for embedding spikes; add 2 GB swap as insurance. Ingest is slower, never wrong. |
-| **Recommended** (build-on-VPS — only if you build your own image on the box; see §2) | 4 | 8 GB | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache — run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB). |
+| **Recommended** (build-on-VPS, only if you build your own image on the box; see §2) | 4 | 8 GB | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache, run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB). |
 | **Reference** (author's prod) | 6 | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes). |
 
 Disk grows with: email/attachment volume (MinIO + Postgres), the nightly
-backup rotation (~40 MB × keep-count at a ~700-node brain), and — dominantly
-on build-on-VPS boxes — Docker build cache, which is reclaimable.
+backup rotation (~40 MB × keep-count at a ~700-node brain), and, dominantly
+on build-on-VPS boxes, Docker build cache, which is reclaimable.
 
 ---
 
@@ -86,7 +86,7 @@ cp .env.prod.example .env
 
 ### Front door / HTTPS (Caddy)
 
-Caddy is the public entrypoint — it terminates TLS on 80/443 and reverse-proxies
+Caddy is the public entrypoint; it terminates TLS on 80/443 and reverse-proxies
 to the app internally (`web:3000`, which is **not** publicly exposed). For
 automatic HTTPS, before first boot:
 
@@ -97,18 +97,18 @@ automatic HTTPS, before first boot:
    Let's Encrypt cert automatically and renews it. (`:80` = plain HTTP for local
    testing without a domain.)
 
-Certs persist in the `caddy_data` volume — don't wipe it, or you risk LE rate limits.
+Certs persist in the `caddy_data` volume, don't wipe it, or you risk LE rate limits.
 
 Since **v0.202.0** the front door also routes to the *client* app (the split
 shipped two images). Two shapes, both driven by the same Caddy:
 
-- **Same-origin** — one domain, path-routed. `/api/*`, `/s/*`, `/print/*` and
+- **Same-origin**: one domain, path-routed. `/api/*`, `/s/*`, `/print/*` and
   the runtime bundles go to the server app; everything else (owner UI,
   `/login`, `/team`, `/hub`) goes to the client app. No extra DNS, no CORS.
   Ship [`infra/caddy/Caddyfile.same-origin`](../infra/caddy/Caddyfile.same-origin)
   as your `Caddyfile`. `MANTLE_SITE_ADDRESS` may hold a comma-separated list
-  of hostnames — all of them get routed and certificated.
-- **Split origins** — `<domain>` + `app.<domain>`, using the default
+  of hostnames, all of them get routed and certificated.
+- **Split origins**: `<domain>` + `app.<domain>`, using the default
   Caddyfile's second vhost. Needs the extra DNS record, plus
   `MANTLE_CLIENT_SITE_ADDRESS` and `MANTLE_API_CORS_ORIGINS`.
 
@@ -116,7 +116,7 @@ Upgrading an existing box into either shape:
 [`upgrading-to-v0.202.md`](./upgrading-to-v0.202.md).
 
 > `MANTLE_MASTER_KEY` and `ALLOWED_USER_ID` **must match dev** for the imported
-> data to be usable — the master key decrypts the secrets/API-key vault, and the
+> data to be usable, the master key decrypts the secrets/API-key vault, and the
 > user id owns every row.
 
 ---
@@ -127,12 +127,12 @@ Upgrading an existing box into either shape:
 > Apple-Silicon Mac builds **arm64**; most VPSes (incl. Contabo) are **amd64**,
 > and an arm64 image won't run there (`exec format error`). Three options:
 > - **Build natively on the VPS** (simplest for a first deploy + frequent
->   updates — no emulation, no registry pull): `rsync` the source to the VPS and
+>   updates, no emulation, no registry pull): `rsync` the source to the VPS and
 >   run `docker compose build web` there. The image is local, so no `docker login`
->   / pull needed. This is how the Contabo deploy was done — see
+>   / pull needed. This is how the Contabo deploy was done, see
 >   [`handoff-deploy-contabo-2026-06-01.md`](./_archive/handoff-deploy-contabo-2026-06-01.md).
 > - **Cross-build for amd64 on the Mac**: `docker buildx build --platform
->   linux/amd64 -t <ns>/mantle:<tag> --push .` (runs amd64 under QEMU — slow).
+>   linux/amd64 -t <ns>/mantle:<tag> --push .` (runs amd64 under QEMU, slow).
 > - **Multi-arch**: `--platform linux/amd64,linux/arm64` (slowest; one tag runs
 >   anywhere). Only worth it if you pull on both arches.
 >
@@ -144,16 +144,16 @@ docker login
 MANTLE_IMAGE_NAMESPACE=youruser MANTLE_IMAGE_TAG=v1 scripts/docker-build-push.sh
 ```
 
-Builds + pushes **one image** — `<youruser>/mantle:v1`. Every service (web,
+Builds + pushes **one image**: `<youruser>/mantle:v1`. Every service (web,
 agent, the four workers, migrate) runs from that same image, differing only in
-the compose `command:`. Use a real tag (`v1`, a date, or a git sha) — `latest`
+the compose `command:`. Use a real tag (`v1`, a date, or a git sha), `latest`
 is fine but harder to roll back from.
 
 > **Automated alternative (the official images).** A push of a `v*` tag runs
 > [`.github/workflows/release.yml`](../.github/workflows/release.yml): it builds
 > the image **multi-arch** (amd64 + arm64), pushes `titanwest/mantle:<tag>` +
 > `:latest`, and cuts a GitHub Release with the deploy bundle. So for the
-> published images you never run the script by hand — you
+> published images you never run the script by hand; you
 > `git tag vX.Y.Z && git push --tags`. Needs the `DOCKERHUB_USERNAME` /
 > `DOCKERHUB_TOKEN` repo secrets. See [`self-hosting.md`](./self-hosting.md)
 > § "cutting a release".
@@ -214,7 +214,7 @@ tar czf backups/minio.tgz -C "${MANTLE_DATA_DIR:-./data}/minio" .
 Copy `backups/mantle-<ts>.dump`, `files.tgz`, `minio.tgz` to the VPS; untar the
 two archives into `$MANTLE_DATA_DIR/files` and `/minio` (step 3d alternative).
 
-> The DB is moved by **dump/restore**, never by copying `postgres/` raw — that
+> The DB is moved by **dump/restore**, never by copying `postgres/` raw, that
 > only works same-PG-major + clean shutdown and is fragile. `pg_dump` is portable.
 
 ---
@@ -231,7 +231,7 @@ docker compose pull
 docker compose up -d --wait        # migrate runs first (gated); then app rolls
 ```
 
-**Always `scripts/db-dump.sh` before a deploy that includes a migration** — a
+**Always `scripts/db-dump.sh` before a deploy that includes a migration**: a
 backup is cheap insurance for a brain. Migrations are the one thing you never
 test in prod first; run them against dev (or a throwaway staging project) first.
 
@@ -242,7 +242,7 @@ test in prod first; run them against dev (or a throwaway staging project) first.
 docker compose pull && docker compose up -d --wait
 ```
 
-Code rolls back instantly. **Schema does not** — a migration is forward-only, so
+Code rolls back instantly. **Schema does not**: a migration is forward-only, so
 if a deploy migrated the DB, rolling back the image may leave the schema ahead.
 This is why the pre-deploy dump matters: to truly roll back a bad migration,
 restore the dump into a fresh DB (§3b–c).
@@ -250,9 +250,9 @@ restore the dump into a fresh DB (§3b–c).
 ## 5b. The release-owned compose contract (drift guard)
 
 `docker-compose.yml` is **owned by the release**, not the box. Tag-only updates
-used to run the new image on whatever compose the box happened to have — losing
+used to run the new image on whatever compose the box happened to have, losing
 every compose-level change a release carried (the v0.137 `table-dbs` mount 500'd
-NATREF; the v0.141 hardening batch — autoheal sidecar, healthchecks, mem caps —
+NATREF; the v0.141 hardening batch (autoheal sidecar, healthchecks, mem caps) 
 would silently not exist on a tag-only box). Since v0.142:
 
 - The canonical compose for a release is **embedded in its image** at
@@ -261,13 +261,13 @@ would silently not exist on a tag-only box). Since v0.142:
 - On every update the **updater sidecar** extracts the target release's
   canonical and, when the box's file is **pristine** (byte-identical to the
   `docker-compose.yml.release` baseline written at install/last refresh), swaps
-  it in before `compose pull`/`up` — compose changes land in the SAME roll as
+  it in before `compose pull`/`up`, compose changes land in the SAME roll as
   the image. The outgoing file is kept as `docker-compose.yml.prev`.
 - A **modified** compose is never overwritten: the update proceeds on the old
-  file and the drift is reported loudly — update.log, `/signal/stack.json`, and
+  file and the drift is reported loudly, update.log, `/signal/stack.json`, and
   a warning on `/settings/updates` ("image is release X, compose is not").
 - **Box-local customization goes in `docker-compose.override.yml`** (compose
-  merges it automatically; verify with `docker compose config`) **+ `.env`** —
+  merges it automatically; verify with `docker compose config`) **+ `.env`**,
   never in the canonical file. That's what keeps a box pristine and
   auto-refreshable.
 - Existing boxes (pre-v0.142, no baseline) adopt once with
@@ -276,23 +276,23 @@ would silently not exist on a tag-only box). Since v0.142:
   canonical + baseline. Automatic from then on.
 - Rollback: to a ≥v0.142 tag, the refresh installs THAT release's canonical
   (compose downgrades with the image). To an older tag, the target ships no
-  canonical — swap `docker-compose.yml.prev` back manually.
+  canonical, swap `docker-compose.yml.prev` back manually.
 
-Manual `docker compose pull` rolls skip the refresh (it lives in the updater) —
+Manual `docker compose pull` rolls skip the refresh (it lives in the updater),
 `/settings/updates` will show the compose as **stale** until an updater-driven
 update runs or you re-run `scripts/compose-adopt.sh`.
 
 ### The updater script refreshes itself too (v0.206+)
 
 The sidecar runs `infra/updater/updater.sh` **bind-mounted from the box**, and
-until v0.206 it was the one release-owned file nothing ever refreshed — so a box
+until v0.206 it was the one release-owned file nothing ever refreshed, so a box
 whose `infra/` predated a script change ran that old logic forever. It failed
 **silently**, which is what made it expensive: on 2026-07-26 every box in the
 fleet was found carrying a pre-v0.200 script that rolled the server stack,
 reported `ok: true`, and skipped the **client** stack with no error anywhere.
 
-It now refreshes on the same trust model as compose — canonical embedded at
-`/app/release/updater.sh`, extracted from the image the box is about to run —
+It now refreshes on the same trust model as compose, canonical embedded at
+`/app/release/updater.sh`, extracted from the image the box is about to run,
 with three differences that follow from it being the running program:
 
 - **It swaps last, then re-execs.** A shell cannot safely rewrite the script
@@ -313,12 +313,12 @@ with three differences that follow from it being the running program:
 
 `/signal/stack.json` carries `updater_sha` / `updater_baseline_sha` /
 `updater_refresh` so a box that cannot self-refresh is visible rather than
-silent — the whole point being that "the update succeeded" was never, on its
+silent, the whole point being that "the update succeeded" was never, on its
 own, evidence that it did everything.
 
 **Availability note:** caddy is deliberately held out of the main `up` and
 converged separately with `--no-deps`. It declares
-`depends_on: web {service_healthy}` — right for first boot, brutal mid-update,
+`depends_on: web {service_healthy}`, right for first boot, brutal mid-update,
 where it parked the public site (including the progress UI) behind web's
 ~2 min health-start window. On a release that changes neither the Caddyfile nor
 the floating `caddy:2-alpine` digest that is now a true no-op and caddy never
@@ -346,8 +346,8 @@ avoid a `:3000` clash.)
 
 ## 7. Integrity tooling in prod
 
-- **Corpus audit** (`/debug/integrity` → Corpus audit) — read-only, safe, run it
+- **Corpus audit** (`/debug/integrity` → Corpus audit): read-only, safe, run it
   anytime / on a schedule as your standing health check.
-- **Active probe** — writes synthetic fixtures; **keep it off prod.** Run it on
+- **Active probe**: writes synthetic fixtures; **keep it off prod.** Run it on
   dev (or against a dedicated test owner / the staging project). See
   [data-flow-tracing.md](./data-flow-tracing.md).

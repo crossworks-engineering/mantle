@@ -44,7 +44,7 @@ context, etc.).
 
 - **AES-256-GCM** with the master key from `MANTLE_MASTER_KEY` (32
   bytes, base64).
-- **Per-row AAD** of `"secret:<node_id>"` — ciphertext from one row
+- **Per-row AAD** of `"secret:<node_id>"`, ciphertext from one row
   can't be replayed against another row even if an attacker swaps
   the bytea column.
 - **Ciphertext layout** is opaque: `version(1) | iv(12) | tag(16) | ct(n)`,
@@ -53,7 +53,7 @@ context, etc.).
   decrypt v1 ciphertext and re-seal as v2.
 
 If `MANTLE_MASTER_KEY` is missing, the secrets surface throws on first
-write or first reveal — never a silent fallback to plaintext.
+write or first reveal, never a silent fallback to plaintext.
 
 ---
 
@@ -80,14 +80,14 @@ The result:
 - Summary + embedding indexed on title + description + tags → semantic
   search ("my Linode root password") works.
 - Facts extracted from the description → end up in the `facts` table.
-  ("Alex has a Linode VPS in Frankfurt" is fine — that's not the
+  ("Alex has a Linode VPS in Frankfurt" is fine, that's not the
   password.)
 - The actual values stay in `secrets.ciphertext` and only leave via
   the explicit `revealSecret` API.
 
 `HARD_SKIP_TYPES` used to include `'secret'` (defence-in-depth: skip
 secrets even if the agent config says to extract). It now contains
-only `'branch'` — secrets are extracted with metadata only, by design.
+only `'branch'`; secrets are extracted with metadata only, by design.
 
 ---
 
@@ -100,7 +100,7 @@ secrets                   ← branch (lazy-created on first secret)
   └── (every secret pinned here in v1)
 ```
 
-v1 keeps it flat — kind + tags do the organising. The pattern leaves
+v1 keeps it flat, kind + tags do the organising. The pattern leaves
 room for `secrets.work`, `secrets.personal`, etc. if you want folders
 later, exactly mirroring how `files.*` works.
 
@@ -111,14 +111,14 @@ are Postgres-only.
 
 ## 5. The UI
 
-### `/secrets` — list
+### `/secrets`: list
 
 - Search by title / description / tag.
 - Filter by kind (password, token, server, card, note, other).
 - Filter by tag.
 - "New secret" modal with title, description, kind, tags, fields, note.
 
-### `/secrets/[id]` — detail
+### `/secrets/[id]`: detail
 
 - Metadata always visible (title, kind, description, tags, summary).
 - Values sealed by default: shows "{n} fields + note · sealed" + a
@@ -130,7 +130,7 @@ are Postgres-only.
 - "Edit" mode: title/description/tags can be updated alone; if you
   edit note/fields the blob gets re-sealed.
 
-There's no re-auth prompt before reveal — the session cookie already
+There's no re-auth prompt before reveal, the session cookie already
 proves it's you. Anyone who steals the session can already do
 anything you can; an extra password prompt is theatre.
 
@@ -157,7 +157,7 @@ intermediate cache stores plaintext.
 
 - **No MCP tools yet.** The MCP server has no `secret_*` tools. If
   you want the assistant to reveal a secret on your behalf, that's a
-  separate design pass — currently you'd copy-paste from the UI.
+  separate design pass, currently you'd copy-paste from the UI.
   Adding MCP would mean exposing decrypted values to whatever model
   invokes the tool, which deserves its own conversation.
 - **No version history.** Updates overwrite the blob.

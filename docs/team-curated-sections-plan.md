@@ -1,6 +1,6 @@
-# Team Hub — curated tag sections on the member Dashboard (plan)
+# Team Hub: curated tag sections on the member Dashboard (plan)
 
-Status: **implemented** (v0.152.0) — see docs/sharing.md §4 "Curated Dashboard
+Status: **implemented** (v0.152.0): see docs/sharing.md §4 "Curated Dashboard
 sections" for the canonical description. This file remains as the design
 record.
 
@@ -9,7 +9,7 @@ record.
 The owner picks a handful of tags on the admin Team screen. On the member
 Dashboard (`/team` overview), each picked tag becomes a section listing up to
 5 shared Pages carrying that tag, newest-updated first, each rendered as
-**title + summary + link**. Both team-mode and public-mode shares qualify —
+**title + summary + link**. Both team-mode and public-mode shares qualify,
 if it has an active share and the tag, it lists.
 
 ```
@@ -23,7 +23,7 @@ Features
   …
 ```
 
-## Investigation findings — the hard parts already exist
+## Investigation findings: the hard parts already exist
 
 **The summary "obstacle" is already solved.** Pages get a real 1–2 sentence
 LLM summary at every commit: `page` is in the extractor's
@@ -35,8 +35,8 @@ via the `content_index` pass. The team-hub read layer **already returns it**:
 
 The only gap: `commitPage` clears `data.summary` and re-queues extraction
 (`packages/content/src/pages.ts:1100`), so between a commit and the extractor
-finishing — or if extraction never ran — the summary is null. Fallback:
-`pages.doc_text` (derived plaintext, kept current on every commit) — take the
+finishing (or if extraction never ran) the summary is null. Fallback:
+`pages.doc_text` (derived plaintext, kept current on every commit), take the
 first ~200 chars as an excerpt.
 
 **The by-tag query already exists.** A tag section is literally one existing
@@ -47,7 +47,7 @@ indexed), visibility on the `shares` table (`settings.mode` =
 (`teamShareVisiblePredicate`, `team-hub.ts:265`) already admits both modes.
 
 **Where things live.**
-- Member Dashboard: `components/team-workspace/team-overview.tsx` — the
+- Member Dashboard: `components/team-workspace/team-overview.tsx`, the
   curated sections slot in directly below the existing section-tiles grid.
   `/team` pages do no server-side DB reads; content comes via team-authed
   `/api/team/*` routes.
@@ -65,7 +65,7 @@ indexed), visibility on the `shares` table (`settings.mode` =
 `teamHubTags?: string[]` in `profile-preferences.ts`, following the
 `teamHubAppId` projection pattern exactly (typed field + read/write
 projections). Cap at ~8 tags, deduped, lowercased on write. This is config,
-not content — the share remains the single source of truth for *what* is
+not content, the share remains the single source of truth for *what* is
 visible; the pref only chooses *which tag groupings get pinned* on the
 Dashboard.
 
@@ -91,7 +91,7 @@ the Dashboard lazy-load the sections independently.
 
 A `DashboardTagsPanel` beside `HubAppPicker` in the Chats-tab aside:
 - Tag multi-select sourced from `listTeamShareTags(ownerId, 'page')`
-  (`team-hub.ts:384`) — shows each tag with its shared-page count, so the
+  (`team-hub.ts:384`), shows each tag with its shared-page count, so the
   owner only picks tags that actually resolve to content.
 - Ordered list (order = section order on the Dashboard), remove ×.
 - Persists via a small owner-only PATCH route under `/api/team-admin/`
@@ -103,7 +103,7 @@ Client component rendered in `team-overview.tsx` below the tiles grid,
 fetching `/api/team/curated`. Per section: tag as a capitalized heading, then
 up to 5 rows of title (link to `/s/<token>`), summary in muted text, relative
 updated-at. Renders nothing at all when no tags are configured or no section
-has items — zero footprint for brains that don't use it.
+has items, zero footprint for brains that don't use it.
 
 ### 6. Docs + release
 
@@ -122,5 +122,5 @@ Update `docs/sharing.md` / team-hub docs with the curation model;
   gesture: to feature a page, tag it and share it; to unfeature, untag or
   unshare. This matches the hub's existing "the share is the single source of
   truth" principle and keeps the admin surface to one small panel.
-- **No LLM calls anywhere in this feature** — summaries are reused from the
+- **No LLM calls anywhere in this feature**: summaries are reused from the
   existing ingest pipeline (cost-safety rule), and the fallback is pure SQL.

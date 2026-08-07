@@ -13,14 +13,14 @@ import {
 /**
  * A generated backdrop, themed to the live palette. EXPERIMENTAL.
  *
- * Draws a DiceBear style as a decorative surface behind a panel's content — see
+ * Draws a DiceBear style as a decorative surface behind a panel's content, see
  * backdrop.ts for why that is more than just a bigger avatar.
  *
  * THE HARD PART IS NOT DRAWING IT, IT IS STAYING READABLE. This is a background
  * behind navigation text, so every default here is chosen to keep the text
  * winning:
  *
- * - `opacity` is low by default. The ramp colours are chart colours — chosen to
+ * - `opacity` is low by default. The ramp colours are chart colours, chosen to
  *   be distinguishable against each other, which makes them loud. At full
  *   strength one of them behind a menu label is a contrast failure, so the
  *   artwork is a tint, not a slab.
@@ -30,7 +30,7 @@ import {
  * - Nothing here is interactive: `pointer-events-none` and `aria-hidden`, so it
  *   can never eat a click meant for a nav item or add noise to a screen reader.
  *
- * It renders nothing at all until the style's JSON chunk arrives — unlike an
+ * It renders nothing at all until the style's JSON chunk arrives, unlike an
  * avatar there is no box to reserve, so there is nothing to shift.
  */
 export function GeneratedBackdrop({
@@ -45,14 +45,14 @@ export function GeneratedBackdrop({
 }: {
   /** Style id from the avatar registry. */
   style?: string | null;
-  /** Stable seed — same seed, same backdrop. */
+  /** Stable seed, same seed, same backdrop. */
   seed: string;
   /** Crop anchor, as an SVG `preserveAspectRatio` alignment. */
   position?: RenderBackdropOptions['position'];
   allowRotation?: boolean;
   /** 0–1. Keep it low behind text. */
   opacity?: number;
-  /** Which way the artwork fades out. `none` keeps it at full strength — only
+  /** Which way the artwork fades out. `none` keeps it at full strength, only
    *  safe on a panel with no text over it. */
   fade?: 'to-top' | 'to-bottom' | 'none';
   /** Theme the artwork from `--chart-1..5`. Off keeps the style's own palette. */
@@ -62,7 +62,7 @@ export function GeneratedBackdrop({
   const ramp = useChartRamp();
 
   // Re-render once the chunk arrives. Starts true when the style is already
-  // cached — the common case, since the avatars have usually loaded it already.
+  // cached, the common case, since the avatars have usually loaded it already.
   const [ready, setReady] = React.useState(() => isAvatarStyleReady(style));
   React.useEffect(() => {
     if (isAvatarStyleReady(style)) {
@@ -73,7 +73,7 @@ export function GeneratedBackdrop({
     setReady(false);
     loadAvatarStyle(style).then(
       () => live && setReady(true),
-      // Chunk failed — draw nothing. A decorative layer must never throw a
+      // Chunk failed, draw nothing. A decorative layer must never throw a
       // whole panel through an error boundary.
       () => {},
     );
@@ -122,7 +122,7 @@ export function GeneratedBackdrop({
         ...(mask ? { maskImage: mask, WebkitMaskImage: mask } : {}),
       }}
       aria-hidden
-      // Generated from a seed by DiceBear — not user-supplied markup.
+      // Generated from a seed by DiceBear, not user-supplied markup.
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

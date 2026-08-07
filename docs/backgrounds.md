@@ -46,17 +46,17 @@ never chose.
 
 1. **Fit.** DiceBear hard-codes `width`/`height` on the root `<svg>` and omits
    `preserveAspectRatio`, so a square composition letterboxes inside a tall
-   sidebar. `fitSvg` rewrites that one tag to `slice` — the SVG equivalent of
+   sidebar. `fitSvg` rewrites that one tag to `slice`, the SVG equivalent of
    `background-size: cover`. It touches only the root, leaving the RDF licence
    block intact.
 2. **Upright.** Most of these styles randomise rotation per seed; `waves` picks
    from a full 360°, so roughly half of all seeds hang the sea from the ceiling.
    Where a style offers a `none` rotation variant it is pinned. Animation
-   variants are pinned off too — a nav that moves forever is a distraction.
+   variants are pinned off too; a nav that moves forever is a distraction.
 
 ## Legibility is the whole design constraint
 
-These sit behind text, and the ramp is made of CHART colours — chosen to be
+These sit behind text, and the ramp is made of CHART colours, chosen to be
 distinguishable from each other, which makes them loud. So:
 
 - Opacity is low, and lowest of all for **chat**, the surface people actually

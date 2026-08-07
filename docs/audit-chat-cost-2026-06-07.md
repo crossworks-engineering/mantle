@@ -1,8 +1,8 @@
-# Audit handover — chat cost per question (2026-06-07)
+# Audit handover: chat cost per question (2026-06-07)
 
 > **For a fresh context.** Jason flagged that "general questions through the
 > agent" can run ~$0.80 average per chat. This is the investigation so far,
-> the evidence, the root cause, and the proposed fix. **Investigation only —
+> the evidence, the root cause, and the proposed fix. **Investigation only,
 > no code changed.** Everything below is from the **production** DB
 > (`ssh cwe@mcp.crossworks.network`, `mantle_pg`).
 
@@ -11,23 +11,23 @@
 - A plain Q&A (`responder_turn`) averages **$0.089** (p50 $0.076, p90 $0.17,
   max $0.29). It is **not** $0.80 in the typical case.
 - The **$0.47–$1.07** turns are **sub-agent delegations** (`trace.kind='manual'`,
-  `subject_kind='child_agent'` — e.g. the Pages specialist via `invoke_agent`).
+  `subject_kind='child_agent'`, e.g. the Pages specialist via `invoke_agent`).
   3 of them in 30 days = 43% of chat spend. These are where "$0.80" comes from.
 - **Headline root cause: prompt caching is misfiring.** Across chat LLM calls,
   cache **writes (398K tok, billed 1.25×) exceed cache reads (341K, billed
-  0.25×)** — the inverse of a healthy cache. 54% of calls re-write the prefix
+  0.25×)**, the inverse of a healthy cache. 54% of calls re-write the prefix
   instead of reading it; in long tool loops the growing tool-result context is
   never cached and is re-sent uncached every round.
 - 30-day total LLM spend (all kinds): **$3.83**; chat portion **$3.27**.
 
 ## How cost is recorded (schema)
 
-- `traces` — one row per turn. Aggregates: `cost_micro_usd` (1e6 = $1, integer),
+- `traces`, one row per turn. Aggregates: `cost_micro_usd` (1e6 = $1, integer),
   `tokens_in`, `tokens_out`, `tokens_cache_read`. `kind` ∈ {`responder_turn`
   (chat), `manual` (delegated/child agent runs), `extractor_run`,
   `summarizer_run`, `reflector_run`, `photo_ingest`, `content_ingest`, …}.
   `subject_kind` for chat = `assistant_message`; for delegations = `child_agent`.
-- `trace_steps` — per step; `kind='llm_call'` rows carry the per-call detail in
+- `trace_steps`, per step; `kind='llm_call'` rows carry the per-call detail in
   **`meta`** (jsonb) with keys: `model`, `tokens_in`, `cache_read`,
   `cache_write`, `tokens_out`, `cost_micro_usd`. (Note snake_case keys.)
 - Usage→cost mapping: `packages/tracing/src/llm-usage.ts` (reads
@@ -81,7 +81,7 @@ and s.meta ? 'cache_read')
 select count(*) llm_calls, sum((crd=0 and cwr>0)::int) missed_but_wrote, sum(cwr) cache_write,
 sum(crd) cache_read, sum(tin-crd-cwr) fresh_input from c;`
 
-### 4) The $1.07 child_agent run (trace `22433689-fffe-49b6-a128-435883c70036`) — 11 calls
+### 4) The $1.07 child_agent run (trace `22433689-fffe-49b6-a128-435883c70036`): 11 calls
 Input grows **12K → 64K**; `cache_read` pinned at **11873** the whole time →
 the accumulated tool-result context is re-sent **uncached** every round (last
 calls $0.12–$0.23 each). Confirms cache covers only the static prefix, never the
@@ -96,9 +96,9 @@ growing tail.
    `messages.ts` (`buildChatMessages`).
 2. **Multi-step tool loops** (3–11 `llm_call`s/turn), each re-sending the whole,
    growing context. Loop driver: `runToolLoop` (`@mantle/agent-runtime`).
-3. **Prompt caching misfires** (the big lever) — see below.
+3. **Prompt caching misfires** (the big lever): see below.
 
-## The caching bug — where to look
+## The caching bug: where to look
 
 Model in use: `anthropic/claude-4.6-sonnet` via **OpenRouter**. The chat adapter
 is **`packages/voice/src/adapters/openrouter-chat.ts`** (trace step name
@@ -125,17 +125,17 @@ Two observed failures to fix:
 
 **Find the caller** that sets `cacheControl` per round (search `cacheControl`
 in `packages/agent-runtime` + how `runToolLoop` calls the adapter each
-iteration) — the placement decision likely lives there, not only in the adapter.
+iteration), the placement decision likely lives there, not only in the adapter.
 
 ## Proposed fix + verification
 
 - Adjust cache_control breakpoint placement in `openrouter-chat.ts` (and mirror
   in `anthropic-chat.ts`): a **stable head breakpoint** + a **moving tail
-  breakpoint**, staying ≤4 markers. This is the **hot chat path** — Jason wanted
+  breakpoint**, staying ≤4 markers. This is the **hot chat path**: Jason wanted
   an explicit go-ahead before touching it.
 - **Estimated savings: ~40–60%** of chat cost (cache_write 398K → mostly reads
   at 1/12.5 the price).
-- **Verify**: after the change, re-run query #2/#3 on the next few real turns —
+- **Verify**: after the change, re-run query #2/#3 on the next few real turns,
   expect `cache_read` to dominate `cache_write`, and `missed_but_wrote` → ~0
   (only call 0 of a turn should miss). Compare avg `responder_turn` cost before
   ($0.089) vs after.
@@ -147,7 +147,7 @@ iteration) — the placement decision likely lives there, not only in the adapte
 
 ## Caveats
 - Pricing math checks out (cache_write ≈ 1.25× input, cache_read ≈ 0.25×, sonnet
-  ~$3/Mtok in) — `cost_micro_usd` is correct; the spend is real, not a
+  ~$3/Mtok in), `cost_micro_usd` is correct; the spend is real, not a
   mis-computation.
 - Low sample size on prod (21 responder_turns / 3 delegations in 30d). The
   *pattern* (54% miss-and-rewrite) is consistent across every turn inspected.
@@ -157,12 +157,12 @@ iteration) — the placement decision likely lives there, not only in the adapte
 A fresh-context pass re-ran every query against prod and read the adapter
 code. **All raw numbers reproduce exactly** (responder_turn avg $0.0893,
 delegation avg $0.4657 / max $1.07, chat total $3.27, model
-`claude-4.6-sonnet-20260217`). But the *diagnosis above is mis-framed* —
+`claude-4.6-sonnet-20260217`). But the *diagnosis above is mis-framed*,
 three corrections, and the fix is narrower (and OpenRouter-only) than stated.
 
-**Correction 1 — "54% miss / inverse cache" is misleading.** Of 19
+**Correction 1, "54% miss / inverse cache" is misleading.** Of 19
 miss-and-wrote calls, **17 are the legitimate first call of a turn** (the
-first call MUST write the prefix — there is nothing to read yet; not a bug).
+first call MUST write the prefix; there is nothing to read yet; not a bug).
 Only **2 of 35 calls** are genuine mid-loop re-writes. And `cache_write >
 cache_read` globally is explained by **11 of 17 turns being single-call**
 one-shot Q&A (no second call ⇒ no read possible), not by a misfire. Split that
@@ -175,40 +175,40 @@ Post the 06-06 cap-fix, plain-chat caching is largely **healthy**: in
 multi-call turns later calls read the prefix (avg later call $0.032 vs
 first-call $0.076).
 
-**Correction 2 — the data is 2 days old, not 14–30.** Every analyzed trace
+**Correction 2; the data is 2 days old, not 14–30.** Every analyzed trace
 ran 06-06→06-07, straddling/after the cap-fix (`36749d4`, 06-06 12:47, which
 IS deployed on prod `8fd6ec7`). The `interval '14 days'` framing makes a
 2-day, 21-turn sample read like a month of evidence.
 
-**Correction 3 — "40–60% savings" applies to delegations, not plain Q&A.**
+**Correction 3, "40–60% savings" applies to delegations, not plain Q&A.**
 Two regimes are blended:
 - *Plain Q&A ($0.089)* is dominated by the **irreducible ~20K fixed prefix**
-  (system + ~68 tool defs + retrieval) written once per turn — caching cannot
+  (system + ~68 tool defs + retrieval) written once per turn, caching cannot
   reduce a first write. Breakpoint surgery saves ~5% here. The real lever is
-  shrinking that prefix (the "secondary/optional" levers — should be primary
+  shrinking that prefix (the "secondary/optional" levers, should be primary
   for this regime).
 - *Delegations / long loops ($0.47–1.07)* are where finding (b) bites and
   where 40–60% is real. **Confirmed empirically** on the $1.07 trace
   `22433689`: `cache_read` pinned at **11873 across all 11 calls** while
-  `tokens_in` grows 11.9K → 63.6K — the ~52K accumulating tool-result tail is
+  `tokens_in` grows 11.9K → 63.6K, the ~52K accumulating tool-result tail is
   re-sent uncached every round (late calls $0.12–$0.23 each).
 
 **Mechanism (and correction to the proposed fix).** The code ALREADY passes
 `lastUserMessage: true` every iteration (`tool-loop.ts:276`). The bug is NOT a
-missing marker — it is that `lastUserIndex` (`openrouter-chat.ts`) matches only
+missing marker; it is that `lastUserIndex` (`openrouter-chat.ts`) matches only
 `role==='user'`, while OpenRouter keeps tool results as `role:'tool'` (OpenAI
 shape). So the "moving" marker pins to the original question and never advances
-past the tool-result tail. **`anthropic-chat.ts` is already correct** — it
+past the tool-result tail. **`anthropic-chat.ts` is already correct**: it
 coalesces `tool` → a synthetic user/tool_result message and marks the trailing
 block (see its audit-#4 safety-net test), so the marker advances there. The
 doc's "mirror in anthropic-chat.ts" is therefore unnecessary.
 
-**Scope — does it affect other providers?** No. Only **openrouter-chat.ts**
+**Scope, does it affect other providers?** No. Only **openrouter-chat.ts**
 (the prod Anthropic-via-OpenRouter path). `anthropic-chat.ts` (direct) is
 correct; `deepseek-chat.ts` ignores `cacheControl`; `openai-compat.ts`
 (xAI/local) doesn't use Anthropic-style ephemeral breakpoints. Anthropic
 (verified via docs) allows `cache_control` on `tool_result` blocks and on the
-last message, ≤4 breakpoints, with a 20-block-lookback incremental cache — so
+last message, ≤4 breakpoints, with a 20-block-lookback incremental cache, so
 marking the genuine last message each round is both valid and what creates the
 advancing write chain the lookback needs.
 
@@ -220,14 +220,14 @@ delegation/long-loop turns to drop ~40–60%; plain single-call Q&A is unchanged
 (its cost is the irreducible prefix). Verify with query #4 on the next few
 delegations: `cache_read` should climb with `tokens_in` instead of pinning.
 
-## Third pass (2026-06-10) — the cross-turn half, missed above
+## Third pass (2026-06-10): the cross-turn half, missed above
 
-Correction 1 above said *"the first call of a turn MUST write the prefix —
+Correction 1 above said *"the first call of a turn MUST write the prefix,
 there is nothing to read yet; not a bug."* **That was wrong.** Anthropic's
 ephemeral cache has a 5-minute TTL refreshed on use, so in a back-and-forth
 conversation turn N+1's first call *should* read turn N's cached prefix
-(tools + persona block). It never did — `cache_read` was 0 on every first
-call — because two per-turn ingredients sat inside cache breakpoint 1:
+(tools + persona block). It never did, `cache_read` was 0 on every first
+call, because two per-turn ingredients sat inside cache breakpoint 1:
 
 1. `buildTimeContextLine` (`packages/content/src/profile-preferences.ts`)
    prepends `UTC instant: <millisecond ISO>` to the system prompt at both
@@ -244,13 +244,13 @@ breakpoints) carrying the time line + heartbeat-awareness block; both call
 sites (`apps/agent/src/main.ts`, `apps/web/lib/assistant.ts`) updated.
 Regression tests in `messages.test.ts` pin the invariant.
 
-**Verify on prod after deploy:** re-run query #3 — first calls of turns that
+**Verify on prod after deploy:** re-run query #3, first calls of turns that
 follow a prior turn within ~5 min should now show `cache_read ≈ 20K` instead
 of `cache_write ≈ 20K`. Expect roughly $0.05–0.07 saved per conversational
 follow-up turn.
 
 ## Session context (where the tree is)
 - All this session's Pages work is on `origin/main` @ `8fd6ec7` (v0.20.33),
-  **deployed to prod**. One later fix — `175d490` (v0.20.34, "show uncommitted
-  draft in list preview") — is **merged to local main but NOT pushed/deployed**.
+  **deployed to prod**. One later fix, `175d490` (v0.20.34, "show uncommitted
+  draft in list preview"), is **merged to local main but NOT pushed/deployed**.
 - No code touched for this audit.

@@ -1,11 +1,11 @@
-# system-manifest — the single source of truth
+# system-manifest: the single source of truth
 
 This directory is the **one** declarative source for the default
 agent / skill / tool-group / worker / persona graph a Mantle brain ships with.
 Onboarding (fresh brains), the boot reconcile (existing brains on upgrade), the
 CLI `pnpm seed:*` scripts, and the `/settings/config` checker **all** derive from
 [`manifest.ts`](manifest.ts). If you change what the product ships, change it
-**here** — never hardcode a model, prompt, grant, or worker anywhere else.
+**here**: never hardcode a model, prompt, grant, or worker anywhere else.
 
 > Onboarding = **manifest + user overlay**. The only things onboarding owns are
 > the genuine overlay: which API keys exist, and the persona's name / voice /
@@ -14,21 +14,21 @@ CLI `pnpm seed:*` scripts, and the `/settings/config` checker **all** derive fro
 
 ## Where each thing lives
 
-- **Definitions + links:** [`manifest.ts`](manifest.ts) — `MANIFEST_SKILLS`,
+- **Definitions + links:** [`manifest.ts`](manifest.ts), `MANIFEST_SKILLS`,
   `MANIFEST_TOOL_GROUPS`, `MANIFEST_AGENTS` (incl. the `isPersona` entry),
   `MANIFEST_WORKERS`, `MANIFEST_HTTP_TOOLS`.
-- **Prompt + skill BODIES:** [`prompts.ts`](prompts.ts) — `SKILL_INSTRUCTIONS`
+- **Prompt + skill BODIES:** [`prompts.ts`](prompts.ts), `SKILL_INSTRUCTIONS`
   and `AGENT_PROMPTS`; the manifest references them by slug.
-- **Seeder (DB writes):** [`seed.ts`](seed.ts) — `applyManifest`,
+- **Seeder (DB writes):** [`seed.ts`](seed.ts), `applyManifest`,
   `seedToolCapabilities`, `seedManifestWorkers`.
-- **Upgrade path:** [`reconcile.ts`](reconcile.ts) — what reaches existing brains.
+- **Upgrade path:** [`reconcile.ts`](reconcile.ts), what reaches existing brains.
 - **Drift visibility:** [`config-diff.ts`](config-diff.ts) (the `/settings/config`
   checker) + [`integrity.ts`](integrity.ts) (referential checks).
 - **CI guard:** [`manifest.test.ts`](manifest.test.ts) fails the build on a
   dangling/typo'd slug. Pure helpers (`worker-route.ts`, `reconcile-util.ts`,
   `group-checks.ts`, `config-diff.ts`) have co-located `*.test.ts`.
 
-## The propagation contract — what reaches an EXISTING brain on upgrade
+## The propagation contract: what reaches an EXISTING brain on upgrade
 
 The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 **additive and product-owned-only**:
@@ -37,33 +37,33 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 |---|---|---|
 | Tool-group membership | ✅ overwrite | `seedToolCapabilities` |
 | Skill **body** (`SKILL_INSTRUCTIONS`) | ✅ overwrite | `applyManifest` `skillMode` |
-| **Persona** skill links (by ROLE — reaches operator personas too) | ✅ **converge** — add new + **drop a retired** manifest skill (e.g. `rich_writing`); operator skills kept | `reconcilePersonaCapabilitiesByRole` |
+| **Persona** skill links (by ROLE, reaches operator personas too) | ✅ **converge**: add new + **drop a retired** manifest skill (e.g. `rich_writing`); operator skills kept | `reconcilePersonaCapabilitiesByRole` |
 | Persona default tool groups (by ROLE) | ✅ union (add-only) | `reconcilePersonaCapabilitiesByRole` |
 | New **specialist** agent | ✅ create + wire delegation | `provisionMissingSpecialists` |
 | Specialist tool groups | ✅ union (add-only) | `grantSpecialistCapabilities` |
-| Specialist skill links | ✅ **converge** — add new + **drop a retired** manifest skill; operator skills kept | `grantSpecialistCapabilities` |
+| Specialist skill links | ✅ **converge**: add new + **drop a retired** manifest skill; operator skills kept | `grantSpecialistCapabilities` |
 | Specialist **params / memoryConfig tuning** (max_iterations, limits; `delegate_to` excepted) | ✅ overwrite | `syncSpecialistDefs` |
 | New **required** worker | ✅ create | `seedManifestWorkers({requiredOnly})` |
 
 **Deliberately NOT auto-propagated** (operator-owned / overlay):
-- Persona **prompt / model / params** — operator-owned; never touched.
+- Persona **prompt / model / params**: operator-owned; never touched.
 - **Any agent's prompt / model / provider / key** (decision 2026-07-29): the
-  route and the prompt are operator-owned on specialists too — a model switch
+  route and the prompt are operator-owned on specialists too, a model switch
   (Models tab) or prompt edit survives upgrades. Shipped prompt/model
   improvements reach existing brains only via the operator's own pull
   (Studio reset-to-default); fresh installs still seed the manifest defaults.
   (Pre-v0.212.0 `syncSpecialistDefs` force-synced prompt+model.)
-- An existing **worker's model/provider** — operator cost choice; never overwritten.
-- New **optional** workers — fresh onboarding only.
-- **Removals** — mostly additive, with ONE exception: an agent's **skill links**
+- An existing **worker's model/provider**: operator cost choice; never overwritten.
+- New **optional** workers, fresh onboarding only.
+- **Removals**: mostly additive, with ONE exception: an agent's **skill links**
   converge, so dropping a skill from an agent's manifest `skillSlugs` (e.g.
-  `rich_writing` off the persona) DOES detach it on upgrade — but only for skills
+  `rich_writing` off the persona) DOES detach it on upgrade, but only for skills
   the manifest owns; operator-authored skill links are never touched. Everything
   else is still add-only: removing a tool group from an agent, removing a skill/
-  group/agent **row** entirely (the row lives on — disable to opt out, delete by
+  group/agent **row** entirely (the row lives on, disable to opt out, delete by
   operator action), and a default group an operator deliberately dropped (it
   reappears).
-- **Operator-authored** skills/agents (not in the manifest) — never seen, never
+- **Operator-authored** skills/agents (not in the manifest), never seen, never
   clobbered. (Named operator personas like `telegram-default`/Saskia are NOT
   manifest slugs.)
 
@@ -82,24 +82,24 @@ The boot reconcile runs once per `APP_VERSION` (production, best-effort). It is
 - **Add/change a specialist:** edit its `MANIFEST_AGENTS` entry (+ `AGENT_PROMPTS`).
   Params/memoryConfig tuning syncs; groups + skills union; a brand-new specialist
   is auto-provisioned with delegation wired. Prompt/model changes reach only
-  fresh installs and new provisions — existing brains keep the operator's
+  fresh installs and new provisions, existing brains keep the operator's
   prompt/route (Studio reset-to-default is the manual pull).
 - **Tool group:** edit `MANIFEST_TOOL_GROUPS` (membership overwrite-syncs). Grant
   it by adding the slug to an agent's `toolGroupSlugs`.
 - **Worker:** edit `MANIFEST_WORKERS` (provider / model / params / optional xAI
   alt route). Worker models live **only** here.
 - **Persona:** structural fields (model/params/`memoryConfig`/tool groups) go in
-  the `isPersona` entry. **Do not** put a persona prompt in the manifest — it's
+  the `isPersona` entry. **Do not** put a persona prompt in the manifest; it's
   the one overlay, generated in [`onboarding-provision.ts`](../onboarding-provision.ts).
 
 ## Always, before you finish
 
-1. `pnpm exec vitest run apps/web/lib/system-manifest/` (from repo root) — drift
+1. `pnpm exec vitest run apps/web/lib/system-manifest/` (from repo root), drift
    guard + pure-logic tests.
 2. `pnpm --filter @mantle/web run typecheck`.
 3. If you added a field other code reads (e.g. a new `ManifestWorker` field),
    update its consumers: `config-diff.ts`, `integrity.ts`, the seeder.
-4. Eyeball `/settings/config` — it shows exactly how a live brain now differs
+4. Eyeball `/settings/config`; it shows exactly how a live brain now differs
    from your template (and confirms nothing drifted unexpectedly).
 
 To force a single item onto an existing brain immediately (instead of waiting for

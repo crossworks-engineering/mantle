@@ -12,10 +12,10 @@ Pre-1.0, the parts mean:
   memory, knowledge graph, embeddings, pages, tables, contacts, email in/out,
   recall, researcher, federation, telegram, journals, heartbeats, chat failover,
   tailscale inference, documentation, unified conversation, onboarding, …).
-- **patch** (`.0`) — fixes/iterations within a milestone; resets each minor.
-- **`-alpha`** — the system runs in production and is used daily, but it's
+- **patch** (`.0`): fixes/iterations within a milestone; resets each minor.
+- **`-alpha`**: the system runs in production and is used daily, but it's
   single-user, makes no stability guarantees, and the schema is still churning
-  (breaking migrations still land). That's alpha, honestly — not beta. The tag
+  (breaking migrations still land). That's alpha, honestly, not beta. The tag
   drops when those guarantees firm up.
 
 ## Single source of truth
@@ -23,15 +23,15 @@ Pre-1.0, the parts mean:
 The root [`package.json`](../package.json) `version` field.
 `server/web/package.json`, `client/web/package.json` and
 `client/desktop/package.json` are kept in lockstep so they never drift (the
-desktop version is what electron-updater compares — drift there stalls
+desktop version is what electron-updater compares, drift there stalls
 auto-updates).
 
 ## Bumps happen on main, as part of the merge
 
 Feature branches **never** touch version fields. The old ritual (bump on the
 branch, then merge) made every concurrent worktree edit the same 4 version
-lines, so two sessions in flight meant a guaranteed conflict — or a silent
-dedupe — at whichever rebase happened second. Merges into main are serialized
+lines, so two sessions in flight meant a guaranteed conflict, or a silent
+dedupe, at whichever rebase happened second. Merges into main are serialized
 through the integrator clone (only it has main checked out), so the bump rides
 the merge instead:
 
@@ -45,11 +45,11 @@ branch's own worktree and re-run. It never tags and never pushes.
 
 `pnpm version:bump` is still there for release prep directly on main
 (`pnpm version:bump 0.19.3-alpha` to set an explicit version, tag drops as
-usual), but it now **refuses to run on any other branch** — that's the
+usual), but it now **refuses to run on any other branch**: that's the
 mechanical enforcement of this section, same spirit as the pre-push demo gate.
 `--force` overrides when you genuinely know better.
 
-`patch`/`minor`/`major` operate on the numeric core and drop any `-alpha` tag —
+`patch`/`minor`/`major` operate on the numeric core and drop any `-alpha` tag,
 pass it back explicitly (`0.20.0-alpha`) to keep carrying it while pre-1.0.
 
 Tag and push only when cutting a release:
@@ -64,7 +64,7 @@ git push origin main v0.2.0   # the tag push cuts the release (see below)
 > multi-arch image, pushes `titanwest/mantle:<tag>` + `:latest` to Docker Hub,
 > and creates a GitHub Release with the deploy bundle. Self-hosters then see the
 > new version in **Settings → Updates** (and the sidebar "Update available"
-> chip). So the version bump isn't just cosmetic — the tag is the release
+> chip). So the version bump isn't just cosmetic; the tag is the release
 > trigger. See [`self-hosting.md`](./self-hosting.md).
 
 ## How it reaches the UI
@@ -83,10 +83,10 @@ module, which reads three `NEXT_PUBLIC_*` env values and exposes `VERSION_LABEL`
 Where those vars come from differs by tier:
 
 - **`client/web` (Next.js)** inlines them at **build** in its `next.config.ts`,
-  so there's no runtime cost — the values are baked into the client bundle.
+  so there's no runtime cost; the values are baked into the client bundle.
 - **`server/web` (Hono under `tsx`, no build step)** resolves them at **boot**
-  in `server/main.ts` — reading the root `package.json` version plus
-  `MANTLE_GIT_SHA`/`MANTLE_BUILD_TIME` — and sets the same `NEXT_PUBLIC_*` env
+  in `server/main.ts`, reading the root `package.json` version plus
+  `MANTLE_GIT_SHA`/`MANTLE_BUILD_TIME`, and sets the same `NEXT_PUBLIC_*` env
   before the app starts. `/api/version` reports from there.
 
 ## Changelog entries
@@ -99,7 +99,7 @@ been viewed on this build (localStorage `mantle_changelog_last_seen_version`
 vs `APP_VERSION`). Entry format: an `# x.y.z — <date>` heading, then
 `## Highlights` / `## Fixes` / `## Notes` sections, written for the operator
 (what changed and where to find it), not commit-log prose. Not every patch
-needs one — write entries for releases worth announcing.
+needs one, write entries for releases worth announcing.
 
 ## Docker builds
 
@@ -115,5 +115,5 @@ so the build can't run `git` inside the image. The build script resolves the SHA
   the bundle); the **server** target has no build step, so they stay as ENV and
   `server/main.ts` reads them at boot.
 
-A bare `docker build .` with no args still works — the SHA/time are simply
+A bare `docker build .` with no args still works, the SHA/time are simply
 omitted from the label.

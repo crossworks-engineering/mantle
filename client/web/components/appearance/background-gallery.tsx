@@ -16,21 +16,21 @@ import { areaPreset, areaSeed } from '@mantle/web-ui/area-backdrop';
  * Which generated background each area of the shell shows.
  *
  * One BLOCK per area, laid out 2x2, because the question a user is actually
- * asking is "what should the menu look like" — not "where could Waves go".
+ * asking is "what should the menu look like", not "where could Waves go".
  * Grouping by style instead would make them visit every block to answer it
  * once.
  *
  * Each swatch previews with the area's OWN seed, crop and opacity (see
  * area-backdrop), so a tile is the artwork that area will get, not a
  * representative sample of the style. That is why the same style looks
- * different from row to row — it genuinely will.
+ * different from row to row; it genuinely will.
  *
  * OFF LEADS EVERY BLOCK. It is the most common answer for three of the four
  * areas, and putting it first makes "none of these" a choice rather than
  * something you achieve by not choosing.
  *
  * Colour comes from the live theme ramp, so the whole gallery repaints when the
- * colour theme or light/dark changes — no swatch can be stale.
+ * colour theme or light/dark changes; no swatch can be stale.
  */
 
 /** Big enough to read the composition, small enough that ~17 fit a row. */

@@ -1,7 +1,7 @@
 # Agent & tool-result overhaul (May 2026)
 
 A cohesive overview of a body of work that hardened how Mantle's agents
-delegate, how the system knows what a model can do, and — the centrepiece —
+delegate, how the system knows what a model can do, and (the centrepiece) 
 how oversized tool output is handled so an agent can actually *finish a job*.
 The detailed reference for each piece lives in
 [`architecture.md`](./architecture.md) and [`ai-workers.md`](./ai-workers.md);
@@ -24,7 +24,7 @@ like one overhaul rather than a list of fixes.
 2. **Bounded / correct by construction, not by recurring cleanup.** Prefer a
    structural guarantee (a ceiling, a delete-then-rebuild, a single writer) over
    a cron that mops up afterwards. Where cleanup *is* needed (TTL), it's
-   deterministic and self-throttling — not aspirational.
+   deterministic and self-throttling, not aspirational.
 
 3. **One authoritative live source over hand-maintained tables.** Model context
    windows and capabilities now come from OpenRouter's live catalog (cached,
@@ -39,9 +39,9 @@ like one overhaul rather than a list of fixes.
 
 ## 2. What changed
 
-### 2a. Voice — wrapping speech tags for Grok (`<whisper>`)
+### 2a. Voice: wrapping speech tags for Grok (`<whisper>`)
 The TTS framework modelled only inline `[bracket]` cues. Grok voice also honours
-**wrapping** tags that style a whole span — `<whisper>…</whisper>`, `<soft>`,
+**wrapping** tags that style a whole span, `<whisper>…</whisper>`, `<soft>`,
 `<loud>`, `<slow>`, `<high>`, `<singing>`. Added a generic `WrappingTag`
 vocabulary alongside `AudioTag`, advertised per-model
 (`supportedWrappingTags`), injected into Saskia's prompt, and **stripped from
@@ -52,14 +52,14 @@ text-mode replies** (keeping the inner words) so the markers never leak.
 `invoke_agent` was sound, but two things made it look broken:
 - **`delegate_to` had no UI and was being wiped.** The allowlist lived only in
   `memory_config.delegate_to` (seed-only), and the agents form *overwrote*
-  `memory_config` wholesale on save — silently dropping the grant. Now there's a
+  `memory_config` wholesale on save, silently dropping the grant. Now there's a
   **"Delegates to" picker**, and `updateAgent` **jsonb-merges** `memory_config`
   so a save never drops unmanaged keys.
 - **Researcher shipped** as the outward delegation twin of Remy (web search via
   Perplexity Sonar → cited synthesis).
 → [`architecture.md` §9b'](./architecture.md#9b-agent-delegation-invoke_agent)
 
-### 2c. Live model catalog — context window + capabilities
+### 2c. Live model catalog: context window + capabilities
 A hand-maintained table claimed Claude Sonnet/Opus were 200 K when OpenRouter
 actually serves **1 M**, so the dashboard over-reported context fill 5×. Now
 `refreshModelCatalog()` fetches OpenRouter's public `/api/v1/models` (keyless,
@@ -70,15 +70,15 @@ the usage card and the agents-form model readout. (Context is a property of the
 model *slug*, not a request flag.)
 → [`architecture.md` §9l](./architecture.md#9l-model-catalog--live-context-window--capabilities)
 
-### 2d. Tool-result spill store (`read_result`) — the centrepiece
+### 2d. Tool-result spill store (`read_result`): the centrepiece
 The single most common reason integrated assistants quit mid-task: a big tool
 result (a delegated agent's full synthesis, a wide `file_read`/search) was
 hard-truncated to ~8 KB, silently dropping the answer. Now oversized output
 **spills to an ephemeral store** and the model gets a handle + preview it
 dereferences via `read_result`:
-- **`page`** — byte-accurate, newline-snapped linear reading.
-- **`grep`** — exact substring with context.
-- **`query`** — semantic search *within* the result (lazily chunks + embeds on
+- **`page`**: byte-accurate, newline-snapped linear reading.
+- **`grep`**: exact substring with context.
+- **`query`**: semantic search *within* the result (lazily chunks + embeds on
   first use; cosine scoped to the one result).
 
 Bounded on every axis: inline cap (32 KB), a hard storage ceiling
@@ -105,14 +105,14 @@ Everything operator-tunable landed in the UI where it's per-agent, and in env
 where it's global store policy.
 
 **Agents form (`/settings/agents`):**
-- **Delegates to** — the `invoke_agent` allowlist (per agent).
-- **Tool results** — `inline_max_kb`, `embed_min_kb`, `spill_max_kb` (per agent).
+- **Delegates to**: the `invoke_agent` allowlist (per agent).
+- **Tool results**: `inline_max_kb`, `embed_min_kb`, `spill_max_kb` (per agent).
 
 **Environment (global store policy):**
-- `TOOL_RESULT_INLINE_MAX` / `_EMBED_MIN` / `_SPILL_MAX` / `_PAGE_BYTES` —
+- `TOOL_RESULT_INLINE_MAX` / `_EMBED_MIN` / `_SPILL_MAX` / `_PAGE_BYTES`,
   defaults for the per-agent knobs + the global page size.
-- `TOOL_RESULT_MAX_CHUNKS` — embed-tier fan-out cap.
-- `TOOL_RESULT_TTL_DAYS` — spill retention.
+- `TOOL_RESULT_MAX_CHUNKS`, embed-tier fan-out cap.
+- `TOOL_RESULT_TTL_DAYS`, spill retention.
 
 Why the split: per-agent knobs are *behaviour*; max-chunks and TTL are *store
 policy* (and the `read_result` query path carries no per-agent context). A
@@ -132,10 +132,10 @@ cut-off preview (→ in-band marker); mid-word/JSON paging + byte/char mixing
 the stale context table (→ live catalog); the `delegate_to` wipe (→ merge + UI).
 
 **Still open (tracked, non-blocking):**
-- **Lazy-embed TOCTOU race** — concurrent first-`query` on one handle can
+- **Lazy-embed TOCTOU race**: concurrent first-`query` on one handle can
   double-insert chunks. Fix: unique `(result_id, ordinal)` + `ON CONFLICT DO
   NOTHING` (a small migration).
-- **No automated coverage of the DB-backed `read_result` paths** — gated on the
+- **No automated coverage of the DB-backed `read_result` paths**: gated on the
   repo's general "test Postgres" story; pure helpers + live verification cover
   the rest today.
 

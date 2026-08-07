@@ -6,8 +6,8 @@ toolGroups: [team-admin]
 ## Team Portal
 
 The front door to the portal your team actually uses. The portal itself lives
-outside this app, behind a member's token, so there is no way to reach it — or
-even to know it exists — from inside your own session. This screen is that
+outside this app, behind a member's token, so there is no way to reach it, or
+even to know it exists, from inside your own session. This screen is that
 missing signpost.
 
 The rule that explains everything else: **only a contact can get in, using a
@@ -16,7 +16,7 @@ email. The token *is* the credential, it's shown once, and you send it to them
 yourself.
 
 The roster shows who holds one. "Never signed in" against a name is worth
-noticing — it means the token was minted and never redeemed, which is almost
+noticing; it means the token was minted and never redeemed, which is almost
 always the real story behind "the link you sent me doesn't work".
 
 ## Assistant
@@ -24,8 +24,8 @@ always the real story behind "the link you sent me doesn't work".
 - "Who's on the team portal?"
 - "What has anyone asked this week?"
 
-The assistant can read the team surface — the roster, the threads, the access
-log — because you hold the admin group. The responder that answers your team is
+The assistant can read the team surface, the roster, the threads, the access
+log, because you hold the admin group. The responder that answers your team is
 a different agent with a much smaller grant, and it cannot see this view.
 
 ## Technical
@@ -40,7 +40,7 @@ request re-checks that the membership is still live. That's the property that
 makes handing out a token safe: you can take it back and know it's gone.
 
 What a member can reach is the team responder's grant, and the brain is the
-trust boundary — they can read broadly and write almost nothing. Their single
+trust boundary; they can read broadly and write almost nothing. Their single
 write is filing a request into your review queue, stamped with who asked.
 Delegation, sending, the terminal and bulk export are all excluded by design;
 bulk export specifically because it turns exfiltration into one call.

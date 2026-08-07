@@ -8,7 +8,7 @@ toolGroups: [memory-core]
 Where you talk to the brain. Type, or dictate; attach an image or a document and
 ask about it; get replies with real formatting rather than a wall of text.
 
-The assistant isn't a chatbot bolted onto your files — it answers **from your
+The assistant isn't a chatbot bolted onto your files; it answers **from your
 own content**. Everything you've put into Mantle is what it draws on, and when
 it doesn't know something it can go and look rather than guess.
 
@@ -19,7 +19,7 @@ this afternoon.
 ## How to ask
 
 Talk to it the way you'd talk to someone who works with you and has read
-everything — because that's the situation.
+everything, because that's the situation.
 
 - Ask about your own material: "what did we agree with the supplier about
   delivery?" beats "search for supplier".
@@ -27,8 +27,8 @@ everything — because that's the situation.
   a page", "remind me on Friday".
 - Follow-ups work. "And the one before that?" keeps the thread; you don't have
   to restate the question.
-- It can hand work to specialists — a researcher for the web, a recall agent for
-  old conversations, a data specialist for grids — without you naming them.
+- It can hand work to specialists, a researcher for the web, a recall agent for
+  old conversations, a data specialist for grids, without you naming them.
 
 If it can't do something, that's usually a **grant**, not a limitation: its
 tools come from tool groups you control, so an ability it's missing can be
@@ -42,7 +42,7 @@ age), rollups of older exchanges, facts extracted from your content matched
 against what you just asked, passages retrieved from the index, and an
 always-on block describing who you are, built from your journal entries.
 
-Retrieval is vector search over locally-computed embeddings — the passages are
+Retrieval is vector search over locally-computed embeddings; the passages are
 found by meaning, not keyword, which is why a question that shares no words with
 a document still finds it.
 
@@ -57,5 +57,5 @@ model chooses which to call; the runtime enforces what's allowed, and anything
 you've marked as needing confirmation waits for you in Pending.
 
 The chat model itself is configurable per agent, with an optional backup route
-that takes over if the primary is unreachable — including a local model with a
+that takes over if the primary is unreachable, including a local model with a
 cloud fallback, or the reverse.

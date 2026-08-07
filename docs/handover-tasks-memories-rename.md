@@ -1,4 +1,4 @@
-# Handover — content-surface renames: Todos→Tasks (deep) & Lifelogs→Memories (shallow)
+# Handover: content-surface renames: Todos→Tasks (deep) & Lifelogs→Memories (shallow)
 
 Status as of this session. **Nothing is committed; nothing is deployed.** Everything
 below is in the working tree on `main`, verified by typecheck + targeted tests.
@@ -10,20 +10,20 @@ depths**:
 
 | Surface | Old | New | Depth | Live-DB migration? |
 |---|---|---|---|---|
-| To-dos | `todos` | **Tasks** | **Deep** — labels, route, code symbols, file names, REST route, tool slugs, tool-group slug, ltree label | **Yes — `0108`** |
-| Life Logs | `lifelog` | **Memories** | **Shallow** — labels + page route + docs only; *all* internals still `lifelog` | No |
+| To-dos | `todos` | **Tasks** | **Deep**: labels, route, code symbols, file names, REST route, tool slugs, tool-group slug, ltree label | **Yes, `0108`** |
+| Life Logs | `lifelog` | **Memories** | **Shallow**: labels + page route + docs only; *all* internals still `lifelog` | No |
 
 The asymmetry is deliberate-so-far, not an oversight: Tasks was taken all the way to
 "purity" by request; Memories was explicitly scoped to labels + URL. **The open
 decision (the "look at lifelogs more" item) is whether to give Memories the same deep
-treatment** — see the last section, which includes the one complication Tasks didn't
+treatment**, see the last section, which includes the one complication Tasks didn't
 have (a Postgres enum value).
 
 ---
 
-## What was done — Tasks (was To-dos)
+## What was done: Tasks (was To-dos)
 
-The node **type was already `task`** in the DB — the single most load-bearing
+The node **type was already `task`** in the DB, the single most load-bearing
 identifier was correct from day one. The rename made the *periphery* agree with it.
 
 Done in staged passes, each leaving the tree compiling:
@@ -49,7 +49,7 @@ Done in staged passes, each leaving the tree compiling:
    - `@mantle/content` export subpath `./todos` → `./tasks`
 5. **REST**: `/api/todos` → `/api/tasks`; response fields `{ tasks }`/`{ task }`; the
    share-view discriminator `kind: 'task'`.
-6. **Tool slugs** (the deliberate *last* code stage): `todo_*` → `task_*` everywhere —
+6. **Tool slugs** (the deliberate *last* code stage): `todo_*` → `task_*` everywhere,
    builtins, MCP server, manifest group membership, `stage-label` keys, agent-prompt
    mentions, the dev queue-approval default, and the assertions in
    `core-tools.test.ts` / `turn-stage.test.ts` / `stage-label.test.ts`.
@@ -58,18 +58,18 @@ Done in staged passes, each leaving the tree compiling:
    (manifest group, persona grant, the `core-tools.ts` floor).
 
 **Kept as-is:** the node type `task` (already correct). That's the only thing that stays
-"unchanged" — because it never needed changing.
+"unchanged", because it never needed changing.
 
 ### Migration `0108_rename_todos_to_tasks.sql`
 
 The only live-DB change in the whole effort. 5 reversible `UPDATE`s, idempotent,
 nothing it touches is queried-by (all task queries filter `type='task'`):
 
-1. Tasks **branch** node — re-path + re-slug `todos`→`tasks`.
+1. Tasks **branch** node, re-path + re-slug `todos`→`tasks`.
 2. Branch **title** `Todos`→`Tasks` (only if the operator hadn't renamed it).
-3. Every **task node** — re-path `todos`→`tasks`.
-4. **tool_groups** row — `slug` `todos`→`tasks`.
-5. **agents** — `array_replace(tool_group_slugs, 'todos', 'tasks')` (persona + operator
+3. Every **task node**: re-path `todos`→`tasks`.
+4. **tool_groups** row, `slug` `todos`→`tasks`.
+5. **agents**: `array_replace(tool_group_slugs, 'todos', 'tasks')` (persona + operator
    agents).
 
 Registered in `migrations/meta/_journal.json` (idx 108). Verified it parses via
@@ -77,13 +77,13 @@ drizzle's `readMigrationFiles` (5 statements split correctly).
 
 ---
 
-## What was done — Memories (was Life Logs)
+## What was done: Memories (was Life Logs)
 
 **Shallow by design.** Only the words a human or the agent *sees*, plus the page URL:
 
 - **Labels**: page title + sidebar → "Memories"; editor/list copy, toasts, the live
   status line ("Saving to your memories…"), the in-app + MCP tool names/descriptions,
-  the **identity-context block header** (`# About the user (Memories)` — this is what the
+  the **identity-context block header** (`# About the user (Memories)`; this is what the
   agent reads every turn, so it makes the agent *speak* "memories"), the persona-bank
   reference, the manifest tool-group display name.
 - **Route**: `app/(app)/lifelog/` → `app/(app)/memories/` (`git mv`), nav `href`, the
@@ -117,12 +117,12 @@ persona `memoryConfig.inject_lifelog` flag.
 Per the "always pg_dump before a live migration" rule, on **both prod boxes**:
 
 1. `pg_dump` both boxes.
-2. `db:migrate` (applies `0108`) — **must run before the app boots / reconciles.**
+2. `db:migrate` (applies `0108`), **must run before the app boots / reconciles.**
 3. App boot **reconcile** (`seedToolCapabilities`, runs once per `APP_VERSION`)
    reaffirms the `tasks` group membership = `task_*`. Because `0108` already renamed the
-   DB group + repointed agents, the reconcile updates that row *in place* — no duplicate,
+   DB group + repointed agents, the reconcile updates that row *in place*, no duplicate,
    no orphaned `todos` group.
-4. Eyeball `/settings/config` — it surfaces any grant drift loudly.
+4. Eyeball `/settings/config`; it surfaces any grant drift loudly.
 
 Reversible if needed (mirror `array_replace` / `UPDATE`s; no enum involved).
 
@@ -139,7 +139,7 @@ grouping when you're ready:
 
 ---
 
-## OPEN ITEM — "look at lifelogs more": should Memories get the deep rename too?
+## OPEN ITEM: "look at lifelogs more": should Memories get the deep rename too?
 
 Right now Memories is "Tasks at stage 1–2 only": pretty on the outside, `lifelog`
 everywhere inside. If the same future-grep / maintainability worry that drove the Tasks
@@ -154,22 +154,22 @@ A full `lifelog → memory` deep rename would touch the same shape as Tasks:
   `@mantle/content/lifelog` subpath.
 - **REST**: `/api/lifelog` → `/api/memories`.
 - **Tool slugs**: `lifelog_*` → `memory_*`; **tool-group slugs** `lifelog` /
-  `lifelog-admin` → `memory` / `memory-admin` (manifest + persona grant + floor) — needs
+  `lifelog-admin` → `memory` / `memory-admin` (manifest + persona grant + floor), needs
   the same `agents.tool_group_slugs` migration as `0108`.
-- **ltree root**: `lifelog` → `memory` (cosmetic, type-filtered — same as the tasks path).
+- **ltree root**: `lifelog` → `memory` (cosmetic, type-filtered, same as the tasks path).
 - **Identity-context plumbing** Tasks did *not* have: the persona
   `memoryConfig.inject_lifelog` flag and `buildIdentityContext` / `identity-context.ts`,
   which inject Memories into every turn. Rename the flag + helpers too.
 
 ### The one thing Tasks didn't have: a Postgres **enum** value
 
-Tasks' node type was already `task`. **Memories' node type is `lifelog` — a value in the
+Tasks' node type was already `task`. **Memories' node type is `lifelog`, a value in the
 `node_type` Postgres enum.** So a *fully* pure rename needs an enum migration, which is
 the one genuinely awkward bit:
 
 - `ALTER TYPE node_type ADD VALUE 'memory'` is **irreversible** and **cannot run in the
   same transaction** that later uses it (this repo's custom migrate runner commits each
-  migration separately, which handles that — see `migrate.ts`).
+  migration separately, which handles that, see `migrate.ts`).
 - Postgres **cannot drop** an enum value, so `lifelog` would linger in the enum forever.
 - Then `UPDATE nodes SET type='memory' WHERE type='lifelog'` to move existing rows, and
   every `eq(nodes.type, 'lifelog')` / `type` filter / the `node_type` zod enums in the
@@ -177,16 +177,16 @@ the one genuinely awkward bit:
 
 **Three options to decide between:**
 
-1. **Leave Memories shallow** (current state) — internal name `lifelog`, zero further
+1. **Leave Memories shallow** (current state): internal name `lifelog`, zero further
    risk. The agent already says "memories"; only devs see `lifelog`.
-2. **Deep rename but keep the node type `lifelog`** — do everything above *except* the
+2. **Deep rename but keep the node type `lifelog`**: do everything above *except* the
    enum. Mirrors Tasks closely (symbols/files/REST/slugs/ltree + a group-slug migration),
    no irreversible enum change. The node type stays an internal `lifelog` wart, exactly
    like Tasks would have if its type hadn't already been `task`.
-3. **Full incl. the enum** — option 2 + the `ADD VALUE 'memory'` + data backfill. Cleanest
+3. **Full incl. the enum**: option 2 + the `ADD VALUE 'memory'` + data backfill. Cleanest
    end state, but the enum add is permanent and `lifelog` stays a dead enum member.
 
-Recommendation if pursued: **option 2** is the sweet spot — it removes the `lifelog` name
+Recommendation if pursued: **option 2** is the sweet spot; it removes the `lifelog` name
 from everything devs grep for day-to-day, with no irreversible step, and the same
 migrate-before-reconcile deploy as `0108`. Option 3 only if a dead enum value genuinely
 bothers you. Decide before starting, since it changes the migration's nature.

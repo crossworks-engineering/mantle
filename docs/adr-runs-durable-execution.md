@@ -1,7 +1,7 @@
 # ADR: Durable-execution substrate for runner queues
 
 - **Status:** accepted (2026-07-21); slice-3 re-evaluation AUDITED same day
-  — hybrid CONFIRMED with amendments (verdicts inline in
+, hybrid CONFIRMED with amendments (verdicts inline in
   [runs-slice-3-plan.md](runs-slice-3-plan.md) §3, amendments folded into
   its §1/§4, outcome + deferred items in its §8). Jason's plan-§7 decision:
   **implement with amendments**. Spine stays on tables as the intended end
@@ -17,13 +17,13 @@ Mantle has **two durable-execution substrates**, and the runner-queue system
 (slices 1+2, `packages/runs`) was built on one without a recorded decision
 against the other:
 
-1. **DBOS** (`@dbos-inc/dbos-sdk`, `apps/api`) — the durable engine for agent
+1. **DBOS** (`@dbos-inc/dbos-sdk`, `apps/api`): the durable engine for agent
    turns. Assistant/telegram/team/forum turns run as DBOS workflows; every
    LLM call and tool dispatch is a journaled step via the `withDurableSteps`
    seam in `@mantle/tracing`; a crash mid-turn resumes from the last completed
    step; recovery is automatic; queues support concurrency caps and
    partitioning.
-2. **pg-boss** (`apps/web/workers/*`) — the job-queue idiom of the worker
+2. **pg-boss** (`apps/web/workers/*`): the job-queue idiom of the worker
    fleet (email-sync, telegram-poll, maintenance, …): plain queues + cron,
    jobs as disposable wake-ups.
 
@@ -33,8 +33,8 @@ it: the `children_done` completion counter under the parent row lock
 choreography (`enqueueRunActionsSafe`), the minutely sweep (deadline
 timeouts, lost-dispatch heal, lost-resume heal), the `resumed_at` claim
 (migration 0130), and semantic retry requeue. That machinery is roughly half
-of `engine.ts` plus all of `sweep.ts` and `boss.ts`, and it re-implements —
-beside an already-deployed engine — what that engine is for.
+of `engine.ts` plus all of `sweep.ts` and `boss.ts`, and it re-implements,
+beside an already-deployed engine; what that engine is for.
 
 The pre-deploy audit (handover §8) found its defects concentrated exactly
 there: a lock-order deadlock between completion and bulk cancellation, a
@@ -54,7 +54,7 @@ are suspension-shaped go to DBOS rather than growing the hand-rolled engine.
 of the engine question): `execute-worker.ts` runs a whole LLM turn with no
 mid-turn durability today, while `apps/api` already durably executes exactly
 this shape (`assistant-turn.ts`). Running the worker turn as a DBOS workflow
-gives per-tool crash-resume for free and touches no engine invariant — the
+gives per-tool crash-resume for free and touches no engine invariant, the
 item still claims/completes through `packages/runs` either side of the turn.
 
 ## Rationale
@@ -72,10 +72,10 @@ Why not rewrite now:
   becomes a write-behind projection that *can* drift.
 - Mid-flight mutation from other processes (`run_append`, `run_audit`,
   `run_cancel` are called by the responder in the web process against a
-  running run) maps to `DBOS.send`/`recv` message-passing — supported, but
+  running run) maps to `DBOS.send`/`recv` message-passing, supported, but
   the "structured concurrency is just `Promise.all`" simplification gets
   qualified once appends and verdicts arrive as messages.
-- Fleet deploys (CORRECTED by the slice-3 audit — the original wording
+- Fleet deploys (CORRECTED by the slice-3 audit, the original wording
   overstated it): this fleet pins a STABLE `applicationVersion`
   (`'mantle-runner-1'`, apps/api/src/config.ts), so routine in-place
   deploys do NOT strand in-flight DBOS workflows. The real hazard is a
@@ -83,16 +83,16 @@ Why not rewrite now:
   step-sequence divergence when replaying across code changes, or bump
   `MANTLE_RUNNER_VERSION` and strand what's in flight. Minutes-long turns
   barely feel either horn; a days-long run meets one near-certainly. The
-  table-driven state machine is version-agnostic — a mid-run deploy picks
+  table-driven state machine is version-agnostic, a mid-run deploy picks
   up where the rows say. With four boxes rolling on cadence, that matters.
   (Also recorded: `DBOSClient` enqueues carry `application_version = NULL`
   and survive upgrades until claimed; DBOS `enablePatching` exists as a
-  code-evolution discipline — considered, not adopted.)
+  code-evolution discipline, considered, not adopted.)
 
 Why the slice-3 gate, and the bias toward DBOS there:
 
-- Slice 3's features — `ask_human` (suspend awaiting a human),
-  `budget_micro_usd` auto-pause (suspend mid-run), worker groups/panels —
+- Slice 3's features, `ask_human` (suspend awaiting a human),
+  `budget_micro_usd` auto-pause (suspend mid-run), worker groups/panels,
   are **headline DBOS capabilities** (durable sleep, messaging,
   human-in-the-loop). Built on the current engine, each becomes another
   sweep duty and another CAS dance; the hand-rolled surface grows
@@ -107,7 +107,7 @@ Why the slice-3 gate, and the bias toward DBOS there:
 
 - The counter/sweep/CAS machinery is **owned code**: reviewers should treat
   `engine.ts`/`sweep.ts` lock ordering as a hazard zone (see the run-row
-  lock ordering rule added by the audit fixes — every multi-lock transaction
+  lock ordering rule added by the audit fixes, every multi-lock transaction
   acquires the run row first).
 - A v2 engine, if it ever happens, targets DBOS workflows in `apps/api`
   with `run_items` demoted to the audit-log projection; the `run_*` tool
@@ -117,8 +117,8 @@ Why the slice-3 gate, and the bias toward DBOS there:
   and can ship in any slice without revisiting this ADR.
 - WP2's resume-turn migration claims durability it must PROVE: the
   `record_outbound` / claim boundaries are NEW instrumentation (the resume
-  path calls `recordTurn` bare today), and the extended crash-test — kill
+  path calls `recordTurn` bare today), and the extended crash-test, kill
   between the journaled `record_outbound` and workflow completion, exactly
-  one outbound row after recovery — is the acceptance gate for declaring
+  one outbound row after recovery, is the acceptance gate for declaring
   the handover-§5 resume-loss gap closed. The claim step sits AFTER the
   journaled preconditions (the v0.157.5 ordering), never at enqueue.

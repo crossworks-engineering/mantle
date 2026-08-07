@@ -1,4 +1,4 @@
-# Handover — First-run onboarding (June 2026)
+# Handover: First-run onboarding (June 2026)
 
 Status at handover: **code complete, all tests green, on `main`.** Jason is about
 to **live-test the wizard screens** end-to-end. Durable reference is
@@ -13,11 +13,11 @@ wizard → a fully working assistant on **a single OpenRouter key**.
 
 16 commits on `main`, `a7ef458` → `f5b7fb0` (base `98c02ca`). Two phases:
 
-- **Phase 1 — from-scratch bootstrap + wizard.**
+- **Phase 1, from-scratch bootstrap + wizard.**
   - Signup `apps/web/app/api/auth/signup/route.ts` (open only while `auth.users`
     is empty; atomic `INSERT…WHERE NOT EXISTS`; case-insensitive login). `/login`
     renders "Create your account" on first run (`apps/web/app/login/*`).
-  - `ALLOWED_USER_ID` is **optional** — `packages/db/src/resolve-owner.ts`
+  - `ALLOWED_USER_ID` is **optional**: `packages/db/src/resolve-owner.ts`
     (`resolveSingleOwnerId` / `waitForOwner` / `countUsers`). The agent
     (`apps/agent/src/main.ts`), `files-watch`, `docs-sync`, and the MCP server
     resolve the sole user and **wait** for first signup instead of exiting.
@@ -34,7 +34,7 @@ wizard → a fully working assistant on **a single OpenRouter key**.
     `packages/content/src/persona-bank.ts` (presets × gender) +
     `onboarding-questions.ts` (interview → Journal → identity block).
 
-- **Phase 2 — one OpenRouter key for everything.**
+- **Phase 2, one OpenRouter key for everything.**
   - New adapters `packages/voice/src/adapters/openrouter-{tts,stt,image}.ts`
     (registered; added to `WIRED_PROVIDERS` + `providers.ts` capabilities).
   - Onboarding collapsed to ONE required OpenRouter key; voice is an optional
@@ -42,11 +42,11 @@ wizard → a fully working assistant on **a single OpenRouter key**.
 
 ## THE BASELINE (operator-verified, don't change without re-testing)
 
-`apps/web/lib/onboarding-provision.ts` — one OpenRouter key provisions:
+`apps/web/lib/onboarding-provision.ts`, one OpenRouter key provisions:
 
 | Kind | Model |
 |---|---|
-| extractor / summarizer / reflector / **document** / **vision** | `google/gemini-3.1-flash-lite` (multimodal — one cheap model) |
+| extractor / summarizer / reflector / **document** / **vision** | `google/gemini-3.1-flash-lite` (multimodal, one cheap model) |
 | image_gen | `google/gemini-3.1-flash-image-preview` |
 | tts | `x-ai/grok-voice-tts-1.0` (voice **ara**, rex for male) |
 | stt | `openai/gpt-4o-mini-transcribe` |
@@ -67,7 +67,7 @@ Adding an **xAI** key upgrades voice to dedicated `grok-voice-latest` /
 - **OR STT models aren't in `/v1/models`** (reachable only via
   `/audio/transcriptions`, like embeddings) → STT uses a curated list.
 - **Dev embeddings need Ollama.** Prod compose bundles it; `docker-compose.dev.yml`
-  does NOT — run `ollama serve` + `ollama pull embeddinggemma` or set
+  does NOT, run `ollama serve` + `ollama pull embeddinggemma` or set
   `MANTLE_LOCAL_EMBEDDING_URL`. The sanity step flags it. (Open decision: bundle
   Ollama in the dev compose? Deferred.)
 - **Stale `.next` typecheck noise:** the main checkout's `.next/types` references a
@@ -78,11 +78,11 @@ Adding an **xAI** key upgrades voice to dedicated `grok-voice-latest` /
   `/onboarding-questions` (subpaths), NOT the `@mantle/content` barrel (it pulls
   `@mantle/db` → postgres into the bundle).
 
-## Test environment — `~/Projects/mantle-new`
+## Test environment: `~/Projects/mantle-new`
 
 An **isolated** clone so the real dev brain (`mantle_pg:54323`) is never touched:
 compose project `mantlenew`, postgres `:55432`, web `:3100`, own volume
-(`docker-compose.test.yml` — local only, not committed). `apps/web/.env.local`
+(`docker-compose.test.yml`, local only, not committed). `apps/web/.env.local`
 points `DATABASE_URL` at `:55432`, `ALLOWED_USER_ID` blank.
 
 - Reset to a pristine brain:
@@ -98,7 +98,7 @@ points `DATABASE_URL` at `:55432`, `ALLOWED_USER_ID` blank.
 - ✅ Live on a clean brain: signup, gate, owner pickup (agent boots on empty DB
   then resolves the new user with no restart), interview → identity block.
 - ✅ Adapter slugs verified against OpenRouter's live `/models` API.
-- ⏳ **Next (Jason):** walk the full wizard screens with a real key — provision,
+- ⏳ **Next (Jason):** walk the full wizard screens with a real key, provision,
   sanity-check greens, personality, and the live TTS/STT/image calls in
   `/traces`. Confirm the OpenRouter voice (grok ara) + transcription + image-gen
   end-to-end through the UI.
@@ -110,4 +110,4 @@ points `DATABASE_URL` at `:55432`, `ALLOWED_USER_ID` blank.
 - No new DB migration was needed (everything rides existing tables +
   `profiles.preferences` jsonb).
 - Power users keep dedicated providers (xAI/OpenAI/ElevenLabs/…) in
-  `/settings/ai-workers` — onboarding just defaults to the one-key set.
+  `/settings/ai-workers`, onboarding just defaults to the one-key set.

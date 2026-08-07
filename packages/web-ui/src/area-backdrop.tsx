@@ -19,7 +19,7 @@ import { BACKGROUND_OFF, type BackgroundAreaId } from './backgrounds';
  *   anchors to the bottom (where wave crests sit) and the artwork is masked
  *   away upward, so the labels sit on clean surface.
  * - `header` is a thin horizontal strip. A gradient mask across ~48px reads as
- *   a smudge rather than a fade, so it gets none — and a lower opacity instead,
+ *   a smudge rather than a fade, so it gets none, and a lower opacity instead,
  *   because the wordmark and the icon row cross the whole width.
  * - `chat` is the largest surface and the one people READ. It gets the lowest
  *   opacity of the four: at panel size a chart colour behind body text is the
@@ -43,7 +43,7 @@ const PRESETS: Record<BackgroundAreaId, Preset> = {
  *
  * It has to be one value that every call site agrees on, or the four areas draw
  * from different points in the ramp and the shell looks accidentally
- * mismatched — which is exactly what happened when two call sites passed the
+ * mismatched, which is exactly what happened when two call sites passed the
  * site name and two did not. Keying on the area is stable, needs no data
  * fetch, gives each area its own character, and lets the picker preview the
  * EXACT artwork the area will get rather than an approximation of it.
@@ -68,7 +68,7 @@ export function AreaBackdrop({ area, className }: { area: BackgroundAreaId; clas
   );
 }
 
-/** The preset an area draws with — so a preview can match it exactly. */
+/** The preset an area draws with, so a preview can match it exactly. */
 export function areaPreset(area: BackgroundAreaId): Preset {
   return PRESETS[area];
 }

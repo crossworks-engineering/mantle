@@ -5,7 +5,7 @@ in-app overview; the binding legal texts live at the repository root.
 
 | File | What it is |
 | --- | --- |
-| `LICENSE.md` | Public **Functional Source License 1.1 (MIT Future)** — `FSL-1.1-MIT`. |
+| `LICENSE.md` | Public **Functional Source License 1.1 (MIT Future)**: `FSL-1.1-MIT`. |
 | `LICENSE-COMMERCIAL.md` | Paid **Commercial License Agreement** that overrides the FSL's Competing-Use restriction. |
 | `LICENSING.md` | Plain-language **Explainer & Foreword** (the business rationale). |
 | `THIRD-PARTY-NOTICES.md` | Attribution for every bundled open-source component. |
@@ -18,7 +18,7 @@ product or service. Each released version automatically converts to the permissi
 **MIT** license **two years** after it is first published (the FSL's _Grant of
 Future License_). Companies that want to **embed** Mantle in a commercial product,
 or offer a **competing service**, during that two-year window buy a **Commercial
-License** — which gives them the latest features, security patches, and support in
+License**, which gives them the latest features, security patches, and support in
 exchange for a subscription fee.
 
 ```
@@ -28,12 +28,12 @@ exchange for a subscription fee.
 
 ## Key terms
 
-- **Embedded Use** — bundling Mantle's code, APIs, or schemas inside your own
+- **Embedded Use**: bundling Mantle's code, APIs, or schemas inside your own
   commercial software. Needs a Commercial License during the FSL window.
-- **Competing Use / Competing Service** — hosting Mantle and selling direct access
+- **Competing Use / Competing Service**: hosting Mantle and selling direct access
   to it (a "Mantle Cloud"). Restricted under the FSL; requires a negotiated
   commercial or revenue-share deal.
-- **IP boundaries** — Cross Works Engineering (Pty) Ltd retains 100% ownership of
+- **IP boundaries**: Cross Works Engineering (Pty) Ltd retains 100% ownership of
   the Mantle trademark, brand, and core codebase. A commercial licensee gets a
   right to use and modify for their integration, not ownership of the engine.
   Core improvements must be contributed back or kept as an external wrapper.
@@ -63,7 +63,7 @@ its own license. Every license is reproduced verbatim in
 | Other (BSD, MIT AND ISC, MIT AND Zlib) | 3 |
 
 **Copyleft note.** The only copyleft dependencies are LGPL (`libheif-js`,
-`@img/sharp-libvips-*`), used unmodified as separate dynamically-loaded libraries —
+`@img/sharp-libvips-*`), used unmodified as separate dynamically-loaded libraries,
 their terms are satisfied by attribution and replaceability. Dual-licensed packages
 (`jszip` MIT-or-GPL, `@zone-eu/mailsplit` MIT-or-EUPL) are used under their MIT
 option. There are **no AGPL or strong-copyleft (GPL) obligations** on Mantle's own

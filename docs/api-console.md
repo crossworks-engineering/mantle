@@ -1,12 +1,12 @@
-# API Console — a built-in Postman + the custom-API-tool factory
+# API Console: a built-in Postman + the custom-API-tool factory
 
 The API Console (`/dev-tools`, sidebar → System → API Console) is two
 things in one screen:
 
-1. **An explorer for everything Mantle can already do** — every built-in
+1. **An explorer for everything Mantle can already do**: every built-in
    REST route, every MCP tool (listed live from the real MCP server),
    and every agent tool, searchable and runnable in place.
-2. **A factory for new agent abilities** — build an HTTP request against
+2. **A factory for new agent abilities**: build an HTTP request against
    any external API, prove it works, then *Save as agent tool*. The
    request template becomes a `tools` row that agents (and therefore
    heartbeats) can call, with secrets pulled from the encrypted key
@@ -15,7 +15,7 @@ things in one screen:
 The flow that makes this special: **Heartbeat → Agent → your custom API
 tool → response**. Add a Mapbox token, save a `find_route` tool, grant
 it to an agent, and a daily-briefing heartbeat can include live travel
-times — no code, no deploy.
+times, no code, no deploy.
 
 ```
 API Console (build + test request)
@@ -38,7 +38,7 @@ same process Claude Desktop talks to), so the listing can never drift
 from reality. The child idles out after 5 minutes.
 
 Search matches names, paths, methods, descriptions, and **parameter
-names** — typing `{id}` or `agentSlug` finds every call that carries it.
+names**, typing `{id}` or `agentSlug` finds every call that carries it.
 
 Saved requests + history live in localStorage; bearer tokens and
 Authorization headers are blanked before persisting.
@@ -62,19 +62,19 @@ An `http` handler is now a request *template*:
 Substitution rules (implemented in `packages/tools/src/http-template.ts`,
 tested in `http-template.test.ts`):
 
-- **`{param}`** fills from the model's tool-call input — URL-encoded in
+- **`{param}`** fills from the model's tool-call input, URL-encoded in
   the URL, raw in query values + headers, **JSON-encoded in the body**
   (so write `"q": {query}`, not `"q": "{query}"`; strings arrive quoted).
 - **`{{secret:service/label}}`** decrypts from the `api_keys` vault
   (Settings → API keys) inside the dispatcher. Plaintext never reaches
   the model or the browser; error text is scrubbed back to
   `[secret:service/label]`. Only refs written by the tool author
-  resolve — a model passing a ref string as input gets a literal.
+  resolve, a model passing a ref string as input gets a literal.
 - **Spillover**: input fields no template consumed go to the JSON body
   (non-GET) or query string (GET). A handler with no templates at all
   behaves exactly like the legacy one: POST the whole input as JSON.
 
-## 2b. Integration groups — the base URL + key, decided once
+## 2b. Integration groups: the base URL + key, decided once
 
 A tool group can carry a **service binding** (`tool_groups.integration`): the
 service, its base URL, the vault entry that authenticates it, where that
@@ -85,14 +85,14 @@ console meets it in two places:
   `service/label` ref shown beside the group name, so a tool's provenance
   ("which API, on whose key") is visible without opening it.
 - **"Save as agent tool" offers an integration-group picker.** Pick one and the
-  tool is added to that group and inherits its base URL + credential placement —
+  tool is added to that group and inherits its base URL + credential placement,
   the identical fold `api_tool_create` performs, applied server-side in
   `POST /api/tools` (`groupSlug`). Your request's own headers/query win on a key
   conflict, and the response says what was inherited. A relative URL is fine when
   the group has a base URL.
 
 The owner edits the binding at **Settings → Tool groups** (service, base URL, a
-credential picker fed by the vault — refs and masked previews only — an
+credential picker fed by the vault (refs and masked previews only) an
 auth-placement editor, view/replace for the stored docs, and a link to the usage
 skill). Everything Toolsmith can set, you can correct. Full model:
 [`toolsmith.md`](./toolsmith.md) §0 and
@@ -103,33 +103,33 @@ skill). Everything Toolsmith can set, you can correct. Full model:
 Saving a tool registers it; agents see it once it's in a granted tool
 group (Settings → Tool groups → add slug → grant group to agent).
 Heartbeat fires resolve the agent's tools the same way a chat turn
-does, so no extra wiring — see [`heartbeats.md`](./heartbeats.md).
+does, so no extra wiring, see [`heartbeats.md`](./heartbeats.md).
 
 `requiresConfirm` works as everywhere else: the call parks in
 `pending_tool_calls` for operator approval. Running a tool from the
-console itself skips the queue — the operator pressing Run *is* the
+console itself skips the queue, the operator pressing Run *is* the
 confirmation.
 
 ## 4. Console plumbing (for the curious)
 
-- `/api/dev-tools/proxy` — server-side fetch for cross-origin requests
+- `/api/dev-tools/proxy`, server-side fetch for cross-origin requests
   and anything carrying a `{{secret:…}}` ref (CORS-free, secrets stay
   server-side, response scrubbed + capped at 2MB).
-- `/api/dev-tools/execute-tool` — runs a `tools` row through the real
+- `/api/dev-tools/execute-tool`, runs a `tools` row through the real
   `dispatchTool`, so a console test exercises exactly what an agent
   call would.
-- `/api/dev-tools/mcp` — GET lists / POST calls tools on the spawned
+- `/api/dev-tools/mcp`, GET lists / POST calls tools on the spawned
   MCP server (`apps/web/lib/dev-tools/mcp-bridge.ts`; override the
   location with `MANTLE_MCP_DIR` if your layout is exotic).
 
 Security posture: every route sits behind `requireOwner()`. The proxy
-is an intentional SSRF-by-design for the single owner — the same power
+is an intentional SSRF-by-design for the single owner, the same power
 their `http` tools already have. Nothing new is network-exposed; the
 MCP bridge stays stdio.
 
 ## 5. Tool-authoring assist (via the responder)
 
-The console's header **Assist** button opens the global assistant — the same
+The console's header **Assist** button opens the global assistant, the same
 one as everywhere else, keeping its full conversation context. Describe the
 integration ("read the API docs at <url> and build tools for X") and the
 responder hands it to the Toolsmith specialist via `invoke_agent`; Toolsmith
@@ -139,7 +139,7 @@ against it, test against the live API, distil a usage skill, and grant. The
 console's Agent-tools list refreshes when the turn settles.
 
 (Until v0.206 this was a docked in-surface panel that invoked Toolsmith
-DIRECTLY — the last surface with a pre-selected specialist. Switching into it
+DIRECTLY, the last surface with a pre-selected specialist. Switching into it
 discarded everything the responder knew, so it was removed along with the
 whole per-surface assist-agent machinery: `/api/assist/*`,
 `/api/profile/assist-agent`, the per-surface agent preferences and the

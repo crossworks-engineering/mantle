@@ -1,21 +1,21 @@
 # Notes, Pages, Tables & Docs
 
 Five surfaces for writing and structured content. They range from "scribble a
-thought" to "build a typed database," and all of them feed the brain — plus
+thought" to "build a typed database," and all of them feed the brain, plus
 **Journal**, the first-person channel for teaching the assistant who you are.
 
-## Notes — fast capture
+## Notes: fast capture
 
 **Notes** are quick markdown jottings. This is the lowest-friction way to put
 knowledge into Mantle: open Notes, type, done. A note is summarised, embedded, and
-mined for facts the moment you save it. Use it for ideas, snippets, meeting scraps —
+mined for facts the moment you save it. Use it for ideas, snippets, meeting scraps,
 anything you want findable later. (The assistant can create notes for you too:
 "make a note that…")
 
-## Journal — who you are
+## Journal: who you are
 
-**Journal** are short, first-person notes about *you* — what you do, who's in
-your life, what you're working towards, and how you're feeling — each tagged with
+**Journal** are short, first-person notes about *you*; what you do, who's in
+your life, what you're working towards, and how you're feeling; each tagged with
 a **mood** and a **life area** (work, family, faith, health, …). Keep them small
 and honest: a sentence or two per entry.
 
@@ -23,18 +23,18 @@ They're different from Notes in one important way: alongside being searchable li
 everything else, your Journal are distilled into an **always-on identity
 context** the assistant carries into *every* conversation. So once you've logged
 "I run CrossWorks and I'm building Mantle" or "I'm a father of three," you never
-have to re-explain — the assistant already knows who it's talking to. The more you
+have to re-explain, the assistant already knows who it's talking to. The more you
 log, the better it understands you.
 
 The assistant can add entries for you, too: "log that I started a new job today,"
 "remember that I've been feeling stretched this week." Open **Journal**, click
 **New**, write a line, pick a mood and area, save.
 
-## Pages — rich documents
+## Pages: rich documents
 
 **Pages** are Notion-style documents for real writing: headings, **callouts**,
 **asides** (gradient note boxes), multi-**column** layouts, tables, to-do lists,
-code blocks, math, images — and **diagrams**: a `/diagram` block (or a
+code blocks, math, images, and **diagrams**: a `/diagram` block (or a
 ```` ```mermaid ```` fence) renders flowcharts, mind maps, sequence diagrams,
 pies, timelines and more from plain Mermaid text, themed to match your palette.
 The editor has a slash menu (`/`) for inserting blocks and a drag handle for moving

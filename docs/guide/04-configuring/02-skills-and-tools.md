@@ -6,7 +6,7 @@ concepts; this page is how to manage them.
 
 ## Settings → Tools
 
-Tools are the concrete actions agents can take — search memory, read a file, create
+Tools are the concrete actions agents can take, search memory, read a file, create
 a note/task/event, send email, generate an image, search the web, and many more.
 Some are built-in; you can also add your own (e.g. an HTTP call to a service you
 run).
@@ -15,7 +15,7 @@ For each tool you control:
 
 - **Whether it requires your approval.** Mark anything consequential (sending email,
   deleting) as **requires confirmation**. When an agent wants to use it, the action
-  is queued under **Pending** for you to approve or reject — nothing happens behind
+  is queued under **Pending** for you to approve or reject; nothing happens behind
   your back. Routine, safe tools run immediately.
 - **Availability.** Which agents may use a tool is set per agent (its allowlist on
   **Settings → Agents**), so a tool existing doesn't mean every agent can use it.
@@ -29,7 +29,7 @@ assistant act without giving it free rein.
 
 ## Settings → Skills
 
-A skill is reusable know-how — a short playbook attached to an agent's instructions.
+A skill is reusable know-how, a short playbook attached to an agent's instructions.
 Rather than one bloated personality, an agent composes just the skills it needs.
 
 A skill can also **carry the tools it requires**, so attaching the skill grants
@@ -46,7 +46,7 @@ agents on **Settings → Agents**.
 
 When you ask the assistant something, its **skills** shape *how* it responds, and
 its **tools** bound *what* actions it can take. A request like "email Don the
-meeting summary" might use a writing skill to draft well, then a `send email` tool —
+meeting summary" might use a writing skill to draft well, then a `send email` tool,
 which, if you've gated it, waits for your approval in **Pending**.
 
 ## Good defaults

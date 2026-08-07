@@ -12,7 +12,7 @@ is the gate: only messages from addresses you've saved as contacts are ever
 stored in the brain. An account with no matching contacts syncs nothing, which
 is the intended starting position rather than a misconfiguration.
 
-The folder tree is live — it's read from the server, so you're picking real
+The folder tree is live; it's read from the server, so you're picking real
 folders rather than typing names and hoping. Watching everything is rarely what
 you want; the inbox and anything you file deliberately usually is.
 
@@ -22,7 +22,7 @@ you want; the inbox and anything you file deliberately usually is.
 - "Email Sam the revised quote."
 
 The same credentials do both jobs. Sending reuses the account's app password
-over the provider's SMTP — Mantle runs no mail server of its own, so mail leaves
+over the provider's SMTP, Mantle runs no mail server of its own, so mail leaves
 from your address, through your provider, exactly as if you'd sent it.
 
 ## Technical
@@ -35,7 +35,7 @@ account password.
 Ingest checks the sender against the contacts allowlist **before** anything is
 written, so non-contact mail is never stored in the brain even transiently.
 That's what makes the contacts list a genuine privacy control rather than a
-display filter — removing a contact stops collection, it doesn't just hide
+display filter, removing a contact stops collection, it doesn't just hide
 results.
 
 Sync is incremental and tracks its position per folder, so a restart resumes

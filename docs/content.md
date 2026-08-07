@@ -7,13 +7,13 @@
 > create / update / delete them on your behalf.
 >
 > For richer, structured documents (callouts, columns, tables, embeds) see
-> the heavier [`pages.md`](./pages.md) surface — a TipTap editor with a
+> the heavier [`pages.md`](./pages.md) surface, a TipTap editor with a
 > draft/commit model. Notes remain the lightweight markdown quick-capture.
 > For first-person self-knowledge (who you are, how you feel) that also feeds
 > the assistant's always-on identity context, see [`journal.md`](./journal.md)
-> — a fourth `nodes.data` sibling that rides this same shape.
+>, a fourth `nodes.data` sibling that rides this same shape.
 >
-> Any of the three can be shared read-only via a public link (`/s/[token]`) —
+> Any of the three can be shared read-only via a public link (`/s/[token]`),
 > see [`sharing.md`](./sharing.md).
 
 ---
@@ -69,8 +69,8 @@ then `updated_at` descending. The `/tasks` screen is **master-detail**
 (see [`ui-style-guide.md`](./ui-style-guide.md) §8): a filterable list
 on the left (search + status + priority; a checkbox toggles done
 optimistically) and a create / edit / detail pane on the right. Search,
-filters, and pagination are URL-driven (SSR) — same for `/events` and
-`/secrets` — via `listTasks`/`countTasks` (and the `events`/`secrets`
+filters, and pagination are URL-driven (SSR), same for `/events` and
+`/secrets`, via `listTasks`/`countTasks` (and the `events`/`secrets`
 equivalents) with `limit`/`offset`.
 
 ### Events (`type='event'`)
@@ -109,12 +109,12 @@ live-time helpers are pure + tested in [`apps/web/lib/event-time.ts`].
 All three are in `DEFAULT_EXTRACT_TYPES` in
 `apps/agent/src/extractor.ts`. The default body resolution is:
 
-- **note**: `data.content` — the markdown verbatim.
+- **note**: `data.content`, the markdown verbatim.
 - **task**: title + `Status:` + `Priority:` + `Due:` + body. Surfaces
   the structured metadata so a summary can say *"OPEN, due tomorrow:
   ship the events feature"* instead of just the title.
 - **event**: title + `Starts:` + `Ends:` + `Location:` + body. Same
-  reason — the assistant searching for "meeting with Alex on Tuesday"
+  reason, the assistant searching for "meeting with Alex on Tuesday"
   needs to find the row by its date.
 
 Every meaningful edit (title, body, status, priority, due, starts_at,
@@ -145,11 +145,11 @@ every 30s:
 already (`remind_at` + `reminder_sent_at`); a restart loses nothing.
 30s granularity is good enough for human-scale meetings. If you move
 a meeting earlier, the next tick picks up the new `remind_at`
-automatically — no schedule to cancel + re-enqueue.
+automatically, no schedule to cancel + re-enqueue.
 
 **At-least-once delivery**: we mark sent *after* the Telegram API
 call returns. If the worker crashes between send + mark, the next
-tick re-sends. Single-user, low-traffic — duplicate reminders are
+tick re-sends. Single-user, low-traffic; duplicate reminders are
 better than missed ones.
 
 **No target chat?** If no allowed private Telegram chat exists for
@@ -200,7 +200,7 @@ Same owner-scoping as the rest of the MCP surface
   local). The DB stores UTC ISO.
 - **No two-way calendar sync.** Events offer a one-shot **.ics**
   "Add to calendar" (per-event in the detail, and on shared events), but
-  there's no Google/CalDAV bridge — events live in Mantle.
+  there's no Google/CalDAV bridge, events live in Mantle.
 - **Reminder target is whichever DM you last spoke in.** Multi-bot
   setups would want per-event override; we picked the recommended
   default for simplicity.

@@ -4,12 +4,12 @@ How Mantle holds and retrieves what it knows. This file is the durable
 reference for the memory layer; companion to
 [`architecture.md`](./architecture.md) which covers the system as a whole.
 
-> **June 2026 — retrieval overhaul.** The six layers (below) were always live,
+> **June 2026, retrieval overhaul.** The six layers (below) were always live,
 > but the *read path* that assembles them was simpler than this doc implied
 > (raw-cosine top-K, no kind-weighting, no graph, no chunks). It's now been
 > rebuilt: hybrid ranking, bulk-email salience, kind-aware recency, auto-chunk
 > passages, entity-graph expansion, always-injected preferences, and zero-LLM
-> query enrichment — all in the shared
+> query enrichment, all in the shared
 > [`loadConversationContext`](../packages/agent-runtime/src/conversation.ts). See
 > [§7](#7-the-retrieval-order-in-the-prompt) for the as-built assembly and
 > [`recall-eval.md`](./recall-eval.md) for the measured before/after of each step.
@@ -27,24 +27,24 @@ wired, and tests for the load-bearing pure helpers. Specifically:
 | `content_index` | extractor (summary + entities + embedding per node) | responder, assistant, MCP `search_nodes` | Live |
 | `content_store` | telegram, email, files watcher, web UI, MCP | by-id lookup only | Live for emails, telegram, files, notes, tasks, events, secrets |
 
-A seventh capability — **agent delegation** via the `invoke_agent`
-builtin — sits beside memory rather than in it: it lets a responder
+A seventh capability, **agent delegation** via the `invoke_agent`
+builtin, sits beside memory rather than in it: it lets a responder
 hand a one-shot prompt to a specialised peer (see [architecture.md
 §9b'](./architecture.md#9b-agent-delegation-invoke_agent)).
 
 **Time-windowed recall** is the memory-facing use of that delegation:
 where the layers above answer "what do I know about X" by *summary*,
 recall replays "what was *actually said*" from the raw message archive
-on demand — lossless paging vs. the lossy `conversation_digest`. The
+on demand, lossless paging vs. the lossy `conversation_digest`. The
 "Remy" agent does it via two builtins (`find_window` locates the window
 through digests, `recall_window` pulls the raw turns). See
 [`recall.md`](./recall.md).
 
-> **Embedding dimensions — read before trusting any `1536` below.** Since
+> **Embedding dimensions, read before trusting any `1536` below.** Since
 > 2026-05-31 every `vector` column is **`vector(768)`** with HNSW indexes.
 > The shipped **default model** (since v0.103–0.104) is the online
 > `openai/text-embedding-3-large`, MRL-reduced to 768 dims and chosen in the
-> onboarding **Memory** step (via OpenRouter — the same key as chat — or
+> onboarding **Memory** step (via OpenRouter (the same key as chat) or
 > OpenAI direct); local **EmbeddingGemma-300m** via Ollama (768 native,
 > keyless) is the opt-in path and the pre-onboarding fallback. This doc
 > predates those changes in places: where the prose, SQL sketches, or §6.3
@@ -60,7 +60,7 @@ through digests, `recall_window` pulls the raw turns). See
 
 Two diagrams, then the rest of the doc explains the boxes.
 
-### 0.1 The write path — how content becomes memory
+### 0.1 The write path: how content becomes memory
 
 When any piece of content arrives (email, voice clip, file edit, web-UI
 note, MCP call from Claude Desktop), it lands as a row in `nodes`. A
@@ -116,25 +116,25 @@ flowchart TD
 **Key invariants the diagram glosses over:**
 
 - The `secret` type takes a special path. `readNodeBodyRaw` returns
-  *only* title + description + tags — the sealed ciphertext in the
+  *only* title + description + tags, the sealed ciphertext in the
   `secrets` table is never read by the extractor. See
   [docs/secrets.md](./secrets.md) for the threat model.
 - The `nodes.embedding` write makes the row findable; clearing it (on
   any meaningful edit) reschedules it through the same trigger path
   on next save.
-- Fact classification is itself an LLM call per candidate fact —
+- Fact classification is itself an LLM call per candidate fact,
   bounded by `memory_config.extract_cost_cap_micro_usd` so a hostile
   or malformed document can't burn the budget. Drops are logged
   per-fact.
-- The trigger fires on commit, not insert — a rolled-back transaction
+- The trigger fires on commit, not insert, a rolled-back transaction
   never fires `node_ingested`. This is what makes the dual insert in
   email-sync (node + emails row in one transaction) safe.
 
-### 0.2 The read path — how a user turn assembles memory
+### 0.2 The read path: how a user turn assembles memory
 
 When the user sends a message (Telegram or web `/assistant`), the
 responder agent reads from every memory layer, then runs the tool
-loop. Same code in both surfaces — `@mantle/agent-runtime` is shared.
+loop. Same code in both surfaces, `@mantle/agent-runtime` is shared.
 
 ```mermaid
 flowchart TD
@@ -194,11 +194,11 @@ flowchart TD
   without losing the content.
 - **Reflector**: every 10 minutes (with exponential backoff on
   failure, capped at 1h), reads new outbound activity since its last
-  run and decides whether anything notable about the user surfaced —
+  run and decides whether anything notable about the user surfaced,
   preferences, in-jokes, corrections. Appends to `agent.persona_notes`
   jsonb (which is read on every turn as Layer 1).
 
-Both are *reactive* agents — they're not invoked by the responder, they
+Both are *reactive* agents; they're not invoked by the responder, they
 react to `pg_notify` and `setInterval` independently. The responder
 doesn't know they exist; they don't know the responder exists.
 
@@ -216,12 +216,12 @@ This frames everything else in this doc:
 - **No `session_id`.** The conversation never ends.
 - **The agent has identity.** Sarah has a stable persona that grows
   through use, not a per-call system prompt.
-- **Memory is the product.** The killer feature is *recall* — Sarah
+- **Memory is the product.** The killer feature is *recall*, Sarah
   surfacing the right note, fact, or email when you mention it vaguely.
-- **Same Sarah everywhere.** Telegram, web, voice, future surfaces — one
+- **Same Sarah everywhere.** Telegram, web, voice, future surfaces, one
   identity, one memory, multiple inputs.
 
-The agent's job is to be the front-door — she can delegate to specialist
+The agent's job is to be the front-door; she can delegate to specialist
 agents (extractor, summarizer, future planners) when she needs them.
 
 ---
@@ -234,12 +234,12 @@ identifier used in code, schemas, and config jsonb keys.
 
 | # | Keyword | Display name | What it holds | Lifetime | Always in prompt? |
 |---|---|---|---|---|---|
-| 1 | `persona` | **Persona** | The agent's stable identity — voice, style, and the relationship notes it has accumulated about *this* user (preferences observed, in-jokes, corrections). | Indefinite; slowly evolves. | Yes — verbatim. |
-| 2 | `recent_turns` | **Recent Turns** | The last N raw exchanges between user and agent (`telegram_messages` direction-tagged). | Sliding window (default 20). | Yes — chronological. |
+| 1 | `persona` | **Persona** | The agent's stable identity, voice, style, and the relationship notes it has accumulated about *this* user (preferences observed, in-jokes, corrections). | Indefinite; slowly evolves. | Yes, verbatim. |
+| 2 | `recent_turns` | **Recent Turns** | The last N raw exchanges between user and agent (`telegram_messages` direction-tagged). | Sliding window (default 20). | Yes, chronological. |
 | 3 | `conversation_digest` | **Conversation Digests** | Compressed summaries of older conversations, rolled up in batches by the summarizer agent. | Permanent once written. | Top-K most relevant prepended. |
-| 4 | `profile` | **Profile** | Durable, dedup'd facts about the user and their world — identity, relationships, projects, preferences. Each fact is declarative and can be updated, contradicted, or retired. | Indefinite; mutable. | Top-K most relevant retrieved. |
-| 5 | `content_index` | **Content Index** | Searchable catalogue over every stored item. Per item: title, tags, 1-2 sentence summary, entities mentioned, embedding. The *spine* of the books — cheap to scan, never the full body. | Refreshed when source content changes. | Top match prepended as link + summary. |
-| 6 | `content_store` | **Content Store** | The source content itself — emails, files, notes, sermons, attachments. Append-only, immutable, citable. | Permanent. | Fetched by id only when full body is requested. |
+| 4 | `profile` | **Profile** | Durable, dedup'd facts about the user and their world, identity, relationships, projects, preferences. Each fact is declarative and can be updated, contradicted, or retired. | Indefinite; mutable. | Top-K most relevant retrieved. |
+| 5 | `content_index` | **Content Index** | Searchable catalogue over every stored item. Per item: title, tags, 1-2 sentence summary, entities mentioned, embedding. The *spine* of the books, cheap to scan, never the full body. | Refreshed when source content changes. | Top match prepended as link + summary. |
+| 6 | `content_store` | **Content Store** | The source content itself, emails, files, notes, sermons, attachments. Append-only, immutable, citable. | Permanent. | Fetched by id only when full body is requested. |
 
 These six layers organise naturally around three concerns:
 
@@ -254,7 +254,7 @@ ABOUT YOUR WORLD      profile               (what I know is true)
                       content_store         (the receipts themselves)
 ```
 
-This grouping isn't a 7th layer — it's the mental model behind the six.
+This grouping isn't a 7th layer; it's the mental model behind the six.
 
 ### Node types currently in use
 
@@ -263,15 +263,15 @@ This grouping isn't a 7th layer — it's the mental model behind the six.
 
 | Type | Surface | Specialised table | Extractor body source |
 |---|---|---|---|
-| `note` | `/notes` | — | `data.content` (markdown) |
-| `page` | `/pages` | `pages` (TipTap doc) | `pages.doc_text` (derived plaintext) — see [pages.md](./pages.md) |
-| `file` | `/files` | — (bytes on disk under `MANTLE_FILES_ROOT`) | text files inline; `.pdf` via pdf-parse |
-| `task` | `/tasks` | — | title + status + priority + due_at + body |
-| `event` | `/events` | — | title + starts_at + ends_at + location + body (IANA tz preserved for reminder display) |
-| `secret` | `/secrets` | `secrets` (sealed bytea) | title + description + tags **only** — sealed payload never reaches the LLM |
+| `note` | `/notes` |, | `data.content` (markdown) |
+| `page` | `/pages` | `pages` (TipTap doc) | `pages.doc_text` (derived plaintext), see [pages.md](./pages.md) |
+| `file` | `/files` |, (bytes on disk under `MANTLE_FILES_ROOT`) | text files inline; `.pdf` via pdf-parse |
+| `task` | `/tasks` |, | title + status + priority + due_at + body |
+| `event` | `/events` |, | title + starts_at + ends_at + location + body (IANA tz preserved for reminder display) |
+| `secret` | `/secrets` | `secrets` (sealed bytea) | title + description + tags **only**: sealed payload never reaches the LLM |
 | `email` / `email_thread` | inbox / IMAP sync | `emails` + `email_attachments` | subject + bodyText (head+tail truncation at 24K chars) |
 | `telegram_message` | Telegram | `telegram_messages` | message text |
-| `branch` | folder nodes | — | **never** — `HARD_SKIP_TYPES` |
+| `branch` | folder nodes |, | **never**: `HARD_SKIP_TYPES` |
 
 The enum also declares `sermon`, `contact`, `printer_project` for
 future surfaces; none have writers today and they're hidden from the
@@ -289,7 +289,7 @@ embedding.
 `search_chunks` tool) does cosine search over them. Generalised across all
 content (pages, files, emails, …), not pages-specific. **Idempotent**: the
 extractor deletes a node's chunks and re-inserts on every (re)extract, so they
-never accumulate — the same delete-then-rebuild rule now also applies to
+never accumulate, the same delete-then-rebuild rule now also applies to
 `mentioned_in` edges (previously appended on every run). Full detail +
 re-extract semantics in [pages.md](./pages.md) §5–6.
 
@@ -303,7 +303,7 @@ The `profile` layer carries facts of three shapes, distinguished by the
   updated.
 - **Episodic**: a record of something that happened. *"On 2026-05-17
   Alex said he was preaching Romans 8."* Anchored in time. Doesn't get
-  "updated" — superseded by newer episodes.
+  "updated", superseded by newer episodes.
 - **Semantic**: an abstraction inferred from many episodes. *"Alex is a
   pastor."* Stable identity; rarely changes; can be contradicted but
   only by weight of evidence.
@@ -318,11 +318,11 @@ recency-weighted; semantic facts rarely change and stay in the prefix.
 
 The word "summary" appears in two places and they're different shapes:
 
-- **Item summary** — 1-to-1 with a single Content Store item. Lives as a
+- **Item summary**: 1-to-1 with a single Content Store item. Lives as a
   field inside its `content_index` entry (currently planned as
   `nodes.data.summary`). Generated at ingest by the summarizer or
   extractor; refreshed if the source is edited.
-- **Aggregate summary** — 1-to-many. One summary covers N source items.
+- **Aggregate summary**: 1-to-many. One summary covers N source items.
   Conversation digests are the working example. Lives as its own row
   (today a `note` node tagged `conversation-digest`).
 
@@ -335,10 +335,10 @@ A single summarizer run can yield **multiple** digests. The summarizer
 groups the batch into contiguous topical stretches and emits one digest
 per topic, each carrying:
 
-- `data.topic` — a 2-5-word label ("Lister Gantry Rebuild")
-- `data.topic_slug` — a slug derived from the label, also added to
+- `data.topic`, a 2-5-word label ("Lister Gantry Rebuild")
+- `data.topic_slug`, a slug derived from the label, also added to
   `nodes.tags` as `topic:lister-gantry-rebuild` for `@>` retrieval
-- `data.source_turn_count` — turns in this topic, not the whole batch
+- `data.source_turn_count`, turns in this topic, not the whole batch
 
 Each turn's `digestNodeId` points at its topic's digest. The same
 topic recurring weeks later produces a new digest with the same slug;
@@ -415,7 +415,7 @@ User: "I have made a note on how I want to build my Lister 3D printer gantry."
 ```
 
 The key insight: **Sarah hits the `content_index`, not the
-`content_store` directly.** The Index is the spine of the book — title,
+`content_store` directly.** The Index is the spine of the book, title,
 tags, summary, embedding. The Store is the body, fetched only when
 needed. You don't reread every book on your shelf to remember you own
 it; you scan the spines.
@@ -437,7 +437,7 @@ Each step narrows. Cheapest first.
 Memory retrieval needs to answer two different *shapes* of question. They
 demand different indexing strategies, and a good system uses both.
 
-### 4.1 Vector retrieval — "what's like this?"
+### 4.1 Vector retrieval: "what's like this?"
 
 A **vector database** stores high-dimensional numeric representations
 (*embeddings*) of text. An embedding model converts a piece of text into
@@ -455,11 +455,11 @@ core query a vector DB answers:
 > Given this query vector, return the N stored items whose vectors are
 > closest (usually by cosine similarity).
 
-**Use cases:** "fuzzy" semantic recall — *"what do I know about church
+**Use cases:** "fuzzy" semantic recall, *"what do I know about church
 work?"* hits items that don't say "church" if they're semantically related
 (sermon, congregation, pastoral, preaching).
 
-**Examples:** Pinecone, Weaviate, Qdrant, Chroma, Milvus — and, the one
+**Examples:** Pinecone, Weaviate, Qdrant, Chroma, Milvus, and, the one
 that matters for us, **pgvector**, a Postgres extension that adds a
 `vector` column type and similarity operators (`<=>` for cosine,
 `<->` for L2).
@@ -469,7 +469,7 @@ that matters for us, **pgvector**, a Postgres extension that adds a
 and `nodes.embedding` is declared as `vector(768)`
 ([`packages/db/src/schema/nodes.ts:45`](../packages/db/src/schema/nodes.ts:45)).
 The extractor is live: every `content_index` entry and every `facts` row
-gets embedded at write time and similarity-searched at read time — same
+gets embedded at write time and similarity-searched at read time, same
 Postgres, no second service.
 
 Typical query shape against `facts`:
@@ -484,17 +484,17 @@ LIMIT 10;
 
 **Which embedding model produces those vectors matters.** The shipped
 default is `openai/text-embedding-3-large` MRL-reduced to 768 dims (online,
-via OpenRouter or OpenAI — chosen in onboarding's Memory step); local
-`embeddinggemma:latest` (768 native, via Ollama, $0 — no cloud call) is the
+via OpenRouter or OpenAI, chosen in onboarding's Memory step); local
+`embeddinggemma:latest` (768 native, via Ollama, $0, no cloud call) is the
 opt-in privacy/self-host path. Other choices unlock multilingual recall.
 See [`docs/embeddings.md`](./embeddings.md) for the operator-facing decision
 guide (OpenAI-large vs Gemma-local vs Gemini with benchmark numbers + the
-768-dim constraint that shapes the choice). The runtime mechanics — how the dispatcher resolves the
+768-dim constraint that shapes the choice). The runtime mechanics, how the dispatcher resolves the
 worker config, how the cache works, how Rebuild Index re-embeds the
-whole corpus on a model swap — live in
+whole corpus on a model swap, live in
 [`ai-workers.md` §5e](./ai-workers.md#5e-embedding--the-cross-cutting-kind).
 
-### 4.2 Graph retrieval — "what's connected to what?"
+### 4.2 Graph retrieval: "what's connected to what?"
 
 A **graph database** stores **entities** (nodes) and the named
 **relationships** between them (edges). Two primitives:
@@ -518,21 +518,21 @@ Visually:
 ```
 
 **Use cases:** "precise" relational traversal. *"Who is Sarah related
-to?"* — start at Sarah, follow edges. *"What did Alex and Sarah do
-together this month?"* — find paths between them, filter by date.
-*"When was Sarah's passport last mentioned?"* — start at Sarah, follow
+to?"*, start at Sarah, follow edges. *"What did Alex and Sarah do
+together this month?"*, find paths between them, filter by date.
+*"When was Sarah's passport last mentioned?"*, start at Sarah, follow
 `HAS_PASSPORT`, then `MENTIONED_IN`.
 
 Vector search can't answer these. It returns *similar* things, not
 *connected* things. A vector query for "Sarah's passport" might return
 items mentioning "Sarah" or items mentioning "passport"; it cannot tell
-you they refer to the same object — only an explicit relationship can.
+you they refer to the same object; only an explicit relationship can.
 
 **Examples of graph DBs:** Neo4j, ArangoDB, AWS Neptune, Memgraph,
 JanusGraph. Mem0 uses Neo4j when graph features are enabled.
 
 **Mantle does NOT need a separate graph DB.** At personal scale (millions
-of edges or less), graphs are just tables — Postgres handles them fine
+of edges or less), graphs are just tables, Postgres handles them fine
 with foreign keys and **recursive CTEs**. You only need a dedicated graph
 engine when traversal becomes the bottleneck of a high-throughput
 production system: social graphs, fraud detection, recommendations at
@@ -543,7 +543,7 @@ internet scale. None of those apply here.
 > recursive CTE, entity-resolution integrity, and near-dup consolidation. At
 > 2,200 edges / 1,365 documents Postgres traverses instantly, and the remaining
 > hard problems (entity resolution, verb consistency) turned out to be
-> *modelling* problems a graph engine wouldn't solve — so the "no Neo4j" call
+> *modelling* problems a graph engine wouldn't solve, so the "no Neo4j" call
 > held under real load. Full design: [`knowledge-graph.md`](./knowledge-graph.md).
 
 ### 4.3 Why both together
@@ -556,7 +556,7 @@ internet scale. None of those apply here.
 
 The killer pattern is **filter, then rank**: use the graph to restrict
 the candidate set ("facts that mention Sarah"), then use vectors to rank
-within it ("…by relevance to 'travel plans'"). Or the reverse — vector-
+within it ("…by relevance to 'travel plans'"). Or the reverse, vector-
 rank first, then expand each result's entity neighbourhood for context.
 
 ---
@@ -570,40 +570,40 @@ sits behind it, and what's planned:
 |---|---|---|---|
 | `persona` | `agents.system_prompt` (seed) + planned `agents.persona_notes` jsonb (or sibling `agent_notes` table if it grows) | **Relational** + **jsonb** | Seed live; evolution unbuilt |
 | `recent_turns` | `telegram_messages` rows, direction-tagged. Schema in `packages/db/src/schema/telegram.ts` | **Relational** + **btree** index `(chat_id, sent_at desc)` | ✓ Live |
-| `conversation_digest` | `nodes` rows of `type='note'` with `tags @> ['conversation-digest']`. jsonb data carries summary, period, source turn ids | **Relational** + **jsonb** + **FTS** (tsvector) + **pgvector** (embedded at insert since 2026-06-10 — `find_window` cosine-ranks digests; backfill older ones with `pnpm -C apps/web backfill:digest-embeddings`) | ✓ Live (migration 0013) |
-| `profile` | `facts` table + `entities` + `entity_edges` for the graph axis (entity↔entity relations, traversed via `graph_path`) | **Relational** + **jsonb** + **pgvector** (every fact embedded) + **Graph** via tables + recursive CTEs (no Neo4j) | ✓ Live — see [`knowledge-graph.md`](./knowledge-graph.md) |
+| `conversation_digest` | `nodes` rows of `type='note'` with `tags @> ['conversation-digest']`. jsonb data carries summary, period, source turn ids | **Relational** + **jsonb** + **FTS** (tsvector) + **pgvector** (embedded at insert since 2026-06-10, `find_window` cosine-ranks digests; backfill older ones with `pnpm -C apps/web backfill:digest-embeddings`) | ✓ Live (migration 0013) |
+| `profile` | `facts` table + `entities` + `entity_edges` for the graph axis (entity↔entity relations, traversed via `graph_path`) | **Relational** + **jsonb** + **pgvector** (every fact embedded) + **Graph** via tables + recursive CTEs (no Neo4j) | ✓ Live, see [`knowledge-graph.md`](./knowledge-graph.md) |
 | `content_index` | Columns on existing `nodes`: `title`, `tags`, `data.summary`, `data.entities`, `embedding`, `search_tsv` | **Relational** + **jsonb** + **FTS** (tsvector + GIN) + **pgvector** (IVFFlat) + **ltree** + **GIN** on tags array | Columns exist; population unbuilt |
 | `content_store` | Existing `nodes` + specialised tables (`emails`, `email_attachments`, `telegram_messages`, `secrets`, future `files`) + MinIO for attachment bytes | **Relational** + **jsonb** + **ltree** (hierarchical paths) + **S3** (object bytes via MinIO) | ✓ Live |
 
-### 5.1 Storage tech axes — what each one is for
+### 5.1 Storage tech axes: what each one is for
 
 A glossary so the column above reads cleanly:
 
-- **Relational** — plain SQL tables, columns, foreign keys. The default;
+- **Relational**: plain SQL tables, columns, foreign keys. The default;
   used by every layer for its scaffolding.
-- **jsonb** — Postgres native JSON storage with binary representation and
+- **jsonb**: Postgres native JSON storage with binary representation and
   GIN indexing. Used wherever data is shaped-but-flexible: the type-
   specific payload on `nodes`, agent config, fact metadata, persona
   notes.
-- **btree** — standard sorted index. Used for `(chat_id, sent_at)` style
+- **btree**: standard sorted index. Used for `(chat_id, sent_at)` style
   lookups in `recent_turns` and most "look up by id" queries.
-- **FTS (Full-Text Search)** — `tsvector` columns with GIN indexes; the
+- **FTS (Full-Text Search)**: `tsvector` columns with GIN indexes; the
   `<@`, `@@`, `plainto_tsquery` operators. Cheap keyword retrieval over
   large text. Used by `content_index` and `conversation_digest` for the
   first pass of any text search.
-- **pgvector** — `vector(768)` column type plus cosine / L2 similarity
+- **pgvector**: `vector(768)` column type plus cosine / L2 similarity
   operators (`<=>`, `<->`). Indexed by IVFFlat (or HNSW) for fast
   approximate nearest-neighbour search. Used wherever semantic similarity
   matters: `content_index.embedding`, `facts.embedding`,
   `entities.embedding`, digest embeddings (insert-time since 2026-06-10).
-- **Graph** — *not* a separate database. Modeled as `entities` +
+- **Graph**: *not* a separate database. Modeled as `entities` +
   `entity_edges` tables in Postgres, traversed via recursive CTEs.
   Personal scale doesn't justify Neo4j. The graph axis lives inside the
   `profile` layer.
-- **ltree** — Postgres extension for hierarchical paths
+- **ltree**: Postgres extension for hierarchical paths
   (`inbox.email_jason.2026.may`). GiST-indexed. Used on `nodes.path` so
   every layer can answer "everything under this branch" cheaply.
-- **S3** (MinIO) — binary bytes only (attachment files). The metadata
+- **S3** (MinIO): binary bytes only (attachment files). The metadata
   + content-addressed key live in `nodes`; the bytes live in MinIO.
 
 The pattern: **everything that can fit in Postgres lives in Postgres.**
@@ -637,7 +637,7 @@ means:
 
 - You can always trace a fact to its receipt.
 - If the source item is edited (e.g. an email re-parsed), derived facts
-  can be marked `dirty=true` and re-extracted — much cleaner than
+  can be marked `dirty=true` and re-extracted, much cleaner than
   syncing across two stores.
 - If the source is deleted, `ON DELETE SET NULL` makes the fact an
   orphan but doesn't lose it.
@@ -684,7 +684,7 @@ as "where does Alex work *currently*?" via `WHERE valid_to IS NULL`.
 `reconcileEntity` in [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts)
 matches in four steps: (1) exact name/alias, (2) trigram similarity ≥ 0.7,
 (3) embedding cosine < threshold, (4) new entity. Steps 2-3 are the merge
-paths — they collapse "Mr J Schoeman", "Schoeman", "Don Carter", "Jonathan
+paths; they collapse "Mr J Schoeman", "Schoeman", "Don Carter", "Jonathan
 Schoeman" into one entity, which is great for spelling variations of the
 *same person* and disastrous for *different people* who share a surname.
 
@@ -693,7 +693,7 @@ is `kind='person'`, the helper `isLikelyDifferentPerson`
 ([`apps/agent/src/person-names.ts`](../apps/agent/src/person-names.ts)) sits
 in front of both merge paths and refuses the merge when **both** names look
 like a full given-name + surname pair, share a surname, and have clearly
-distinct given names. Conservative — anything ambiguous returns false so the
+distinct given names. Conservative, anything ambiguous returns false so the
 normal merge still wins:
 
 | Candidate vs existing | Decision |
@@ -710,7 +710,7 @@ known name on the existing entity (primary + aliases): the merge is refused
 only if the candidate clashes with **all** of them, so a re-extraction of a
 contact already aliased into an entity still finds its way home.
 
-Doesn't unwind earlier collapses — if pre-fix data shows a single
+Doesn't unwind earlier collapses, if pre-fix data shows a single
 `J. Schoeman` row with five people's aliases, delete the row (facts'
 `entity_id` FK is `ON DELETE SET NULL`; `entity_edges` need a manual sweep)
 and re-fire `pg_notify('node_ingested')` on the affected source nodes; the
@@ -724,7 +724,7 @@ Every layer is either *populated* (writes happen) or *consulted* (reads
 happen) by specific agents or by a small embedding subsystem. The
 `agents` table holds the chat-style LLM agents with their model, system
 prompt, and API key (already live, configurable at `/settings/agents`).
-The embedding subsystem is *not* an agent — it's a stateless utility
+The embedding subsystem is *not* an agent; it's a stateless utility
 called by agents and at retrieval time.
 
 ### 6.1 Producers and consumers, layer by layer
@@ -735,12 +735,12 @@ called by agents and at retrieval time.
 | `recent_turns` | The ingestion path (telegram-poll worker writes inbound; `responder` writes outbound) | `responder` (every turn); `summarizer` (when rolling up) | Continuous |
 | `conversation_digest` | `summarizer` agent | `responder` (top-K most relevant prepended each turn) | When undigested-turn count crosses threshold (default 30) |
 | `profile` (`facts` table) | `extractor` agent | `responder` (top-K relevant prepended each turn); MCP `search` tool for external clients | On every new `content_store` row; on edits via `dirty=true` flag |
-| `content_index` (fields on `nodes`) | `extractor` agent (or a dedicated `indexer` role — for v1 the extractor produces both summary and facts in one pass) | `responder` (when user mentions content); MCP `search` tool | On every new `content_store` row |
+| `content_index` (fields on `nodes`) | `extractor` agent (or a dedicated `indexer` role, for v1 the extractor produces both summary and facts in one pass) | `responder` (when user mentions content); MCP `search` tool | On every new `content_store` row |
 | `content_store` | Ingestion workers (email-sync, telegram-poll, future file/note ingest) | Fetched by id only when full body is needed | Append-only on ingest |
 
 ### 6.2 The agent roles and worker kinds
 
-Memory is built by two distinct populations of LLM-driven things —
+Memory is built by two distinct populations of LLM-driven things,
 they live in two tables now, after the `0027_ai_workers.sql` split:
 
 **Conversational agents** (table: `agents`, UI: `/settings/agents`,
@@ -754,7 +754,7 @@ memory, and tool loops:
 | `custom` | ✓ Live | Whatever you pick | Catch-all for anything else, e.g. `invoke_agent` delegation targets (specialists Saskia hands off to). |
 
 **One-shot AI workers** (table: `ai_workers`, UI: `/settings/ai-workers`,
-enum: `ai_worker_kind`). These don't have personalities — they do one
+enum: `ai_worker_kind`). These don't have personalities; they do one
 job per invocation, triggered by system events:
 
 | Kind | Status | Default | What it does |
@@ -764,12 +764,12 @@ job per invocation, triggered by system events:
 | `reflector` | ✓ Live | `anthropic/claude-haiku-4.5` (via OpenRouter) | Reads new outbound activity (Telegram + web `/assistant`) every 10 min; appends to the responder's `persona_notes` when something notable surfaces. Never overwrites the seed `system_prompt`. |
 | `tts` | ✓ Live | OpenAI `gpt-4o-mini-tts`, voice `nova` | Synthesises voice replies. Triggered when the user voice-messaged us OR the LLM emitted a `[VOICE]` marker. Adapter-driven; OpenAI + ElevenLabs wired. |
 | `stt` | ✓ Live | OpenAI `whisper-1` | Transcribes inbound Telegram voice notes before the responder sees anything. Adapter-driven; OpenAI wired today. |
-| `vision` | (defined, not wired) | — | Image → text. Whiteboards / receipts / document scans, when wired. |
-| `image_gen` | (defined, not wired) | — | Text → image. Reserved for tool-call use by Saskia. |
+| `vision` | (defined, not wired) |, | Image → text. Whiteboards / receipts / document scans, when wired. |
+| `image_gen` | (defined, not wired) |, | Text → image. Reserved for tool-call use by Saskia. |
 
 **Why Sonnet for `responder` / `assistant`:** these agents do real
 reasoning across all six memory layers in the same prompt. Cheaping out
-here is the wrong tradeoff — recall quality lives or dies by the
+here is the wrong tradeoff, recall quality lives or dies by the
 responder's ability to use what's been retrieved.
 
 **Why Haiku for the background agents:** summarization, extraction, and
@@ -778,18 +778,18 @@ than Sonnet and plenty smart for them. Could go further (DeepSeek,
 local Qwen) for cost; we default to Haiku for stability + caching.
 
 **Priority ranking** (the `priority` column on `agents`) decides who
-wins when two agents share a role — e.g. two `responder` rows enabled
+wins when two agents share a role, e.g. two `responder` rows enabled
 means the higher-priority one handles Telegram. Drop a row's priority
 to switch. See `architecture.md` §9b for the resolution logic.
 
 **Delegation between agents** is opt-in via the `invoke_agent` builtin
 tool. Each agent's `memory_config.delegate_to: string[]` lists which
 peer slugs it may invoke; empty/missing = no delegation (fail closed).
-The child runs one-shot with its own persona + tools + API key — the
+The child runs one-shot with its own persona + tools + API key, the
 parent's conversation history is NOT forwarded. Chain depth is capped
 at 2 (parent → child, no grandchildren) and self-invocation is refused
 even when the parent's own slug is in the list. Cost is attributed to
-the child agent's trace independently — `/debug` "spend by agent" stays
+the child agent's trace independently, `/debug` "spend by agent" stays
 correct. Full design: [architecture.md §9b'](./architecture.md#9b-agent-delegation-invoke_agent).
 
 ### 6.3 The embedding subsystem
@@ -804,20 +804,20 @@ agents. Different model type, different endpoint, different scale.
   dimensions** (matches our column), chosen in the onboarding **Memory** step
   and routed via **OpenRouter** (the same key as chat) or OpenAI direct. The
   budget pick is `text-embedding-3-small` @768. (History: until 2026-05-31
-  the default was cloud `openai/text-embedding-3-small` at 1536 dims —
+  the default was cloud `openai/text-embedding-3-small` at 1536 dims,
   recorded in
-  [`handoff-local-embeddings-2026-05-30.md`](./_archive/handoff-local-embeddings-2026-05-30.md) —
+  [`handoff-local-embeddings-2026-05-30.md`](./_archive/handoff-local-embeddings-2026-05-30.md),
   then local EmbeddingGemma until the v0.103–0.104 flip back to online.)
 - **The local opt-in.** `embeddinggemma:latest` (EmbeddingGemma-300m), served
-  **locally by Ollama** — 768 native, keyless, $0, vectors never leave the
+  **locally by Ollama**: 768 native, keyless, $0, vectors never leave the
   box. In the prod compose it sits behind the `local-embedder` profile (off
   by default); its keyless config is also the pre-onboarding fallback.
 - **API path.** Cloud models route via OpenRouter's
   `POST https://openrouter.ai/api/v1/embeddings` using the existing
   `openrouter` key in `/settings/keys` (or an OpenAI key direct). The `local`
   provider calls Ollama's embeddings endpoint directly (`POST
-  /api/embeddings` on the Ollama host) — no OpenRouter, no API key.
-- **Alternatives** — the full side-by-side (which models fit 768 natively
+  /api/embeddings` on the Ollama host), no OpenRouter, no API key.
+- **Alternatives**: the full side-by-side (which models fit 768 natively
   vs. need MRL truncation vs. need a schema migration, with benchmark
   numbers and prices) lives in [`embeddings.md`](./embeddings.md). Short
   version: `openai/text-embedding-3-large` (3072 → MRL 768, cloud, default),
@@ -827,13 +827,13 @@ agents. Different model type, different endpoint, different scale.
   clean MRL to 768 needs another schema migration to adopt.
 
 - **Switching models (same 768 dims).** Vectors from different models
-  live in different spaces — comparing across them returns garbage
+  live in different spaces, comparing across them returns garbage
   distances. To switch cleanly:
   1. Update `MANTLE_EMBEDDING_MODEL` or the per-agent
      `memoryConfig.embedding_model` to the new slug.
   2. Run `pnpm re-embed --model=<new-slug>` to re-vectorise every
      stored embedding (`nodes`, `facts`, `entities`) using the new
-     model. Reuses the cached summary + fact + entity text — skips
+     model. Reuses the cached summary + fact + entity text, skips
      the chat-model extraction entirely; only pays the embedding API.
   3. Use `--dry-run` first to see row count + cost estimate.
   Idempotent: re-running with the same model hits the embedding_cache
@@ -859,25 +859,25 @@ agents. Different model type, different endpoint, different scale.
 - **Switching models.** Set `MANTLE_EMBEDDING_MODEL` in `.env.local` to
   globally swap the default (e.g. `google/gemini-embedding-2-preview`),
   or pass `opts.model` per call. The package whitelists multimodal
-  models via `MULTIMODAL_MODELS` — passing an image/audio/file input
+  models via `MULTIMODAL_MODELS`, passing an image/audio/file input
   to a text-only model throws with a clear message. For cloud models with
   Matryoshka (MRL) support, the output dimension is wired to **768** so the
   response always fits the pgvector column without a schema change.
 
-- **One model, configured in N+1 places — keep them equal.** A common
+- **One model, configured in N+1 places, keep them equal.** A common
   question: *why is the embedding model set on the agent (Saskia) and not
   on an ai_worker?* The answer is that it's on **both**, because there are
   two distinct `embed()` call sites:
-  - **Write side** — the `extractor` ai_worker embeds stored content
+  - **Write side**: the `extractor` ai_worker embeds stored content
     (`nodes`/`facts`/`entities`/`content_chunks`). Configured via
     `ai_workers.params.embedding_model` (`apps/agent/src/extractor.ts`).
-  - **Read side** — the responder (Saskia) and web assistant embed the
+  - **Read side**: the responder (Saskia) and web assistant embed the
     *incoming user message* to do similarity search at query time.
     Configured via `agents.memory_config.embedding_model`
     (`apps/agent/src/main.ts`, `apps/web/lib/assistant.ts`). It lives on
     the agent because the agent is what does the retrieving.
 
-  So it's **not** "on the agent instead of the worker" — it's one model
+  So it's **not** "on the agent instead of the worker"; it's one model
   per call site. And it is a **brain-wide invariant, not a per-component
   preference**: the writer and *every* reader (responder, assistant, and
   any future agent that does vector retrieval) must use the **same** model,
@@ -889,12 +889,12 @@ agents. Different model type, different endpoint, different scale.
   every side aligned by default; the per-row `embedding_model` fields are
   *overrides* that all fall back to it. **Today the whole system uses the
   one configured embedder (default `openai/text-embedding-3-large`,
-  MRL-reduced to 768 dims) uniformly — write and read are aligned.**
+  MRL-reduced to 768 dims) uniformly; write and read are aligned.**
 
   This is correct but fragile: nothing enforces that the N+1 overrides
   agree. We **deliberately keep** the per-row overrides (reviewed
-  2026-05-23) rather than collapsing to a single global knob — leaving room
-  for a future second corpus — but the operating discipline is: **switch the
+  2026-05-23) rather than collapsing to a single global knob, leaving room
+  for a future second corpus, but the operating discipline is: **switch the
   embedding model via `MANTLE_EMBEDDING_MODEL` (or change every row at once)
   and then run `pnpm re-embed`. Never set it on one agent alone**, or you
   split the brain's vector space.
@@ -973,7 +973,7 @@ Visual map of who writes what, who reads what:
 
 ## 7. The retrieval order in the prompt
 
-> **As-built, June 2026.** This assembly lives in one place —
+> **As-built, June 2026.** This assembly lives in one place,
 > [`loadConversationContext`](../packages/agent-runtime/src/conversation.ts), shared
 > by Telegram + web. The June-2026 retrieval overhaul (the full chronology + the
 > measured before/after is in [`recall-eval.md`](./recall-eval.md)) added the
@@ -1001,61 +1001,61 @@ Visual map of who writes what, who reads what:
 > between turns** or every turn pays a full prefix re-write. Two per-turn
 > ingredients used to live inside breakpoint 1 and silently broke this: the
 > `Current time: …` line (millisecond ISO timestamp) and the query-ranked
-> top-K facts. Both now render *below* the breakpoints — the time line +
+> top-K facts. Both now render *below* the breakpoints, the time line +
 > heartbeat awareness via `buildChatMessages`'s `volatileContext` arg, facts
 > as their own uncached block. Never fold per-turn text into the agent's
 > system prompt at a call site; pass it through `volatileContext`.
 
 **The ranking factors (all in the one effective-distance expression):**
 
-- **Hybrid** — the `search` tool / `searchNodes` fuse vector (spine) + FTS
+- **Hybrid**: the `search` tool / `searchNodes` fuse vector (spine) + FTS
   (booster) via weighted RRF (`semanticWeight` default 0.7). The responder's own
   content hits are vector-led.
-- **Salience** — `effective = cosine + λ·(1 − nodes.salience)`. Bulk/marketing
+- **Salience**: `effective = cosine + λ·(1 − nodes.salience)`. Bulk/marketing
   email (mapped from `emails.delivery_kind`) is demoted so it can't crowd out real
   content. A down-weight, never a filter. See [§7a](#7a-salience--down-weighting-bulk-content) below.
-- **Recency** — `+ λ(kind)·(1 − e^(−age/τ))`. **Kind-aware**: episodic facts decay,
+- **Recency**: `+ λ(kind)·(1 − e^(−age/τ))`. **Kind-aware**: episodic facts decay,
   semantic/preference don't, factual mildly; content mildly (anchored on the
-  content's own date — an email's send date, not its sync time).
-- **Kind-weighting is real now** — preferences are *always-injected* (not left to a
+  content's own date, an email's send date, not its sync time).
+- **Kind-weighting is real now**: preferences are *always-injected* (not left to a
   vector match); episodic/semantic/factual rank differently via recency. (Earlier
   this doc described kind-weighting that wasn't yet implemented; it is now.)
-- **Graph axis** — `entityRelationsFor` injects the 1-hop relations of the turn's
+- **Graph axis**: `entityRelationsFor` injects the 1-hop relations of the turn's
   entities. The "filter by graph, rank by vector" pattern of [§4.3](#43-why-both-together),
   finally in the read path. See [`knowledge-graph.md` §6a](./knowledge-graph.md).
-- **Chunks** — `searchChunks` pulls the closest *passages* into context, so the
+- **Chunks**: `searchChunks` pulls the closest *passages* into context, so the
   model answers *from* a document, not just knowing it exists.
 
 Persona first (durable identity), then dialog memory, then per-query content +
 graph + passages, then raw recent turns. Early blocks durable, late blocks live.
 Two Anthropic cache breakpoints emitted here (persona, digests); the tool-loop
-adds a third, moving one on the latest tail message — three of four total.
+adds a third, moving one on the latest tail message, three of four total.
 Knobs: `memory_config.{fact_limit, content_hit_limit, chunk_limit,
 digest_limit}`; env `MANTLE_{SALIENCE_LAMBDA,RECENCY_*,QUERY_ENRICH}`.
-`chunk_limit` defaults to 8 (the runtime `CHUNK_LIMIT_DEFAULT`, ~22k chars) —
+`chunk_limit` defaults to 8 (the runtime `CHUNK_LIMIT_DEFAULT`, ~22k chars),
 enough section passages to cover a long procedure/standard without forcing a
 full file read every turn; a per-agent override still wins.
 
-- **Identity (always-on "who you are")** — alongside the always-injected
+- **Identity (always-on "who you are")**: alongside the always-injected
   preferences, `buildIdentityContext` distils the user's **Journal** (the
-  `journal` node type — see [`journal.md`](./journal.md)) into a compact
+  `journal` node type, see [`journal.md`](./journal.md)) into a compact
   `# About the user` block prepended to the cached system prompt on every turn.
   Deterministic (no LLM), bounded + category-grouped, empty when there are no
   journal entries, and opt-out per agent via `memory_config.inject_journal`. This is
   the user telling the brain who they are in the first person, rather than the
-  extractor inferring it — the strongest, most durable signal in Tier-1.
+  extractor inferring it, the strongest, most durable signal in Tier-1.
 
-### 7a. Salience — down-weighting bulk content
+### 7a. Salience: down-weighting bulk content
 
 `nodes.salience` (0..1, default 1.0; migration 0073) is a retrieval weight, blended
 into every ranker. For email it's derived from the header classifier
-(`emails.delivery_kind`: `marketing→0.25, list→0.5, automated→0.75, direct→1.0` —
+(`emails.delivery_kind`: `marketing→0.25, list→0.5, automated→0.75, direct→1.0`,
 see [`email-ingest.md`](./email-ingest.md)). It is **never** a filter: a marketing
 email is still found by an explicit `search`. Set at ingest; legacy mail
 reclassified by `pnpm -C apps/web classify:backfill`. The audit caught newsletters
 crowding out personal notes; this fixes it without losing anything.
 
-### 7b. Supersession — the content-currency layer
+### 7b. Supersession: the content-currency layer
 
 `nodes.superseded_by` + `superseded_reason` (migration 0125) lift the facts-layer
 lineage primitive (`facts.superseded_by`) to content: an uploaded file whose
@@ -1067,14 +1067,14 @@ pages that replaced them, so passage retrieval preferred the dead copy daily.
 Mechanics: the demotion is **materialized into `salience`** at write time
 (`version`/`migrated` → `MANTLE_SUPERSEDED_SALIENCE`, default 0.5; `corrected` →
 `MANTLE_CORRECTED_SALIENCE`, default 0.3), so every existing ranker picks it up
-with zero query changes — still a nudge, never a filter. On the read side,
+with zero query changes, still a nudge, never a filter. On the read side,
 `search_nodes` / `search_chunks` / `node_read` hits and the responder's
 auto-context annotate superseded items with the **living end of the chain**
 (`resolveSupersededTargets`, ≤5 hops; cycles are refused at write time) and the
 context-block headers instruct the model to prefer the successor. Writers:
 `page_from_file` / `page_from_note(s)` stamp `reason='migrated'` automatically
 (`supersede_source: false` opts out), the extractor's version-family step stamps
-`reason='version'` (never touching manual marks — ownership keys on the
+`reason='version'` (never touching manual marks, ownership keys on the
 reason column, so bare marks are safe too), and the `content_supersede` tool
 (owner-side only; `curation` group) handles corrections + undo. Emails and
 folders are refused: email salience is ingest-assigned bulk-mail weighting
@@ -1086,33 +1086,33 @@ that a supersede/undo round-trip would clobber.
 
 Each step delivers value standalone.
 
-1. **`recent_turns`** — DONE (migration 0012, agent runner).
-2. **`conversation_digest`** — DONE (migration 0013, summarizer agent).
-3. **`packages/embeddings` + embedding_cache** — DONE (migration 0014).
+1. **`recent_turns`**: DONE (migration 0012, agent runner).
+2. **`conversation_digest`**: DONE (migration 0013, summarizer agent).
+3. **`packages/embeddings` + embedding_cache**: DONE (migration 0014).
    Shared `embed()`/`embedBatch()` via OpenRouter; content-hash cache
    makes re-embedding identical strings free.
-4. **`facts` table + extractor agent (content_index + profile)** — DONE
+4. **`facts` table + extractor agent (content_index + profile)**: DONE
    (migrations 0015/0016/0017/0018). Extractor runs on
    `pg_notify('node_ingested')`, writes summary + embedding to
    `nodes.data` / `nodes.embedding`, runs the ADD/UPDATE/DELETE
    classifier against existing facts, reconciles entity mentions to
    `entities` + adds `mentioned_in` edges. Configured via
    `memory_config.extract_types` (default `['note']`).
-5. **Responder retrieves the full stack** — DONE. Embeds the inbound
+5. **Responder retrieves the full stack**: DONE. Embeds the inbound
    message once, vector-searches facts + content_index, prepends them
    with three Anthropic cache breakpoints (persona+facts / digests /
    content hits + turns).
-6. **`persona` evolution** — DONE. Reflector agent runs every 10 min,
+6. **`persona` evolution**: DONE. Reflector agent runs every 10 min,
    appends to `agents.persona_notes` when it spots a style preference,
    relationship signal, or correction in recent dialog. Capped at 100
    notes per agent (oldest aged out FIFO).
-7. **`entities` + graph traversal API** — DONE. `packages/search` exposes
+7. **`entities` + graph traversal API**: DONE. `packages/search` exposes
    `searchEntities`, `entityNeighbors`, `entityFacts`, `entityMentions`;
    four matching MCP tools (`entity_search`, `entity_neighbors`,
    `entity_facts`, `entity_mentions`) ship the graph axis to Claude.
-   Single-hop only for now — recursive CTE multi-hop walker waits until
+   Single-hop only for now, recursive CTE multi-hop walker waits until
    a query actually demands it.
-8. **Web assistant surface** — DONE (MVP). `/assistant` page + `POST
+8. **Web assistant surface**: DONE (MVP). `/assistant` page + `POST
    /api/assistant/turn` route; new `assistant_messages` table (migration
    0021); shared `packages/agent-runtime` exports `buildChatMessages` +
    `captureLlmUsage` for both surfaces. Memory layers wired: persona +
@@ -1129,7 +1129,7 @@ Roughly a weekend per remaining step.
 Retrieval quality is protected by never letting any single index get large.
 The policy (from the scaling whitepaper, grounded in the published
 degradation literature): per brain, **watch** at 10k documents / 50k passage
-vectors, **split** at 20k / 100k — a breakout brain is created via federation
+vectors, **split** at 20k / 100k; a breakout brain is created via federation
 before any index reaches the corpus sizes where flat-RAG degradation has been
 measured (~10⁵–10⁶ passages; the 768-dim geometric ceiling is ~1.7M vectors).
 
@@ -1139,7 +1139,7 @@ vectors = embedded `content_chunks`); the dashboard **Brain capacity** dial
 reads the worst axis as % of the split budget; the `brain_capacity` tool
 exposes the same numbers to agents, and the weekly `brain_health` heartbeat
 (see [`recall-eval.md`](./recall-eval.md)) alerts when a zone leaves green.
-Meeting/transcript-heavy corpora hit the passage-vector axis first — the
+Meeting/transcript-heavy corpora hit the passage-vector axis first, the
 summarize-before-embed ingest design keeps that axis flat.
 
 ## 9. What we deliberately don't do
@@ -1168,26 +1168,26 @@ summarize-before-embed ingest design keeps that axis flat.
 
 Live today, in order of first read:
 
-1. [`packages/db/src/schema/facts.ts`](../packages/db/src/schema/facts.ts) —
+1. [`packages/db/src/schema/facts.ts`](../packages/db/src/schema/facts.ts),
    shape of a fact (factual / episodic / semantic / preference).
 2. [`packages/db/src/schema/entities.ts`](../packages/db/src/schema/entities.ts)
-   + [`entity-edges.ts`](../packages/db/src/schema/entity-edges.ts) —
+   + [`entity-edges.ts`](../packages/db/src/schema/entity-edges.ts),
    the graph axis.
-3. [`packages/embeddings/src/index.ts`](../packages/embeddings/src/index.ts) —
+3. [`packages/embeddings/src/index.ts`](../packages/embeddings/src/index.ts),
    shared `embed`/`embedBatch` via OpenRouter, with hash-keyed cache.
-4. [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts) —
+4. [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts),
    per-item summary + embedding + facts + entity reconciliation. The
    ADD/UPDATE/DELETE/NOOP classifier prompt lives in here.
-5. [`apps/agent/src/main.ts`](../apps/agent/src/main.ts) `loadContext()` —
+5. [`apps/agent/src/main.ts`](../apps/agent/src/main.ts) `loadContext()`,
    how persona / facts / digests / content_hits / turns get assembled
    into the responder's prompt.
-6. [`apps/agent/src/messages.ts`](../apps/agent/src/messages.ts) —
+6. [`apps/agent/src/messages.ts`](../apps/agent/src/messages.ts),
    `buildChatMessages` with three Anthropic cache breakpoints.
-7. [`apps/agent/src/summarizer.ts`](../apps/agent/src/summarizer.ts) —
+7. [`apps/agent/src/summarizer.ts`](../apps/agent/src/summarizer.ts),
    `conversation_digest` production from `recent_turns`.
-8. [`apps/agent/src/reflector.ts`](../apps/agent/src/reflector.ts) —
+8. [`apps/agent/src/reflector.ts`](../apps/agent/src/reflector.ts),
    persona_notes evolution from dialog signals.
-9. [`apps/web/scripts/extract-backfill.ts`](../apps/web/scripts/extract-backfill.ts) —
+9. [`apps/web/scripts/extract-backfill.ts`](../apps/web/scripts/extract-backfill.ts),
    re-fires `node_ingested` for existing nodes missing summary/embedding.
 
 The full lookup at `/debug` shows recent digests, facts, content_index

@@ -1,4 +1,4 @@
-# Handover — Thinking + GitHub Copilot provider (learning from Hermes)
+# Handover: Thinking + GitHub Copilot provider (learning from Hermes)
 
 **Branch:** `feat/real-thinking` (worktree `.claude/worktrees/real-thinking`), UNMERGED.
 **Date:** 2026-06-29.
@@ -9,14 +9,14 @@
 We studied Hermes to improve Mantle's "thinking / narrate-next-step / streaming",
 and shipped two intertwined things on one branch:
 
-1. **Real model thinking** end-to-end — request it, stream it, surface it, and
-   keep it correct across a tool round-trip — replacing the canned "thinking
+1. **Real model thinking** end-to-end, request it, stream it, surface it, and
+   keep it correct across a tool round-trip, replacing the canned "thinking
    phrases" theatre.
-2. **A new direct provider, GitHub Copilot**, with reasoning — modelled on how
+2. **A new direct provider, GitHub Copilot**, with reasoning, modelled on how
    Hermes implements its `copilot` provider.
 
 Seven commits, 325 voice tests green. Default-OFF behind a per-user profile gate
-(live-thinking switch + Thinking budget — superseded the original
+(live-thinking switch + Thinking budget, superseded the original
 `MANTLE_THINKING_BUDGET` env var; see §6) pending a live smoke test.
 
 ---
@@ -31,7 +31,7 @@ Two threads came out of it:
   reasoning (`reasoning-delta` events → NOTIFY → SSE → web client) but it was
   **starved at both ends**: we never *requested* thinking from the provider, and
   the web client *discarded* any reasoning that did arrive. What the user saw was
-  100% synthetic — a rotating list of canned phrases ("Mulling it over…") plus a
+  100% synthetic, a rotating list of canned phrases ("Mulling it over…") plus a
   separate gemini-flash "narrator" restyling tool labels. Jason's words: "our
   model is broken."
 - **Providers.** Hermes supports many providers directly; Jason asked us to
@@ -58,9 +58,9 @@ hermes-agent/run_agent.py                            # provider routing + creden
 How we found it: `grep -rniE "copilot" hermes-agent` →
 `find hermes-agent -iname "*copilot*"`.
 
-### 2.2 Copilot — the wire details we ported
+### 2.2 Copilot: the wire details we ported
 
-**Base URL** — `hermes_cli/auth.py:92`:
+**Base URL**: `hermes_cli/auth.py:92`:
 
 ```python
 DEFAULT_GITHUB_MODELS_BASE_URL = "https://api.githubcopilot.com"
@@ -78,7 +78,7 @@ credential failure (`run_agent.py:3986 _try_refresh_copilot_client_credentials`,
 endpoint is GitHub's `copilot_internal/v2/token` (the well-known VS Code /
 opencode flow).
 
-**Editor headers required on every request** — `copilot_auth.py:377-396`
+**Editor headers required on every request**: `copilot_auth.py:377-396`
 (`copilot_request_headers`) and `models.py:2768` (`copilot_default_headers`):
 
 ```python
@@ -94,13 +94,13 @@ if is_vision:
 ```
 
 The docstring notes this "replicates the header set used by opencode and the
-Copilot CLI" — i.e. Copilot 4xxs without the editor fingerprint.
+Copilot CLI"; i.e. Copilot 4xxs without the editor fingerprint.
 
-**Model discovery + filtering** — `models.py:2786 _copilot_catalog_item_is_text_model`
+**Model discovery + filtering**: `models.py:2786 _copilot_catalog_item_is_text_model`
 drops entries where `model_picker_enabled is False` or `capabilities.type != "chat"`
 (the `/models` list also includes embeddings / non-chat models). `cli.py:5022`
 + `models.py` handle model-id normalisation and per-model API mode
-(`copilot_model_api_mode`, `_should_use_copilot_responses_api` — chat completions
+(`copilot_model_api_mode`, `_should_use_copilot_responses_api`, chat completions
 vs the OpenAI Responses API; we only needed chat completions).
 
 ### 2.3 Thinking machinery we also drew on (context)
@@ -108,10 +108,10 @@ vs the OpenAI Responses API; we only needed chat completions).
 The same study informed the thinking work (documented fully in the memory note
 `hermes-thinking-learnings.md`). The most relevant Hermes pieces:
 
-- `agent/think_scrubber.py` — `StreamingThinkScrubber`, a stateful, delta-boundary
+- `agent/think_scrubber.py`, `StreamingThinkScrubber`, a stateful, delta-boundary
   -aware filter for inline `<think>…</think>` that open/local models emit in the
   *content* stream. We ported this (commit `464c27a1`).
-- Native reasoning fields + **echo-back** — Hermes preserves provider reasoning
+- Native reasoning fields + **echo-back**: Hermes preserves provider reasoning
   (`reasoning` / `reasoning_content`) and replays it on continuation so providers
   (DeepSeek/Kimi/Anthropic) don't reject a replayed tool turn. This is the
   pattern behind our OpenRouter `reasoning_details` round-trip (commit `4d6c6e4e`)
@@ -138,7 +138,7 @@ All in `packages/voice` (the adapter framework) + `packages/agent-runtime`
 
 - **Source (request it).** Each adapter translates `opts.thinkingBudget` to its
   provider's knob: Anthropic `thinking:{type:'adaptive', display:'summarized'}`
-  (the modern API — the old `budget_tokens` 400s on Opus 4.7/4.8/Fable);
+  (the modern API, the old `budget_tokens` 400s on Opus 4.7/4.8/Fable);
   OpenRouter `reasoning:{max_tokens}`; Gemini `generationConfig.thinkingConfig`;
   Copilot `reasoning_effort`. Sampling params are dropped when thinking is on
   (reasoning models reject them). `display:'summarized'` is **required** or
@@ -159,8 +159,8 @@ All in `packages/voice` (the adapter framework) + `packages/agent-runtime`
 - **Gate.** Originally `MANTLE_THINKING_BUDGET` (int tokens, >0 = on) in the tool
   loop, per box. **Superseded** by a per-user profile gate (live-thinking switch +
   Thinking budget, resolved in the turn runners and threaded into runToolLoop as
-  `args.thinkingBudget`, then clamped vs the agent's max_tokens — see §6). Shipped
-  **dark** — the signature round-trip can only be proven against a live
+  `args.thinkingBudget`, then clamped vs the agent's max_tokens, see §6). Shipped
+  **dark**: the signature round-trip can only be proven against a live
   OpenRouter+Anthropic call.
 
 ### 3.2 The GitHub Copilot provider (commit `bb051fb5`)
@@ -171,7 +171,7 @@ Followed Mantle's 5-step provider cookbook (`docs/adding-a-provider.md`). Files:
 |---|---|---|
 | Catalogue | `packages/voice/src/providers.ts` | `ProviderId` union + `SUPPORTED_PROVIDERS` entry, capabilities `['chat']` |
 | Static catalog | `packages/voice/src/catalogs/copilot.ts` | `COPILOT_BASE_URL` + curated reasoning models; live discovery refines |
-| Auth | `packages/voice/src/adapters/copilot-auth.ts` | **the Hermes port** — token exchange + editor headers |
+| Auth | `packages/voice/src/adapters/copilot-auth.ts` | **the Hermes port**: token exchange + editor headers |
 | Adapter | `packages/voice/src/adapters/copilot-chat.ts` | openai-compat chat/stream + `reasoning_effort` |
 | Register | `packages/voice/src/adapters/index.ts` + `registry.ts` | `registerChatAdapter` + `WIRED_PROVIDERS.chat` |
 | Tests | `packages/voice/src/adapters/copilot-chat.test.ts` | 7 wire-shape tests |
@@ -192,7 +192,7 @@ Followed Mantle's 5-step provider cookbook (`docs/adding-a-provider.md`). Files:
 forwarding for free), adds the Copilot bearer + editor headers, and a one-shot
 re-mint on 401 (`withCopilotAuth`). **Thinking:** `copilotReasoningEffort()` maps
 `thinkingBudget` → `reasoning_effort` (`<2000`→low, `<8000`→medium, else high),
-drops sampling params when on, and requests reasoning **every round** — Copilot's
+drops sampling params when on, and requests reasoning **every round**: Copilot's
 chat-completions reasoning is server-side (no signed blocks to replay), so it
 needs no continuation guard, unlike direct Anthropic/Gemini.
 
@@ -206,11 +206,11 @@ Hermes applies in `models.py`).
 
 | Provider | How it requests thinking | Continuity | Net under the gate |
 |---|---|---|---|
-| **OpenRouter** (responder path; umbrella for Anthropic/OpenAI/Gemini-via-OR) | `reasoning:{max_tokens}` | `reasoning_details` echo-back | **Full — thinks every round** |
-| **GitHub Copilot** (new) | `reasoning_effort` | server-side (none needed) | **Full — thinks every round** |
+| **OpenRouter** (responder path; umbrella for Anthropic/OpenAI/Gemini-via-OR) | `reasoning:{max_tokens}` | `reasoning_details` echo-back | **Full, thinks every round** |
+| **GitHub Copilot** (new) | `reasoning_effort` | server-side (none needed) | **Full, thinks every round** |
 | **Anthropic (direct)** | `thinking:{adaptive,summarized}` | continuation guard (no echo-back) | First round thinks; continuations run thinking-off (no 400) |
 | **Google Gemini (direct)** | `thinkingConfig{thinkingBudget,includeThoughts}` | continuation guard | First round thinks; thought parts → reasoning channel |
-| **xAI / HuggingFace / DeepSeek / local** | — | — | Inert (ignore the budget; won't break) |
+| **xAI / HuggingFace / DeepSeek / local** |, |, | Inert (ignore the budget; won't break) |
 
 The **continuation guard** (`packages/voice/src/adapters/thinking-guard.ts`,
 `wantGuardedThinking` / `isToolContinuation`): for echo-back-less providers,
@@ -229,13 +229,13 @@ run thinking-off, which makes the replayed thinking-less history valid.
   + registry-drift gates pass.
 - **NOT proven by unit tests:** the live signature round-trip (OpenRouter →
   Anthropic, thinking + tools), and the in-browser reasoning trace. Both need a
-  running stack with provider keys and the gate on — that's the §6 smoke test.
+  running stack with provider keys and the gate on, that's the §6 smoke test.
 
 ---
 
 ## 6. How to enable / operate
 
-**Thinking (per user — Settings → Profile):**
+**Thinking (per user, Settings → Profile):**
 
 > The old per-box `MANTLE_THINKING_BUDGET` env gate was **removed** (branch
 > `feat/thinking-profile-control`). Thinking is now a per-user profile pref:
@@ -243,7 +243,7 @@ run thinking-off, which makes the replayed thinking-less history valid.
 > switch ON **and** a positive **Thinking budget** before any reasoning is
 > requested. Resolved in `run-turn.ts` and threaded into `runToolLoop`
 > (`args.thinkingBudget`). Delegated specialists still run without thinking
-> (fallback — see §7 / invoke-agent.ts).
+> (fallback, see §7 / invoke-agent.ts).
 
 1. Settings → Profile → turn **Live thinking & streaming** ON, set **Thinking
    budget** to Low/Medium/High (Off = no thinking). Save.
@@ -258,7 +258,7 @@ run thinking-off, which makes the replayed thinking-less history valid.
 
 - In Settings → AI workers, pick provider **GitHub Copilot**, choose a model.
 - The "API key" is a **GitHub Copilot OAuth token** (the device-flow `gho_…`
-  that VS Code / the Copilot CLI obtains) — **not** a PAT. Only the OAuth token
+  that VS Code / the Copilot CLI obtains), **not** a PAT. Only the OAuth token
   carries the `copilot_internal` scope the token-exchange needs. A pre-minted
   Copilot token (`tid=…`) also works but expires in ~25 min.
 - Thinking on a Copilot worker is controlled by the same per-user profile gate
@@ -271,14 +271,14 @@ run thinking-off, which makes the replayed thinking-less history valid.
 - **Promote thinking from dark → default** once the live smoke test is clean.
 - **Merge:** `#1` (the scrubber, `464c27a1`) is independently safe to merge now;
   the rest waits on the smoke test.
-- **Direct-Anthropic / Gemini every-round thinking** — would need their own
+- **Direct-Anthropic / Gemini every-round thinking**: would need their own
   block/signature echo-back (only matters if a box runs a *direct*-provider
   responder; today the responder is OpenRouter). See the scoped enhancement
   below.
 
-### 7.1 Future enhancement — native direct-Anthropic thinking-block echo-back
+### 7.1 Future enhancement: native direct-Anthropic thinking-block echo-back
 
-**Status:** documented, UNBUILT. Low priority — only relevant if a box's
+**Status:** documented, UNBUILT. Low priority, only relevant if a box's
 responder is configured to use the **direct** `anthropic` provider instead of
 OpenRouter. Today the direct path thinks on round 0 only (the
 [`thinking-guard`](../packages/voice/src/adapters/thinking-guard.ts) disables
@@ -287,22 +287,22 @@ enhancement makes the direct path think on *every* round, matching OpenRouter.
 
 **Why it's now well-understood (the contract is verified, not a guess).** Checked
 against the `claude-api` skill: a thinking-then-tool_use turn must replay the
-prior `thinking` block **exactly as received** on the same model — *the API
+prior `thinking` block **exactly as received** on the same model, *the API
 rejects modified blocks, not read ones*. Critically, `display:'summarized'`
 (and even `display:'omitted'`, which yields empty thinking text) still produces a
 **replayable block**: you capture the block with its `signature` and re-send it
 verbatim; the signature validates the block-as-delivered, not the hidden raw
-reasoning. So summarized display and block replay compose cleanly — there is no
+reasoning. So summarized display and block replay compose cleanly; there is no
 "we only have the summary but the signature wants the full thing" failure mode.
 `redacted_thinking` blocks (encrypted; carry a `data` field instead of text) must
 be captured and replayed the same way.
 
-**Approach — reuse the existing `reasoningDetails` channel; one file.** The
+**Approach, reuse the existing `reasoningDetails` channel; one file.** The
 per-assistant-message `reasoningDetails` carry + replay plumbing already exists
 and is proven by OpenRouter, and `ReasoningDetail`
 (`packages/voice/src/adapters/types.ts`) is loose enough (`type`/`text`/`data`/
 `signature`) to hold native Anthropic blocks. So **no tool-loop or runtime
-changes** are needed — only [`anthropic-chat.ts`](../packages/voice/src/adapters/anthropic-chat.ts):
+changes** are needed, only [`anthropic-chat.ts`](../packages/voice/src/adapters/anthropic-chat.ts):
 1. **Capture (one-shot):** also collect `thinking` (text + `signature`) and
    `redacted_thinking` (`data`) blocks off `parsed.content` into
    `ChatResult.reasoningDetails`.
@@ -319,7 +319,7 @@ changes** are needed — only [`anthropic-chat.ts`](../packages/voice/src/adapte
 
 **Effort:** ~150–250 LOC in that one adapter + types + tests; roughly half a day
 to a day. Low blast radius (can't regress other adapters; still behind the
-per-user thinking gate — §6).
+per-user thinking gate, §6).
 
 **Confidence:** high (~90%). The replay contract is documented and is the same
 shape we already ship for OpenRouter. Residual risk is the streaming
@@ -331,29 +331,29 @@ OpenRouter echo-back.
 **Gemini** is the analogous follow-up (capture + replay its thought signatures so
 it too thinks every round); same pattern, separate block shape.
 
-### 7.2 Provider breadth — what's left from Hermes (audited 2026-06-30)
+### 7.2 Provider breadth: what's left from Hermes (audited 2026-06-30)
 
 Compared Hermes' ~26 model-provider plugins against Mantle. Finding: Hermes'
-breadth is mostly **one pattern repeated** — a static-key OpenAI-compatible
+breadth is mostly **one pattern repeated**: a static-key OpenAI-compatible
 endpoint differing only in base URL + model list (alibaba/DashScope, arcee, gmi,
 kilocode, kimi/Moonshot, novita, nvidia, stepfun, xiaomi, zai/GLM, azure-foundry,
 …). Most of those models are *already reachable* through the existing
 `openrouter` adapter, and the rest collapse into one generic adapter.
 
-**SHIPPED — `custom` (OpenAI-compatible cloud) provider.** One adapter
+**SHIPPED, `custom` (OpenAI-compatible cloud) provider.** One adapter
 ([`custom-chat.ts`](../packages/voice/src/adapters/custom-chat.ts)) that takes a
 per-route Base URL + API key and reuses the shared `openai-compat` translation +
 streamer (so it inherits the `<think>` scrubber and `reasoning_content`
-forwarding). Subsumes the entire static-key long tail — point a route at any
+forwarding). Subsumes the entire static-key long tail, point a route at any
 vendor's `/chat/completions`, pick/type the model. Distinct from `local` (keyless
-self-host/tailnet; cosmetic Bearer): `custom` is the **keyed cloud** path —
+self-host/tailnet; cosmetic Bearer): `custom` is the **keyed cloud** path,
 Base URL + key both required, no localhost default, no tailnet. Thinking maps
 `thinkingBudget`→`reasoning_effort` (Copilot-consistent), sent only under the
 gate. Wiring: `providers.ts` (`capabilities:['chat']`, aggregator badge) +
 `WIRED_PROVIDERS.chat` + barrel registration; Base URL field surfaced in BOTH the
 agents form and the ai-workers form (the shared `RouteHostFields` generalized to
 `provider: 'local' | 'custom'`, hiding the tailnet toggle for custom). Runtime
-needed **zero** changes — route `baseUrl` already flows for any provider and
+needed **zero** changes, route `baseUrl` already flows for any provider and
 `resolveChatKey` treats only `local` as keyless, so `custom` correctly requires a
 key. Live model discovery returns empty-with-hint (the keyless `/api/models`
 route can't pass the per-route Base URL); the `ModelSelect` free-text
@@ -362,13 +362,13 @@ route can't pass the per-route Base URL); the `ModelSelect` free-text
 browser-smoked** (settings forms need a running stack + auth).
 
 **Deliberately NOT built (demand-gated):**
-- **`bedrock`** (AWS) — the only other entry with real standalone value, but it
-  needs SigV4 signing (not a static key) — real adapter work. Build when a
+- **`bedrock`** (AWS): the only other entry with real standalone value, but it
+  needs SigV4 signing (not a static key), real adapter work. Build when a
   customer requires AWS-account billing/compliance.
 - **OAuth/subscription providers** (qwen-oauth, nous device-code, openai-codex
-  Responses API, minimax OAuth, copilot-acp) — each a bespoke token flow like
+  Responses API, minimax OAuth, copilot-acp); each a bespoke token flow like
   Copilot; niche, per-subscription. Add the specific one a user actually has.
-- Single-vendor static endpoints (zai/GLM, kimi, DashScope, nvidia, novita) — no
+- Single-vendor static endpoints (zai/GLM, kimi, DashScope, nvidia, novita), no
   bespoke adapter needed: reach them via `openrouter`, or now via `custom` with
   the vendor's base URL + key.
 
@@ -376,18 +376,18 @@ This closes the model audit: the Copilot port covered the one gap that *needed*
 bespoke auth code; `custom` covers the breadth; everything remaining is either
 already reachable or demand-gated.
 
-#### Future enhancement — thread the route Base URL into model discovery
+#### Future enhancement: thread the route Base URL into model discovery
 `discoverModels(apiKey)` has no `baseUrl` param, so a `custom` route can't live-
 list `/models` (operators type the model id via `allowCustom`). Making it
 discover would be an **additive optional** `discoverModels(apiKey, baseUrl?)` on
 the `ChatDispatcher` interface + the `/api/models` route + the form's discovery
 trigger passing the typed Base URL. ~Half a day; low priority (free-text already
 unblocks configuration).
-- **Copilot Responses-API mode** — Hermes switches some models to the OpenAI
+- **Copilot Responses-API mode**: Hermes switches some models to the OpenAI
   Responses API (`_should_use_copilot_responses_api`); we only implemented chat
   completions. Add if a Copilot model needs it.
 - **Known minor:** toggling thinking on→off between rounds busts Anthropic's
-  prompt cache on the *direct* paths (not OpenRouter). Accepted — correctness
+  prompt cache on the *direct* paths (not OpenRouter). Accepted, correctness
   over cache.
 
 ---

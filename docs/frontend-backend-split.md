@@ -1,7 +1,7 @@
-# Frontend / Backend Split — Status & Phase 2 Handover
+# Frontend / Backend Split: Status & Phase 2 Handover
 
 > ✅ **DONE & MERGED (v0.66.x, PR #1).** Both phases shipped: Phase 1 (durable
-> runners) and Phase 2 (the FE/BE separation — `apps/web` is now a pure client,
+> runners) and Phase 2 (the FE/BE separation, `apps/web` is now a pure client,
 > no `@mantle/db` in the browser bundle). This file is preserved as the **design
 > + plan**; for what actually shipped and what remains (mostly Electron-scoped),
 > read the completion record
@@ -22,7 +22,7 @@ Branch for Phase 1: `feat/dedicated-api-runners`. Project memory:
 Two originating goals, neither yet delivered by Phase 1:
 
 1. **A desktop (Electron) client** that reuses the *same* UI as the web app.
-2. **DB-less local development** — stop needing direct Postgres access (over
+2. **DB-less local development**: stop needing direct Postgres access (over
    Tailscale) just to run the frontend.
 
 The blocker for both is the same: **`apps/web` is not a frontend, it's a
@@ -39,21 +39,21 @@ split.
 
 ## 2. What Phase 1 delivered (the starting point for Phase 2)
 
-- **`apps/api`** — a dedicated, always-on Node service running durable LLM/agent
+- **`apps/api`**: a dedicated, always-on Node service running durable LLM/agent
   work as **DBOS** workflows (journaled to a `mantle_dbos_sys` Postgres database).
   Assistant turns now execute here, off the web request, and survive web-process
   restarts. Per-step idempotency is proven (crash-recovery test:
   `apps/api/src/crash-test.ts`).
-- **`@mantle/assistant-runtime`** — the turn-execution package (lifted out of
+- **`@mantle/assistant-runtime`**: the turn-execution package (lifted out of
   `apps/web/lib/assistant.ts`), importable by any process. Holds `runAssistantTurn`,
   `resolveAssistantAgent`, and the cross-process runner **contract**
   (`contract.ts`: `ASSISTANT_TURN_WORKFLOW`, `RUNNER_QUEUE`, `AssistantTurnInput`,
   `AssistantTurnRunResult`, `resolveSystemDatabaseUrl`).
-- **`@mantle/tracing` durable-step seam** (`durable.ts`) — an ALS-injected
+- **`@mantle/tracing` durable-step seam** (`durable.ts`): an ALS-injected
   executor so existing `step()` boundaries become durable journal points when a
   workflow is active; inert (passthrough) otherwise.
 - **The web route `/api/assistant/turn`** now enqueues the workflow via
-  `DBOSClient` and awaits the result, relaying the **same response shape** — so
+  `DBOSClient` and awaits the result, relaying the **same response shape**: so
   the chat UI was unchanged. (`apps/web/lib/dbos-client.ts` = cached client.)
 - Compose has an `api` service; the `migrate` one-shot provisions the DBOS system
   DB.
@@ -72,17 +72,17 @@ HTTP boundary as a *contract* and a frontend that consumes it.
 > order-of-magnitude.
 
 **`apps/web` (Next.js 15, App Router):**
-- ~**72 server pages** (`app/**/page.tsx`) — most `await` data functions
+- ~**72 server pages** (`app/**/page.tsx`): most `await` data functions
   *in-process* during render (RSC). This is the core coupling.
-- ~**20 server actions** (`actions.ts`, `'use server'`) — mutate the DB in-process
+- ~**20 server actions** (`actions.ts`, `'use server'`): mutate the DB in-process
   on form submit. ~5 import `@mantle/db` directly.
-- ~**121 API route handlers** (`app/api/**/route.ts`) — already a substantial
+- ~**121 API route handlers** (`app/api/**/route.ts`): already a substantial
   HTTP surface; consistent shape (Zod validate → call package fn → JSON).
 - ~**81 client components** (~37 `*-client.tsx`); ~37 already `fetch('/api/*')`.
 - ~**34 files import `@mantle/db` directly** (10 API routes, ~11 pages,
-  ~8 components, ~5 server actions). These are the holes — code that touches the
+  ~8 components, ~5 server actions). These are the holes, code that touches the
   DB with **no HTTP endpoint** in front of it.
-- ~**48 `revalidatePath` calls** — Next's server-cache invalidation, which has no
+- ~**48 `revalidatePath` calls**: Next's server-cache invalidation, which has no
   meaning for a detached client.
 
 **Shared packages (the backend logic, already extracted):**
@@ -95,7 +95,7 @@ pages/tables/contacts/journal/peers), `@mantle/search`, `@mantle/files`,
 **Auth (`apps/web/lib/auth.ts`, `auth-constants.ts`):**
 - Stateless HMAC **session cookie** `mantle_session` (`{uid, exp}` payload).
 - **Mobile bearer tokens** already exist (`getBearerUser`, `buildMobileToken`,
-  `Authorization: Bearer …`) — the companion app uses them. **This is the auth
+  `Authorization: Bearer …`), the companion app uses them. **This is the auth
   path Electron and DB-less dev should reuse.**
 - `requireOwner()` / `requireOwnerWithSource()` gate routes/pages; single-owner
   system (`resolveSingleOwnerId`).
@@ -109,7 +109,7 @@ reconciles via `syncLatest`.
 service is cheap (same image, different command).
 
 **Other API-shaped consumers (proof the seam works):** `apps/mcp` (stdio MCP
-exposing the same package functions), `apps/agent` (Telegram responder — slated
+exposing the same package functions), `apps/agent` (Telegram responder, slated
 to be absorbed into `apps/api`, see §7 "Step 6").
 
 ---
@@ -131,7 +131,7 @@ to be absorbed into `apps/api`, see §7 "Step 6").
   mutates via HTTP. An Electron shell loads the same bundle and points it at an
   API base URL.
 - The **HTTP API is the only contract**. Whether it stays as Next route handlers
-  or moves to a standalone service is a decision (§5) — but every screen's data
+  or moves to a standalone service is a decision (§5), but every screen's data
   must be reachable through it.
 - **DB-less dev** falls out for free: run the client against a deployed/remote
   API with a bearer token; no local Postgres needed.
@@ -154,28 +154,28 @@ single-tenant assumption.
 2. **HTTP surface: keep in Next vs standalone service.** Phase 1 chose
    "runners-first, keep HTTP in Next." For Phase 2, the cheapest correct move is
    to **treat `app/api/**` as the formal contract** and *not* immediately extract
-   a separate HTTP service — extraction (e.g. a Hono app in `apps/api`) can come
+   a separate HTTP service, extraction (e.g. a Hono app in `apps/api`) can come
    later once the frontend is fully client-side. Decide based on whether Electron
    talks to a *deployed* web (fine) or needs the API decoupled from the Next
    server (then extract).
 
 3. **Cache/mutation strategy.** Pick one client data layer (React Query or SWR)
    and a convention for cache invalidation to replace the ~48 `revalidatePath`
-   calls. This is a cross-cutting decision — set it before converting many pages.
+   calls. This is a cross-cutting decision, set it before converting many pages.
 
 4. **Auth for cross-origin clients.** Standardize on **bearer tokens** (already
    built for mobile) for Electron + DB-less dev. Decide token issuance/console
    UX. Cookies still work same-origin for the browser; bearer is additive.
 
 5. **Single-tenant scoping.** Everything is `resolveSingleOwnerId`. Confirm this
-   stays for Phase 2 (it should) — it keeps the API simple, but note it before
+   stays for Phase 2 (it should); it keeps the API simple, but note it before
    exposing the API more broadly.
 
 ---
 
-## 6. Phase 2 work breakdown (recommended sequencing — strangler, not big-bang)
+## 6. Phase 2 work breakdown (recommended sequencing: strangler, not big-bang)
 
-**Task 0 — Re-inventory (do first; the §3 numbers are stale).**
+**Task 0, Re-inventory (do first; the §3 numbers are stale).**
 ```bash
 # server pages
 find apps/web/app -name 'page.tsx' | wc -l
@@ -191,36 +191,36 @@ grep -rn "revalidatePath" apps/web/app | wc -l
 Produce a living checklist: every page/component/server-action that touches the
 DB without an endpoint = an **API gap** to close.
 
-**Task 1 — Close the API gaps.** For each direct-DB page/component/server-action,
+**Task 1, Close the API gaps.** For each direct-DB page/component/server-action,
 add (or route it through) an `app/api/**` endpoint that calls the same package
-function. After this, the API is *complete* — a prerequisite for any external
+function. After this, the API is *complete*, a prerequisite for any external
 client. (~19 pages + ~5 server actions + attachment/mention routes from the
 audit.) This is independently valuable and low-risk.
 
-**Task 2 — Bearer auth across all of `/api`.** Ensure every endpoint accepts the
+**Task 2, Bearer auth across all of `/api`.** Ensure every endpoint accepts the
 mobile-style bearer token (the mechanism exists; verify coverage, incl. the SSE
 endpoints which were cookie-only). Now dev/Electron can authenticate without
 cookies. Add CORS for the eventual separate origin.
 
-**Task 3 — Solve DB-less dev immediately (high ROI, low effort).** Point local
+**Task 3, Solve DB-less dev immediately (high ROI, low effort).** Point local
 frontend dev at a *deployed/remote* API via a bearer token instead of giving
 every dev DB creds. Two ways: (a) full client-fetch screens hit the remote API;
-(b) interim — even RSC pages can `fetch()` the remote API instead of importing
+(b) interim; even RSC pages can `fetch()` the remote API instead of importing
 `@mantle/db`, removing local DB creds while keeping SSR. This delivers one of the
 two originating goals before the full conversion is done.
 
-**Task 4 — Convert screens to client data-fetching, page by page.** Replace
+**Task 4, Convert screens to client data-fetching, page by page.** Replace
 server-side `await getData()` + server actions with client fetches against `/api`
 using the chosen data layer; replace `revalidatePath` with client cache
 invalidation; add loading/error/empty states (SSR hid these). Use `/pages` (the
 list/detail reference screen) as the first conversion and template. Order by
 Electron priority (the screens the desktop app needs first).
 
-**Task 5 — Electron shell.** Thin shell that loads the client bundle, injects the
+**Task 5, Electron shell.** Thin shell that loads the client bundle, injects the
 API base URL + bearer token, and consumes SSE over HTTP. Realtime already works
 over HTTP once Task 2 makes SSE bearer-auth'd.
 
-**Task 6 — (carryover) Absorb `apps/agent` into `apps/api`.** Telegram +
+**Task 6, (carryover) Absorb `apps/agent` into `apps/api`.** Telegram +
 heartbeat/reflector/extract runners move into `apps/api`, the Telegram loop
 becomes a durable workflow, and `apps/agent` is deleted. This is a Phase 1
 remainder; do it whenever convenient (independent of the FE work). Compose: drop
@@ -231,24 +231,24 @@ the `agent` service, the `api` service already exists.
 ## 7. Risks & gotchas
 
 - **Realtime/SSE auth:** `/api/realtime` + `/api/assistant/stream` authorize by
-  cookie today. A detached client needs them to accept bearer tokens — easy to
+  cookie today. A detached client needs them to accept bearer tokens, easy to
   miss.
 - **Server actions are invisible coupling:** they're not in the `/api` count but
   are real mutations. Each must become an endpoint (Task 1/4).
 - **`revalidatePath` everywhere:** ~48 sites. Don't convert pages without a
   client-cache invalidation convention in place (Decision 5.3).
 - **Loading/error states:** SSR currently hides "no data yet" and error paths.
-  Client fetching surfaces them — budget UI work per screen.
+  Client fetching surfaces them, budget UI work per screen.
 - **Connection pooling:** more processes (web + api + workers + DBOS system pool)
   = more Postgres connections. `max_connections=200` today; watch it, consider
   PgBouncer if the API scales out.
 - **CORS + cookie SameSite:** once the client is a different origin (Electron
-  custom scheme / different dev port), same-origin cookie assumptions break —
+  custom scheme / different dev port), same-origin cookie assumptions break,
   bearer + CORS is the path.
 - **Don't regress Phase 1:** the chat's durable-runner path
   (`/api/assistant/turn` → DBOS) and the `{inbound, outbound, reply, artifacts}`
   response contract must stay intact. The runner (`apps/api`) must be running for
-  the assistant to work — it's in `pnpm dev` and compose.
+  the assistant to work; it's in `pnpm dev` and compose.
 
 ---
 
@@ -272,7 +272,7 @@ the `agent` service, the `api` service already exists.
 ## 9. Definition of done for Phase 2
 
 - An Electron build loads the Mantle UI, authenticates with a bearer token, and
-  is fully functional against a remote API — no bundled Next server, no DB access.
+  is fully functional against a remote API, no bundled Next server, no DB access.
 - Local frontend dev runs with **no Postgres credentials**, against a remote API.
 - No `apps/web` page/component/server-action imports `@mantle/db` (the grep in
   Task 0 returns empty for non-API code), and `revalidatePath` is gone.
@@ -280,7 +280,7 @@ the `agent` service, the `api` service already exists.
 
 ---
 
-## 10. The v0.200 member carve (T1–T5) — /team, /hub, /team-admin
+## 10. The v0.200 member carve (T1–T5): /team, /hub, /team-admin
 
 The v0.200 "true split" (P0–P5) carved the owner UI into `client/web` but
 froze the team-member surfaces server-side (locked decision 4): members
@@ -294,56 +294,56 @@ authenticated with cookies, and cookies don't cross origins. The member carve
   the same per-request membership liveness; the raw-contact-token bearer (the
   MS Teams seam) still works. Bearer = no ambient credential = CSRF-free.
 - **`/team` + `/hub` render on the client origin** via
-  `teamFetch`/`teamEventStream` (`@mantle/web-ui/team-fetch` — cookie
+  `teamFetch`/`teamEventStream` (`@mantle/web-ui/team-fetch`, cookie
   same-origin, bearer + `credentials:'omit'` cross-origin; fetch-based SSE
   because EventSource can't set an Authorization header). The server keeps
   redirect stubs for old bookmarks; members re-enter their 8-char token once
-  (a URL-fragment credential handoff was REJECTED — 30-day credentials don't
+  (a URL-fragment credential handoff was REJECTED, 30-day credentials don't
   belong in history/session stores).
 - **Share reading is INLINE same-origin; the SSO handoff covers the genuine
-  split.** (Revised in v0.204 — the carve originally keyed "split" off
+  split.** (Revised in v0.204, the carve originally keyed "split" off
   "apiBase configured", but the DEFAULT deployment is one domain path-routed
   with an absolute `MANTLE_SERVER_ORIGIN`, so every production box misread as
   split. `isCrossOrigin()` compares real origins now.) Same-origin, `/team`
   and the hub render share content inline: `ShareReader` fetches
-  `GET /s/<token>/view` (the presenter payload as JSON — pages arrive as
+  `GET /s/<token>/view` (the presenter payload as JSON, pages arrive as
   pre-rendered sanitized HTML) and mounts the shared presenters from
-  `@mantle/web-ui/share` — no iframe. On a genuinely cross-origin client the
+  `@mantle/web-ui/share`, no iframe. On a genuinely cross-origin client the
   open still goes top-level through `POST /api/team/sso` (form body
-  `{tb, next}` — the bearer never rides a URL), which verifies the bearer,
+  `{tb, next}`, the bearer never rides a URL), which verifies the bearer,
   mints a fresh server-origin cookie and 303s to `/s/<token>`; `next` is
   locked to a single `/s/` path segment, and an ABSENT `next` answers 204 +
-  Set-Cookie — the silent bearer→cookie upgrade same-origin sessions minted
+  Set-Cookie, the silent bearer→cookie upgrade same-origin sessions minted
   in bearer mode need for the reader's cookie-authenticated subresources.
 - **The OWNER plane uses the same real-origin test** (v0.206). The member
   surface was converted in v0.204; the owner call sites were deliberately left
-  on `runtimeApiBase() !== ''` because they form a coupled set — flipping any
+  on `runtimeApiBase() !== ''` because they form a coupled set, flipping any
   one alone breaks owners whose sessions are bearer-only. Converted together:
   `login-form` (same-origin signup/sign-in is cookie mode again),
   `api-fetch`'s `withAuth` (cookies same-origin; the bearer now attaches
   whenever one is stored, so sessions minted under the old predicate keep
   working alongside the cookie), `asset-url` (same-origin `<img>`/`<iframe>`
-  srcs go back to bare paths — signing them put a short-lived `?at=` token in
+  srcs go back to bare paths, signing them put a short-lived `?at=` token in
   history and access logs for no benefit), and the team-admin download anchor
   (back to a plain link, which restores the browser's own inline preview and
   Save-As). The bearer-only sessions those loaders would strand are covered by
   `upgradeOwnerCookie()` → `POST /api/auth/sso`, the owner twin of the team
   SSO upgrade: it verifies whatever credential the caller has and answers 204
-  + Set-Cookie. It grants nothing new — the bearer it accepts already
-  authorises every owner API call — and mints for the ACTOR, not the anchor,
+  + Set-Cookie. It grants nothing new, the bearer it accepts already
+  authorises every owner API call, and mints for the ACTOR, not the anchor,
   so an added login's audit rows stay its own.
 - **The designated hub app stays first-class**: `AppSandbox` broker fetches
   happen in the parent page, so the client-origin hub passes an absolute
   `apiBase` + a bearer-attaching `fetcher`; the `/s` sub-paths a client-origin
   page calls (`bundle`/`tool-broker`/`db-broker`, plus `view`/`rows` for the
   inline reader) accept the bearer (`resolveShareVisitorFromRequest`) and get
-  the `/api/**` CORS treatment — and ONLY they.
+  the `/api/**` CORS treatment, and ONLY they.
 - **`/team-admin` rehomed under the owner bearer**: per-tab
   `GET /api/team-admin/*` routes + a client page in `client/web`; the old
   render side effects (mark thread/topic read) became explicit POSTs.
 - **What stays server-side, by design**: `/s/[token]` (anonymous shares, SEO),
   `/print` (the PDF loop), the share brokers, and page rendering
-  (`renderPageDoc` — sanitization never moves client-side). The presenter
+  (`renderPageDoc`, sanitization never moves client-side). The presenter
   COMPONENTS live in `@mantle/web-ui/share` since v0.204 so both surfaces
   render the same UI; the server still renders them for /s. The server app's
   UI is render surfaces only.
@@ -352,34 +352,34 @@ The regression net is `e2e/` (`team.spec`, `team-bearer.spec`,
 `team-reader.spec`, `team-admin.spec` + the rest) across both topology
 projects.
 
-## 11. The Hono server (v0.202.0) — Next.js removed from `server/web`
+## 11. The Hono server (v0.202.0): Next.js removed from `server/web`
 
 Once the member carve (§10) finished, `server/web` was **render surfaces plus
-the `/api/**` plane** — an API-first tier with barely any React left. Carrying
+the `/api/**` plane**, an API-first tier with barely any React left. Carrying
 the full Next.js runtime (App Router, RSC, the Edge middleware sandbox, `next
 build`) to serve JSON and a couple of static pages was pure weight. So `server/web`
-now runs a **Hono app under `@hono/node-server`, executed by `tsx`** — the same
+now runs a **Hono app under `@hono/node-server`, executed by `tsx`**: the same
 runtime `server/api` and the workers have always used. Next.js is **gone** from
 `server/web`. `client/web` stays a Next.js app, untouched.
 
 **Architecture (all under `server/web/server/`):**
 
-- **`main.ts`** — the entrypoint. Loads env (`.env.local`, explicit-env-wins),
+- **`main.ts`**: the entrypoint. Loads env (`.env.local`, explicit-env-wins),
   runs the boot manifest-reconcile, resolves build identity (root
   `package.json` version + `MANTLE_GIT_SHA`/`MANTLE_BUILD_TIME`), and starts
   `@hono/node-server` on `PORT`. Sub-second boot; no compile step.
-- **`middleware/gate.ts`** — a faithful port of the old Edge `middleware.ts`:
+- **`middleware/gate.ts`**: a faithful port of the old Edge `middleware.ts`:
   session-HMAC verify, the `k:'m'` mobile bearer, `?at=` asset tokens,
   `PUBLIC_PATHS`, and CORS **including the wildcard refusal on
   credential-minting paths** (`/api/auth/**`), preflight-before-auth.
-- **`request-context.ts`** — request path/method now travel via
+- **`request-context.ts`**: request path/method now travel via
   `AsyncLocalStorage` instead of the injected `x-mantle-path`/`x-mantle-method`
   headers the Edge middleware used.
-- **`http-compat/`** — a local `NextResponse` subclass (extends `Response`,
+- **`http-compat/`**: a local `NextResponse` subclass (extends `Response`,
   keeps the cookie set/delete API) plus ambient `cookies()`/`headers()` read
-  shims. This is the seam that let the route files keep their exact shape — the
+  shims. This is the seam that let the route files keep their exact shape, the
   handler signature and helper calls are unchanged behind the compat layer.
-- **`route-loader.ts` + `scripts/gen-route-manifest.ts`** — the `app/**/route.ts`
+- **`route-loader.ts` + `scripts/gen-route-manifest.ts`**: the `app/**/route.ts`
   file convention is preserved. A generated, precedence-sorted manifest (288
   routes) lazily imports each handler and adapts the Next handler signature onto
   Hono (including catch-all `[[...x]]`-optional vs `[...x]`-required semantics).
@@ -388,18 +388,18 @@ runtime `server/api` and the workers have always used. Next.js is **gone** from
   (app-presenter, table-presenter, team-token-prompt) bundled by
   `scripts/build-share-runtime.ts` into `public/share-runtime/` (a Tailwind v4
   CLI compile of `globals.css`, an esbuild islands bundle, and KaTeX css+fonts).
-  `/print/pages/[id]` is a plain HTML template wrapped around `renderPageDoc` —
+  `/print/pages/[id]` is a plain HTML template wrapped around `renderPageDoc`,
   no React at all. `/login`, `/hub`, `/team/*` are Hono redirect stubs.
 
 **What did NOT change:** the HTTP contract (same routes, request/response
-shapes), the port (3000), `/api/health`, and the **env contract — no new env
+shapes), the port (3000), `/api/health`, and the **env contract, no new env
 vars**. The Docker server image drops the compile step (`build` is asset
-generation only — app-runtime, route manifest, share-runtime); `CMD` is
+generation only, app-runtime, route manifest, share-runtime); `CMD` is
 `pnpm -C server/web start` (tsx). e2e is green in **both** topologies (29
 passed / 0 failed), with SSE client-abort, 8 MB multipart upload, and share-asset
 `Range` all verified live under the node server. `client/web` is untouched.
 
-**Gotcha — the tsx tsconfig `include`.** `tsx` applies the **cwd tsconfig only
+**Gotcha, the tsx tsconfig `include`.** `tsx` applies the **cwd tsconfig only
 to files its `include` matches**. `server/web`'s app imports `.tsx` from
 `web-ui`; until `web-ui`'s `src` was added to the `include` (and `jsx` set to
 `react-jsx`), those files compiled with esbuild's **classic** JSX transform and
@@ -409,7 +409,7 @@ transform.
 
 **Route files keep the Next handler convention on purpose.** They still export
 `GET`/`POST`/… functions taking a request and a `{ params }` context, behind the
-`http-compat` shim — a deliberate choice to keep the ~280-file diff mechanical
+`http-compat` shim, a deliberate choice to keep the ~280-file diff mechanical
 and reviewable, not an accident. Migrating individual routes to native Hono
 idioms (context-first handlers, Hono's own cookie/response helpers) is optional
 future cleanup, not required for correctness.

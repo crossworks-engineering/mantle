@@ -9,7 +9,7 @@
  * look of the product, not one login's taste.
  *
  * OFF IS A REAL CHOICE, not the absence of one. Every area can be bare, and a
- * bare area has to be storable — otherwise "I turned the header off" is
+ * bare area has to be storable, otherwise "I turned the header off" is
  * indistinguishable from "I never set the header", and the next default change
  * would silently switch it back on.
  */
@@ -43,7 +43,7 @@ export const BACKGROUND_AREA_IDS: readonly BackgroundAreaId[] = BACKGROUND_AREAS
  *
  * Only the menu is decorated out of the box. Turning on all four at once is a
  * decorated app rather than a decorated panel, and the point of a background is
- * that it is background — so the rest are opt-in.
+ * that it is background, so the rest are opt-in.
  */
 export const DEFAULT_AREA_BACKGROUNDS: Record<BackgroundAreaId, string> = {
   menu: 'waves',
@@ -61,7 +61,7 @@ function isArea(id: string): id is BackgroundAreaId {
 }
 
 /** Whether a value may be stored as an area's background. `off` counts; a style
- *  that is not in the `backgrounds` category does not — a portrait stretched
+ *  that is not in the `backgrounds` category does not, a portrait stretched
  *  across the sidebar is a giant face, not a background. */
 export function isBackgroundChoice(v: string | null | undefined): boolean {
   return !!v && (v === BACKGROUND_OFF || BACKGROUND_STYLE_IDS.has(v));
@@ -88,7 +88,7 @@ export function resolveBackgrounds(
 /**
  * Wire format: `menu=waves,header=off`.
  *
- * Chosen over JSON because it rides in an HTML attribute — this needs no
+ * Chosen over JSON because it rides in an HTML attribute; this needs no
  * quoting, survives a glance in devtools, and cannot smuggle anything: both
  * halves of every pair are validated on the way in AND on the way out.
  *

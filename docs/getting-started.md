@@ -1,9 +1,9 @@
 # Getting started
 
-The operator's setup guide — local dev stack, first run, connecting email and
+The operator's setup guide, local dev stack, first run, connecting email and
 Telegram, API keys, and the agent basics. (Moved here from the README, which
 is now the product front door.) Production deployment is
-[`deploy.md`](./deploy.md) — its §0a has measured **VPS sizing** (minimum
+[`deploy.md`](./deploy.md), its §0a has measured **VPS sizing** (minimum
 2 vCPU / 4 GB; recommended 4 vCPU / 8 GB for build-on-VPS); updating a
 running box is [`update-prod.md`](./update-prod.md).
 
@@ -37,7 +37,7 @@ mantle/
 ## First-time setup
 
 Prereqs: **Node.js 24+**, **pnpm** (installed in step 1), and **Docker**
-(Desktop or engine) running — `pnpm start` boots Postgres/MinIO/Tika in
+(Desktop or engine) running, `pnpm start` boots Postgres/MinIO/Tika in
 containers.
 
 ```bash
@@ -71,11 +71,11 @@ pnpm start
 > name). The collision is documented at <https://pnpm.io/cli/update>.
 
 > **macOS embedder, why step 4 is optional.** The **default** embedder is
-> online — onboarding's Memory step selects `text-embedding-3-large` (or the
+> online, onboarding's Memory step selects `text-embedding-3-large` (or the
 > budget `text-embedding-3-small`), MRL-reduced to 768 dims, running via
-> OpenRouter (reuses the chat key) or OpenAI direct — so most dev setups need
+> OpenRouter (reuses the chat key) or OpenAI direct, so most dev setups need
 > **no Ollama at all**. The keyless **local** config (EmbeddingGemma) is the
-> pre-onboarding fallback, so the app boots and chat works without any key —
+> pre-onboarding fallback, so the app boots and chat works without any key,
 > but until the Memory step completes (or you run Ollama natively and select
 > the `local` provider), embeddings fail: uploaded content won't index and
 > semantic search returns nothing. If you want the local path on a dev machine,
@@ -86,7 +86,7 @@ pnpm start
 > infra in Docker + the apps hot-reloading on the host + your local Ollama).
 > **Production is meant to run on Linux** via the full `docker-compose.yml`, which
 > builds the app images. A **local embedder (Ollama + model pull)** is bundled
-> too, but behind the opt-in **`local-embedder` compose profile** — it does NOT
+> too, but behind the opt-in **`local-embedder` compose profile**: it does NOT
 > run by default (`docker compose --profile local-embedder up -d` to enable,
 > then select provider `local` in Settings → Embedding). The default deploy
 > uses the online embedder chosen in onboarding, so it needs no Ollama at all.
@@ -100,7 +100,7 @@ pnpm start
 4. Ensures the pg-boss schema exists (so the workers don't race to create it)
 5. Starts the dev servers (web + mcp + email worker + telegram worker + agent)
 
-That's it — **no SQL, no `ALLOWED_USER_ID` to fill in.** Open
+That's it, **no SQL, no `ALLOWED_USER_ID` to fill in.** Open
 http://localhost:3000 and you'll land on **Create your account** (the first-run
 signup, available only while `auth.users` is empty). After signup, the
 **onboarding wizard** walks you through everything the brain needs to run: a
@@ -109,7 +109,7 @@ embedder (the Memory step), then it provisions your assistant + the background
 AI workers, runs a sanity check, captures the brain's purpose, and lets you
 shape the assistant's personality. See [`onboarding.md`](./onboarding.md).
 
-> `ALLOWED_USER_ID` is **optional** — left blank, the workers and MCP server
+> `ALLOWED_USER_ID` is **optional**: left blank, the workers and MCP server
 > auto-resolve the single `auth.users` row, so a fresh install is zero-config.
 > Set it only for scripts or a multi-DB setup.
 
@@ -134,7 +134,7 @@ MinIO console: http://localhost:9001 (user `minio` / pass `minio12345`)
 
 ## Connecting an email account
 
-Mantle uses **IMAP for every provider** — Gmail, Outlook, custom
+Mantle uses **IMAP for every provider**: Gmail, Outlook, custom
 domains, all of them. No OAuth, no Google Cloud Console setup, no
 refresh tokens to babysit. The cost is one app-password per account.
 
@@ -147,7 +147,7 @@ For each account:
      (also: Gmail Settings → Forwarding and POP/IMAP → IMAP access: Enable)
    - Outlook / Microsoft personal:
      https://account.live.com → Security → Advanced → App passwords
-   - Fastmail / iCloud / Zoho / Proton (via Bridge): same idea —
+   - Fastmail / iCloud / Zoho / Proton (via Bridge): same idea,
      account security → app passwords
 3. **Open `/settings/accounts` → Add IMAP account**:
    - **Host** depends on provider:
@@ -161,13 +161,13 @@ For each account:
 
 **The contacts list is the ingest gate**: a message is only ingested when its
 sender matches a contact (exact address or `@domain` wildcard) or one of your
-own addresses — everyone else is silently rejected. Discover new senders at
+own addresses; everyone else is silently rejected. Discover new senders at
 `/settings/discover`. See [`email-ingest.md`](./email-ingest.md).
 
 **Microsoft 365 corporate caveat**: some tenants have basic-auth IMAP
 disabled by admin policy. If you can't get IMAP working from a paid
 M365 mailbox, the easiest workaround is to ask your admin to enable
-it for your mailbox — Mantle does not implement Microsoft OAuth.
+it for your mailbox; Mantle does not implement Microsoft OAuth.
 
 ## Connecting a Telegram bot
 
@@ -180,18 +180,18 @@ can read and reply.
 > **Where to do this.** Telegram is **optional** and set up **after** your
 > assistant exists. You can do it in the **last step of the onboarding wizard**
 > ("Reach your assistant on Telegram"), or any time later in
-> `/settings/agents` — both run the exact same connect → pair flow (the shared
+> `/settings/agents`; both run the exact same connect → pair flow (the shared
 > `<TelegramBotSection>`) against your assistant. The steps below are that flow.
 
 1. **Create a bot.** DM [@BotFather](https://t.me/BotFather), `/newbot`,
    write down the token.
 2. **Link it to your assistant.** In `/settings/agents` (or the onboarding
-   Telegram step), select your assistant — **any agent can carry a Telegram
-   channel** — and paste the token into its **Telegram bot** section. Mantle
+   Telegram step), select your assistant, **any agent can carry a Telegram
+   channel**, and paste the token into its **Telegram bot** section. Mantle
    validates it (`getMe`), seals it AES-256-GCM at rest on the agent's
-   `channels` row (`credentials_enc` — the generic comms-channels binding,
+   `channels` row (`credentials_enc`, the generic comms-channels binding,
    [`comms-channels.md`](./comms-channels.md)), and binds the bot to that
-   agent — so DMs to that bot are answered by it. The poll worker picks it
+   agent, so DMs to that bot are answered by it. The poll worker picks it
    up within ~60s.
 3. **Pair.** DM your bot from your phone. Within ~25s the worker
    gates the message, generates a 6-char pairing code, and DMs it back.
@@ -203,8 +203,8 @@ can read and reply.
 
 ## Connecting Claude (Desktop / Code)
 
-Claude Desktop and Claude Code can drive your Mantle directly — search,
-mail, tasks, the knowledge graph, Telegram — through the bundled stdio MCP
+Claude Desktop and Claude Code can drive your Mantle directly, search,
+mail, tasks, the knowledge graph, Telegram, through the bundled stdio MCP
 server (`apps/mcp`). It's a one-time config per client machine: Claude
 spawns the server on demand (locally, or inside the `mantle_web` container
 over SSH for a remote install) and your SSH key is the entire auth layer.
@@ -215,7 +215,7 @@ security model: [`connecting-claude.md`](./connecting-claude.md).
 
 `/settings/keys` is the UI for storing keys for external services
 (OpenRouter, OpenAI, Anthropic, …). Keys are AES-256-GCM encrypted at
-rest using `MANTLE_MASTER_KEY` — your backups contain ciphertext only.
+rest using `MANTLE_MASTER_KEY`, your backups contain ciphertext only.
 
 - **Service** is the slug your code looks up by (e.g. `openrouter`).
 - **Label** disambiguates multiple keys for the same service
@@ -230,7 +230,7 @@ label)` so you can swap a key without affecting another label.
 ## Agents & auto-responding
 
 `apps/agent` listens on `pg_notify('telegram_message_inserted')` and replies
-through the shared agent runtime — the same code path the web `/assistant`
+through the shared agent runtime, the same code path the web `/assistant`
 uses (one conversation store across channels; see
 [`conversation.md`](./conversation.md)):
 
@@ -245,24 +245,24 @@ inbound DM → telegram-poll worker → INSERT inbound telegram_messages row
           → recordTurn(outbound) → mark inbound processed
 ```
 
-**Configuration** lives in the `agents` table — manage it at
+**Configuration** lives in the `agents` table, manage it at
 `/settings/agents`. Each row carries:
 
 - `slug`, `name`, `description`
-- `role` — `responder` (Telegram-facing), `assistant` (web chat), or `custom`
+- `role`, `responder` (Telegram-facing), `assistant` (web chat), or `custom`
   (delegation targets like Remy / Researcher / Pages). One-shot jobs
   (extractor, summarizer, reflector, TTS/STT/vision/image-gen/embedding) are
-  **AI workers**, a separate table — see [`ai-workers.md`](./ai-workers.md).
-- `model` + `provider` — any wired provider/model (OpenRouter slug, direct
+  **AI workers**, a separate table, see [`ai-workers.md`](./ai-workers.md).
+- `model` + `provider`, any wired provider/model (OpenRouter slug, direct
   Anthropic/Google/xAI, local) with an optional backup route
   ([`chat-failover.md`](./chat-failover.md))
-- `api_key_id` — which entry in `api_keys` to use
-- `system_prompt` — persona (plus evolving `persona_notes` the reflector appends)
-- `memory_config` — history/digest/fact/chunk limits, `delegate_to` allowlist
-- `params` — `temperature`, `max_tokens`, `top_p`
-- `tts_worker_id` — which `kind='tts'` AI worker voices this agent
-- `priority` — higher wins when multiple agents share a role
-- `enabled` — kill switch
+- `api_key_id`, which entry in `api_keys` to use
+- `system_prompt`, persona (plus evolving `persona_notes` the reflector appends)
+- `memory_config`, history/digest/fact/chunk limits, `delegate_to` allowlist
+- `params`, `temperature`, `max_tokens`, `top_p`
+- `tts_worker_id`, which `kind='tts'` AI worker voices this agent
+- `priority`; higher wins when multiple agents share a role
+- `enabled`, kill switch
 
 First-time setup is handled by onboarding; manual path: add an OpenRouter key
 at `/settings/keys`, then create a responder at `/settings/agents`.
@@ -272,7 +272,7 @@ at `/settings/keys`, then create a responder at `/settings/agents`.
 recall) + `profile` (dedup'd facts with an ADD/UPDATE/DELETE classifier) +
 `content_index` (per-item summary + embedding + chunks) + `content_store`.
 Prompt assembly keeps the cacheable prefix byte-stable (persona ← breakpoint 1,
-digests ← breakpoint 2, everything per-turn rides below them) — see
+digests ← breakpoint 2, everything per-turn rides below them), see
 [`memory.md`](./memory.md) §7 for the as-built order and the cache-hygiene
 rule.
 
@@ -284,5 +284,5 @@ pnpm -C apps/web extract:backfill --types=note     # restrict
 pnpm -C apps/web extract:backfill --since=2025-01-01
 ```
 
-The agent must be running — the script just feeds `pg_notify('node_ingested')`;
+The agent must be running, the script just feeds `pg_notify('node_ingested')`;
 the durable extract queue does the work.

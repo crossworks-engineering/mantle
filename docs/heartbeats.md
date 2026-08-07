@@ -1,8 +1,8 @@
-# Heartbeats — proactive Saskia
+# Heartbeats: proactive Saskia
 
 Heartbeats are how an agent acts *without being prompted*. Instead of
 the user asking and Saskia replying, a heartbeat row schedules Saskia
-to **initiate** — ask a question, send a nudge, run a checklist —
+to **initiate** (ask a question, send a nudge, run a checklist) 
 and remember her state across firings until the goal is met.
 
 The metaphor in one sentence: **a heartbeat is a standing instruction
@@ -57,13 +57,13 @@ a "sensible defaults" preset (15/22-07/30) but the DB stays explicit.
 
 ### `heartbeat_fires`
 
-One row per fire attempt — whether it actually ran or was gated. The
+One row per fire attempt, whether it actually ran or was gated. The
 detail page renders this as a chronological audit log without
 exploding the `traces` table (gate skips happen often, traces are
 precious).
 
 `trace_id` is populated for any disposition that opened a trace
-(everything except auto-pause). It's a bare uuid column, NOT a FK —
+(everything except auto-pause). It's a bare uuid column, NOT a FK,
 heartbeats outlive trace pruning, and a dangling reference is
 preferable to either keeping traces forever or losing the audit row.
 
@@ -76,7 +76,7 @@ on `/heartbeats/[id]`):
 | `completed` | sky | Same as fired, but a tool flipped `status=completed` (heartbeat met its goal) |
 | `fired_undelivered` | orange | LLM ran + reply text computed, but the surface refused (no enabled Telegram account; `sendMessage` threw). LLM cost was spent; user got nothing. State still updated. P1-1 fix. |
 | `skipped_idle` / `skipped_quiet` / `skipped_cooldown` / `skipped_earliest` | amber | Gate rejected. No work, no cost. |
-| `auto_paused` | rose | Config error caught BEFORE any LLM work (agent missing, skill missing, key undecryptable). Heartbeat moved to `status=paused` — operator must intervene. P1-2 split. |
+| `auto_paused` | rose | Config error caught BEFORE any LLM work (agent missing, skill missing, key undecryptable). Heartbeat moved to `status=paused`; operator must intervene. P1-2 split. |
 | `error` | purple | Transient runtime failure mid-fire. Will retry on the next tick after a short backoff. Distinct from `auto_paused` so the operator can tell "will fix itself" from "I need to look at this". |
 
 ### trace_kind extension
@@ -96,14 +96,14 @@ type Schedule =
   | { kind: 'manual'                        };       // only via heartbeat_fire tool
 ```
 
-`jitter_minutes` is small but matters — keeps fires from feeling
+`jitter_minutes` is small but matters, keeps fires from feeling
 mechanical (asking the same question at exactly 09:00:00 every day
 reads as a bot, not a peer). The jitter seed is `${id}:${fireCount}`
 so a flaky retry reproduces the same offset.
 
 `cron` is intentionally not implemented in v1. The enum reserves it
 for forward-compat; `computeNextFireAt` throws if you try to use it.
-The UI form silently coerces `cron` rows to `manual` on edit — known
+The UI form silently coerces `cron` rows to `manual` on edit, known
 data-corruption risk for power users who insert cron rows via SQL
 (v1.1 fix: surface a banner instead).
 
@@ -123,7 +123,7 @@ SELECT * FROM heartbeats
  LIMIT 10
 ```
 
-then filters out rows in `isFireInflight(id)` — the in-process
+then filters out rows in `isFireInflight(id)`, the in-process
 `Map<id, Promise>` lock in `packages/heartbeats/src/inflight.ts`.
 This is what stops the next tick from re-firing a slow heartbeat
 that's still mid-LLM-call (the schedule's `next_fire_at` doesn't
@@ -140,7 +140,7 @@ For each eligible row:
 3. **Open trace** (`startTrace({kind:'heartbeat_fire', subject_id:hb.id})`)
    and capture the trace id (stamped onto `heartbeat_fires.trace_id`).
 4. **Compose system prompt**: agent's persona + persistent skills +
-   time-context line. The HEARTBEAT skill is NOT in here — it goes
+   time-context line. The HEARTBEAT skill is NOT in here; it goes
    into the user-role synthetic prompt below.
 5. **Build synthetic user prompt** (`buildHeartbeatPrompt`):
    identity + state JSON + (if `state.expecting_reply` already true,
@@ -164,12 +164,12 @@ For each eligible row:
 
 Step 8 is critical: a `heartbeat_complete` call mid-loop must stop
 the next fire from being scheduled. Step 9's snooze-preservation is
-the P0-1 fix from the v1 audit — without it, snooze was silently
+the P0-1 fix from the v1 audit, without it, snooze was silently
 clobbered.
 
 ## 4. The 5 control tools
 
-Live in `packages/heartbeats/src/tools.ts` (not `@mantle/tools` —
+Live in `packages/heartbeats/src/tools.ts` (not `@mantle/tools`,
 would create a dependency cycle). `registerHeartbeatTools()` runs at
 agent boot, before `seedBuiltinTools()`.
 
@@ -187,22 +187,22 @@ explicit `slug` arg  →  ALS context (fire path)  →  error
   asked heartbeat question): pass `slug` explicitly. The awareness
   block injected into the responder's system prompt tells the model
   exactly which slug to pass.
-- **Ownership scoping** holds in both paths — a slug from one owner
+- **Ownership scoping** holds in both paths, a slug from one owner
   can never resolve to another's row.
 
 Tool-by-tool:
 
 | Tool                       | Required args | Addressing |
 |----------------------------|---------------|------------|
-| `heartbeat_complete`       | —             | slug or ALS |
+| `heartbeat_complete`       |, | slug or ALS |
 | `heartbeat_snooze`         | `for_hours` or `until` | slug or ALS |
 | `heartbeat_update_state`   | `patch`       | slug or ALS |
-| `heartbeat_list`           | —             | no addressing (lists all) |
+| `heartbeat_list`           |, | no addressing (lists all) |
 | `heartbeat_fire`           | `slug`        | slug only (force-fire by id) |
 
 Each tool's failure modes are surfaced as a `branch: '...'` value on
 the trace step's `meta` (no_target / bad_patch_shape / bad_delay /
-updated / completed / snoozed). Silent diagnostic — no console
+updated / completed / snoozed). Silent diagnostic, no console
 noise, but `/traces` shows exactly which path the call took.
 
 ### Permission model & runtime hygiene
@@ -223,7 +223,7 @@ Custom heartbeats not seeded this way need the operator to grant
 the tools manually via the UI.
 
 The three mutation tools all self-protect via `resolveTargetHeartbeat()`
-— calling them with no slug and no ALS context returns a clean
+, calling them with no slug and no ALS context returns a clean
 "no heartbeat context" error. So they're inert in unrelated turns;
 adding them to an agent's allowlist persistently is safe.
 
@@ -231,21 +231,21 @@ adding them to an agent's allowlist persistently is safe.
 operator granted these tools, the responder loops drop them from the
 per-turn tool list when `hasActiveHeartbeatsOnSurface()` returns
 false. The model never *sees* them when there's nothing for them to
-do — eliminates the small but real noise of the model confusedly
+do, eliminates the small but real noise of the model confusedly
 calling a heartbeat tool on a turn with no relevant heartbeat. The
 grant in `tool_slugs` stays canonical; only the per-turn affordance
 is scoped to context. This is the mirror image of auto-injection
 (which would *grant* affordances the operator didn't): hiding what's
 useless is fine, granting what wasn't asked for is not.
 
-`heartbeat_list` + `heartbeat_fire` are NOT auto-excluded — they're
+`heartbeat_list` + `heartbeat_fire` are NOT auto-excluded; they're
 operator/skill tools that make sense any time (e.g., "what
 heartbeats do you have for me?", "fire that one now").
 
 ## 5. The continuity trick
 
 If a heartbeat asks the user a question and the user replies an hour
-later, that reply hits the *normal* responder turn — not the heartbeat
+later, that reply hits the *normal* responder turn, not the heartbeat
 fire loop. So how does Saskia stay in character?
 
 The responder, on every turn, calls `openHeartbeatsForSurface(ownerId, surface)`
@@ -277,7 +277,7 @@ Pending heartbeats:
 - `get_to_know_user` (Get to know the user) — asked 2h ago. State: {...}
 ```
 
-The "asked 2h ago" suffix comes from `state.last_asked_at` — a skill-
+The "asked 2h ago" suffix comes from `state.last_asked_at`, a skill-
 level convention (see §11) that the prompt builder surfaces so the
 model can reason about staleness when picking between "soft re-ask"
 and "give them space."
@@ -291,7 +291,7 @@ on the next heartbeat fire.
 
 The "Leave the heartbeat alone" branch is the load-bearing piece.
 Without explicit "do NOT call" wording, models treat the visible tool
-list as a menu and reach for it — calling `heartbeat_update_state`
+list as a menu and reach for it, calling `heartbeat_update_state`
 with empty arrays when the user asked about the weather, or re-asking
 the heartbeat question on top of answering the weather. Both feel
 broken to the user. The explicit branch tells the model: if the
@@ -306,7 +306,7 @@ always land at exactly 6h), sends a single warm invitation, and
 self-terminates on the user's first substantive reply. That's the
 whole script.
 
-The skill (`profile_interview`) state shape is tiny — just enough to
+The skill (`profile_interview`) state shape is tiny, just enough to
 power the awareness block on the inbound reply:
 
 ```ts
@@ -370,13 +370,13 @@ with reason='user_declined'.
 The original design fired daily for 8 days, asking one topical question
 per fire (family / work / hobbies / health / weekend / goals / …).
 Tested every state-persistence + multi-fire path in the engine. Also
-felt like an interrogation — exactly the wrong vibe for an AI that's
+felt like an interrogation, exactly the wrong vibe for an AI that's
 supposed to know you, not interview you.
 
 Two design failures in that v1:
 1. **The system already learns passively.** Extractor harvests entities
    + facts from every message. Reflector appends persona notes. The
-   heartbeat doesn't need to drive the learning — it just needs to
+   heartbeat doesn't need to drive the learning; it just needs to
    open the door. Asking 8 questions duplicated work the rest of the
    system was already doing for free.
 2. **Multi-fire pestering risk.** Even with the relevance gate + stale-
@@ -390,7 +390,7 @@ that's a different shape of feature, not the get-to-know-you flow.
 
 ## 7. Soft-fail catalog (real bugs we've already paid for)
 
-Lessons collected from the v1 dogfood — keep this list updated as
+Lessons collected from the v1 dogfood, keep this list updated as
 new symptoms surface.
 
 - **Dual-mode addressing was the v1 latent bug.** Original tools
@@ -398,7 +398,7 @@ new symptoms surface.
   heartbeat. The responder turn handling a user's reply has no
   such context (different lifecycle). The awareness block told
   the model to "call heartbeat_update_state" but the tool refused
-  with `branch: 'no_context'`. Fixed in `0de3a9e` — tools now
+  with `branch: 'no_context'`. Fixed in `0de3a9e`, tools now
   accept `slug` and fall back to ALS only when slug is absent.
 
 - **`tsx --watch` doesn't reliably reload workspace packages.**
@@ -413,7 +413,7 @@ new symptoms surface.
   `heartbeats`). The fire orchestrator stores agent_id correctly;
   if you add a future trace path that uses a different uuid, it'll
   throw a silent FK violation (the tracing layer is fire-and-forget).
-  Same trap that bit extractor/summarizer/reflector — see
+  Same trap that bit extractor/summarizer/reflector, see
   `observability.md` §12.
 
 - **Auto-pause on missing config** beats silent retries. If the
@@ -445,19 +445,19 @@ new symptoms surface.
   would burn through `max_fires` for an unbounded heartbeat without
   the user ever hearing from Saskia.
 
-- **Permission model — `agents.tool_slugs` is the source of truth.**
+- **Permission model, `agents.tool_slugs` is the source of truth.**
   Heartbeat continuity tools must be in the responder agent's
   `tool_slugs` for the responder→state update path to work. The
   seed script handles this; custom heartbeats need manual grant.
   We briefly auto-injected the tools per-turn; that violated the
   "tools live in tool_slugs" contract and was reverted.
 
-- **Runtime affordance hygiene — auto-exclusion.** Even with the
+- **Runtime affordance hygiene, auto-exclusion.** Even with the
   three continuity tools granted persistently, the responders drop
   them from the per-turn tool list when zero active heartbeats
   exist on the surface (`hasActiveHeartbeatsOnSurface()` returns
   false). The grant stays canonical; only the affordance is
-  scoped. Mirror image of auto-injection — hiding useless tools is
+  scoped. Mirror image of auto-injection; hiding useless tools is
   fine, granting un-granted ones is not. Means a completed/paused
   install is byte-indistinguishable from a system that never had
   heartbeats: the model never sees the tools, can't call them,
@@ -465,14 +465,14 @@ new symptoms surface.
 
 ## 8. Operator surfaces
 
-- `/settings/heartbeats` — list, create/edit, pause/resume, fire-now,
+- `/settings/heartbeats`, list, create/edit, pause/resume, fire-now,
   delete. Per-heartbeat gate preset radio (none / sensible / custom).
-- `/heartbeats/[id]` — detail with current state JSON, gates summary,
+- `/heartbeats/[id]`, detail with current state JSON, gates summary,
   recent fire log (50 most recent) with trace links.
-- `/traces?kind=heartbeat_fire` — every fire (and gate-skip) under
+- `/traces?kind=heartbeat_fire`, every fire (and gate-skip) under
   the normal trace browser. Subject link pivots back to the heartbeat
   detail page.
-- `/settings/skills` — skills CRUD (the skill that backs a heartbeat
+- `/settings/skills`, skills CRUD (the skill that backs a heartbeat
   is edited here). **Caveat**: the skills list doesn't yet show which
   heartbeats reference each skill, so deleting a skill that's bound
   to a heartbeat will auto-pause the heartbeat on its next fire
@@ -486,7 +486,7 @@ Named so we don't accidentally do them:
   UI form currently coerces cron rows to manual on edit (v1.1: banner instead).
 - **Multi-agent collaboration mid-fire.** A heartbeat picks one agent
   via `agent_slug`. Need delegation? Use the existing `invoke_agent`
-  builtin from inside the fire — that's already wired.
+  builtin from inside the fire, that's already wired.
 - **Cross-surface heartbeats** (start on web, finish on telegram).
 - **User-driven snooze via Telegram keyword** (e.g. `/later`).
 - **Heartbeat template library.** v1 expects hand-crafted entries
@@ -507,17 +507,17 @@ which fires `pg_notify('heartbeat_due', <ownerId>)`. Producers:
     (covers schedule edits + resume-from-paused)
 
 Consumer: `apps/agent/src/main.ts` LISTENs on `heartbeat_due` and
-calls `tickHeartbeats(ownerId)` on each notification — same code path
+calls `tickHeartbeats(ownerId)` on each notification, same code path
 as the 60s setInterval, just kicked early. Net effect: an operator's
 Create/Edit/Resume click lands in the trace within ~1s, not 60s.
 
 Soft-failing on both sides. `notifyHeartbeatDue` swallows errors
 (next regular tick catches up). The listener swallows handler errors
-too. The 60s setInterval remains as the floor — losing a single
+too. The 60s setInterval remains as the floor, losing a single
 notify is at most a 60-second UX regression, never a correctness
 issue.
 
-The web's `fireNowAction` (Zap button) does NOT use `notify` — it
+The web's `fireNowAction` (Zap button) does NOT use `notify`; it
 calls `forceFire` directly in the Next.js server-action process, so
 the trace appears immediately. The two paths don't overlap.
 
@@ -530,7 +530,7 @@ selects up to `TICK_BATCH=10` due rows per minute and fires them
 sequentially.
 
 Worst case: agent down for an hour, 50 heartbeats due in that window
-→ on resume, 10 fire in the first minute, 10 in the next, etc. — a
+→ on resume, 10 fire in the first minute, 10 in the next, etc., a
 5-minute flurry. For a single-user install with a handful of
 heartbeats this is invisible; at scale (dozens of frequently-firing
 heartbeats), it could feel like a notification storm.
@@ -542,25 +542,25 @@ discussion):
   - Detect `now() - next_fire_at > stale_threshold` and **bump
     forward** instead of firing the stale one (treat as missed-bus)
   - Coalesce per-surface: don't send N Telegram messages in 2 minutes
-    even if N heartbeats are due — let the user breathe
+    even if N heartbeats are due, let the user breathe
 
 For the dogfooded single-user scenario today, none worth doing. Worth
 knowing exists for capacity planning.
 
-## 10. Initial state — `skills.default_state` + heartbeat override
+## 10. Initial state: `skills.default_state` + heartbeat override
 
 Migration 0031 adds `skills.default_state jsonb` so skill authors can
 declare the expected starting shape once. Heartbeat creation flow:
 
 1. Operator picks a skill in the create form
 2. `state` textarea auto-populates from `skills.default_state` (only
-   if the textarea hasn't been manually touched yet — protects
+   if the textarea hasn't been manually touched yet, protects
    in-progress edits when switching skills)
 3. Operator can edit the JSON freely; client + server both validate
    that it's a plain object (not array, not primitive)
 4. On submit, the heartbeat's own `state` column gets that value
 
-Once a heartbeat exists, its `state` is the source of truth — edits
+Once a heartbeat exists, its `state` is the source of truth, edits
 to the skill's `default_state` do NOT propagate to existing
 heartbeats (it's a template, not a live reference). The skills CRUD
 form has its own `default_state` textarea so authors can declare
@@ -582,7 +582,7 @@ keys appear as the skill runs and the model populates them via
 
 ## 11. Conventions: well-known state keys
 
-`heartbeats.state` is free-form jsonb — the engine writes to it
+`heartbeats.state` is free-form jsonb, the engine writes to it
 (only via tools, never directly) but doesn't validate the shape.
 Skills are responsible for the vocabulary. The following keys are
 **read by engine code** (prompt builder, tick query) so renaming
@@ -597,16 +597,16 @@ contract between the engine and skill authors:
 | `answered`            | string[] | (display only) | Skill-defined; convention is "topics already covered" for interview-style skills. |
 
 Skill conventions beyond these four (anything else the skill's
-instructions reference) are local to the skill — keep them
+instructions reference) are local to the skill, keep them
 namespaced ("interview_questions_remaining", "checklist_step",
 etc.) to avoid future collisions.
 
 There's no TypeScript type for these today; it's a documentation
 contract. A `WellKnownStateKeys` type re-exported from
 `@mantle/heartbeats` would catch typos at the skill-author layer
-without forcing a schema change — v1.1 candidate.
+without forcing a schema change, v1.1 candidate.
 
-## 11b. Skill design — prefer one focused fire over an interrogation
+## 11b. Skill design: prefer one focused fire over an interrogation
 
 Drawn from the get_to_know_user redesign. When you're tempted to
 ship a heartbeat with a multi-fire skill, ask:
@@ -614,7 +614,7 @@ ship a heartbeat with a multi-fire skill, ask:
 1. **Does the rest of the system already learn this passively?**
    Extractor + reflector harvest entities, facts, and persona notes
    from every message. If your heartbeat's goal is "build a profile
-   of the user", the heartbeat just needs to open the door — the
+   of the user", the heartbeat just needs to open the door, the
    passive pipelines do the real work. A long script duplicates them
    AND feels like a CRM.
 
@@ -622,7 +622,7 @@ ship a heartbeat with a multi-fire skill, ask:
    A daily check-in adds value (today's mood is different from
    yesterday's). An 8-day interview where each fire asks one more
    topic is just N invasive pings stretched across N days. The user
-   doesn't experience them as separate — they experience them as
+   doesn't experience them as separate; they experience them as
    "this thing keeps bothering me."
 
 3. **Could one well-crafted fire achieve 80% of the goal?**
@@ -645,7 +645,7 @@ ship a heartbeat with a multi-fire skill, ask:
 
 The complex multi-fire flow stays available in the engine for skills
 that earn it (daily check-ins, weekly reviews, multi-step
-onboarding). It just isn't the default shape — design for one good
+onboarding). It just isn't the default shape, design for one good
 fire first, only branch out if you can defend why.
 
 ## 12. Skills: two activation models, one table

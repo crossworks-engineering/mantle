@@ -4,7 +4,7 @@ title: Runners
 
 ## Runners
 
-The queue console — the workflows currently executing, waiting, or recently
+The queue console, the workflows currently executing, waiting, or recently
 finished, with their status, name and timing.
 
 This is a level below Runs. A run is the work you asked for; a runner workflow
@@ -18,7 +18,7 @@ nothing completing is the clearest possible sign that a worker is down.
 ## When to use this
 
 When background work has stopped happening. Ingest that never finishes, a run
-that sits at the same step, a scheduled job that didn't fire — all look
+that sits at the same step, a scheduled job that didn't fire, all look
 identical from the surface screens and are distinguishable here.
 
 Filter by status first. A wall of `success` with one `error` is a different
@@ -37,12 +37,12 @@ why a crash during a long run costs you one step rather than the run.
 
 Because execution is checkpointed rather than held in memory, a workflow can
 wait indefinitely without consuming anything. A run paused on a question isn't
-occupying a worker — it's a row waiting to be woken.
+occupying a worker; it's a row waiting to be woken.
 
 Retries are bounded and recorded, so a workflow that failed three times shows
 three attempts rather than one mysterious failure. That distinction matters when
 diagnosing: a transient provider error and a genuine bug look identical in a
 single-attempt view.
 
-The queue is shared by everything background — ingest, extraction, scheduled
-jobs and runs — so a flood in one is visible here as pressure on the others.
+The queue is shared by everything background, ingest, extraction, scheduled
+jobs and runs, so a flood in one is visible here as pressure on the others.

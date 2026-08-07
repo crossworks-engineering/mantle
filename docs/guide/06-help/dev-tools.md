@@ -6,7 +6,7 @@ title: API Console
 
 A built-in client for Mantle's own interfaces. Explore and run every REST route,
 every MCP tool as the MCP server actually exposes it, and every tool your agents
-hold — then send a real request and read the real response.
+hold, then send a real request and read the real response.
 
 It answers a question nothing else does: *what does this actually return?* A
 tool's description tells you what it's for; running it tells you the shape of
@@ -24,7 +24,7 @@ the tool or the caller. Running the same call by hand settles that in one step.
 
 It's also the honest way to check what an agent can see. A tool's output is what
 the model reads, and output that looks fine to a person can be unusable to a
-model — a wall of unlabelled ids, or an error buried in a success response.
+model, a wall of unlabelled ids, or an error buried in a success response.
 
 Requests here are **real**. This isn't a simulation: a run that sends mail sends
 mail, and a run that deletes something deletes it. Read the arguments before
@@ -34,7 +34,7 @@ running anything with a verb in its name.
 
 Calls execute with your owner identity and the same dispatcher the agents use,
 so behaviour matches production exactly rather than approximating it. That's the
-point — a console with its own code path would be a second implementation to
+point, a console with its own code path would be a second implementation to
 keep honest.
 
 The MCP tool list is pulled live from the MCP server rather than from a stored

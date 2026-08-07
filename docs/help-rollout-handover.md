@@ -1,6 +1,6 @@
-# Handover — finish per-screen help
+# Handover: finish per-screen help
 
-> Working doc for the help rollout, not user-facing guide content — which is why
+> Working doc for the help rollout, not user-facing guide content, which is why
 > it lives here and not in `docs/guide/06-help/`. That directory is the topic
 > corpus: `help.test.ts` asserts every file in it is a reachable topic with the
 > three-section shape, so a stray doc there fails the build.
@@ -54,18 +54,18 @@ How it works underneath, how the AI reads it, what's stored where.
 - `toolGroups` must be real slugs from `MANIFEST_TOOL_GROUPS`
   (`server/web/lib/system-manifest/manifest.ts`). The test fails on invented ones.
   Names and counts are resolved at request time, so never write a group's name
-  into the prose — it would drift.
+  into the prose; it would drift.
 - The **Assistant** section is dropped automatically when no agent holds any
   declared group; a one-line "grant this to enable it" hint shows instead.
 - Screens the assistant genuinely cannot touch (most of Settings, all of
   System/debug) should declare **no** `toolGroups` and use section 2 for
-  something honest — e.g. "## When to use this" or "## Before you change
-  anything" — rather than pretending there's an assistant angle.
+  something honest, e.g. "## When to use this" or "## Before you change
+  anything", rather than pretending there's an assistant angle.
 - Third section's heading must be literally `Technical` (the test asserts it).
 
 ## House style for the copy
 
-Set by the 11 existing topics — read `tables.md`, `contacts.md` and `secrets.md`
+Set by the 11 existing topics, read `tables.md`, `contacts.md` and `secrets.md`
 before writing.
 
 - **Lead with what surprises people**, not with what the screen obviously is.
@@ -74,9 +74,9 @@ before writing.
 - Say the effect, not the value. Never "Default 3".
 - Two-to-four short paragraphs per section. This is a 22rem column.
 - Ground every technical claim in the repo or `docs/`. **Do not guess** how a
-  subsystem works — read it. Several existing topics cite exact storage
+  subsystem works, read it. Several existing topics cite exact storage
   mechanics; that trust is the point.
-- No client names, hostnames or IPs — the repo is public.
+- No client names, hostnames or IPs; the repo is public.
 
 ## Suggested waves
 
@@ -84,9 +84,9 @@ before writing.
 |---|---|---|
 | 1 | `/` `/formulas` `/apps` `/docs` | Finishes Workspace |
 | 2 | `/models` `/settings/discover` `/team-admin` `/pending` | Review |
-| 3 | Settings — the 9 the assistant depends on: `agents`, `ai-workers`, `tools`, `tool-groups`, `skills`, `keys`, `embedding`, `heartbeats`, `worker-groups` | Highest teaching value |
-| 4 | Settings — the remaining 16 | `appearance`, `accounts`, `microsoft`, `calendar`, `profile`, `mcp`, `network`, `config`, `entities`, `peers`, `pdf-passwords`, `backups`, `updates`, `security`, `users`, `audit` |
-| 5 | System — `/studio` `/dev-tools` `/runners` `/runs` `/sandboxes` `/traces` `/debug` | Technical-only; no Assistant section |
+| 3 | Settings, the 9 the assistant depends on: `agents`, `ai-workers`, `tools`, `tool-groups`, `skills`, `keys`, `embedding`, `heartbeats`, `worker-groups` | Highest teaching value |
+| 4 | Settings, the remaining 16 | `appearance`, `accounts`, `microsoft`, `calendar`, `profile`, `mcp`, `network`, `config`, `entities`, `peers`, `pdf-passwords`, `backups`, `updates`, `security`, `users`, `audit` |
+| 5 | System, `/studio` `/dev-tools` `/runners` `/runs` `/sandboxes` `/traces` `/debug` | Technical-only; no Assistant section |
 
 ## Loop, and how to know you're done
 
@@ -114,12 +114,12 @@ pnpm infra:up && pnpm dev      # web :3000, client :3100
   absolute paths** in it (`MANTLE_FILES_ROOT`, `TABLE_DB_DIR`, `APP_DB_DIR`,
   `MANTLE_DOCS_ROOT`) to your worktree.
 - **Copy `data/` across before starting**, or files-watch reconciles the brain
-  against an empty tree. Tables are SQLite workbooks under `data/table-dbs` —
+  against an empty tree. Tables are SQLite workbooks under `data/table-dbs`,
   missing them is a 500, not an empty list.
 - The dev box's live stack is `~/stack-rehearsal`, **not** `~/mantle`. Copying
   from the wrong one gives you a stale unrelated file tree.
 - `MANTLE_API_CORS_ORIGINS` must include `http://localhost:3100`.
-- Restart with an explicit `cd` — the shell's cwd resets, and starting from the
+- Restart with an explicit `cd`, the shell's cwd resets, and starting from the
   integrator silently runs the wrong checkout with no `.env.local`.
 - **Never run `pnpm dev` in the integrator** (`~/Projects/mantle`); it's the
   merge/release checkout.
@@ -127,7 +127,7 @@ pnpm infra:up && pnpm dev      # web :3000, client :3100
 ## Open, not blocking
 
 - The rail's flare (gradient + grid) and its 22rem width are unreviewed in the
-  running app — Jason may want them softened.
+  running app; Jason may want them softened.
 - Three-column layout (help + assistant + activity) on a 1440px screen is
   untested.
 - `v0.215.0` and `v0.216.0` are committed on `main` but **never tagged**, so

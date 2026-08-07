@@ -1,7 +1,7 @@
 # Unified conversation stream
 
-**Status: SHIPPED (2026-06-03).** Every chat channel — web `/assistant`, Telegram,
-and any future surface (WhatsApp, …) — now writes ONE per-(owner, agent)
+**Status: SHIPPED (2026-06-03).** Every chat channel, web `/assistant`, Telegram,
+and any future surface (WhatsApp, …), now writes ONE per-(owner, agent)
 conversation store (`assistant_messages`), one summarizer rolls it up, and the
 `/assistant` window renders all of it. This doc began as the plan-on-paper and is
 now the as-built reference; the phase checklist in §8 maps each step to its commit.
@@ -11,12 +11,12 @@ UI.
 
 Companion docs:
 - [`architecture.md`](./architecture.md) §9b (Telegram responder), §9g (web
-  `/assistant`), §9b' (digests) — the per-surface detail, now pointing here for the
+  `/assistant`), §9b' (digests), the per-surface detail, now pointing here for the
   unified model.
-- [`recall.md`](./recall.md) — "Remy" reads `conversation-digest` notes; her
+- [`recall.md`](./recall.md), "Remy" reads `conversation-digest` notes; her
   `find_window` matches by tag (re-key-safe) and `recall_window` reads web from
   `assistant_messages` (channel='web') + Telegram from `telegram_messages`.
-- [`ai-workers.md`](./ai-workers.md) §5 — the `summarizer` worker, now driven from
+- [`ai-workers.md`](./ai-workers.md) §5, the `summarizer` worker, now driven from
   a single per-agent entry point (`summarizeAgentConversation`).
 
 ---
@@ -33,7 +33,7 @@ duplicated four things each:
 | Digests | `summarizeChat(chatPk)` → notes keyed `data.chat_id` | `summarizeWebConversation(ownerId)` → notes `source:web` |
 | Summarize trigger | `summarize_due` on `telegram_messages` INSERT, payload `chat_id` ([0013](../packages/db/migrations/0013_conversation_digests.sql)) | `summarize_web_due` on `assistant_messages` INSERT, payload `owner_id` ([0044](../packages/db/migrations/0044_web_summarize_due.sql)) |
 | Brain node per message | yes (`type=telegram_message`) | no |
-| Attachments | `telegram_messages.attachments` (file_ids) | ephemeral artifacts only — not persisted |
+| Attachments | `telegram_messages.attachments` (file_ids) | ephemeral artifacts only, not persisted |
 
 Adding WhatsApp means a *fifth* copy of all of that. Three things make this worse
 than it looks:
@@ -41,7 +41,7 @@ than it looks:
 1. **Every channel re-implements memory.** History loading, digest production, the
    summarize trigger, and the prompt-build context are copy-pasted per channel and
    drift independently.
-2. **The web summarizer is already per-*owner*, not per-*agent*** — a latent
+2. **The web summarizer is already per-*owner*, not per-*agent***, a latent
    inconsistency with the "one stream per agent" goal, and the web responder passes
    `digests: []` so it never even reads its own digests back.
 3. **There is no single place to *see* a conversation.** A turn sent on Telegram
@@ -50,7 +50,7 @@ than it looks:
 
 ## 1. The goal
 
-> For each agent, all comms — whatever channel they arrive on — end up in **one**
+> For each agent, all comms (whatever channel they arrive on) end up in **one**
 > conversation stream. The `/assistant` window for that agent shows everything
 > (text, voice, images, from any channel). Exactly **one** summarizer runs over that
 > stream. A single source of truth per agent.
@@ -79,9 +79,9 @@ responder, the summarizer, and the UI never know which channel a turn came from.
 
 **Two axes, cleanly separated:**
 
-- **Conversation + memory axis** — `assistant_messages`. Cross-channel, per agent.
+- **Conversation + memory axis**: `assistant_messages`. Cross-channel, per agent.
   Owns history, digests, and display. This is the source of truth.
-- **Transport + brain axis** — `telegram_messages` (and a future `whatsapp_messages`).
+- **Transport + brain axis**: `telegram_messages` (and a future `whatsapp_messages`).
   Owns dedup (`update_id`), threading (`message_id`), delivery state, attachment
   `file_id`s, and the `type=telegram_message` brain node. Stays channel-specific.
 
@@ -93,14 +93,14 @@ responder/summarizer/UI only ever touch `assistant_messages`.
 Because it does jobs the conversation stream shouldn't: Telegram-specific dedup,
 delivery retries, the `file_id`s needed to download a voice clip, and the per-message
 brain node that makes an individual Telegram line findable by search. Per the design
-decision (2026-06-03), raw-message **node-backing stays as-is** — the brain axis is
+decision (2026-06-03), raw-message **node-backing stays as-is**: the brain axis is
 unchanged. The conversation stream is a *separate, additional* write, not a
 replacement. This is a deliberate dual-write (see §7 Risks).
 
 ## 3. Schema change
 
 Migration `0071_unified_conversation.sql`. Extend `assistant_messages`
-([schema](../packages/db/src/schema/assistant-messages.ts)) — chosen over a rename to
+([schema](../packages/db/src/schema/assistant-messages.ts)), chosen over a rename to
 `conversation_messages` to keep the blast radius small (existing `/assistant` code,
 indexes, recall queries keep working):
 
@@ -114,22 +114,22 @@ CREATE INDEX assistant_messages_owner_agent_channel_created_idx
   ON assistant_messages (owner_id, agent_id, channel, created_at);
 ```
 
-- **`channel`** — drives the UI badge and which transport sends an outbound reply.
-- **`attachments`** — what makes voice/images render in `/assistant`. Shape maps onto
+- **`channel`**: drives the UI badge and which transport sends an outbound reply.
+- **`attachments`**: what makes voice/images render in `/assistant`. Shape maps onto
   the existing `Artifact` type the chat already renders
   ([assistant-client.tsx `ArtifactView`](../apps/web/app/\(app\)/assistant/assistant-client.tsx)).
-- **`external_ref`** — lets the Telegram sender thread replies and lets us
+- **`external_ref`**: lets the Telegram sender thread replies and lets us
   dedup/back-link to the transport row without a join table.
 
-### Trigger swap — deferred to cutover, NOT Phase 0
+### Trigger swap: deferred to cutover, NOT Phase 0
 
 The column adds above are **additive and non-breaking** (defaults/nullable, so existing
-rows and INSERTs are untouched) — they ship in `0071` immediately.
+rows and INSERTs are untouched); they ship in `0071` immediately.
 
 The trigger swap below is the **one breaking step** and must NOT land before the code
 is ready: the moment it applies, Telegram's `summarize_due` trigger and the
 `summarize_web_due` trigger are gone and `summarize_due` starts carrying an `agent_id`
-payload — which the current `main.ts` LISTEN handlers don't understand. So it ships in
+payload, which the current `main.ts` LISTEN handlers don't understand. So it ships in
 a **separate cutover migration** (`0072_unified_conversation_triggers.sql`) landed
 together with Phases 3 + 4 (Telegram writing `assistant_messages` + the unified
 summarizer). A single trigger on the unified table then replaces both existing ones;
@@ -151,13 +151,13 @@ DROP TRIGGER IF EXISTS assistant_messages_summarize_web_due_trg ON assistant_mes
 ```
 
 > **Cost-safety note.** Per [MEMORY: cost-safety / no-reextract-trigger], this trigger
-> only ever `pg_notify`s — it never itself runs an LLM. The summarizer's own
+> only ever `pg_notify`s; it never itself runs an LLM. The summarizer's own
 > threshold check (undigested < N) remains the gate that decides whether a model is
 > actually called. No runaway risk introduced.
 
 ## 4. Shared conversation module
 
-New file `packages/agent-runtime/src/conversation.ts` — the single read/write API both
+New file `packages/agent-runtime/src/conversation.ts`, the single read/write API both
 surfaces call. This dedups the two near-identical `loadContext` copies.
 
 ```ts
@@ -186,7 +186,7 @@ silence when there's nothing to say. Without it the `attachments` column was
 write-only as far as the model was concerned: an image generated on one turn
 could not be named on the next, and the field failure was a page stored with a
 `media:` id the model had rebuilt from the 8-char prefix the corpus map prints.
-Only attachments with a `nodeId` are quoted — a transport handle (a Telegram
+Only attachments with a `nodeId` are quoted, a transport handle (a Telegram
 `fileId`) is not resolvable by the `media:` dialect, so quoting it would spend
 tokens on something unusable. Three per turn, then `+N more`.
 
@@ -206,17 +206,17 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
 - Inbound/outbound inserts → `recordTurn(channel='web', attachments=[image artifact])`.
 - Pass real `digests` into `buildChatMessages`. Lowest-risk surface (same table).
 
-### 5b. Telegram (`apps/agent/src/main.ts`) — as built
-- **Keep** the `telegram_messages` insert (node, dedup, file_ids, delivery) — the
+### 5b. Telegram (`apps/agent/src/main.ts`): as built
+- **Keep** the `telegram_messages` insert (node, dedup, file_ids, delivery), the
   transport/brain record.
 - **Add** `recordTurn(channel='telegram', externalRef={accountId,chatId,messageId},
   attachments=[…])` for both inbound and outbound.
-- **Where inbound is recorded:** in `handleMessage`, NOT the poll worker — the
+- **Where inbound is recorded:** in `handleMessage`, NOT the poll worker, the
   responder agent is only resolved at handle time (`resolveResponderAgent`), and the
   stream is per-agent. It runs right after the agent is resolved + voice is
   transcribed, before `loadConversationContext`; the atomic `processed`-claim earlier
   in `handleMessage` guarantees exactly-once. (This resolved the original "poll worker
-  vs handleMessage" open question — poll time has no agent.) The inbound row is then
+  vs handleMessage" open question; poll time has no agent.) The inbound row is then
   excluded from its own context load via `excludeMessageId` + `before`.
 - **Outbound** is recorded once per reply (full text) inside `persist_outbound`,
   alongside the per-chunk `telegram_messages` rows.
@@ -224,7 +224,7 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
   per-chat `loadContext` is removed. Digests filter by `data.agent_id`, not chat.
 - Outbound reply still sends via the bot (`sendMessage`/`sendVoice`), threading off the
   inbound message id. Telegram attachments (photos/voice/docs) are mapped onto the
-  conversation row (`toConversationAttachments`) so they render in `/assistant` — no
+  conversation row (`toConversationAttachments`) so they render in `/assistant`, no
   bytes stored, just `file_id` + (for ingested photos/docs) the file node id.
 
 ### 5c. Summarizer (`apps/agent/src/summarizer.ts`)
@@ -244,7 +244,7 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
 - [assistant-client.tsx](../apps/web/app/\(app\)/assistant/assistant-client.tsx): map
   `attachments` → the existing `Artifact` shape (already renders `<audio controls>` +
   image preview); add a small channel badge on non-web turns.
-- Telegram voice notes need a playable URL — served via the existing
+- Telegram voice notes need a playable URL, served via the existing
   attachment-download route off the stored `file_id` / node id.
 
 ## 6. Backfill (one-time)
@@ -268,29 +268,29 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
 ## 6a. Per-login assistants (migration 0143)
 
 Multi-admin logins (0111) share the anchor owner, so before 0143 every login
-resolved to the SAME default agent — two co-admins chatting at once interleaved
+resolved to the SAME default agent, two co-admins chatting at once interleaved
 in one thread, and each turn's history block fed the other person's words to the
 model.
 
 The fix rides on the split this document already established: because the stream
-is keyed `(owner_id, agent_id)` — and the `conversation_changed` NOTIFY payload
-(0091), read cursors (0090), digests and the inbox all key off the agent too —
+is keyed `(owner_id, agent_id)`, and the `conversation_changed` NOTIFY payload
+(0091), read cursors (0090), digests and the inbox all key off the agent too,
 giving a login its own agent row splits every one of them for free.
 
 `agents.assigned_user_id` (nullable, `ON DELETE SET NULL`, partial-unique) binds
 an agent to one login. Moving parts:
 
-- **Clone** — `cloneAgentFields` (`server/web/lib/agent-clone.ts`, unit-tested)
+- **Clone**: `cloneAgentFields` (`server/web/lib/agent-clone.ts`, unit-tested)
   copies the source's route, prompt, skills, tool groups and `delegate_to`.
   It does NOT copy persona notes (they're about a different human) and cannot
   copy a Telegram binding (`channels` rows key off `agent_id`). Priority lands
   one BELOW the source, so `pickWebDefaultAgent`'s slug tiebreak can never let a
   clone become the brain-wide default for headless callers (reminders,
   heartbeats).
-- **Identity — the `{{name}}` token.** A copied prompt named its SOURCE: an
-  assistant called Tommy opened with *"You are Mira — an RBI specialist"*
+- **Identity, the `{{name}}` token.** A copied prompt named its SOURCE: an
+  assistant called Tommy opened with *"You are Mira, an RBI specialist"*
   (observed live at v0.220.0). `name` and `system_prompt` are separate columns
-  and nothing kept them in step — the same reason renaming any agent in
+  and nothing kept them in step, the same reason renaming any agent in
   `/settings/agents` left it introducing its old name. So the name is now a
   token, resolved once per turn:
   - `composeSystemPromptWithSkills` (`packages/agent-runtime/src/skills.ts`)
@@ -300,60 +300,60 @@ an agent to one login. Moving parts:
     a new call site cannot forget it.
   - The persona bank emits the token instead of interpolating a name, so fresh
     installs are name-agnostic. `PERSONA_NAME_TOKEN` is declared separately in
-    `@mantle/content` (a browser-safe leaf that agent-runtime depends on —
+    `@mantle/content` (a browser-safe leaf that agent-runtime depends on,
     importing back would cycle); `persona-bank-token.test.ts` is the tripwire
     against drift.
   - Cloning rewrites whole-word occurrences of the source's name to the token,
-    NOT to the new name — baking "Tommy" in would re-break on the next rename.
+    NOT to the new name, baking "Tommy" in would re-break on the next rename.
   - A prompt with no token is byte-identical, so existing brains' cached
     prefixes are untouched. `{{secret:service/label}}` is a different mechanism
     resolved in the HTTP dispatcher and is never matched.
-- **Resolution** — `resolveAgentForActor` (`server/web/lib/assistant.ts`) at the
+- **Resolution**: `resolveAgentForActor` (`server/web/lib/assistant.ts`) at the
   HTTP boundary: explicit slug → the login's assigned agent → the runtime's
   brain default. `resolveAssistantAgent` in `@mantle/assistant-runtime` is
   unchanged; it runs outside the request and must not learn about logins.
-- **Cookie handshake** — `mantle_assistant_agent` is per-browser and sticky, so
+- **Cookie handshake**: `mantle_assistant_agent` is per-browser and sticky, so
   a co-admin already chatting to the shared agent would keep landing there. The
   thread payload carries `assigned: {slug, assignedAt}`; the client adopts a
   newer `assignedAt` once against a `localStorage` watermark.
 - **Not privacy.** Content stays keyed to the anchor, every login sees every
   agent in the picker, and `recall_window` replays any thread. The brain is
-  still the trust boundary — this is thread separation only, and the UI says so.
+  still the trust boundary; this is thread separation only, and the UI says so.
 - **Releasing never deletes.** `DELETE /api/users/[id]/agent` only clears the
   binding; the agent and its archive stay, per the reasoning in migration 0127.
 
 ## 7. Risks & call-outs
 
 - **Multiple Telegram chats on one agent interleave** in the single stream. For the
-  single-user setup (one bot per responder, DMs only) this is correct and desired —
+  single-user setup (one bot per responder, DMs only) this is correct and desired,
   noted, not partitioned.
-- **Reminders and heartbeats stay brain-wide** — they resolve one agent (the
+- **Reminders and heartbeats stay brain-wide**: they resolve one agent (the
   pinned `reminderAgentSlug`, or `heartbeats.agent_slug`), so a per-login
   assistant does not get its own reminders. Deliberate; per-login routing is
   separate work.
 - **`/settings/config` "adopt" converges only the effective persona**
-  (`syncPersonaSkills`), so it won't reach clones. The boot reconcile does —
+  (`syncPersonaSkills`), so it won't reach clones. The boot reconcile does,
   `reconcilePersonaCapabilitiesByRole` and `wireDelegation` both operate on every
-  enabled responder/assistant — so clones stay current across version bumps.
-- **Dual-write transactionality** — Telegram writes both `telegram_messages` and
+  enabled responder/assistant, so clones stay current across version bumps.
+- **Dual-write transactionality**: Telegram writes both `telegram_messages` and
   `assistant_messages`; wrap in one transaction so a crash can't half-record a turn.
-- **Digest re-keying** — see §6; old digests must gain `agent_id` or be migrated.
-- **Recall / `find_window`** — VERIFIED: Remy's `find_window` matches digests purely by
+- **Digest re-keying**: see §6; old digests must gain `agent_id` or be migrated.
+- **Recall / `find_window`**: VERIFIED: Remy's `find_window` matches digests purely by
   the `conversation-digest` tag + period + embedding (it only reads `data.source` as a
   display label), so the re-key to `data.agent_id` is safe. `recall_window`, however,
-  replayed raw turns from BOTH `telegram_messages` AND `assistant_messages` — after
+  replayed raw turns from BOTH `telegram_messages` AND `assistant_messages`, after
   cutover a Telegram turn lives in both, so `surface='all'` would double-count it. Fixed
   in Phase 3: the `assistant_messages` branch is now filtered to `channel='web'` (Telegram
   still replays from `telegram_messages`, which stays authoritative).
-- **Telegram short-term continuity at cutover** — the responder reads raw history from
+- **Telegram short-term continuity at cutover**: the responder reads raw history from
   `assistant_messages` (per agent). Pre-cutover Telegram turns live only in
   `telegram_messages` until the Phase 6 backfill, and pre-cutover digests carry
   `data.chat_id` (not `data.agent_id`). So immediately after cutover a Telegram thread's
   short-term history + digests look empty until new turns accumulate. **Run Phase 6
   (backfill + digest re-key) promptly after Phase 3 to close this gap.** Replies keep
-  working throughout — only recalled context is affected.
+  working throughout; only recalled context is affected.
 - **`flattenChatMessagesForAdapter`** rejects multimodal/tool messages; the summarizer
-  path stays single-turn text, so unaffected — but worth a regression check.
+  path stays single-turn text, so unaffected, but worth a regression check.
 
 ## 8. Sequencing
 
@@ -383,7 +383,7 @@ committing per phase on `main` with `pnpm --filter @mantle/web run typecheck`:
 
 (Web before Telegram so the shared module is proven on the lower-risk surface first.)
 
-## 9. Proof the abstraction holds — WhatsApp later
+## 9. Proof the abstraction holds: WhatsApp later
 
 A new channel needs only: a poll/webhook worker that calls
 `recordTurn(channel='whatsapp', …)`, and a send function keyed off `external_ref`.

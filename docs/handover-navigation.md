@@ -1,10 +1,10 @@
-# Handover — Navigation (routes + inline maps)
+# Handover: Navigation (routes + inline maps)
 
 _Written 2026-06-21 · lands in the next release. Builds directly on
 [Location](./handover-companion-location.md)._
 
 The assistant can now answer "where's the nearest coffee shop and how do I get
-there?" — it finds the place, **finds a route**, **plots it on a map shown inline
+there?"; it finds the place, **finds a route**, **plots it on a map shown inline
 in chat**, and gives a short driving/walking **overview** (distance + time + a few
 key turns). It is deliberately **not** live turn-by-turn navigation.
 
@@ -14,11 +14,11 @@ key turns). It is deliberately **not** live turn-by-turn navigation.
   code. Keep attaching `location` to `POST /api/assistant/turn` exactly as the
   [Location handover](./handover-companion-location.md) describes.
 - The map arrives as an ordinary **image artifact** on the turn response
-  (`artifacts[]`, `kind: "image"`, a PNG in `base64`) — the same channel a
+  (`artifacts[]`, `kind: "image"`, a PNG in `base64`), the same channel a
   generated image or a TTS voice note already uses. The companion already writes
   image artifacts to a temp file and renders them inline
   (`_attachmentsFromArtifacts` → `Image.file`). A route map is just another image.
-- Same for the web `/assistant` — the PNG renders via the existing `ArtifactView`.
+- Same for the web `/assistant`, the PNG renders via the existing `ArtifactView`.
 
 ## Why this shape (no SDKs, API-only, provider-swappable)
 
@@ -30,7 +30,7 @@ This mirrors the Location split exactly:
 | `route_map` | **Builtin** (`packages/tools/src/builtins-locations.ts`) | HTTP tools return JSON; they can't carry a binary PNG into the artifact channel. So the image is a builtin (like `generate_image`): it calls the **Static Images API** server-side and emits the PNG as an artifact. |
 | `navigation` | **Skill** | Orchestrates the lazy loop. Attached to the `assistant` persona alongside `location_awareness`. |
 
-No map SDK on either surface — the map is a static PNG, so there's no
+No map SDK on either surface; the map is a static PNG, so there's no
 `mapbox-gl-js` (web) or Flutter map plugin to bundle. Interactive pan/zoom is
 explicitly out of scope.
 
@@ -40,15 +40,15 @@ explicitly out of scope.
    context from the `location` you send). No location → the agent asks or uses a
    saved place; it won't invent one. Mock/low-accuracy/stale fixes are caveated
    per `location_awareness`.
-2. **Destination** — for a named place/category the agent calls `mapbox_search`
+2. **Destination**: for a named place/category the agent calls `mapbox_search`
    (proximity-biased to the current location) and takes the best match's centre.
-3. **Profile** — `driving` (default) or `walking`, chosen from the wording.
-4. **Route** — `mapbox_directions(profile, from, to)` → distance, duration,
+3. **Profile**: `driving` (default) or `walking`, chosen from the wording.
+4. **Route**: `mapbox_directions(profile, from, to)` → distance, duration,
    `geometry` (an encoded polyline, precision 5), and step instructions.
-5. **Plot** — `route_map(polyline, from/to)` builds a Static Images URL
+5. **Plot**: `route_map(polyline, from/to)` builds a Static Images URL
    (`path-…(polyline)` + start/end pins, `auto` viewport), **fetches it
    server-side with the vault key**, and returns the PNG as an image artifact.
-6. **Overview** — the agent writes a short human summary (≈X km, ≈Y min, a few
+6. **Overview**: the agent writes a short human summary (≈X km, ≈Y min, a few
    key turns) and notes it's an overview, not live navigation.
 
 ## Security / cost notes
@@ -69,7 +69,7 @@ explicitly out of scope.
 
 ## Other surfaces
 
-On **Telegram / voice** there's no inline image — the agent skips `route_map`
+On **Telegram / voice** there's no inline image, the agent skips `route_map`
 (or notes the map isn't shown) and gives the overview in words; on voice it stays
 plain and spoken. (`navigation` skill enforces this.)
 

@@ -1,4 +1,4 @@
-# System integrity — one manifest for the agent/skill/tool/worker graph
+# System integrity: one manifest for the agent/skill/tool/worker graph
 
 > A provisioned Mantle is a graph of **agents → skills → tools** plus **ai_workers**.
 > Those links used to be defined and wired across a dozen CLI seed scripts,
@@ -10,7 +10,7 @@
 
 Shipped 2026-06. Code lives in `apps/web/lib/system-manifest/`.
 
-> **Update (2026-06, tools/skills reshape — see [docs/tools-and-skills.md](tools-and-skills.md)):**
+> **Update (2026-06, tools/skills reshape, see [docs/tools-and-skills.md](tools-and-skills.md)):**
 > the graph is now **agents → {skills (teaching), tool groups (capability)} → tools**.
 > Skills carry no tools (`skills.tool_slugs` dropped). The manifest gained
 > `MANIFEST_TOOL_GROUPS`; the checker gained `group-tools` + `dangling-groups`
@@ -24,7 +24,7 @@ Shipped 2026-06. Code lives in `apps/web/lib/system-manifest/`.
 
 Adding a specialist agent used to mean editing 5–7 files (a new seed script, the
 onboarding stack, the sanity-check list, the assist-binding map, `package.json`,
-…) — and they drifted: `runSanityChecks` was missing `coder` for a while even
+…), and they drifted: `runSanityChecks` was missing `coder` for a while even
 though onboarding seeded it. Worse, the runtime resolvers
 (`resolveAgentSkills`, `resolveAgentTools`) **silently drop** a skill/tool whose
 row is missing or disabled, so a broken link looks "set up" but is dead. There
@@ -37,19 +37,19 @@ closed-set declarative catalog guarded by a drift test.
 
 ---
 
-## 2. The manifest — single source of truth
+## 2. The manifest: single source of truth
 
 `apps/web/lib/system-manifest/manifest.ts` declares the **default** system:
 
-- `MANIFEST_SKILLS` — `slug`, `name`, `toolSlugs` (builtin slugs it bundles),
+- `MANIFEST_SKILLS`, `slug`, `name`, `toolSlugs` (builtin slugs it bundles),
   `instructions` (the body, from `./prompts.ts`).
-- `MANIFEST_AGENTS` — `slug`, `role`, `model` (+ `envModelVar`), `toolSlugs`
+- `MANIFEST_AGENTS`, `slug`, `role`, `model` (+ `envModelVar`), `toolSlugs`
   (or the `'DEFAULT_ASSISTANT'` sentinel → `DEFAULT_ASSISTANT_TOOL_SLUGS`),
   `skillSlugs`, `isDelegate` (does the persona delegate to it), `assistSurface`
   (`'pages'`/`'tables'` → the editor Assist panel binding), `systemPrompt` (from
-  `./prompts.ts`; the persona has none — its prompt is built from the persona
+  `./prompts.ts`; the persona has none; its prompt is built from the persona
   bank), `params`, `priority`. One entry is `isPersona: true` (slug `assistant`).
-- `MANIFEST_WORKERS` — the ai_worker `kind`s + canonical models, `required`
+- `MANIFEST_WORKERS`, the ai_worker `kind`s + canonical models, `required`
   marking the always-on indexing pipeline (extractor/summarizer/reflector/document).
 
 Derived selectors remove the duplication:
@@ -58,7 +58,7 @@ Derived selectors remove the duplication:
 - `ASSIST_SURFACE_DEFAULTS` = `{ pages, tables }` → `lib/assist-agent.ts`'s
   `DEFAULT_ASSIST_SLUG` is now **derived from this**, not a hardcoded literal.
 - `KNOWN_TOOL_SLUGS` = `BUILTIN_TOOLS` slugs + `KNOWN_EXTERNAL_TOOL_SLUGS`
-  (heartbeat controls register only in the agent process — see §6).
+  (heartbeat controls register only in the agent process, see §6).
 
 The verbatim prompt/instruction bodies live in `./prompts.ts` (`SKILL_INSTRUCTIONS`,
 `AGENT_PROMPTS`) so the manifest stays scannable.
@@ -67,23 +67,23 @@ The verbatim prompt/instruction bodies live in `./prompts.ts` (`SKILL_INSTRUCTIO
 (Saskia) and `apostle-paul`. The manifest defines DEFAULTS; operator agents
 coexist and are never seeded or clobbered by anything derived from it.
 
-The manifest is **server-only** (it imports `@mantle/tools`). Every consumer —
-the seeder, the checker, onboarding, the `/debug` route — is server-side.
+The manifest is **server-only** (it imports `@mantle/tools`). Every consumer,
+the seeder, the checker, onboarding, the `/debug` route, is server-side.
 
 ---
 
 ## 3. Three consumers, one source
 
-### a. CI drift-test — `manifest.test.ts`
+### a. CI drift-test: `manifest.test.ts`
 
 Pure (no DB). Fails `pnpm test` if anything dangles: a skill/agent referencing an
 unknown tool slug, an agent referencing a non-manifest skill, a delegate target
 that isn't an agent, a duplicate slug, a non-unique assist surface, a dangerous
 tool (`run_terminal`/`page_delete`) leaking into the persona grant, a skill
 without instructions, or a specialist without a system prompt. **This is how a
-new tool/skill gets kept honest** — a typo fails the build, not production.
+new tool/skill gets kept honest**, a typo fails the build, not production.
 
-### b. The seeder — `seed.ts` `applyManifest(ownerId, opts?)`
+### b. The seeder: `seed.ts` `applyManifest(ownerId, opts?)`
 
 The single seeding path. Seeds: builtin tool rows (`seedBuiltinTools`) → skills →
 specialist agents → delegation wiring → the persona's skill attach. The persona
@@ -93,11 +93,11 @@ delegation to it.
 
 Two modes:
 
-- **`gap-fill`** (default, onboarding) — create what's absent; on an *existing*
+- **`gap-fill`** (default, onboarding): create what's absent; on an *existing*
   agent NEVER overwrite `systemPrompt`/`model`/`params` (operator customisations),
   only union `skillSlugs`, set `toolSlugs` if empty, ensure `enabled`. Existing
   skills are left untouched. Re-running the wizard can't clobber edits.
-- **`overwrite`** (CLI `seed:*`) — upsert rows to the canonical manifest definition.
+- **`overwrite`** (CLI `seed:*`): upsert rows to the canonical manifest definition.
 
 `opts.only` filters which agent slugs to seed; `opts.onlySkills` which skills.
 Delegation wiring is **slug-agnostic**: each in-scope `isDelegate` specialist is
@@ -111,13 +111,13 @@ Consumers:
   `applyManifest(o, { only/onlySkills, mode: 'overwrite' })`. `seed:shared-skills`
   additionally keeps its operator-persona wiring (`telegram-default`/`apostle-paul`
   + `SASKIA_PROMPT`) inline. **The scripts import the seed module by RELATIVE path**
-  (`../lib/system-manifest/seed`) — `tsx` doesn't resolve the `@/` tsconfig alias,
+  (`../lib/system-manifest/seed`), `tsx` doesn't resolve the `@/` tsconfig alias,
   and the barrel pulls `integrity.ts`'s `@/` chain.
 
-### c. The live checker — `integrity.ts` `checkSystemIntegrity(ownerId)`
+### c. The live checker: `integrity.ts` `checkSystemIntegrity(ownerId)`
 
 Loads the real DB rows and compares them to the manifest + validates referential
-integrity — catching the silent-drop cases. Returns severity-tagged
+integrity, catching the silent-drop cases. Returns severity-tagged
 `SystemCheck[]` (`apps/web/lib/integrity/types.ts`, reuses `AuditSeverity`):
 
 | check | what it asserts |
@@ -133,10 +133,10 @@ integrity — catching the silent-drop cases. Returns severity-tagged
 | Editor Assist binding | `resolveAssistAgentSlug` resolves for /pages + /tables |
 
 Surfaced two ways:
-- **`/debug/integrity` → "System config" tab** — runs `checkSystemIntegrity` on
+- **`/debug/integrity` → "System config" tab**: runs `checkSystemIntegrity` on
   open (once, on mount), re-runnable, with expandable per-finding samples.
   (`GET /api/debug/integrity/system`.)
-- **Onboarding's "Check" step** — `runSanityChecks` calls the *same* checker, so
+- **Onboarding's "Check" step**: `runSanityChecks` calls the *same* checker, so
   the wizard and the debug surface can't drift.
 
 ---
@@ -164,7 +164,7 @@ The **Persona agent** + **Delegation wiring** checks are **slug-flexible**: they
 anchor on the canonical slug `assistant`, but a brain hand-built before
 onboarding existed (e.g. the dev brain, whose persona is `telegram-default`/
 Saskia) has no `assistant` slug, so the checker falls back to the
-highest-priority enabled responder and measures *that* persona — the label shows
+highest-priority enabled responder and measures *that* persona, the label shows
 the resolved slug. Such a brain now reads green when its real persona is wired
 correctly (tools + `invoke_agent` + grounding skills + delegation), instead of
 showing two reds for a slug it never had. A genuinely missing/broken persona
@@ -178,10 +178,10 @@ showing two reds for a slug it never had. A genuinely missing/broken persona
   (`heartbeat_*`) register into the builtin registry only in the **agent** process
   (`apps/agent` calls `registerHeartbeatTools()` before `seedBuiltinTools`). The
   web process (onboarding) never registers them, so `applyManifest`'s
-  `seedBuiltinTools` won't seed their rows — they land when the agent next boots.
+  `seedBuiltinTools` won't seed their rows; they land when the agent next boots.
   `DEFAULT_ASSISTANT_TOOL_SLUGS` deliberately excludes them, so nothing references
   a missing row. `KNOWN_EXTERNAL_TOOL_SLUGS` documents them for the validator.
 - **The persona's tool grant** is `DEFAULT_ASSISTANT_TOOL_SLUGS` (in
-  `@mantle/tools`) — `BUILTIN_TOOLS` minus a deny-set (`run_terminal`,
+  `@mantle/tools`), `BUILTIN_TOOLS` minus a deny-set (`run_terminal`,
   `page_delete`, the `table_*` grid tools → delegate to Ledger, `web_search`/
   `find_window` → delegate to Researcher/Remy, federation `peer_*`). 68 tools.

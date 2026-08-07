@@ -1,10 +1,10 @@
 /**
- * Generated BACKDROPS — the same DiceBear styles the avatars use, drawn as a
+ * Generated BACKDROPS, the same DiceBear styles the avatars use, drawn as a
  * full-bleed surface instead of a 40px circle.
  *
  * EXPERIMENTAL. The observation behind it: several of the Minimalist and Scenes
  * styles (waves, landscape, constellation, stripes, weave) are not really
- * portraits at all — they are small abstract compositions that read far better
+ * portraits at all; they are small abstract compositions that read far better
  * at panel size than at avatar size. This module renders one to fill a region.
  *
  * It deliberately reuses `avatar.ts` rather than forking it: the same registry,
@@ -19,7 +19,7 @@
  *    square composition inside a tall sidebar. `fitSvg` rewrites the root tag to
  *    scale-and-crop instead, which is what "background" means.
  *
- * 2. UPRIGHT. Most of these styles randomise rotation per seed — `waves`
+ * 2. UPRIGHT. Most of these styles randomise rotation per seed, `waves`
  *    picks from a full 360°, so one seed in two hangs the sea from the ceiling.
  *    Charming on a 32px circle, wrong on a wall. Where a style offers a `none`
  *    rotation variant we ask for it; where it doesn't, the seed still decides.
@@ -35,12 +35,12 @@ import {
 } from './avatar';
 
 /** Waves is the default because its layered bands degrade the most gracefully
- *  under a heavy crop — at panel scale you see two or three sweeping edges
+ *  under a heavy crop, at panel scale you see two or three sweeping edges
  *  rather than a busy field competing with the nav labels on top of it. */
 export const DEFAULT_BACKDROP_STYLE = 'waves';
 
 /**
- * Styles that earn their keep at panel size — the registry's `backgrounds`
+ * Styles that earn their keep at panel size, the registry's `backgrounds`
  * category, not a second hand-kept list that could drift out of step with it.
  *
  * Not a hard restriction: `renderBackdropSvg` will draw ANY style in the
@@ -52,7 +52,7 @@ export const BACKDROP_STYLE_IDS: readonly string[] = BACKGROUND_STYLES.map((s) =
 /**
  * Rewrite the root `<svg>` so it fills its box instead of sizing itself.
  *
- * Only the FIRST tag is touched, and only its sizing attributes — the
+ * Only the FIRST tag is touched, and only its sizing attributes, the
  * `<metadata>` RDF credit block DiceBear embeds (which the CC BY styles' licence
  * relies on) and every drawn element are left exactly as generated.
  *
@@ -71,12 +71,12 @@ export function fitSvg(svg: string, position = 'xMidYMid'): string {
 export type RenderBackdropOptions = {
   /** Style id from the avatar registry. Unknown ids resolve, never throw. */
   style?: string | null;
-  /** Stable seed — the same seed always yields the same backdrop. */
+  /** Stable seed, the same seed always yields the same backdrop. */
   seed: string;
   /** The theme's chart ramp, as hex. Omit to keep the style's own palette. */
   ramp?: readonly string[];
   /** Where the crop is anchored, as an SVG `preserveAspectRatio` alignment.
-   *  `xMidYMax` keeps the bottom edge — which is where wave crests live. */
+   *  `xMidYMax` keeps the bottom edge, which is where wave crests live. */
   position?: string;
   /** Let the style pick its own rotation, as it does for avatars. Off by
    *  default: see the UPRIGHT note above. */
@@ -84,7 +84,7 @@ export type RenderBackdropOptions = {
 };
 
 /** DiceBear rejects any colour that isn't hex (it throws on `oklch(...)`).
- *  Mirrors avatar.ts — a backdrop must never be the thing that takes a screen
+ *  Mirrors avatar.ts; a backdrop must never be the thing that takes a screen
  *  down, so anything that wouldn't validate is dropped rather than passed. */
 const HEX = /^#?([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 function hexOnly(colors: readonly string[] | undefined): string[] | undefined {
@@ -102,7 +102,7 @@ function draw(loaded: Loaded, opts: RenderBackdropOptions): string {
   const colors = hexOnly(ramp);
   if (colors) {
     dicebear.backgroundColor = colors;
-    // Groups declared `contrastTo` another group are left alone deliberately —
+    // Groups declared `contrastTo` another group are left alone deliberately,
     // DiceBear solves them to black or white against whatever background it
     // picked. For `waves` that IS the wave colour, so honouring it is what
     // keeps the crests legible on every theme rather than tinting them into
@@ -110,7 +110,7 @@ function draw(loaded: Loaded, opts: RenderBackdropOptions): string {
     for (const g of loaded.tintGroups) dicebear[`${g}Color`] = colors;
   }
 
-  // Only ask for a variant the style actually declares — DiceBear throws on an
+  // Only ask for a variant the style actually declares, DiceBear throws on an
   // unknown option key, and not every style has a `rotation` component.
   if (!allowRotation && loaded.variants.rotation?.includes('none')) {
     dicebear.rotationVariant = ['none'];

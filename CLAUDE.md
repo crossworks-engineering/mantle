@@ -1,14 +1,14 @@
-# Mantle — repo guidance
+# Mantle: repo guidance
 
 ## Worktrees are the default for parallel work
 
-If more than one session touches this repo at once — a second Claude session, or
-a session running alongside your editor — they must **not** share the original
+If more than one session touches this repo at once, a second Claude session, or
+a session running alongside your editor; they must **not** share the original
 checkout. Sharing one working directory has caused real failures here: a session
 switched the branch out from under another, uncommitted edits intermingled, and a
 shared `node_modules`/lockfile broke imports (a package showed up "not found"
 after a revert that never re-installed). Give each parallel session its own git
-worktree — separate working dir, branch, index, and `node_modules` — and none of
+worktree (separate working dir, branch, index, and `node_modules`) and none of
 that class of bug can happen.
 
 **Spin one up (one command):**
@@ -24,18 +24,18 @@ store, so ~seconds), and copies `.env.local`. Tear down with
 
 **Rules of the road**
 
-- The **original clone is the integrator** — keep it on `main` and use it for
+- The **original clone is the integrator**: keep it on `main` and use it for
   merges/releases. Don't develop features directly in it while other sessions
   run; do feature work in a worktree.
 - `main` (or any branch) can be checked out in **only one** worktree at a time.
   Land a finished branch with **`scripts/merge-branch.sh <branch>`** (runs from
   anywhere, operates in the integrator): ff-only merge, then the version bump as
   its own `release:` commit ON MAIN. Feature branches never touch version
-  fields — bumping there made every concurrent session edit the same 4
+  fields; bumping there made every concurrent session edit the same 4
   package.json lines, a guaranteed conflict; `pnpm version:bump` now refuses to
   run off main. If the merge isn't a fast-forward, rebase in your worktree and
   re-run the script.
-- **Refs are shared** across worktrees — branches, tags, and the **stash stack**.
+- **Refs are shared** across worktrees, branches, tags, and the **stash stack**.
   Use unique branch names; don't run a bare `git stash` while others are active
   (scope it: `git stash push -- <paths>`).
 - Each worktree has its own `.next`, so concurrent `next build`s are safe (the
@@ -44,7 +44,7 @@ store, so ~seconds), and copies `.env.local`. Tear down with
   (`PORT=3100 pnpm -C server/web dev`).
 - **The dev stack belongs to the original clone, not to your worktree.** Its
   Postgres and MinIO data are bind mounts resolved relative to compose's working
-  directory, and the compose project name is pinned (`mantle-dev`) — so running
+  directory, and the compose project name is pinned (`mantle-dev`), so running
   compose from a worktree does not give you a separate stack, it gives you THE
   SAME containers pointed at a DIFFERENT data directory. `pnpm infra:up`,
   `start`, `stop`, `reset` and friends all go through `scripts/dev-compose.sh`,
@@ -61,7 +61,7 @@ store, so ~seconds), and copies `.env.local`. Tear down with
 
 This repo is **public**, and the commits are Jason's work. Never add a
 `Co-Authored-By: Claude …` trailer or a `🤖 Generated with [Claude Code]` line
-to a commit message — GitHub renders them as a real co-author on the commit and
+to a commit message, GitHub renders them as a real co-author on the commit and
 in the contributors graph, which misrepresents authorship. This holds for every
 session, every model, every worktree.
 
@@ -73,7 +73,7 @@ git config core.hooksPath scripts/git-hooks   # once per clone/worktree
 
 That same setting enables the `pre-push` gate, which runs `pnpm verify` before
 a push (bypass with `--no-verify`). Write commit messages without the trailers
-anyway — the hook is the backstop, not the rule.
+anyway; the hook is the backstop, not the rule.
 
 History before 2026-07-25 still carries ~1695 of these. Left deliberately:
 scrubbing them means rewriting every SHA and re-pointing 115 release tags,
@@ -90,18 +90,18 @@ git checkout demo && git merge --no-ff main
 
 **Never the reverse.** Merging demo into main would drag the whole seeded-demo
 apparatus into the product tree. That used to be a line in a handover; it is now
-mechanical — `pre-push` refuses to push `main` if its tree contains `demo/`,
+mechanical, `pre-push` refuses to push `main` if its tree contains `demo/`,
 checked before `pnpm verify` so it fails in a second rather than after a full
 test run. If you hit it, you almost certainly merged the wrong direction:
 `git reset --hard origin/main` and merge main into demo instead.
 
 ## Other guidance
 
-- **Frontend-only dev (no local Docker/DB): `pnpm dev:fe`** — runs the owner UI
+- **Frontend-only dev (no local Docker/DB): `pnpm dev:fe`**: runs the owner UI
   (`client/web`) detached against a deployed brain (the test box). Setup + troubleshooting:
   [docs/db-less-dev.md](docs/db-less-dev.md). Plain `pnpm dev` expects a full
   local stack and will 500 without one.
 - UI conventions: [server/web/CLAUDE.md](server/web/CLAUDE.md).
 - What a brain ships with (agents/skills/tool-groups/workers/persona): the system
-  manifest is the single source of truth — see
+  manifest is the single source of truth, see
   [server/web/lib/system-manifest/CLAUDE.md](server/web/lib/system-manifest/CLAUDE.md).

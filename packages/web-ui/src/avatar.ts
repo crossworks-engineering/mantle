@@ -49,7 +49,7 @@ import { Avatar, Style } from '@dicebear/core';
  * The catalogue used to be split by look (minimalist / characters / scenes),
  * which described the artwork but not the job. Since the same generator now
  * draws both 32px avatars and full-panel backgrounds (see backdrop.ts), the
- * useful split is by PURPOSE — a portrait makes a poor wallpaper, and a field
+ * useful split is by PURPOSE; a portrait makes a poor wallpaper, and a field
  * of waves makes an unrecognisable avatar.
  *
  * `initials`, `initial-face`, `glyphs` and `icons` sit under `avatars` despite
@@ -504,7 +504,7 @@ export const BACKGROUND_STYLES: AvatarStyleMeta[] = AVATAR_STYLES.filter(
 /**
  * Was `shapes`, which is now a background. Nothing was migrated: a brain that
  * explicitly saved a style keeps it, and `resolveAvatarStyle` still resolves
- * every id in the registry regardless of category — rendering never cared about
+ * every id in the registry regardless of category, rendering never cared about
  * the split. Only a brain that never chose one moves, and it moves to a style
  * that is actually an avatar.
  */

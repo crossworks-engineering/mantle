@@ -1,10 +1,10 @@
-# Contacts — the index of who Saskia may reach
+# Contacts: the index of who Saskia may reach
 
-A `contact` node is a person or organisation Saskia may reach — and now, the
+A `contact` node is a person or organisation Saskia may reach, and now, the
 people whose mail Mantle will ingest. It does **two** jobs at once:
 
-1. **Identity** — fields the human form expects (name + company + emails + cell).
-2. **Allowlist — both directions.** The set of contact emails IS the gate for
+1. **Identity**: fields the human form expects (name + company + emails + cell).
+2. **Allowlist; both directions.** The set of contact emails IS the gate for
    *outbound* `email_send` *and* (since 2026-06-04) *inbound* ingestion. Each
    contact carries a list of entries (`data.emails`), each a full address
    (`jason@schoeman.me`) or a `@domain` wildcard (`@schoeman.me` = all mail from
@@ -14,13 +14,13 @@ people whose mail Mantle will ingest. It does **two** jobs at once:
    send-vs-ingest asymmetry.
 
 Companion docs:
-- [`email-send.md`](./email-send.md) — the send half; its gate reads from here.
-- [`email-ingest.md`](./email-ingest.md) — the inbound half; its `ContactGate`
+- [`email-send.md`](./email-send.md), the send half; its gate reads from here.
+- [`email-ingest.md`](./email-ingest.md), the inbound half; its `ContactGate`
   reads from here (`§3a`, `§6`).
-- [`memory.md`](./memory.md) — the brain layers a contact node's `description`
+- [`memory.md`](./memory.md), the brain layers a contact node's `description`
   feeds into (summary / embedding / facts / entities).
 - [`architecture.md` §6](./architecture.md#6-the-nodes-table--mantles-central-abstraction)
-  — the `nodes` pattern this rides on (no new table).
+, the `nodes` pattern this rides on (no new table).
 
 ---
 
@@ -75,22 +75,22 @@ first + last  →  company  →  email  →  formatted cell  →  "Untitled cont
 
 Pure helpers in [`contacts-format.ts`](../packages/content/src/contacts-format.ts):
 
-- **`normalizeCountryCode`** — accepts `+27`, `27`, `00 27`; rejects leading
+- **`normalizeCountryCode`**: accepts `+27`, `27`, `00 27`; rejects leading
   zeros (ITU-T E.164: country codes are non-zero) and codes longer than 4
   digits.
-- **`digitsOnly`** — strips formatting so `(760) 810-0774` becomes `7608100774`.
-- **`toE164`** — `(+27, 760810774)` → `+27760810774`. Stored on the row as
+- **`digitsOnly`**: strips formatting so `(760) 810-0774` becomes `7608100774`.
+- **`toE164`**: `(+27, 760810774)` → `+27760810774`. Stored on the row as
   `cellE164` (derived; not persisted) and used by the future SMS path.
-- **`formatCell`** — right-to-left grouping (4 then 3s) →
+- **`formatCell`**: right-to-left grouping (4 then 3s) →
   `+27 76 081 0774`. Drives the live preview in the form.
 
 All unit-tested in [`contacts.test.ts`](../packages/content/src/contacts.test.ts).
 
 ---
 
-## 2. The email gate — contacts ARE the allowlist (both directions)
+## 2. The email gate: contacts ARE the allowlist (both directions)
 
-**Outbound** — defined in [`builtins-email.ts`](../packages/tools/src/builtins-email.ts)
+**Outbound**: defined in [`builtins-email.ts`](../packages/tools/src/builtins-email.ts)
 `blockedRecipients` / `allowlistError`, called from both `email_send` and
 `email_page`:
 
@@ -103,7 +103,7 @@ Refusal returns a clear message: *"these recipients aren't in the user's
 contact list: …  Ask the user to confirm and add them as contacts at /contacts."*
 No tool-loop side effects, no surprise sends.
 
-**Inbound** — defined in [`contact-gate.ts`](../packages/content/src/contact-gate.ts)
+**Inbound**: defined in [`contact-gate.ts`](../packages/content/src/contact-gate.ts)
 `loadContactGate(ownerId) → allows(fromAddr)`, called per message in
 `syncAccount`. Mail is ingested iff `From` matches a contact address, a contact
 `@domain` wildcard, or one of the user's own account addresses. Empty contacts ⇒
@@ -111,7 +111,7 @@ nothing inbound (an empty allowlist is an empty inbox). Full detail in
 [`email-ingest.md` §3a](./email-ingest.md#3a-the-gate--loadcontactgate).
 
 **The deliberate asymmetry:** domains are **inbound-only**. A `@domain` wildcard
-means "trust mail *from* this domain" — it does **not** let Saskia send to an
+means "trust mail *from* this domain"; it does **not** let Saskia send to an
 arbitrary address there (you can't mail a whole domain). So the send gate reads
 concrete addresses only (`partitionEmailEntries(...).addresses`); the inbound
 gate uses both addresses and domains.
@@ -123,7 +123,7 @@ unlocks emailing them + ingesting their mail; deleting one revokes both.
 
 ---
 
-## 2a. Team membership — a role a contact can hold
+## 2a. Team membership: a role a contact can hold
 
 Since v0.114.0 a contact can additionally be a **team member**: a live row in
 `contact_team_tokens` holding the SHA-256 of a short shown-once token (8
@@ -131,11 +131,11 @@ chars, look-alike-free alphabet). The `/contacts` UI mints it via a header
 "Team member" switch (shown-once dialog with copy; regenerate + remove
 confirms; a list badge marks members).
 
-The token is that person's **only credential** on Mantle's external surfaces —
+The token is that person's **only credential** on Mantle's external surfaces,
 team-mode shares (`/s/<token>`, see
 [`app-authoring-guide.md`](./app-authoring-guide.md)), the Team Workspace +
-its Assistant (`/team`), and the Team Hub (`/hub`) — see
-[`team-chat.md`](./team-chat.md) — and every action on those surfaces is
+its Assistant (`/team`), and the Team Hub (`/hub`), see
+[`team-chat.md`](./team-chat.md), and every action on those surfaces is
 audited against the contact. Membership is the single source of truth:
 disabling the toggle or deleting the contact deletes the row, and because
 every request re-checks liveness, access dies immediately, mid-session.
@@ -148,7 +148,7 @@ Helpers live in `packages/content/src/team-tokens.ts`
 
 ---
 
-## 3. Activity tracking — per-method counters
+## 3. Activity tracking: per-method counters
 
 After every successful `email_send` / `email_page` the matching contact's
 counter bumps atomically:
@@ -159,7 +159,7 @@ data.last_contacted_at.email  ← now()
 ```
 
 Implemented by **`recordContactSent(ownerId, contactId, method)`** in
-[`contacts.ts`](../packages/content/src/contacts.ts) — one chained `jsonb_set`
+[`contacts.ts`](../packages/content/src/contacts.ts), one chained `jsonb_set`
 so concurrent sends can't lose increments. Method is open-ended on the data
 side (just a key in the jsonb object); the TypeScript `ContactMethod` type
 covers `'email' | 'sms'` for the call sites we wire ourselves. When the SMS
@@ -172,7 +172,7 @@ and the form has a small "5 emails sent · last on …" strip near the top.
 
 ## 4. The brain pipeline
 
-A contact's `description` is fed to the extractor body resolver — the same
+A contact's `description` is fed to the extractor body resolver, the same
 pipeline that processes notes / pages / files. The extractor reads:
 
 ```
@@ -184,10 +184,10 @@ Cell: <country_code> <cell>
 ```
 
 …and produces:
-- `nodes.data.summary` — a one-sentence summary.
-- `nodes.data.entities` — names mentioned.
-- `nodes.embedding` — the search vector.
-- `content_chunks` rows — section-sized embeddings for long descriptions.
+- `nodes.data.summary`, a one-sentence summary.
+- `nodes.data.entities`, names mentioned.
+- `nodes.embedding`, the search vector.
+- `content_chunks` rows, section-sized embeddings for long descriptions.
 - `facts` rows + the ADD/UPDATE/DELETE classifier.
 - `entities` reconciled (one per person/org) + `mentioned_in` edges.
 
@@ -208,7 +208,7 @@ note.
 
 ---
 
-## 5. Saskia's reach — the `contact_*` tools
+## 5. Saskia's reach: the `contact_*` tools
 
 In [`builtins-contacts.ts`](../packages/tools/src/builtins-contacts.ts):
 
@@ -218,16 +218,16 @@ In [`builtins-contacts.ts`](../packages/tools/src/builtins-contacts.ts):
 | `contact_list` | Browse, newest-updated first. |
 | `contact_get(id)` | Full record incl. counters. |
 | `contact_create(…)` | Save someone. **Only when explicitly asked.** |
-| `contact_update(id, …)` | Patch — only fields you pass change. |
+| `contact_update(id, …)` | Patch, only fields you pass change. |
 | `contact_delete(id)` | Removes from the email allowlist too. |
 
-All ungated (`requiresConfirm: false`) — restraint lives in the tool
+All ungated (`requiresConfirm: false`), restraint lives in the tool
 descriptions, which are loud about *"use ONLY when the user explicitly asks…
 Never add contacts on your own initiative just because someone's name came up."*
 
 **Auto-granted at boot** to responder/assistant via `CONTACT_AUTO_GRANT_SLUGS`
 (part of `CORE_AUTO_GRANT_SLUGS` in `apps/agent/src/main.ts`): read + add +
-update. **Delete is excluded from the auto-grant** — destructive ops require
+update. **Delete is excluded from the auto-grant**: destructive ops require
 an explicit per-agent grant in `/settings/tools`.
 
 The motivating flow:
@@ -244,7 +244,7 @@ You → Saskia: "mail Modular and ask about 2020 profiles"
 
 ---
 
-## 6. UI — `/contacts` master-detail
+## 6. UI: `/contacts` master-detail
 
 - **List (left, 340px):** search + pager + accent cards. Each card shows the
   title; secondary line shows the company (if it differs from the title) or
@@ -253,23 +253,23 @@ You → Saskia: "mail Modular and ask about 2020 profiles"
   country-code + cell with **live formatted preview** (`+27 76 081 0774`) /
   description / tags / "5 emails sent · last on …" strip.
 - **`+` button:** creates an **empty draft** (no "New contact" seed) and
-  navigates to it. Drafts are inert from every gate's POV — no email ⇒ not in
+  navigates to it. Drafts are inert from every gate's POV, no email ⇒ not in
   `contactEmails` ⇒ no gate engagement; no recipient match ⇒ no counter bumps.
 - **Save** is a divider-topped footer floated right, labelled
-  **"Save contact"** — matching the task/event form pattern.
+  **"Save contact"**: matching the task/event form pattern.
 - **Save-time validation:** at least one of `first_name`, `last_name`, or
   `company` is required (`hasIdentity` in `contacts-format.ts`). Email and
-  cell alone aren't enough — they're channels, not identities. Client
+  cell alone aren't enough; they're channels, not identities. Client
   pre-checks instantly via the leaf module; server enforces independently in
   `updateContact` as the authoritative guard.
 - **Delete** is a top-right ghost button (`<Trash2 /> Delete`) with an
-  `AlertDialog` confirm — matching events/notes/tasks.
+  `AlertDialog` confirm, matching events/notes/tasks.
 
 REST endpoints under [`apps/web/app/api/contacts/`](../apps/web/app/api/contacts/):
 `GET /` list, `POST /` create, `GET /[id]`, `PATCH /[id]`, `DELETE /[id]`.
 Server side imports through `@/lib/contacts` (which barrels through
 `@mantle/content`); the client component imports types + pure helpers from
-`@mantle/content/contacts-format` — the **leaf** subpath with no DB
+`@mantle/content/contacts-format`, the **leaf** subpath with no DB
 transitively. Importing the barrel into a client component drags `postgres`
 into the browser bundle and the build fails with `Can't resolve 'fs'`; this
 split is the intentional shape.

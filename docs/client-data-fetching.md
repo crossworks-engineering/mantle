@@ -10,7 +10,7 @@ Reference conversion: **`/settings/skills`** (`skills-client.tsx`). Copy its sha
 ## The pattern
 
 **1. Make the page data-free.** It keeps the server-side auth gate and renders the
-client component — no data props:
+client component, no data props:
 
 ```tsx
 export default async function SkillsPage() {
@@ -20,7 +20,7 @@ export default async function SkillsPage() {
 ```
 
 **2. Read with `useQuery`.** Query keys are arrays mirroring the URL. Fetch through
-`apiFetch` (`lib/api-fetch.ts`) — relative + cookie auth by default, base-URL +
+`apiFetch` (`lib/api-fetch.ts`), relative + cookie auth by default, base-URL +
 bearer when `NEXT_PUBLIC_MANTLE_API_BASE` is set (Electron / DB-less browser).
 
 ```tsx
@@ -30,7 +30,7 @@ const skillsQuery = useQuery({
 });
 ```
 
-**3. Render the states SSR used to hide** — `isPending` (loading), `isError`
+**3. Render the states SSR used to hide**: `isPending` (loading), `isError`
 (with a Retry calling `query.refetch()`), empty, then data.
 
 **4. Mutate with `useMutation`, then invalidate** (the client-side replacement for
@@ -47,7 +47,7 @@ const save = useMutation({
 
 ## Conventions
 
-- **Types come from `@mantle/client-types`** — never duplicate a row shape in the client,
+- **Types come from `@mantle/client-types`**: never duplicate a row shape in the client,
   and never `import` (value) from `@mantle/db` in a client component. Add the wire DTO to
   that package and alias the server summary to it (`type SkillSummary = SkillDTO`) so a
   drift between what the server returns and what the client expects is a **type error**.
@@ -59,7 +59,7 @@ const save = useMutation({
   disjoint prefixes (`['agents']`, `['assistant']`, `['studio']`), and the
   assistant panel never unmounts, so a save path that invalidates only its own
   key leaves the panel's model indicator stale until a full page refresh.
-- **Errors**: `apiFetch` throws `ApiError` carrying the endpoint's `{ error }` message —
+- **Errors**: `apiFetch` throws `ApiError` carrying the endpoint's `{ error }` message,
   surface it via `query.error.message` / mutation `onError` + `toast`.
 - **Auth is handled for you.** `apiFetch` detects a `401` *or* a followed redirect-to-`/login`
   and bounces the browser to `/login?next=…`. (The page also keeps a server-side
@@ -67,13 +67,13 @@ const save = useMutation({
 - **Loading** → `<Spinner>` (`components/ui/spinner.tsx`). **Secondary/optional data** (badges,
   counts that aren't the primary content) → on error, show a subtle non-blocking notice with
   Retry rather than failing the whole screen (see the skills backrefs notice).
-- **Provider**: `QueryProvider` wraps the app in `app/layout.tsx` — nothing to add per screen.
+- **Provider**: `QueryProvider` wraps the app in `app/layout.tsx`; nothing to add per screen.
 
 ## Why no SSR initial data?
 
 Pure client-fetch (no `initialData` from SSR) keeps the page free of any in-process DB
 read, which is what makes the screen Electron- and DB-less-ready. The cost is a brief
-loading state — which we want to handle explicitly anyway. If a screen later needs
+loading state, which we want to handle explicitly anyway. If a screen later needs
 instant first paint, hydrate `initialData` from a server fetch then; don't reach for it
 by default.
 
@@ -91,7 +91,7 @@ by default.
 | `/settings/discover` | ✅ converted (endpoints existed; accounts gate client-side; scan = useQuery, promote = mutation) |
 | `/settings/microsoft` | ✅ converted (built config + drives + mail + disconnect endpoints; sub-components self-fetch) |
 | `/settings/accounts` | ✅ converted (endpoints existed; URL-driven master-detail → client; IMAP test/save + folder picker as mutations) |
-| `/pages` (+ `/pages/[id]`) | ✅ converted (first content screen; mutations were already client-fetch — wired the initial loads + extended the list GET + backlinks endpoint) |
+| `/pages` (+ `/pages/[id]`) | ✅ converted (first content screen; mutations were already client-fetch, wired the initial loads + extended the list GET + backlinks endpoint) |
 | `/notes` (+ `/notes/[id]`) | ✅ converted (same shape as /pages; extended the list GET; deep-linked note via a secondary `enabled` query; `[id]` is just a redirect) |
 | `/tasks` | ✅ converted (status/priority filters; kept the local optimistic list, seeded from the query; extended the list GET with pagination) |
 | `/events` (+ `/events/[id]`) | ✅ converted (window filter; local optimistic list like /tasks; the `useRealtime` callback → invalidate; small `[id]` outer-gate) |
@@ -104,7 +104,7 @@ Convert more by following the reference; order by Electron priority.
 
 Notes from the conversions so far:
 - **Shared caches**: a screen that needs another resource just queries its key
-  (`['tools']`) — TanStack dedupes across screens, no prop-drilling.
+  (`['tools']`), TanStack dedupes across screens, no prop-drilling.
 - **Optimistic toggles**: for instant on/off switches, `useMutation` with
   `onMutate` (cache the previous value, set the new one) + rollback in `onError`.
   See `/settings/tools`.
@@ -113,7 +113,7 @@ Notes from the conversions so far:
   shapes (e.g. `ToolHandler`) standalone rather than re-export from `@mantle/db`
   (which drags its node-typed graph in); the alias still catches drift at compile.
   When there's no summary layer (e.g. ai-workers returns raw rows), add a
-  `toXDTO(row)` mapper instead — its explicit return type is the drift checkpoint,
+  `toXDTO(row)` mapper instead; its explicit return type is the drift checkpoint,
   and it's where ISO-date serialization happens.
 - **Uncontrolled forms** (build a `FormData` at submit, like the worker form) needn't
   be rewritten: keep the FormData submit and convert it to JSON in a `lib/*-form.ts`
@@ -124,7 +124,7 @@ Notes from the conversions so far:
 - **Multi-source screens** (agents reads 6: agents, keys, skills, tool-groups, tts
   workers, tailnet peers) → one `useQuery` per source, each keyed to its own URL,
   then derive view-model arrays (filter enabled / map to the option shape) in
-  `useMemo`. Most sources already had a GET from earlier screens — only the two
+  `useMemo`. Most sources already had a GET from earlier screens, only the two
   genuinely missing endpoints were built (`/api/tailscale/peers`, and the
   test-chat affordance `/api/agents/[id]/test/chat`, which replaced the last
   server action so the screen has zero server-action deps).
@@ -134,7 +134,7 @@ Notes from the conversions so far:
   `invalidateAgentQueries(queryClient)`, which also covers the `['assistant']`
   and `['studio']` prefixes. Track in-flight save with a plain
   `useState` boolean for `<SubmitButton pending>` (the optimistic upsert is dropped
-  — invalidate refetches; a brief repaint is acceptable, matching the other screens).
+, invalidate refetches; a brief repaint is acceptable, matching the other screens).
 - **Building the mutation API + Zod from scratch** (heartbeats had only GETs): put
   the create/update Zod schemas in a shared `lib/*-schema.ts` (both `POST` and the
   `[id]` `PATCH` import them) with a `toCreateInput`/`toUpdateInput` that converts
@@ -153,7 +153,7 @@ Notes from the conversions so far:
   `GET /api/agents/options` rather than overloading the existing list endpoint.
 - **Query gate + inner form** (profile): when form `useState` must seed from
   fetched data, split into an outer component that runs the query + loading/error
-  gate and an inner form that takes the loaded data as props — the inner mounts
+  gate and an inner form that takes the loaded data as props, the inner mounts
   only once data exists, so its `useState` initializers are correct (no
   seed-from-async-data effect dance).
 - **Self-fetching leaf components** (microsoft mail-toggle / drives-list): instead
@@ -169,7 +169,7 @@ Notes from the conversions so far:
   folder probe): set `staleTime: Infinity` + `refetchOnWindowFocus: false` so a tab
   refocus doesn't silently re-run a slow probe; expose a manual Rescan via `refetch()`.
 - **URL-driven master-detail → client** (accounts `?selected=&mode=add|edit|folders`):
-  keep the exact URL semantics — `useSearchParams()` for the current view + `<Link>`
+  keep the exact URL semantics, `useSearchParams()` for the current view + `<Link>`
   for navigation (client nav updates the params → re-render). The list is one
   `useQuery(['email','accounts'])`; the folders pane lazily `enabled`s its own query
   off `mode==='folders'`. Wrap the client in `<Suspense>` (useSearchParams).
@@ -190,16 +190,16 @@ Notes from the conversions so far:
   `invalidateQueries(['pages', id])`, which re-renders the inner with fresh `initial`
   and triggers the existing remount effect.
 - **Screen with a local optimistic list** (`/tasks` prepends-on-create, optimistic toggle):
-  don't rip out the local `useState` list — seed it from the query in a `useEffect` keyed on
+  don't rip out the local `useState` list, seed it from the query in a `useEffect` keyed on
   `listQuery.data` (+ the deep-linked row), keep the optimistic `setTasks`, and swap
   `router.refresh()` for `invalidateQueries(['tasks'])` (the refetch re-runs the seed effect to
   reconcile). Two traps: (1) the page defaulted `status='open'` while the GET defaults to `'all'`,
   so the client must send `status` explicitly; (2) extracting a list filter to `const opts = {…}`
-  drops call-site contextual typing — annotate the narrowed union vars (`status: TaskStatus |
+  drops call-site contextual typing, annotate the narrowed union vars (`status: TaskStatus |
   'all'`) or the spread re-widens them to `string`.
 - **Server-only sanitisation at a security boundary** (`/inbox` `ReadingPane` rendered the
   email body via `sanitizeEmailHtml`, a VALUE from server pkg `@mantle/email`, into a sandboxed
-  iframe). Don't move the sanitiser to the browser — move it INTO the endpoint:
+  iframe). Don't move the sanitiser to the browser, move it INTO the endpoint:
   `GET /api/email/messages/[id]` now returns `bodyHtmlSafe` alongside `{ email, attachments }`, so
   the HTML is sanitised server-side exactly as before and the client just renders the trusted
   string (iframe stays as the second layer). The pane becomes `'use client'` with the `@mantle/db`
@@ -209,10 +209,10 @@ Notes from the conversions so far:
 - **3-pane orchestrator** (`/inbox` `InboxClient`): chained queries (accounts → folders →
   messages) plus a deep-linked `['email','message',selectedId]` detail query. Two gates render
   client-side before the shell: no-accounts (connect prompt) and the contact allowlist being empty
-  — the latter via a tiny `GET /api/email/contact-gate` → `{ isEmpty }` rather than deriving from
+, the latter via a tiny `GET /api/email/contact-gate` → `{ isEmpty }` rather than deriving from
   `/api/contacts` `total`, because the gate counts email/domain ENTRIES (a contact with no email
   doesn't count). Mark-read-on-select (the SSR page did an unconditional `setReadStatus(true)` on
   view) is a `useEffect` keyed on `selectedId` with a per-id ref so a manual "mark unread" while
-  viewing isn't re-clobbered. `INBOX_LIMIT` is a value export — don't import it into the client;
+  viewing isn't re-clobbered. `INBOX_LIMIT` is a value export, don't import it into the client;
   omit `limit` and let the endpoint default match. Gate the messages query on `!foldersQuery.isPending`
   so the folder is resolved before the first fetch (else it lists every folder, then narrows to INBOX).

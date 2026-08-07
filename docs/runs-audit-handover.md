@@ -1,15 +1,15 @@
-# Runner queues — implementation handover for audit (slices 1 + 2)
+# Runner queues: implementation handover for audit (slices 1 + 2)
 
 Written 2026-07-21 for an independent implementation audit. Self-contained: an
 auditor should be able to work from this document plus the repo. The feature is
 DARK by default (`MANTLE_RUNS` unset) and has not yet been dogfooded on a live
-brain — this audit happens before first deploy.
+brain; this audit happens before first deploy.
 
 - Landed in: `5f21f489` (spine, v0.157.2) → `c207b610` (slice 1 complete,
   v0.157.3) → `d4bfee1c` (slice 2, v0.157.4), all on `main`.
 - Product doc: [docs/runs.md](runs.md). Changelogs:
   `docs/_changelog/0.157.{2,3,4}.md`.
-- The design ("Runner queues & worker agents — implementation plan v1") lives
+- The design ("Runner queues & worker agents, implementation plan v1") lives
   on the operator's private brain; this document restates every binding
   decision the audit needs, so the plan is not required reading.
 
@@ -18,7 +18,7 @@ brain — this audit happens before first deploy.
 When the responder (the user-facing chat agent) is asked for a multi-step
 delegatable job, it can create a **run**: a durable tree of **run items**
 stored in Postgres and executed in the background by a pg-boss-driven worker.
-Interior nodes are `group_seq` / `group_par` (structured concurrency — a tree,
+Interior nodes are `group_seq` / `group_par` (structured concurrency, a tree,
 deliberately NOT a general DAG); leaves are `tool_call`, `note`,
 `worker_invoke` (a whole delegated agent turn), and `audit` (a judgment the
 responder itself performs when woken). Items are immutable once created
@@ -30,7 +30,7 @@ woken exactly once with the compiled run state and reports to the user.
 
 1. **Exactly-one-resume.** Every child terminal transition increments its
    parent group's `children_done` via `UPDATE … SET children_done =
-   children_done + 1 WHERE id = :parent RETURNING …` — the parent row lock
+   children_done + 1 WHERE id = :parent RETURNING …`, the parent row lock
    serializes concurrent completions, so exactly ONE transaction observes
    `done == total`, seals the group, transitions it terminal, and bubbles the
    same increment upward. Root completion emits ONE resume action.
@@ -40,7 +40,7 @@ woken exactly once with the compiled run state and reports to the user.
 2. **CAS discipline everywhere.** Every state transition is
    `UPDATE … WHERE state IN (…) RETURNING`; a no-row result means a duplicate
    or stale wake-up and the caller acks without acting. pg-boss jobs carry
-   only ids, never payload — "the table is the truth; jobs are disposable
+   only ids, never payload, "the table is the truth; jobs are disposable
    wake-ups."
 3. **Post-commit actions.** Engine functions return `PostCommitAction[]`
    (dispatch/resume enqueues) instead of enqueuing inside their transactions;
@@ -53,17 +53,17 @@ woken exactly once with the compiled run state and reports to the user.
    open) or the group already sealed and it errors (`SealedGroupError`). It
    can never race the final counter increment into a lost update.
 5. **Counter integrity across redo.** A redo relabels the audited worker item
-   `done → superseded` (both terminal — the counter is NOT touched again) and
+   `done → superseded` (both terminal; the counter is NOT touched again) and
    appends replacement + fresh audit (total += 2, each completing once).
    After any sequence of redos, `children_done == children_total` at group
    completion.
 6. **Deadline semantics.** Deadlines are EXECUTION budgets: stamped at CLAIM
    for dispatched leaves (default 600 s, `payload.timeout_seconds` override),
-   at PROMOTE for audits (default 1800 s — audits are never claimed; the
+   at PROMOTE for audits (default 1800 s; audits are never claimed; the
    deadline is the verdict budget). Ready items waiting on the queue or the
    worker cap have NULL deadlines and cannot time out; the sweep's lost-job
    duty covers them instead. The sweep failing an overdue item drives the
-   counter like any completion — nothing wedges.
+   counter like any completion; nothing wedges.
 7. **Workers propose, never mutate, never recurse.** Worker turns run at
    delegation depth 2 with an empty delegate allowlist: `invoke_agent` fails
    closed and every `run_*` tool refuses at depth > 1. Their tool kit is
@@ -81,7 +81,7 @@ woken exactly once with the compiled run state and reports to the user.
 
 ## 3. File map
 
-Engine (`packages/runs/src/` — pure DB logic, no pg-boss handlers):
+Engine (`packages/runs/src/`, pure DB logic, no pg-boss handlers):
 
 | File | Owns |
 |---|---|
@@ -89,7 +89,7 @@ Engine (`packages/runs/src/` — pure DB logic, no pg-boss handlers):
 | `sweep.ts` | the minutely immune system: deadline timeouts, lost-dispatch re-emit, lost-resume re-send (roots + audits), `claimResume` |
 | `audit.ts` | `applyAuditVerdict` (pass/redo/needs_human), `findAuditedWorkerItem`, `mechanicalPreCheck` |
 | `worker.ts` | worker-agent template: `ensureWorkerAgent` (lazy default), `WORKER_MODEL_INHERIT` sentinel, kit + prompt constants |
-| `state.ts` | `compileRunState` / `renderRunStateText` — the projection every consumer reads |
+| `state.ts` | `compileRunState` / `renderRunStateText`, the projection every consumer reads |
 | `boss.ts` | send-side pg-boss singleton, queue ensure, `enqueueRunActions(Safe)` |
 | `queues.ts` / `flag.ts` | queue names; `isRunsEnabled`, `workerConcurrencyCap` |
 
@@ -103,7 +103,7 @@ Execution + surfaces (`apps/web/`):
 | `lib/runs/resume.ts` | resume turns, two modes: ROOT (report to user, records outbound chat turn) and AUDIT (judge + `run_audit`, posts nothing) |
 | `app/api/debug/runs/*` + `app/(app)/debug/runs/*` | read-only run view + acceptance metric |
 
-Tools: `packages/tools/src/builtins-runs.ts` — `run_plan`, `run_append`,
+Tools: `packages/tools/src/builtins-runs.ts`, `run_plan`, `run_append`,
 `run_state`, `run_cancel`, `run_audit`; plan parsing/validation with teaching
 errors; plan-time tool existence + worker-routing resolution. Granted via the
 manifest `runs` tool group (NOT attached to the persona by default).
@@ -112,7 +112,7 @@ Schema: `packages/db/src/schema/runs.ts` (+ `agents.ts`, `traces.ts` touches);
 migrations `0129_runs.sql`, `0130_runs_resume_marker.sql`,
 `0131_agent_role_worker.sql`.
 
-## 4. Deliberate decisions & deviations (don't report these as bugs — judge them)
+## 4. Deliberate decisions & deviations (don't report these as bugs: judge them)
 
 - **`conversation_id` replaced by `owner_id` + `agent_id`** on `runs`: the
   repo has no conversations table (a conversation is per (owner, agent)).
@@ -123,11 +123,11 @@ migrations `0129_runs.sql`, `0130_runs_resume_marker.sql`,
   instead of making the column nullable (a `string|null` ripple through every
   chat path for one consumer). Contained in `execute-worker.ts`.
 - **Mechanical evidence** (the tool-loop's own call ledger) instead of the
-  planned model-authored evidence array — unfakeable, and the "reject
+  planned model-authored evidence array, unfakeable, and the "reject
   verified-claims-with-no-trace" check becomes a regex + empty-ledger test.
 - **Worker output → `tool_results` handle** (`read_result`, 7-day TTL)
   instead of a brain node. Revisit if permanence is wanted.
-- **`run_audit` is a new tool not in the plan's binding list** — the plan
+- **`run_audit` is a new tool not in the plan's binding list**: the plan
   says audits run inside responder resume turns but names no verdict-recording
   surface; this is it.
 - **Redo is seq-only**; par-group audits refuse redo (`needs_human`) and the
@@ -140,27 +140,27 @@ migrations `0129_runs.sql`, `0130_runs_resume_marker.sql`,
   existing flag idiom; `run_state`/`run_cancel`/`run_audit` stay live when
   off so existing runs remain inspectable/stoppable.
 
-## 5. Known gaps (acknowledged, non-blocking — verify they're contained)
+## 5. Known gaps (acknowledged, non-blocking: verify they're contained)
 
 - Responder Stop signal is not yet wired to `run_cancel`.
 - Resume replies record to the web conversation only (no channel routing to
   Telegram etc. yet).
 - If the auditing responder lacks the `runs` tool group, an audit turn cannot
   record a verdict; the audit times out (30 min) into `failed(timeout)` and
-  the run completes with the failure visible — degraded but safe.
+  the run completes with the failure visible, degraded but safe.
 - A resume turn that crashes AFTER `claimResume` but before finishing loses
   that wake-up (at-most-once by design); the run record remains complete in
   the run view.
 - `ask_human` items, `budget_micro_usd` / `item_cap` enforcement, and worker
-  groups are slice 3 — columns exist, enforcement doesn't.
+  groups are slice 3, columns exist, enforcement doesn't.
 - Cancel does not abort an in-flight tool/worker execution mid-call; the late
   completion no-ops at the CAS.
 - `cancelRun` cancels subtrees without driving inner group counters (the
-  whole subtree dies together) — deliberate; check the reasoning holds.
+  whole subtree dies together), deliberate; check the reasoning holds.
 
 ## 6. Test coverage & how to run
 
-`packages/runs/src/engine.test.ts` — 20 DB-backed tests, gated on
+`packages/runs/src/engine.test.ts`, 20 DB-backed tests, gated on
 `RUNS_TEST_DATABASE_URL` (a Postgres URL whose role can CREATE DATABASE; the
 suite provisions and drops a scratch db `mantle_runs_engine_test`, applying
 migrations 0129+0130). Without the env var the suite skips (CI-safe).
@@ -186,12 +186,12 @@ lint, format, 2442 unit tests) is green as of `d4bfee1c`.
 
 1. **Concurrency**: lock ordering (child row → parent row upward on
    completion; run row for the worker cap; group row for append). Look for a
-   deadlock or lost-update interleaving the tests don't force — especially
+   deadlock or lost-update interleaving the tests don't force, especially
    append vs fail_fast cancellation vs completion, and `cancelRun` racing a
    completing subtree.
 2. **The nested-completion path**: `onTerminal` recursion when a promoted
    child group completes instantly (empty group) inside a parent's completion
-   transaction — stale local `done`/`total` variables are handled by
+   transaction, stale local `done`/`total` variables are handled by
    re-checking; verify there is no interleaving that double-completes a group
    or drops a resume.
 3. **Sweep vs live handlers**: every pairwise race (sweep timeout vs real
@@ -205,7 +205,7 @@ lint, format, 2442 unit tests) is green as of `d4bfee1c`.
 5. **Authorization**: every tool handler owner-scopes via the run row; the
    debug API scopes by session owner. Check for any path where an item/run id
    from another owner could be acted on (`run_audit`, `run_append`,
-   `claimResume` via forged job payloads — note pg-boss payloads are written
+   `claimResume` via forged job payloads, note pg-boss payloads are written
    only by this codebase, but the sweep/dispatch trust `itemId`s).
 6. **Flag discipline**: with `MANTLE_RUNS` unset, confirm nothing executes
    (worker idles, creation tools refuse) yet existing data stays readable.
@@ -220,9 +220,9 @@ decision to critique, not a defect to file.
 The audit ran; all confirmed findings are FIXED in v0.157.5
 ([changelog](_changelog/0.157.5.md)). Headlines: `run_audit` was grantable
 but absent from both item ban lists (a queue item could rubber-stamp the
-audit gate — now a single exported `BANNED_ITEM_TOOLS` with guard tests);
+audit gate, now a single exported `BANNED_ITEM_TOOLS` with guard tests);
 completion vs fail_fast/cancel locked rows in opposite orders and deadlocked
-under a forced race (reproduced against the pre-fix engine — now a run-row-
+under a forced race (reproduced against the pre-fix engine, now a run-row-
 first lock ordering rule, see `lockRunRow` in engine.ts, with two regression
 races in the suite, 20 → 22 tests); `claimResume` burned the at-most-once
 token before turn preconditions; `applyAuditVerdict` ignored the completion
@@ -231,10 +231,10 @@ accepted; `run_state`/`run_cancel` lacked the depth guard; the worker
 proposal was interpolated unfenced into the audit prompt.
 
 Invariants §2.1/§2.3/§2.4/§2.5/§2.8/§2.10 survived the audit unbroken. The
-§4 decisions all held; the one process critique — `run_audit` shipped
-granted-but-unbanned — is now structurally prevented by the guard tests.
+§4 decisions all held; the one process critique, `run_audit` shipped
+granted-but-unbanned, is now structurally prevented by the guard tests.
 
 The audit also surfaced an unrecorded architecture decision: the engine
 hand-rolls durability beside the repo's existing DBOS runner. Recorded in
-[docs/adr-runs-durable-execution.md](adr-runs-durable-execution.md) — v1
+[docs/adr-runs-durable-execution.md](adr-runs-durable-execution.md), v1
 stays as built; slice 3 is the re-evaluation gate.

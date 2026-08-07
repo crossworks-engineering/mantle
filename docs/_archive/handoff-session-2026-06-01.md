@@ -1,4 +1,4 @@
-# Session changelog — 2026-06-01 (Contabo go-live + polish)
+# Session changelog: 2026-06-01 (Contabo go-live + polish)
 
 The session that took Mantle from "containerized but never deployed" to **live on
 the Contabo VPS** (https://jason.crossworks.network), then fixed a string of
@@ -7,13 +7,13 @@ things the first real production run + first real UI walkthrough surfaced.
 
 ---
 
-## 1. Production deploy — the 3 prod-only bugs
+## 1. Production deploy: the 3 prod-only bugs
 
 The container stack had never actually run end-to-end; three bugs that **only
 manifest in a real prod container** (never under `next dev`) had to be fixed live.
 Full writeup: [`handoff-deploy-contabo-2026-06-01.md`](./handoff-deploy-contabo-2026-06-01.md).
 
-- **`e4ae962`** web crash-loop: the image CMD `pnpm … start -- -H …` — pnpm 10/11
+- **`e4ae962`** web crash-loop: the image CMD `pnpm … start -- -H …`, pnpm 10/11
   forwards `--` to `next start`, which read `-H` as a directory. Switched to the
   `exec` form.
 - **`7910e2a`** the killer: `packages/db/src/client.ts` exported `db` as a Proxy
@@ -26,7 +26,7 @@ Full writeup: [`handoff-deploy-contabo-2026-06-01.md`](./handoff-deploy-contabo-
   crash-looping (the cascade amplifier); `unhandledRejection` backstops added to
   all workers + the agent.
 
-## 2. Dashboard "System vitals" — two new pills
+## 2. Dashboard "System vitals": two new pills
 
 - **`d1a74a8`** **Embedder** pill: probes the configured embedder; for `local`
   it GETs the Ollama `/models` and confirms the model is loaded
@@ -34,9 +34,9 @@ Full writeup: [`handoff-deploy-contabo-2026-06-01.md`](./handoff-deploy-contabo-
 - **`d30f101`** **Tailnet** pill: reads tailscaled status; muted/disabled when the
   tailnet's off (the normal dev resting state), green when `Running`.
 
-## 3. Corpus audit — made honest (`/debug/integrity`)
+## 3. Corpus audit: made honest (`/debug/integrity`)
 
-First real-brain run showed **668 violations** — but ~all were check-naïveté or
+First real-brain run showed **668 violations**: but ~all were check-naïveté or
 pre-fix sediment, not live bugs (the key post-migration check, embedding-dim
 drift, *passed*). See [`project_integrity_probe` memory] for the full reasoning.
 
@@ -47,7 +47,7 @@ drift, *passed*). See [`project_integrity_probe` memory] for the full reasoning.
 - **`d64b8c6`** `unembedded_facts` scoped to *valid* facts (the 1322 flagged were
   all retired). 1322→0.
 - **`48d7a12`** **the judgment call:** `orphan_entities` (562) + `reaper_miss_facts`
-  (27) turned out to be **real data, not residue** — named entities (Alan Kay,
+  (27) turned out to be **real data, not residue**: named entities (Alan Kay,
   …) and valid personal facts. So instead of deleting (the original "backfill"
   plan), the checks were softened to flag only true residue / retired facts.
   **Zero real data deleted.** Lesson baked in: *sample flagged rows before any
@@ -59,10 +59,10 @@ drift, *passed*). See [`project_integrity_probe` memory] for the full reasoning.
   reads `embedding_config` not `ai_workers` (it always showed "off");
   **`894861d`** aligned the probe results table into fixed grid columns.
 
-## 4. Tailscale UI-activation — new feature
+## 4. Tailscale UI-activation: new feature
 
 Store the Tailscale auth key in the vault and **Activate/Deactivate the tailnet
-from `/settings/network`** — no more SSH + `.env` edit. Safe because single-user.
+from `/settings/network`**, no more SSH + `.env` edit. Safe because single-user.
 Canonical doc: [`tailscale.md` §UI-activation](./tailscale.md). Memory:
 `project_tailscale_ui_activation`.
 
@@ -74,9 +74,9 @@ Canonical doc: [`tailscale.md` §UI-activation](./tailscale.md). Memory:
 - **`b93dc60`** the Activate card + server actions; polls status for `Running`.
 - **Open gate:** whether tailscaled accepts the app's *write* calls over the
   shared socket is verified live on the VPS (paste a key → Activate). If `/start`
-  is rejected, fall back to the `file:` authkey transport — UI/schema unchanged.
+  is rejected, fall back to the `file:` authkey transport, UI/schema unchanged.
 
-## 5. Provider wired-detection — regression fix
+## 5. Provider wired-detection: regression fix
 
 `isProviderWired` read the *live* adapter registry, which is empty in the
 browser bundle since the prod-build client/server split (`5dfaa0d`) moved the UI
@@ -86,12 +86,12 @@ wired yet"** across the worker + agent forms.
 - **`0a8458c`/`c21c428`** static `WIRED_PROVIDERS` table (browser-visible) unioned
   with the live registry; a drift test keeps it honest. Dropped the confusing
   `openai`-chat carve-out (OpenAI chat is via OpenRouter). See
-  [`adding-a-provider.md`](./adding-a-provider.md) — adding an adapter now
+  [`adding-a-provider.md`](./adding-a-provider.md), adding an adapter now
   includes updating that table.
 
 ## 6. Docs + ops
 
-- **`edc4cdd`** [`update-prod.md`](./update-prod.md) — the build-on-VPS update
+- **`edc4cdd`** [`update-prod.md`](./update-prod.md), the build-on-VPS update
   runbook (deploy.md §5 only covered registry-pull, which this box doesn't use).
 - **`740fc1d` / `04fc824`** deploy-handoff updates.
 
@@ -103,9 +103,9 @@ wired yet"** across the worker + agent forms.
   local LM Studio gemma box to OpenRouter `google/gemini-3.1-flash-lite` (their
   existing backup promoted to primary) after the box hit `n_ctx: 4096` errors and
   was too slow. Local path stays proven + re-enable-able. Memory:
-  `project_local_chat_live` (marked reverted). **Dev DB only — prod is a frozen
+  `project_local_chat_live` (marked reverted). **Dev DB only; prod is a frozen
   pre-flip copy; flip prod the same way if it ever ingests.**
-- **Telegram poller** stays **stopped on prod** (dev owns the bots) — `up -d`
+- **Telegram poller** stays **stopped on prod** (dev owns the bots): `up -d`
   restarts it, so re-`stop worker_telegram` after every deploy. Memory:
   `project_telegram_dev_prod_poller_conflict`.
 - Deduped 38 redundant `mentioned_in` edges on the dev brain (lossless).

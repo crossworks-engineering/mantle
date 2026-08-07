@@ -1,18 +1,18 @@
-# Public sharing — read-only links to any content
+# Public sharing: read-only links to any content
 
 > **Status: BUILT.** Read-only public sharing ships for every workspace type
 > (page, note, task, event, file, app, **table**, **folder**): the `shares`
 > table + tokens, the public `/s/[token]` route + scoped asset route, the
 > server page renderer, per-type presenters, and the owner `<ShareControl>`
-> wired into every detail surface — plus the owner's **Shared links** registry
+> wired into every detail surface, plus the owner's **Shared links** registry
 > (`/team-admin?view=shares`) listing every active link with copy/revoke.
 > **Deferred (schema-ready):** per-link expiry UI and per-link indexability
 > opt-in (`expires_at` / `settings` columns exist; no UI yet).
 >
 > Share any **page, note, task, event, file, app, table, or folder** with
 > anyone who has the URL.
-> The link opens a clean, auth-free page tailored to the content — files in a
-> proper media viewer, pages in their full formatting — centered and quiet, with
+> The link opens a clean, auth-free page tailored to the content, files in a
+> proper media viewer, pages in their full formatting, centered and quiet, with
 > nothing from the owner's account exposed beyond that one item.
 >
 > Companion docs: [`pages.md`](./pages.md) (the page schema this renders),
@@ -27,20 +27,20 @@
 **Shareable** node types: `page`, `note`, `task`, `event`, `file`, `app`,
 `table`, `branch` (= a **files folder**).
 **Never shareable:** `secret`, `email` / `email_thread`, `contact`, `journal`
-(sensitive) — the share API rejects them.
+(sensitive), the share API rejects them.
 
 Two of these carry extra semantics:
 
-- **Table** — the link shows the **published** workbook only, never the owner's
+- **Table**: the link shows the **published** workbook only, never the owner's
   draft (same rule as page drafts). Rows page in through
-  `GET /s/[token]/rows` (offset windows off the published sqlite file — no SQL
+  `GET /s/[token]/rows` (offset windows off the published sqlite file, no SQL
   passthrough, no draft switch, no distinct endpoint); legacy JSONB tables ship
   their whole doc in the share view. Formula columns aren't stored per-row, so
   they don't appear on the public surface.
-- **Folder** (`branch`) — shares **every file under the folder, subfolders
+- **Folder** (`branch`): shares **every file under the folder, subfolders
   included, evaluated per request**: a file added later is covered with no
   re-share; a file moved out is denied on its next fetch. Only folders strictly
-  under the `files` root qualify (`isShareableFolderPath`) — the root itself is
+  under the `files` root qualify (`isShareableFolderPath`); the root itself is
   deliberately not shareable, so "share my entire filesystem" can never be one
   accidental toggle. Visitors get a read-only listing with downloads; subfolder
   navigation stays inside the share (`?p=` is validated as a descendant before
@@ -52,12 +52,12 @@ Settled design decisions:
 |---|---|---|
 | Share model | **Revocable tokens** (a `shares` table) | revoke + expiry + view counts; hides internal node ids |
 | Page rendering | **Server static sanitized HTML** | fast, crawlable-by-choice, no client JS for anonymous visitors, safest |
-| Indexing | **`noindex` by default** | unlisted — only people with the link; per-link opt-in later |
+| Indexing | **`noindex` by default** | unlisted, only people with the link; per-link opt-in later |
 | Links per item | **One active link per item** | simple mental model (toggle on/off) |
 
 ---
 
-## 2. Data model — `shares`
+## 2. Data model: `shares`
 
 A new table (`packages/db/src/schema/shares.ts`, migration `00XX_shares.sql`):
 
@@ -78,14 +78,14 @@ shares
 
 **One active link per node** is enforced by a unique partial index:
 `UNIQUE (node_id) WHERE revoked_at IS NULL`. Toggling on mints (or re-mints if a
-revoked row exists); toggling off sets `revoked_at` — the link 404s immediately
+revoked row exists); toggling off sets `revoked_at`, the link 404s immediately
 because the token is in the URL path (no cache can serve a revoked link).
 
 Helpers (`packages/content/src/shares.ts`, exported from `@mantle/content`):
 `createShare`, `revokeShare`, `getActiveShareForNode(ownerId, nodeId)`,
 `resolveActiveShareByToken(token)` (active = not revoked, not past `expires_at`).
 
-This **supersedes** the page-only `nodes.data.visibility` flag — a page is
+This **supersedes** the page-only `nodes.data.visibility` flag; a page is
 "public" iff it has an active share. The flag can be derived/retired.
 
 ---
@@ -97,27 +97,27 @@ get only the root layout). `/s` is added to `PUBLIC_PATHS`
 ([`lib/auth-constants.ts`](../apps/web/lib/auth-constants.ts)) so middleware lets
 them through without a session cookie.
 
-- **`GET /s/[token]`** — server component. `resolveActiveShareByToken` →
+- **`GET /s/[token]`**: server component. `resolveActiveShareByToken` →
   **404** invalid / **410** revoked|expired → load node + sidecar → render the
   type presenter inside the public layout. Best-effort `view_count++`. Emits
   `noindex` (meta + `X-Robots-Tag`) and OG/meta tags (title + summary) for link
   previews.
-- **`GET /s/[token]/a/[fileId]`** — public **asset** bytes (P2). The
+- **`GET /s/[token]/a/[fileId]`**: public **asset** bytes (P2). The
   security-critical route: serves a file only if `fileId` is in the share's
-  **allowed set** — for a `file` share, the file itself; for a `page` share, the
+  **allowed set**: for a `file` share, the file itself; for a `page` share, the
   file ids referenced in its doc (walk `image`/`fileEmbed` nodeIds); for a
   `branch` (folder) share, any file whose ltree path is under the folder
   (`path <@ folder.path`, re-derived per request). Streams via
   `readFileById` with content-type + range support (video/audio seeking) +
   cache headers. Anything outside the set → 404.
-- `apps/web/app/s/layout.tsx` — minimal public chrome: clean default theme,
+- `apps/web/app/s/layout.tsx`, minimal public chrome: clean default theme,
   light/dark via `prefers-color-scheme`, a quiet "Shared via Mantle" footer.
 
 ---
 
 ## 4. Security
 
-- Public routes **never call `requireOwner`** — they resolve strictly by an
+- Public routes **never call `requireOwner`**: they resolve strictly by an
   active token and only ever return the **one** shared node + its scoped assets.
   No traversal to siblings, no owner data beyond that item.
 - Tokens are CSPRNG (~128-bit), revocable, optionally expiring.
@@ -132,26 +132,26 @@ them through without a session cookie.
   [`lib/rate-limit.ts`](../apps/web/lib/rate-limit.ts)); secrets/emails/contacts
   excluded at the API.
 - **Team mode** (`settings.mode = 'team'`, toggle in `<ShareControl teamMode>`):
-  the link additionally requires a **live team credential** — the share-scoped
+  the link additionally requires a **live team credential**: the share-scoped
   visitor cookie (minted at the link's own token prompt) or the brain-level
   `/team` hub cookie. Enforced uniformly on the `/s/` surface: the page render,
   the asset-bytes route, and the app brokers all resolve
   `resolveShareVisitor` and re-check membership liveness per request
   (revocation is instant). Team-mode **page** shares double as the `/team`
   hub's briefing sections, and team-mode **app** shares (with a green published
-  build) double as the hub's "Team apps" launcher cards — revoking the share,
+  build) double as the hub's "Team apps" launcher cards, revoking the share,
   or the build going red, delists them (`@mantle/content/team-hub`). The
   designated hub app itself never appears on its own launcher.
 - **Curated Dashboard sections** (Team admin → "Dashboard sections", pref
   `teamHubTags`): the owner picks page TAGS; each renders on the `/team`
   overview as a section of up to 5 team-visible shared pages carrying that tag
-  (team **and** public mode — anything a member could already open), newest
+  (team **and** public mode; anything a member could already open), newest
   node update first, title + summary; items open in the workspace reader
   (`/team/pages?s=<token>`), not a bare `/s/` page. The pref only
-  groups — the share stays the single source of truth for what is visible, so
+  groups; the share stays the single source of truth for what is visible, so
   curation can never widen access. Tag + share a page to feature it; unshare
   or untag to remove it (the admin panel shows a live shared-page count per
-  pill and renders a dead tag — 0 visible pages — muted). When a page's LLM
+  pill and renders a dead tag (0 visible pages) muted). When a page's LLM
   summary is missing (just committed, or never indexed), listings fall back
   to an excerpt of its published plaintext (`excerptFromDocText`). Data:
   `curatedTeamSections` in `@mantle/content/team-hub`, served by
@@ -161,22 +161,22 @@ them through without a session cookie.
 
 ## 5. Rendering a public page (server static HTML)
 
-`apps/web/lib/render-page-doc.ts` — `renderPageDoc(doc, { assetBase }) → string`
+`apps/web/lib/render-page-doc.ts`, `renderPageDoc(doc, { assetBase }) → string`
 (sanitized HTML). Built on `@tiptap/html`'s `generateHTML(doc, headlessSchema)`
 so it **reuses each node's `renderHTML`** (a headless schema with no React
 NodeViews), then post-processes:
 
-1. **Math** — replace `[data-type="inline-math"|"block-math"]` with
+1. **Math**: replace `[data-type="inline-math"|"block-math"]` with
    `katex.renderToString(latex)` (server-rendered; no client KaTeX).
-2. **Code** — `lowlight`-highlight `<pre><code>` into hljs spans (matches the
+2. **Code**: `lowlight`-highlight `<pre><code>` into hljs spans (matches the
    existing `.ProseMirror .hljs-*` theme CSS).
-3. **Callouts / asides** — `renderHTML` emits `<div data-callout data-variant>`
+3. **Callouts / asides**: `renderHTML` emits `<div data-callout data-variant>`
    and `<div data-aside data-color style="background:…">` (the aside carries its
    themed gradient inline, from the shared `aside-style.ts` helper, so the public
    render matches the in-app NodeView), so ship **public callout/aside CSS** for
    the box geometry (columns, tables, task-lists already have CSS in `globals.css`).
-4. **Images** — rewrite `src` → `/s/[token]/a/[fileId]`.
-5. **Sanitize** — escape text/attrs; restrict link protocols.
+4. **Images**: rewrite `src` → `/s/[token]/a/[fileId]`.
+5. **Sanitize**: escape text/attrs; restrict link protocols.
 
 > This is a **third** representation of the page schema (the TipTap editor,
 > `markdownToDoc`, and now JSON→HTML). They're kept in sync by the shared schema
@@ -198,7 +198,7 @@ Clean, centered, media-appropriate (`apps/web/components/share/`):
 | **Table** | Read-only grid (client): tab bar for multi-tab workbooks, sticky header, "Load more" offset paging via `GET /s/[token]/rows`; legacy JSONB docs render inline. |
 | **Folder** | Read-only listing (server): breadcrumbs scoped to the share, subfolder navigation via `?p=`, per-file **Download** through the scoped asset route. |
 
-All themed via tokens. *(Note: the in-app file view only handles text today — the
+All themed via tokens. *(Note: the in-app file view only handles text today, the
 media presenters are net-new here.)*
 
 ---
@@ -209,26 +209,26 @@ A reusable **`<ShareControl>`** (`components/share/share-control.tsx`) on every
 detail screen (pages, notes, tasks, events, files, apps, tables, folders): a *"Anyone with the link can
 view"* toggle → mint token → show URL + **Copy** → **Revoke** (and, P4, expiry +
 "allow search engines"). **Every** shareable type also offers the
-public/team admission toggle (`teamMode`) — pages/apps/tables/folders carry
+public/team admission toggle (`teamMode`), pages/apps/tables/folders carry
 kind-specific hints; notes/tasks/events/files use the default. The `/team`
 workspace lists shares of **both** modes per section (public ones marked with
 a `public` badge); the mode only controls who can open the `/s/` link.
 API (owner-scoped via `requireOwner`):
 
 - `POST /api/shares` `{ nodeId }` → `{ token, url }`
-- `DELETE /api/shares/[id]` → revoke (cascades to the subtree if the share does — §7b)
+- `DELETE /api/shares/[id]` → revoke (cascades to the subtree if the share does, §7b)
 - `PATCH /api/shares/[id]` `{ mode }` → public/team admission (cascades if the share does)
 - `GET /api/shares?nodeId=` → current active link (if any) + `childCount` (descendant pages)
 - `POST /api/shares/cascade` `{ nodeId, on }` → turn subtree sharing on/off (§7b)
 
 ---
 
-## 7b. Sharing a page's subtree — "Share sub-pages"
+## 7b. Sharing a page's subtree: "Share sub-pages"
 
 A page's Share popover shows a third toggle, **Share sub-pages**, whenever the
 page has descendant pages (`teamMode` pages via `<ShareControl allowCascade>`).
-Turning it on shares every descendant page; turning it off — or un-sharing the
-parent — revokes those child links. Children **mirror the parent's mode**: flip
+Turning it on shares every descendant page; turning it off, or un-sharing the
+parent, revokes those child links. Children **mirror the parent's mode**: flip
 the parent public↔team and the shared children follow.
 
 - **Intent lives on the parent share:** `settings.cascade = true`
@@ -236,7 +236,7 @@ the parent public↔team and the shared children follow.
   changes and un-share propagate. No schema change (jsonb `settings`).
 - **Snapshot, not live:** toggling on shares the pages that exist at that moment
   (descendants via the `parent_id` recursion, `listPageDescendantIds`). A page
-  added later isn't auto-shared — re-toggle to pick it up.
+  added later isn't auto-shared, re-toggle to pick it up.
 - **Helpers** (`packages/content/src/shares.ts`): `setShareCascade(ownerId,
   parentNodeId, on)`, and the cascade-aware drop-ins `applyShareMode` /
   `revokeShareTree` used by the PATCH / DELETE routes.
@@ -251,29 +251,29 @@ the parent public↔team and the shared children follow.
 
 ---
 
-## 7a. Agent-side UX — Saskia can share anything shareable
+## 7a. Agent-side UX: Saskia can share anything shareable
 
 The token CRUD is exposed to the chat agent for **every shareable type** since
 v0.145.0: `node_share { id, mode? }` / `node_unshare { id }`
 ([`packages/tools/src/builtins-share.ts`](../packages/tools/src/builtins-share.ts))
-mint/revoke a link for a note, task, event, file, app, table, or folder —
+mint/revoke a link for a note, task, event, file, app, table, or folder,
 thin, confirm-gated wrappers over the same `createShare` path (its validation
 owns the rules). Pages keep their dedicated pair, which adds the sub-page
 cascade
 ([`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts)),
 so *"share that page and send me the link"* works end to end:
 
-- **`page_share { id, mode?, children? }`** → `createShare` (idempotent — one
+- **`page_share { id, mode?, children? }`** → `createShare` (idempotent, one
   active link per node) → returns `{ url, token, mode }`. `mode: 'public' |
   'team'` sets admission via `applyShareMode` (team also lists the page on the
   hub); `children: true|false` shares/unshares the subtree via `setShareCascade`
   (§7b) and reports `subpagesShared` / `subpagesRevoked`. The URL is built with
   `shareUrlForToken`.
 - **`page_unshare { id }`** → `getActiveShareForNode` → `revokeShareTree`
-  (subtree-aware — un-shares cascaded sub-pages too). No-op if unshared.
+  (subtree-aware, un-shares cascaded sub-pages too). No-op if unshared.
 
 Both are auto-granted at boot (`CORE_AUTO_GRANT_SLUGS`). Because the agent runs
-outside the web request cycle, it can't read an origin from the request — share
+outside the web request cycle, it can't read an origin from the request, share
 URLs come from `publicBaseUrl()` ([`packages/content/src/shares.ts`](../packages/content/src/shares.ts)),
 which reads `MANTLE_PUBLIC_URL` ?? `NEXT_PUBLIC_APP_URL` (falls back to
 localhost). Set one of those in the agent's environment so links point at the
@@ -284,25 +284,25 @@ real host. `email_page`'s `includeLink` option reuses `page_share` to add a
 
 ## 8. Phasing
 
-1. **Foundation** — `shares` table + token helpers + public route + public
+1. **Foundation**: `shares` table + token helpers + public route + public
    layout + `renderPageDoc` + **Page & Note** presenters + `<ShareControl>` +
    shares API. Wire the control into page + note detail.
-2. **Files** — media presenters + the scoped public **asset route** (the
+2. **Files**: media presenters + the scoped public **asset route** (the
    meatiest piece). Wire into the files screen.
-3. **Tasks & Events** — card presenters + `.ics`. Wire in.
-4. **Polish** — revoke/expiry mgmt UI, view counts, OG/social cards, rate
+3. **Tasks & Events**: card presenters + `.ics`. Wire in.
+4. **Polish**: revoke/expiry mgmt UI, view counts, OG/social cards, rate
    limiting, per-link indexability opt-in.
 
 ---
 
 ## 9. Open questions / deferred
 
-- **Range requests on the asset route** — needed for smooth video/audio
+- **Range requests on the asset route**: needed for smooth video/audio
   seeking; the existing `?raw=1` route doesn't do ranges, so the public asset
   route adds them.
-- **Theme of the public page** — fixed clean default vs. the owner's chosen
+- **Theme of the public page**: fixed clean default vs. the owner's chosen
   color theme. Defaulting to clean + `prefers-color-scheme`.
-- **Federation** — Mantle-to-Mantle sharing over MCP is a separate concern; this
+- **Federation**: Mantle-to-Mantle sharing over MCP is a separate concern; this
   is human-facing link sharing only.
-- **`docToText` already indexes** shared content normally — sharing doesn't
+- **`docToText` already indexes** shared content normally; sharing doesn't
   change ingestion; it's purely an outbound read surface.

@@ -1,8 +1,8 @@
-# Models — live provider model-catalog explorer
+# Models: live provider model-catalog explorer
 
 > **Status: BUILT.** A read-only Review-group page (`/models`) that, for a chosen
 > provider, hits that provider's public "list models" API and shows pricing,
-> context window, type, and modality per model — plus the **verbatim raw JSON**
+> context window, type, and modality per model, plus the **verbatim raw JSON**
 > the API returned. "As much information as the API returns."
 
 Pick a provider from the dropdown; the page fetches its catalog server-side
@@ -31,7 +31,7 @@ supported provider so you can compare pricing/context/capabilities in one place.
 ## Per-provider coverage
 
 Provider ids are the canonical `@mantle/voice` `SUPPORTED_PROVIDERS` ids, which
-double as the `api_keys.service` strings — so the key lookup is a 1:1 match.
+double as the `api_keys.service` strings, so the key lookup is a 1:1 match.
 Each provider exposes a different amount through its list API; the normalised
 columns are best-effort and the raw pane always shows everything.
 
@@ -43,10 +43,10 @@ columns are best-effort and the raw pane always shows everything.
 | Cohere | `/v1/models` | key | name, context_length, endpoints → type |
 | xAI | `/v1/language-models` | key | id, modalities, per-token prices (surfaced verbatim) |
 | Anthropic | `/v1/models` | key | id, display_name, created_at |
-| OpenAI | `/v1/models` | key | id, created (sparse — no pricing/context via API) |
+| OpenAI | `/v1/models` | key | id, created (sparse, no pricing/context via API) |
 | DeepSeek | `/models` | key | id (sparse) |
 | Hugging Face | router `/v1/models` | key | id (sparse) |
-| Deepgram / ElevenLabs / AssemblyAI | — | — | voice/transcription only → reported "no catalog" |
+| Deepgram / ElevenLabs / AssemblyAI |, |, | voice/transcription only → reported "no catalog" |
 
 ## Notes
 

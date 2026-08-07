@@ -1,6 +1,6 @@
 # Realtime (live UI)
 
-Server-rendered screens that repaint the instant their data changes — no manual
+Server-rendered screens that repaint the instant their data changes, no manual
 refresh. Built on the Postgres `LISTEN/NOTIFY` Mantle already uses for ingest:
 migration 0018 fires `pg_notify('node_ingested', <id>)` on **every** `nodes`
 insert. We bridge that channel to the browser over SSE.
@@ -44,18 +44,18 @@ useEffect(() => setRows(initialRows), [initialRows]);
 
 ## Notes & guarantees
 
-- **Owner isolation** is enforced server-side in `/api/realtime` — a change for
+- **Owner isolation** is enforced server-side in `/api/realtime`, a change for
   another owner is never emitted.
 - **One DB connection total.** A single shared LISTENer serves every connected
   tab; the SSE route only adds an in-process subscriber. The listener is a
   `globalThis` singleton so Next.js dev HMR doesn't stack duplicates.
 - **Self-healing.** `EventSource` auto-reconnects on drop; a 25s heartbeat
   comment keeps idle connections off proxy/idle timeouts.
-- **Scope today:** two channels, both fanned out the same way —
+- **Scope today:** two channels, both fanned out the same way,
   `node_ingested` (migration 0018 trigger, every `nodes` insert: events, notes,
   files, emails, telegram, …) and `node_indexed` (the extractor's explicit
   `notifyNodeIndexed` after it writes `data.summary` + `embedding`). The second
-  is what makes a freshly-summarised file repaint live — the insert alone has no
+  is what makes a freshly-summarised file repaint live; the insert alone has no
   summary yet. Other pure column updates still won't notify; emit on
   `node_indexed` (or add a table+channel) from the code that does the update.
 

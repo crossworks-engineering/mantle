@@ -1,13 +1,13 @@
 # Backups
 
-The brain (Postgres) is the irreplaceable part of a Mantle install — everything
+The brain (Postgres) is the irreplaceable part of a Mantle install; everything
 else is rebuildable from source. Mantle ships a built-in scheduled backup that
 dumps the database to a **local folder you choose**; getting that folder
 **offsite is deliberately your job**, because every operator has a different
 story (rsync cron, rclone, restic, Syncthing, Time Machine) and all of them
 work by pointing at a directory.
 
-## The feature — /settings/backups
+## The feature: /settings/backups
 
 Configure at **Settings → Backups**:
 
@@ -31,17 +31,17 @@ Engine: [`packages/content/src/backup.ts`](../packages/content/src/backup.ts).
   mistaken for a good one), then verified against the `PGDMP` magic bytes
   before being promoted.
 - Rotation deletes beyond `keep`, and only files matching Mantle's own
-  `mantle-*.dump` pattern — anything else in the folder is never touched.
+  `mantle-*.dump` pattern, anything else in the folder is never touched.
 - The scheduler is a cheap tick hosted by the **events worker**: when the
   wall-clock hour in your timezone matches the configured hour (and the last
   run is old enough to rule out a double-fire), it runs. Consequence: backups
-  fire **while the stack is up** — if it was down during the window, the next
+  fire **while the stack is up**: if it was down during the window, the next
   window catches it.
 - Config + status live on `profiles.preferences` (`backup` / `backupStatus`
   keys), so the UI and the worker share one source of truth.
 - The Docker image ships `postgresql-client-18` (pgdg) so `pg_dump` matches the
   compose default `POSTGRES_IMAGE_TAG=pg18`. **The client must never be older
-  than the server** — `pg_dump` aborts outright on a newer server, so a
+  than the server**, `pg_dump` aborts outright on a newer server, so a
   major-version bump in compose has to be matched here in the same change. The
   reverse is fine (an 18 client dumps a pinned-`pg17` box), so when in doubt
   ship the newer client. On a bare-metal/dev install, the engine looks for
@@ -58,15 +58,15 @@ Your offsite sync should include, from `${MANTLE_DATA_DIR}` (default
 | `backups/` | the rotated DB dumps (this feature's output) |
 | `files/` | your host-mirrored files (`/files` surface) |
 | `minio/` | attachment object bytes |
-| `forum-uploads/` | quarantined member forum uploads awaiting review — the ONLY copy of a pending upload until you file it |
+| `forum-uploads/` | quarantined member forum uploads awaiting review, the ONLY copy of a pending upload until you file it |
 
-One `rsync -a` of the `data/` directory (minus `postgres/` — the live cluster
+One `rsync -a` of the `data/` directory (minus `postgres/`, the live cluster
 files are useless mid-write; the dumps are the DB backup) covers everything.
 
 **Master key caveat:** a restored database is unreadable in its encrypted
 columns (`secrets`, account passwords, bot tokens) without the
 `MANTLE_MASTER_KEY` from your `.env`. Keep a copy of that key somewhere safe
-and separate. Losing the key loses the vault — nothing else.
+and separate. Losing the key loses the vault; nothing else.
 
 ## Restore drill
 
@@ -91,5 +91,5 @@ scratch stack, so the first time isn't the bad day.
 
 `scripts/db-dump.sh` remains the manual path (pre-deploy insurance, pre-
 migration snapshots). It writes to `backups/` at the install root and is
-independent of the scheduled feature — scheduled rotation never touches its
+independent of the scheduled feature, scheduled rotation never touches its
 output.

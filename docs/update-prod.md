@@ -1,7 +1,7 @@
 # Updating production (registry-pull)
 
 How to ship the latest tagged release to the Contabo prod box. Prod runs the
-**CI-built multi-arch image** and updates by **pulling** it — no build, no rsync,
+**CI-built multi-arch image** and updates by **pulling** it, no build, no rsync,
 no source tree needed on the VPS.
 
 > **Why this changed.** The old loop built the image *on the VPS* because the Mac
@@ -14,7 +14,7 @@ no source tree needed on the VPS.
 > **Box:** `ssh mantle-prod` (`cwe@jason.crossworks.network`), install dir
 > `~/mantle`, serves https://jason.crossworks.network. Its `.env` pins
 > `MANTLE_IMAGE_NAMESPACE=titanwest` + `MANTLE_IMAGE_TAG=<exact version tag>`
-> (e.g. `v0.210.0` — NOT `:latest`; bump it as part of every update, step 2
+> (e.g. `v0.210.0`, NOT `:latest`; bump it as part of every update, step 2
 > below). See deploy.md §0 for the full topology.
 
 > ⚠️ **`~/mantle` is this box's path. Do not assume it on another box, and do
@@ -25,7 +25,7 @@ no source tree needed on the VPS.
 > ssh <box> 'docker inspect --format "{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}" mantle_web'
 > ```
 >
-> On the dev box that answers `/home/cwe/stack-rehearsal` — while `~/mantle` is a
+> On the dev box that answers `/home/cwe/stack-rehearsal`, while `~/mantle` is a
 > **source checkout sitting on a feature branch**, whose `docker-compose.yml`
 > names the image `titanwest/mantle` (the real one is `mantle-server`). Running
 > the steps below verbatim there operates on a directory that is not the live
@@ -36,7 +36,7 @@ no source tree needed on the VPS.
 
 1. **tag & push** (Mac). `pnpm version:bump <patch|minor|major>` (by change
    extent), commit the `release: vX.Y.Z`, `git tag vX.Y.Z`, `git push origin main
-   vX.Y.Z`. The **tag push is the publish trigger** — nothing ships until it lands.
+   vX.Y.Z`. The **tag push is the publish trigger**: nothing ships until it lands.
 2. **CI builds** ([`release.yml`](../.github/workflows/release.yml), fires on
    `v*`): builds amd64 + arm64 in parallel, pushes one multi-arch manifest tagged
    **both** `:vX.Y.Z` and `:latest`, then cuts a GitHub Release with generated
@@ -55,7 +55,7 @@ no source tree needed on the VPS.
    Additive (never removes a grant), best-effort (never fails boot),
    production-only, opt-out via `MANTLE_DISABLE_BOOT_RECONCILE=1`.
 
-Code is forward-and-back; **migrations are forward-only** — always dump first.
+Code is forward-and-back; **migrations are forward-only**: always dump first.
 
 ---
 
@@ -111,7 +111,7 @@ Then smoke-test the surface the release actually changed in the browser (and
 
 ## Gotchas
 
-- **The owner UI is a SECOND stack — `docker compose up` does not roll it.**
+- **The owner UI is a SECOND stack, `docker compose up` does not roll it.**
   Since the v0.200.0 split the client image (`mantle-client`, the zero-secret
   owner UI) is driven by `docker-compose.client.yml`, which the default project
   never loads. A plain `docker compose pull && up -d` leaves `mantle_client_web`
@@ -119,13 +119,13 @@ Then smoke-test the surface the release actually changed in the browser (and
   reports the new version (that's the *server*), and only the UI is stale. Hit
   on the v0.203.0 roll, where the release's two fixes were both client-side, so
   the roll would have shipped nothing a user could see. Always run step 3b, and
-  verify with `docker ps` that `mantle_client_web` shows the new tag — the
+  verify with `docker ps` that `mantle_client_web` shows the new tag, the
   version endpoint cannot tell you.
 - **The box may pin an explicit tag, not `latest`.** Check
   `grep MANTLE_IMAGE_TAG .env` before pulling; if it names a version, bump it
   or `pull` re-fetches the old one and `up -d` is a no-op that looks like
   success.
-- **Compose is release-owned (v0.142+)** — updates driven by the in-app
+- **Compose is release-owned (v0.142+)**: updates driven by the in-app
   **updater** auto-refresh a pristine `docker-compose.yml` from the target
   image, so compose-level changes (new services, healthchecks, mounts) land
   with the roll (deploy.md §5b). The MANUAL ssh loop above skips that refresh:
@@ -136,22 +136,22 @@ Then smoke-test the surface the release actually changed in the browser (and
   never in the canonical file.
 - **Topology-change releases** (a renamed / added / removed service in
   `docker-compose.yml`) also need `docker compose up -d --wait
-  --remove-orphans` — otherwise a renamed service's old container keeps running
+  --remove-orphans`, otherwise a renamed service's old container keeps running
   under its former name (the updater passes `--remove-orphans` already; both
   production boxes hit this on the v0.79.0 split, apps/agent → apps/api).
 - **telegram poller**: leave `worker_telegram` RUNNING (`restart: unless-stopped`).
   The dev/prod bot split (2026-06-02) means prod polls only `saskianewbot` and dev
-  only `saskiadevbot` — disjoint tokens, no 409. If you ever re-share a token across
+  only `saskiadevbot`, disjoint tokens, no 409. If you ever re-share a token across
   dev+prod you'll get 409s again; the fix is separate bots, not stopping the worker.
   Keep apostle_paulus_bot / brianthecoder_bot / miaschoemanbot **disabled** on prod.
 - **Caddyfile / infra changes** ride in the release **bundle**, not the image. Copy
   the updated `infra/caddy/Caddyfile` onto the box, then **restart** caddy
-  (`docker restart mantle_caddy`) — don't just reload. The file is bind-mounted
+  (`docker restart mantle_caddy`), don't just reload. The file is bind-mounted
   (`./infra/caddy/Caddyfile:/etc/caddy/Caddyfile`); an in-place rewrite lands on a
   new inode while Docker keeps serving the original, so `caddy reload` reports
   `config is unchanged`. `docker compose up -d` won't recreate caddy on a
-  mount-content change — restart it explicitly (re-resolves the path → new inode).
-- **migrations are forward-only** — the pre-roll `db-dump` is the only way back.
+  mount-content change, restart it explicitly (re-resolves the path → new inode).
+- **migrations are forward-only**: the pre-roll `db-dump` is the only way back.
 
 ## Rollback
 
@@ -162,6 +162,6 @@ ssh mantle-prod 'cd ~/mantle && docker compose pull && docker compose up -d --wa
 ```
 
 CI publishes every release as `:vX.Y.Z` **and** `:latest`, so a rollback is just
-pinning the prior `vX.Y.Z`. **Code rolls back instantly; schema does not** — a
+pinning the prior `vX.Y.Z`. **Code rolls back instantly; schema does not**: a
 migration is forward-only, so to undo one, restore the pre-update dump into a
 fresh DB (deploy.md §3b–c).

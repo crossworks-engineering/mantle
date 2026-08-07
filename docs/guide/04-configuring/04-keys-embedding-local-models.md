@@ -10,7 +10,7 @@ checks it's alive before you rely on it.
 
 The one that covers the most ground is **OpenRouter**: a single OpenRouter key
 powers chat (the assistant and all background workers), embeddings, and reading
-images/PDFs — the entire text-and-vision brain. You only need *direct* provider
+images/PDFs, the entire text-and-vision brain. You only need *direct* provider
 keys for things OpenRouter doesn't proxy:
 
 - **Voice** (speaking replies / transcribing voice notes) → OpenAI, ElevenLabs,
@@ -22,33 +22,33 @@ features.
 
 ## Settings → Embedding
 
-Embeddings are the numeric "meaning fingerprints" behind semantic search — every
+Embeddings are the numeric "meaning fingerprints" behind semantic search, every
 document and query is embedded so the brain can find things by meaning. There's
 **one embedding model for the whole system** (it has to be consistent, or stored
 and query vectors wouldn't be comparable).
 
 The default is **EmbeddingGemma running locally** (via Ollama): 768-dimensional,
-**free**, and **private** — your content's vectors never leave the box. That's the
+**free**, and **private**: your content's vectors never leave the box. That's the
 right default for a self-hosted brain.
 
 The settings page lets you:
 
 - Choose the model and a **primary + backup route** (the backup must be the *same*
-  model — different models live in incompatible vector spaces).
-- **Test dimensions** — probe the model's output size; the system is locked to
+  model, different models live in incompatible vector spaces).
+- **Test dimensions**: probe the model's output size; the system is locked to
   768, so a model emitting a different size is blocked (it would need a schema
   migration).
-- **Rebuild index** — re-embed your whole corpus after a deliberate model change.
+- **Rebuild index**: re-embed your whole corpus after a deliberate model change.
 
 > Rule of thumb: **don't switch the embedding model without a measured reason.**
 > Most retrieval misses come from what's indexed or how a query is phrased, not the
-> model — and switching means re-embedding everything.
+> model, and switching means re-embedding everything.
 
 ## Local models & your own network
 
 You're not tied to the cloud for *chat* either. With **Settings → Local network**
-(Tailscale) you can let Mantle reach a model machine on your own network — even a
-home GPU box behind your router, from a cloud-hosted Mantle — securely and without
+(Tailscale) you can let Mantle reach a model machine on your own network, even a
+home GPU box behind your router, from a cloud-hosted Mantle, securely and without
 port-forwarding.
 
 - Activate the network connection on the **Local network** page (paste a Tailscale

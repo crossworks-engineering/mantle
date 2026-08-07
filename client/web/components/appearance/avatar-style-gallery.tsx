@@ -128,7 +128,7 @@ export function AvatarStyleList() {
   const needle = fold(query);
 
   /**
-   * The offered list is the `avatars` category only — the background styles
+   * The offered list is the `avatars` category only, the background styles
    * moved to their own gallery below.
    *
    * A brain that chose one BEFORE the split (the old default, `shapes`, was one

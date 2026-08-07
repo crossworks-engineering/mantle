@@ -34,7 +34,7 @@ it does. Look at rows, then act.
 ## Technical
 
 The figures come from the same tables the features use, not from a separate
-metrics store — so a number here disagreeing with a feature screen is a real
+metrics store, so a number here disagreeing with a feature screen is a real
 inconsistency worth chasing rather than a reporting lag.
 
 Costs are rolled up from individual traced calls at the model's price, so any
@@ -43,7 +43,7 @@ it on the traces screen.
 
 The integrity view is deliberately **passive**: it reads and reports, and the
 destructive operations are separate, explicit maintenance actions. The corpus
-audit finding a problem is information, not an instruction — a node with no
+audit finding a problem is information, not an instruction, a node with no
 embedding may be waiting for a worker rather than broken.
 
 Sanity check and tool validation exercise real paths rather than inspecting

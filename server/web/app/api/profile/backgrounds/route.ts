@@ -4,14 +4,14 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { savePreferencesFor } from '@mantle/content';
 
 /**
- * PUT /api/profile/backgrounds { backgrounds } — persist which generated
+ * PUT /api/profile/backgrounds { backgrounds }, persist which generated
  * background each area of the shell shows, as `menu=waves,header=off`.
  *
  * Tiny by design, exactly like /api/profile/avatar: the Appearance picker calls
  * it fire-and-forget on every change.
  *
  * BRAIN-level (see BRAIN_PREFERENCE_KEYS), so savePreferencesFor lands it on
- * the shared anchor row — it describes the look of the product, not one login's
+ * the shared anchor row; it describes the look of the product, not one login's
  * taste.
  *
  * An EMPTY string is a legitimate value, not a missing one: it means every area
@@ -19,7 +19,7 @@ import { savePreferencesFor } from '@mantle/content';
  * field is required and `''` is accepted, unlike the avatar route where each
  * field is optional and absence means "leave alone". Validation of the pairs
  * themselves happens in the shared projection (projectBackgrounds) and again on
- * read (decodeBackgrounds) — garbage stores as unset, never an error.
+ * read (decodeBackgrounds), garbage stores as unset, never an error.
  */
 const Body = z.object({
   backgrounds: z.string().max(200),

@@ -28,7 +28,7 @@ describe('the catalogue split', () => {
   });
 
   // These encode an identity, which is an avatar's job and meaningless spread
-  // across a sidebar — the reason they moved out of the old "minimalist" shelf.
+  // across a sidebar, the reason they moved out of the old "minimalist" shelf.
   it('keeps the identity styles on the avatar side', () => {
     const ids = AVATAR_PICKER_STYLES.map((s) => s.id);
     for (const id of ['initials', 'initial-face', 'glyphs', 'icons']) expect(ids).toContain(id);

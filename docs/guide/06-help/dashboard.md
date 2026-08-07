@@ -5,7 +5,7 @@ toolGroups: [brain-health]
 
 ## Dashboard
 
-Not a summary of your content — a health readout of the **brain**. Everything
+Not a summary of your content, a health readout of the **brain**. Everything
 here answers "is the thing that remembers for me working, and what is it
 costing?"
 
@@ -17,7 +17,7 @@ your costs shows up as a trend rather than a number you have to remember.
 **Pending review** is the only card that means someone has to do something.
 
 Below them: spend and ingest over thirty days, a capacity dial, a breakdown by
-node type and entity kind, and the ops panels — email, Telegram, heartbeats,
+node type and entity kind, and the ops panels, email, Telegram, heartbeats,
 recent errors and failures. The panels are where a quietly broken background job
 becomes visible; nothing else in the app will tell you a heartbeat has been
 failing for a week.
@@ -29,7 +29,7 @@ failing for a week.
 - "How's retrieval quality looking?"
 
 The assistant reads the same capacity figure the dial does, so asking is a real
-alternative to visiting the screen. What it cannot do is act on any of it — the
+alternative to visiting the screen. What it cannot do is act on any of it, the
 dashboard's job is to send you somewhere, and both the spend card and the
 pending card are links for that reason.
 
@@ -42,7 +42,7 @@ database is its own kind of problem.
 
 The capacity dial measures your corpus against the **split policy**: roughly
 twenty thousand documents, or a hundred thousand passage vectors, per brain.
-That ceiling is a retrieval-quality limit, not a storage one — embeddings are
+That ceiling is a retrieval-quality limit, not a storage one; embeddings are
 768-dimension vectors and search stays sharp while the corpus is small enough
 for a nearest-neighbour scan to be meaningful. Passing it means it's time to
 split into a second brain, not to buy a bigger disk.

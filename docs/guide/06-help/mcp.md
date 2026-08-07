@@ -4,8 +4,8 @@ title: MCP connector
 
 ## MCP connector
 
-Lets an outside AI client — Claude Desktop, Claude Code, or anything else
-speaking MCP — connect **to** your brain and use it as a tool.
+Lets an outside AI client, Claude Desktop, Claude Code, or anything else
+speaking MCP, connect **to** your brain and use it as a tool.
 
 This is the reverse of everything else in Settings. Elsewhere you're giving
 Mantle access to your things; here you're giving something else access to
@@ -23,7 +23,7 @@ keeping is written back here, so your memory doesn't fragment across
 applications.
 
 Treat the connector URL as a password. Anyone with it reaches your brain with
-the tools you've granted, from anywhere — so paste it into a client's
+the tools you've granted, from anywhere, so paste it into a client's
 configuration, not into a message, a document, or a shared repository.
 
 Review the connected-clients list occasionally. A client you set up on a machine
@@ -32,7 +32,7 @@ you no longer use is still connected until you disconnect it here.
 ## Technical
 
 The connector exposes the same tool surface the assistant uses, subject to the
-same tool groups — an external client is not a privileged path around the
+same tool groups; an external client is not a privileged path around the
 permission model. Tools requiring confirmation still queue for approval, and the
 approval happens here rather than in the connecting client.
 
@@ -42,7 +42,7 @@ distinction is the reason connections are individually revocable rather than
 governed by a single on/off switch.
 
 The health check makes a real round trip, which is worth using when a client
-reports a connection it can't actually use — it separates "the connector is
+reports a connection it can't actually use; it separates "the connector is
 down" from "the client is misconfigured".
 
 Because the URL is the whole credential, rotating it invalidates every connected

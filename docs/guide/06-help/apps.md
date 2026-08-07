@@ -5,7 +5,7 @@ toolGroups: [apps, app-admin, app-data]
 
 ## Apps
 
-Small single-purpose interfaces built on top of your own data — a job sheet, a
+Small single-purpose interfaces built on top of your own data, a job sheet, a
 stock count, a booking form, a dashboard for one thing you check every morning.
 
 An app is **real code**, not a configured widget. It's written as TSX, compiled
@@ -25,7 +25,7 @@ compile never replaces the last one that worked.
 
 Authoring is the interesting case. The assistant writes the source files,
 compiles, and hands back errors with the exact file and line when it doesn't
-build — so "it won't compile, fix it" is a normal part of the loop rather than a
+build, so "it won't compile, fix it" is a normal part of the loop rather than a
 dead end. It can also grant the app its data access and give it a small database
 of its own for reference data.
 
@@ -34,8 +34,8 @@ draft, which is the whole point of having one.
 
 ## Technical
 
-Source is a virtual file tree stored on the app row — up to 50 files, 256 KB
-each — bundled server-side by esbuild. The entry file must default-export an
+Source is a virtual file tree stored on the app row, up to 50 files, 256 KB
+each, bundled server-side by esbuild. The entry file must default-export an
 `App()` component.
 
 It runs in a **sandboxed, opaque-origin iframe**: no credentials, no
@@ -45,7 +45,7 @@ only through a runtime allowlist of tool slugs set per app; the host refuses any
 slug not on that list. An app may also declare its own SQLite database for
 reference data it owns.
 
-The bundler's import allowlist is deliberately short — React, a handful of UI
+The bundler's import allowlist is deliberately short, React, a handful of UI
 primitives, Lucide icons, the host bridge, and relative files within the app.
 Any other bare import is rejected at build time rather than fetched. No
 arbitrary npm, so an app's dependency surface is a fact you can read off this

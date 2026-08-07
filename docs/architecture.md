@@ -4,89 +4,89 @@ A concrete, file-cited tour of how the system fits together. If you want one
 document to read before touching the codebase, this is it.
 
 Companion docs:
-- [`memory.md`](./memory.md) — the memory layer in depth: tier taxonomy,
+- [`memory.md`](./memory.md), the memory layer in depth: tier taxonomy,
   vector vs graph retrieval, the `memories` / `entities` / `entity_edges`
   schema, the build sequence.
-- [`knowledge-graph.md`](./knowledge-graph.md) — the graph axis (shipped): how
+- [`knowledge-graph.md`](./knowledge-graph.md), the graph axis (shipped): how
   entity↔entity relations are extracted, traversed (`graph_path`), kept clean
   (entity-resolution integrity + near-dup consolidation), and why it's all
   Postgres, not a graph DB.
-- [`federation.md`](./federation.md) — Mantle-to-Mantle federation: sealed
+- [`federation.md`](./federation.md), Mantle-to-Mantle federation: sealed
   per-peer tokens, scoped grants (per node, or per category with automatic
   inclusion of new nodes), the traced `/api/federation` surface.
-- [`observability.md`](./observability.md) — the tracing layer: how every
+- [`observability.md`](./observability.md), the tracing layer: how every
   agent run becomes a `traces` row + `trace_steps` tree, the reactflow
   visual, the dashboard widgets, and how to add a new trace kind.
-- [`system-integrity.md`](./system-integrity.md) — the declarative **manifest**
+- [`system-integrity.md`](./system-integrity.md), the declarative **manifest**
   that is the single source of truth for the default agent/skill/tool/worker
   graph: the CI drift-test, the `applyManifest` seeder (gap-fill vs overwrite),
   and the standing `checkSystemIntegrity` checker (`/debug/integrity` → System
   config + onboarding's Check step). Read before adding a specialist/skill/tool.
 - [`frontend-backend-split.md`](./frontend-backend-split.md) +
-  [`fe-be-split-session-handover.md`](./fe-be-split-session-handover.md) — the
+  [`fe-be-split-session-handover.md`](./fe-be-split-session-handover.md), the
   **client/server split**: `apps/web` became a pure client that talks to the
   backend only over HTTP `/api/**` (no `@mantle/db` in the browser bundle),
   client data-fetching via TanStack Query, bearer-auth + CORS for detached
   clients, and DB-less local dev. The first is the design/Phase-2 plan; the
   second is the completion record (what shipped, merged at ~v0.66.x). The
   per-screen conversion recipe is [`client-data-fetching.md`](./client-data-fetching.md).
-- [`live-turn-streaming.md`](./live-turn-streaming.md) — **live turn streaming**:
+- [`live-turn-streaming.md`](./live-turn-streaming.md), **live turn streaming**:
   showing what an agent is doing during a turn, from a grounded status line
   ("Searching your brain…") to token-by-token streaming of the reply, over one
   client-agnostic event contract (`TurnEvent`) that web AND the Flutter companion
   both consume. The durability-vs-liveness split (the DBOS journal never carries
   tokens), the Postgres-`NOTIFY` bus, Stop-mid-flight, and `Last-Event-ID` replay.
   Session record: [`live-turn-streaming-handover.md`](./live-turn-streaming-handover.md).
-- [`files.md`](./files.md) — the host-mirrored filesystem layer:
+- [`files.md`](./files.md), the host-mirrored filesystem layer:
   folders + files on disk under `MANTLE_FILES_ROOT`, the editor, the
   ingestion handoff, and the MCP tools.
-- [`file-ingestion.md`](./file-ingestion.md) — how files/images/documents
+- [`file-ingestion.md`](./file-ingestion.md), how files/images/documents
   enter from every source (Files UI, /assistant, Telegram, disk-watcher,
   MCP): the save→notify→extract spine, the shared primitives, a flow table,
   and the production audit.
-- [`telegram.md`](./telegram.md) — a frozen handoff covering the Telegram
+- [`telegram.md`](./telegram.md), a frozen handoff covering the Telegram
   bridge build. Project diary; durable details have moved here.
-- [`pages.md`](./pages.md) — the Notion-style rich-document content type:
+- [`pages.md`](./pages.md), the Notion-style rich-document content type:
   TipTap editor, draft/commit model, custom blocks, and how pages plug into
   the brain (incl. `content_chunks` chunked retrieval + re-extract semantics).
   Also covers the **"Pages" delegate agent** + Phase 2b block-addressed
   editing (stable per-block ids, `page_blocks_list`, `page_block_*` tools)
   + the Phase 3a editor AI-assist side panel.
-- [`conversation.md`](./conversation.md) — the **unified conversation stream**:
+- [`conversation.md`](./conversation.md), the **unified conversation stream**:
   every channel (web `/assistant`, Telegram, future WhatsApp) writes one
   per-(owner, agent) store (`assistant_messages` + `channel`), one summarizer
   rolls it up, and `/assistant` renders all of it. Channels are transports
   (`recordTurn` / `loadConversationContext` in `@mantle/agent-runtime`); read
   this before touching how a surface persists or loads conversation turns.
-- [`journal.md`](./journal.md) — "Journal": the note-like `journal` content
-  type — short first-person entries (mood + life-area category) that teach
+- [`journal.md`](./journal.md), "Journal": the note-like `journal` content
+  type, short first-person entries (mood + life-area category) that teach
   agents who the user is. Indexed like notes **and** distilled into an
   always-on identity block (`buildIdentityContext`) injected into every agent
   turn (opt-out via `AgentMemoryConfig.inject_journal`). Deterministic, no LLM.
-- [`recall.md`](./recall.md) — "Remy", the memory-recall agent: time-windowed
+- [`recall.md`](./recall.md), "Remy", the memory-recall agent: time-windowed
   replay of past conversations (`find_window` → `recall_window`) via the
   `invoke_agent` delegation path. Lossless paging vs. lossy digests.
-- [`research.md`](./research.md) — "Researcher", the web-search agent: the
+- [`research.md`](./research.md), "Researcher", the web-search agent: the
   outward twin of Remy. `web_search` (Perplexity Sonar via OpenRouter) wrapped
   by a synthesising agent, reached through `invoke_agent` delegation.
-- [`email-send.md`](./email-send.md) — outbound email: the `email_send` tool
+- [`email-send.md`](./email-send.md), outbound email: the `email_send` tool
   sends from the user's mailbox via provider SMTP submission (reusing the IMAP
   app password); never an own MTA. The send half of the §8 read-only pipeline.
-- [`contacts.md`](./contacts.md) — `contact` node type (name + company + email
+- [`contacts.md`](./contacts.md), `contact` node type (name + company + email
   + cell + description) and the `/contacts` master-detail UI. The contacts
   list IS the email allowlist, and it fails closed: the agent may only send to
-  the user's own account addresses plus their contacts — with no contacts yet it
+  the user's own account addresses plus their contacts, with no contacts yet it
   can email the user but not arbitrary outside addresses, so a prompt-injected
   agent can't exfiltrate by mail. Add a contact to permit sending to them.
   Per-method send counters bumped on success. Same-surname-different-given
   reconciler refinement lives here too.
-- [`chat-failover.md`](./chat-failover.md) — primary + backup chat routes for
+- [`chat-failover.md`](./chat-failover.md), primary + backup chat routes for
   agents and chat workers (migrations 0062/0063): a different-model backup the
   runtime fails over to on route-down / 429 / 5xx. Single-shot `chatWithFailover`
   + sticky-within-turn tool-loop failover, per-route base URL + tailnet flag, the
   operator UI, and the `resolveChatKey` source of truth. Operator summary in
   `ai-workers.md` §7a.
-- [`tailscale.md`](./tailscale.md) — the networking layer that lets a cloud VPS
+- [`tailscale.md`](./tailscale.md), the networking layer that lets a cloud VPS
   reach a model box behind NAT by MagicDNS name: bundled `tailscale` compose
   sidecar (HTTP proxy, profile-gated), the `local` chat adapter, `tailnetFetch`
   dispatch, and the `/settings/network` status page + "Connect a device" guide.
@@ -96,19 +96,19 @@ Companion docs:
 ## 1. What this is
 
 Mantle is a **single-user, self-hosted "AI-queryable life tree."** A Postgres
-database is the source of truth for everything you care about — emails, files,
-notes, secrets, Telegram messages, contacts, tasks — modelled as polymorphic
+database is the source of truth for everything you care about, emails, files,
+notes, secrets, Telegram messages, contacts, tasks, modelled as polymorphic
 `nodes` arranged in a tree. A Next.js app gives you a UI on top; an MCP server
 gives Claude direct tool access to it; workers ingest new data on a loop.
 
 Three deliberate constraints shape every decision:
 
 - **Self-hosted.** No SaaS in the runtime path. Postgres, object storage,
-  auth, sync workers — all run on your machine in `docker-compose.dev.yml`.
+  auth, sync workers, all run on your machine in `docker-compose.dev.yml`.
 - **Single-user.** The whole tree belongs to one human (`ALLOWED_USER_ID`).
   No multi-tenancy, no role-based access, no signup flow.
 - **Postgres-first.** If something can be a table, it's a table. Auth, job
-  queues, search, vectors, real-time events — all in Postgres. The lean
+  queues, search, vectors, real-time events, all in Postgres. The lean
   stack is what's left after removing every other moving part.
 
 ---
@@ -116,7 +116,7 @@ Three deliberate constraints shape every decision:
 ## 2. The big picture
 
 A `pnpm dev` process tree of seven Node lanes, two Docker containers,
-one shared Postgres + MinIO behind them. Memory is the spine — every
+one shared Postgres + MinIO behind them. Memory is the spine, every
 ingest path lands a `nodes` row, which fires `pg_notify('node_ingested')`,
 which the extractor turns into searchable index + facts + entities.
 See [memory.md §0](./memory.md#0-the-flow-at-a-glance) for the
@@ -197,8 +197,8 @@ processes orchestrated by `concurrently`).
 MinIO from docker-compose. That's it.
 
 > **`apps/agent` is gone (absorbed into `apps/api`, v0.64.0).** The old `agent`
-> lane — the Telegram responder, extractor, summarizer, reflector, and heartbeat
-> loops — now lives inside the dedicated `apps/api` runner, where the Telegram
+> lane, the Telegram responder, extractor, summarizer, reflector, and heartbeat
+> loops, now lives inside the dedicated `apps/api` runner, where the Telegram
 > turn runs as a **durable DBOS workflow** (see [§3a](#3a-durable-runners-the-febe-split-and-live-turn-streaming)).
 > Several sections below still cite `apps/agent/src/main.ts`; those files moved
 > to `apps/api/src/agent/` but the behaviour they describe is unchanged.
@@ -207,16 +207,16 @@ MinIO from docker-compose. That's it.
 |--------------------|-------------------------------------------------------------------------------|
 | `postgres` (Docker)| Source of truth. Holds every row. Healthchecked, restart on failure.          |
 | `minio` (Docker)   | Object store for attachment bytes. Healthchecked.                             |
-| `web`              | Next.js dev server (Turbopack). Serves the UI **and every `/api/**` route** (incl. SSE) — but is now a **pure client/API host**: the browser bundle fetches its data over `/api` and no longer imports `@mantle/db` (see [§3a](#3a-durable-runners-the-febe-split-and-live-turn-streaming)). Hosts the `/assistant` chat surface, which **enqueues** the turn onto the `api` runner (POST `/api/assistant/turn` returns `202` immediately) and renders the live stream. |
-| `api`              | **The durable runner** (`apps/api/src/main.ts`). Runs assistant + Telegram turns and all background agent work (extractor, summarizer, reflector, heartbeats) as **durable [DBOS](https://docs.dbos.dev/) workflows** journaled to a Postgres system DB. No HTTP surface of its own — it's reached by enqueue (web) and reaches clients by publishing turn events over the Postgres `NOTIFY` bus. Absorbed the old `apps/agent` (v0.64.0). |
+| `web`              | Next.js dev server (Turbopack). Serves the UI **and every `/api/**` route** (incl. SSE): but is now a **pure client/API host**: the browser bundle fetches its data over `/api` and no longer imports `@mantle/db` (see [§3a](#3a-durable-runners-the-febe-split-and-live-turn-streaming)). Hosts the `/assistant` chat surface, which **enqueues** the turn onto the `api` runner (POST `/api/assistant/turn` returns `202` immediately) and renders the live stream. |
+| `api`              | **The durable runner** (`apps/api/src/main.ts`). Runs assistant + Telegram turns and all background agent work (extractor, summarizer, reflector, heartbeats) as **durable [DBOS](https://docs.dbos.dev/) workflows** journaled to a Postgres system DB. No HTTP surface of its own; it's reached by enqueue (web) and reaches clients by publishing turn events over the Postgres `NOTIFY` bus. Absorbed the old `apps/agent` (v0.64.0). |
 | `mcp`              | MCP server (`apps/mcp/src/server.ts`). Speaks stdio JSON-RPC to Claude Code.  |
 | `worker` (email)   | `apps/web/workers/email-sync.ts`. pg-boss queue consumer, runs IMAP syncs.    |
 | `tg`               | `apps/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.         |
 | `files`            | `apps/web/workers/files-watch.ts`. chokidar on `MANTLE_FILES_ROOT`; mirrors external edits (vim, Syncthing, host `cp`) back into the DB. Loop-safe via `syncFileFromDisk`, which never re-writes bytes. |
-| `events`           | `apps/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent — `rollForwardRecurrence` in `@mantle/content/events`. The tick also hosts two piggybacked housekeeping jobs: the tool-result spill sweep (`maybeSweep`, §9m) and the **scheduled-backup check** (`maybeRunScheduledBackups` — [`backups.md`](./backups.md), configured at /settings/backups). |
+| `events`           | `apps/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent, `rollForwardRecurrence` in `@mantle/content/events`. The tick also hosts two piggybacked housekeeping jobs: the tool-result spill sweep (`maybeSweep`, §9m) and the **scheduled-backup check** (`maybeRunScheduledBackups`, [`backups.md`](./backups.md), configured at /settings/backups). |
 | `docs`             | `apps/web/workers/docs-sync.ts`. Mirrors the `docs/` collection into the brain as `documentation` nodes (the disk-watcher counterpart for docs). |
 
-> The Telegram responder loop is **no longer a `pnpm dev` lane of its own** — it
+> The Telegram responder loop is **no longer a `pnpm dev` lane of its own**: it
 > moved into the `api` runner (above). It still LISTENs on
 > `telegram_message_inserted` and replies via the adapter framework, sharing
 > prompt-build + LLM helpers with the web `/assistant` through `@mantle/agent-runtime`;
@@ -226,7 +226,7 @@ The workers live under `server/web/workers/` (not in their own app) because they
 share `.env.local` and `@mantle/*` imports with the web, and `pnpm dev` runs
 them as one process tree.
 
-In **production they already are separate containers** — `docker-compose.yml`
+In **production they already are separate containers**: `docker-compose.yml`
 defines a `worker_*` service per worker, each with its own command, memory limit
 and heartbeat healthcheck. What they still share is the *image*: all of them run
 `mantle-server`, so a worker container also carries the web build (share-runtime
@@ -249,12 +249,12 @@ app became a **pure client** (no DB in the browser), and finally the turn became
 [`fe-be-split-session-handover.md`](./fe-be-split-session-handover.md) (the split)
 and [`live-turn-streaming.md`](./live-turn-streaming.md) (streaming).
 
-### 3a.1 Durable runners — `apps/api` + DBOS
+### 3a.1 Durable runners: `apps/api` + DBOS
 
 The problem: LLM/agent work used to run **in the web request**. Navigate away,
 reload, or restart the web process mid-turn and the work died with the request.
 
-The fix: a dedicated, always-on Node service — **`apps/api`** — runs each turn as
+The fix: a dedicated, always-on Node service (**`apps/api`**) runs each turn as
 a **durable [DBOS](https://docs.dbos.dev/) workflow**. DBOS journals a workflow's
 steps to a Postgres **system database** (`mantle_dbos_sys`, provisioned by the
 one-shot `migrate` service); on a crash or restart it **replays from the journal**
@@ -271,27 +271,27 @@ How it's wired (the cross-process contract):
   `ASSISTANT_TURN_WORKFLOW`, `RUNNER_QUEUE`, `AssistantTurnInput`,
   `resolveSystemDatabaseUrl`).
 - **`@mantle/tracing` durable seam** ([`durable.ts`](../packages/tracing/src/durable.ts))
-  — an AsyncLocalStorage-injected executor that turns existing `step()` boundaries
+, an AsyncLocalStorage-injected executor that turns existing `step()` boundaries
   into durable journal points **when a workflow is active**, and is an inert
   passthrough otherwise. So the same tracing code is durable inside `apps/api` and
   free outside it.
 - **The web route enqueues; the runner executes.** `POST /api/assistant/turn`
   enqueues the workflow via a cached **`DBOSClient`**
   ([`apps/web/lib/dbos-client.ts`](../apps/web/lib/dbos-client.ts)). `apps/api` has
-  **no HTTP surface** — it's reached by enqueue and reaches clients back over the
+  **no HTTP surface**: it's reached by enqueue and reaches clients back over the
   Postgres `NOTIFY` bus (§3a.3).
 - **`apps/agent` was absorbed** (v0.64.0): the Telegram responder loop is now a
   durable workflow inside `apps/api`, and the extractor/summarizer/reflector/
   heartbeat runners moved with it. One runner for all background agent work.
 
 Schema: migration **0105** added durable turn state (`status pending|complete|failed`
-+ `error`) to `assistant_messages` — the row the runner owns from turn-start, which
++ `error`) to `assistant_messages`, the row the runner owns from turn-start, which
 is also what makes liveness reconnection clean (§3a.3).
 
-### 3a.2 The FE/BE split — `apps/web` is now a pure client
+### 3a.2 The FE/BE split: `apps/web` is now a pure client
 
 The goal: a **desktop (Electron) client** that reuses the same UI, and **DB-less
-local dev**. The blocker was that `apps/web` was a *full-stack* app — it
+local dev**. The blocker was that `apps/web` was a *full-stack* app; it
 server-rendered against the database in-process (React Server Components + Server
 Actions), so even "just the UI" needed DB credentials and there was no client
 bundle a shell could load. The split makes the browser bundle **talk to the
@@ -301,13 +301,13 @@ What changed:
 
 - **Every screen converted to client data-fetching.** Pages, notes, tasks, events,
   contacts, tables, files, the whole `/settings/*` surface, the dashboard, traces,
-  `/inbox`, `/assistant` — all moved from `await getData()` in an RSC to
+  `/inbox`, `/assistant`, all moved from `await getData()` in an RSC to
   **[TanStack Query](https://tanstack.com/query)** fetches against `/api`. Server
   actions were removed; mutations go through endpoints. The conversion recipe is
   [`client-data-fetching.md`](./client-data-fetching.md).
 - **`apiFetch` / `apiSend` / `apiEventStream`** ([`apps/web/lib/api-fetch.ts`](../apps/web/lib/api-fetch.ts))
   are the client transport: they inject the API base-URL + bearer token, bounce to
-  `/login` on 401, and (for SSE) carry the bearer + reconnect with backoff — so the
+  `/login` on 401, and (for SSE) carry the bearer + reconnect with backoff, so the
   same components work same-origin in the browser **and** detached in Electron / a
   remote-API dev session.
 - **Bearer-auth + CORS across `/api`.** Every route gates on `getOwnerOr401()` and
@@ -315,24 +315,24 @@ What changed:
   CORS for a separate origin. The mobile bearer token (`k:'m'`) and a desktop token
   (`k:'a'`) ride the `Authorization` header; the cookie path now *rejects* kinded
   tokens, so detached clients never depend on cookies.
-- **No `@mantle/db` in the browser bundle** — the §9 definition-of-done. Shared
+- **No `@mantle/db` in the browser bundle**: the §9 definition-of-done. Shared
   **wire types live in `@mantle/client-types`** (agents, AI-workers, tools,
   tool-groups, content rows, the `TurnEvent`…), so producer↔client drift is a
-  **compile error** — the deliberate alternative to runtime response validation.
+  **compile error**: the deliberate alternative to runtime response validation.
 - **DB-less dev falls out for free:** run the UI against a deployed/remote API with
   just a bearer token; no local Postgres. Merged via PR #1 (a merge commit, history
   preserved) at ~v0.66.x; scored ~9/10 for the same-origin web app, with the
   true-Electron path the remaining future work.
 
-### 3a.3 Live turn streaming — watch the turn happen
+### 3a.3 Live turn streaming: watch the turn happen
 
 Once a turn is durable and the client is detached, the last piece is **liveness**:
 showing what the agent is doing, live, to both the web client and the Flutter
 companion off **one contract**. The governing principle:
 
-> **Durability and liveness travel separate paths.** Correctness — the final
-> assembled reply — is journaled by DBOS to `assistant_messages` (exactly-once,
-> survives a crash). Liveness — the stream of status/token deltas — rides an
+> **Durability and liveness travel separate paths.** Correctness, the final
+> assembled reply, is journaled by DBOS to `assistant_messages` (exactly-once,
+> survives a crash). Liveness (the stream of status/token deltas) rides an
 > **ephemeral** side channel *around* the journal and is allowed to be lost. The
 > journal **never carries tokens**: if the runner crashes mid-stream the partial
 > tokens are thrown away, DBOS re-runs the step, and the user never loses the
@@ -340,13 +340,13 @@ companion off **one contract**. The governing principle:
 
 The moving parts:
 
-- **One client-agnostic event contract** — `TurnEvent` in `@mantle/client-types`:
+- **One client-agnostic event contract**: `TurnEvent` in `@mantle/client-types`:
   `{ v, turnId, seq, round, type, data }` with types `turn-start` / `status` /
   `tool-start` / `tool-end` / `reasoning-delta` / `text-delta` / `done` / `error`.
   Web React and Dart both subscribe; `seq` is the resume cursor.
 - **Transport = Postgres `LISTEN/NOTIFY`, not an in-process bus.** This is the
   crux: the turn runs in **`apps/api`** but the browser's SSE socket is held by
-  **`apps/web`** — always two processes. So the producer
+  **`apps/web`**: always two processes. So the producer
   (`publishTurnEvent` in **`@mantle/turn-stream`**, called from the runner via
   `pg_notify`) and the consumer (`subscribeTurnStream` in
   [`apps/web/lib/realtime.ts`](../apps/web/lib/realtime.ts), behind the bearer SSE
@@ -356,7 +356,7 @@ The moving parts:
 - **Grounded status, never a guess.** Labels are built from the agent's **real**
   tool calls + args ("Reading note *Q3 plan*"). A configurable **`narrator`** AI
   worker (its own kind, migration **0106**) restyles a *real* status line into the
-  agent's voice — fed only the grounded event, fire-and-forget off the critical
+  agent's voice, fed only the grounded event, fire-and-forget off the critical
   path, with its system prompt as the verbosity dial. It auto-seeds as a required
   baseline worker and falls back to a built-in concise label on brains without one.
 - **Token streaming on every provider.** `chatStream()` on the OpenRouter adapter
@@ -373,7 +373,7 @@ The moving parts:
 - **`Last-Event-ID` replay (migration 0107).** `NOTIFY` has no backlog, so a
   reconnect can miss deltas. `publishTurnEvent` also writes each event to the
   short-TTL **`turn_stream_buffer`** table keyed by `(turn_id, seq)`; on reconnect
-  with `Last-Event-ID: <seq>` the SSE route replays `seq > N` then live-tails —
+  with `Last-Event-ID: <seq>` the SSE route replays `seq > N` then live-tails,
   gap-free + duplicate-free via `makeReplayMerger`. The durable message row still
   covers the final answer regardless.
 
@@ -389,25 +389,25 @@ render, it's modelled wrong.*
 
 One Postgres 17 cluster, one database (`postgres`), three schemas:
 
-- **`public`** — every Mantle table. Owned by Drizzle migrations
+- **`public`**: every Mantle table. Owned by Drizzle migrations
   (`packages/db/migrations/*.sql`).
-- **`auth`** — identity. One table: `auth.users(id, email, password_hash,
+- **`auth`**: identity. One table: `auth.users(id, email, password_hash,
   created_at)`. Owned by `infra/postgres/init/02-auth-schema.sql`. Drizzle
   sees it via `packages/db/src/schema/auth-users.ts` but `drizzle.config.ts`
   is filtered to `schemaFilter: ['public']` so Drizzle never tries to manage
   it.
-- **`pgboss`** — auto-created by [pg-boss](https://github.com/timgit/pg-boss),
+- **`pgboss`**: auto-created by [pg-boss](https://github.com/timgit/pg-boss),
   the email worker's job queue. Mantle never touches it directly.
 
 **Extensions** (`infra/postgres/init/01-extensions.sql`):
 
 | Extension      | What it enables                                                 |
 |----------------|-----------------------------------------------------------------|
-| `ltree`        | `nodes.path` — hierarchical paths with operators like `<@`, `@>` |
+| `ltree`        | `nodes.path`, hierarchical paths with operators like `<@`, `@>` |
 | `pg_trgm`      | Trigram indexes for fuzzy/full-text fallbacks                   |
 | `pgcrypto`     | `gen_random_uuid()` for default PKs                             |
 | `"uuid-ossp"`  | Legacy uuid helpers (a few migrations still reference them)     |
-| `vector`       | pgvector — `nodes.embedding` (768-dim, local EmbeddingGemma)    |
+| `vector`       | pgvector, `nodes.embedding` (768-dim, local EmbeddingGemma)    |
 
 **Bootstrap order** matters and is enforced by the filesystem:
 
@@ -429,12 +429,12 @@ own migration file and use it only in a *later* one. See
 [`packages/db/README.md`](../packages/db/README.md).
 
 A fresh setup needs one extra step the bootstrap can't do: inserting your own
-row into `auth.users`. There's no signup UI — you `psql` it in directly with a
+row into `auth.users`. There's no signup UI; you `psql` it in directly with a
 bcrypt hash. (Single-user system; this was a deliberate trade.)
 
 **Connection** is a single `postgres-js` pool (`packages/db/src/client.ts`),
 exported as `db` (Drizzle). All app code, workers, and the MCP server import
-the same `db`. No raw `pg` clients, no service-role split — single connection
+the same `db`. No raw `pg` clients, no service-role split, single connection
 shape across the codebase.
 
 ---
@@ -448,16 +448,16 @@ SDK pointed at `http://127.0.0.1:9000`.
 `packages/storage/src/index.ts` is the only file that knows about S3. It
 exposes five functions:
 
-- `putContent(buf, contentType)` — uploads, deduplicating by sha256.
-- `getSignedUrl(key, ttl)` — mints a presigned GET URL.
-- `getContent(key)` — streams bytes back through Node (for proxied downloads
+- `putContent(buf, contentType)`, uploads, deduplicating by sha256.
+- `getSignedUrl(key, ttl)`, mints a presigned GET URL.
+- `getContent(key)`, streams bytes back through Node (for proxied downloads
   when the browser can't reach the MinIO endpoint).
-- `deleteContent(key)` — single object delete.
-- `contentKey(sha256)` / `hashBuffer(buf)` — pure helpers.
+- `deleteContent(key)`, single object delete.
+- `contentKey(sha256)` / `hashBuffer(buf)`, pure helpers.
 
 Keys are **content-addressed**: `attachments/aa/bb/<full-sha256>`. Identical
 bytes always land at the same key, so dedup is automatic. The PutObject path
-calls HeadObject first — if the key exists, the upload is short-circuited and
+calls HeadObject first, if the key exists, the upload is short-circuited and
 `deduped: true` is returned.
 
 Attachment downloads go through `apps/web/app/api/attachments/[id]/route.ts`,
@@ -469,7 +469,7 @@ exchange for never leaking the internal endpoint.
 
 ---
 
-## 6. The `nodes` table — Mantle's central abstraction
+## 6. The `nodes` table: Mantle's central abstraction
 
 Everything Mantle stores is either a `node` or hangs off a node.
 (`packages/db/src/schema/nodes.ts:34`)
@@ -523,18 +523,18 @@ HNSW on embedding) live in the raw SQL migrations under
 
 One user, one row in `auth.users`. Auth is a **bespoke signed-cookie session**:
 
-- `apps/web/lib/auth.ts` — the Node-runtime side. `loginWithPassword()`
+- `apps/web/lib/auth.ts`, the Node-runtime side. `loginWithPassword()`
   compares a bcryptjs hash. `buildSessionCookie()` produces
   `<payload>.<sig>` where `payload = base64url(JSON({uid, exp}))` and
   `sig = base64url(HMAC-SHA256(SESSION_SECRET, payload))`. Signed cookies
-  are stateless — to invalidate everything in one shot, rotate
+  are stateless, to invalidate everything in one shot, rotate
   `SESSION_SECRET`.
-- `apps/web/middleware.ts` — the Edge-runtime gate. Same verify logic
+- `apps/web/middleware.ts`, the Edge-runtime gate. Same verify logic
   rewritten in Web Crypto (Edge can't use `node:crypto`). Redirects any
   non-public path without a valid cookie to `/login`.
-- `apps/web/lib/auth-constants.ts` — `SESSION_COOKIE_NAME` and
+- `apps/web/lib/auth-constants.ts`, `SESSION_COOKIE_NAME` and
   `PUBLIC_PATHS`, the only constants both files share without drift.
-- `apps/web/app/api/auth/{login,logout,change-password}/route.ts` —
+- `apps/web/app/api/auth/{login,logout,change-password}/route.ts`,
   Zod-validated, single-purpose endpoints. Login sets HttpOnly + Secure
   (in prod) + SameSite=Lax cookies with 1-year `maxAge`.
 
@@ -560,17 +560,17 @@ Full reference: [`email-ingest.md`](./email-ingest.md) (inbound) and
 [`email-send.md`](./email-send.md) (outbound).
 
 The big idea: **never ingest mail you didn't ask for.** The **contacts list
-is the security gate** — the same list that authorises outbound send. A
+is the security gate**, the same list that authorises outbound send. A
 message is ingested only if its `From` matches a contact (an exact address
 **or** a `@domain` wildcard in `data.emails`) or one of the user's own
 account addresses; everyone else is silently rejected. Once it passes,
 the message lands as a `nodes` row of type `email` and the `node_ingested`
-pg_notify trigger fires the extractor — same path as notes and files. The
+pg_notify trigger fires the extractor, same path as notes and files. The
 gate is computed live per sync by `loadContactGate`
 (`packages/content/src/contact-gate.ts`); the worker
 (`apps/web/workers/email-sync.ts`) runs three pg-boss queues (scheduler
 every 2 min, per-account sync, per-contact-entry 90-day backfill on add).
-*(The old per-sender curation layer — `email_senders`/`/settings/senders` —
+*(The old per-sender curation layer (`email_senders`/`/settings/senders`) 
 was retired in migration 0074; discovery of new senders now lives in the
 live-peek `/settings/discover` view.)*
 
@@ -578,7 +578,7 @@ live-peek `/settings/discover` view.)*
 `(account_id, provider_msg_id)` catches same-UID-same-folder races
 (restart replay, retry-overlap); the partial `emails_account_rfc_msg_id_uq`
 on `(account_id, rfc_message_id)` catches the same logical message
-landing in INBOX *and* INBOX.Archive *and* `[Gmail]/All Mail` — Gmail's
+landing in INBOX *and* INBOX.Archive *and* `[Gmail]/All Mail`, Gmail's
 All Mail re-UIDs an old message on every label change, so a
 folder-scoped key alone leaked duplicates. The INSERT uses an untargeted
 `onConflictDoNothing()` + `DuplicateRaceError` sentinel so either
@@ -592,10 +592,10 @@ IMAP system flags into `emails.labels`; safe on non-Gmail servers
 
 **Delivery-kind classification.** Every message is tagged
 `direct | list | automated | marketing | unknown` at sync time from
-headers + envelope + Gmail labels — no body required. It drives
+headers + envelope + Gmail labels, no body required. It drives
 `nodes.salience` (`marketing→0.25, list→0.5, automated→0.75,
 direct→1.0`), blended into retrieval ranking so a contact's newsletter
-can't crowd out real correspondence — a down-weight, never a filter.
+can't crowd out real correspondence, a down-weight, never a filter.
 Rules are RFC-based (`List-Unsubscribe-Post: One-Click`, `Precedence: bulk`,
 `Feedback-ID`, ESP fingerprints) with `Auto-Submitted` as the
 marketing→automated downgrader, so transactional sends via ESPs (Stripe
@@ -617,7 +617,7 @@ via SendGrid, GitHub via SES) classify correctly. Full detail in
 > per **enabled channel**; inbound dispatch resolves the channel's agent (per-chat
 > `telegram_chats.responder_agent_id` override still wins; then highest-priority
 > enabled conversational agent). References to `responder_agent_id` /
-> `bot_token_enc` below describe the pre-refactor model — see
+> `bot_token_enc` below describe the pre-refactor model, see
 > [`comms-channels.md`](./comms-channels.md).
 
 Flow:
@@ -628,21 +628,21 @@ Flow:
    `last_update_offset` after each batch. It reconciles the enabled-account
    set every 60s, so a newly connected bot starts polling without a restart.
    The cursor is acked at **`max(received update_id) + 1`** (empty long-poll
-   leaves it untouched), so it tracks the stream in *either* direction — if a
+   leaves it untouched), so it tracks the stream in *either* direction, if a
    bot **token is repointed at a different bot** with a lower update-id range,
    the cursor self-heals instead of pinning above the new stream forever (the
    old "advance only" logic wedged into an infinite "N updates, 0 delivered"
    loop). A redelivered update is deduped on the partial unique index
-   `(account_id, telegram_update_id) WHERE telegram_update_id IS NOT NULL` —
+   `(account_id, telegram_update_id) WHERE telegram_update_id IS NOT NULL`,
    the `ON CONFLICT … WHERE …` clause **must repeat that predicate** or Postgres
    raises `42P10` (a partial index isn't inferred without it).
    **One poller per token:** Telegram allows a single `getUpdates` consumer per
-   bot token (else `409 Conflict`), so dev and prod each own *different* bots —
-   dev `@saskiadevbot`, prod `@saskianewbot` — never the same token. Ownership
+   bot token (else `409 Conflict`), so dev and prod each own *different* bots,
+   dev `@saskiadevbot`, prod `@saskianewbot`, never the same token. Ownership
    is the per-DB `enabled` flag, not stopping the worker.
    Each `telegram_accounts` row holds the bot's AES-sealed token and (since
    migration 0050) an optional `responder_agent_id` binding the bot to the
-   responder that owns it — see §9b. Tokens are entered + rotated from the
+   responder that owns it, see §9b. Tokens are entered + rotated from the
    responder's `/settings/agents` **Telegram bot** section
    (`lib/agent-telegram.ts` + `POST /api/agents/[id]/telegram`); the CLI
    `seed:telegram` remains for bootstrap.
@@ -651,7 +651,7 @@ Flow:
    logic: known chat → deliver. New chat → issue a 6-char pairing code, DM
    it back, wait for the owner to approve. Approval is **one click in the
    responder's Telegram section** (pending requests list with Approve/Block,
-   polled every 10s) — the `telegram_pair` MCP tool is the equivalent
+   polled every 10s), the `telegram_pair` MCP tool is the equivalent
    fallback. Approving flips the chat to `allowed` and sends a confirmation
    DM that greets with the responder's name. Replies are capped at 2 per
    pending chat so an unknown sender can't farm responses.
@@ -670,16 +670,16 @@ outbound is gated to allowlisted chats only.
 
 ---
 
-## 9b. The agent — auto-replies to Telegram
+## 9b. The agent: auto-replies to Telegram
 
-> **Unified conversation stream (2026-06-03) — read [`conversation.md`](./conversation.md).**
+> **Unified conversation stream (2026-06-03), read [`conversation.md`](./conversation.md).**
 > Telegram is now a **transport** onto one per-(owner, agent) conversation store
 > (`assistant_messages`), shared with the web `/assistant`. The agent still owns
 > the Telegram-specific I/O below (poll, gate, send, the `telegram_messages`
 > transport/brain record), but **conversation history + summarization no longer
 > live in `telegram_messages`**: `handleMessage` calls `recordTurn(channel='telegram')`
 > for each turn and loads context via `loadConversationContext` (per-agent, ALL
-> channels) — both from `@mantle/agent-runtime`. The two changes vs. the description
+> channels); both from `@mantle/agent-runtime`. The two changes vs. the description
 > below: (1) "load conversation history" reads the unified stream per-agent, not
 > `telegram_messages` per-chat; (2) digests are produced by the single
 > `summarizeAgentConversation` keyed on `agent_id` (see §9b'-digests + `conversation.md`),
@@ -720,13 +720,13 @@ Key properties:
   enabled, that agent handles inbound for the chat. NULL falls back to
   global priority resolution. Managed inline on the `/debug` chats table.
 - **Per-bot binding (migration 0050).** A `telegram_accounts.responder_agent_id`
-  links a bot to the responder that owns it — set when you paste the token
+  links a bot to the responder that owns it, set when you paste the token
   into that responder's `/settings/agents` Telegram section. So one responder
   = one bot, and a message resolves to the bot's owner. Full precedence:
   **per-chat override → the bot's owning responder → global priority**
   (`resolveResponderAgent(ownerId, perChatOverride, accountResponderId)`).
   Replies + attachment downloads go out on the **inbound message's own bot**
-  (`accountById(row.accountId)`), not the "first enabled" account — this is
+  (`accountById(row.accountId)`), not the "first enabled" account; this is
   what makes several responder bots run side-by-side correctly. Unlinked bots
   (`responder_agent_id` NULL, e.g. CLI-seeded) keep the old global-priority
   behaviour.
@@ -748,10 +748,10 @@ Key properties:
   coherent past the raw-history window without an exploding token bill.
 - **Prompt caching.** For `anthropic/*` models the runner emits
   `cache_control: { type: 'ephemeral' }` on the system block AND on the
-  digest block when present — two of Anthropic's four allowed breakpoints.
+  digest block when present, two of Anthropic's four allowed breakpoints.
   Both prefixes are stable for many turns; only the last-20-turns tail
   drifts. Caching for non-Anthropic models is implicit (OpenAI, DeepSeek
-  auto-cache) or unsupported (most open-source routes) — no marker needed.
+  auto-cache) or unsupported (most open-source routes), no marker needed.
 - **Event-driven, not polled.** The pg_notify trigger is fired inside the
   worker's INSERT transaction, so the agent gets the message id within
   milliseconds of it landing in the DB.
@@ -767,7 +767,7 @@ Sharp edges still open:
 
 - **No third cache breakpoint.** Two of four are used (system + digest).
   Marking the raw-history block too would cut cost further but needs the
-  prefix to be byte-stable turn-to-turn — easy to break accidentally
+  prefix to be byte-stable turn-to-turn, easy to break accidentally
   when a new turn lands.
 - **No cost ceiling.** Each inbound triggers exactly one OpenRouter
   responder call + (every ~20 turns) one summarizer call. Cheap on
@@ -781,7 +781,7 @@ Sharp edges still open:
   worth the code until it actually bites.
 - **No Tier-3 / fact consolidation.** The Mem0-style ADD/UPDATE/DELETE
   pipeline for observation memory ("Sarah's passport expires June
-  2030", dedup'd across sources) is the next layer up — separate from
+  2030", dedup'd across sources) is the next layer up, separate from
   conversation summarization.
 
 ## 9b'. Agent delegation (`invoke_agent`)
@@ -796,7 +796,7 @@ as the triage agent's tool result.
 
 The bridge between `@mantle/tools` (where the builtin lives) and
 `@mantle/agent-runtime` (where `runToolLoop` lives) is a registered
-callback — `apps/agent/src/main.ts` and `apps/web/lib/assistant.ts`
+callback, `apps/agent/src/main.ts` and `apps/web/lib/assistant.ts`
 each call `registerAgentInvoker(invokeAgent)` at module load, so the
 builtin can call back into the runtime without an import cycle.
 
@@ -812,11 +812,11 @@ Four guardrails ([`packages/tools/src/invoke-agent-guards.ts`](../packages/tools
 3. **Per-target allowlist.** The parent agent's
    `memory_config.delegate_to: string[]` lists which slugs it may
    invoke. Empty/missing = no delegation. Self-references are refused
-   even when present in the list — the closest thing to a recursion
+   even when present in the list, the closest thing to a recursion
    footgun we have. Editable via the **"Delegates to"** picker at
    `/settings/agents`; `updateAgent` jsonb-**merges** `memory_config`
    (`||`) so a form save never silently drops the allowlist. (An earlier
-   wholesale overwrite *did* drop it — the form doesn't render
+   wholesale overwrite *did* drop it; the form doesn't render
    `delegate_to`, so saving any agent wiped the grant. That's why
    delegation looked broken until re-seeded.)
 4. **Cost attribution.** The child gets its own `traces` row
@@ -826,7 +826,7 @@ Four guardrails ([`packages/tools/src/invoke-agent-guards.ts`](../packages/tools
    `meta.child_cost_micro_usd` for visibility but doesn't roll up,
    so `/debug` "spend by agent" totals stay correct.
 
-**Shipped delegation target — "Remy" (recall).** The first concrete
+**Shipped delegation target, "Remy" (recall).** The first concrete
 use of this path is the memory-recall agent: Saskia delegates an
 explicit "recall what we discussed last week" request to `remy`
 (slug), which uses two recall builtins (`find_window` over digests →
@@ -836,7 +836,7 @@ because recall needs a tool loop (`invoke_agent` only targets
 `agents`); it runs at depth 2 so it iterates sub-ranges itself rather
 than sub-delegating.
 
-**Shipped delegation target — "Researcher" (web search).** The *outward*
+**Shipped delegation target, "Researcher" (web search).** The *outward*
 twin of Remy: Saskia delegates an open-web question to `researcher`
 (slug), which calls the `web_search` builtin (Perplexity Sonar via the
 owner's OpenRouter key) and returns a cited synthesis. Saskia decides
@@ -845,14 +845,14 @@ Both targets are wired into the responder's `delegate_to` by their seed
 scripts (`pnpm -C apps/web seed:remy` / `seed:researcher`). Full detail
 in [`recall.md`](./recall.md).
 
-**Shipped delegation target — "Pages" (document authoring + editing).**
+**Shipped delegation target, "Pages" (document authoring + editing).**
 The third delegate, scoped to the `/pages` surface. Saskia hands off
 any existing-page transform (restyle, reformat, add callouts,
 restructure) and any file → page import to `pages` (slug); Pages
 operates on stable per-block ids (Phase 2b) via `page_blocks_list` →
 `page_block_get` → `page_block_update` (and `_insert_after`,
 `_delete`), so the output bytes scale with the **change**, not the
-document size — the lever that whole-doc round-trips through chat
+document size, the lever that whole-doc round-trips through chat
 models lacks. All writes land in `pages.draft_doc` (never `doc`); the
 operator commits via the editor or via the new AI-assist side panel
 ([`pages.md` §4 / §8](./pages.md)). Three structural protections worth
@@ -868,19 +868,19 @@ machinery is the off-ramp if the model misbehaves. Seed:
 showed the forced hop taxed light work: ~23% of Pages delegations were
 sub-30s edits, turns with a delegation averaged 428s vs 46s without,
 and for tables even READS were specialist-gated (the persona's own
-`tool_grounding` skill told it to use `table_sql` — a tool it didn't
+`tool_grounding` skill told it to use `table_sql`; a tool it didn't
 hold). The persona now carries the LIGHT slices directly via three
-groups — `pages-draft` (create / draft-write / one-block fixes, still
+groups, `pages-draft` (create / draft-write / one-block fixes, still
 draft-only), `tables-read` (the full structured read kit), and
-`tables-rows` (single-row writes) — while multi-block transforms,
+`tables-rows` (single-row writes), while multi-block transforms,
 imports, splits, schema/column work, and all deletes stay with the
 specialists. The routing policy lives in the `specialist_routing`
 skill (persona-attached; it also names WHY researcher/reader stay
-delegated — the no-write-tools child is the prompt-injection
+delegated, the no-write-tools child is the prompt-injection
 firewall). `invoke_agent` gained `subject_node_ids` and now
 auto-attaches the user's verbatim triggering message to the child
 prompt, closing the under-packed-hand-off gap. Evidence + full
-reasoning: the "Pages delegation — is it worth it?" page on the dev
+reasoning: the "Pages delegation, is it worth it?" page on the dev
 brain (a7f3255d).
 
 ## 9c. Encrypted API key vault
@@ -905,7 +905,7 @@ api_keys (
 
 Exposed as:
 
-- `getApiKey(userId, service, label?)` — decrypts and returns plaintext.
+- `getApiKey(userId, service, label?)`, decrypts and returns plaintext.
 - `setApiKey`, `rotateApiKey`, `deleteApiKey`, `listApiKeys` (returns
   masked view).
 
@@ -928,7 +928,7 @@ The `agents` table was originally a grab-bag: it held both
 conversational agents (responder, assistant) and one-shot jobs
 (reflector, extractor, summarizer). After the responder grew tool
 loops, persona notes, memory configuration, and a multi-turn shape,
-the workers became the awkward minority — they have no persona, no
+the workers became the awkward minority; they have no persona, no
 memory, no turn structure, and only need a model + key + system prompt.
 At the same time we wanted to add new transformation jobs (voice
 in/out, vision OCR, image generation) that share *worker* DNA but
@@ -936,10 +936,10 @@ emphatically not *agent* DNA.
 
 So we split:
 
-- **`agents` table** — conversational reasoners only. Today: responder
+- **`agents` table**: conversational reasoners only. Today: responder
   (Telegram) and assistant (web `/assistant`). They have `persona_notes`,
   `memory_config`, `tool_slugs`, `skill_slugs`. UI at `/settings/agents`.
-- **`ai_workers` table** (migration `0027_ai_workers.sql`) — one-shot
+- **`ai_workers` table** (migration `0027_ai_workers.sql`): one-shot
   jobs of any flavour. Each row has `kind`, `provider`, `model`,
   `api_key_id`, optional `system_prompt`, and `params` (kind-specific
   jsonb). UI at `/settings/ai-workers`.
@@ -962,7 +962,7 @@ Per-kind params (declared in `packages/db/src/schema/ai-workers.ts`):
 | `stt` | `language`, `max_duration_seconds` | inbound voice msg |
 | `vision` | `extraction_prompt`, `max_tokens` | (not wired yet) |
 | `image_gen` | `size`, `style`, `quality` | (not wired yet) |
-| `embedding` | `output_dimensions` (only models that honour it — Gemini) | every embedding call (extractor writes, agent memory reads, recall, MCP search, spill query) |
+| `embedding` | `output_dimensions` (only models that honour it, Gemini) | every embedding call (extractor writes, agent memory reads, recall, MCP search, spill query) |
 
 One worker per `(owner, kind)` is marked `is_default=true`. The runtime
 calls `getDefaultWorker(ownerId, kind)` from `@mantle/db`; the default
@@ -971,7 +971,7 @@ flag wins, otherwise highest-priority enabled row.
 **Per-agent TTS override (migration 0066).** TTS is the one kind an agent
 can pin individually: `agents.tts_worker_id` selects which `tts` worker
 voices that agent (set in `/settings/agents` → Voice (TTS)). The reply
-path resolves it via `getAgentTtsWorker(ownerId, agent.ttsWorkerId)` —
+path resolves it via `getAgentTtsWorker(ownerId, agent.ttsWorkerId)`,
 the pinned worker if owned + enabled, else `getDefaultWorker(_, 'tts')`.
 So you can run several voices and assign them per agent, with unset /
 disabled / deleted all degrading to the default.
@@ -985,19 +985,19 @@ chain: `ai_workers` (kind=embedding) → `MANTLE_EMBEDDING_MODEL` env var
 / `deleteAiWorkerAction`) call `clearEmbeddingModelCache(ownerId)` so a
 model swap takes effect on the next ingest / recall instead of waiting
 the TTL. Discovery for the embedding kind uses OpenRouter's keyless
-`/api/v1/embeddings/models` catalog — 25 models with pricing — because
+`/api/v1/embeddings/models` catalog (25 models with pricing) because
 OR's main `/v1/models` deliberately excludes embedding routes (separate
 endpoint).
 
 The form's `EmbeddingFields` block handles the two cliffs a model swap
 can hit. A **Test dimensions** button embeds a probe string and reports
-the actual output dim — replaces the hand-maintained allow-list as the
+the actual output dim, replaces the hand-maintained allow-list as the
 authoritative dim source. When the dim is known and ≠ 768, the Save
-button is **hard-blocked** — switching to a non-768 model needs a
+button is **hard-blocked**: switching to a non-768 model needs a
 schema migration on every `vector(768)` column (nodes, entities, facts,
 content_chunks), not just a re-embed. When the dim matches but the
 *model* changed, a **Rebuild Index** button re-embeds every stored
-vector against the saved model — same code path as the `pnpm re-embed`
+vector against the saved model, same code path as the `pnpm re-embed`
 CLI via `@mantle/embeddings#runReembed`, cache-aware so re-running
 against the same model is free. Full detail in
 [`ai-workers.md` §5e](./ai-workers.md#5e-embedding--the-cross-cutting-kind).
@@ -1006,16 +1006,16 @@ against the same model is free. Full detail in
 layer that lets us swap providers without changing call sites. Three
 concepts:
 
-- **Provider catalogue** (`providers.ts`) — closed-set list of known
+- **Provider catalogue** (`providers.ts`): closed-set list of known
   AI providers with their capabilities, signup URLs, docs URLs. Drives
   the UI dropdowns; persisted as `api_keys.service` and
   `ai_workers.provider`.
-- **Per-capability dispatcher interfaces** (`adapters/types.ts`) —
+- **Per-capability dispatcher interfaces** (`adapters/types.ts`),
   `ChatDispatcher`, `TtsDispatcher`, `SttDispatcher`,
   `VisionDispatcher`, `ImageGenDispatcher`. Each defines a uniform
   call shape (`chat(opts)`, `synthesize(opts)`, etc.) plus optional
   hooks for live model discovery and voice listing.
-- **Adapter registry** (`adapters/registry.ts`) — `Map<ProviderId,
+- **Adapter registry** (`adapters/registry.ts`): `Map<ProviderId,
   Dispatcher>` per capability. Built-in adapters self-register on
   import. The runtime resolves
   `getChatAdapter(worker.provider).chat({...})` and the per-provider
@@ -1025,18 +1025,18 @@ Currently shipped adapters:
 
 | Provider | Chat | TTS | STT | Vision | Image-gen |
 |---|---|---|---|---|---|
-| OpenAI | (via OpenRouter) | ✅ `openai-tts` | ✅ `openai-stt` | — | — |
-| OpenRouter | ✅ (direct SDK) | — | — | — | — |
-| xAI (Grok) | ✅ `xai-chat` | — | — | — | — |
-| Hugging Face | ✅ `huggingface-chat` (router) | — | — | — | — |
-| Anthropic (direct) | ✅ `anthropic-chat` | — | — | — | — |
-| Google (Gemini) | ✅ `google-chat` | — | — | — | — |
-| ElevenLabs | — | ✅ `elevenlabs-tts` | — | — | — |
+| OpenAI | (via OpenRouter) | ✅ `openai-tts` | ✅ `openai-stt` |, |, |
+| OpenRouter | ✅ (direct SDK) |, |, |, |, |
+| xAI (Grok) | ✅ `xai-chat` |, |, |, |, |
+| Hugging Face | ✅ `huggingface-chat` (router) |, |, |, |, |
+| Anthropic (direct) | ✅ `anthropic-chat` |, |, |, |, |
+| Google (Gemini) | ✅ `google-chat` |, |, |, |, |
+| ElevenLabs |, | ✅ `elevenlabs-tts` |, |, |, |
 
 Adding a new provider is `~150 LOC`:
 
-1. `catalogs/<provider>.ts` — known models with capabilities + pricing
-2. `adapters/<provider>-<capability>.ts` — implements the dispatcher
+1. `catalogs/<provider>.ts`, known models with capabilities + pricing
+2. `adapters/<provider>-<capability>.ts`, implements the dispatcher
    interface, translates the unified call shape to the provider's
    native HTTP shape
 3. One line in `adapters/index.ts` to `registerXAdapter(...)`
@@ -1049,7 +1049,7 @@ version: type safety end-to-end, no extra container on Contabo, the
 adapter pattern is roughly the same maintenance cost as LiteLLM's own
 adapter code (which we can lift from when shapes are weird). LiteLLM
 adoption later would mean writing a single `LiteLLMTtsAdapter` /
-`LiteLLMChatAdapter` and routing through that — the interface is the
+`LiteLLMChatAdapter` and routing through that; the interface is the
 swap point.
 
 See [ai-workers.md](./ai-workers.md) for the deep dive.
@@ -1084,7 +1084,7 @@ inbound voice msg
           └─ else sendMessage(...) as text
 ```
 
-Configuration is per-worker — the user can set Saskia's voice to Nova
+Configuration is per-worker; the user can set Saskia's voice to Nova
 (OpenAI default), nova with style instructions ("speak warmly")
 on gpt-4o-mini-tts, or pick a cloned voice from their ElevenLabs
 library. The `voice in → voice out` mirror is automatic; `[VOICE]`
@@ -1092,7 +1092,7 @@ prefix lets the LLM opt into TTS reply even when the user typed.
 
 Failure modes degrade gracefully:
 
-- STT down → polite text apology ("Sorry — couldn't pick up that voice
+- STT down → polite text apology ("Sorry, couldn't pick up that voice
   clip"), inbound row stays unprocessed for retry.
 - TTS down → falls through to text reply with a `ttsFallback: true`
   meta on the trace step.
@@ -1115,16 +1115,16 @@ live reply via the shared `extractAttachmentForTurn` helper.
   answers (`responder_turn` trace). Telegram has full parity with web,
   including documents.
 - **Indexing (universal):** the save fires `node_ingested` → the extractor
-  produces durable `data.text` + summary + embedding + facts — images via the
+  produces durable `data.text` + summary + embedding + facts, images via the
   shared `runVisionWorker` (neutral describe+OCR, `photo_ingest` trace), docs
   via `parseDocumentBytes`. So a file dropped into `/files` (Files UI,
-  disk-watcher, MCP) — with no inline pass — still gets fully indexed. One
+  disk-watcher, MCP) (with no inline pass) still gets fully indexed. One
   indexing path however the file lands.
 - **Vision on demand (Saskia tool):** `extract_from_image(node_id |
-  telegram_file_id, prompt?)` — Saskia can re-read a previously-sent
+  telegram_file_id, prompt?)`; Saskia can re-read a previously-sent
   photo or any image-typed file node.
 - **Image gen (Saskia tool):** `generate_image(prompt, size?, style?,
-  quality?, negative_prompt?)` — runs the default image_gen worker,
+  quality?, negative_prompt?)`, runs the default image_gen worker,
   saves to `/files/generated-images/<date>/`, delivers inline
   (`sendPhoto` on Telegram, base64 artifact on web).
 
@@ -1133,42 +1133,42 @@ providers wired (OpenAI, Anthropic, Google, xAI); 4 image-gen
 providers (OpenAI, xAI, Google, Hugging Face). See
 [`ai-workers.md`](./ai-workers.md) for the full matrix.
 
-## 9g. Web /assistant — full multimedia parity with Telegram
+## 9g. Web /assistant: full multimedia parity with Telegram
 
-> **Unified conversation stream (2026-06-03) — read [`conversation.md`](./conversation.md).**
+> **Unified conversation stream (2026-06-03), read [`conversation.md`](./conversation.md).**
 > `/assistant` is the **web doorway onto the same per-(owner, agent) store every
 > channel writes**, not a web-only surface. Two consequences: (1)
 > `apps/web/lib/assistant.ts` persists/loads via the shared `recordTurn` /
-> `loadConversationContext` (`@mantle/agent-runtime`) — so the responder here reads
+> `loadConversationContext` (`@mantle/agent-runtime`), so the responder here reads
 > facts + digests + last-N turns **across all channels** (it gained per-agent
 > digests + the 0.85/0.6 retrieval cutoffs in the migration); (2) the window
-> **renders turns from other channels too** — Telegram turns appear inline with a
+> **renders turns from other channels too**: Telegram turns appear inline with a
 > channel badge, and persisted `attachments` (voice-note chips, images via the
 > file-bytes route) render on load. The capabilities below are the web surface's
 > own native I/O; they sit on top of the shared store.
 
 The `/assistant` chat (web) reaches Telegram-equivalent capability:
 
-- **Mic input** — `MediaRecorder` → `POST /api/assistant/transcribe`
+- **Mic input**: `MediaRecorder` → `POST /api/assistant/transcribe`
   → STT worker → fills the input box. User reviews + sends; no
   auto-send (Whisper mishearings would cost an LLM round-trip).
-- **Voice output** — Saskia's `synthesize_speech` tool emits an
+- **Voice output**: Saskia's `synthesize_speech` tool emits an
   audio artifact via the tool-loop sidecar mechanism; the chat
   renders `<audio controls>` inline in the reply bubble.
-- **Image upload** — paperclip in the input row attaches an image;
+- **Image upload**: paperclip in the input row attaches an image;
   multipart submit; vision worker runs synchronously; image renders
   in the user's bubble.
-- **Image gen** — `generate_image` artifact renders as a
+- **Image gen**: `generate_image` artifact renders as a
   click-to-zoom preview in the reply bubble.
 
-Artifacts ride the `runToolLoop` result via a sidecar array — see
+Artifacts ride the `runToolLoop` result via a sidecar array, see
 [`ai-workers.md §5d`](./ai-workers.md) for the artifact convention.
 
 **Per-agent transcript model.** Each agent on `/assistant` owns its own
 forever-conversation. The shared brain (`nodes` / `facts` / `entities`,
 none of which are agent-partitioned) is what agents have in common; the
 transcripts are not. `assistant_messages.agent_id` is `NOT NULL` since
-migration 0049 — the bug class where N assistant-role agents all saw the
+migration 0049, the bug class where N assistant-role agents all saw the
 same legacy NULL-agent_id rows ("different agents show the same chat
 with content swapped") is structurally extinct. The runtime gates are
 correspondingly thinner: `recentAssistantMessages(ownerId, agentId,
@@ -1183,7 +1183,7 @@ param. Pattern mirrors `mantle_spend_range`. Resolution order: URL param
 → cookie → priority default. Switching agents force-remounts
 `AssistantClient` via `key={agent.slug}` so every piece of local state
 (draft, attached image, recording flag, optimistic messages) resets
-cleanly — without the key, Next.js soft-navigation preserves the prior
+cleanly, without the key, Next.js soft-navigation preserves the prior
 agent's component state across the swap.
 
 ## 9h. Profile preferences + time-aware agent
@@ -1203,7 +1203,7 @@ attached).
 
 Saskia gets 5 event tools (`event_list`, `event_get`, `event_create`,
 `event_update`, `event_delete`) mirroring the MCP shapes. None
-require_confirm — operator can flip per-row in `/settings/tools` if
+require_confirm; operator can flip per-row in `/settings/tools` if
 approval gates are wanted. `event_create` defaults the event's
 timezone to the owner's profile when the caller doesn't specify.
 
@@ -1220,7 +1220,7 @@ full disposition catalog and the two real-world tracing bugs that
 informed this design (FK enum-mismatch + Drizzle journal-skipped
 migration).
 
-## 9j. Heartbeats — proactive agent loop
+## 9j. Heartbeats: proactive agent loop
 
 Full doc: [`heartbeats.md`](./heartbeats.md). Heartbeats turn Saskia
 from passive to proactive: a `heartbeats` row schedules a
@@ -1233,7 +1233,7 @@ The fire loop lives in `apps/agent/src/main.ts` as a per-minute
 
 1. SELECT active heartbeats where `next_fire_at <= now()`
 2. Filter out rows currently in-flight (per-process `Map<id, Promise>`
-   lock in `inflight.ts` — without it a fire taking >60s would be
+   lock in `inflight.ts`, without it a fire taking >60s would be
    re-selected by the next tick and double-fire)
 3. For each remaining: gate-check (idle / quiet / cooldown / earliest)
 4. On pass: open `trace_kind='heartbeat_fire'`, build synthetic
@@ -1250,7 +1250,7 @@ user-role prompt at fire time. The responder's normal turn queries
 `open_heartbeats_for_surface` and appends an awareness block with
 a **3-branch decision tree** (related answer → call update_state;
 unrelated → leave alone, do NOT call heartbeat tools; stop request
-→ snooze/complete) — keeping continuity across outbound/inbound
+→ snooze/complete), keeping continuity across outbound/inbound
 without making every regular turn pestering.
 
 Gates are nullable (per-heartbeat-only policy, no system-wide
@@ -1259,7 +1259,7 @@ defaults). Form offers a "sensible defaults" preset
 mean "no gate of that kind".
 
 5 builtin control tools live in `@mantle/heartbeats/src/tools.ts`
-(not `@mantle/tools` — would create a dep cycle): `heartbeat_complete`,
+(not `@mantle/tools`, would create a dep cycle): `heartbeat_complete`,
 `heartbeat_snooze`, `heartbeat_update_state` (all use **dual-mode
 addressing**: explicit `slug` arg → ALS context → error),
 `heartbeat_list`, `heartbeat_fire` (always slug-keyed).
@@ -1271,7 +1271,7 @@ responder→state update path to work. The seed script
 `seed-get-to-know-user.ts` ensures this; custom heartbeats need
 the operator to grant the three mutation tools manually. The tools
 self-protect via `resolveTargetHeartbeat`, so granting them is
-safe — they're inert in unrelated turns.
+safe; they're inert in unrelated turns.
 
 **Runtime affordance hygiene**: both responders (apps/agent +
 apps/web) drop the `HEARTBEAT_RESPONDER_TOOLS` set
@@ -1279,13 +1279,13 @@ apps/web) drop the `HEARTBEAT_RESPONDER_TOOLS` set
 per-turn tool list when `hasActiveHeartbeatsOnSurface()` returns
 false. The grant in `tool_slugs` is unchanged; the model never
 sees the tools on turns with no relevant heartbeat. Equivalent to
-greying out a UI button when its action would no-op — pure
+greying out a UI button when its action would no-op, pure
 context scoping, not a permission change. A completed/paused
 install becomes byte-indistinguishable from one that never had
 heartbeats.
 
-**State conventions**: `expecting_reply` (boolean — drives the
-awareness-block injection), `last_asked_at` (ISO — drives "asked
+**State conventions**: `expecting_reply` (boolean, drives the
+awareness-block injection), `last_asked_at` (ISO, drives "asked
 Nh ago" display + stale-pending nudge), `last_question_topic`,
 `answered` (string[]). These are read by engine code but written
 only by skill instructions via `heartbeat_update_state`. See
@@ -1295,16 +1295,16 @@ only by skill instructions via `heartbeat_update_state`. See
 
 Editing content re-fires `node_ingested`, so a node is extracted many times
 over its life. Every derived brain artifact is therefore written as a
-**rebuild keyed by the node, not an append** — a re-extract *replaces* prior
+**rebuild keyed by the node, not an append**: a re-extract *replaces* prior
 output instead of piling up:
 
-- **Summary + embedding** — overwritten in place on the `nodes` row.
-- **Entities** — reconciled by name (existing rows reused, never re-created).
-- **Facts** — run through the ADD/UPDATE/DELETE/NOOP dedup classifier.
-- **`content_chunks`** — atomic swap: embedded first, then delete + insert
-  in one transaction (2026-06-10 — the old delete-first order could leave a
+- **Summary + embedding**: overwritten in place on the `nodes` row.
+- **Entities**: reconciled by name (existing rows reused, never re-created).
+- **Facts**: run through the ADD/UPDATE/DELETE/NOOP dedup classifier.
+- **`content_chunks`**: atomic swap: embedded first, then delete + insert
+  in one transaction (2026-06-10, the old delete-first order could leave a
   node permanently chunk-less when the embedder hiccuped).
-- **`mentioned_in`/`references` + relation edges** — same atomic swap:
+- **`mentioned_in`/`references` + relation edges**: same atomic swap:
   collected in memory during the pass, then delete + insert in one
   transaction, so a crash mid-rebuild can't destroy the previous
   extraction's edges.
@@ -1314,13 +1314,13 @@ fixes) sit underneath the rebuild rules:
 
 - The **`already_extracted` skip guard** requires the end-of-pass
   `data.extract_completed_at` marker, not just summary+embedding (which are
-  written *first*) — so a pg-boss retry after a partial failure re-runs
+  written *first*), so a pg-boss retry after a partial failure re-runs
   instead of skipping forever.
 - **`update_index` is conditional on the row's `xmin`** captured before the
   LLM call: a user edit mid-extract aborts the stale write (the retry
   re-reads) instead of overwriting the edit's invalidation.
 - The extract queue runs **`policy: 'short'`** (real per-node dedup of
-  queued jobs — `singletonKey` alone is a no-op on a `standard` queue) plus
+  queued jobs, `singletonKey` alone is a no-op on a `standard` queue) plus
   an in-process per-node chain; the dead-letter queue is re-driven on every
   agent start and surfaced by the `/debug/integrity` **Dead-lettered
   extractions** check.
@@ -1329,35 +1329,35 @@ The last two follow the same **delete-then-rebuild per node** rule. The edge
 clear was a fix (Phase 4): the extractor previously *appended* a `mentioned_in`
 edge on every run, so re-edited content accumulated duplicate
 `entity --mentioned_in--> node` rows. Because the rule lives in the **shared
-extractor**, it covers every content type automatically — notes, pages,
-emails, files — with no per-type code. Edit a note → it re-extracts → its
+extractor**, it covers every content type automatically, notes, pages,
+emails, files, with no per-type code. Edit a note → it re-extracts → its
 edges are cleared and rebuilt → no new duplicates. Same for everything.
 
 Two corollaries:
 
-- **Re-extract is not free** — it re-runs the summary LLM and the fact
+- **Re-extract is not free**: it re-runs the summary LLM and the fact
   classifier (bounded by `extract_cost_cap_micro_usd`). That's why pages
   re-extract only on a deliberate **commit**, not on every keystroke (see
   [`pages.md`](./pages.md) §3, §6).
 - **Pre-fix duplicates** that accumulated before the edge fix are cleaned in
   one pass by `pnpm dedupe:edges` (dry-run by default; collapses duplicate
   `mentioned_in` rows, keeping the earliest). `extract:backfill` does *not*
-  clean them — it only re-fires nodes still missing their index.
+  clean them; it only re-fires nodes still missing their index.
 - **Duplicate-edge guard (dashboard).** Because the single writer
-  delete-then-rebuilds, duplicates can't accrue — so instead of a recurring
+  delete-then-rebuilds, duplicates can't accrue, so instead of a recurring
   `dedupe:edges` job (which would *mask* a regression), the dashboard's
   **Memory-index** card shows a live duplicate count (`graphIntegrity()` in
   `apps/web/lib/dashboard.ts`): green when clean, amber with the one-shot
   `pnpm dedupe:edges --apply` remedy if a regression ever surfaces. A monitor,
-  not a fixer — see [`agent-overhaul-2026-05.md` §2e](./_archive/agent-overhaul-2026-05.md).
+  not a fixer, see [`agent-overhaul-2026-05.md` §2e](./_archive/agent-overhaul-2026-05.md).
 
-## 9l. Model catalog — live context, capabilities, pricing
+## 9l. Model catalog: live context, capabilities, pricing
 
-How the system knows what a model can do —
+How the system knows what a model can do,
 [`packages/tracing/src/model-context.ts`](../packages/tracing/src/model-context.ts).
 
 **The problem it solves.** A model's context window, vision support, and
-pricing are all *provider* facts that change without notice — e.g. Claude
+pricing are all *provider* facts that change without notice, e.g. Claude
 Sonnet/Opus 4.x defaulting to a **1M** window. A hand-maintained table
 silently goes stale: the dashboard's "context %" once read a model as 200K
 when it was really 1M, over-reporting fill by 5×. So capability is sourced
@@ -1380,21 +1380,21 @@ aggregates upstream, so its catalog covers what each direct provider
 sells. A worker stored as `provider='anthropic', model='claude-sonnet-4-5'`
 looks up `anthropic/claude-sonnet-4-5` in this cache and gets the same
 pricing Anthropic's own `/v1/models` would have returned if it bothered
-to. One source serves both modes — OpenRouter-as-provider in `/settings/agents`,
+to. One source serves both modes, OpenRouter-as-provider in `/settings/agents`,
 direct providers in `/settings/ai-workers`. The two prefix-remappings
 worth knowing (the only places SUPPORTED_PROVIDERS ids don't match OR
 prefixes verbatim): `xai → x-ai`, `mistral → mistralai`.
 
 **Pricing parser nuance.** OpenRouter encodes pricing as USD per single
 token, string-typed (`"0.0000025"` for $2.50 per 1M). The parser multiplies
-by 1e6 for the per-million view and is tight on the empty-string case —
+by 1e6 for the per-million view and is tight on the empty-string case,
 `Number('')` is 0 in JS, which would silently promote malformed data into
 "free". Empty / non-numeric input stays `undefined` so callers can
 distinguish *free* (0) from *unknown* (absent).
 
-**The fetch — built to fail safe.** `refreshModelCatalog()` is the single
+**The fetch, built to fail safe.** `refreshModelCatalog()` is the single
 entry point. It is **TTL-gated** (6h), **dedupes** concurrent callers
-(in-flight promise), has an **8s timeout**, and **never throws** — on any
+(in-flight promise), has an **8s timeout**, and **never throws**: on any
 failure it keeps the last-good cache, degrading to a **static fallback
 table** that is kept roughly current (so even a cold start with OpenRouter
 down returns accurate numbers). The cache is per-process and in-memory; no
@@ -1407,7 +1407,7 @@ null/false. `contextSourceFor(slug)` reports provenance (`live` |
 `fallback` | `unknown`).
 
 **Warming.** Each consuming process fire-and-forgets `refreshModelCatalog()`
-where it reads capability — `recentAgentContext` (dashboard), the agent's
+where it reads capability, `recentAgentContext` (dashboard), the agent's
 attachment path, the web `/assistant` turn. Fire-and-forget is safe because
 the fallback is accurate: the first read after a cold start uses it, live
 data takes over once the fetch lands, and the TTL-gated calls keep it fresh.
@@ -1418,7 +1418,7 @@ data takes over once the fetch lands, and the TTL-gated calls keep it fresh.
 - **`/settings/agents` → Model field**: a searchable combobox over the full
   live OpenRouter catalog (see §9l′) plus a context-window readout for the
   typed slug. Both served by [`/api/model-context`](../apps/web/app/api/model-context/route.ts)
-  (the same cached map) — "unknown for this slug" flags a typo'd id.
+  (the same cached map), "unknown for this slug" flags a typo'd id.
 - **`/settings/ai-workers` → Model field**: the same combobox, fed by the
   adapter's `discoverModels()` for the chosen provider, with this catalog's
   pricing folded in as a fallback for direct providers that don't return
@@ -1427,30 +1427,30 @@ data takes over once the fetch lands, and the TTL-gated calls keep it fresh.
 **How to check by hand:** `curl -s https://openrouter.ai/api/v1/models` and
 read `context_length` / `top_provider.context_length` /
 `architecture.input_modalities` / `pricing.{prompt,completion}` for the
-slug — that's the same source the code reads.
+slug, that's the same source the code reads.
 
-> **Note — Mantle never sets a context "flag".** The window is a property of
+> **Note, Mantle never sets a context "flag".** The window is a property of
 > the model slug + its OpenRouter route, not a request parameter. Mantle
 > sends only `model` + sampling params (no `provider` routing pref, no
 > `anthropic-beta` header). For providers where the big window is a beta,
 > OpenRouter handles the opt-in upstream and advertises the resulting ceiling
 > as `context_length`. So "1M vs 200K" is decided by the slug, and the
-> ceiling is read off the catalog — there's nothing to toggle.
+> ceiling is read off the catalog; there's nothing to toggle.
 
-## 9l′. Model picker UI — searchable combobox over the live catalog
+## 9l′. Model picker UI: searchable combobox over the live catalog
 
 Source: [`apps/web/components/ui/model-select.tsx`](../apps/web/components/ui/model-select.tsx)
 + [`model-select-utils.ts`](../apps/web/components/ui/model-select-utils.ts).
 
 **The shape.** A cmdk-backed Popover + Command composition (no new
-dependency — shadcn's existing primitives) used identically on
+dependency, shadcn's existing primitives) used identically on
 `/settings/agents` and `/settings/ai-workers`. The trigger button shows
 the selected model's name + context + pricing inline; the popover lists
 every row with the same three badges plus a sort dropdown and a fuzzy
 search input. Search matches across `id + name + modality` so a query like
 "vision" hits multimodal rows without a tag index.
 
-**Sort keys**: `newest` (default — ISO-dated rows from OpenRouter sort
+**Sort keys**: `newest` (default, ISO-dated rows from OpenRouter sort
 lexicographically), `name`, `cheapest` (sum of input + output per-1M,
 unpriced rows sink to the bottom), `context` (descending, unknowns last).
 
@@ -1470,7 +1470,7 @@ to the shared `ExplorerModel` shape. Adapter fields are
 
 1. Prefers the adapter's own pricing when present.
 2. Otherwise looks up `${prefix}/${model.id}` in the OpenRouter pricing
-   cache (§9l) — that's how Anthropic / OpenAI / xAI direct
+   cache (§9l), that's how Anthropic / OpenAI / xAI direct
    configurations show pricing badges anyway, even though their own
    `/v1/models` doesn't return pricing.
 3. Surfaces `ChatModelInfo.capabilities` (`vision` / `reasoning` /
@@ -1480,7 +1480,7 @@ to the shared `ExplorerModel` shape. Adapter fields are
 **Form integration.** Agents form uses controlled React state
 (`setForm((f) => ({ ...f, model: next }))`). Workers form uses
 `new FormData(e.currentTarget)` for submission, so ModelSelect renders a
-hidden `<input name="model" value={value}>` when given a `name` prop —
+hidden `<input name="model" value={value}>` when given a `name` prop,
 the server action keeps reading `formData.get('model')` unchanged. Empty
 slugs are rejected server-side in the worker action; hidden inputs don't
 trigger native validation, so the server is the gate.
@@ -1495,7 +1495,7 @@ The JSX is exercised live; the pure helpers (sort, formatContext,
 formatPriceCompact) are pulled into a sibling `model-select-utils.ts` so
 vitest can cover the formatting + sort invariants without dragging the
 React import chain through `@/`-aliased modules vitest's root config
-doesn't resolve. 18 cases — newest with undated rows, case-insensitive
+doesn't resolve. 18 cases, newest with undated rows, case-insensitive
 name sort, cheapest sinking unpriced rows, half-priced cheapest, context
 desc with unknowns last, plus all formatContext / formatPriceCompact
 anchors.
@@ -1509,51 +1509,51 @@ The fourth member of Mantle's store-full / index-compact / dereference family
 
 **The problem.** A tool result has to travel back to the model inside the
 conversation, where it (a) bloats context, (b) is **re-sent on every tool-loop
-iteration**, and (c) used to be hard-truncated to ~8 KB — which silently
+iteration**, and (c) used to be hard-truncated to ~8 KB, which silently
 *dropped the very answer* the model went to fetch (a delegated agent's full
 synthesis, a big `file_read`, a wide search). That truncation is the single
 most common reason integrated assistants "can't finish the job."
 
-**The fix — results become addressable artifacts.** Oversized output is stored
+**The fix, results become addressable artifacts.** Oversized output is stored
 once and the model gets a compact handle + preview; it dereferences on demand.
 Only the small envelope re-circulates in history, so the re-send amplification
 is gone and nothing is lost. Same principle as the brain (`content_store` ↔
-`content_index`) and recall (archive ↔ digest) — see the table in §9b' / §9l.
+`content_index`) and recall (archive ↔ digest), see the table in §9b' / §9l.
 
-**Tiers** (per-agent thresholds in `memory_config.result_handling`, KB — set in
+**Tiers** (per-agent thresholds in `memory_config.result_handling`, KB, set in
 the agents form; env defaults `TOOL_RESULT_INLINE_MAX` / `_EMBED_MIN` /
 `_SPILL_MAX`):
 
 | Result size | Behaviour |
 |---|---|
-| ≤ `inline_max` (default 32 KB) | inline, untouched — the common path, zero overhead |
+| ≤ `inline_max` (default 32 KB) | inline, untouched, the common path, zero overhead |
 | > `inline_max` | spill to `tool_results`; model gets `{_spilled, handle:"tr_…", preview, pages, note}` |
 | ≥ `embed_min` (default 100 KB) | same, but the envelope steers the model to semantic `query` |
-| > `spill_max` (default 1 MB) | **head-truncated with a marker before storing** — a runaway tool can't write a giant row or fan out into unbounded chunks |
+| > `spill_max` (default 1 MB) | **head-truncated with a marker before storing**: a runaway tool can't write a giant row or fan out into unbounded chunks |
 
-**`read_result(handle, …)`** — three modes on any spilled handle:
-- `page` — linear slice, **byte-accurate and snapped to newline boundaries**
+**`read_result(handle, …)`**: three modes on any spilled handle:
+- `page`, linear slice, **byte-accurate and snapped to newline boundaries**
   (no mid-word / mid-JSON cuts; contiguous, so page _p_ ends where _p+1_
   begins). Global `pageBytes`, so the envelope's page count and reads agree.
-- `grep` — exact substring with surrounding context.
-- `query` — semantic search **within** the result. **Lazy**: the first `query`
+- `grep`, exact substring with surrounding context.
+- `query`, semantic search **within** the result. **Lazy**: the first `query`
   chunks + embeds the content into `tool_result_chunks` (reusing
   `@mantle/embeddings`); `page`/`grep` never pay that cost. Cosine is scoped to
-  one `result_id` (a handful of chunks), so no ivfflat index is needed — unlike
+  one `result_id` (a handful of chunks), so no ivfflat index is needed, unlike
   the brain's global `content_chunks`. Chunk size **adapts** so the count never
   exceeds `TOOL_RESULT_MAX_CHUNKS` (env, default 200) while still covering the
-  whole stored content — bounding embedding cost + latency regardless of size.
+  whole stored content; bounding embedding cost + latency regardless of size.
 
 **Preview integrity.** A spilled result's preview is always a strict prefix, so
-the envelope appends an **in-band cut marker** (`⚠ PREVIEW ENDS HERE — … call
+the envelope appends an **in-band cut marker** (`⚠ PREVIEW ENDS HERE, … call
 read_result before answering`) right at the truncation point and sets
 `preview_truncated: true`. That's the main guard against the model answering
-from a cut-off head — a strong nudge, not hard enforcement (which isn't
+from a cut-off head, a strong nudge, not hard enforcement (which isn't
 possible without false positives).
 
 **Why 32 KB inline, not 8 KB.** The old cap was set for a 200 K-context,
 no-cache world. Main agents now run on 1 M context with prompt caching, so
-re-sending tens of KB costs fractions of a cent — the generous inline cap means
+re-sending tens of KB costs fractions of a cent; the generous inline cap means
 ~95% of results (incl. essentially every delegated synthesis) never spill, and
 the store is the backstop for the genuine outliers.
 
@@ -1561,13 +1561,13 @@ the store is the backstop for the genuine outliers.
 runs the middleware on every OK result and **always offers `read_result`** (auto-
 injected when the agent has tools) so a handle is never a dead end. Spills open
 a `spill_result` trace step (`{handle, bytes}`); each `read_result` records
-`{mode, hits|count|page}` — so you watch it work in `/traces` exactly like
+`{mode, hits|count|page}`, so you watch it work in `/traces` exactly like
 tracing a node through the brain.
 
 **Lifecycle.** `tool_results` / `tool_result_chunks` are **ephemeral working
-state** — never `nodes` rows, never seen by the extractor or brain search.
+state**, never `nodes` rows, never seen by the extractor or brain search.
 `cleanupToolResults()` (retention `TOOL_RESULT_TTL_DAYS`, default 7; chunks
-cascade) is swept by `maybeSweep()` — an hourly-throttled, never-throwing sweep
+cascade) is swept by `maybeSweep()`, an hourly-throttled, never-throwing sweep
 called both from the periodic `events-reminders` tick (so it runs even when
 idle) and opportunistically from the spill path (so the store self-prunes while
 it's being written). So the TTL is real, not aspirational.
@@ -1587,7 +1587,7 @@ per-iteration dispatch loop.
 
 **The problem.** Some models (notably Grok-4.x) hedge by emitting
 multiple identical tool-call blocks in a single response. Pre-guard, the
-loop dispatched every one — a single "move this sermon to /pages" turn
+loop dispatched every one, a single "move this sermon to /pages" turn
 produced 3 duplicate pages because Grok emitted 3× `page_create` with
 byte-identical args. Same pattern on a second turn (2×). Confirmed in
 traces: same `(name, arguments)` triple, three sequential `compute
@@ -1601,7 +1601,7 @@ duplicate within the *same response*:
 - Records a `tool: <slug>` step with status `skipped` and disposition
   `duplicate_in_response` (visible in `/traces`).
 - Pushes a synthetic tool message paired with the duplicate's `call.id`
-  (provider-shape requirement — every `tool_use` must have a matching
+  (provider-shape requirement, every `tool_use` must have a matching
   `tool_result`, else the next request 400s):
 
   ```json
@@ -1625,15 +1625,15 @@ duplicates are suppressed.
 
 **Catches every mutating tool.** `page_create`, `note_create`,
 `task_create`, `event_create`, `file_create`, `contact_create`,
-`telegram_send`, future ones. The guard is tool-agnostic — it doesn't
+`telegram_send`, future ones. The guard is tool-agnostic; it doesn't
 look at the slug, just at byte-equal args. Non-mutating tools (`file_list`,
 `search`) gain the same protection from wasted dispatch but the
 correctness stakes are lower.
 
 **What the guard is NOT.** Not a UNIQUE constraint on `nodes (owner_id,
-title)` for pages — sermons re-preach, identical titles are legitimate
-across years. Not a per-handler "look up existing by title" — same
-reason. Not `requires_confirm: true` on every write — adds friction to
+title)` for pages, sermons re-preach, identical titles are legitimate
+across years. Not a per-handler "look up existing by title", same
+reason. Not `requires_confirm: true` on every write, adds friction to
 every legitimate single call. The right scope is the tool-loop
 generically.
 
@@ -1641,7 +1641,7 @@ generically.
 at write time, no join needed) so the `/debug` "Duplicates suppressed
 (7d)" widget can group by model. Empty list = the guard never had to
 fire in the window; a populated list answers "which model is
-misbehaving?" at a glance — operator-actionable, not just absence-of-
+misbehaving?" at a glance, operator-actionable, not just absence-of-
 symptom. See `duplicateSuppressionStats` in
 [`apps/web/lib/metrics.ts`](../apps/web/lib/metrics.ts) and the
 `duplicate_in_response` disposition in
@@ -1682,11 +1682,11 @@ symptom. See `duplicateSuppressionStats` in
 | `telegram_mark_processed`     | Flip `processed=true` so it stops appearing in `telegram_pending`      |
 | `telegram_pair`               | Approve a pending pairing code                                         |
 
-Every query is scoped by `OWNER_ID = process.env.ALLOWED_USER_ID` — single-
+Every query is scoped by `OWNER_ID = process.env.ALLOWED_USER_ID`, single-
 user isolation. The server uses the same `@mantle/db` client as the web app
 and workers; no separate connection or auth layer.
 
-Stdio is the **only transport, period** — an earlier version of this doc
+Stdio is the **only transport, period**: an earlier version of this doc
 claimed an HTTP+SSE code path behind `MCP_HTTP_PORT`, but no such code
 exists in `server.ts` (verified 2026-06-11). Networked MCP (Streamable
 HTTP + bearer auth + a compose profile) is specced as Workstream A of
@@ -1712,7 +1712,7 @@ AES key directly (32 random bytes base64). Two implications:
   is no automated rotation; you'd write a one-off script when needed.
 - The `aad` parameter binds ciphertext to a row id (`AAD = account.id`).
   Copy-pasting an encrypted blob from one row to another fails to
-  decrypt — a defence against tampering with bytes in the DB.
+  decrypt, a defence against tampering with bytes in the DB.
 
 If we ever need per-record keys or HKDF, `masterKey()` is the single
 chokepoint.
@@ -1779,7 +1779,7 @@ Why this split:
   process. Moving them to `apps/worker/` is a 5-line change when the
   Dockerfile story lands.
 
-Workspace package boundaries are real — `apps/web` imports `@mantle/db`
+Workspace package boundaries are real, `apps/web` imports `@mantle/db`
 the same way `apps/mcp` does. Anything labeled `@mantle/*` is a workspace
 package; `pnpm-workspace.yaml` declares them.
 
@@ -1792,21 +1792,21 @@ package; `pnpm-workspace.yaml` declares them.
 1. Verifies Docker is running. Bails with a clear message if not.
 2. Verifies `apps/web/.env.local` exists. Bails with the env vars you need
    to fill in.
-3. `docker compose -f docker-compose.dev.yml up -d --wait` — postgres +
+3. `docker compose -f docker-compose.dev.yml up -d --wait`, postgres +
    minio + tika, health-checked.
 4. Reads `S3_ACCESS_KEY` / `S3_SECRET_KEY` from `.env.local`, runs `mc mb`
    to ensure the `mantle` bucket exists. Idempotent.
-5. `pnpm -C packages/db migrate` — applies any new Drizzle migrations.
-6. `pnpm -C apps/web pgboss:init` — creates the `pgboss` schema deterministically
+5. `pnpm -C packages/db migrate`, applies any new Drizzle migrations.
+6. `pnpm -C apps/web pgboss:init`, creates the `pgboss` schema deterministically
    so workers don't race on the first start.
-7. `exec pnpm dev` — `concurrently` starts all eight lanes (`web`, `api`, `mcp`,
+7. `exec pnpm dev`, `concurrently` starts all eight lanes (`web`, `api`, `mcp`,
    `worker`, `tg`, `files`, `docs`, `events`). A `predev` preflight hook checks
    infra is healthy first and refuses politely if not (so `pnpm dev` against down
    infra never crashes into `ECONNREFUSED`). **The `api` runner must be up for the
-   assistant to work** — turns are enqueued onto it, not run in the web request.
+   assistant to work**; turns are enqueued onto it, not run in the web request.
 
 > ⚠️ **Not `pnpm up`.** That's pnpm's built-in alias for `pnpm update` (it
-> updates dependencies and exits) — it silently shadows any script with the
+> updates dependencies and exits); it silently shadows any script with the
 > same name. Use `pnpm start` (or `pnpm run up` if you must).
 
 Granular escape hatches in `package.json`:
@@ -1827,7 +1827,7 @@ Granular escape hatches in `package.json`:
 
 **Hot reload:** `next dev --turbo` for the web; `tsx --watch` for the MCP +
 workers. Edit a source file, the relevant process respawns. `.env.local`
-changes are **not** picked up by `tsx --watch` — you have to touch a source
+changes are **not** picked up by `tsx --watch`; you have to touch a source
 file or kill the process to re-read env.
 
 ---
@@ -1838,9 +1838,9 @@ Two migration systems coexist:
 
 - **Drizzle** owns `public.*`. Run via `pnpm db:migrate`. Migration files
   in `packages/db/migrations/*.sql`. Journal at `migrations/meta/_journal.json`
-  tracks which have been applied — Drizzle records this in a private
+  tracks which have been applied, Drizzle records this in a private
   `drizzle.__drizzle_migrations` table on first run.
-- **Postgres init scripts** own everything before `public.*` —
+- **Postgres init scripts** own everything before `public.*`,
   extensions and the `auth` schema. They live in `infra/postgres/init/`
   and the Postgres image runs them exactly once, at first cluster init.
   Re-running compose against the same data dir is a no-op.
@@ -1856,9 +1856,9 @@ commit between 0008 and 0009.
 
 **Adding a new column?**
 1. Edit the Drizzle schema in `packages/db/src/schema/`.
-2. `pnpm -C packages/db exec drizzle-kit generate` — emits a migration.
+2. `pnpm -C packages/db exec drizzle-kit generate`, emits a migration.
 3. Inspect the generated SQL, hand-edit if needed (Drizzle can't emit
-   GiST/GIN/HNSW operator classes — drop those in by hand).
+   GiST/GIN/HNSW operator classes, drop those in by hand).
 4. `pnpm db:migrate` to apply.
 
 **Adding a new node type?**
@@ -1872,19 +1872,19 @@ commit between 0008 and 0009.
 
 **State lives in three places:**
 
-- `${MANTLE_DATA_DIR:-./data}/postgres` bind mount — Postgres cluster files.
-- `${MANTLE_DATA_DIR:-./data}/minio` bind mount — object bytes.
-- `apps/web/.env.local` — secrets (DATABASE_URL, SESSION_SECRET,
+- `${MANTLE_DATA_DIR:-./data}/postgres` bind mount, Postgres cluster files.
+- `${MANTLE_DATA_DIR:-./data}/minio` bind mount, object bytes.
+- `apps/web/.env.local`, secrets (DATABASE_URL, SESSION_SECRET,
   MANTLE_MASTER_KEY, S3 creds, ALLOWED_USER_ID, OPENAI_API_KEY).
 
 (Named Docker volumes until v0.103; both composes now bind-mount everything
 under `MANTLE_DATA_DIR`, so the data is a plain directory you can inspect,
 rsync, and back up. Consequence: `docker compose down -v` no longer deletes
-it — see disaster recovery below.)
+it, see disaster recovery below.)
 
 Everything else is rebuildable from source + those three.
 
-**Backups:** built-in since 2026-06-10 — see [`backups.md`](./backups.md):
+**Backups:** built-in since 2026-06-10, see [`backups.md`](./backups.md):
 the app dumps Postgres on a schedule configured at **/settings/backups**
 (frequency, hour in the user's timezone, retention, destination folder) and
 rotates old dumps; the operator points their own offsite sync (rsync, rclone,
@@ -1907,7 +1907,7 @@ historical snapshots; safe to delete.
 
 **Rolling a secret:**
 - `SESSION_SECRET`: edit `.env.local`, restart web. Every existing session
-  cookie fails verification, everyone signs in again. (You — single user.)
+  cookie fails verification, everyone signs in again. (You, single user.)
 - `MANTLE_MASTER_KEY`: re-encrypt every `_enc` column with the new key.
   No tooling exists for this yet; write a one-off script via `seal/open`.
 
@@ -1919,7 +1919,7 @@ docker compose -f docker-compose.dev.yml down
 rm -rf "${MANTLE_DATA_DIR:-./data}"/{postgres,minio}   # sudo on Linux (container-owned files)
 ```
 
-nukes the brain — note `down -v` alone does **not**: bind mounts survive
+nukes the brain, note `down -v` alone does **not**: bind mounts survive
 volume removal. Then `pnpm start` brings up a virgin stack;
 `pg_restore --data-only` loads the latest backup; insert your `auth.users`
 row by hand. Done.
@@ -1930,7 +1930,7 @@ row by hand. Done.
 
 In rough priority order. Items the audit completed have been removed
 from this list; what's here is genuinely still open. The May 2026
-hardening pass closed a batch of these — see
+hardening pass closed a batch of these, see
 [`hardening-audit-2026-05.md`](./_archive/hardening-audit-2026-05.md) for what
 was fixed, accepted, or deliberately left (and why).
 
@@ -1941,7 +1941,7 @@ was fixed, accepted, or deliberately left (and why).
   migrations before any app service starts, so the compose stack is no
   longer a degraded stub. Still unexercised end-to-end on real hardware:
   first-deploy runbook + HTTPS-only cookie verification + Caddy reverse
-  proxy config. (`apps/mcp` stays out of compose — stdio-only, would
+  proxy config. (`apps/mcp` stays out of compose, stdio-only, would
   crash-loop as a daemon until the HTTP transport lands.)
 - **Backups are built in** (2026-06-10, [`backups.md`](./backups.md)):
   scheduled `pg_dump` + rotation to a local folder, configured at
@@ -1955,7 +1955,7 @@ was fixed, accepted, or deliberately left (and why).
   direct presigned-MinIO would scale better.
 - **Next-externalized packages must be declared in `apps/web`.** A
   dep that Next keeps external (its `serverExternalPackages` default
-  list — e.g. `@aws-sdk/client-s3`, pulled in transitively via
+  list, e.g. `@aws-sdk/client-s3`, pulled in transitively via
   `@mantle/storage`) must be resolvable *from the app dir*. Under
   pnpm's isolated layout a transitive dep isn't, so Next errors
   "Package … can't be external". Fix: list it directly in
@@ -1964,10 +1964,10 @@ was fixed, accepted, or deliberately left (and why).
 
 **Telegram surface**
 - **Web UI for Telegram is missing.** Allowlist management, pairing-
-  code approval, conversation view — all happen via MCP tools today.
+  code approval, conversation view, all happen via MCP tools today.
 - ~~**Embeddings for Telegram messages** aren't generated.~~ **CLOSED
   (June 2026).** `extractNode` has an embed-only branch for
-  `type='telegram_message'` — turns get a `nodes.embedding` (local, ~free) for
+  `type='telegram_message'`, turns get a `nodes.embedding` (local, ~free) for
   semantic search, with no per-message summary/fact pass. Backfill existing turns
   with `extract:backfill --types=telegram_message`. Part of the June retrieval
   overhaul ([`recall-eval.md`](./recall-eval.md)).
@@ -2007,10 +2007,10 @@ was fixed, accepted, or deliberately left (and why).
   provider catalog, adapter registry, voice + chat dispatcher
   contracts. Integration coverage (full extractor pipeline, secrets
   reveal end to end, tool-loop with a real DB) needs a test
-  Postgres — probably a `docker-compose.test.yml`.
+  Postgres, probably a `docker-compose.test.yml`.
 
-**Agent delegation (`invoke_agent`) — audit follow-ups, none blocking**
-- ~~**Child reply truncated at ~8 KB.**~~ **RESOLVED** — tool results no
+**Agent delegation (`invoke_agent`), audit follow-ups, none blocking**
+- ~~**Child reply truncated at ~8 KB.**~~ **RESOLVED**: tool results no
   longer truncate. Oversized output (incl. a delegated agent's full
   synthesis) spills to the tool-result store and the model pages/greps/
   queries it via `read_result`. See §9m.
@@ -2034,7 +2034,7 @@ was fixed, accepted, or deliberately left (and why).
 **Agent ergonomics**
 - **`delegate_to` is now UI-editable** via the "Delegates to" picker at
   `/settings/agents`, and `updateAgent` merges `memory_config` so saves
-  no longer wipe it. (Resolved — was previously DB/seed-only.)
+  no longer wipe it. (Resolved, was previously DB/seed-only.)
 - **All chat dispatch is now adapter-routed** (Phase 3, shipped May 2026).
   The responder, web `/assistant`, heartbeat fire, invoke_agent, and
   all three chat-shaped workers (reflector / extractor / summarizer)
@@ -2049,7 +2049,7 @@ was fixed, accepted, or deliberately left (and why).
   [`docs/phase-3-retrospective.md`](./_archive/phase-3-retrospective.md).
 - **Embedding is fully adapter-routed** as of the Stage 1 push
   (5dc3984). `@mantle/embeddings` dispatches through
-  `getEmbeddingAdapter(provider)` — five adapters (openrouter, openai,
+  `getEmbeddingAdapter(provider)`, five adapters (openrouter, openai,
   google, mistral, cohere) covering both OR-routed and direct-
   provider modes. See [`ai-workers.md` §5e.2](./ai-workers.md#5e2-adapter-dispatch-stage-1-of-the-runtime-honesty-push).
 
@@ -2059,9 +2059,9 @@ was fixed, accepted, or deliberately left (and why).
 
 If you only read four files, read these in order:
 
-1. `packages/db/src/schema/nodes.ts` — the central abstraction.
-2. `apps/mcp/src/server.ts` — the tools Claude actually uses.
-3. `packages/email/src/sync.ts` — the longest end-to-end pipeline.
-4. `apps/web/lib/auth.ts` — the security boundary.
+1. `packages/db/src/schema/nodes.ts`, the central abstraction.
+2. `apps/mcp/src/server.ts`, the tools Claude actually uses.
+3. `packages/email/src/sync.ts`, the longest end-to-end pipeline.
+4. `apps/web/lib/auth.ts`, the security boundary.
 
 Then `git log --oneline` for the rest.

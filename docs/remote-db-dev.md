@@ -2,13 +2,13 @@
 
 A workflow for running the **local codebase + dev server**, but pointed at a
 **deployed Postgres + MinIO** instead of the local dev containers. Useful when you
-want to build/iterate against real data without replicating it locally — and it's
+want to build/iterate against real data without replicating it locally, and it's
 the same thin-client shape a future Electron desktop build will use. For the
 architecture behind it (and what else it unlocks), see
 [Split UI / core](./split-ui-core.md).
 
-> ⚠️ **This is live data.** Every dev write — an agent turn, a seed, a migration,
-> a file upload — mutates the deployment. Read [Before you migrate](#before-you-migrate)
+> ⚠️ **This is live data.** Every dev write, an agent turn, a seed, a migration,
+> a file upload, mutates the deployment. Read [Before you migrate](#before-you-migrate)
 > before any schema change.
 
 There are two ways to reach the remote data plane. **Tailscale (recommended)** is
@@ -22,7 +22,7 @@ would 404 locally).
 
 ---
 
-## Option A — Tailscale (recommended)
+## Option A: Tailscale (recommended)
 
 The remote node publishes Postgres + MinIO on the tailnet with `tailscale serve
 --tcp`; any device signed into the same tailnet reaches them by MagicDNS:
@@ -32,7 +32,7 @@ local dev server ──▶ mantle.taildc9091.ts.net:5432   (Postgres, over the t
                  └──▶ mantle.taildc9091.ts.net:9000   (MinIO/S3, over the tailnet)
 ```
 
-**One-time, on the prod node** — publish the data plane (see also
+**One-time, on the prod node**: publish the data plane (see also
 `scripts/prod-tailscale-serve.sh`):
 
 ```sh
@@ -41,7 +41,7 @@ pnpm tailscale:serve:status   # verify
 ```
 
 `tailscale serve` targets must be IPs and docker IPs change on container recreate,
-so the script re-resolves them each run — **re-run `pnpm tailscale:serve` after a
+so the script re-resolves them each run, **re-run `pnpm tailscale:serve` after a
 prod redeploy** if the tailnet endpoints stop responding. Remove the exposure with
 `scripts/prod-tailscale-serve.sh reset`.
 
@@ -62,10 +62,10 @@ prod redeploy** if the tailnet endpoints stop responding. Remove the exposure wi
    ```
 3. Run the dev server (see [Running the dev server](#running-the-dev-server)).
 
-> **Security:** `serve` is a *standing* exposure — the DB + object store are
+> **Security:** `serve` is a *standing* exposure, the DB + object store are
 > reachable by every device on your tailnet (scope with tailnet ACLs). On a
 > single-user tailnet the blast radius is small, but it's a real posture change.
-> The status shows "TLS over TCP" — that's Tailscale's label; a plain Postgres/S3
+> The status shows "TLS over TCP", that's Tailscale's label; a plain Postgres/S3
 > client connects normally, and the tailnet itself is WireGuard-encrypted.
 >
 > **No inbound ports** are opened on the host: `5432`/`9000` live on the tailnet
@@ -74,7 +74,7 @@ prod redeploy** if the tailnet endpoints stop responding. Remove the exposure wi
 
 ---
 
-## Option B — SSH tunnel (fallback, no standing exposure)
+## Option B: SSH tunnel (fallback, no standing exposure)
 
 When you're not on the tailnet. Opens local ports forwarded over SSH to the
 remote containers (IPs re-resolved each run):
@@ -91,7 +91,7 @@ pnpm db:tunnel:down       # close when done    ·  status: scripts/prod-db-tunne
 
 Then set `.env.local` to the local ports instead of the MagicDNS name:
 `DATABASE_URL=…@127.0.0.1:55432/postgres`, `S3_ENDPOINT=http://127.0.0.1:9100`.
-The tunnel is key-gated and on-demand — nothing is reachable unless it's open. It
+The tunnel is key-gated and on-demand; nothing is reachable unless it's open. It
 dies on reboot / network drop; re-run `pnpm db:tunnel`.
 
 Config knobs (env overrides; defaults match the reference deployment):
@@ -114,7 +114,7 @@ pnpm -C apps/web dev      # web (next dev) against the remote DB
 and will refuse to start. The per-service `dev` scripts above skip the preflight.
 
 The encryption master key (`MANTLE_MASTER_KEY`) must match the server's so
-encrypted vault rows decrypt — for the reference deployment it already does.
+encrypted vault rows decrypt, for the reference deployment it already does.
 
 ## Before you migrate
 

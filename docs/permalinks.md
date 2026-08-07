@@ -1,7 +1,7 @@
-# Item permalinks — deep links to any node
+# Item permalinks: deep links to any node
 
-A single, type-agnostic URL that opens any item — note, page, task, table,
-app, event, file, contact, journal entry — straight at its surface. Companion
+A single, type-agnostic URL that opens any item, note, page, task, table,
+app, event, file, contact, journal entry, straight at its surface. Companion
 to [`content.md`](./content.md) (the node model), [`sharing.md`](./sharing.md)
 (public `/s/[token]` links), and [`conversation.md`](./conversation.md) (how
 responder replies render).
@@ -12,11 +12,11 @@ links in replies and the user clicks straight through.
 ## Why
 
 Items used to live on master-detail surfaces whose selection was pure client
-state — the URL never changed, so nothing could link to a specific item. The
+state, the URL never changed, so nothing could link to a specific item. The
 motivating need: let responders (Saskia & co.) reference a document in a reply
 as a clickable link the user taps to land on it.
 
-## The permalink — `/n/<id>`
+## The permalink: `/n/<id>`
 
 `apps/web/app/(app)/n/[id]/page.tsx` is the one canonical deep link. It loads
 the node **owner-scoped**, reads its `type`, and redirects to whichever surface
@@ -36,22 +36,22 @@ edits or displays it:
 | anything else | `/nodes/<id>/history` (universal node biography) |
 
 Keeping the type→surface map in this one route means **callers never need to
-know the type** — they hold only an id — and links survive a surface changing
+know the type** (they hold only an id) and links survive a surface changing
 its URL shape. Surfaces that already deep-linked by id (`/notes/[id]`,
 `/tables/[id]` redirects; `/pages/[id]`, `/apps/[id]`, `/events/[id]` pages) are
 reused as-is; types without a dedicated editor fall back to the generic
 `/nodes/<id>/history` biography, which renders for every node kind.
 
 Security: the loader is owner-scoped, so a leaked id for another owner gets a
-**404, not a permission error** (less informative for probing) — matching the
+**404, not a permission error** (less informative for probing): matching the
 existing biography route.
 
-## Building the link — `nodeUrl(id)`
+## Building the link: `nodeUrl(id)`
 
 [`nodeUrl`](../packages/content/src/shares.ts) (in `@mantle/content`, beside
 `publicBaseUrl` / `shareUrlForToken`) returns the absolute permalink
-`<origin>/n/<id>`. It's absolute so it survives outside the web request cycle —
-Telegram, email — and the in-app chat renderer treats same-origin links as SPA
+`<origin>/n/<id>`. It's absolute so it survives outside the web request cycle,
+Telegram, email, and the in-app chat renderer treats same-origin links as SPA
 navigation (below). Origin comes from `MANTLE_PUBLIC_URL` → `NEXT_PUBLIC_APP_URL`
 → localhost, same as share links.
 
@@ -61,9 +61,9 @@ So responders link items without constructing URLs by hand, the read tools
 return a `url` field and their descriptions tell the model to surface items as
 markdown `[title](url)`:
 
-- `search_nodes` — every hit carries `url` (the main discovery path).
-- `node_read` — universal reader returns `url`.
-- `note_get`, `page_get`, `task_get`, `table_get`, `event_get` — each returns
+- `search_nodes`, every hit carries `url` (the main discovery path).
+- `node_read`, universal reader returns `url`.
+- `note_get`, `page_get`, `task_get`, `table_get`, `event_get`; each returns
   `url` alongside the row.
 
 Because the tool descriptions carry the instruction, it propagates to **every
@@ -89,23 +89,23 @@ The editable Pages canvas is untouched.
 ## The URL reflects what you're looking at
 
 The permalink lands on `?selected=<id>`, but selecting another item *within* a
-surface was pure client state — the URL went stale, so you couldn't copy a link
+surface was pure client state, the URL went stale, so you couldn't copy a link
 to the item currently open. [`syncSelectionParam`](../apps/web/lib/url-sync.ts)
 fixes that: on each selection it rewrites `?selected=` via
-`history.replaceState` — **no server refetch** (the item is already in client
+`history.replaceState`, **no server refetch** (the item is already in client
 state), no scroll reset, and no back-stack entry (Back leaves the surface rather
 than stepping through every item you clicked).
 
 Wired into **notes**, **journal**, and **tasks** (the surfaces whose detail is
-held client-side). **Tables** and **contacts** are left as-is — their detail
+held client-side). **Tables** and **contacts** are left as-is, their detail
 loads server-side on select, so they genuinely need `useListNav().go`
 navigation, and already reflect the selection in the URL.
 
 ## Files
 
-- `apps/web/app/(app)/n/[id]/page.tsx` — the universal permalink route.
-- `packages/content/src/shares.ts` — `nodeUrl()`.
-- `packages/tools/src/builtins*.ts` — `url` fields + link instructions on the
+- `apps/web/app/(app)/n/[id]/page.tsx`, the universal permalink route.
+- `packages/content/src/shares.ts`, `nodeUrl()`.
+- `packages/tools/src/builtins*.ts`, `url` fields + link instructions on the
   read tools.
-- `apps/web/components/assistant/rich-text.tsx` — chat link-click handling.
-- `apps/web/lib/url-sync.ts` — `syncSelectionParam` (replaceState).
+- `apps/web/components/assistant/rich-text.tsx`, chat link-click handling.
+- `apps/web/lib/url-sync.ts`, `syncSelectionParam` (replaceState).

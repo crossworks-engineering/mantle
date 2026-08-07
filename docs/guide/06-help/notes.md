@@ -5,7 +5,7 @@ toolGroups: [notes]
 
 ## Notes
 
-Quick markdown notes — the fastest way to get something into the brain.
+Quick markdown notes, the fastest way to get something into the brain.
 
 Use a note when you want the knowledge captured more than you want it
 formatted: a phone number someone read out, what a supplier quoted, how a
@@ -21,7 +21,7 @@ page later. Start here anyway; the cost of writing it down should be near zero.
 - "Add to the supplier note: they quoted R18k, two-week lead time."
 - "What did I write down about the borehole?"
 
-Appending to an existing note is a first-class move, not a rewrite — so a note
+Appending to an existing note is a first-class move, not a rewrite, so a note
 works as a running log you keep adding to over weeks. Ask it to add rather than
 to update and you'll keep the history.
 
@@ -30,7 +30,7 @@ Deleting notes is deliberately not something the assistant can do.
 ## Technical
 
 A note is the simplest node in the system: markdown body, title, tags. That
-simplicity is why it's the cheapest thing to ingest — there's no document model
+simplicity is why it's the cheapest thing to ingest; there's no document model
 to normalise and no draft state to reconcile.
 
 On save it goes through the same ingest path as everything else. A local model
@@ -42,5 +42,5 @@ itself doesn't.
 
 That extraction happens **once, at write time**, rather than each time something
 is read. It costs a little on the way in and makes every later read cheap and
-deterministic — the same reason the rest of the system prefers doing work on
+deterministic, the same reason the rest of the system prefers doing work on
 ingest.

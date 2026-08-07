@@ -1,7 +1,7 @@
-# Handoff — local embeddings migration (2026-05-30)
+# Handoff: local embeddings migration (2026-05-30)
 
 Written because context was full mid-migration. **Read the "STATUS RIGHT NOW"
-box first** — the brain is mid-transplant and needs two more steps before
+box first**; the brain is mid-transplant and needs two more steps before
 retrieval works again.
 
 ---
@@ -25,7 +25,7 @@ part is **done and committed**. Two steps remain:
 - The `local` provider + `local-embedding` adapter (Phase 1, commit `b6dea96`)
   are live and verified against EmbeddingGemma.
 - The embed path now treats `local` as **keyless** (it threw "no api key for
-  provider 'local'" otherwise — local servers need no credential). Required for
+  provider 'local'" otherwise, local servers need no credential). Required for
   both live extraction and the repopulation below.
 
 **NOT DONE (do these next):**
@@ -42,7 +42,7 @@ part is **done and committed**. Two steps remain:
   model id **`embeddinggemma:latest`**, **768-dim**. Confirmed working
   (`curl localhost:11434/v1/models` and an embed both succeed).
 - The adapter's base URL = env **`MANTLE_LOCAL_EMBEDDING_URL`** (default
-  `http://localhost:11434/v1` — so no env needed in dev). Keep `ollama serve` up.
+  `http://localhost:11434/v1`, so no env needed in dev). Keep `ollama serve` up.
 - Dev stack runs from `~/Projects/mantle` (main); `apps/web/.env.local` holds
   `DATABASE_URL` + `ALLOWED_USER_ID`. The worktree is
   `.claude/worktrees/brave-nobel-cd3aee` on branch `claude/brave-nobel-cd3aee`,
@@ -52,20 +52,20 @@ part is **done and committed**. Two steps remain:
 
 ## How to finish: repopulate the 768-dim embeddings
 
-The rows still have their **text** — only the embedding column is null. So this
-is a re-embed, not a re-extract. **But `pnpm re-embed` will NOT work as-is** —
+The rows still have their **text**: only the embedding column is null. So this
+is a re-embed, not a re-extract. **But `pnpm re-embed` will NOT work as-is**,
 two reasons discovered live:
 
 1. `runReembed`'s fetchers filter `WHERE embedding IS NOT NULL` (it was built for
    *same-dimension model swaps* on populated vectors). After the migration nulled
    everything, it finds **0 rows**.
 2. The CLI defaults the model to `DEFAULT_EMBEDDING_MODEL` (env), not the worker
-   config — so it resolved the *old* `openai/text-embedding-3-small`.
+   config, so it resolved the *old* `openai/text-embedding-3-small`.
 
-### ✅ Path A — repopulate via re-embed (SHIPPED — just run it)
+### ✅ Path A: repopulate via re-embed (SHIPPED: just run it)
 The `runReembed` repopulate fix is **done** (commit: `--repopulate` /
 `includeUnembedded` + the CLI content_chunks gap). Run this (model id is
-REQUIRED — without it the CLI defaults to the old cloud model and asks Ollama
+REQUIRED, without it the CLI defaults to the old cloud model and asks Ollama
 for one it doesn't have; provider resolves to `local` from the worker):
 ```
 cd ~/Projects/mantle && ollama serve   # keep EmbeddingGemma up on :11434
@@ -80,8 +80,8 @@ In `packages/embeddings/src/reembed.ts`, the per-table fetchers use
 `isNotNull(<table>.embedding)`. For a dimension-migration repopulation we want
 "embed every row that *should* have an embedding," i.e.:
 - `facts`, `entities`, `content_chunks`: **all rows** (drop the `isNotNull`
-  filter — every row of these tables is always embedded).
-- `nodes`: all rows **except** the types the extractor never embeds — exclude
+  filter; every row of these tables is always embedded).
+- `nodes`: all rows **except** the types the extractor never embeds, exclude
   `type IN ('branch','telegram_message')` and the `conversation-digest` tag
   (these are why `isNotNull` was the implicit filter; replicate it explicitly).
   Node type counts for reference: email 1387, file 271, telegram_message 171,
@@ -95,11 +95,11 @@ MANTLE_LOCAL_EMBEDDING_URL=http://localhost:11434/v1 \
   pnpm -C apps/web re-embed --model=embeddinggemma:latest
 ```
 The provider resolves to `local` from the worker config; `--model` overrides the
-env default. ~16K embeds through Ollama — minutes on the M4. (Also widen the
-re-embed to cover `content_chunks` if the `--tables` default doesn't — the M1
+env default. ~16K embeds through Ollama, minutes on the M4. (Also widen the
+re-embed to cover `content_chunks` if the `--tables` default doesn't, the M1
 fix added it; confirm `content_chunks` is in `DEFAULT_TABLES`.)
 
-### Recommended path B — re-extract via the boot-drain (no code change, costs chat LLM)
+### Recommended path B: re-extract via the boot-drain (no code change, costs chat LLM)
 Restart the dev agent on the new code with a wide drain window:
 ```
 MANTLE_EXTRACT_DRAIN_WINDOW_HOURS=8760 MANTLE_EXTRACT_DRAIN_LIMIT=10000 pnpm dev
@@ -111,7 +111,7 @@ summary+fact extraction = chat-LLM calls (cloud unless you also point the
 extractor's chat worker at a local Gemma). Path A is cheaper; B is more "correct"
 and also refreshes facts.
 
-**Recommendation:** Path A (fix re-embed) — cheapest, embeddings-only, and the
+**Recommendation:** Path A (fix re-embed), cheapest, embeddings-only, and the
 `isNotNull`→repopulate fix is worth having permanently for future dimension
 migrations.
 
@@ -119,27 +119,27 @@ migrations.
 - `SELECT count(*) FILTER (WHERE embedding IS NOT NULL) FROM nodes;` → non-zero.
 - A node's vector length = 768.
 - Restart the dev stack; ask the responder something that should hit content/
-  facts — confirm it retrieves. The H1 `assertEmbeddingModelConsistency` boot
+  facts, confirm it retrieves. The H1 `assertEmbeddingModelConsistency` boot
   check should log **nothing** (all sites agree on the local model).
 
 ---
 
 ## Everything else from this session (durable, already shipped)
 
-This local-embeddings work sat on top of a large hardening + audit effort —
+This local-embeddings work sat on top of a large hardening + audit effort,
 **all committed to `main`, not pushed.** Canonical records:
-- `docs/hardening-audit-2026-05.md` — the independent audit + fixes (chat-runtime
+- `docs/hardening-audit-2026-05.md`, the independent audit + fixes (chat-runtime
   retry/cache/tool-ids/is_error/image-translation; memory stale-fact retirement,
   chunk re-embed, facts mismatch guard; data-layer HNSW index, prod workers,
   migrate-on-boot; embedding-model consistency check). Read before re-pitching a
   "known issue."
 - Memory: `reference_hardening_audit_2026_05`, `project_cost_safety_no_reextract_trigger`
-  (never add a model-invoking trigger that can run away — the deletion audit's
+  (never add a model-invoking trigger that can run away, the deletion audit's
   H3 was deliberately NOT built for this reason), `project_delete_cleanup_semantics`
   (the 0058/0059 deletion triggers + kind-aware fact deletion).
 - Deletion audit (a separate session's findings, verified + mostly fixed):
   `#1` entity_edges reaper (`0058`), `#2` kind-aware facts (`0059`), `#3`
-  page-subtree warning, `#4` file-attachment delete guard — all shipped. Open:
+  page-subtree warning, `#4` file-attachment delete guard, all shipped. Open:
   `#5` object-storage GC (slow leak), `#6` traces linger (by design).
 
 ### Open threads worth remembering
@@ -148,7 +148,7 @@ This local-embeddings work sat on top of a large hardening + audit effort —
   (LM Studio on the AMD box `192.168.100.75:1234`). Would need a `local` **chat**
   adapter (the provider exists; add chat capability + register a chat dispatcher
   reusing `openai-compat`). The dual-config/failover idea (local primary + cloud
-  fallback per worker) was designed but not built — chat-only; embeddings can't
+  fallback per worker) was designed but not built, chat-only; embeddings can't
   fail over (dimension/space lock).
 - **jina-embeddings-v5** was evaluated and rejected for the LM Studio path: it
   loads as `type=llm` there (Qwen3 base) and LM Studio silently falls back to
@@ -156,7 +156,7 @@ This local-embeddings work sat on top of a large hardening + audit effort —
   768, Gemma license = commercial-OK). If jina-v5 is ever wanted, serve it via
   llama.cpp `--pooling last` / TEI / vLLM, not LM Studio.
 - Minor stale comment: `packages/db/src/schema/ai-workers.ts` still says the
-  embedding column is `vector(1536)` "MUST keep at 1536" — now 768. Cosmetic.
+  embedding column is `vector(1536)` "MUST keep at 1536", now 768. Cosmetic.
 
 ## Commit list (this worktree → main, `edd73a8`→ HEAD)
 `a394dc3` HNSW index + prod workers · `3a6c7c9` chat retry · `8773e14` cache
@@ -164,4 +164,4 @@ breakpoints + Google ids · `99ffa21` is_error/Gemini-images/L1–L4 · `7d78aa7
 memory cluster + migrate-on-boot · `4e20af7` embedding consistency + drain ·
 `e3ff2e3` page-subtree delete · (deletion triggers `0058`/`0059` + guards) ·
 `b6dea96` local embedding adapter (Phase 1) · `<this>` 768 migration (Phase 2).
-Nothing pushed — push when ready.
+Nothing pushed, push when ready.

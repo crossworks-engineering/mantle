@@ -9,7 +9,7 @@ Prose that teaches an agent how to do something well. How to phrase a voice
 reply, how to structure a page edit, when to hand work to a specialist, how to
 quote a calculation's working.
 
-A skill is **teaching only**. It confers no capability whatsoever — an agent
+A skill is **teaching only**. It confers no capability whatsoever, an agent
 with a page-editing skill and no page tools will explain page editing very well
 and be unable to do any. This is the single most useful thing to know about this
 screen, because the intuition runs the other way.
@@ -24,7 +24,7 @@ is how a summarizer learns your preferred shape for a summary.
 - "Write a skill that teaches you how we word quotes."
 
 Because a skill is just prose, this is one of the safer things to let the
-assistant author — the worst outcome is advice that doesn't help, not an action
+assistant author; the worst outcome is advice that doesn't help, not an action
 you didn't expect.
 
 ## Technical
@@ -36,7 +36,7 @@ permission to be confused.
 
 That split is what makes the composed prompt readable. At turn time the agent's
 own prompt and its attached skills are assembled in a fixed order, and Studio
-can show you the exact text the model received — nothing is injected behind your
+can show you the exact text the model received; nothing is injected behind your
 back.
 
 Because skills are prose and versioned, Studio keeps their history with a diff

@@ -1,15 +1,15 @@
 # Handover: the tool-description standard + lint
 
-**Status: DONE — executed 2026-07-07** (same day it was scoped), merged to
+**Status: DONE, executed 2026-07-07** (same day it was scoped), merged to
 main in `40e15564`. The standard lives in `packages/tools/CLAUDE.md` ("The
 description style guide"); the lint is `packages/tools/src/description-lint.test.ts`.
-The first-pass audit found far more than the expected handful — 206 missing
-param descriptions, 20 over-budget descriptions, 45 uncovered node-id params —
+The first-pass audit found far more than the expected handful, 206 missing
+param descriptions, 20 over-budget descriptions, 45 uncovered node-id params,
 all swept in the same change.
 
 **Audited 2026-07-07** by three independent adversarial reviews (merged as
 `946d922b`): zero truthfulness failures across ~90 code-verified claims; all
-findings applied — a missing `enum` on `table_set_view.filters[].op` (typo'd
+findings applied, a missing `enum` on `table_set_view.filters[].op` (typo'd
 op silently saved a match-all view), numeric default/cap prose stripped in
 favour of schema keywords (the guide + lint now forbid restating them),
 precondition coverage extended to contact/app/email domains and camelCase id
@@ -26,11 +26,11 @@ Jason approved the direction ("I think we are on to something here").
 ## Why this exists
 
 The v0.119.0 release moved tool-usage rules down the reliability ladder
-(prose → schema → validating errors → gates → code — see
+(prose → schema → validating errors → gates → code, see
 [tool-reliability.md](tool-reliability.md)). What remains in prose is the
 part that SHOULD be prose: tool descriptions carrying judgment calls no
 schema can express. The 2026-07-07 audit inventoried ~40 such load-bearing
-rules and found they follow consistent shapes — but the shapes are folklore.
+rules and found they follow consistent shapes, but the shapes are folklore.
 There is a written, repo-checked standard for **errors** and **schemas**
 (`packages/tools/CLAUDE.md`), and **nothing** for description prose itself.
 Whoever writes the next builtin copies whichever neighbor they read first.
@@ -39,7 +39,7 @@ Whoever writes the next builtin copies whichever neighbor they read first.
 enforce the mechanical subset in CI the way `manifest.test.ts` enforces slug
 integrity for the manifest.
 
-## Part 1 — the standard (write into `packages/tools/CLAUDE.md`)
+## Part 1: the standard (write into `packages/tools/CLAUDE.md`)
 
 Add a section "The description style guide" beside the existing error-style
 section. Content to codify (drafted and agreed, tune wording freely):
@@ -51,13 +51,13 @@ section. Content to codify (drafted and agreed, tune wording freely):
 2. **Selection boundaries must name the alternative.** Every "when to use"
    states which tool to use for the adjacent case ("for time-windowed email
    questions use `email_list`"). A boundary without a named alternative
-   teaches hesitation. This is the highest-value pattern in the codebase —
+   teaches hesitation. This is the highest-value pattern in the codebase,
    exemplars: `email_list` vs `search_nodes`, `page_from_file` vs
    `page_create`, `search_chunks` → `read_section` → `file_read` ladder.
 3. **Side effects and visibility, always.** Draft vs published, outward-
    facing or not, reversible or not. Exemplars: the `DRAFT_REVIEW_HINT`
    pattern in builtins-pages/tables; `contact_delete`'s allowlist warning.
-4. **Scaling behavior when it matters.** What happens at size — truncation
+4. **Scaling behavior when it matters.** What happens at size, truncation
    self-announces (`pageMeta`), sheets split (`table_from_file`), batches
    are atomic (`page_blocks_apply`).
 5. **The ladder check.** Before ANY rule enters prose: can it be a schema
@@ -71,7 +71,7 @@ Hygiene rules:
 - **Length budget ~120 words** per description. Every description ships in
   the system prompt of every granted agent on every turn (the hermes
   "narrow waist" point). Exceeding the budget is allowed only for genuine
-  footguns and must be justified — current sanctioned essays:
+  footguns and must be justified, current sanctioned essays:
   `page_block_update` (markdown structural-prefix trap), `page_split`,
   `page_blocks_apply`, `search_nodes`, `search_chunks`, `table_from_file`,
   `page_from_file`, `api_tool_create`.
@@ -79,15 +79,15 @@ Hygiene rules:
   load-bearing rules (if everything is bold nothing is); "Use when… / For
   X use `y` instead" phrasing.
 
-## Part 2 — the lint (`packages/tools/src/description-lint.test.ts`)
+## Part 2: the lint (`packages/tools/src/description-lint.test.ts`)
 
 A pure vitest suite over `listBuiltins()` (or `BUILTIN_TOOLS` + the domain
-arrays — use the registry so app-registered builtins are covered). Checks,
+arrays, use the registry so app-registered builtins are covered). Checks,
 in order of certainty:
 
 1. **Non-empty**: `description` present on every def; every
    `inputSchema.properties[*]` has a non-empty `description` (allowlist
-   for genuinely self-evident params if any exist — prefer zero).
+   for genuinely self-evident params if any exist, prefer zero).
 2. **Cross-references resolve**: every backticked token in a description
    that *looks like a tool slug* must exist in the registry. This catches
    the rename-rot class (the Todos→Tasks / Lifelogs→Journal renames left
@@ -102,22 +102,22 @@ in order of certainty:
    the sanctioned-essay allowlist (list above; keep it in the test file
    with a comment requiring justification for additions).
 4. **No schema duplication**: a param whose schema declares `enum` while
-   its description contains "must be one of" / "one of:" fails — the enum
+   its description contains "must be one of" / "one of:" fails, the enum
    renders to the model already, and prose copies drift.
 5. **Precondition coverage**: any top-level param matching
    `/^(page|table|note|node|journal|task|event|file|folder)_id$/` (or
    `id` on a tool whose slug starts with one of those domains) must have a
-   matching `preconditions` entry on the def — or be in an explicit
+   matching `preconditions` entry on the def, or be in an explicit
    exceptions list with a comment. (The v0.119.0 first-consumer wiring
    covered pages block tools + table row/column tools; this check makes
    the pattern self-extending.)
 
 Run the first pass as a MINI-AUDIT: expect a handful of violations in the
 ~80 existing builtins; fix them in the same commit (that's the point).
-Expect the cross-reference allowlist to need 2–3 tuning rounds — start
+Expect the cross-reference allowlist to need 2–3 tuning rounds, start
 strict, add terms deliberately, never regex-loosen.
 
-## Part 3 — order of work
+## Part 3: order of work
 
 1. Worktree: `scripts/new-worktree.sh tool-description-standard`.
 2. Write the style-guide section into `packages/tools/CLAUDE.md`.
@@ -131,13 +131,13 @@ strict, add terms deliberately, never regex-loosen.
 ## Context a fresh session needs
 
 - **The rule book is repo-checked**: `packages/tools/CLAUDE.md` (errors,
-  schemas — this work adds descriptions) and `docs/tool-reliability.md`
+  schemas; this work adds descriptions) and `docs/tool-reliability.md`
   (architecture, the ladder, ops). Read both first.
 - Scope is **builtin tool defs only** (`packages/tools/src/builtins*.ts`).
   Manifest prose (agent prompts, skills) is governed separately by
-  `apps/web/lib/system-manifest/CLAUDE.md` — do not lint it here, though
+  `apps/web/lib/system-manifest/CLAUDE.md`, do not lint it here, though
   the standard's principles may migrate there later.
-- Related principles: "mutate diagnostics, never data" (fence boundary —
+- Related principles: "mutate diagnostics, never data" (fence boundary,
   see tool-reliability.md); operator overrides are sacred (seed never
   re-asserts flags). Don't let sweep edits touch those behaviors.
 - Prior work anchors: v0.119.0 release (commits `20c2f975..3e138a95`),
