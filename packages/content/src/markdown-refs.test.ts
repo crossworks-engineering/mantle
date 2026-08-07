@@ -11,6 +11,7 @@ import {
   markdownRefs,
   mediaFileId,
   stripInlineMediaImages,
+  drawNodeId,
 } from './markdown-refs';
 
 describe('mediaFileId', () => {
@@ -115,5 +116,28 @@ describe('markdownRefs', () => {
   it('is safe on empty input', () => {
     expect(markdownRefs('')).toEqual([]);
     expect(markdownRefs(null)).toEqual([]);
+  });
+});
+
+describe('draw: references', () => {
+  it('extracts an embedded drawing as a draw-typed ref', () => {
+    const refs = markdownRefs('Here is the plan:\n\n![Architecture](draw:abc-123)\n');
+    expect(refs).toEqual([{ scheme: 'draw', id: 'abc-123', nodeType: 'draw' }]);
+  });
+
+  it('reads the id back off a draw href, and only a draw href', () => {
+    expect(drawNodeId('draw:abc-123')).toBe('abc-123');
+    expect(drawNodeId('media:abc-123')).toBeNull();
+    expect(drawNodeId('https://example.com/x.png')).toBeNull();
+    expect(drawNodeId(undefined)).toBeNull();
+  });
+
+  it('does not collide with media or page refs in one source', () => {
+    const refs = markdownRefs('![a](media:f1) ![b](draw:d1) [c](page:p1)');
+    expect(refs).toEqual([
+      { scheme: 'media', id: 'f1', nodeType: 'file' },
+      { scheme: 'draw', id: 'd1', nodeType: 'draw' },
+      { scheme: 'page', id: 'p1', nodeType: 'page' },
+    ]);
   });
 });

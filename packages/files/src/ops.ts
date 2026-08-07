@@ -45,6 +45,7 @@ import {
 import { derivedCountsOf, type DerivedCounts } from './derived-counts';
 import {
   db,
+  draws,
   emailAttachments,
   forumUploads,
   nodes,
@@ -666,6 +667,27 @@ export async function countDerivedFromFile(args: {
   return derivedCountsOf(rows);
 }
 
+/** Drawings whose `file_refs` still map some BinaryFile to this file node.
+ *  jsonb_each_text because the keys are Excalidraw's ids, so the file node id
+ *  is a VALUE in the map, not a key. */
+export async function drawsReferencingFile(
+  ownerId: string,
+  fileId: string,
+): Promise<{ id: string; title: string }[]> {
+  const rows = await db
+    .select({ id: nodes.id, title: nodes.title })
+    .from(draws)
+    .innerJoin(nodes, eq(nodes.id, draws.nodeId))
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'draw'),
+        sql`EXISTS (SELECT 1 FROM jsonb_each_text(${draws.fileRefs}) AS ref WHERE ref.value = ${fileId})`,
+      ),
+    );
+  return rows;
+}
+
 export async function deleteFileById(args: {
   ownerId: string;
   fileId: string;
@@ -675,7 +697,9 @@ export async function deleteFileById(args: {
   deleteDerived?: boolean;
 }): Promise<{
   ok: boolean;
-  reason?: 'not_found' | 'attachment' | 'has_derived';
+  reason?: 'not_found' | 'attachment' | 'has_derived' | 'in_drawing';
+  /** Populated on the in_drawing refusal: the drawings still using this image. */
+  drawings?: { id: string; title: string }[];
   /** Populated on the has_derived refusal so the caller can show what a
    *  cascade would remove before asking again with `deleteDerived: true`. */
   derived?: DerivedCounts;
@@ -696,6 +720,17 @@ export async function deleteFileById(args: {
     .where(eq(emailAttachments.fileNodeId, node.id))
     .limit(1);
   if (attachment) return { ok: false, reason: 'attachment' };
+  // Block deletion of an image a drawing still places on its canvas. There is
+  // no FK to lean on: `draws.file_refs` is a jsonb map (BinaryFile id → file
+  // node id), so a bare delete used to succeed and leave the drawing quietly
+  // broken — the canvas lost the image on next open while the committed
+  // snapshot kept showing it, because exportToSvg inlines image bytes. Two
+  // surfaces disagreeing forever, with no error anywhere. Refuse instead, and
+  // name the drawings so the caller can say where to remove it.
+  const inDrawings = await drawsReferencingFile(args.ownerId, node.id);
+  if (inDrawings.length > 0) {
+    return { ok: false, reason: 'in_drawing', drawings: inDrawings };
+  }
   // Refuse when ingest derived nodes from this file and the caller hasn't
   // opted in: a bare delete would strand them (data.sourceFileId is JSONB —
   // no FK cascade reaches them). The refusal carries counts so the caller can

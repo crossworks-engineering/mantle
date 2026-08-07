@@ -143,6 +143,17 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
           { status: 409 },
         );
       }
+      if (res.reason === 'in_drawing') {
+        const names = (res.drawings ?? []).map((d) => d.title).join(', ');
+        return NextResponse.json(
+          {
+            error: `Can't delete — this image is used in ${names || 'a drawing'}. Remove it from the drawing first.`,
+            reason: 'in_drawing',
+            drawings: res.drawings ?? [],
+          },
+          { status: 409 },
+        );
+      }
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
     return NextResponse.json({ ok: true, reaped: res.reaped, skipped: res.skipped });
@@ -162,6 +173,17 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
         {
           error:
             "Can't delete — this file is an email attachment. Delete it from the email instead.",
+        },
+        { status: 409 },
+      );
+    }
+    if (res.reason === 'in_drawing') {
+      const names = (res.drawings ?? []).map((d) => d.title).join(', ');
+      return NextResponse.json(
+        {
+          error: `Can't delete — this image is used in ${names || 'a drawing'}. Remove it from the drawing first.`,
+          reason: 'in_drawing',
+          drawings: res.drawings ?? [],
         },
         { status: 409 },
       );

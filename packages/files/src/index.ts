@@ -106,6 +106,7 @@ export {
   readFileById,
   countDerivedFromFile,
   deleteFileById,
+  drawsReferencingFile,
   renameFileById,
   bulkDeleteFiles,
   listFiles,

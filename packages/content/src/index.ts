@@ -450,7 +450,7 @@ export {
 
 export { diffBlocks, type BlockDiff, type BlockChange } from './block-diff';
 
-export { referencedFileIds } from './doc-assets';
+export { referencedFileIds, referencedDrawIds } from './doc-assets';
 
 export {
   SHAREABLE_TYPES,

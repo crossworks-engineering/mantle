@@ -375,6 +375,20 @@ function renderBlock(node: PMNode, ctx: DocxCtx): DocxBlock[] {
     case 'image': {
       const fileId = str(node.attrs?.nodeId);
       const alt = str(node.attrs?.alt);
+      // An embedded drawing has no raster bytes to give Word: the snapshot is
+      // SVG, and ImageRun below only takes png/jpg/gif/bmp (imageInfo sniffs
+      // exactly those). It degrades to the labelled placeholder that a
+      // failed-to-load image already uses, rather than silently vanishing.
+      // Rasterizing through the browser sidecar would fix it — see the
+      // follow-up in docs/draw-render-fallback-plan.md.
+      const drawId = str(node.attrs?.drawId);
+      if (drawId) {
+        return [
+          new Paragraph({
+            children: [new TextRun({ text: `[drawing: ${alt || 'untitled'}]`, italics: true })],
+          }),
+        ];
+      }
       const loaded = fileId ? ctx.images.get(fileId) : null;
       if (loaded?.bytes) {
         const dims = imageInfo(loaded.bytes);

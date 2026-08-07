@@ -66,12 +66,15 @@ async function renderShare(c: Context): Promise<Response> {
   void recordShareView(share.id); // fire-and-forget view counter
 
   const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
+  const drawUrl = (drawId: string) => `/s/${token}/draw/${drawId}`;
 
   let body: string | null;
   let islands = false;
   switch (view.kind) {
     case 'page':
-      body = renderToStaticMarkup(<PagePresenter view={view} assetUrl={assetUrl} />);
+      body = renderToStaticMarkup(
+        <PagePresenter view={view} assetUrl={assetUrl} drawUrl={drawUrl} />,
+      );
       break;
     case 'note':
       body = renderToStaticMarkup(<NotePresenter view={view} />);

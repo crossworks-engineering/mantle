@@ -4,7 +4,9 @@ import { assetUrl } from '@mantle/web-ui/asset-url';
 /**
  * Block image node. Carries `nodeId` (the backing `file` node) alongside `src`
  * (the `?raw=1` serve route), so a page references an uploaded file by id rather
- * than inlining bytes. Part of the shared schema, so the editor, the read-only
+ * than inlining bytes. `drawId` is the same idea for an embedded DRAWING: the
+ * page renders that draw's committed snapshot, live, so editing the drawing
+ * updates every page that embeds it (markdown form: `![alt](draw:<id>)`). Part of the shared schema, so the editor, the read-only
  * PageView, and the assistant's RichText all render images identically.
  *
  * Markdown `![alt](url)` parses straight into this via `img[src]`, so Saskia can
@@ -27,6 +29,14 @@ export const PageImage = Node.create({
         parseHTML: (el) => el.getAttribute('data-node-id'),
         renderHTML: (attrs) => (attrs.nodeId ? { 'data-node-id': attrs.nodeId } : {}),
       },
+      // Registered so TipTap round-trips it: an unknown attribute is dropped
+      // on load, which would silently turn an embedded drawing into a blank
+      // image the next time the page was saved.
+      drawId: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('data-draw-id'),
+        renderHTML: (attrs) => (attrs.drawId ? { 'data-draw-id': attrs.drawId } : {}),
+      },
     };
   },
 
@@ -43,9 +53,14 @@ export const PageImage = Node.create({
     // (http/https/data) srcs are left untouched. Only the rendered DOM is affected
     // — saves serialize via getJSON, so the stored doc keeps the raw attrs.
     const nodeId = HTMLAttributes['data-node-id'];
+    const drawId = HTMLAttributes['data-draw-id'];
     const rawSrc = typeof HTMLAttributes.src === 'string' ? HTMLAttributes.src : null;
     let src = rawSrc;
-    if (typeof nodeId === 'string' && nodeId) {
+    if (typeof drawId === 'string' && drawId) {
+      // Always an <img>, never inline markup: the snapshot is validated but
+      // image context is what actually makes it inert.
+      src = assetUrl(`/api/draws/${drawId}/svg?raw=1`);
+    } else if (typeof nodeId === 'string' && nodeId) {
       src = assetUrl(`/api/files/files/${nodeId}?raw=1`);
     } else if (rawSrc && rawSrc.startsWith('/')) {
       src = assetUrl(rawSrc);

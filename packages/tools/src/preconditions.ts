@@ -55,6 +55,7 @@ const REF_LOOKUP: Record<MarkdownRef['scheme'], string> = {
   media: 'file_list / search_nodes',
   page: 'page_list / search_nodes',
   mention: 'search_nodes',
+  draw: 'draw_list / search_nodes',
 };
 
 /** The href form as written, for quoting back in the error. */

@@ -67,6 +67,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   void recordShareView(share.id); // fire-and-forget, same as the HTML page
 
   const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
+  const drawUrl = (drawId: string) => `/s/${token}/draw/${drawId}`;
 
   let payload: ShareViewPayload;
   switch (view.kind) {
@@ -76,7 +77,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
         title: view.title,
         icon: view.icon,
         width: view.width,
-        html: renderPageDoc(view.doc, { assetUrl }),
+        html: renderPageDoc(view.doc, { assetUrl, drawUrl }),
         toc: buildPageToc(view.doc),
       };
       break;

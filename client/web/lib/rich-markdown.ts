@@ -48,7 +48,7 @@
  * dropped gracefully rather than shown raw.
  */
 import { Marked, type TokenizerAndRendererExtension } from 'marked';
-import { fileRawSrc, mediaFileId } from '@mantle/content/markdown-refs';
+import { drawNodeId, drawRawSrc, fileRawSrc, mediaFileId } from '@mantle/content/markdown-refs';
 
 const CALLOUT_VARIANTS = ['info', 'success', 'warning', 'danger'] as const;
 type CalloutVariant = (typeof CALLOUT_VARIANTS)[number];
@@ -166,15 +166,22 @@ const mediaImageExtension: TokenizerAndRendererExtension = {
     const m = /^!\[([^\]]*)\]\(\s*([^\s)]+)(?:\s+"([^"]*)")?\s*\)/.exec(src);
     if (!m) return undefined;
     const nodeId = mediaFileId(m[2]);
+    // `draw:` resolves here too. If it fell through to marked it would render
+    // <img src="draw:…">, which is the exact divergence this file exists to
+    // prevent (see the header) — Pages resolving a scheme that chat does not.
+    const drawId = drawNodeId(m[2]);
     // Any other href (http, data, a relative path) is an ordinary markdown
     // image. Hand it back to marked's own tokenizer.
-    if (!nodeId) return undefined;
-    return { type: 'mediaImage', raw: m[0], text: m[1] ?? '', nodeId };
+    if (!nodeId && !drawId) return undefined;
+    return { type: 'mediaImage', raw: m[0], text: m[1] ?? '', nodeId, drawId };
   },
   renderer(token) {
     const nodeId = typeof token.nodeId === 'string' ? token.nodeId : '';
+    const drawId = typeof token.drawId === 'string' ? token.drawId : '';
+    const alt = typeof token.text === 'string' ? token.text : '';
+    if (drawId) return drawImageHtml(drawId, alt);
     if (!nodeId) return '';
-    return mediaImageHtml(nodeId, typeof token.text === 'string' ? token.text : '');
+    return mediaImageHtml(nodeId, alt);
   },
 };
 
@@ -183,6 +190,14 @@ const mediaImageExtension: TokenizerAndRendererExtension = {
 function mediaImageHtml(nodeId: string, alt: string): string {
   return `<img src="${escapeAttr(fileRawSrc(nodeId))}" data-node-id="${escapeAttr(
     nodeId,
+  )}" alt="${escapeAttr(alt)}">`;
+}
+
+/** The `<img>` for an embedded drawing's committed snapshot. Same shape as
+ *  mediaImageHtml — always an image element, never inline SVG markup. */
+function drawImageHtml(drawId: string, alt: string): string {
+  return `<img src="${escapeAttr(drawRawSrc(drawId))}" data-draw-id="${escapeAttr(
+    drawId,
   )}" alt="${escapeAttr(alt)}">`;
 }
 

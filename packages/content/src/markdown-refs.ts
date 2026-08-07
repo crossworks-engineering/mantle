@@ -5,6 +5,7 @@
  *   ![alt](media:<file-id>)      an uploaded image, by node id
  *   [label](media:<file-id>)     a file embed
  *   [Title](page:<page-id>)      a child page
+ *   ![alt](draw:<draw-id>)       an embedded drawing
  *   [Label](mention:<ref>:<id>)  a mention chip
  *
  * Kept here, alone, with **no dependencies**, because two converters read these
@@ -29,6 +30,22 @@ export const MENTION_HREF = /^mention:(?:(node|entity):)?([^\s]+)$/;
 export const MEDIA_HREF = /^media:([^\s]+)$/;
 /** `page:<page-id>`, a child page by node id. */
 export const PAGE_HREF = /^page:([^\s]+)$/;
+/** `draw:<draw-id>`, a drawing embedded as a picture. Deliberately a LIVE
+ *  reference, not a copy: the page renders the drawing's current committed
+ *  snapshot, so editing the drawing updates every page that embeds it. */
+export const DRAW_HREF = /^draw:([^\s]+)$/;
+
+/** The draw node id behind a `draw:` href, or null for any other href. */
+export function drawNodeId(href: string | undefined | null): string | null {
+  return DRAW_HREF.exec(href ?? '')?.[1] ?? null;
+}
+
+/** The owner-gated serve path for a drawing's committed snapshot. The one
+ *  place this route is spelled out for markdown conversion, mirroring
+ *  `fileRawSrc` for uploaded files. */
+export function drawRawSrc(nodeId: string): string {
+  return `/api/draws/${nodeId}/svg?raw=1`;
+}
 
 /** The file node id behind a `media:` href, or null for any other href. */
 export function mediaFileId(href: string | undefined | null): string | null {
@@ -67,9 +84,9 @@ export function inlineMediaImageIds(source: string | undefined | null): Set<stri
  *  the id it points at, and the node type that scheme requires (unset ⇒ any
  *  node). `nodeType` is what makes a wrong-type reference reportable. */
 export type MarkdownRef = {
-  scheme: 'media' | 'page' | 'mention';
+  scheme: 'media' | 'page' | 'mention' | 'draw';
   id: string;
-  nodeType?: 'file' | 'page';
+  nodeType?: 'file' | 'page' | 'draw';
 };
 
 /** Any markdown link or image, capturing the href. */
@@ -97,6 +114,8 @@ export function markdownRefs(source: string | undefined | null): MarkdownRef[] {
     if (media?.[1]) ref = { scheme: 'media', id: media[1], nodeType: 'file' };
     const page = PAGE_HREF.exec(href);
     if (page?.[1]) ref = { scheme: 'page', id: page[1], nodeType: 'page' };
+    const draw = DRAW_HREF.exec(href);
+    if (draw?.[1]) ref = { scheme: 'draw', id: draw[1], nodeType: 'draw' };
     const mention = MENTION_HREF.exec(href);
     // Bare `mention:<id>` defaults to an entity — skip; only `mention:node:` is
     // a node reference.

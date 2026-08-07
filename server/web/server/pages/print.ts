@@ -143,6 +143,9 @@ export function mountPrint(app: Hono): void {
     // under the forwarded owner cookie.
     const html = renderPageDoc(page.doc, {
       assetUrl: (fileId: string) => `/api/files/files/${fileId}?raw=1`,
+      // Same authed path the in-app editor uses; the sidecar carries the
+      // owner render cookie, so an embedded drawing prints too.
+      drawUrl: (drawId: string) => `/api/draws/${drawId}/svg?raw=1`,
     });
     const widthClass = page.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl';
 

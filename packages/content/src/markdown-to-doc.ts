@@ -29,7 +29,7 @@ import { ensureBlockIds } from './block-ids';
 // The reference-link schemes live in their own leaf so the client converter
 // (client/web/lib/rich-markdown.ts) reads the SAME definitions. See
 // markdown-refs.ts for why, and rich-markdown.drift.test.ts for the guard.
-import { MENTION_HREF, MEDIA_HREF, PAGE_HREF } from './markdown-refs';
+import { MENTION_HREF, MEDIA_HREF, PAGE_HREF, DRAW_HREF } from './markdown-refs';
 
 type PMMark = { type: string; attrs?: Record<string, unknown> };
 type PMNode = {
@@ -256,13 +256,19 @@ function paragraphAndImages(tokens: Tok[] | undefined): PMNode[] {
   for (const t of tokens ?? []) {
     if (t.type === 'image') {
       flush();
-      // ![alt](media:<fileId>) → an uploaded (nodeId-backed) image; anything
-      // else is a plain URL image.
+      // ![alt](media:<fileId>) → an uploaded (nodeId-backed) image;
+      // ![alt](draw:<drawId>)  → an embedded drawing, which is still an IMAGE
+      // node (block-level picture with alt text) — only the bytes come from a
+      // drawing's committed snapshot instead of an uploaded file, so the whole
+      // image pipeline carries it. Anything else is a plain URL image.
       const media = MEDIA_HREF.exec(t.href ?? '');
+      const draw = DRAW_HREF.exec(t.href ?? '');
       out.push(
         media
           ? { type: 'image', attrs: { src: null, alt: t.text ?? null, nodeId: media[1]! } }
-          : { type: 'image', attrs: { src: t.href ?? '', alt: t.text ?? null } },
+          : draw
+            ? { type: 'image', attrs: { src: null, alt: t.text ?? null, drawId: draw[1]! } }
+            : { type: 'image', attrs: { src: t.href ?? '', alt: t.text ?? null } },
       );
     } else {
       buf.push(t);

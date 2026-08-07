@@ -101,6 +101,8 @@ const markSig = (marks?: PMMark[]) => JSON.stringify(marks ?? []);
 function imageToMd(node: PMNode): string {
   const alt = s(node.attrs?.alt).replace(/[[\]]/g, '\\$&');
   const nodeId = s(node.attrs?.nodeId);
+  const drawId = s(node.attrs?.drawId);
+  if (drawId) return `![${alt}](draw:${drawId})`;
   return `![${alt}](${nodeId ? `media:${nodeId}` : s(node.attrs?.src)})`;
 }
 

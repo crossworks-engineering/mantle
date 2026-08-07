@@ -38,6 +38,10 @@ type PMNode = {
 export type RenderOptions = {
   /** Build the public URL for an embedded file node id. */
   assetUrl: (fileId: string) => string;
+  /** Build the URL for an embedded DRAWING's committed snapshot. Optional so
+   *  existing callers keep compiling; a page that embeds a drawing without it
+   *  renders the alt text rather than a broken picture. */
+  drawUrl?: (drawId: string) => string;
 };
 
 function esc(s: string): string {
@@ -188,7 +192,16 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       return `<td>${renderBlocks(node.content, opts)}</td>`;
     case 'image': {
       const fileId = str(node.attrs?.nodeId);
-      const src = fileId ? opts.assetUrl(fileId) : str(node.attrs?.src);
+      // An embedded drawing is an image whose bytes come from a draw's
+      // committed snapshot. Always an <img>, never inline markup — the
+      // snapshot is third-party-shaped SVG and image context is what makes it
+      // inert (see docs/draw-audit-findings.md §2).
+      const drawId = str(node.attrs?.drawId);
+      const src = drawId
+        ? (opts.drawUrl?.(drawId) ?? '')
+        : fileId
+          ? opts.assetUrl(fileId)
+          : str(node.attrs?.src);
       const alt = escAttr(str(node.attrs?.alt));
       return src ? `<img src="${escAttr(src)}" alt="${alt}" loading="lazy">` : '';
     }

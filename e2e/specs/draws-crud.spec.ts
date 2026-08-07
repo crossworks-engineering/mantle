@@ -207,6 +207,124 @@ test.describe('snapshot cache', () => {
   });
 });
 
+test.describe('drawing embedded in a page', () => {
+  test.skip(({ topology }) => topology === 'same-origin', 'owner UI lives on the client app');
+
+  test('renders on the shared page, and only for the page that embeds it', async ({
+    ownerApi,
+    visitorPage,
+    serverURL,
+  }) => {
+    const created = await ownerApi.post('/api/draws', {
+      data: { title: `E2E embedded draw ${Date.now()}` },
+    });
+    const { draw } = (await created.json()) as { draw: { id: string } };
+    // A second page that does NOT embed it, to prove the share gate is scoped
+    // to the doc rather than to "any drawing this owner has".
+    // The doc form of `![Sketch](draw:<id>)` — an image node whose bytes come
+    // from a drawing rather than an uploaded file.
+    const host = await ownerApi.post('/api/pages', {
+      data: {
+        title: `E2E host page ${Date.now()}`,
+        doc: {
+          type: 'doc',
+          content: [{ type: 'image', attrs: { src: null, alt: 'Sketch', drawId: draw.id } }],
+        },
+      },
+    });
+    const { page: hostPage } = (await host.json()) as { page: { id: string } };
+    const other = await ownerApi.post('/api/pages', {
+      data: {
+        title: `E2E other page ${Date.now()}`,
+        doc: { type: 'doc', content: [{ type: 'paragraph' }] },
+      },
+    });
+    const { page: otherPage } = (await other.json()) as { page: { id: string } };
+
+    try {
+      await ownerApi.post(`/api/draws/${draw.id}/commit`, {
+        data: { scene: sceneWith('embedded canary'), svg: GOOD_SVG, if_rev: 0 },
+      });
+
+      const share = await ownerApi.post('/api/shares', { data: { nodeId: hostPage.id } });
+      const { share: link } = (await share.json()) as { share: { token: string } };
+
+      await visitorPage.goto(`${serverURL}/s/${link.token}`);
+      // The drawing is an <img> into the share's own draw route — never inline
+      // SVG markup on a page an anonymous visitor is looking at.
+      await expect(
+        visitorPage.locator(`img[src="/s/${link.token}/draw/${draw.id}"]`),
+      ).toBeVisible();
+      expect(await visitorPage.content()).not.toContain('<svg');
+
+      const asset = await visitorPage.request.get(`${serverURL}/s/${link.token}/draw/${draw.id}`);
+      expect(asset.ok()).toBeTruthy();
+      expect(asset.headers()['content-type']).toContain('image/svg+xml');
+
+      // A share of a page that does not embed the drawing must not serve it.
+      const otherShare = await ownerApi.post('/api/shares', { data: { nodeId: otherPage.id } });
+      const { share: otherLink } = (await otherShare.json()) as { share: { token: string } };
+      const leaked = await visitorPage.request.get(
+        `${serverURL}/s/${otherLink.token}/draw/${draw.id}`,
+      );
+      expect(leaked.status()).toBe(404);
+    } finally {
+      await ownerApi.delete(`/api/pages/${hostPage.id}`);
+      await ownerApi.delete(`/api/pages/${otherPage.id}`);
+      await ownerApi.delete(`/api/draws/${draw.id}`);
+    }
+  });
+});
+
+test.describe('scene image integrity', () => {
+  test.skip(({ topology }) => topology === 'same-origin', 'owner UI lives on the client app');
+
+  test('deleting an image a drawing still uses is refused, not silently broken', async ({
+    ownerApi,
+  }) => {
+    // A drawing whose file_refs point at a real file — the shape the editor
+    // produces when you paste an image onto the canvas.
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const upload = await ownerApi.post('/api/files/files', {
+      multipart: { file: { name: 'scene-image.png', mimeType: 'image/png', buffer: png } },
+    });
+    expect(upload.ok()).toBeTruthy();
+    const uploaded = (await upload.json()) as { file?: { id: string }; id?: string };
+    const fileId = uploaded.file?.id ?? uploaded.id ?? '';
+    expect(fileId).toBeTruthy();
+
+    const created = await ownerApi.post('/api/draws', {
+      data: { title: `E2E scene image ${Date.now()}` },
+    });
+    const { draw } = (await created.json()) as { draw: { id: string } };
+
+    try {
+      await ownerApi.post(`/api/draws/${draw.id}/commit`, {
+        data: {
+          scene: sceneWith('has an image'),
+          svg: GOOD_SVG,
+          file_refs: { 'excalidraw-file-1': fileId },
+          if_rev: 0,
+        },
+      });
+
+      // Used to succeed, leaving the canvas quietly missing the image while
+      // the committed snapshot kept showing it (the bytes are inlined there).
+      const del = await ownerApi.delete(`/api/files/files/${fileId}`);
+      expect(del.status()).toBe(409);
+      const body = (await del.json()) as { reason?: string; error?: string };
+      expect(body.reason).toBe('in_drawing');
+      expect(body.error).toContain('drawing');
+    } finally {
+      await ownerApi.delete(`/api/draws/${draw.id}`);
+      await ownerApi.delete(`/api/files/files/${fileId}`);
+    }
+  });
+});
+
 test.describe('shared drawing', () => {
   test('renders for an anonymous visitor as an IMAGE, never inline markup', async ({
     ownerApi,

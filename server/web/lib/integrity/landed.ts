@@ -230,7 +230,9 @@ export async function deleteLandedNode(
           ? `file has ${res.derived?.total ?? 0} derived node(s) — delete it from /files, which confirms the cascade`
           : res.reason === 'attachment'
             ? 'file is an email attachment — delete it from the email'
-            : 'file delete failed';
+            : res.reason === 'in_drawing'
+              ? `image is used in ${res.drawings?.length ?? 0} drawing(s) — remove it from the drawing first`
+              : 'file delete failed';
       return { ok: false, type: row.type, error };
     }
     return { ok: true, type: row.type };
