@@ -10,7 +10,7 @@
  * landed.
  */
 
-import { listDraws, getDraw, getDrawSceneText, nodeUrl } from '@mantle/content';
+import { listDraws, getDrawMeta, getDrawSceneText, nodeUrl } from '@mantle/content';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str } from './coerce';
 import { notFound } from './errors';
@@ -30,7 +30,13 @@ const draw_list: BuiltinToolDef = {
     properties: {
       query: { type: 'string', description: 'substring match over title/body/summary' },
       tag: { type: 'string', description: 'Only return items carrying this tag.' },
-      limit: { type: 'number', minimum: 1, maximum: 200, default: 50, description: 'Max rows to return.' },
+      limit: {
+        type: 'number',
+        minimum: 1,
+        maximum: 200,
+        default: 50,
+        description: 'Max rows to return.',
+      },
     },
   },
   handler: async (input, ctx) => {
@@ -62,7 +68,7 @@ const draw_get: BuiltinToolDef = {
   preconditions: DRAW_ID_PRE,
   name: 'Get a drawing',
   description:
-    "Read one drawing by id: title, tags, summary, and the COMMITTED scene rendered as text (`content` — frame names as headings, shape labels, and labelled arrows as `A -> B: label` relations). You read what the drawing says, not its pixels. Uncommitted canvas edits are invisible here until the owner commits — say so rather than reporting work missing. Drawings cannot be authored or edited by tools; the owner draws on the canvas. Returns a `url` permalink — reference the drawing as a markdown `[title](url)`.",
+    'Read one drawing by id: title, tags, summary, and the COMMITTED scene rendered as text (`content` — frame names as headings, shape labels, and labelled arrows as `A -> B: label` relations). You read what the drawing says, not its pixels. Uncommitted canvas edits are invisible here until the owner commits — say so rather than reporting work missing. Drawings cannot be authored or edited by tools; the owner draws on the canvas. Returns a `url` permalink — reference the drawing as a markdown `[title](url)`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -74,7 +80,10 @@ const draw_get: BuiltinToolDef = {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
-      const draw = await getDraw(ctx.ownerId, id);
+      // getDrawMeta, not getDraw: the latter pulls the whole uncommitted
+      // draft scene into memory just so we can report one boolean, which is
+      // one careless spread away from handing an agent the draft.
+      const draw = await getDrawMeta(ctx.ownerId, id);
       if (!draw) return notFound('drawing', id, 'draw_list / search_nodes');
       const content = (await getDrawSceneText(ctx.ownerId, id)) ?? '';
       return {
@@ -85,7 +94,7 @@ const draw_get: BuiltinToolDef = {
           tags: draw.tags,
           summary: draw.summary,
           url: nodeUrl(draw.id),
-          has_uncommitted_draft: draw.draft !== null,
+          has_uncommitted_draft: draw.hasDraft,
           content,
         },
       };

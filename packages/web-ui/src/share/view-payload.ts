@@ -80,5 +80,7 @@ export type ShareViewPayload =
       dimensionIssues: DimensionIssue[];
     }
   | { kind: 'folder'; title: string; path: string; listing: ShareFolderListing }
-  // The committed SVG snapshot (validated at commit; null = none yet).
-  | { kind: 'draw'; title: string; svg: string | null };
+  // Only WHETHER a committed snapshot exists. The bytes are fetched as an
+  // image from /s/<token>/draw, so they never ride in this payload and never
+  // become markup on the page.
+  | { kind: 'draw'; title: string; hasSvg: boolean };

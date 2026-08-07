@@ -77,18 +77,25 @@ export function mountPrint(app: Hono): void {
   // Draws: the committed SVG snapshot on a white sheet. No scripts at all —
   // the snapshot is already final pixels (fonts inlined by exportToSvg), so
   // there is no data-diagram-print marker and render-pdf doesn't wait.
+  //
+  // The snapshot is embedded as a data: IMAGE, not as inline markup. This page
+  // is loaded by headless Chromium carrying an owner render cookie, so markup
+  // injected here would execute authenticated as the owner — the most valuable
+  // context in the system. As an <img> it is a script-disabled document, and a
+  // `data:` source can't reach the network either.
   app.get('/print/draws/:id', async (c) => {
     const user = await requireOwner(); // throws RedirectError → 307 /login
     const svg = await getDrawSvg(user.id, c.req.param('id'));
     if (!svg) return c.notFound();
+    const src = `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
     return c.html(
       htmlPage(
         {
           title: 'Drawing',
           appearance: await loadAppearanceAttrs(user.id),
-          extraHead: `<style>html,body{overflow:visible!important;height:auto!important;background:#fff}svg{max-width:100%;height:auto}</style>`,
+          extraHead: `<style>html,body{overflow:visible!important;height:auto!important;background:#fff}img{max-width:100%;height:auto}</style>`,
         },
-        `<div style="padding:2rem">${svg}</div>`,
+        `<div style="padding:2rem"><img src="${src}" alt=""></div>`,
       ),
     );
   });

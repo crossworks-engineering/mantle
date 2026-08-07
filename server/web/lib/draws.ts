@@ -2,6 +2,7 @@
 export {
   DRAWS_ROOT_LABEL,
   EMPTY_SCENE,
+  sceneWithinLimits,
   normalizeScene,
   listDraws,
   countDraws,

@@ -27,8 +27,35 @@ import { evaluateDraftRev, foldEmbeddedText } from './pages';
 
 export const DRAWS_ROOT_LABEL = 'draw';
 
-/** An empty Excalidraw scene. */
-export const EMPTY_SCENE: Record<string, unknown> = { elements: [] };
+/** An empty Excalidraw scene. Returned by reference from normalizeScene and
+ *  from the read paths, so it is frozen: it crosses requests, and a caller
+ *  mutating it would corrupt every later reader in the process. */
+export const EMPTY_SCENE: Record<string, unknown> = Object.freeze({
+  elements: Object.freeze([]),
+}) as Record<string, unknown>;
+
+/** Bounds on a client-supplied scene. The autosave PUT fires every ~1.5 s
+ *  while drawing and writes straight into an unbounded jsonb column, and
+ *  neither hono nor @hono/node-server imposes a body limit — the only cap in
+ *  the product is the shipped Caddy's 100 MB, which a differently-proxied
+ *  deployment does not have. These are deliberately far above any real scene
+ *  (a busy architecture diagram is a few hundred elements, tens of KB). */
+export const SCENE_MAX_ELEMENTS = 20_000;
+export const SCENE_MAX_BYTES = 20_000_000;
+
+/** Whether a scene is small enough to accept. Callers reject with 413 rather
+ *  than silently truncating: losing part of someone's drawing without saying
+ *  so is worse than refusing the save. */
+export function sceneWithinLimits(scene: unknown): boolean {
+  if (!scene || typeof scene !== 'object') return true;
+  const elements = (scene as Record<string, unknown>).elements;
+  if (Array.isArray(elements) && elements.length > SCENE_MAX_ELEMENTS) return false;
+  try {
+    return Buffer.byteLength(JSON.stringify(scene) ?? '', 'utf8') <= SCENE_MAX_BYTES;
+  } catch {
+    return false; // circular or otherwise unserializable — it can't be stored.
+  }
+}
 
 export type DrawVisibility = 'private' | 'public';
 
@@ -264,6 +291,46 @@ export async function getDraw(ownerId: string, id: string): Promise<DrawDetail |
   };
 }
 
+/** Metadata only: no scene, and above all no DRAFT. For readers that need to
+ *  describe a drawing without being trusted with its uncommitted contents
+ *  (the agent tools), so "don't leak the draft" is enforced by the query
+ *  rather than by every caller remembering not to pass it on. */
+export async function getDrawMeta(
+  ownerId: string,
+  id: string,
+): Promise<{
+  id: string;
+  title: string;
+  tags: string[];
+  summary: string | null;
+  hasDraft: boolean;
+  hasSvg: boolean;
+} | null> {
+  const [row] = await db
+    .select({
+      id: nodes.id,
+      title: nodes.title,
+      tags: nodes.tags,
+      data: nodes.data,
+      hasDraft: sql<boolean>`${draws.draftScene} IS NOT NULL`,
+      hasSvg: sql<boolean>`${draws.sceneSvg} IS NOT NULL`,
+    })
+    .from(nodes)
+    .leftJoin(draws, eq(draws.nodeId, nodes.id))
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
+    .limit(1);
+  if (!row) return null;
+  const summary = (row.data as Record<string, unknown> | null)?.summary;
+  return {
+    id: row.id,
+    title: row.title,
+    tags: row.tags ?? [],
+    summary: typeof summary === 'string' ? summary : null,
+    hasDraft: row.hasDraft ?? false,
+    hasSvg: row.hasSvg ?? false,
+  };
+}
+
 /** The committed derived plaintext (`scene_text`, including any folded
  *  embedded-image OCR) — what the extractor indexed and what an agent should
  *  read. Null when the draw doesn't exist. Deliberately NOT recomputed from
@@ -438,7 +505,10 @@ export async function discardDrawDraft(ownerId: string, id: string): Promise<boo
  * picked up on the next commit — no reactive re-extract (cost stays
  * bounded, per the no-runaway rule). Mirror of pages' embeddedAssetText.
  */
-async function embeddedAssetText(ownerId: string, fileRefs: Record<string, string>): Promise<string> {
+async function embeddedAssetText(
+  ownerId: string,
+  fileRefs: Record<string, string>,
+): Promise<string> {
   const ids = [...new Set(Object.values(fileRefs))];
   if (ids.length === 0) return '';
   const rows = await db
@@ -486,11 +556,7 @@ export async function commitDraw(
   const refsForText =
     opts.fileRefs ??
     ((
-      await db
-        .select({ fileRefs: draws.fileRefs })
-        .from(draws)
-        .where(eq(draws.nodeId, id))
-        .limit(1)
+      await db.select({ fileRefs: draws.fileRefs }).from(draws).where(eq(draws.nodeId, id)).limit(1)
     )[0]?.fileRefs as Record<string, string> | undefined) ??
     {};
   const baseText = sceneToText(normalized);

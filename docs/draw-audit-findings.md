@@ -212,26 +212,63 @@ success.
    (`builtins-draws.ts:88`). Correct, but `getDrawSceneText` would have sufficed
    and it is one careless spread from leaking a draft over MCP.
 
-## 5. Revised pre-merge checklist
+## 5. Pre-merge checklist
 
-Blocking:
+Everything blocking was fixed on `claude/draw-workspace-audit-7b7a98`, which is
+this branch rebased onto `main` (v0.225.3) plus the remediation commit.
 
-- [ ] **§2**: stop injecting stored SVG inline (prefer `<img>`), or replace the
-      blocklist with an allowlist sanitizer, and add the payloads as tests
-- [ ] **§3.1**: pass `renderEmbeddables: false` to `exportToSvg`
-- [ ] **§3.2**: surface `hasSvg: false` instead of reporting a clean commit
-- [ ] **§4.3**: `pnpm format`, then `pnpm verify` on the workstation (G10)
-- [ ] G1: commit an automated lifecycle test (still the biggest process gap; there
-      is no `draws.test.ts` at all)
-- [ ] Rebase, wrapping the new draw export items in `assetUrl(...)` (§4.5)
+- [x] **§2** Snapshots are no longer injected as markup anywhere. All three
+      surfaces reference them as images: the owner list preview via a blob URL
+      built from the bearer-authenticated fetch, the share page via a new
+      `/s/:token/draw` image route (`image/svg+xml`, `Content-Security-Policy:
+      sandbox`, rate-limited and team-gated exactly like `/s/:token/a/:fileId`),
+      and `/print/draws/:id` via a `data:` image. `ShareViewPayload` now carries
+      `hasSvg: boolean` instead of the markup, so the bytes never ride in a JSON
+      payload either. Verified in a browser: with the payloads loaded as images,
+      no script ran, the CSS did not escape to the host page, and the external
+      beacon was never requested.
+- [x] **§2** `acceptSceneSvg` hardened as a second layer, with all four
+      script-execution payloads now rejected and regression tests added. Two
+      checks were tried and deliberately reverted because they reject 100% of
+      genuine exports: `<style>` (exportToSvg always emits the `style-fonts`
+      block) and external `href` (element links). Both are documented in the
+      file so the next author does not re-add them.
+- [x] **§3.1** `renderEmbeddables: false` on the export call.
+- [x] **§3.2** A commit with no stored snapshot now says so
+      ("Committed, but the preview could not be generated") instead of
+      reporting unqualified success. The SVG cap is also byte-counted in the
+      route, matching `acceptSceneSvg`, so the char/byte gap that silently
+      destroyed a good snapshot is closed.
+- [x] **§4.3** `pnpm verify` is green: typecheck, lint, format and 4209 tests.
+- [x] **G1** `e2e/specs/draws-crud.spec.ts`: create → draft → stale-rev 409 →
+      commit → discard → delete, draft-not-indexed, committed-content-searchable,
+      hostile snapshot dropped and clearing the stored one, oversized scene
+      refused, and the share surface asserted to contain an `<img>` and no inline
+      `<svg>` or `<script>`.
+- [x] **§4.5** Rebased onto main. The `assetUrl` trap did not materialize: main
+      moved the anchor into the shared render loop, so the draw items inherit it.
+- [x] **§4.6** Stale docstring and the misleading "not a page" 404 fixed.
+- [x] **§4.7** `SCENE_MAX_ELEMENTS` / `SCENE_MAX_BYTES` bound both write routes,
+      returning 413 rather than truncating.
+- [x] **§4.8** `EMPTY_SCENE` frozen.
+- [x] **§4.9** `draw_get` reads a new metadata-only `getDrawMeta`, so the draft
+      is never loaded into memory to produce one boolean.
 
-Worth doing, not blocking:
+Still open, and NOT fixed here:
 
-- [ ] A CSP on `/s` and `/print` (fixes page shares too)
-- [ ] A size/element-count bound on the draft PUT (§4.7)
-- [ ] G2 pin-bump corpus test, G3 image-paste browser run, G9 theme and mobile pass
-- [ ] Decide G4 (orphaned draft images) and G8 (share-before-commit UX)
-- [ ] Fix the stale docstring and the misleading draw 404 (§4.6)
+- [ ] **G10 on the workstation.** `pnpm verify` is green on the Mac, but the
+      house rule is the Linux box, and the e2e suite cannot run on macOS at all
+      (`run-local.sh` needs `setsid`). **The new e2e spec typechecks but has
+      never been executed** — run `pnpm e2e` on the workstation before merging.
+      Migrations were replayed cleanly (all 146) on the fresh throwaway e2e
+      database in passing.
+- [ ] G2 pin-bump corpus test, G3 image-paste browser run, G9 theme and mobile pass.
+- [ ] Decide G4 (orphaned draft images) and G8 (share-before-commit UX).
+- [ ] A CSP on the rest of `/s` (page shares are still unprotected; out of scope
+      for a draw branch, but the gap is real and now the only inline-injection
+      surface left).
 
-Not blocking, informational: §4.1 (manifest drift on existing brains), §4.2 (one
-extraction per created drawing), §4.4 (enum is permanent), §4.8, §4.9.
+Informational, no action taken: §4.1 (existing brains report manifest drift
+until `applyManifest` re-runs), §4.2 (the `nodes` INSERT trigger means one
+extraction per drawing CREATED, not only per commit), §4.4 (the enum value is
+permanent).

@@ -1,10 +1,14 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { saveDrawDraft } from '@/lib/draws';
+import { saveDrawDraft, sceneWithinLimits } from '@/lib/draws';
 
 const Body = z.object({
-  scene: z.record(z.string(), z.unknown()),
+  // Bounded: this is the hot path (every ~1.5 s while drawing) into an
+  // unbounded jsonb column, and no framework body limit stands in front of it.
+  scene: z
+    .record(z.string(), z.unknown())
+    .refine(sceneWithinLimits, { message: 'scene too large' }),
   /** BinaryFile id → file node id. Present when the editor uploaded new
    *  scene images through the files pipeline; replaces the stored map. */
   file_refs: z.record(z.string(), z.string().uuid()).optional(),
@@ -24,7 +28,11 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json({ error: 'invalid input' }, { status: 400 });
+    const tooLarge = parsed.error.issues.some((i) => i.message === 'scene too large');
+    return NextResponse.json(
+      { error: tooLarge ? 'scene too large' : 'invalid input' },
+      { status: tooLarge ? 413 : 400 },
+    );
   }
   const result = await saveDrawDraft(user.id, id, parsed.data.scene, {
     ...(parsed.data.if_rev !== undefined ? { baseRev: parsed.data.if_rev } : {}),

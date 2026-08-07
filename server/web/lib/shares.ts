@@ -101,10 +101,11 @@ export type ShareView =
       dimensionIssues: DimensionIssue[];
     }
   | { kind: 'folder'; folderId: string; title: string; path: string }
-  // The committed SVG snapshot (validated at commit) — null when the last
-  // commit carried none; the presenter shows a placeholder rather than 404ing
-  // a link that was legitimately minted.
-  | { kind: 'draw'; title: string; svg: string | null };
+  // Only WHETHER a committed snapshot exists (false when the last commit
+  // carried none; the presenter shows a placeholder rather than 404ing a link
+  // that was legitimately minted). The bytes are served separately, as an
+  // image, by /s/<token>/draw.
+  | { kind: 'draw'; title: string; hasSvg: boolean };
 
 async function loadNode(ownerId: string, nodeId: string) {
   const [row] = await db
@@ -246,7 +247,7 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       // as page drafts / table draft files).
       const n = await loadNode(ownerId, nodeId);
       if (!n) return null;
-      return { kind: 'draw', title: n.title, svg: await getDrawSvg(ownerId, nodeId) };
+      return { kind: 'draw', title: n.title, hasSvg: (await getDrawSvg(ownerId, nodeId)) !== null };
     }
     case 'branch': {
       const folder = await folderById({ ownerId, folderId: nodeId });

@@ -117,3 +117,4 @@ server/web/public/share-runtime/
 # Fleet host list for `pnpm status` — hostnames are operational detail,
 # never committed to this public repo. See .mantle-fleet.example.json.
 .mantle-fleet.json
+.impeccable/

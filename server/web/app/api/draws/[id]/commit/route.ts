@@ -1,14 +1,24 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { commitDraw, sceneToText, SCENE_SVG_MAX_BYTES } from '@/lib/draws';
+import { commitDraw, sceneToText, sceneWithinLimits, SCENE_SVG_MAX_BYTES } from '@/lib/draws';
 import { recordIngest } from '@mantle/tracing';
 
 const Body = z.object({
-  scene: z.record(z.string(), z.unknown()),
+  scene: z
+    .record(z.string(), z.unknown())
+    .refine(sceneWithinLimits, { message: 'scene too large' }),
   /** exportToSvg output captured by the committing editor. Validated
-   *  server-side (acceptSceneSvg); dropped, never fatal, on any doubt. */
-  svg: z.string().max(SCENE_SVG_MAX_BYTES).optional(),
+   *  server-side (acceptSceneSvg); dropped, never fatal, on any doubt.
+   *  Bounded in BYTES to match acceptSceneSvg: zod's .max() counts UTF-16 code
+   *  units, so a multibyte payload up to 3x the cap used to pass here, get
+   *  dropped downstream, and silently clear a good stored snapshot. */
+  svg: z
+    .string()
+    .refine((s) => Buffer.byteLength(s, 'utf8') <= SCENE_SVG_MAX_BYTES, {
+      message: 'svg too large',
+    })
+    .optional(),
   /** BinaryFile id → file node id (scene images in the files pipeline). */
   file_refs: z.record(z.string(), z.string().uuid()).optional(),
   if_rev: z.number().int().nonnegative().optional(),
@@ -26,7 +36,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json({ error: 'invalid input' }, { status: 400 });
+    const tooLarge = parsed.error.issues.some((i) => i.message.endsWith('too large'));
+    return NextResponse.json(
+      { error: tooLarge ? 'payload too large' : 'invalid input' },
+      { status: tooLarge ? 413 : 400 },
+    );
   }
   const result = await commitDraw(user.id, id, parsed.data.scene, {
     ...(parsed.data.if_rev !== undefined ? { baseRev: parsed.data.if_rev } : {}),

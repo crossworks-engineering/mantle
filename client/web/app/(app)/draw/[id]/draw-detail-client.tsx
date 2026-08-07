@@ -305,13 +305,20 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
               : {}),
           },
           files: snapshot.files,
+          // MANDATORY, not cosmetic: left unset, upstream renders an
+          // embeddable element (paste a YouTube/Figma link and you have one)
+          // into a <foreignObject>, which acceptSceneSvg rejects wholesale —
+          // so one embed would silently blank the preview, the share link and
+          // both exports. `false` makes upstream emit a plain sanitized <a>.
+          renderEmbeddables: false,
         });
         svg = svgEl.outerHTML;
       } catch {
         svg = undefined;
       }
+      let hasSvg = true;
       try {
-        const { draw } = await apiSend<{ draw: { draftRev?: number } }>(
+        const { draw } = await apiSend<{ draw: { draftRev?: number; hasSvg?: boolean } }>(
           `/api/draws/${initial.id}/commit`,
           'POST',
           {
@@ -325,6 +332,7 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
           },
         );
         if (typeof draw?.draftRev === 'number') draftRevRef.current = draw.draftRev;
+        if (draw?.hasSvg === false) hasSvg = false;
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) return;
         if (e instanceof ApiError && e.status === 409) {
@@ -339,7 +347,14 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
       savedHashRef.current = hash;
       setDirty(false);
       void queryClient.invalidateQueries({ queryKey: ['draws'], exact: false });
-      toast.success('Committed');
+      // The scene is published either way, but without a snapshot the preview,
+      // any live share link and both exports go blank — so say so instead of
+      // reporting a clean commit the surfaces won't back up.
+      if (hasSvg) {
+        toast.success('Committed');
+      } else {
+        toast.error('Committed, but the preview could not be generated');
+      }
     } finally {
       committingRef.current = false;
       setCommitting(false);

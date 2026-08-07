@@ -111,8 +111,9 @@ async function renderShare(c: Context): Promise<Response> {
       islands = true;
       break;
     case 'draw':
-      // Fully static — the committed snapshot renders with no JS at all.
-      body = renderToStaticMarkup(<DrawPresenter view={view} />);
+      // Fully static — the snapshot is an <img> pointing at /s/:token/draw, so
+      // no JS and no third-party markup ever lands in this document.
+      body = renderToStaticMarkup(<DrawPresenter view={view} src={`/s/${token}/draw`} />);
       break;
     case 'folder': {
       const listing = await loadFolderListing(share.ownerId, view, p);

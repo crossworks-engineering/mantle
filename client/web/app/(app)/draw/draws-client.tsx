@@ -158,17 +158,26 @@ export function DrawsClient() {
           {draws.length === 0 && (query || tag) ? (
             <div className="space-y-3 px-1 py-8 text-center">
               <p className="text-sm text-muted-foreground">Nothing matches these filters.</p>
-              <Button variant="outline" size="sm" onClick={() => go({ q: null, tag: null, page: null })}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => go({ q: null, tag: null, page: null })}
+              >
                 Clear filters
               </Button>
             </div>
           ) : draws.length === 0 ? (
             <div className="space-y-3 px-1 py-8 text-center">
               <p className="text-sm text-muted-foreground">
-                No drawings yet. Sketch an idea, an architecture, a plan. Commits land in the
-                brain like every other content type.
+                No drawings yet. Sketch an idea, an architecture, a plan. Commits land in the brain
+                like every other content type.
               </p>
-              <Button variant="outline" size="sm" onClick={() => void createDraw()} disabled={creating}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void createDraw()}
+                disabled={creating}
+              >
                 {creating ? <Spinner /> : <Plus />}
                 New drawing
               </Button>
@@ -237,7 +246,11 @@ export function DrawsClient() {
       {/* ── Right: preview pane ────────────────────────────────────── */}
       <div className="md:h-full md:min-h-0 md:overflow-y-auto">
         {active ? (
-          <DrawPreview key={active.id} draw={active} onOpen={() => router.push(`/draw/${active.id}`)} />
+          <DrawPreview
+            key={active.id}
+            draw={active}
+            onOpen={() => router.push(`/draw/${active.id}`)}
+          />
         ) : (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm text-muted-foreground">Select a drawing.</p>
@@ -249,10 +262,16 @@ export function DrawsClient() {
 }
 
 /**
- * Read-only preview: the committed SVG snapshot (captured at commit,
- * validated server-side — nothing scriptable is stored) plus metadata and
- * the Open button. No canvas is mounted here, so browsing the list never
- * pays the editor chunk.
+ * Read-only preview: the committed SVG snapshot plus metadata and the Open
+ * button. No canvas is mounted here, so browsing the list never pays the
+ * editor chunk.
+ *
+ * The snapshot renders as an IMAGE, not as injected markup. This screen is the
+ * owner's authenticated session, which makes it the worst place to inline
+ * third-party-shaped SVG: referenced as an image, the browser treats the file
+ * as a separate, script-disabled document, so nothing inside it can touch this
+ * page. The bytes still arrive over an authenticated fetch (an image element's
+ * src can't carry a bearer in the detached deployment), then become a blob URL.
  */
 function DrawPreview({ draw, onOpen }: { draw: DrawRow; onOpen: () => void }) {
   const svgQuery = useQuery({
@@ -260,6 +279,18 @@ function DrawPreview({ draw, onOpen }: { draw: DrawRow; onOpen: () => void }) {
     queryFn: () => apiFetch<{ svg: string | null }>(`/api/draws/${draw.id}/svg`).then((r) => r.svg),
     enabled: draw.hasSvg,
   });
+
+  const svg = svgQuery.data;
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!svg) {
+      setSrc(null);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    setSrc(url);
+    return () => URL.revokeObjectURL(url);
+  }, [svg]);
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-4 p-6">
@@ -280,14 +311,12 @@ function DrawPreview({ draw, onOpen }: { draw: DrawRow; onOpen: () => void }) {
           <div className="flex h-64 items-center justify-center rounded-lg border border-border">
             <Spinner />
           </div>
-        ) : svgQuery.data ? (
-          <div
-            className="overflow-hidden rounded-lg border border-border bg-white p-2 [&_svg]:h-auto [&_svg]:max-h-[70vh] [&_svg]:w-full"
-            // Stored SVG passed acceptSceneSvg at commit (no scripts,
-            // handlers, foreignObject or js: URLs) — inline render is the
-            // design; see docs/draw-plan.md §5.
-            dangerouslySetInnerHTML={{ __html: svgQuery.data }}
-          />
+        ) : src ? (
+          <div className="overflow-hidden rounded-lg border border-border bg-white p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element -- a blob:
+                URL of an owner-generated SVG; next/image can't take it. */}
+            <img src={src} alt={draw.title} className="h-auto max-h-[70vh] w-full" />
+          </div>
         ) : (
           <PreviewEmpty label="No preview available." onOpen={onOpen} />
         )
