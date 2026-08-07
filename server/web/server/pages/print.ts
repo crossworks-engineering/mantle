@@ -1,5 +1,5 @@
 import type { Hono } from 'hono';
-import { getPage } from '@mantle/content';
+import { getPage, getDrawSvg } from '@mantle/content';
 import { requireOwner } from '@/lib/auth';
 import { renderPageDoc } from '@/lib/render-page-doc';
 import { htmlPage } from './template';
@@ -74,6 +74,25 @@ const DIAGRAM_PRINT_SCRIPT = `
  * and print-to-PDFs it for the `?format=pdf` download. Not linked from the UI.
  */
 export function mountPrint(app: Hono): void {
+  // Draws: the committed SVG snapshot on a white sheet. No scripts at all —
+  // the snapshot is already final pixels (fonts inlined by exportToSvg), so
+  // there is no data-diagram-print marker and render-pdf doesn't wait.
+  app.get('/print/draws/:id', async (c) => {
+    const user = await requireOwner(); // throws RedirectError → 307 /login
+    const svg = await getDrawSvg(user.id, c.req.param('id'));
+    if (!svg) return c.notFound();
+    return c.html(
+      htmlPage(
+        {
+          title: 'Drawing',
+          appearance: await loadAppearanceAttrs(user.id),
+          extraHead: `<style>html,body{overflow:visible!important;height:auto!important;background:#fff}svg{max-width:100%;height:auto}</style>`,
+        },
+        `<div style="padding:2rem">${svg}</div>`,
+      ),
+    );
+  });
+
   app.get('/print/pages/:id', async (c) => {
     const user = await requireOwner(); // throws RedirectError → 307 /login
     const page = await getPage(user.id, c.req.param('id'));

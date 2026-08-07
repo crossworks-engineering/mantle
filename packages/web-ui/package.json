@@ -57,6 +57,7 @@
     "./runtime-env": "./src/runtime-env.ts",
     "./search-query": "./src/search-query.ts",
     "./share/app-presenter": "./src/share/app-presenter.tsx",
+    "./share/draw-presenter": "./src/share/draw-presenter.tsx",
     "./share/event-presenter": "./src/share/event-presenter.tsx",
     "./share/file-presenter": "./src/share/file-presenter.tsx",
     "./share/formula-calculator": "./src/share/formula-calculator.tsx",

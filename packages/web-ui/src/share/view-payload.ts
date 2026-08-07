@@ -79,4 +79,6 @@ export type ShareViewPayload =
       coverageGaps: CoverageGap[];
       dimensionIssues: DimensionIssue[];
     }
-  | { kind: 'folder'; title: string; path: string; listing: ShareFolderListing };
+  | { kind: 'folder'; title: string; path: string; listing: ShareFolderListing }
+  // The committed SVG snapshot (validated at commit; null = none yet).
+  | { kind: 'draw'; title: string; svg: string | null };

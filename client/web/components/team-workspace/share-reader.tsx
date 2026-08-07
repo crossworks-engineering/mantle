@@ -28,6 +28,7 @@ import { formatBytes } from '@mantle/web-ui/lib/format-bytes';
 import { cn } from '@mantle/web-ui/lib/utils';
 import type { ShareViewPayload, ShareFolderListing } from '@mantle/web-ui/share/view-payload';
 import { NotePresenter } from '@mantle/web-ui/share/note-presenter';
+import { DrawPresenter } from '@mantle/web-ui/share/draw-presenter';
 import { TaskPresenter } from '@mantle/web-ui/share/task-presenter';
 import { EventPresenter } from '@mantle/web-ui/share/event-presenter';
 import { FilePresenter } from '@mantle/web-ui/share/file-presenter';
@@ -128,6 +129,7 @@ export function ShareReader({ token, title }: { token: string; title: string }) 
     <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin bg-background">
       {view.kind === 'page' && <PageReader view={view} />}
       {view.kind === 'note' && <NotePresenter view={view} />}
+      {view.kind === 'draw' && <DrawPresenter view={view} />}
       {view.kind === 'task' && <TaskPresenter view={view} />}
       {view.kind === 'event' && <EventPresenter view={view} />}
       {view.kind === 'file' && <FilePresenter view={view} assetUrl={assetUrl(token)} />}

@@ -26,6 +26,9 @@ export const SHAREABLE_TYPES = [
   // calculator — the point of sending someone a link is that they can put their
   // own numbers in and see the derivation, not just read the equations.
   'formula',
+  // A draw shares its COMMITTED SVG snapshot (validated by acceptSceneSvg at
+  // commit) — never the scene JSON, never the draft. Static pixels, no JS.
+  'draw',
   'branch',
 ] as const;
 export type ShareableType = (typeof SHAREABLE_TYPES)[number];

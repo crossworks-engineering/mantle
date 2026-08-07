@@ -15,6 +15,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { getPage } from './pages';
+import { getDrawSvg } from './draws';
 import { getNote } from './notes';
 import { getTable } from './tables';
 import { markdownToDoc } from './markdown-to-doc';
@@ -23,21 +24,22 @@ import { renderDocx, type LoadedImage } from './render-docx';
 import { renderXlsx } from './render-xlsx';
 import { tableToText, tableToCsv } from './table-to-text';
 
-export type ExportFormat = 'docx' | 'xlsx' | 'md' | 'csv';
-export type ExportKind = 'page' | 'note' | 'table';
+export type ExportFormat = 'docx' | 'xlsx' | 'md' | 'csv' | 'svg';
+export type ExportKind = 'page' | 'note' | 'table' | 'draw';
 
 /** Formats a node can be asked to download as (the caller picks). PDF is NOT
  *  here — it's rendered in apps/web via headless Chromium against the live HTML
  *  surface, not through this pure (browser-free) package. Each node kind serves
  *  the subset it supports (page/note → docx|md; table → xlsx|md|csv) and falls
  *  back to its default for the rest. */
-export type DocExportFormat = 'docx' | 'md' | 'csv' | 'xlsx';
+export type DocExportFormat = 'docx' | 'md' | 'csv' | 'xlsx' | 'svg';
 
 export const EXPORT_MIME: Record<ExportFormat, string> = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   md: 'text/markdown; charset=utf-8',
   csv: 'text/csv; charset=utf-8',
+  svg: 'image/svg+xml; charset=utf-8',
 };
 
 export type ExportResult = {
@@ -62,6 +64,7 @@ export const EXPORTABLE_TYPES: Record<ExportKind, ExportFormat> = {
   page: 'docx',
   note: 'docx',
   table: 'xlsx',
+  draw: 'svg',
 };
 
 /** Prepend the node's title as an H1 so a Markdown download opens as a titled
@@ -143,6 +146,15 @@ export async function resolveExport(
     }
     const bytes = await renderXlsx(table.data, { title: table.title });
     return result(bytes, 'xlsx', 'table', table.title);
+  }
+
+  if (node.type === 'draw') {
+    // The committed snapshot IS the export — already validated, fonts
+    // inlined, renders anywhere. Null (nothing committed yet, or the last
+    // commit carried no valid snapshot) means there is nothing to download.
+    const svg = await getDrawSvg(ownerId, nodeId);
+    if (!svg) return null;
+    return result(Buffer.from(svg, 'utf8'), 'svg', 'draw', node.title);
   }
 
   return null;

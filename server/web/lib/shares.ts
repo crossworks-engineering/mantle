@@ -10,6 +10,7 @@ import { db, nodes, tables, type Share } from '@mantle/db';
 import {
   getPage,
   getApp,
+  getDrawSvg,
   referencedFileIds,
   ensureTableDoc,
   emptyTableDoc,
@@ -99,7 +100,11 @@ export type ShareView =
       coverageGaps: CoverageGap[];
       dimensionIssues: DimensionIssue[];
     }
-  | { kind: 'folder'; folderId: string; title: string; path: string };
+  | { kind: 'folder'; folderId: string; title: string; path: string }
+  // The committed SVG snapshot (validated at commit) — null when the last
+  // commit carried none; the presenter shows a placeholder rather than 404ing
+  // a link that was legitimately minted.
+  | { kind: 'draw'; title: string; svg: string | null };
 
 async function loadNode(ownerId: string, nodeId: string) {
   const [row] = await db
@@ -234,6 +239,14 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
         coverageGaps: checkLookupCoverage(spec),
         dimensionIssues: checkDimensions(spec),
       };
+    }
+    case 'draw': {
+      // The share surface renders the COMMITTED snapshot only — the scene
+      // JSON and any working draft never cross the share boundary (same rule
+      // as page drafts / table draft files).
+      const n = await loadNode(ownerId, nodeId);
+      if (!n) return null;
+      return { kind: 'draw', title: n.title, svg: await getDrawSvg(ownerId, nodeId) };
     }
     case 'branch': {
       const folder = await folderById({ ownerId, folderId: nodeId });

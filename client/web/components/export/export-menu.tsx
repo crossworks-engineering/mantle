@@ -3,6 +3,7 @@
 import {
   ChevronDown,
   Download,
+  FileImage,
   FileText,
   FileType,
   FileType2,
@@ -27,7 +28,7 @@ type ExportItem = { format: string; label: string; Icon: LucideIcon };
 // supports (PDF via headless Chromium). Hrefs go through assetUrl(): an anchor
 // can't carry a bearer, so a detached client targets the server origin with
 // the short-lived `?at=` asset token (same-origin passes through unchanged).
-const ITEMS: Record<'page' | 'table', ExportItem[]> = {
+const ITEMS: Record<'page' | 'table' | 'draw', ExportItem[]> = {
   page: [
     { format: 'md', label: 'Markdown', Icon: FileText },
     { format: 'docx', label: 'Word', Icon: FileType },
@@ -38,14 +39,28 @@ const ITEMS: Record<'page' | 'table', ExportItem[]> = {
     { format: 'md', label: 'Markdown table', Icon: Table2 },
     { format: 'csv', label: 'CSV', Icon: FileText },
   ],
+  // Both serve the COMMITTED snapshot. Exporting the live working scene as
+  // PNG/SVG is the canvas's own job (hamburger menu → Export image), which
+  // already does it client-side.
+  draw: [
+    { format: 'svg', label: 'SVG', Icon: FileImage },
+    { format: 'pdf', label: 'PDF', Icon: FileType2 },
+  ],
 };
 
 /**
  * Download a content node in a chosen format. `kind` selects the menu: `page`
- * (Markdown / Word / PDF) or `table` (Excel / Markdown table / CSV). Replaces
- * the single-format ExportButton on a detail header.
+ * (Markdown / Word / PDF), `table` (Excel / Markdown table / CSV) or `draw`
+ * (SVG / PDF of the committed snapshot). Replaces the single-format
+ * ExportButton on a detail header.
  */
-export function ExportMenu({ nodeId, kind = 'page' }: { nodeId: string; kind?: 'page' | 'table' }) {
+export function ExportMenu({
+  nodeId,
+  kind = 'page',
+}: {
+  nodeId: string;
+  kind?: 'page' | 'table' | 'draw';
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

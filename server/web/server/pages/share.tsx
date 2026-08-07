@@ -11,6 +11,7 @@ import { TaskPresenter } from '@mantle/web-ui/share/task-presenter';
 import { EventPresenter } from '@mantle/web-ui/share/event-presenter';
 import { FolderPresenter, loadFolderListing } from '@/components/share/folder-presenter';
 import { FormulaPresenter } from '@mantle/web-ui/share/formula-presenter';
+import { DrawPresenter } from '@mantle/web-ui/share/draw-presenter';
 import { htmlPage, islandDiv, shareShell } from './template';
 
 /**
@@ -108,6 +109,10 @@ async function renderShare(c: Context): Promise<Response> {
         />,
       );
       islands = true;
+      break;
+    case 'draw':
+      // Fully static — the committed snapshot renders with no JS at all.
+      body = renderToStaticMarkup(<DrawPresenter view={view} />);
       break;
     case 'folder': {
       const listing = await loadFolderListing(share.ownerId, view, p);

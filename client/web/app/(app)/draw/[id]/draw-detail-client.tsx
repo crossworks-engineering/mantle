@@ -14,6 +14,8 @@ import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/ty
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { TagInput } from '@/components/tag-input';
+import { ShareControl } from '@/components/share-control';
+import { ExportMenu } from '@/components/export/export-menu';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { ExcalidrawCanvas, type SceneChange } from '@/components/draw/excalidraw-canvas';
@@ -487,6 +489,10 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
           <Button size="sm" onClick={() => void commit()} disabled={!dirty || committing}>
             <GitCommitHorizontal /> Commit
           </Button>
+          {/* Share publishes first (beforeEnable=commit, the pages pattern) so
+              the minted link never points at a stale or absent snapshot. */}
+          <ShareControl nodeId={initial.id} beforeEnable={commit} />
+          <ExportMenu nodeId={initial.id} kind="draw" />
           {dirty && (
             <Button
               size="sm"

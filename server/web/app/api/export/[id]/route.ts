@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { buildInternalRenderCookie, getOwnerForAsset } from '@/lib/auth';
-import { resolveExport, getPage } from '@mantle/content';
+import { resolveExport, getPage, getDraw, getDrawSvg } from '@mantle/content';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
 import { renderUrlToPdf, printOrigin, PdfRendererUnavailableError } from '@/lib/render-pdf';
@@ -9,15 +9,17 @@ import { slugify } from '@mantle/web-ui/slugify';
 
 const IdParams = z.object({ id: z.string().uuid() });
 // Absent ⇒ docx (the original type-driven behavior; existing links keep working).
-const Format = z.enum(['md', 'docx', 'pdf', 'csv', 'xlsx']);
+const Format = z.enum(['md', 'docx', 'pdf', 'csv', 'xlsx', 'svg']);
 
 /**
  * Download a content node. Format is chosen by `?format=`:
  *   - `md`   → Markdown (page/note markdown, or a table's GFM pipe-table)
  *   - `docx` → Word (page/note), default
- *   - `pdf`  → PDF (page only) — headless Chromium over /print
+ *   - `pdf`  → PDF (page, or a draw's committed snapshot) — headless Chromium
+ *              over /print
  *   - `csv`  → CSV (table)
  *   - `xlsx` → Excel (table, the table default)
+ *   - `svg`  → SVG (a draw's committed snapshot, the draw default)
  * Each kind serves the formats it supports and falls back to its default for
  * the rest (a table asked for docx → xlsx; a page asked for csv → docx). Bytes
  * are generated on the fly — nothing is persisted (the agent `export_node` tool
@@ -41,11 +43,38 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   }
 
   // PDF: rendered in-process by headless Chromium against the live, owner-authed
-  // /print surface — highest fidelity to the on-screen page. Pages only.
+  // /print surface — highest fidelity to the on-screen page. Pages and draws.
   if (fmt.data === 'pdf') {
+    // Draws print their committed SVG snapshot via /print/draws — same
+    // sidecar, no Excalidraw involvement (the snapshot is already pixels-
+    // ready). Requires a committed snapshot, like every non-editor surface.
+    const drawSvg = await getDrawSvg(user.id, id);
+    if (drawSvg !== null) {
+      const cookie = buildInternalRenderCookie(user.id);
+      try {
+        const bytes = await renderUrlToPdf(`${printOrigin()}/print/draws/${id}`, cookie);
+        const title = (await getDraw(user.id, id))?.title ?? 'drawing';
+        return download(
+          bytes,
+          'application/pdf',
+          `${slugify(title, { maxLength: 80, fallback: 'drawing' })}.pdf`,
+        );
+      } catch (e) {
+        if (e instanceof PdfRendererUnavailableError) {
+          console.error('[export] pdf renderer unavailable:', e.message);
+          return NextResponse.json({ error: e.message }, { status: 503 });
+        }
+        throw e;
+      }
+    }
     const page = await getPage(user.id, id);
     if (!page) {
-      return NextResponse.json({ error: 'not found or not a page' }, { status: 404 });
+      // Reached by a draw with no committed snapshot too, so the message names
+      // both: "not a page" alone sent people looking in the wrong place.
+      return NextResponse.json(
+        { error: 'not found: not a page, or a drawing with nothing committed yet' },
+        { status: 404 },
+      );
     }
     // The browser SIDECAR (not this process) fetches the print route, so the
     // URL must be reachable from that container: http://web:3000 in prod
