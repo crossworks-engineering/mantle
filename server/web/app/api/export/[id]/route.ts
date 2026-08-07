@@ -1,7 +1,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { buildInternalRenderCookie, getOwnerForAsset } from '@/lib/auth';
-import { resolveExport, getPage, getDraw, getDrawSvg } from '@mantle/content';
+import { resolveExport, getPage, getDraw } from '@mantle/content';
+import { getDrawSvgOrRender } from '@/lib/draw-snapshot';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
 import { renderUrlToPdf, printOrigin, PdfRendererUnavailableError } from '@/lib/render-pdf';
@@ -46,9 +47,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // /print surface — highest fidelity to the on-screen page. Pages and draws.
   if (fmt.data === 'pdf') {
     // Draws print their committed SVG snapshot via /print/draws — same
-    // sidecar, no Excalidraw involvement (the snapshot is already pixels-
-    // ready). Requires a committed snapshot, like every non-editor surface.
-    const drawSvg = await getDrawSvg(user.id, id);
+    // sidecar, no Excalidraw involvement there (the snapshot is already
+    // pixels-ready). Filling first means an export works even for a drawing no
+    // browser ever committed. Non-draws return null immediately.
+    const drawSvg = await getDrawSvgOrRender(user.id, id);
     if (drawSvg !== null) {
       const cookie = buildInternalRenderCookie(user.id);
       try {
@@ -101,6 +103,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       throw e;
     }
   }
+
+  // A draw's SVG comes straight out of the snapshot cache, so fill it first
+  // for the same reason as the PDF path above. resolveExport lives in the
+  // browser-free content package and can only read what is already stored.
+  if (fmt.data === 'svg') await getDrawSvgOrRender(user.id, id);
 
   // md / docx / csv / xlsx go through the shared, browser-free resolver, which
   // picks what each node kind supports (pdf already handled above).

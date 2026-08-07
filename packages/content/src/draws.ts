@@ -17,10 +17,10 @@
  * pg_notify('node_ingested'); `readNodeBodyRaw` reads `scene_text` from the
  * sidecar.
  */
-import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { db, nodes, draws, notifyNodeIngested, type Node } from '@mantle/db';
 import { sceneToText } from './scene-to-text';
-import { acceptSceneSvg } from './scene-svg';
+import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
 // The etag decision and the embedded-asset text bounds are shared with
 // pages — identical semantics, one truth.
 import { evaluateDraftRev, foldEmbeddedText } from './pages';
@@ -357,6 +357,70 @@ export async function getDrawSvg(ownerId: string, id: string): Promise<string | 
   return row?.svg ?? null;
 }
 
+/** The stored snapshot AND the engine that produced it, for callers that can
+ *  re-render a stale or missing one. `null` = no such draw for this owner
+ *  (distinct from a draw whose snapshot is simply empty). */
+export async function getDrawSnapshot(
+  ownerId: string,
+  id: string,
+): Promise<{ svg: string | null; engine: string | null } | null> {
+  const [row] = await db
+    .select({ svg: draws.sceneSvg, engine: draws.svgEngine })
+    .from(draws)
+    .innerJoin(nodes, eq(nodes.id, draws.nodeId))
+    .where(and(eq(draws.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
+    .limit(1);
+  if (!row) return null;
+  return { svg: row.svg ?? null, engine: row.engine ?? null };
+}
+
+/**
+ * Write a re-rendered snapshot into the cache. Deliberately NOT a content
+ * mutation: no `version` bump, no `draft_rev` change, and above all no
+ * `notifyNodeIngested`. Filling a render cache must never re-run the
+ * extractor, or a corpus re-render would fire an LLM pass per drawing — the
+ * exact runaway shape the house cost rules forbid.
+ *
+ * Validated like any other snapshot even though it came from our own sidecar.
+ * Returns false when the draw is gone or the SVG failed validation.
+ */
+export async function setDrawSvg(
+  ownerId: string,
+  id: string,
+  svg: string,
+  engine: string,
+): Promise<boolean> {
+  const accepted = acceptSceneSvg(svg);
+  if (!accepted) return false;
+  const [node] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
+    .limit(1);
+  if (!node) return false;
+  await db.update(draws).set({ sceneSvg: accepted, svgEngine: engine }).where(eq(draws.nodeId, id));
+  return true;
+}
+
+/** Draws whose snapshot is missing or was drawn by a different engine — the
+ *  work list for `draws:re-render`. Ordered oldest-updated first so a bounded
+ *  run makes predictable progress. */
+export async function listStaleDrawSnapshots(
+  ownerId: string,
+  opts: { engine: string; includeRendered?: boolean; limit?: number } = { engine: '' },
+): Promise<{ id: string; title: string }[]> {
+  const stale = opts.includeRendered
+    ? sql`true`
+    : or(isNull(draws.sceneSvg), isNull(draws.svgEngine), ne(draws.svgEngine, opts.engine));
+  return db
+    .select({ id: nodes.id, title: nodes.title })
+    .from(draws)
+    .innerJoin(nodes, eq(nodes.id, draws.nodeId))
+    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw'), stale))
+    .orderBy(asc(nodes.updatedAt))
+    .limit(opts.limit ?? 500);
+}
+
 export type CreateDrawInput = {
   title: string;
   scene?: Record<string, unknown>;
@@ -587,8 +651,10 @@ export async function commitDraw(
         scene: normalized,
         sceneText,
         // A commit without a (valid) snapshot clears the old one — a stale
-        // preview of a superseded scene is worse than no preview.
+        // preview of a superseded scene is worse than no preview. The cache is
+        // refillable from `scene` by the sidecar, so this is a miss, not a loss.
         sceneSvg,
+        svgEngine: sceneSvg ? EXCALIDRAW_ENGINE : null,
         draftScene: null,
         draftUpdatedAt: null,
         version: sql`${draws.version} + 1`,

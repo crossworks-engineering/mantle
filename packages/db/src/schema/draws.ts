@@ -23,9 +23,14 @@ export const draws = pgTable('draws', {
     .default(sql`'{"elements":[]}'::jsonb`)
     .notNull(),
   sceneText: text('scene_text').default('').notNull(),
-  // SVG export of the committed scene (sanitized server-side before storing;
-  // null when the committing client sent none or it failed validation).
+  // SVG export of the committed scene (validated server-side before storing;
+  // null when the committing client sent none or it failed validation). A
+  // CACHE, not a source of truth: regenerable from `scene` by the browser
+  // sidecar, so an empty one is a miss rather than a dead end.
   sceneSvg: text('scene_svg'),
+  // Excalidraw version that produced `scene_svg`. NULL, or a value other than
+  // the pinned one, means stale: re-render on next owner view or in bulk.
+  svgEngine: text('svg_engine'),
   fileRefs: jsonb('file_refs')
     .$type<Record<string, string>>()
     .default(sql`'{}'::jsonb`)

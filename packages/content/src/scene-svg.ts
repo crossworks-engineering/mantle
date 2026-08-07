@@ -26,6 +26,19 @@
  * allowlist (DOMPurify's SVG profile) first.
  */
 
+/**
+ * The pinned Excalidraw version, stamped onto every snapshot this codebase
+ * produces (`draws.svg_engine`). A stored snapshot whose stamp differs from
+ * this is STALE: the scene is unchanged, but the renderer that drew it isn't
+ * the one we ship any more, so it re-renders on next owner view or in bulk via
+ * the `draws:re-render` maintenance task.
+ *
+ * Kept as a literal rather than read from the package, whose `exports` map
+ * does not expose package.json. `excalidraw-engine.test.ts` is the tripwire:
+ * it fails if this drifts from the exact pin declared by either app.
+ */
+export const EXCALIDRAW_ENGINE = '0.18.1';
+
 /** Hard cap. Generous because exportToSvg INLINES the fonts it uses as data
  *  URIs (that is what makes the snapshot render standalone on /s, email and
  *  print) — several font subsets can add a couple of MB. Scene images still

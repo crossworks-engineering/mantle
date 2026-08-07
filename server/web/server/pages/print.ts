@@ -1,8 +1,9 @@
 import type { Hono } from 'hono';
-import { getPage, getDrawSvg } from '@mantle/content';
+import { getPage, getDraw, getDrawSvg } from '@mantle/content';
 import { requireOwner } from '@/lib/auth';
 import { renderPageDoc } from '@/lib/render-page-doc';
 import { htmlPage } from './template';
+import { jsonForScript } from '@/lib/json-script';
 import { loadAppearanceAttrs } from './appearance';
 
 /**
@@ -96,6 +97,39 @@ export function mountPrint(app: Hono): void {
           extraHead: `<style>html,body{overflow:visible!important;height:auto!important;background:#fff}img{max-width:100%;height:auto}</style>`,
         },
         `<div style="padding:2rem"><img src="${src}" alt=""></div>`,
+      ),
+    );
+  });
+
+  // Regeneration surface for the draw snapshot cache. Not a print page and not
+  // linked from anywhere: the browser sidecar loads it, the render island runs
+  // the real (browser-only) Excalidraw renderer here, and lib/render-draw-svg.ts
+  // reads the SVG back out. Owner-authed exactly like /print, so the sidecar
+  // must carry the internal render cookie. See docs/draw-render-fallback-plan.md.
+  app.get('/render/draws/:id', async (c) => {
+    const user = await requireOwner(); // throws RedirectError → 307 /login
+    const draw = await getDraw(user.id, c.req.param('id'));
+    if (!draw) return c.notFound();
+    // The COMMITTED scene only. A draft must never reach a render surface,
+    // for the same reason it never reaches a share or an export.
+    return c.html(
+      htmlPage(
+        {
+          title: 'Rendering drawing',
+          extraHead:
+            `<style>html,body{margin:0;background:#fff}</style>` +
+            // Must be set before the package initialises, or it reaches for
+            // the CDN. This tier serves its own copy of the fonts (they get
+            // inlined into the SVG, so they have to be the same files).
+            `<script>window.EXCALIDRAW_ASSET_PATH='/excalidraw-assets/';` +
+            `window.__mantleDrawScene=${jsonForScript(draw.scene)};` +
+            // Scene images live in the files pipeline; without the map the
+            // render would draw empty frames and then overwrite a good
+            // snapshot with the worse one.
+            `window.__mantleDrawFileRefs=${jsonForScript(draw.fileRefs)};</script>` +
+            `<script type="module" src="/share-runtime/draw-render.js"></script>`,
+        },
+        '',
       ),
     );
   });

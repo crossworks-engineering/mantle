@@ -162,6 +162,51 @@ test.describe('draws lifecycle', () => {
   });
 });
 
+test.describe('snapshot cache', () => {
+  test.skip(({ topology }) => topology === 'same-origin', 'owner UI lives on the client app');
+
+  test('an owner view re-renders a missing snapshot; the public route does not', async ({
+    ownerApi,
+    visitorPage,
+    serverURL,
+  }) => {
+    const title = `E2E render fallback ${Date.now()}`;
+    const created = await ownerApi.post('/api/draws', { data: { title } });
+    const { draw } = (await created.json()) as { draw: { id: string } };
+
+    try {
+      // Commit WITHOUT an svg: exactly the state an agent-authored drawing
+      // lands in, and the state that used to be a permanent dead end.
+      const committed = await ownerApi.post(`/api/draws/${draw.id}/commit`, {
+        data: { scene: sceneWith('render fallback canary'), if_rev: 0 },
+      });
+      expect(committed.ok()).toBeTruthy();
+      expect(((await committed.json()) as { draw: { hasSvg: boolean } }).draw.hasSvg).toBe(false);
+
+      // The public share surface must NOT trigger a render — spawning a
+      // browser is not something anonymous traffic gets to do.
+      const share = await ownerApi.post('/api/shares', { data: { nodeId: draw.id } });
+      const { share: link } = (await share.json()) as { share: { token: string } };
+      const beforeFill = await visitorPage.request.get(`${serverURL}/s/${link.token}/draw`);
+      expect(beforeFill.status()).toBe(404);
+
+      // An owner view fills the cache through the browser sidecar.
+      const filled = await ownerApi.get(`/api/draws/${draw.id}/svg`);
+      expect(filled.ok()).toBeTruthy();
+      const svg = ((await filled.json()) as { svg: string | null }).svg;
+      expect(svg).toBeTruthy();
+      expect(svg).toContain('<svg');
+
+      // Now it is cached, so the public route serves it without rendering.
+      const afterFill = await visitorPage.request.get(`${serverURL}/s/${link.token}/draw`);
+      expect(afterFill.ok()).toBeTruthy();
+      expect(afterFill.headers()['content-type']).toContain('image/svg+xml');
+    } finally {
+      await ownerApi.delete(`/api/draws/${draw.id}`);
+    }
+  });
+});
+
 test.describe('shared drawing', () => {
   test('renders for an anonymous visitor as an IMAGE, never inline markup', async ({
     ownerApi,

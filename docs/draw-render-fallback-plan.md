@@ -1,10 +1,30 @@
 # Draw: server-side render fallback (plan)
 
-> STATUS: proposed, not built. Follows [draw-plan.md](./draw-plan.md) and the
-> audit in [draw-audit-findings.md](./draw-audit-findings.md). Scope is P0 (a
-> render fallback) and P1 (engine versioning + a re-render maintenance task).
-> P2 (embedding a drawing in a page) and P3 (`file_refs` integrity) are noted at
-> the end but are not part of this plan.
+> STATUS: **P0 and P1 BUILT.** Follows [draw-plan.md](./draw-plan.md) and the
+> audit in [draw-audit-findings.md](./draw-audit-findings.md). P2 (embedding a
+> drawing in a page) and P3 (`file_refs` integrity) are noted at the end and are
+> not part of this plan.
+>
+> What the build changed against the plan as written, all verified rather than
+> assumed:
+>
+> - **The island needs code splitting.** Bundled as a single file it came to
+>   **8 MB**, because the package pulls ~30 i18n locale bundles through dynamic
+>   imports and esbuild inlines every one. With `splitting: true` the entry is
+>   **1.2 KB** and a render fetches 12 of 180 chunks.
+> - **The render must rehydrate scene images.** Passing no `files` produced a
+>   snapshot with empty frames where the screenshots are, which the cache would
+>   then have written over a perfectly good committed one. The island now loads
+>   `file_refs` through the files pipeline exactly as the editor does, and
+>   **throws if any referenced file is missing** so a degraded render can never
+>   replace a good snapshot.
+> - **`cost: 'none'` is not a `TaskCost`.** The maintenance entry uses `'io'`.
+> - Verified in a real browser: the island renders a scene to a 6.4 KB SVG,
+>   fonts load from the local `/excalidraw-assets/` path with **no CDN request**,
+>   and the output passes every `acceptSceneSvg` check. That last one confirms
+>   why the `<style>` rejection had to be removed during the audit: a real
+>   export always carries the `style-fonts` block, so keeping it would have made
+>   **every** sidecar render silently unstorable.
 
 ## 1. The problem, stated precisely
 

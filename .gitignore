@@ -111,6 +111,7 @@ client/web/public/app-runtime/
 # Self-hosted Excalidraw fonts (~13 MB woff2) — synced from the npm package
 # by client/web/scripts/copy-excalidraw-assets.mjs via pre(dev|build)
 client/web/public/excalidraw-assets/
+server/web/public/excalidraw-assets/
 server/web/server/route-manifest.gen.ts
 server/web/public/share-runtime/
 

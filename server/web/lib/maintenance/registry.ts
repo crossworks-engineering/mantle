@@ -168,6 +168,23 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Indirect chat + embedding spend via the extractor; requires the agent (apps/api) to be running. No dry-run flag — it prints the candidate count before firing.',
   },
   {
+    slug: 'draws-re-render',
+    title: 'Re-render drawing snapshots',
+    description:
+      'Regenerates draws.scene_svg for drawings whose snapshot is missing or was drawn by a different Excalidraw version, using the browser sidecar. The snapshot is a cache of a render, so this is how an upstream bump heals the corpus and how agent-authored drawings get a preview at all.',
+    kind: 'ops',
+    status: 'live',
+    // Browser time, not tokens: the write path never notifies the extractor.
+    cost: 'io',
+    schedulable: false,
+    script: 'scripts/draws-re-render.ts',
+    cwd: 'server/web',
+    dryRunFlag: '--dry-run',
+    extraFlags: ['--all', '--limit=<n>'],
+    notes:
+      'Costs browser time, not tokens — it never re-runs the extractor. Requires the browser sidecar (BROWSER_WS_ENDPOINT). --all re-renders every drawing, not just stale ones.',
+  },
+  {
     slug: 'rotate-master-key',
     title: 'Rotate MANTLE_MASTER_KEY',
     description:
