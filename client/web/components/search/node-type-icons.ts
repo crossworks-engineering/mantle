@@ -10,6 +10,7 @@ import {
   Mail,
   Mails,
   NotebookPen,
+  PenTool,
   Printer,
   Send,
   Sigma,
@@ -39,6 +40,7 @@ export const NODE_TYPE_ICONS: Record<SearchNodeType, LucideIcon> = {
   documentation: BookOpen,
   journal: NotebookPen,
   formula: Sigma,
+  draw: PenTool,
 };
 
 /** Icon for a node type, tolerating types outside the search enum. */

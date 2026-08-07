@@ -21,6 +21,7 @@ export const SEARCH_NODE_TYPES = [
   'documentation',
   'journal',
   'formula',
+  'draw',
 ] as const;
 
 export type SearchNodeType = (typeof SEARCH_NODE_TYPES)[number];

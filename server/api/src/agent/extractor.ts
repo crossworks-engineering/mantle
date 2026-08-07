@@ -43,6 +43,7 @@ import {
   emails,
   pages,
   tables,
+  draws,
   contentChunks,
   type AiWorker,
   type ExtractorParams,
@@ -141,6 +142,7 @@ const DEFAULT_EXTRACT_TYPES = [
   'journal',
   'location',
   'formula',
+  'draw',
 ];
 
 /** Max characters of body text we feed the summarizer in one shot.
@@ -999,6 +1001,20 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
       .where(eq(tables.nodeId, node.id))
       .limit(1);
     return row?.dataText?.trim() ? row.dataText : node.title;
+  }
+  // ─── Draws — derived plaintext from the Excalidraw sidecar ────────────
+  // The scene JSON lives in `draws.scene`; `draws.scene_text` is its
+  // structured plaintext (frame names as headings, shape labels, bound
+  // arrows as `A -> B: label` relations), computed on commit in
+  // @mantle/content. Only committed scenes ever reach this point — drafts
+  // never fire node_ingested.
+  if (node.type === 'draw') {
+    const [row] = await db
+      .select({ sceneText: draws.sceneText })
+      .from(draws)
+      .where(eq(draws.nodeId, node.id))
+      .limit(1);
+    return row?.sceneText?.trim() ? row.sceneText : node.title;
   }
   // ─── Documentation — the markdown body, cached in data.content ────────
   // Docs are synced from disk (one node per .md file). The full markdown is

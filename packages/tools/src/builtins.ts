@@ -158,6 +158,7 @@ const search_nodes: BuiltinToolDef = {
           'documentation',
           'journal',
           'formula',
+          'draw',
         ],
       },
       tags: {

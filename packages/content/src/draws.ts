@@ -17,12 +17,13 @@
  * pg_notify('node_ingested'); `readNodeBodyRaw` reads `scene_text` from the
  * sidecar.
  */
-import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db, nodes, draws, notifyNodeIngested, type Node } from '@mantle/db';
 import { sceneToText } from './scene-to-text';
 import { acceptSceneSvg } from './scene-svg';
-// The etag decision is shared with pages — identical semantics, one truth.
-import { evaluateDraftRev } from './pages';
+// The etag decision and the embedded-asset text bounds are shared with
+// pages — identical semantics, one truth.
+import { evaluateDraftRev, foldEmbeddedText } from './pages';
 
 export const DRAWS_ROOT_LABEL = 'draw';
 
@@ -414,6 +415,29 @@ export async function discardDrawDraft(ownerId: string, id: string): Promise<boo
   return true;
 }
 
+/**
+ * Plaintext of the images a draw embeds — each referenced `file` node's
+ * durable `data.text` (vision describe + OCR, written once by the file
+ * extractor) folded into the scene's indexed text, so a drawing is
+ * searchable by what's INSIDE its pasted screenshots, not just its shape
+ * labels. A file whose own extraction hasn't landed yet is skipped and
+ * picked up on the next commit — no reactive re-extract (cost stays
+ * bounded, per the no-runaway rule). Mirror of pages' embeddedAssetText.
+ */
+async function embeddedAssetText(ownerId: string, fileRefs: Record<string, string>): Promise<string> {
+  const ids = [...new Set(Object.values(fileRefs))];
+  if (ids.length === 0) return '';
+  const rows = await db
+    .select({ id: nodes.id, title: nodes.title, data: nodes.data })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ids), eq(nodes.type, 'file')));
+  const items = rows.map((r) => ({
+    title: r.title,
+    text: (r.data as Record<string, unknown> | null)?.text as string | undefined,
+  }));
+  return foldEmbeddedText(items);
+}
+
 export type CommitDrawResult =
   | { ok: true; draw: DrawDetail }
   | { ok: false; conflict: true; rev: number }
@@ -442,7 +466,22 @@ export async function commitDraw(
   if (!node) return { ok: false, missing: true };
 
   const normalized = normalizeScene(scene);
-  const sceneText = sceneToText(normalized);
+  // Fold the text inside embedded images (vision/OCR) into the indexed
+  // plaintext, so the drawing is searchable by — and its summary reflects —
+  // what its screenshots say, not just its own labels.
+  const refsForText =
+    opts.fileRefs ??
+    ((
+      await db
+        .select({ fileRefs: draws.fileRefs })
+        .from(draws)
+        .where(eq(draws.nodeId, id))
+        .limit(1)
+    )[0]?.fileRefs as Record<string, string> | undefined) ??
+    {};
+  const baseText = sceneToText(normalized);
+  const assetText = await embeddedAssetText(ownerId, refsForText);
+  const sceneText = assetText ? `${baseText}\n\n${assetText}` : baseText;
   const sceneSvg = acceptSceneSvg(opts.svg);
   const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
   delete newData.summary;
