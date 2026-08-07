@@ -24,6 +24,7 @@ export * from './microsoft-drives';
 export * from './calendar-accounts';
 export * from './secrets';
 export * from './pages';
+export * from './draws';
 export * from './apps';
 export * from './app-databases';
 export * from './tables';

@@ -116,6 +116,34 @@ export {
   type ExtractResult,
 } from './page-split';
 export {
+  DRAWS_ROOT_LABEL,
+  EMPTY_SCENE,
+  normalizeScene,
+  listDraws,
+  countDraws,
+  listDrawTags,
+  getDraw,
+  getDrawSvg,
+  createDraw,
+  updateDraw,
+  saveDrawDraft,
+  discardDrawDraft,
+  commitDraw,
+  deleteDraw,
+  withDrawLock,
+  type DrawRow,
+  type DrawDetail,
+  type DrawSort,
+  type DrawVisibility,
+  type CreateDrawInput,
+  type UpdateDrawInput,
+  type SaveDrawDraftResult,
+  type CommitDrawResult,
+  type LockedDrawRow,
+} from './draws';
+export { sceneToText } from './scene-to-text';
+export { acceptSceneSvg, SCENE_SVG_MAX_BYTES } from './scene-svg';
+export {
   APPS_ROOT_LABEL,
   DEFAULT_ENTRY,
   emptySource,
