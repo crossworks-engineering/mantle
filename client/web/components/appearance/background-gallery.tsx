@@ -15,16 +15,17 @@ import { areaPreset, areaSeed } from '@mantle/web-ui/area-backdrop';
 /**
  * Which generated background each area of the shell shows.
  *
- * One ROW per area, because the question a user is actually asking is "what
- * should the menu look like" — not "where could Waves go". Grouping by style
- * instead would make them visit every row to answer it once.
+ * One BLOCK per area, laid out 2x2, because the question a user is actually
+ * asking is "what should the menu look like" — not "where could Waves go".
+ * Grouping by style instead would make them visit every block to answer it
+ * once.
  *
  * Each swatch previews with the area's OWN seed, crop and opacity (see
  * area-backdrop), so a tile is the artwork that area will get, not a
  * representative sample of the style. That is why the same style looks
  * different from row to row — it genuinely will.
  *
- * OFF LEADS EVERY ROW. It is the most common answer for three of the four
+ * OFF LEADS EVERY BLOCK. It is the most common answer for three of the four
  * areas, and putting it first makes "none of these" a choice rather than
  * something you achieve by not choosing.
  *
@@ -83,10 +84,12 @@ function AreaRow({ area, label, hint }: { area: BackgroundAreaId; label: string;
         <h3 className="text-sm font-medium text-foreground">{label}</h3>
         <span className="text-xs text-muted-foreground">{hint}</span>
       </div>
-      {/* Horizontal scroll rather than a wrap: the row is a single comparison,
-          and reflowing it into three lines loses the "these are the options for
-          the menu" reading the layout is carrying. */}
-      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+      {/* Wraps rather than scrolls. A scroller hides most of the catalogue
+          behind a gesture — you cannot compare what you cannot see, and the
+          options past the fold went unnoticed. Wrapping shows all 17 at once;
+          the block heading is what carries "these are the options for the
+          menu", so the single-line reading is not what was holding it. */}
+      <div className="flex flex-wrap gap-2">
         <Tile
           selected={current === BACKGROUND_OFF}
           label={`${label}: no background`}
@@ -142,7 +145,18 @@ export function BackgroundGallery() {
           area plain.
         </p>
       </div>
-      <div className="space-y-5">
+      {/* Two columns, so the four areas read as a 2x2 block rather than four
+          full-width bands:
+              menu | header
+              chat | activity
+          That is BACKGROUND_AREAS' own order flowing through a 2-column grid —
+          no explicit placement — so adding a fifth area extends the block
+          instead of breaking the arrangement.
+
+          `items-start` keeps each block its own height: without it the grid
+          stretches every cell to the tallest row, and a block whose swatches
+          wrap onto one fewer line grows a gap under it. */}
+      <div className="grid items-start gap-x-6 gap-y-6 lg:grid-cols-2">
         {BACKGROUND_AREAS.map((a) => (
           <AreaRow key={a.id} area={a.id} label={a.label} hint={a.hint} />
         ))}
