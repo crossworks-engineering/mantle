@@ -1065,17 +1065,35 @@ export async function bulkDeleteFiles(args: { ownerId: string; fileIds: string[]
   /** Files refused because ingest derived nodes from them — the caller shows
    *  the counts and retries the confirmed set via the cascade path. */
   hasDerived: Array<{ fileId: string; derived: DerivedCounts }>;
+  /** Files refused for a reason the caller cannot resolve by confirming.
+   *  Reported so a refusal is never a silent no-op: without this, deleting a
+   *  guarded file returned `{deleted: 0}` and the UI said nothing at all,
+   *  while a mixed selection reported "Deleted N" and quietly left the rest. */
+  refused: Array<{
+    fileId: string;
+    reason: 'attachment' | 'in_drawing';
+    drawings?: Array<{ id: string; title: string }>;
+  }>;
 }> {
   let deleted = 0;
   const hasDerived: Array<{ fileId: string; derived: DerivedCounts }> = [];
+  const refused: Array<{
+    fileId: string;
+    reason: 'attachment' | 'in_drawing';
+    drawings?: Array<{ id: string; title: string }>;
+  }> = [];
   for (const id of args.fileIds) {
     const res = await deleteFileById({ ownerId: args.ownerId, fileId: id });
     if (res.ok) deleted++;
     else if (res.reason === 'has_derived' && res.derived) {
       hasDerived.push({ fileId: id, derived: res.derived });
+    } else if (res.reason === 'in_drawing') {
+      refused.push({ fileId: id, reason: 'in_drawing', drawings: res.drawings ?? [] });
+    } else if (res.reason === 'attachment') {
+      refused.push({ fileId: id, reason: 'attachment' });
     }
   }
-  return { deleted, hasDerived };
+  return { deleted, hasDerived, refused };
 }
 
 export async function listFiles(args: { ownerId: string; parentPath: string }): Promise<FileRow[]> {

@@ -143,9 +143,12 @@ export function mountPrint(app: Hono): void {
     // under the forwarded owner cookie.
     const html = renderPageDoc(page.doc, {
       assetUrl: (fileId: string) => `/api/files/files/${fileId}?raw=1`,
-      // Same authed path the in-app editor uses; the sidecar carries the
-      // owner render cookie, so an embedded drawing prints too.
-      drawUrl: (drawId: string) => `/api/draws/${drawId}/svg?raw=1`,
+      // nofill=1 is REQUIRED here: this page is loaded by the sidecar, so a
+      // render triggered from it would need a second sidecar session while
+      // this one blocks on the image (renderUrlToPdf waits for networkidle0).
+      // The export route warms the cache before printing; an unrendered
+      // drawing degrades to its placeholder rather than deadlocking.
+      drawUrl: (drawId: string) => `/api/draws/${drawId}/svg?raw=1&nofill=1`,
     });
     const widthClass = page.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl';
 

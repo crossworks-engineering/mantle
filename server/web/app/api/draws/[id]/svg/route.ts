@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerForAsset } from '@/lib/auth';
+import { getDrawSvg } from '@mantle/content';
 import { getDrawSvgOrRender } from '@/lib/draw-snapshot';
 
 /**
@@ -26,9 +27,19 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const user = await getOwnerForAsset(req);
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
-  const svg = await getDrawSvgOrRender(user.id, id);
+  const url = new URL(req.url);
+  // `nofill=1` = read the cache, never render. The print surface sets it
+  // because that page is ITSELF loaded by the browser sidecar: a render
+  // triggered from there would need a second sidecar session while the first
+  // is still blocked waiting for this image, and with CONCURRENT=2 two
+  // simultaneous exports would deadlock until the session timeout. The export
+  // route warms the cache before printing instead.
+  const svg =
+    url.searchParams.get('nofill') === '1'
+      ? await getDrawSvg(user.id, id)
+      : await getDrawSvgOrRender(user.id, id);
 
-  if (new URL(req.url).searchParams.get('raw') !== '1') {
+  if (url.searchParams.get('raw') !== '1') {
     return NextResponse.json({ svg });
   }
   if (!svg)

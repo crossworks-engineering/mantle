@@ -197,12 +197,18 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       // snapshot is third-party-shaped SVG and image context is what makes it
       // inert (see docs/draw-audit-findings.md §2).
       const drawId = str(node.attrs?.drawId);
-      const src = drawId
-        ? (opts.drawUrl?.(drawId) ?? '')
-        : fileId
-          ? opts.assetUrl(fileId)
-          : str(node.attrs?.src);
       const alt = escAttr(str(node.attrs?.alt));
+      if (drawId) {
+        const drawSrc = opts.drawUrl?.(drawId);
+        // A caller that can't serve drawings says so, rather than dropping the
+        // drawing out of the document without a trace. Matches how the docx
+        // renderer degrades, and keeps a surface from quietly losing content.
+        if (!drawSrc) {
+          return `<p><em>[drawing: ${esc(str(node.attrs?.alt)) || 'untitled'}]</em></p>`;
+        }
+        return `<img src="${escAttr(drawSrc)}" alt="${alt}" loading="lazy">`;
+      }
+      const src = fileId ? opts.assetUrl(fileId) : str(node.attrs?.src);
       return src ? `<img src="${escAttr(src)}" alt="${alt}" loading="lazy">` : '';
     }
     case 'fileEmbed': {

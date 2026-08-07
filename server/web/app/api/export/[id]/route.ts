@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { buildInternalRenderCookie, getOwnerForAsset } from '@/lib/auth';
-import { resolveExport, getPage, getDraw } from '@mantle/content';
+import { resolveExport, getPage, getDraw, referencedDrawIds } from '@mantle/content';
 import { getDrawSvgOrRender } from '@/lib/draw-snapshot';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
@@ -78,6 +78,17 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         { status: 404 },
       );
     }
+    // Warm the snapshot cache for every drawing this page embeds, BEFORE the
+    // sidecar is engaged. /print/pages requests those images with nofill=1, so
+    // without this pass an unrendered drawing would print as a placeholder —
+    // and with it, the print page would have to spawn a nested sidecar session
+    // while this one blocks on the image, which deadlocks two concurrent
+    // exports (CONCURRENT=2) until the session timeout.
+    const embedded = referencedDrawIds(page.doc);
+    for (const drawId of embedded) {
+      await getDrawSvgOrRender(user.id, drawId);
+    }
+
     // The browser SIDECAR (not this process) fetches the print route, so the
     // URL must be reachable from that container: http://web:3000 in prod
     // (compose DNS), host.docker.internal in dev — never the public origin,

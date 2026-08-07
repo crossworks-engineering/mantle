@@ -542,7 +542,9 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
           const text =
             res.reason === 'attachment'
               ? "can't delete — this file is an email attachment; delete it from the email instead"
-              : 'file not found';
+              : res.reason === 'in_drawing'
+                ? `can't delete — this image is used in ${(res.drawings ?? []).map((d) => d.title).join(', ') || 'a drawing'}; remove it from the drawing first`
+                : 'file not found';
           return { content: [{ type: 'text', text }], isError: true };
         }
         const skipped = res.skipped > 0 ? ` (${res.skipped} derived node(s) skipped)` : '';
@@ -571,7 +573,9 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
         const text =
           res.reason === 'attachment'
             ? "can't delete — this file is an email attachment; delete it from the email instead"
-            : 'file not found';
+            : res.reason === 'in_drawing'
+              ? `can't delete — this image is used in ${(res.drawings ?? []).map((d) => d.title).join(', ') || 'a drawing'}; remove it from the drawing first`
+              : 'file not found';
         return { content: [{ type: 'text', text }], isError: true };
       }
       return { content: [{ type: 'text', text: 'deleted' }] };

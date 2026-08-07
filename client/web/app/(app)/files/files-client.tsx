@@ -101,6 +101,13 @@ type DerivedCounts = {
 type BulkDeleteResponse = {
   deleted: number;
   hasDerived?: Array<{ fileId: string; derived: DerivedCounts }>;
+  /** Refusals the user cannot resolve by confirming — surfaced so a blocked
+   *  delete is never a silent no-op. */
+  refused?: Array<{
+    fileId: string;
+    reason: 'attachment' | 'in_drawing';
+    drawings?: Array<{ id: string; title: string }>;
+  }>;
 };
 
 function sumDerivedCounts(all: DerivedCounts[]): DerivedCounts {
@@ -328,14 +335,24 @@ function FilesView({
       toast.error(err instanceof ApiError ? err.message : 'Delete failed');
       return;
     }
-    const refused = res.hasDerived ?? [];
-    if (refused.length > 0) {
+    const needsCascade = res.hasDerived ?? [];
+    if (needsCascade.length > 0) {
       // Some files produced derived nodes; nothing of theirs was deleted.
       // Ask before cascading.
       setCascadeConfirm({
-        ids: refused.map((r) => r.fileId),
-        counts: sumDerivedCounts(refused.map((r) => r.derived)),
+        ids: needsCascade.map((r) => r.fileId),
+        counts: sumDerivedCounts(needsCascade.map((r) => r.derived)),
       });
+    }
+    // Say why a file survived. Without this a guarded file just silently
+    // stayed put — worse, a mixed selection reported only the successes.
+    for (const r of res.refused ?? []) {
+      const names = (r.drawings ?? []).map((d) => d.title).join(', ');
+      toast.error(
+        r.reason === 'in_drawing'
+          ? `Not deleted — used in ${names || 'a drawing'}. Remove it from the drawing first.`
+          : 'Not deleted — this file is an email attachment. Delete it from the email instead.',
+      );
     }
     if (res.deleted > 0) {
       toast.success(`Deleted ${res.deleted} file${res.deleted === 1 ? '' : 's'}`);
