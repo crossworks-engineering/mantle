@@ -66,7 +66,7 @@ async function renderShare(c: Context): Promise<Response> {
   void recordShareView(share.id); // fire-and-forget view counter
 
   const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
-  const drawUrl = (drawId: string) => `/s/${token}/draw/${drawId}`;
+  const drawUrl = (drawId: string) => `/s/${token}/draw/${encodeURIComponent(drawId)}`;
 
   let body: string | null;
   let islands = false;

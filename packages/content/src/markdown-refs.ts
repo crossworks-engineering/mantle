@@ -44,7 +44,10 @@ export function drawNodeId(href: string | undefined | null): string | null {
  *  place this route is spelled out for markdown conversion, mirroring
  *  `fileRawSrc` for uploaded files. */
 export function drawRawSrc(nodeId: string): string {
-  return `/api/draws/${nodeId}/svg?raw=1`;
+  // Encoded: DRAW_HREF accepts any non-whitespace run, so a hand-written
+  // `![x](draw:../../foo)` or an id carrying `?`/`#` would otherwise reshape
+  // the path or the query it is spliced into.
+  return `/api/draws/${encodeURIComponent(nodeId)}/svg?raw=1`;
 }
 
 /** The file node id behind a `media:` href, or null for any other href. */

@@ -682,7 +682,33 @@ export async function drawsReferencingFile(
       and(
         eq(nodes.ownerId, ownerId),
         eq(nodes.type, 'draw'),
-        sql`EXISTS (SELECT 1 FROM jsonb_each_text(${draws.fileRefs}) AS ref WHERE ref.value = ${fileId})`,
+        // The map alone is NOT enough. `file_refs` is append-only: nothing
+        // prunes an entry when the image is deleted from the canvas, so a
+        // map-only check would refuse the delete and tell the user to "remove
+        // it from the drawing first" for an image they already removed, with
+        // no way to comply. So confirm the image is genuinely placed: some
+        // live (non-deleted) element in the committed scene — or in the
+        // working draft, which is still the user's work — must reference the
+        // BinaryFile id that maps to this file.
+        sql`EXISTS (
+          SELECT 1
+          FROM jsonb_each_text(${draws.fileRefs}) AS ref
+          CROSS JOIN LATERAL (
+            SELECT ${draws.scene} AS doc
+            UNION ALL
+            SELECT COALESCE(${draws.draftScene}, '{}'::jsonb)
+          ) AS scenes
+          CROSS JOIN LATERAL jsonb_array_elements(
+            CASE
+              WHEN jsonb_typeof(scenes.doc -> 'elements') = 'array'
+              THEN scenes.doc -> 'elements'
+              ELSE '[]'::jsonb
+            END
+          ) AS el
+          WHERE ref.value = ${fileId}
+            AND el ->> 'fileId' = ref.key
+            AND COALESCE((el ->> 'isDeleted')::boolean, false) = false
+        )`,
       ),
     );
   return rows;

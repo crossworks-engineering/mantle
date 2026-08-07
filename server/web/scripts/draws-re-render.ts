@@ -57,7 +57,10 @@ async function main() {
       // Sequential on purpose. getDrawSvgOrRender already caps concurrency at
       // 2, and a sweep must never starve an owner's live PDF export of the
       // sidecar's session pool.
-      const svg = await getDrawSvgOrRender(ownerId, d.id);
+      // force: --all means "re-render", not "ensure a render exists". Without
+      // it every already-current drawing returns straight from cache while
+      // the script cheerfully prints a tick for each.
+      const svg = await getDrawSvgOrRender(ownerId, d.id, { force: all });
       if (svg) {
         rendered++;
         console.log(`  ✓ ${d.id}  ${d.title}`);

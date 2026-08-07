@@ -59,7 +59,7 @@ export const PageImage = Node.create({
     if (typeof drawId === 'string' && drawId) {
       // Always an <img>, never inline markup: the snapshot is validated but
       // image context is what actually makes it inert.
-      src = assetUrl(`/api/draws/${drawId}/svg?raw=1`);
+      src = assetUrl(`/api/draws/${encodeURIComponent(drawId)}/svg?raw=1`);
     } else if (typeof nodeId === 'string' && nodeId) {
       src = assetUrl(`/api/files/files/${nodeId}?raw=1`);
     } else if (rawSrc && rawSrc.startsWith('/')) {

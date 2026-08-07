@@ -363,15 +363,37 @@ export async function getDrawSvg(ownerId: string, id: string): Promise<string | 
 export async function getDrawSnapshot(
   ownerId: string,
   id: string,
-): Promise<{ svg: string | null; engine: string | null } | null> {
+): Promise<{
+  svg: string | null;
+  engine: string | null;
+  /** Committed scene has no elements — nothing to render. Answered in SQL so
+   *  an empty drawing never costs a browser session just to find that out. */
+  isEmpty: boolean;
+  /** Guards the cache write against a commit that lands mid-render. */
+  version: number;
+} | null> {
   const [row] = await db
-    .select({ svg: draws.sceneSvg, engine: draws.svgEngine })
+    .select({
+      svg: draws.sceneSvg,
+      engine: draws.svgEngine,
+      version: draws.version,
+      isEmpty: sql<boolean>`COALESCE(
+        jsonb_typeof(${draws.scene} -> 'elements') <> 'array'
+          OR jsonb_array_length(${draws.scene} -> 'elements') = 0,
+        true
+      )`,
+    })
     .from(draws)
     .innerJoin(nodes, eq(nodes.id, draws.nodeId))
     .where(and(eq(draws.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
     .limit(1);
   if (!row) return null;
-  return { svg: row.svg ?? null, engine: row.engine ?? null };
+  return {
+    svg: row.svg ?? null,
+    engine: row.engine ?? null,
+    isEmpty: row.isEmpty ?? true,
+    version: row.version ?? 0,
+  };
 }
 
 /**
@@ -389,6 +411,12 @@ export async function setDrawSvg(
   id: string,
   svg: string,
   engine: string,
+  /** The `version` observed before rendering. The write is skipped if the
+   *  drawing has been committed since: a render of the OLD scene landing after
+   *  a newer commit would otherwise overwrite the fresh snapshot AND stamp it
+   *  current, so nothing would ever detect it as stale and the superseded
+   *  drawing would render forever. */
+  expectedVersion?: number,
 ): Promise<boolean> {
   const accepted = acceptSceneSvg(svg);
   if (!accepted) return false;
@@ -398,8 +426,16 @@ export async function setDrawSvg(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
     .limit(1);
   if (!node) return false;
-  await db.update(draws).set({ sceneSvg: accepted, svgEngine: engine }).where(eq(draws.nodeId, id));
-  return true;
+  const written = await db
+    .update(draws)
+    .set({ sceneSvg: accepted, svgEngine: engine })
+    .where(
+      expectedVersion === undefined
+        ? eq(draws.nodeId, id)
+        : and(eq(draws.nodeId, id), eq(draws.version, expectedVersion)),
+    )
+    .returning({ nodeId: draws.nodeId });
+  return written.length > 0;
 }
 
 /** Draws whose snapshot is missing or was drawn by a different engine — the
@@ -407,7 +443,9 @@ export async function setDrawSvg(
  *  run makes predictable progress. */
 export async function listStaleDrawSnapshots(
   ownerId: string,
-  opts: { engine: string; includeRendered?: boolean; limit?: number } = { engine: '' },
+  // No default: an omitted engine would compare against '' and report the
+  // whole corpus as stale, silently.
+  opts: { engine: string; includeRendered?: boolean; limit?: number },
 ): Promise<{ id: string; title: string }[]> {
   const stale = opts.includeRendered
     ? sql`true`

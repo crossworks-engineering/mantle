@@ -35,7 +35,7 @@ export type MentionListProps = {
 };
 
 const GROUP_LABEL: Record<MentionItem['ref'], string> = {
-  node: 'Pages & notes',
+  node: 'Pages, notes & drawings',
   entity: 'People & things',
 };
 

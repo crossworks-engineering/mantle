@@ -277,7 +277,12 @@ function DrawPreview({ draw, onOpen }: { draw: DrawRow; onOpen: () => void }) {
   const svgQuery = useQuery({
     queryKey: ['draws', draw.id, 'svg'],
     queryFn: () => apiFetch<{ svg: string | null }>(`/api/draws/${draw.id}/svg`).then((r) => r.svg),
-    enabled: draw.hasSvg,
+    // Deliberately NOT gated on draw.hasSvg. A drawing with no snapshot is
+    // exactly the case the render fallback exists for (an agent authored it,
+    // or a client-side export failed), and gating the fetch on "a snapshot
+    // already exists" meant that case could never heal from this screen. The
+    // route answers an empty scene straight from SQL, so a drawing with
+    // nothing on it still costs no browser session.
   });
 
   const svg = svgQuery.data;
@@ -306,23 +311,19 @@ function DrawPreview({ draw, onOpen }: { draw: DrawRow; onOpen: () => void }) {
         </Button>
       </div>
 
-      {draw.hasSvg ? (
-        svgQuery.isLoading ? (
-          <div className="flex h-64 items-center justify-center rounded-lg border border-border">
-            <Spinner />
-          </div>
-        ) : src ? (
-          <div className="overflow-hidden rounded-lg border border-border bg-white p-2">
-            {/* eslint-disable-next-line @next/next/no-img-element -- a blob:
-                URL of an owner-generated SVG; next/image can't take it. */}
-            <img src={src} alt={draw.title} className="h-auto max-h-[70vh] w-full" />
-          </div>
-        ) : (
-          <PreviewEmpty label="No preview available." onOpen={onOpen} />
-        )
+      {svgQuery.isPending ? (
+        <div className="flex h-64 items-center justify-center rounded-lg border border-border">
+          <Spinner />
+        </div>
+      ) : src ? (
+        <div className="overflow-hidden rounded-lg border border-border bg-white p-2">
+          {/* eslint-disable-next-line @next/next/no-img-element -- a blob:
+              URL of an owner-generated SVG; next/image can't take it. */}
+          <img src={src} alt={draw.title} className="h-auto max-h-[70vh] w-full" />
+        </div>
       ) : (
         <PreviewEmpty
-          label="No committed snapshot yet. Open the drawing and commit to create one."
+          label="Nothing to preview yet. Open the drawing and commit to create one."
           onOpen={onOpen}
         />
       )}

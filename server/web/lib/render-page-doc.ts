@@ -39,8 +39,8 @@ export type RenderOptions = {
   /** Build the public URL for an embedded file node id. */
   assetUrl: (fileId: string) => string;
   /** Build the URL for an embedded DRAWING's committed snapshot. Optional so
-   *  existing callers keep compiling; a page that embeds a drawing without it
-   *  renders the alt text rather than a broken picture. */
+   *  existing callers keep compiling; without it an embedded drawing renders
+   *  as a labelled `[drawing: alt]` placeholder rather than disappearing. */
   drawUrl?: (drawId: string) => string;
 };
 
