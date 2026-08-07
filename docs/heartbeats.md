@@ -2,7 +2,7 @@
 
 Heartbeats are how an agent acts *without being prompted*. Instead of
 the user asking and Saskia replying, a heartbeat row schedules Saskia
-to **initiate** (ask a question, send a nudge, run a checklist) 
+to **initiate** (ask a question, send a nudge, run a checklist)
 and remember her state across firings until the goal is met.
 
 The metaphor in one sentence: **a heartbeat is a standing instruction

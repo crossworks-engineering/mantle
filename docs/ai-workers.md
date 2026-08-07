@@ -552,7 +552,7 @@ own kind with its own provider / model / prompt. Migration `0051` adds it to the
 `max_tokens` (default **8000**: the whole doc transcribes in one call, so the
 per-image vision default is far too small), and `prefer_native`.
 
-### Native PDF vs rasterize: and why native is better
+### Native PDF vs rasterize, and why native is better
 
 Two ways to turn a PDF into text for a vision model:
 

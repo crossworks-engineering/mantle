@@ -15,7 +15,7 @@ TLS). The provider relays it under *its* reputation with SPF/DKIM aligned to the
 domain, so it's genuinely "from you" and lands in inboxes.
 
 Crucially, this reuses the **same app password already sealed for IMAP**
-(`imap_config_enc`) (providers accept one app-password for both IMAP and SMTP) 
+(`imap_config_enc`) (providers accept one app-password for both IMAP and SMTP)
 so there's **no new secret column**, just plaintext `smtp_host`/`smtp_port`/
 `smtp_secure` knobs on `email_accounts` (migration 0041).
 

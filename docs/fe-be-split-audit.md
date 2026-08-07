@@ -106,7 +106,7 @@ seam. The only residual server-side DB read on a data-free page (the auth gate) 
 of querying `authUsers`. Triple-gated (impossible in prod). Rewritten: `docs/db-less-dev.md`. NOT
 runtime-verified (needs a live remote + minted token; a 2nd dev server collides with the running stack).
 
-## Is it well implemented? 
+## Is it well implemented?
 
 **Yes for what's done; the patterns are sound and the converted core is leak-free.** The remaining
 work is mostly *more of the same* (screens A + the shell C, each a mechanical conversion against the

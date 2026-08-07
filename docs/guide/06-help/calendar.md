@@ -44,5 +44,5 @@ rather than deleting them. A dead link is far more often a temporary outage than
 a cancelled year, and silently emptying your calendar would be the worse failure.
 
 The URL is stored as given. Most providers' "secret address in iCal format" links
-are credentials in their own right (anyone with the URL can read the calendar) 
+are credentials in their own right (anyone with the URL can read the calendar)
 so treat one like a password when copying it around.

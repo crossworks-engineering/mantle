@@ -32,7 +32,7 @@ When an `ask_human` (or `run_budget`) row is created:
 5. Telegram keeps working as an approval surface (option-aware card is a
    stretch goal, not v1).
 
-Design constraint from Jason: **don't over-bind to `ask_human`**: considered
+Design constraint from Jason: **don't over-bind to `ask_human`**, considered
 adding a separate `show_questionnaire`; decision below is to extend the
 `ask_human` payload instead (rationale in WP1) and keep the renderer generic
 so a future non-run inline tool can reuse it.

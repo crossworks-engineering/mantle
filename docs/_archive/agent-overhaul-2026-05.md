@@ -1,7 +1,7 @@
 # Agent & tool-result overhaul (May 2026)
 
 A cohesive overview of a body of work that hardened how Mantle's agents
-delegate, how the system knows what a model can do, and (the centrepiece) 
+delegate, how the system knows what a model can do, and (the centrepiece)
 how oversized tool output is handled so an agent can actually *finish a job*.
 The detailed reference for each piece lives in
 [`architecture.md`](./architecture.md) and [`ai-workers.md`](./ai-workers.md);

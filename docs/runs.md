@@ -1,7 +1,7 @@
 # Runner queues: durable, inspectable execution plans
 
 Design: "Runner queues & worker agents, implementation plan v1" (dev brain).
-Status: **slices 1 + 2, plus slice 3 WP1**: the spine (schema, engine,
+Status: **slices 1 + 2, plus slice 3 WP1**, the spine (schema, engine,
 dispatcher, sweep, `run_*` tools, resume turn, run view), worker agents +
 audits (per-run concurrency cap, model inheritance, mechanical evidence,
 resume-driven audit verdicts with a one-redo cycle, the per-worker acceptance

@@ -52,7 +52,7 @@ Crucially the core's Tailscale runs in **userspace** mode (it can't be a subnet
 router), so `serve` is exactly the right primitive: it forwards two specific TCP
 ports to two specific containers, and nothing else.
 
-## What gets served: and why both
+## What gets served, and why both
 
 Two ports, published tailnet-only:
 

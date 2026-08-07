@@ -6,7 +6,7 @@ small service; anything that should never execute next to the brain. It is
 `run_terminal`'s sibling with the opposite blast radius: the terminal acts on
 the server itself (the brain's own container); a sandbox is a disposable box
 on an isolated network that cannot reach postgres, minio, or the web tier.
-Untrusted work (cloned repos, `curl | bash`, code you're only inspecting) 
+Untrusted work (cloned repos, `curl | bash`, code you're only inspecting)
 belongs in a sandbox, always.
 
 The container is disposable; the work is not. Every sandbox owns a host

@@ -10,7 +10,7 @@
 ## 1. The mission
 
 A **slick, engaging landing page that gets right to the bones**: Mantle is a
-self-hosted AI brain (a system with genuinely no like-for-like competitor) 
+self-hosted AI brain (a system with genuinely no like-for-like competitor)
 and the page must make that felt within one screen. Not a feature grid with
 stock gradients; a confident product story: the brain is the product, it
 never forgets, it builds a personality around you, it targets context

@@ -1,7 +1,7 @@
 # Journal
 
 > A personal journal that teaches agents **who you are**. Short, first-person
-> entries (what you do, who you are, what you're thinking, sad/happy/anxious) 
+> entries (what you do, who you are, what you're thinking, sad/happy/anxious)
 > each with an optional **mood** and **life-area category**. They ride the
 > `nodes` table like notes, flow through the extractor for search/recall, and
 > are distilled into an **always-on identity block** injected into every agent

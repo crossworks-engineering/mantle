@@ -41,7 +41,7 @@ dilemma, plus the ADR's tree-is-the-product and mid-flight-mutation
 arguments, carries the hybrid.
 
 Corollary reversal from the ADR's early framing, now assessed rather than
-assumed: `ask_human` and budget-pause (the "suspension-shaped" features) 
+assumed: `ask_human` and budget-pause (the "suspension-shaped" features)
 STAY on the table engine. Suspension is native to a row-driven engine (a row
 simply sits non-terminal); the audit-item pattern (an item completed later
 by an external actor through a tool) already exists and `ask_human` is that

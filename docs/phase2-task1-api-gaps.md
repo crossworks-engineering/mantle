@@ -95,7 +95,7 @@ must not fetch its own HTTP API during render). Two owner-scoped helpers added t
 
 The Task 0 grep flags these, but none does runtime DB access:
 
-**Comment-only (4)**: deliberately avoid importing `@mantle/db` (keeps postgres
+**Comment-only (4)**, deliberately avoid importing `@mantle/db` (keeps postgres
 out of the browser bundle); the string appears only in a comment:
 - `app/(app)/assistant/assistant-client.tsx`
 - `app/(app)/contacts/contacts-client.tsx`

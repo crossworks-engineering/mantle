@@ -44,7 +44,7 @@ sidecar table, and do NOT persist any derived rendering (the drift argument in
 
 1. **Specialist name**: slug `mathematician`; display name proposed **"Euler"**
    (fits Remy/Ledger/Reader). Jason names agents, confirm before merge.
-2. **Bank delivery**: **DECIDED (Jason, 2026-07-25)**: the formula bank is
+2. **Bank delivery**: **DECIDED (Jason, 2026-07-25)**, the formula bank is
    owner-derived, not shipped. We seed exactly **5 of the most popular
    formulas as an instructional base**; they teach the spec format by
    example; everything beyond that the owner (or the mathematician) authors.
@@ -126,7 +126,7 @@ URL-driven list state, `min-h-0`).
     (expression + live KaTeX preview of `latex` side by side, labelled
     "display only, never parsed"; `equation` no.; `resultSymbol`; `unit`;
     `unverified` toggle + justification), Piecewise (case builder), Lookups
-    (editable row grid + key-domain editor, live coverage readout), 
+    (editable row grid + key-domain editor, live coverage readout),
     Classifications (rating ↔ criteria prose), Notes.
   - **Source view**: YAML editor (client-side `yaml` dep in `client/web`
     only) with parse errors inline. Round-trips with the form.

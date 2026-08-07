@@ -200,7 +200,7 @@ Per screen (mirrors `docs/client-data-fetching.md`):
 - **A "server component" with no `'use client'` and no server-only API bundles fine inside a client**
 , but an **async** server component passed as a prop/child needs its **own `<Suspense>`**, or its SSR
   suspension shifts every radix `useId` in the parent client tree → a hydration-id mismatch (the
-  `UsageCard`/header bug). 
+  `UsageCard`/header bug).
 - **`useSearchParams` in the client needs `<Suspense>`** in the server page, or `next build` fails with
   a CSR-bailout. Prefer parsing searchParams in the page and passing as props.
 - **JSON dates**: `Date` columns arrive as ISO strings over HTTP. Compare day-bucketed dates with

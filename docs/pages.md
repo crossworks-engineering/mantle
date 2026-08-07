@@ -438,7 +438,7 @@ cache + `extract_cost_cap_micro_usd`.
     (`lib/focus-directive.ts`) telling Pages to operate ONLY on those ids and
     leave the rest byte-for-byte. **No new agent tools**: Pages already edits
     by block id; the marker just names the targets.
-  - Deferred (next slice): **gutter break → child page**: a between-blocks
+  - Deferred (next slice): **gutter break → child page**, a between-blocks
     "break here" / "extract marked range → sub-page" that creates a child from
     the selected blocks and drops a `childPage` card in their place (Phase 4c
     realized through the gutter, landing on the 4a foundation).

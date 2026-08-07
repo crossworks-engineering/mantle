@@ -190,7 +190,7 @@ threads a per-route `baseUrl`.
 
 ---
 
-## 5. What Mantle builds: and what it deliberately doesn't
+## 5. What Mantle builds, and what it deliberately doesn't
 
 **Builds (small, because Tailscale's own console does the hard parts):**
 

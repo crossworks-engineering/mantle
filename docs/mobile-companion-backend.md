@@ -177,7 +177,7 @@ For the app-side architecture see
   `status` events (upsert by `stepId`) and, with trail-persistence on, the
   persisted `thoughts`/`toolStats` on the outbound row.
 - **Pages (read-only, 1.5).** `GET /api/pages` (tree/list modes),
-  `GET /api/pages/:id`, `GET /api/pages/:id/backlinks`, and (key choice) 
+  `GET /api/pages/:id`, `GET /api/pages/:id/backlinks`, and (key choice)
   **`GET /api/export/:id?format=md`** for content, so the app renders markdown
   and needs no ProseMirror. In-page images fetch through the authed files
   route with the Bearer header.

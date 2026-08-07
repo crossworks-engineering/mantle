@@ -1,7 +1,7 @@
 # Mantle
 
 [![build + tests](https://img.shields.io/github/actions/workflow/status/crossworks-engineering/mantle/build-check.yml?branch=main&label=build%20%2B%20tests&logo=github)](https://github.com/crossworks-engineering/mantle/actions/workflows/build-check.yml)
-[![desktop build](https://img.shields.io/github/actions/workflow/status/crossworks-engineering/mantle/desktop.yml?branch=main&label=desktop&logo=electron&logoColor=white)](https://github.com/crossworks-engineering/mantle/actions/workflows/desktop.yml)
+[![desktop build](https://img.shields.io/github/actions/workflow/status/crossworks-engineering/mantle/desktop.yml?label=desktop&logo=electron&logoColor=white)](https://github.com/crossworks-engineering/mantle/actions/workflows/desktop.yml)
 [![release](https://img.shields.io/github/v/tag/crossworks-engineering/mantle?label=release&sort=semver&logo=semanticrelease&logoColor=white)](https://github.com/crossworks-engineering/mantle/releases)
 [![docker pulls](https://img.shields.io/docker/pulls/titanwest/mantle-server?label=docker%20pulls&logo=docker&logoColor=white)](https://hub.docker.com/r/titanwest/mantle-server)
 [![image size](https://img.shields.io/docker/image-size/titanwest/mantle-server/latest?label=image&logo=docker&logoColor=white)](https://hub.docker.com/r/titanwest/mantle-server)
@@ -30,7 +30,7 @@ summarised it, extracted the facts, linked the people and projects, and acted.
 
 ---
 
-## The brain is the product: and it's awake
+## The brain is the product, and it's awake
 
 Mantle is built backwards from every chat app: the **memory substrate** is the
 core, chat is just one doorway, and an autonomous agent *lives inside* the
@@ -59,7 +59,7 @@ The result is an assistant that picks up where you left off, last week or
 last year. No sessions. No "as an AI, I don't have memory of previous
 conversations." One continuous relationship.
 
-## Awake: and safe to leave running
+## Awake, and safe to leave running
 
 A brain that only answers when asked is a database with a chat skin. Mantle's
 second half is that it *acts*: **heartbeats** run agent routines on schedules
@@ -80,7 +80,7 @@ none of them act on your whole life to begin with. Underneath it: AES-256-GCM
 sealed secrets, owner-scoped everything, and a test suite that pins the trust
 boundary in place.
 
-(And the horizon: **federation**: sovereign Mantles answering scoped queries
+(And the horizon: **federation**, sovereign Mantles answering scoped queries
 for each other, brains that talk to brains. It's the endgame, not the opening.)
 
 ## Who it's for
@@ -98,12 +98,12 @@ share links for anything worth publishing, and Mantle-to-Mantle
 
 **A company's knowledge base behind an MCP chatbot.** Point a Mantle instance
 at your documentation, manuals, and internal know-how; it becomes a
-fully-indexed brain (semantic search, passage retrieval, knowledge graph) 
+fully-indexed brain (semantic search, passage retrieval, knowledge graph)
 that any MCP client (Claude, or your own chatbot built on the same protocol)
 can query with ~30 tools. Your support bot stops hallucinating answers and
 starts citing your actual docs.
 
-One brain per install. What that brain holds (a life, a team, a product) 
+One brain per install. What that brain holds (a life, a team, a product)
 is up to you.
 
 ## Why it's different
@@ -178,14 +178,14 @@ what you declare, it never has to guess.
 
 ## Quick start
 
-Run it, published Docker image, secrets generated for you, everything else
+Run it: published Docker image, secrets generated for you, everything else
 configured in the interface:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh | bash
 ```
 
-With a domain (automatic HTTPS, point the A record at the box first):
+With a domain (automatic HTTPS; point the A record at the box first):
 
 ```bash
 MANTLE_DOMAIN=mantle.example.com bash -c "$(curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh)"
@@ -203,7 +203,7 @@ personality, who you are. (Want it on loopback only? Run the bundled
 Letting an AI agent install it for you? Point it at the machine-oriented
 runbook: **https://mantle-ai.tech/ai-install.md**
 
-Hack on it, dev checkout with hot reload. Prereqs: **Node 26+**, **pnpm**,
+Hack on it: dev checkout with hot reload. Prereqs: **Node 26+**, **pnpm**,
 and **Docker** running (`pnpm start` boots Postgres/MinIO/Tika in containers):
 
 ```bash
@@ -270,10 +270,10 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.225.1, 2,392 commits and 174 releases since 2026-05-14 (85 days, ~28.1 commits/day).
+**Velocity** — v0.225.1, 2,393 commits and 174 releases since 2026-05-14 (85 days, ~28.2 commits/day).
 
 ```
-commits/week, last 13 weeks   ▁▄▇▅▃▁▃█▃▃▅▆▅   peak 384
+commits/week, last 13 weeks   ▁▄▇▅▃▁▃█▃▃▅▆▅   peak 383
 ```
 
 ```mermaid

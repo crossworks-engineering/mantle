@@ -570,7 +570,7 @@ gate is computed live per sync by `loadContactGate`
 (`packages/content/src/contact-gate.ts`); the worker
 (`apps/web/workers/email-sync.ts`) runs three pg-boss queues (scheduler
 every 2 min, per-account sync, per-contact-entry 90-day backfill on add).
-*(The old per-sender curation layer (`email_senders`/`/settings/senders`) 
+*(The old per-sender curation layer (`email_senders`/`/settings/senders`)
 was retired in migration 0074; discovery of new senders now lives in the
 live-peek `/settings/discover` view.)*
 

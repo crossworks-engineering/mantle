@@ -252,7 +252,7 @@ restore the dump into a fresh DB (§3b–c).
 `docker-compose.yml` is **owned by the release**, not the box. Tag-only updates
 used to run the new image on whatever compose the box happened to have, losing
 every compose-level change a release carried (the v0.137 `table-dbs` mount 500'd
-NATREF; the v0.141 hardening batch (autoheal sidecar, healthchecks, mem caps) 
+NATREF; the v0.141 hardening batch (autoheal sidecar, healthchecks, mem caps)
 would silently not exist on a tag-only box). Since v0.142:
 
 - The canonical compose for a release is **embedded in its image** at

@@ -25,7 +25,7 @@ exposed and how.
 - "What has the team been asking about this week?"
 - "Has anyone raised anything about the pump job?"
 
-The assistant can read the team surface (members, threads, and the access log) 
+The assistant can read the team surface (members, threads, and the access log)
 because you hold the admin group. The team responder that answers *them* is a
 different agent with a different, much smaller grant, and it cannot read this
 screen's view of things.
