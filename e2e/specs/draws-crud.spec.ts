@@ -317,9 +317,29 @@ test.describe('scene image integrity', () => {
     const { draw } = (await created.json()) as { draw: { id: string } };
 
     try {
+      // The scene must actually PLACE the image: the guard checks for a live
+      // image element referencing the BinaryFile id, not merely a file_refs
+      // entry, because that map is append-only and would otherwise block
+      // deletes for images the user had already removed.
+      const sceneWithImage = {
+        elements: [
+          {
+            id: 'img1',
+            type: 'image',
+            fileId: 'excalidraw-file-1',
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 10,
+            version: 1,
+            isDeleted: false,
+          },
+        ],
+        appState: { viewBackgroundColor: '#ffffff' },
+      };
       await ownerApi.post(`/api/draws/${draw.id}/commit`, {
         data: {
-          scene: sceneWith('has an image'),
+          scene: sceneWithImage,
           svg: GOOD_SVG,
           file_refs: { 'excalidraw-file-1': fileId },
           if_rev: 0,
