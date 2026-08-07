@@ -9,6 +9,8 @@ const Body = z.object({
   /** exportToSvg output captured by the committing editor. Validated
    *  server-side (acceptSceneSvg); dropped, never fatal, on any doubt. */
   svg: z.string().max(SCENE_SVG_MAX_BYTES).optional(),
+  /** BinaryFile id → file node id (scene images in the files pipeline). */
+  file_refs: z.record(z.string(), z.string().uuid()).optional(),
   if_rev: z.number().int().nonnegative().optional(),
 });
 
@@ -29,6 +31,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const result = await commitDraw(user.id, id, parsed.data.scene, {
     ...(parsed.data.if_rev !== undefined ? { baseRev: parsed.data.if_rev } : {}),
     ...(parsed.data.svg !== undefined ? { svg: parsed.data.svg } : {}),
+    ...(parsed.data.file_refs !== undefined ? { fileRefs: parsed.data.file_refs } : {}),
   });
   if (!result.ok) {
     if ('conflict' in result) {

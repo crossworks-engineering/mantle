@@ -17,6 +17,7 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   // ── Workspace ──────────────────────────────────────────────────────────
   ['/tables', 'tables'],
   ['/pages', 'pages'],
+  ['/draw', 'draw'],
   ['/notes', 'notes'],
   ['/files', 'files'],
   ['/assistant', 'assistant'],

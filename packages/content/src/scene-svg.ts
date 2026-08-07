@@ -10,9 +10,11 @@
  * the rejected constructs, so a legitimate client loses nothing.
  */
 
-/** Hard cap — a scene snapshot has no business being bigger (embedded
- *  images live in the files pipeline, not in the SVG). */
-export const SCENE_SVG_MAX_BYTES = 2_000_000;
+/** Hard cap. Generous because exportToSvg INLINES the fonts it uses as data
+ *  URIs (that is what makes the snapshot render standalone on /s, email and
+ *  print) — several font subsets can add a couple of MB. Scene images still
+ *  live in the files pipeline, never here. */
+export const SCENE_SVG_MAX_BYTES = 6_000_000;
 
 const FORBIDDEN = [
   /<\s*script/i,

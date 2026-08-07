@@ -1,11 +1,28 @@
-import { DrawScaffold } from './draw-scaffold';
+import { Suspense } from 'react';
+import { SetPageTitle } from '@/components/layout/page-title';
+import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { DrawsClient } from './draws-client';
 
 /**
- * /draw — the whiteboard workspace. PHASE 0 SCAFFOLD: mounts a bare canvas
- * to prove the Excalidraw integration (self-hosted fonts, theme wiring,
- * lazy chunk isolation). Phase 2 replaces this with the master-detail list
- * + /draw/[id] editor over the Phase 1 API.
+ * /draw — the whiteboard workspace (auth gate only). The list, tag facets and
+ * pagination are client-fetched via `GET /api/draws`, keyed off the URL params
+ * which `DrawsClient` reads with useSearchParams — hence the Suspense
+ * boundary. The editor lives at /draw/[id]; browsing the list never loads the
+ * canvas chunk.
  */
-export default function DrawPage() {
-  return <DrawScaffold />;
+export default async function DrawPage() {
+  return (
+    <>
+      <SetPageTitle title="Draw" />
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center">
+            <Spinner />
+          </div>
+        }
+      >
+        <DrawsClient />
+      </Suspense>
+    </>
+  );
 }

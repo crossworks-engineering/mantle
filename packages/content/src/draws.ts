@@ -364,7 +364,7 @@ export async function saveDrawDraft(
   ownerId: string,
   id: string,
   scene: Record<string, unknown>,
-  opts: { baseRev?: number } = {},
+  opts: { baseRev?: number; fileRefs?: Record<string, string> } = {},
 ): Promise<SaveDrawDraftResult> {
   const [node] = await db
     .select({ id: nodes.id })
@@ -385,6 +385,9 @@ export async function saveDrawDraft(
         draftScene: normalized,
         draftUpdatedAt: new Date(),
         draftRev: sql`${draws.draftRev} + 1`,
+        // The BinaryFile-id → file-node-id map rides along whenever the editor
+        // uploaded new scene images. Replace-whole-map: the editor owns it.
+        ...(opts.fileRefs !== undefined ? { fileRefs: opts.fileRefs } : {}),
       })
       .where(eq(draws.nodeId, id));
     return { ok: true as const, rev: decision.nextRev };
@@ -429,7 +432,7 @@ export async function commitDraw(
   ownerId: string,
   id: string,
   scene: Record<string, unknown>,
-  opts: { baseRev?: number; svg?: string } = {},
+  opts: { baseRev?: number; svg?: string; fileRefs?: Record<string, string> } = {},
 ): Promise<CommitDrawResult> {
   const [node] = await db
     .select()
@@ -472,6 +475,7 @@ export async function commitDraw(
         version: sql`${draws.version} + 1`,
         draftRev: sql`${draws.draftRev} + 1`,
         updatedAt: new Date(),
+        ...(opts.fileRefs !== undefined ? { fileRefs: opts.fileRefs } : {}),
       })
       .where(eq(draws.nodeId, id));
     return {

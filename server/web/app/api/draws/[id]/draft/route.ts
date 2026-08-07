@@ -5,6 +5,9 @@ import { saveDrawDraft } from '@/lib/draws';
 
 const Body = z.object({
   scene: z.record(z.string(), z.unknown()),
+  /** BinaryFile id → file node id. Present when the editor uploaded new
+   *  scene images through the files pipeline; replaces the stored map. */
+  file_refs: z.record(z.string(), z.string().uuid()).optional(),
   if_rev: z.number().int().nonnegative().optional(),
 });
 
@@ -25,6 +28,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   }
   const result = await saveDrawDraft(user.id, id, parsed.data.scene, {
     ...(parsed.data.if_rev !== undefined ? { baseRev: parsed.data.if_rev } : {}),
+    ...(parsed.data.file_refs !== undefined ? { fileRefs: parsed.data.file_refs } : {}),
   });
   if (!result.ok) {
     if ('conflict' in result) {
