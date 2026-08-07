@@ -134,11 +134,22 @@ test.describe('draws lifecycle', () => {
         });
         expect(res.ok()).toBeTruthy(); // the commit itself never fails on the svg
         const body = (await res.json()) as { draw: { hasSvg: boolean; draftRev: number } };
+        // The client's payload was refused, so the commit stored no snapshot.
         expect(body.draw.hasSvg).toBe(false);
         rev = body.draw.draftRev;
 
+        // Reading it back does NOT return null any more: with the render
+        // fallback in place the server regenerates a snapshot from the scene
+        // through the sidecar. That is the point — what must never happen is
+        // the ATTACKER's bytes being stored or served, so assert on the
+        // payload, not on emptiness.
         const stored = await ownerApi.get(`/api/draws/${draw.id}/svg`);
-        expect(((await stored.json()) as { svg: string | null }).svg).toBeNull();
+        const storedSvg = ((await stored.json()) as { svg: string | null }).svg ?? '';
+        expect(storedSvg).not.toContain('onerror');
+        expect(storedSvg).not.toContain('javascript:');
+        expect(storedSvg).not.toContain('&#106;');
+        // Anything served is our own render, not the submitted document.
+        if (storedSvg) expect(storedSvg).toContain('svg-source:excalidraw');
       }
     } finally {
       await ownerApi.delete(`/api/draws/${draw.id}`);
@@ -289,11 +300,15 @@ test.describe('scene image integrity', () => {
       'base64',
     );
     const upload = await ownerApi.post('/api/files/files', {
-      multipart: { file: { name: 'scene-image.png', mimeType: 'image/png', buffer: png } },
+      multipart: {
+        // Required by the route; without it the upload 400s.
+        parentPath: 'files',
+        file: { name: 'scene-image.png', mimeType: 'image/png', buffer: png },
+      },
     });
     expect(upload.ok()).toBeTruthy();
-    const uploaded = (await upload.json()) as { file?: { id: string }; id?: string };
-    const fileId = uploaded.file?.id ?? uploaded.id ?? '';
+    const uploaded = (await upload.json()) as { file: { id: string } };
+    const fileId = uploaded.file?.id ?? '';
     expect(fileId).toBeTruthy();
 
     const created = await ownerApi.post('/api/draws', {
