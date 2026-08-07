@@ -5,9 +5,9 @@ import { and, db, desc, eq, ilike, inArray, nodes } from '@mantle/db';
 
 /**
  * Read-only resolver for the editor's @-mention picker. Returns two kinds of
- * reference, pages/notes first (you have those immediately) then entities
+ * reference, documents first (you have those immediately) then entities
  * (which fill in as the brain learns):
- *   - ref:'node'   → another page/note to link to (→ `references` edge)
+ *   - ref:'node'   → another page/note/drawing to link to (→ `references` edge)
  *   - ref:'entity' → a person/project/place (→ `mentioned_in` edge)
  *
  * Pure read — never creates anything. Edges are built by the extractor on
@@ -26,7 +26,11 @@ export async function GET(req: Request) {
       .where(
         and(
           eq(nodes.ownerId, user.id),
-          inArray(nodes.type, ['page', 'note']),
+          // Whatever a document can meaningfully point AT. `draw` qualifies:
+          // the edge writer only checks that the target exists and is owned by
+          // the same owner, so a drawing makes a valid `references` target, and
+          // "put my architecture sketch in the design doc" had no other path.
+          inArray(nodes.type, ['page', 'note', 'draw']),
           ilike(nodes.title, `%${q}%`),
         ),
       )

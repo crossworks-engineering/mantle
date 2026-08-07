@@ -9,7 +9,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { AtSign, FileText, Loader2 } from 'lucide-react';
+import { AtSign, Loader2 } from 'lucide-react';
+import { nodeTypeIcon } from '@/components/search/node-type-icons';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 
@@ -136,7 +137,10 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(funct
     >
       {items.map((item, i) => {
         const showGroup = i === 0 || items[i - 1]?.ref !== item.ref;
-        const Icon = item.ref === 'node' ? FileText : AtSign;
+        // Node results carry their node type in `kind`, so use the shared
+        // type→icon map rather than one document icon for everything: a page,
+        // a note and a drawing should not look identical in the picker.
+        const Icon = item.ref === 'node' ? nodeTypeIcon(item.kind) : AtSign;
         return (
           <div key={`${item.ref}:${item.id}`}>
             {showGroup && (
