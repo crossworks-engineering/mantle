@@ -61,6 +61,7 @@ import { RESEARCH_TOOLS } from './builtins-research';
 import { NOTE_TOOLS } from './builtins-notes';
 import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
+import { DRAW_TOOLS } from './builtins-draws';
 import { SHARE_TOOLS } from './builtins-share';
 import { APP_TOOLS, APP_DATA_TOOLS } from './builtins-apps';
 import { TABLE_TOOLS } from './builtins-tables';
@@ -1756,6 +1757,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // dialect; markdownToDoc converts it to the ProseMirror JSON pages store.
   // page_delete is requires_confirm (irreversible).
   ...PAGE_TOOLS,
+  // Draw — READ-ONLY access to the whiteboard workspace: list + read the
+  // committed scene as text. Authoring stays on the canvas (Phase 6 is its
+  // own decision; see docs/draw-plan.md).
+  ...DRAW_TOOLS,
   // Generic sharing — mint/revoke a viewable link for ANY shareable item
   // (note/task/event/file/app/table/folder); the type-agnostic counterpart
   // of page_share. node_share is requires_confirm (publishes outward).

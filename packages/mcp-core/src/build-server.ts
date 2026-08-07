@@ -67,6 +67,7 @@ import {
   WORKER_DELEGATION_TOOLS,
   EXPORT_TOOLS,
   PAGE_TOOLS,
+  DRAW_TOOLS,
   TABLE_TOOLS,
   APP_TOOLS,
   TOOLSMITH_TOOLS,
@@ -1129,6 +1130,13 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   // for the in-app agent to avoid changing the existing MCP read shape).
   const PAGE_READ_SLUGS = new Set(['page_list', 'page_get']);
   registerBuiltinTools(PAGE_TOOLS, { skip: (def) => PAGE_READ_SLUGS.has(def.slug) });
+
+  // ─── Draw (read-only) ──────────────────────────────────────────────────────
+  // Whiteboard scenes (type='draw'). Read-only over MCP — drawings are
+  // authored on the canvas; agents read the committed scene as text (frame
+  // headings, shape labels, `A -> B: label` relations). Bridged from the
+  // in-app DRAW_TOOLS: same tested handlers, plaintext read shape.
+  registerBuiltinTools(DRAW_TOOLS);
 
   // ─── Tables (read-only) ────────────────────────────────────────────────────
   //

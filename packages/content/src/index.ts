@@ -124,6 +124,7 @@ export {
   listDrawTags,
   getDraw,
   getDrawSvg,
+  getDrawSceneText,
   createDraw,
   updateDraw,
   saveDrawDraft,

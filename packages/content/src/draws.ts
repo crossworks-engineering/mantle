@@ -264,6 +264,20 @@ export async function getDraw(ownerId: string, id: string): Promise<DrawDetail |
   };
 }
 
+/** The committed derived plaintext (`scene_text`, including any folded
+ *  embedded-image OCR) — what the extractor indexed and what an agent should
+ *  read. Null when the draw doesn't exist. Deliberately NOT recomputed from
+ *  the scene: the stored text is the one the brain saw. */
+export async function getDrawSceneText(ownerId: string, id: string): Promise<string | null> {
+  const [row] = await db
+    .select({ sceneText: draws.sceneText })
+    .from(draws)
+    .innerJoin(nodes, eq(nodes.id, draws.nodeId))
+    .where(and(eq(draws.nodeId, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
+    .limit(1);
+  return row?.sceneText ?? null;
+}
+
 /** The committed SVG snapshot, for surfaces that render it (list preview,
  *  /s share, export). Null when no commit carried one. */
 export async function getDrawSvg(ownerId: string, id: string): Promise<string | null> {

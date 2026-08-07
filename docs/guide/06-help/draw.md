@@ -1,5 +1,6 @@
 ---
 title: Draw
+toolGroups: [draw-read]
 ---
 
 ## Draw

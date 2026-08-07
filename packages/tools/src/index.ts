@@ -42,6 +42,7 @@ export {
 
 export { BUILTIN_TOOLS } from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
+export { DRAW_TOOLS, DRAW_TOOL_SLUGS } from './builtins-draws';
 export { APP_TOOLS, APP_TOOL_SLUGS, APP_DATA_TOOLS, APP_DATA_TOOL_SLUGS } from './builtins-apps';
 export { TABLE_TOOLS, TABLE_TOOL_SLUGS } from './builtins-tables';
 export { TOOL_RESULT_TOOLS, TOOL_RESULT_TOOL_SLUGS } from './builtins-tool-results';

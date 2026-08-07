@@ -650,6 +650,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['formula_list', 'formula_get', 'formula_evaluate'],
   },
   {
+    slug: 'draw-read',
+    name: 'Draw (read)',
+    description:
+      'List + read whiteboard drawings as text (committed scenes only). No authoring — the canvas is the only writer; agent authoring is a future, separate decision.',
+    toolSlugs: ['draw_list', 'draw_get'],
+  },
+  {
     slug: 'calculator',
     name: 'Calculator',
     description:
@@ -943,6 +950,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'formulas',
       'calculator',
       'pages-draft',
+      'draw-read',
       'app-data',
       'team-admin',
       'federation',
