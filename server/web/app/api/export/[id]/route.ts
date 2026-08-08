@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { buildInternalRenderCookie, getOwnerForAsset } from '@/lib/auth';
 import { resolveExport, getPage, getDraw, referencedDrawIds } from '@mantle/content';
-import { getDrawSvgOrRender } from '@/lib/draw-snapshot';
+import { getDrawSvgOrRender, getDrawPngOrRender } from '@/lib/draw-snapshot';
 import { readFileById } from '@/lib/files';
 import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
 import { renderUrlToPdf, printOrigin, PdfRendererUnavailableError } from '@/lib/render-pdf';
@@ -129,6 +129,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       const res = await readFileById({ ownerId: user.id, fileId });
       return res ? { bytes: res.bytes } : null;
     },
+    // Word takes no SVG, so an embedded drawing goes in as a raster of its
+    // committed snapshot (browser sidecar). Only the docx path asks for this,
+    // and only for the drawings a document actually embeds.
+    loadDraw: async (drawId) => await getDrawPngOrRender(user.id, drawId),
   });
   if (!result) {
     return NextResponse.json({ error: 'not found or not exportable' }, { status: 404 });

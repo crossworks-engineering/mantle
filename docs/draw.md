@@ -99,6 +99,16 @@ images load 4 at a time with per-fetch timeouts under an overall deadline; a
 render missing some images is _partial_ and may only fill an EMPTY cache,
 never replace an existing snapshot.
 
+The sidecar has a second, unrelated job: **rasterizing** a snapshot to PNG for
+the Word export, since `ImageRun` embeds no SVG
+([`server/web/lib/render-draw-png.ts`](../server/web/lib/render-draw-png.ts)).
+That is a screenshot of `/print/draws/:id` — the sheet the PDF export already
+prints — not a second scene render, so the picture in a .docx is the same
+snapshot every other surface serves and cannot drift from it. It runs at 2× for
+print, reports its size in CSS px so the document still lays it out at 1×,
+shares the same 2-session semaphore, and stores nothing: a raster is a
+transient export artefact, never a second cache beside `scene_svg`.
+
 **Validation (`acceptSceneSvg`)**: a committed snapshot is validated
 server-side (no scripts, no event handlers, no foreignObject, size cap) and a
 hostile payload is dropped, clearing the stored one. It cannot blocklist
@@ -109,14 +119,14 @@ validator being exhaustive; it rests on every surface rendering the snapshot
 
 ## 5. Where drawings render
 
-| Surface                       | How                                                                                                                     |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL)                                                                    |
-| Page embed                    | `![alt](draw:<id>)` = an image node with `attrs.drawId`; `<img>` into `/api/draws/:id/svg?raw=1`                        |
-| Share (`/s/[token]`)          | cache-only image routes; a shared page serves exactly the drawings its doc places (`referencedDrawIds`), nothing else   |
-| PDF export                    | the print sidecar, embeds with `?nofill=1`                                                                              |
-| Markdown / HTML export        | the `draw:` reference / an `<img>`                                                                                      |
-| DOCX export                   | **placeholder `[drawing: alt]`** (known gap: `ImageRun` takes no SVG; a PNG raster via the sidecar is the intended fix) |
+| Surface                       | How                                                                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL)                                                                  |
+| Page embed                    | `![alt](draw:<id>)` = an image node with `attrs.drawId`; `<img>` into `/api/draws/:id/svg?raw=1`                      |
+| Share (`/s/[token]`)          | cache-only image routes; a shared page serves exactly the drawings its doc places (`referencedDrawIds`), nothing else |
+| PDF export                    | the print sidecar, embeds with `?nofill=1`                                                                            |
+| Markdown / HTML export        | the `draw:` reference / an `<img>`                                                                                    |
+| DOCX export                   | a PNG **raster of the snapshot**, screenshotted off `/print/draws/:id` in the sidecar (`ImageRun` takes no SVG)       |
 
 Embedding in a page has three entry points: the **`/drawing` slash item**
 (picker dialog: search, thumbnails, "New drawing" which creates + embeds +
@@ -190,6 +200,10 @@ content; drafts stay private.
 
 ## 9. Known gaps
 
-- DOCX export degrades to a placeholder (§5).
+- The `export_node` agent tool still writes `[drawing: alt]` into a .docx.
+  `resolveExport` takes the raster callback, but `@mantle/tools` has no route to
+  the browser sidecar (that lives in `server/web` by design), so only the
+  download button injects one. Closing it needs the renderer reachable from
+  wherever a tool loop runs, which is more than one process.
 - Creating a drawing fires `node_ingested` via the `nodes` INSERT trigger, so
   a brand-new empty drawing costs one summarizer call.

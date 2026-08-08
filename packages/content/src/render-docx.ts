@@ -44,7 +44,15 @@ type PMNode = {
   content?: PMNode[];
 };
 
-export type LoadedImage = { bytes: Buffer };
+export type LoadedImage = {
+  bytes: Buffer;
+  /** Size the picture should OCCUPY on the page, in px. Only a caller that
+   *  rastered above 1× needs these: the byte probe below reads how many pixels
+   *  the image CARRIES, which at 2× is twice the size it should be shown at.
+   *  Absent (every `loadImage` caller) ⇒ the probed dimensions are used. */
+  width?: number;
+  height?: number;
+};
 
 export type RenderDocxOptions = {
   /** Rendered as the document title (large bold heading) above the body. */
@@ -53,6 +61,12 @@ export type RenderDocxOptions = {
    *  by the caller (web route / export tool) from `@mantle/files`; when absent
    *  or it returns null, the image degrades to its alt text. */
   loadImage?: (fileId: string) => Promise<LoadedImage | null>;
+  /** Resolve an embedded drawing to RASTER bytes (png/jpg/gif/bmp — `ImageRun`
+   *  takes nothing else, and a drawing's snapshot is SVG). Injected the same
+   *  way `loadImage` is, and for the same reason: producing the raster needs a
+   *  real browser, which this package must not depend on. Absent, or null for
+   *  a drawing with nothing committed, degrades to a labelled placeholder. */
+  loadDraw?: (drawId: string) => Promise<LoadedImage | null>;
 };
 
 function str(v: unknown): string {
@@ -148,9 +162,11 @@ type NumberingConfigItem = NonNullable<
 class DocxCtx {
   olConfigs: NumberingConfigItem[] = [];
   readonly images: Map<string, LoadedImage | null>;
+  readonly draws: Map<string, LoadedImage | null>;
   private olSeq = 0;
-  constructor(images: Map<string, LoadedImage | null>) {
+  constructor(images: Map<string, LoadedImage | null>, draws: Map<string, LoadedImage | null>) {
     this.images = images;
+    this.draws = draws;
   }
   /** Register a fresh ordered-list numbering instance and return its reference. */
   newOrderedRef(): string {
@@ -373,46 +389,23 @@ function renderBlock(node: PMNode, ctx: DocxCtx): DocxBlock[] {
       ];
     }
     case 'image': {
-      const fileId = str(node.attrs?.nodeId);
       const alt = str(node.attrs?.alt);
-      // An embedded drawing has no raster bytes to give Word: the snapshot is
-      // SVG, and ImageRun below only takes png/jpg/gif/bmp (imageInfo sniffs
-      // exactly those). It degrades to the labelled placeholder that a
-      // failed-to-load image already uses, rather than silently vanishing.
-      // Rasterizing through the browser sidecar would fix it — see the
-      // follow-up in docs/draw-render-fallback-plan.md.
+      // An embedded drawing's own snapshot is SVG, which ImageRun cannot take
+      // (imageInfo below sniffs png/jpg/gif/bmp and nothing else), so it
+      // reaches Word through `loadDraw` — a raster of that same snapshot,
+      // produced by the caller's browser sidecar. A caller that injects no
+      // callback, or a drawing with nothing committed, still degrades to the
+      // labelled placeholder rather than silently vanishing.
       const drawId = str(node.attrs?.drawId);
       if (drawId) {
         return [
-          new Paragraph({
-            children: [new TextRun({ text: `[drawing: ${alt || 'untitled'}]`, italics: true })],
-          }),
+          imageParagraph(ctx.draws.get(drawId)) ?? placeholder(`drawing: ${alt || 'untitled'}`),
         ];
       }
-      const loaded = fileId ? ctx.images.get(fileId) : null;
-      if (loaded?.bytes) {
-        const dims = imageInfo(loaded.bytes);
-        if (dims) {
-          const scale = dims.width > CONTENT_PX ? CONTENT_PX / dims.width : 1;
-          return [
-            new Paragraph({
-              children: [
-                new ImageRun({
-                  data: loaded.bytes,
-                  type: dims.type,
-                  transformation: {
-                    width: Math.round(dims.width * scale),
-                    height: Math.round(dims.height * scale),
-                  },
-                } as never),
-              ],
-            }),
-          ];
-        }
-      }
-      return alt
-        ? [new Paragraph({ children: [new TextRun({ text: `[image: ${alt}]`, italics: true })] })]
-        : [];
+      const fileId = str(node.attrs?.nodeId);
+      const embedded = fileId ? imageParagraph(ctx.images.get(fileId)) : null;
+      if (embedded) return [embedded];
+      return alt ? [placeholder(`image: ${alt}`)] : [];
     }
     case 'fileEmbed': {
       const name = str(node.attrs?.filename) || 'file';
@@ -426,6 +419,32 @@ function renderBlock(node: PMNode, ctx: DocxCtx): DocxBlock[] {
     default:
       return node.content ? renderBlocks(node.content, ctx) : [];
   }
+}
+
+/** One embedded picture, scaled to fit the body width. Null when there are no
+ *  bytes or they aren't a format Word embeds — the caller places its
+ *  placeholder instead, so an unreadable image never disappears silently. */
+function imageParagraph(loaded: LoadedImage | null | undefined): Paragraph | null {
+  if (!loaded?.bytes) return null;
+  const probed = imageInfo(loaded.bytes);
+  if (!probed) return null;
+  const width = loaded.width && loaded.width > 0 ? loaded.width : probed.width;
+  const height = loaded.height && loaded.height > 0 ? loaded.height : probed.height;
+  const scale = width > CONTENT_PX ? CONTENT_PX / width : 1;
+  return new Paragraph({
+    children: [
+      new ImageRun({
+        data: loaded.bytes,
+        type: probed.type,
+        transformation: { width: Math.round(width * scale), height: Math.round(height * scale) },
+      } as never),
+    ],
+  });
+}
+
+/** The degrade for any picture that couldn't be embedded — `[image: alt]`. */
+function placeholder(label: string): Paragraph {
+  return new Paragraph({ children: [new TextRun({ text: `[${label}]`, italics: true })] });
 }
 
 function noBorders() {
@@ -489,16 +508,40 @@ function imageInfo(buf: Buffer): { width: number; height: number; type: DocxImag
   return null;
 }
 
-/** Collect every page-image file id (in document order) so the caller can
- *  pre-load their bytes before rendering. Mirrors `referencedFileIds` but
- *  scoped to inline `image` nodes (the only ones docx embeds). */
-function collectImageIds(node: PMNode | undefined, acc: string[]): void {
+/** Collect every picture id (in document order) so the caller can pre-load the
+ *  bytes before rendering. Mirrors `referencedFileIds`/`referencedDrawIds` but
+ *  scoped to inline `image` nodes (the only ones docx embeds). The two kinds
+ *  stay in separate buckets: an uploaded file and an embedded drawing are
+ *  resolved by different callbacks against different stores. */
+function collectImageIds(node: PMNode | undefined, files: string[], draws: string[]): void {
   if (!node) return;
   if (node.type === 'image') {
-    const id = str(node.attrs?.nodeId);
-    if (id) acc.push(id);
+    const drawId = str(node.attrs?.drawId);
+    const fileId = str(node.attrs?.nodeId);
+    if (drawId) draws.push(drawId);
+    else if (fileId) files.push(fileId);
   }
-  for (const c of node.content ?? []) collectImageIds(c, acc);
+  for (const c of node.content ?? []) collectImageIds(c, files, draws);
+}
+
+/** Resolve each id once, in order, tolerating a loader that throws. Sequential
+ *  on purpose: a drawing costs a browser session, and the sidecar is the
+ *  scarce resource — a page with a dozen of them must not stampede it. */
+async function preload(
+  ids: string[],
+  load: ((id: string) => Promise<LoadedImage | null>) | undefined,
+): Promise<Map<string, LoadedImage | null>> {
+  const out = new Map<string, LoadedImage | null>();
+  if (!load) return out;
+  for (const id of ids) {
+    if (out.has(id)) continue;
+    try {
+      out.set(id, await load(id));
+    } catch {
+      out.set(id, null);
+    }
+  }
+  return out;
 }
 
 /**
@@ -508,22 +551,14 @@ function collectImageIds(node: PMNode | undefined, acc: string[]): void {
 export async function renderDocx(doc: unknown, opts: RenderDocxOptions = {}): Promise<Buffer> {
   const root = doc && typeof doc === 'object' ? (doc as PMNode) : { content: [] };
 
-  // Pre-load image bytes (the walk is synchronous; image fetches are async).
-  const ids: string[] = [];
-  collectImageIds(root, ids);
-  const images = new Map<string, LoadedImage | null>();
-  if (opts.loadImage) {
-    for (const id of ids) {
-      if (images.has(id)) continue;
-      try {
-        images.set(id, await opts.loadImage(id));
-      } catch {
-        images.set(id, null);
-      }
-    }
-  }
+  // Pre-load picture bytes (the walk is synchronous; the fetches are async).
+  const fileIds: string[] = [];
+  const drawIds: string[] = [];
+  collectImageIds(root, fileIds, drawIds);
+  const images = await preload(fileIds, opts.loadImage);
+  const draws = await preload(drawIds, opts.loadDraw);
 
-  const ctx = new DocxCtx(images);
+  const ctx = new DocxCtx(images, draws);
   const body: DocxBlock[] = [];
   if (opts.title) {
     body.push(

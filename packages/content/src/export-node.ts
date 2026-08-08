@@ -54,6 +54,11 @@ export type ExportResult = {
 
 export type ResolveExportOptions = {
   loadImage?: (fileId: string) => Promise<LoadedImage | null>;
+  /** Raster bytes for an embedded drawing, whose stored snapshot is SVG and so
+   *  can't be embedded in Word directly. Needs a browser, so it is injected
+   *  like `loadImage` rather than imported; a caller without one gets the
+   *  `[drawing: …]` placeholder. Only the docx path consults it. */
+  loadDraw?: (drawId: string) => Promise<LoadedImage | null>;
   /** Requested download format for a page/note. Ignored for tables (always
    *  xlsx). Defaults to `docx` when omitted (preserves the original behavior). */
   format?: DocExportFormat;
@@ -111,7 +116,11 @@ export async function resolveExport(
       const md = docToMarkdown(page.doc);
       return result(Buffer.from(md, 'utf8'), 'md', 'page', page.title);
     }
-    const bytes = await renderDocx(page.doc, { title: page.title, loadImage: opts.loadImage });
+    const bytes = await renderDocx(page.doc, {
+      title: page.title,
+      loadImage: opts.loadImage,
+      loadDraw: opts.loadDraw,
+    });
     return result(bytes, 'docx', 'page', page.title);
   }
 
@@ -123,8 +132,14 @@ export async function resolveExport(
       const md = withTitle(note.title, note.content ?? '');
       return result(Buffer.from(md, 'utf8'), 'md', 'note', note.title);
     }
+    // Notes carry drawings too: markdownToDoc turns `![alt](draw:<id>)` into
+    // the same image node with a drawId, so the raster path covers both kinds.
     const doc = markdownToDoc(note.content ?? '');
-    const bytes = await renderDocx(doc, { title: note.title, loadImage: opts.loadImage });
+    const bytes = await renderDocx(doc, {
+      title: note.title,
+      loadImage: opts.loadImage,
+      loadDraw: opts.loadDraw,
+    });
     return result(bytes, 'docx', 'note', note.title);
   }
 

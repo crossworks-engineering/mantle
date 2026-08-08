@@ -1,6 +1,7 @@
 import { EXCALIDRAW_ENGINE, getDrawSnapshot, setDrawSvg } from '@mantle/content';
 import { buildInternalRenderCookie } from '@/lib/auth';
 import { renderDrawSvg, DrawRendererUnavailableError } from '@/lib/render-draw-svg';
+import { renderDrawPng, type DrawPng } from '@/lib/render-draw-png';
 
 /**
  * Read a draw's SVG snapshot, rendering it first if the cache is empty or was
@@ -135,5 +136,33 @@ export async function getDrawSvgOrRender(
     }
     failedUntil.set(id, Date.now() + FAILURE_COOLDOWN_MS);
     return snap.svg;
+  }
+}
+
+/**
+ * The snapshot as a PNG, for the one consumer that can't take SVG: Word.
+ *
+ * Warm-then-raster, the same order the PDF export uses — the raster is a
+ * screenshot of the committed snapshot, so the snapshot has to exist first,
+ * and a drawing no browser ever committed still exports. Null means there is
+ * no picture (nothing committed, an empty scene, or the sidecar is down), and
+ * the caller degrades to its placeholder.
+ *
+ * Shares the Chromium semaphore with the SVG path, and deliberately caches
+ * nothing: a raster is a transient export artefact, not a second copy of the
+ * snapshot to keep in step with the first. Exports are hand-initiated and
+ * rare, so a repeatedly-failing drawing costs a session per export rather than
+ * per request — no cooldown needed here.
+ */
+export async function getDrawPngOrRender(ownerId: string, id: string): Promise<DrawPng | null> {
+  const svg = await getDrawSvgOrRender(ownerId, id);
+  if (!svg) return null;
+  try {
+    return await withSlot(() => renderDrawPng(id, buildInternalRenderCookie(ownerId)));
+  } catch (err) {
+    if (!(err instanceof DrawRendererUnavailableError)) {
+      console.error(`[draw-snapshot] raster failed for ${id}:`, err);
+    }
+    return null;
   }
 }

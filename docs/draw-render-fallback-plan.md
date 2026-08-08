@@ -54,7 +54,7 @@ four separate problems:
 The client capture at commit stays exactly as it is and remains the fast path,
 covering essentially every human-authored drawing. Nothing on the hot path gains
 a Chromium dependency: rendering a share page stays a single database read. The
-only change is that a cache *miss* becomes fillable instead of fatal.
+only change is that a cache _miss_ becomes fillable instead of fatal.
 
 This is not a reversal of the original decision to keep Excalidraw out of the
 server. It is a fallback for the cases that decision never covered.
@@ -72,8 +72,8 @@ server. It is a fallback for the cases that decision never covered.
 - `server/web` already ships browser bundles. `scripts/build-share-runtime.ts`
   runs esbuild three times today (`islands.js`, a mermaid IIFE, `diagram-theme.js`).
 - **The precedent is exact.** The mermaid IIFE bundle exists so that a heavy,
-  browser-only rendering library can be self-hosted and executed *inside the PDF
-  sidecar's Chromium* to upgrade a print surface. That is precisely the shape of
+  browser-only rendering library can be self-hosted and executed _inside the PDF
+  sidecar's Chromium_ to upgrade a print surface. That is precisely the shape of
   this work.
 
 The image cost is already paid: the Dockerfile does a full workspace install and
@@ -134,11 +134,11 @@ Unavailability is an expected condition, not an exception: mirror
 This is the security-relevant decision. Rendering spawns a browser, so an
 anonymous request must never be able to trigger one.
 
-| Caller | On cache miss |
-|---|---|
-| `/s/:token/draw` (public share) | **cache only**, placeholder on miss |
-| Owner list preview, export, print | may fill the cache |
-| `draws:re-render` maintenance task | fills in bulk, bounded concurrency |
+| Caller                             | On cache miss                       |
+| ---------------------------------- | ----------------------------------- |
+| `/s/:token/draw` (public share)    | **cache only**, placeholder on miss |
+| Owner list preview, export, print  | may fill the cache                  |
+| `draws:re-render` maintenance task | fills in bulk, bounded concurrency  |
 
 The public share surface therefore stays a pure database read, exactly as today.
 A shared drawing that has never been rendered gets filled by the owner visiting
@@ -225,14 +225,14 @@ incident.
 
 ## 7. Risks
 
-| Risk | Mitigation |
-|---|---|
+| Risk                                              | Mitigation                                                                  |
+| ------------------------------------------------- | --------------------------------------------------------------------------- |
 | Sidecar render differs from client render (fonts) | Ship the same woff2 files to `server/web/public` (§4.7); verify once by eye |
-| A burst of misses saturates Chromium | In-flight dedupe + semaphore (§4.6) |
-| Anonymous share traffic triggers renders | Public route is cache-only by design (§4.4) |
-| Re-render storm re-runs the extractor | `setDrawSvg` never notifies (§4.5) |
-| Scene JSON injected into a script tag | Escaping helper + unit test (§4.2) |
-| `packages/content` gains a browser dependency | Fallback lives in `server/web` only (§4.5) |
+| A burst of misses saturates Chromium              | In-flight dedupe + semaphore (§4.6)                                         |
+| Anonymous share traffic triggers renders          | Public route is cache-only by design (§4.4)                                 |
+| Re-render storm re-runs the extractor             | `setDrawSvg` never notifies (§4.5)                                          |
+| Scene JSON injected into a script tag             | Escaping helper + unit test (§4.2)                                          |
+| `packages/content` gains a browser dependency     | Fallback lives in `server/web` only (§4.5)                                  |
 
 ## 8. Non-goals
 
@@ -241,7 +241,11 @@ incident.
   good.
 - **No jsdom or SVG-rasterizer rendering in Node.** Text metrics would be wrong,
   and wrong quietly, on some diagrams rather than loudly on all of them.
-- **No PNG alongside the SVG**, and no second renderer of any kind.
+- **No PNG alongside the SVG**, and no second renderer of any kind. (Shipped
+  since: the Word export rasterizes a snapshot on demand, `render-draw-png.ts`.
+  The rule still holds — that is a screenshot of the existing snapshot, thrown
+  away after the download, not a stored second representation and not a second
+  renderer.)
 
 ## 9. Sequencing
 

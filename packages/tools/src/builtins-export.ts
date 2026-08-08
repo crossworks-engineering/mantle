@@ -2,9 +2,14 @@
  * Export builtins — render a content node to an Office document and save it
  * under /files/exports. The rendering itself (and the page/note/table → format
  * mapping) lives in `@mantle/content`'s `resolveExport`, the same code the web
- * `/api/export/[id]` download button uses, so the assistant and the UI produce
- * identical files. Page images are embedded by reading their bytes from the
- * file store via the injected `loadImage` callback.
+ * `/api/export/[id]` download button uses. Page images are embedded by reading
+ * their bytes from the file store via the injected `loadImage` callback.
+ *
+ * One documented difference from that button: an embedded DRAWING degrades to
+ * `[drawing: alt]` here. Word takes no SVG, so a snapshot has to be rastered in
+ * the browser sidecar, and the sidecar is reachable only from `server/web` —
+ * this package is imported by every process that runs a tool loop, including
+ * workers that have no browser. See docs/draw.md §9.
  */
 import { resolveExport } from '@mantle/content';
 import { ensureDatedUploadFolder, readFileById, upsertFile } from '@mantle/files';

@@ -46,7 +46,80 @@ describe('renderDocx', () => {
     const buf = await renderDocx({ type: 'doc', content: [] }, { title: 'Empty' });
     expect(buf.subarray(0, 2).equals(PK)).toBe(true);
   });
+
+  // A drawing's stored snapshot is SVG, which ImageRun cannot embed, so it
+  // reaches Word only through `loadDraw`. Zip entry names are stored
+  // uncompressed, so the presence of an embedded picture is readable straight
+  // off the archive bytes without unpacking it.
+  const DRAW_DOC = {
+    type: 'doc',
+    content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'Before' }] },
+      { type: 'image', attrs: { drawId: 'd-1', alt: 'Architecture' } },
+    ],
+  };
+  const hasMedia = (buf: Buffer) => buf.includes('word/media/');
+
+  it('embeds an embedded drawing as a raster when loadDraw supplies one', async () => {
+    const calls: string[] = [];
+    const buf = await renderDocx(DRAW_DOC, {
+      loadDraw: async (drawId) => {
+        calls.push(drawId);
+        return { bytes: fakePng(1200, 800), width: 600, height: 400 };
+      },
+    });
+    expect(calls).toEqual(['d-1']);
+    expect(hasMedia(buf)).toBe(true);
+  });
+
+  it('degrades to the placeholder when no loadDraw is injected', async () => {
+    const buf = await renderDocx(DRAW_DOC, {});
+    expect(buf.subarray(0, 2).equals(PK)).toBe(true);
+    expect(hasMedia(buf)).toBe(false);
+  });
+
+  it('degrades to the placeholder when the drawing has nothing to raster', async () => {
+    // A drawing with no committed snapshot, and a loader that throws (the
+    // sidecar being down): both must produce a document, not an exception.
+    expect(hasMedia(await renderDocx(DRAW_DOC, { loadDraw: async () => null }))).toBe(false);
+    expect(
+      hasMedia(
+        await renderDocx(DRAW_DOC, {
+          loadDraw: async () => {
+            throw new Error('sidecar unreachable');
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('resolves a drawing embedded twice only once', async () => {
+    const calls: string[] = [];
+    await renderDocx(
+      { type: 'doc', content: [...DRAW_DOC.content, DRAW_DOC.content[1]] },
+      {
+        loadDraw: async (drawId) => {
+          calls.push(drawId);
+          return { bytes: fakePng(100, 100) };
+        },
+      },
+    );
+    // One browser session per drawing, not per occurrence.
+    expect(calls).toEqual(['d-1']);
+  });
 });
+
+/** Smallest thing the renderer's dimension probe accepts as a PNG: the
+ *  signature plus an IHDR carrying the size. The bytes are never decoded —
+ *  docx stores the picture verbatim. */
+function fakePng(width: number, height: number): Buffer {
+  const buf = Buffer.alloc(32);
+  buf.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  buf.write('IHDR', 12, 'ascii');
+  buf.writeUInt32BE(width, 16);
+  buf.writeUInt32BE(height, 20);
+  return buf;
+}
 
 describe('renderXlsx', () => {
   it('produces a valid .xlsx with typed cells and a totals row', async () => {
