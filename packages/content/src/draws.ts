@@ -96,6 +96,9 @@ export type DrawRow = {
    *  pages (`data.icon`); null = the type's default glyph. */
   icon: string | null;
   tags: string[];
+  /** User-authored one-liner about the drawing (`data.description`). Distinct
+   *  from `summary`, which the extractor writes. */
+  description: string | null;
   summary: string | null;
   visibility: DrawVisibility;
   /** Whether a committed SVG snapshot exists (the list fetches it lazily). */
@@ -125,6 +128,7 @@ function rowOf(n: Node, hasSvg = false): DrawRow {
     title: n.title,
     icon: typeof d.icon === 'string' && d.icon ? d.icon : null,
     tags: n.tags ?? [],
+    description: typeof d.description === 'string' && d.description ? d.description : null,
     summary: typeof d.summary === 'string' ? d.summary : null,
     visibility: d.visibility === 'public' ? 'public' : 'private',
     hasSvg,
@@ -221,6 +225,7 @@ function drawConds(ownerId: string, opts: ListDrawsOpts) {
       ilike(nodes.title, q),
       sql`${draws.sceneText} ilike ${q}`,
       sql`${nodes.data}->>'summary' ilike ${q}`,
+      sql`${nodes.data}->>'description' ilike ${q}`,
     );
     if (c) conds.push(c);
   }
@@ -499,6 +504,8 @@ export type UpdateDrawInput = {
   /** Emoji beside the title; `''` clears it (rowOf normalises blank → null),
    *  same contract as pages. */
   icon?: string;
+  /** User-authored one-liner; `''` clears it, same normalisation as icon. */
+  description?: string;
 };
 
 /** Metadata-only update (title/tags/visibility save live, like pages).
@@ -518,6 +525,7 @@ export async function updateDraw(
   const newData: Record<string, unknown> = { ...((node.data ?? {}) as Record<string, unknown>) };
   if (input.visibility !== undefined) newData.visibility = input.visibility;
   if (input.icon !== undefined) newData.icon = input.icon;
+  if (input.description !== undefined) newData.description = input.description;
 
   const [row] = await db
     .update(nodes)

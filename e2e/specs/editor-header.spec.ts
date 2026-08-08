@@ -57,10 +57,18 @@ test.describe('editor header layout', () => {
     const { draw } = (await created.json()) as { draw: { id: string } };
 
     try {
-      // The icon saves like the rest of the metadata and round-trips.
-      const patched = await ownerApi.patch(`/api/draws/${draw.id}`, { data: { icon: '🎨' } });
+      // Icon + description save like the rest of the metadata and round-trip.
+      const patched = await ownerApi.patch(`/api/draws/${draw.id}`, {
+        data: { icon: '🎨', description: 'A canary description' },
+      });
       expect(patched.ok()).toBeTruthy();
-      expect(((await patched.json()) as { draw: { icon: string | null } }).draw.icon).toBe('🎨');
+      const patchedRow = (
+        (await patched.json()) as {
+          draw: { icon: string | null; description: string | null };
+        }
+      ).draw;
+      expect(patchedRow.icon).toBe('🎨');
+      expect(patchedRow.description).toBe('A canary description');
 
       await ownerPage.goto(`/draw/${draw.id}`);
       const titleInput = ownerPage.locator('input[aria-label="Drawing title"]');
@@ -71,19 +79,33 @@ test.describe('editor header layout', () => {
       expect(box).not.toBeNull();
       expect(box!.height).toBeLessThan(HEADER_MAX_PX);
 
+      // Three columns on one row: title, description, tags.
       const titleBox = await titleInput.boundingBox();
+      const desc = ownerPage.locator('input[aria-label="Drawing description"]');
+      await expect(desc).toHaveValue('A canary description');
+      const descBox = await desc.boundingBox();
       const tagsBox = await ownerPage.getByPlaceholder('Add tags…').boundingBox();
-      expect(
-        Math.abs(titleBox!.y + titleBox!.height / 2 - (tagsBox!.y + tagsBox!.height / 2)),
-      ).toBeLessThan(8);
+      for (const other of [descBox, tagsBox]) {
+        expect(
+          Math.abs(titleBox!.y + titleBox!.height / 2 - (other!.y + other!.height / 2)),
+        ).toBeLessThan(8);
+      }
+      expect(descBox!.x).toBeGreaterThan(titleBox!.x);
+      expect(tagsBox!.x).toBeGreaterThan(descBox!.x);
 
       // The picker trigger shows the chosen emoji…
       await expect(ownerPage.getByRole('button', { name: 'Change drawing icon' })).toHaveText('🎨');
       await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}editor-header-draw.png` });
 
-      // …and so does the list row (rowOf carries data.icon).
+      // …and so does the list row (rowOf carries data.icon). The preview pane
+      // is the pages-style shell now: description line + Edit/export/delete
+      // actions, with the snapshot area unboxed.
       await ownerPage.goto(`/draw?q=${encodeURIComponent(title)}`);
       await expect(ownerPage.locator(`[data-mark-label="${title}"]`).getByText('🎨')).toBeVisible();
+      await expect(ownerPage.getByText('A canary description')).toBeVisible();
+      await expect(ownerPage.getByRole('link', { name: 'Edit' })).toBeVisible();
+      await expect(ownerPage.getByRole('button', { name: 'Delete drawing' })).toBeVisible();
+      await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}draw-list-preview.png` });
     } finally {
       await ownerApi.delete(`/api/draws/${draw.id}`);
     }

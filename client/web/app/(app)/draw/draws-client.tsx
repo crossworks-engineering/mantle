@@ -1,14 +1,26 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { PenTool, Plus, Search, X } from 'lucide-react';
+import { Pencil, PenTool, Plus, Search, Trash2, X } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { TagPill } from '@mantle/web-ui/tag-pill';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@mantle/web-ui/ui/alert-dialog';
+import { ExportMenu } from '@/components/export/export-menu';
 import { useListNav } from '@/lib/use-list-nav';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
@@ -20,6 +32,7 @@ type DrawRow = {
   title: string;
   icon: string | null;
   tags: string[];
+  description: string | null;
   summary: string | null;
   visibility: 'private' | 'public';
   hasSvg: boolean;
@@ -54,6 +67,26 @@ export function DrawsClient() {
   useEffect(() => {
     if (urlId) setSelectedId(urlId);
   }, [urlId]);
+
+  const [deleteTarget, setDeleteTarget] = useState<DrawRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function deleteActive() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await apiSend(`/api/draws/${deleteTarget.id}`, 'DELETE');
+      toast.success('Drawing deleted');
+      setSelectedId(null);
+      syncSelectionParam('id', null);
+      await queryClient.invalidateQueries({ queryKey: ['draws'] });
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not delete the drawing');
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const [searchInput, setSearchInput] = useState(query);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -257,6 +290,7 @@ export function DrawsClient() {
             key={active.id}
             draw={active}
             onOpen={() => router.push(`/draw/${active.id}`)}
+            onDelete={() => setDeleteTarget(active)}
           />
         ) : (
           <div className="flex h-full items-center justify-center">
@@ -264,6 +298,28 @@ export function DrawsClient() {
           </div>
         )}
       </div>
+
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this drawing?</AlertDialogTitle>
+            <AlertDialogDescription>
+              “{deleteTarget?.title ?? ''}” and its brain index will be removed. Images embedded
+              from the files area are kept there.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+              onClick={() => void deleteActive()}
+            >
+              {deleting ? 'Deleting…' : 'Delete drawing'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -280,7 +336,15 @@ export function DrawsClient() {
  * page. The bytes still arrive over an authenticated fetch (an image element's
  * src can't carry a bearer in the detached deployment), then become a blob URL.
  */
-function DrawPreview({ draw, onOpen }: { draw: DrawRow; onOpen: () => void }) {
+function DrawPreview({
+  draw,
+  onOpen,
+  onDelete,
+}: {
+  draw: DrawRow;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
   const svgQuery = useQuery({
     queryKey: ['draws', draw.id, 'svg'],
     queryFn: () => apiFetch<{ svg: string | null }>(`/api/draws/${draw.id}/svg`).then((r) => r.svg),
@@ -305,29 +369,58 @@ function DrawPreview({ draw, onOpen }: { draw: DrawRow; onOpen: () => void }) {
   }, [svg]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-4 p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-xl font-semibold">{draw.title}</h2>
-          {draw.summary ? (
-            <p className="mt-1 text-sm text-muted-foreground">{draw.summary}</p>
+    // Full-width, start-aligned — the same clean preview shell as /pages
+    // (no centred max-w column, actions top-right and out of the way).
+    <div className="w-full space-y-4 p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="flex min-w-0 items-center gap-2 text-xl font-semibold">
+            <span aria-hidden>{draw.icon ?? '✏️'}</span>
+            <span className="min-w-0 truncate">{draw.title}</span>
+          </h2>
+          {/* The user's own one-liner wins; the extractor's summary fills in
+              when none was written. */}
+          {(draw.description ?? draw.summary) ? (
+            <p className="mt-1 text-sm text-muted-foreground">{draw.description ?? draw.summary}</p>
           ) : null}
         </div>
-        <Button onClick={onOpen}>
-          <PenTool /> Open
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <ExportMenu nodeId={draw.id} kind="draw" />
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/draw/${draw.id}`}>
+              <Pencil /> Edit
+            </Link>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-destructive-ink"
+            onClick={onDelete}
+            aria-label="Delete drawing"
+          >
+            <Trash2 />
+          </Button>
+        </div>
       </div>
 
+      {draw.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {draw.tags.map((t) => (
+            <TagPill key={t} tag={t} />
+          ))}
+        </div>
+      )}
+
       {svgQuery.isPending ? (
-        <div className="flex h-64 items-center justify-center rounded-lg border border-border">
+        <div className="flex h-64 items-center justify-center">
           <Spinner />
         </div>
       ) : src ? (
-        <div className="overflow-hidden rounded-lg border border-border bg-white p-2">
-          {/* eslint-disable-next-line @next/next/no-img-element -- a blob:
-              URL of an owner-generated SVG; next/image can't take it. */}
-          <img src={src} alt={draw.title} className="h-auto max-h-[70vh] w-full" />
-        </div>
+        /* The snapshot fills its pane plainly — no border, mat or box; the
+           SVG carries its own background. Still an IMAGE, never inline
+           markup (see the loader note above). */
+        // eslint-disable-next-line @next/next/no-img-element -- blob: URL of an owner-generated SVG; next/image can't take it
+        <img src={src} alt={draw.title} className="h-auto w-full" />
       ) : (
         <PreviewEmpty
           label="Nothing to preview yet. Open the drawing and commit to create one."

@@ -40,6 +40,7 @@ type DrawDetail = {
   title: string;
   icon: string | null;
   tags: string[];
+  description: string | null;
   summary: string | null;
   visibility: 'private' | 'public';
   createdAt: string;
@@ -121,6 +122,7 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
 
   const [title, setTitle] = useState(initial.title);
   const [icon, setIcon] = useState<string | null>(initial.icon);
+  const [description, setDescription] = useState(initial.description ?? '');
   const [tags, setTags] = useState<string[]>(initial.tags);
   const [dirty, setDirty] = useState(initial.draft !== null);
   const [draftSaving, setDraftSaving] = useState(false);
@@ -147,7 +149,12 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
   const committedHashRef = useRef<number>(0); // hash of the published elements
   const savedHashRef = useRef<number>(0); // hash last autosaved (or published)
   const metaSavedRef = useRef(
-    JSON.stringify({ title: initial.title, tags: initial.tags, icon: initial.icon ?? '' }),
+    JSON.stringify({
+      title: initial.title,
+      tags: initial.tags,
+      icon: initial.icon ?? '',
+      description: initial.description ?? '',
+    }),
   );
   const lastDraftAtRef = useRef(Date.now());
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -265,9 +272,14 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
   // ── Title / tags save live (cheap metadata, never indexes). ───────────
   const saveMeta = useCallback(async () => {
     if (deletedRef.current) return;
-    // `icon: ''` clears it — updateDraw stores the blank and rowOf normalises
-    // it back to null, same contract as pages.
-    const payload = { title: title.trim() || 'Untitled drawing', tags, icon: icon ?? '' };
+    // `icon`/`description: ''` clear — updateDraw stores the blank and rowOf
+    // normalises it back to null, same contract as pages icons.
+    const payload = {
+      title: title.trim() || 'Untitled drawing',
+      tags,
+      icon: icon ?? '',
+      description: description.trim(),
+    };
     const s = JSON.stringify(payload);
     if (s === metaSavedRef.current) return;
     try {
@@ -276,7 +288,7 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
     } catch {
       // Silent — reverts on next load; apiSend's 401 bounce still fires.
     }
-  }, [initial.id, title, tags, icon]);
+  }, [initial.id, title, tags, icon, description]);
 
   // ── Commit: publish + index + capture the SVG snapshot. ───────────────
   const commit = useCallback(async () => {
@@ -420,7 +432,7 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
       return;
     }
     scheduleMeta();
-  }, [title, tags, icon, scheduleMeta]);
+  }, [title, tags, icon, description, scheduleMeta]);
 
   // Leaving the editor flushes the draft + metadata — never commits. The
   // pagehide flush covers hard reloads/closes (best-effort; the debounce
@@ -568,6 +580,15 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
           placeholder="New drawing"
           aria-label="Drawing title"
           className="h-auto min-w-48 flex-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-lg font-semibold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-lg"
+        />
+        {/* Middle column: the user-authored one-liner (data.description) —
+            distinct from the extractor's summary, saves with the metadata. */}
+        <Input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Add a description…"
+          aria-label="Drawing description"
+          className="h-auto min-w-40 flex-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-sm text-muted-foreground shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-sm"
         />
         <TagInput
           value={tags}
