@@ -119,14 +119,14 @@ validator being exhaustive; it rests on every surface rendering the snapshot
 
 ## 5. Where drawings render
 
-| Surface                       | How                                                                                                                   |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL), theme-inverted in dark mode (§5b)                               |
-| Page embed                    | `![alt](draw:<id>)` = an image node with `attrs.drawId`; `<img>` into `/api/draws/:id/svg?raw=1`                      |
-| Share (`/s/[token]`)          | cache-only image routes; a shared page serves exactly the drawings its doc places (`referencedDrawIds`), nothing else |
-| PDF export                    | the print sidecar, embeds with `?nofill=1`                                                                            |
-| Markdown / HTML export        | the `draw:` reference / an `<img>`                                                                                    |
-| DOCX export                   | a PNG **raster of the snapshot**, screenshotted off `/print/draws/:id` in the sidecar (`ImageRun` takes no SVG)       |
+| Surface                       | How                                                                                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL), theme-inverted in dark mode (§5b)                                             |
+| Page embed                    | `![alt](draw:<id>)` = an image node with `attrs.drawId`; `<img>` into `/api/draws/:id/svg?raw=1`, theme-inverted in dark mode (§5b) |
+| Share (`/s/[token]`)          | cache-only image routes; a shared page serves exactly the drawings its doc places (`referencedDrawIds`), nothing else               |
+| PDF export                    | the print sidecar, embeds with `?nofill=1`                                                                                          |
+| Markdown / HTML export        | the `draw:` reference / an `<img>`                                                                                                  |
+| DOCX export                   | a PNG **raster of the snapshot**, screenshotted off `/print/draws/:id` in the sidecar (`ImageRun` takes no SVG)                     |
 
 Embedding in a page has three entry points: the **`/drawing` slash item**
 (picker dialog: search, thumbnails, "New drawing" which creates + embeds +
@@ -172,18 +172,36 @@ links, PDF, Word and a sidecar re-render that is always light, and it must not
 depend on which theme its author had open at commit.
 
 The cost was that the editor inverted and every other surface didn't, which
-reads as "my drawing came back in the wrong theme". So the in-app previews
+reads as "my drawing came back in the wrong theme". So the in-app surfaces
 apply the same filter at VIEW time
-([`client/web/components/draw/snapshot-theme.ts`](../client/web/components/draw/snapshot-theme.ts)).
-Nothing stored or exported changes, and the share surface, `/print` and both
-exports are deliberately excluded — they leave the brain, where there is no app
-theme to follow.
+([`client/web/components/draw/snapshot-theme.ts`](../client/web/components/draw/snapshot-theme.ts)):
+the `/draw` list and detail previews, and drawings embedded in a page. Nothing
+stored or exported changes, and the share surface, `/print` and both exports are
+deliberately excluded — they leave the brain, where there is no app theme to
+follow.
 
-**A drawing that places pasted images opts out** (`DrawRow.hasImages`, from a
-non-empty `file_refs`). Upstream cancels its own inversion per image element so
-a photo isn't shown as a negative; one filter over a flat `<img>` cannot, and
-rendering the snapshot as inline markup instead is exactly what §4's security
-rule forbids. Those keep the light rendition.
+**A drawing that places pasted images opts out.** Upstream cancels its own
+inversion per image element so a photo isn't shown as a negative; one filter
+over a flat `<img>` cannot, and rendering the snapshot as inline markup instead
+is exactly what §4's security rule forbids. Those keep the light rendition.
+The test is `snapshotPlacesImage`, run against the SNAPSHOT rather than
+`file_refs` — the snapshot is the thing on screen, so a scene that no longer
+places an image it once held gives the right answer, and no surface needs a
+database flag plumbed to it.
+
+The two surfaces differ only in how they reach that answer. A preview already
+holds the snapshot, so it decides before rendering. A page embed is a plain
+`<img>` from a static `renderHTML` (`page-editor/image.ts`) that knows neither
+the theme nor the drawing, so it always carries a class ARMED on
+`data-draw-theme="invert"`, and `useDrawEmbedTheme` stamps that attribute after
+checking the snapshot — re-fetched at the URL the `<img>` already used, so it is
+a cache hit, and memoised per drawing. The default is therefore un-inverted (the
+old rendering), so a slow or failed check never flashes through a wrong state.
+
+Both classes are written out in full, and must stay that way: Tailwind v4 scans
+SOURCE TEXT, so a class assembled from a shared fragment emits no rule at all
+and the filter silently does nothing. `snapshot-theme.test.ts` asserts against
+the file's own source for exactly this.
 
 A genuinely dark drawing is still available and travels everywhere: set the
 canvas background to a dark colour with the custom picker and choose light

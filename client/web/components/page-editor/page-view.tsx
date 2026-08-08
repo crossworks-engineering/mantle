@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { EditorContent, useEditor, type JSONContent } from '@tiptap/react';
 import { pageExtensions } from './extensions';
+import { useDrawEmbedTheme } from './draw-embed-theme';
 
 /**
  * Read-only render of a page document, using the same extension set as the
@@ -23,6 +24,8 @@ export function PageView({ content }: { content: JSONContent }) {
       attributes: { class: 'prose dark:prose-invert prose-accent max-w-none focus:outline-none' },
     },
   });
+
+  useDrawEmbedTheme(editor);
 
   useEffect(() => {
     if (editor && content) editor.commands.setContent(content);

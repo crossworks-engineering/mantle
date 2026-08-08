@@ -1,5 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { assetUrl } from '@mantle/web-ui/asset-url';
+import { DRAW_EMBED_CLASS } from '@/components/draw/snapshot-theme';
 
 /**
  * Block image node. Carries `nodeId` (the backing `file` node) alongside `src`
@@ -56,15 +57,29 @@ export const PageImage = Node.create({
     const drawId = HTMLAttributes['data-draw-id'];
     const rawSrc = typeof HTMLAttributes.src === 'string' ? HTMLAttributes.src : null;
     let src = rawSrc;
+    let extraClass: string | null = null;
     if (typeof drawId === 'string' && drawId) {
       // Always an <img>, never inline markup: the snapshot is validated but
       // image context is what actually makes it inert.
       src = assetUrl(`/api/draws/${encodeURIComponent(drawId)}/svg?raw=1`);
+      // A snapshot is always captured light (docs/draw.md §5b), so under the
+      // dark theme an embed follows the canvas the way the previews do. This
+      // render is static and knows neither the theme nor the drawing, so the
+      // class only ARMS the rule — `useDrawEmbedTheme` stamps the matching
+      // data attribute once it has checked the snapshot for pasted images.
+      extraClass = DRAW_EMBED_CLASS;
     } else if (typeof nodeId === 'string' && nodeId) {
       src = assetUrl(`/api/files/files/${nodeId}?raw=1`);
     } else if (rawSrc && rawSrc.startsWith('/')) {
       src = assetUrl(rawSrc);
     }
-    return ['img', mergeAttributes(HTMLAttributes, { src, loading: 'lazy' })];
+    return [
+      'img',
+      mergeAttributes(
+        HTMLAttributes,
+        { src, loading: 'lazy' },
+        extraClass ? { class: extraClass } : {},
+      ),
+    ];
   },
 });

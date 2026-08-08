@@ -10,6 +10,7 @@ import { EditorBubbleMenu } from './bubble-menu';
 import { EditorDragHandle } from './drag-handle';
 import { TableControls } from './table-controls';
 import { DrawPicker } from './draw-picker';
+import { useDrawEmbedTheme } from './draw-embed-theme';
 import { SlashCommand } from './slash-command';
 import { FocusMarks, focusMarksKey } from './focus-marks';
 import { FocusGutter } from './focus-gutter';
@@ -250,6 +251,9 @@ export function PageEditor({
     dom.addEventListener(DIFF_ACTION_EVENT, onAction);
     return () => dom.removeEventListener(DIFF_ACTION_EVENT, onAction);
   }, [editor]);
+
+  // Embedded drawings follow the app theme like the /draw previews do.
+  useDrawEmbedTheme(editor);
 
   if (!editor) return null;
 

@@ -16,22 +16,50 @@
  * brain, where there is no app theme to follow.
  */
 
-/** Excalidraw's own `THEME_FILTER`, copied deliberately rather than imported —
- *  it is a private constant in the package, and the point is that our surfaces
- *  match the canvas. Re-check it on a pin bump, alongside `draw-theme.css`. */
-const DARK_INVERT = 'dark:[filter:invert(93%)_hue-rotate(180deg)]';
+// Both classes carry Excalidraw's own THEME_FILTER — copied deliberately
+// rather than imported, since it is a private constant in the package and the
+// point is that our surfaces match the canvas. Re-check on a pin bump,
+// alongside draw-theme.css.
+//
+// WRITTEN OUT IN FULL, and they must stay that way. Tailwind v4 scans SOURCE
+// TEXT for candidates, so a class assembled from a shared fragment
+// (`dark:${FILTER}`) is invisible to it and no rule is emitted at all — the
+// filter then silently does nothing. Guarded by the source assertion in
+// snapshot-theme.test.ts.
+
+/** For a preview that holds the snapshot and can decide up front. */
+const INVERT = 'dark:[filter:invert(93%)_hue-rotate(180deg)]';
+
+/** For a page embed, which is a plain `<img>` rendered by a static
+ *  `renderHTML` with no theme and no data in hand. The class ships on every
+ *  embed; `useDrawEmbedTheme` stamps `data-draw-theme="invert"` once it has
+ *  checked the snapshot, so the default is today's un-inverted rendering and
+ *  nothing ever flashes through a wrong state. */
+export const DRAW_EMBED_CLASS =
+  'dark:data-[draw-theme=invert]:[filter:invert(93%)_hue-rotate(180deg)]';
 
 /**
- * The class for an `<img>` showing a drawing's snapshot.
+ * Whether a snapshot places a pasted raster image.
  *
- * `hasImages` drawings opt OUT: the editor cancels its inversion per image
- * element (upstream applies `invert(100%) hue-rotate(180deg) saturate(1.25)` to
- * raster images so a pasted photo isn't shown as a negative), and one filter
- * over a flat `<img>` cannot do that. Since every surface must render a
- * snapshot as an `<img>` and never as inline markup — that is the security
- * property the whole validator design rests on (docs/draw.md §4) — the honest
- * answer for those is to leave them light rather than negate the photo.
+ * Such a drawing must NOT be inverted. Upstream cancels its own inversion per
+ * image element (it applies `invert(100%) hue-rotate(180deg) saturate(1.25)` to
+ * raster images so a photo isn't shown as a negative), and one filter over a
+ * flat `<img>` cannot do that. Since every surface must render a snapshot as an
+ * `<img>` and never as inline markup — the security property the whole
+ * validator design rests on, docs/draw.md §4 — the honest answer is to leave
+ * those light rather than negate the photo.
+ *
+ * Read off the snapshot rather than off `file_refs`: the snapshot is the thing
+ * actually being displayed, so a scene that no longer places an image it once
+ * held gives the right answer here, and no surface needs a database flag
+ * plumbed to it.
  */
-export function drawSnapshotClass(hasImages: boolean): string {
-  return hasImages ? '' : DARK_INVERT;
+export function snapshotPlacesImage(svg: string): boolean {
+  return /<image[\s/>]/i.test(svg);
+}
+
+/** The class for an `<img>` showing a snapshot the caller already holds. */
+export function drawSnapshotClass(svg: string | null | undefined): string {
+  if (!svg) return '';
+  return snapshotPlacesImage(svg) ? '' : INVERT;
 }

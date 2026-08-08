@@ -38,9 +38,6 @@ type DrawRow = {
   visibility: 'private' | 'public';
   hasSvg: boolean;
   hasDraft: boolean;
-  /** The scene places pasted images — its preview must not be theme-inverted
-   *  (see `drawSnapshotClass`). */
-  hasImages: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -454,11 +451,7 @@ function DrawPreview({
               the canvas's own inversion so the preview matches the editor the
               drawing was made in — view-time only, nothing stored changes. */}
           {/* eslint-disable-next-line @next/next/no-img-element -- blob: URL of an owner-generated SVG; next/image can't take it */}
-          <img
-            src={src}
-            alt={draw.title}
-            className={cn('h-auto w-full', drawSnapshotClass(draw.hasImages))}
-          />
+          <img src={src} alt={draw.title} className={cn('h-auto w-full', drawSnapshotClass(svg))} />
         </>
       ) : (
         <PreviewEmpty
