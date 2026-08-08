@@ -279,6 +279,19 @@ test.describe('drawing embedded in a page', () => {
         `${serverURL}/s/${otherLink.token}/draw/${draw.id}`,
       );
       expect(leaked.status()).toBe(404);
+
+      // Committing the host page folds the drawing's scene_text into the
+      // page's indexed text (4b in docs/draw-audit-handover.md): a term that
+      // appears only inside the embedded diagram finds the PAGE.
+      const hostDetail = (await (await ownerApi.get(`/api/pages/${hostPage.id}`)).json()) as {
+        page: { doc: Record<string, unknown> };
+      };
+      const recommit = await ownerApi.post(`/api/pages/${hostPage.id}/commit`, {
+        data: { doc: hostDetail.page.doc },
+      });
+      expect(recommit.ok()).toBeTruthy();
+      const byDrawText = await ownerApi.get('/api/pages?q=embedded%20canary');
+      expect(JSON.stringify(await byDrawText.json())).toContain(`E2E host page`);
     } finally {
       await ownerApi.delete(`/api/pages/${hostPage.id}`);
       await ownerApi.delete(`/api/pages/${otherPage.id}`);

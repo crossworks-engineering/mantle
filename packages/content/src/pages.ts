@@ -16,9 +16,18 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
-import { db, nodes, pages, entities, entityEdges, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  db,
+  draws,
+  nodes,
+  pages,
+  entities,
+  entityEdges,
+  notifyNodeIngested,
+  type Node,
+} from '@mantle/db';
 import { docToText } from './doc-to-text';
-import { referencedFileIds } from './doc-assets';
+import { referencedDrawIds, referencedFileIds } from './doc-assets';
 import { ensureBlockIds, repairTableRows } from './block-ids';
 import { childPagePath } from './page-path';
 import { insertAfterBlock, type PMBlockNode } from './block-edit';
@@ -1020,7 +1029,7 @@ export const EMBED_TEXT_TOTAL = 16000;
  * text is skipped, and order is preserved (diff-friendly).
  */
 export function foldEmbeddedText(
-  items: { title: string; text: string | null | undefined }[],
+  items: { title: string; text: string | null | undefined; label?: string }[],
   perFile = EMBED_TEXT_PER_FILE,
   total = EMBED_TEXT_TOTAL,
 ): string {
@@ -1031,7 +1040,7 @@ export function foldEmbeddedText(
     if (!text) continue;
     const slice = text.slice(0, Math.min(perFile, budget));
     if (!slice) break;
-    parts.push(`[Embedded file: ${it.title}]\n${slice}`);
+    parts.push(`[${it.label ?? 'Embedded file'}: ${it.title}]\n${slice}`);
     budget -= slice.length;
     if (budget <= 0) break;
   }
@@ -1052,22 +1061,45 @@ export function foldEmbeddedText(
  */
 async function embeddedAssetText(ownerId: string, doc: unknown): Promise<string> {
   const ids = referencedFileIds(doc);
-  if (ids.length === 0) return '';
+  const drawIds = referencedDrawIds(doc);
+  if (ids.length === 0 && drawIds.length === 0) return '';
 
-  const rows = await db
-    .select({ id: nodes.id, title: nodes.title, data: nodes.data })
-    .from(nodes)
-    .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ids), eq(nodes.type, 'file')));
+  const rows = ids.length
+    ? await db
+        .select({ id: nodes.id, title: nodes.title, data: nodes.data })
+        .from(nodes)
+        .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ids), eq(nodes.type, 'file')))
+    : [];
   const byId = new Map(rows.map((r) => [r.id, r]));
 
+  // Embedded drawings fold their committed `scene_text` (which already carries
+  // the drawing's own images' OCR — see draws.ts embeddedAssetText), so a term
+  // that appears only inside an embedded diagram still finds the page. Drafts
+  // never leak: scene_text is recomputed on commit only. Pure SQL, bounded by
+  // the same fold budget — no extraction is triggered here.
+  const drawRows = drawIds.length
+    ? await db
+        .select({ id: draws.nodeId, title: nodes.title, text: draws.sceneText })
+        .from(draws)
+        .innerJoin(nodes, eq(nodes.id, draws.nodeId))
+        .where(and(eq(nodes.ownerId, ownerId), inArray(draws.nodeId, drawIds)))
+    : [];
+  const byDrawId = new Map(drawRows.map((r) => [r.id, r]));
+
   // Map doc embed-order → {title, text}, preserving order; skip unresolved ids.
-  const items = ids
-    .map((id) => byId.get(id))
-    .filter((r): r is NonNullable<typeof r> => !!r)
-    .map((r) => ({
-      title: r.title,
-      text: (r.data as Record<string, unknown> | null)?.text as string | undefined,
-    }));
+  const items = [
+    ...ids
+      .map((id) => byId.get(id))
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .map((r) => ({
+        title: r.title,
+        text: (r.data as Record<string, unknown> | null)?.text as string | undefined,
+      })),
+    ...drawIds
+      .map((id) => byDrawId.get(id))
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .map((r) => ({ title: r.title, text: r.text, label: 'Embedded drawing' })),
+  ];
   return foldEmbeddedText(items);
 }
 
