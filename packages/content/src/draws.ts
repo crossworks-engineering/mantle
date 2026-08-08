@@ -107,6 +107,13 @@ export type DrawRow = {
    *  rendered (that is the whole point of the commit gate), so the list can
    *  only SAY it exists — see the badge in the preview pane. */
   hasDraft: boolean;
+  /** Whether the committed scene places any pasted RASTER image (`file_refs`
+   *  is non-empty). In-app previews invert the snapshot to match the dark
+   *  editor canvas, and a flat filter over an `<img>` would turn a photo into
+   *  a negative — the editor cancels its own inversion per image element,
+   *  which a single snapshot cannot. So a drawing carrying images keeps its
+   *  light rendition. See `client/web/components/draw/snapshot-theme.ts`. */
+  hasImages: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -125,7 +132,7 @@ export type DrawDetail = DrawRow & {
   fileRefs: Record<string, string>;
 };
 
-function rowOf(n: Node, hasSvg = false, hasDraft = false): DrawRow {
+function rowOf(n: Node, hasSvg = false, hasDraft = false, hasImages = false): DrawRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   return {
     id: n.id,
@@ -137,6 +144,7 @@ function rowOf(n: Node, hasSvg = false, hasDraft = false): DrawRow {
     visibility: d.visibility === 'public' ? 'public' : 'private',
     hasSvg,
     hasDraft,
+    hasImages,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -149,7 +157,14 @@ function detailOf(
   extra: { draftRev?: number; fileRefs?: Record<string, string>; hasSvg?: boolean } = {},
 ): DrawDetail {
   return {
-    ...rowOf(n, extra.hasSvg ?? false, draft !== null),
+    // hasImages comes off the same fileRefs map the detail already carries, so
+    // the detail view needs no extra column for it.
+    ...rowOf(
+      n,
+      extra.hasSvg ?? false,
+      draft !== null,
+      Object.keys(extra.fileRefs ?? {}).length > 0,
+    ),
     scene,
     draft,
     fileRefs: extra.fileRefs ?? {},
@@ -249,6 +264,9 @@ export async function listDraws(
       // The draft's CONTENT never leaves the editor; only its existence does,
       // so the list can tell the user their uncommitted work is safe.
       hasDraft: sql<boolean>`${draws.draftScene} IS NOT NULL`,
+      // Existence only, again: which files a scene places is not the list's
+      // business, but whether its preview may be theme-inverted is.
+      hasImages: sql<boolean>`coalesce(${draws.fileRefs}, '{}'::jsonb) <> '{}'::jsonb`,
     })
     .from(nodes)
     .leftJoin(draws, eq(draws.nodeId, nodes.id))
@@ -256,7 +274,9 @@ export async function listDraws(
     .orderBy(drawOrderBy(opts.sort))
     .limit(opts.limit ?? 500)
     .offset(opts.offset ?? 0);
-  return rows.map((r) => rowOf(r.node, r.hasSvg ?? false, r.hasDraft ?? false));
+  return rows.map((r) =>
+    rowOf(r.node, r.hasSvg ?? false, r.hasDraft ?? false, r.hasImages ?? false),
+  );
 }
 
 export async function countDraws(ownerId: string, opts: ListDrawsOpts = {}): Promise<number> {

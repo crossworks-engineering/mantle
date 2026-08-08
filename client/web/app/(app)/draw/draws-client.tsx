@@ -26,6 +26,7 @@ import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { syncSelectionParam } from '@/lib/url-sync';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { drawSnapshotClass } from '@/components/draw/snapshot-theme';
 
 type DrawRow = {
   id: string;
@@ -37,6 +38,9 @@ type DrawRow = {
   visibility: 'private' | 'public';
   hasSvg: boolean;
   hasDraft: boolean;
+  /** The scene places pasted images — its preview must not be theme-inverted
+   *  (see `drawSnapshotClass`). */
+  hasImages: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -446,9 +450,15 @@ function DrawPreview({
           )}
           {/* The snapshot fills its pane plainly — no border, mat or box; the
               SVG carries its own background. Still an IMAGE, never inline
-              markup (see the loader note above). */}
+              markup (see the loader note above). Under the dark theme it takes
+              the canvas's own inversion so the preview matches the editor the
+              drawing was made in — view-time only, nothing stored changes. */}
           {/* eslint-disable-next-line @next/next/no-img-element -- blob: URL of an owner-generated SVG; next/image can't take it */}
-          <img src={src} alt={draw.title} className="h-auto w-full" />
+          <img
+            src={src}
+            alt={draw.title}
+            className={cn('h-auto w-full', drawSnapshotClass(draw.hasImages))}
+          />
         </>
       ) : (
         <PreviewEmpty

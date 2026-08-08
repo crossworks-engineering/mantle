@@ -121,7 +121,7 @@ validator being exhaustive; it rests on every surface rendering the snapshot
 
 | Surface                       | How                                                                                                                   |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL)                                                                  |
+| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL), theme-inverted in dark mode (§5b)                               |
 | Page embed                    | `![alt](draw:<id>)` = an image node with `attrs.drawId`; `<img>` into `/api/draws/:id/svg?raw=1`                      |
 | Share (`/s/[token]`)          | cache-only image routes; a shared page serves exactly the drawings its doc places (`referencedDrawIds`), nothing else |
 | PDF export                    | the print sidecar, embeds with `?nofill=1`                                                                            |
@@ -157,6 +157,37 @@ fonts, selection and the dark `--theme-filter` inversion stay stock, so
 committed snapshots do not vary with the app theme. Guarded by
 `e2e/specs/draw-theme.spec.ts` (computed-style assertions + a screenshot per
 theme in `e2e/.artifacts/`).
+
+## 5b. Why a dark drawing comes back light, and what the previews do
+
+Excalidraw's dark mode is a **CSS filter over the canvas**
+(`invert(93%) hue-rotate(180deg)`), not a change to element colours. Draw in
+dark mode and the scene stores `#1e1e1e` strokes on a `#ffffff` canvas — the
+palettes have no dark canvas swatch and no white stroke swatch — and while the
+canvas is inverted the pickers are inverted too, so the "white" you chose is
+stored as near-black. `theme` is not in `APP_STATE_KEYS` and both capture paths
+pass `exportWithDarkMode: false`, so **no drawing can produce a dark snapshot
+by way of the app theme**. That is the intent: the snapshot is served to share
+links, PDF, Word and a sidecar re-render that is always light, and it must not
+depend on which theme its author had open at commit.
+
+The cost was that the editor inverted and every other surface didn't, which
+reads as "my drawing came back in the wrong theme". So the in-app previews
+apply the same filter at VIEW time
+([`client/web/components/draw/snapshot-theme.ts`](../client/web/components/draw/snapshot-theme.ts)).
+Nothing stored or exported changes, and the share surface, `/print` and both
+exports are deliberately excluded — they leave the brain, where there is no app
+theme to follow.
+
+**A drawing that places pasted images opts out** (`DrawRow.hasImages`, from a
+non-empty `file_refs`). Upstream cancels its own inversion per image element so
+a photo isn't shown as a negative; one filter over a flat `<img>` cannot, and
+rendering the snapshot as inline markup instead is exactly what §4's security
+rule forbids. Those keep the light rendition.
+
+A genuinely dark drawing is still available and travels everywhere: set the
+canvas background to a dark colour with the custom picker and choose light
+stroke colours. Then darkness is data, not a viewer preference.
 
 ## 6. Brain wiring + agents
 
