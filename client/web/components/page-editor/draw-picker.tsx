@@ -252,7 +252,9 @@ function PickerRow({
       <span
         className={cn(
           'flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border',
-          selected ? 'border-accent-foreground/25 bg-accent-foreground/10' : 'border-border bg-background',
+          selected
+            ? 'border-accent-foreground/25 bg-accent-foreground/10'
+            : 'border-border bg-background',
         )}
       >
         {icon}

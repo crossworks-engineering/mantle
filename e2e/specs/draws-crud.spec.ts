@@ -346,7 +346,8 @@ test.describe('the /drawing slash item', () => {
       // And the autosaved page draft carries the drawId reference.
       await expect
         .poll(
-          async () => JSON.stringify(await (await ownerApi.get(`/api/pages/${hostPage.id}`)).json()),
+          async () =>
+            JSON.stringify(await (await ownerApi.get(`/api/pages/${hostPage.id}`)).json()),
           { timeout: 15_000 },
         )
         .toContain(draw.id);

@@ -68,12 +68,21 @@ function inCooldown(id: string): boolean {
   return true;
 }
 
-function renderOnce(ownerId: string, id: string, expectedVersion: number): Promise<string | null> {
+function renderOnce(
+  ownerId: string,
+  id: string,
+  expectedVersion: number,
+  hasCachedSvg: boolean,
+): Promise<string | null> {
   const existing = inFlight.get(id);
   if (existing) return existing;
   const p = withSlot(async () => {
-    const svg = await renderDrawSvg(id, buildInternalRenderCookie(ownerId));
-    if (!svg) {
+    const { svg, partial } = await renderDrawSvg(id, buildInternalRenderCookie(ownerId));
+    // A partial render (some scene images missing/hung) beats NOTHING, so it
+    // may fill an empty cache — but it must never overwrite a snapshot that
+    // still shows the images. Cooldown either way: the missing file won't
+    // reappear within the window, so retrying per-request would loop Chromium.
+    if (!svg || (partial && hasCachedSvg)) {
       failedUntil.set(id, Date.now() + FAILURE_COOLDOWN_MS);
       return null;
     }
@@ -119,7 +128,7 @@ export async function getDrawSvgOrRender(
   if (!opts.force && inCooldown(id)) return snap.svg;
 
   try {
-    return (await renderOnce(ownerId, id, snap.version)) ?? snap.svg;
+    return (await renderOnce(ownerId, id, snap.version, snap.svg != null)) ?? snap.svg;
   } catch (err) {
     if (!(err instanceof DrawRendererUnavailableError)) {
       console.error(`[draw-snapshot] render failed for ${id}:`, err);

@@ -31,13 +31,20 @@ export class DrawRendererUnavailableError extends Error {
  *  wedged sidecar can't hold a request open. */
 const RENDER_TIMEOUT_MS = 20_000;
 
+export type DrawRenderResult = {
+  svg: string | null;
+  /** The island rendered without some scene images (missing/hung fetches).
+   *  The caller decides whether that beats what it already has. */
+  partial: boolean;
+};
+
 /**
  * Render `/render/draws/<id>` in the sidecar and return the SVG string.
- * Returns null when the scene is empty or the island reported a failure —
+ * `svg` is null when the scene is empty or the island reported a failure —
  * both are "no snapshot", which is a legitimate state, not an error.
  * Throws DrawRendererUnavailableError when the sidecar itself is unusable.
  */
-export async function renderDrawSvg(nodeId: string, cookie: string): Promise<string | null> {
+export async function renderDrawSvg(nodeId: string, cookie: string): Promise<DrawRenderResult> {
   const endpoint = process.env.BROWSER_WS_ENDPOINT;
   if (!endpoint) throw new DrawRendererUnavailableError('BROWSER_WS_ENDPOINT is not set');
 
@@ -67,6 +74,7 @@ export async function renderDrawSvg(nodeId: string, cookie: string): Promise<str
     const result = await page.evaluate(() => ({
       svg: window.__mantleDrawSvg ?? null,
       error: window.__mantleDrawError ?? null,
+      partial: window.__mantleDrawPartial === true,
     }));
 
     if (result.error) {
@@ -74,9 +82,12 @@ export async function renderDrawSvg(nodeId: string, cookie: string): Promise<str
       if (result.error !== 'empty scene') {
         console.warn(`[draw-render] ${nodeId}: ${result.error}`);
       }
-      return null;
+      return { svg: null, partial: result.partial };
     }
-    return result.svg;
+    if (result.partial) {
+      console.warn(`[draw-render] ${nodeId}: rendered without some scene images`);
+    }
+    return { svg: result.svg, partial: result.partial };
   } finally {
     // Disconnect, never close: browserless owns the browser lifecycle.
     await browser.disconnect().catch(() => {});
@@ -88,5 +99,6 @@ declare global {
     __mantleDrawSvg?: string;
     __mantleDrawDone?: boolean;
     __mantleDrawError?: string;
+    __mantleDrawPartial?: boolean;
   }
 }
