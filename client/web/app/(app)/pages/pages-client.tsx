@@ -1,6 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -79,6 +87,9 @@ import { TagPill } from '@mantle/web-ui/tag-pill';
 import { TagInput } from '@/components/tag-input';
 import { PageView } from '@/components/page-editor/page-view';
 import { ShareControl } from '@/components/share-control';
+import { PageOutline } from '@mantle/web-ui/page-outline';
+import { buildPageToc } from '@mantle/content/page-toc';
+import { StretchHorizontal } from 'lucide-react';
 import { FocusToggle } from '@/components/layout/focus-toggle';
 import { useZenMode } from '@/components/layout/zen-mode';
 import { focusGridColumns } from '@/components/layout/focus-layout';
@@ -86,7 +97,7 @@ import { ExportMenu } from '@/components/export/export-menu';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { buildChildrenIndex } from '@mantle/web-ui/page-tree';
-import type { PageRow } from '@mantle/content';
+import type { PageRow, PageWidth } from '@mantle/content';
 
 // Wire shape is the GET /api/pages mapper's output — single source of truth
 // (the canonical row also carries `width`, unused by this list view). Drift
@@ -678,6 +689,7 @@ export function PagesClient() {
             key={selected.id}
             row={selected}
             onDelete={() => setDeleteTarget(selected)}
+            onWidthChange={() => void queryClient.invalidateQueries({ queryKey: ['pages'] })}
           />
         ) : (
           <div className="flex h-full items-center justify-center p-10 text-center text-sm text-muted-foreground">
@@ -1022,10 +1034,49 @@ function TagFilter({
  *  empty — shows its content here instead of looking blank. This is render-only
  *  (no indexing); the committed doc stays the canonical version everywhere else
  *  (public share, MCP). A badge flags that the preview is showing a draft. */
-function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) {
+function PagePreview({
+  row,
+  onDelete,
+  onWidthChange,
+}: {
+  row: PageRow;
+  onDelete: () => void;
+  onWidthChange: (width: PageWidth) => void;
+}) {
   const [doc, setDoc] = useState<JSONContent | null>(null);
   const [isDraft, setIsDraft] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Optimistic: the width applies on click and the PATCH follows, because this
+  // is a reading control and a round trip between click and reflow reads as a
+  // stall. The list is invalidated after, so re-selecting shows the new value.
+  const [width, setWidth] = useState<PageWidth>(row.width);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  // The outline reads the SAME doc the preview renders — the draft when there
+  // is one, so the headings match what is on screen rather than what was last
+  // committed.
+  const toc = useMemo(() => (doc ? buildPageToc(doc) : []), [doc]);
+
+  // PageView renders through TipTap, which writes block ids as `data-block-id`
+  // (block-id.ts avoids the native `id` on purpose). PageOutline's default jump
+  // uses getElementById, which only works on the server-rendered share/print
+  // surface — so this surface supplies its own.
+  const jumpToBlock = useCallback((id: string) => {
+    bodyRef.current
+      ?.querySelector(`[data-block-id="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  const applyWidth = async (next: PageWidth) => {
+    if (next === width) return;
+    setWidth(next);
+    try {
+      await apiSend(`/api/pages/${row.id}`, 'PATCH', { width: next });
+      onWidthChange(next);
+    } catch {
+      setWidth(width); // put it back; the page kept its stored width
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1066,6 +1117,20 @@ function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) 
               case. The "Draft · uncommitted" badge beside the title is what
               says so. */}
           <ShareControl nodeId={row.id} teamMode allowCascade />
+          {/* Reading width, same control and same stored `data.width` as the
+              editor's — so a page reads the way it was written, and widening it
+              here widens it there. Earns its place beside the focus toggle:
+              full-viewport reading is exactly when the measure matters. */}
+          <Button
+            size="sm"
+            variant={width === 'wide' ? 'default' : 'outline'}
+            onClick={() => void applyWidth(width === 'wide' ? 'narrow' : 'wide')}
+            aria-pressed={width === 'wide'}
+            aria-label="Toggle full width"
+            title="Toggle full width"
+          >
+            <StretchHorizontal />
+          </Button>
           {/* This header survives focus mode (the shell's chrome doesn't), so
               the toggle here is the whole control, enter and exit. */}
           <FocusToggle />
@@ -1101,7 +1166,22 @@ function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) 
           <Skeleton className="h-4 w-5/6" />
         </div>
       ) : doc ? (
-        <PageView content={doc} />
+        // Outline rail (left, wide screens) + width-constrained content, the
+        // same shape the editor uses so a page doesn't reflow when you open it.
+        <div className="flex w-full gap-6" ref={bodyRef}>
+          {toc.length > 0 && (
+            <aside className="hidden w-56 shrink-0 xl:block">
+              <div className="sticky top-6 max-h-[calc(100vh-9rem)] overflow-y-auto scrollbar-thin">
+                <PageOutline entries={toc} onJump={jumpToBlock} />
+              </div>
+            </aside>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className={cn('mx-auto w-full', width !== 'wide' ? 'max-w-3xl' : 'max-w-none')}>
+              <PageView content={doc} />
+            </div>
+          </div>
+        </div>
       ) : (
         <p className="text-sm italic text-muted-foreground">Couldn’t load this page.</p>
       )}
