@@ -102,8 +102,8 @@ never replace an existing snapshot.
 The sidecar has a second, unrelated job: **rasterizing** a snapshot to PNG for
 the Word export, since `ImageRun` embeds no SVG
 ([`server/web/lib/render-draw-png.ts`](../server/web/lib/render-draw-png.ts)).
-That is a screenshot of `/print/draws/:id` — the sheet the PDF export already
-prints — not a second scene render, so the picture in a .docx is the same
+That is a screenshot of `/print/draws/:id`, the sheet the PDF export already
+prints, not a second scene render, so the picture in a .docx is the same
 snapshot every other surface serves and cannot drift from it. It runs at 2× for
 print, reports its size in CSS px so the document still lays it out at 1×,
 shares the same 2-session semaphore, and stores nothing: a raster is a
@@ -162,8 +162,8 @@ theme in `e2e/.artifacts/`).
 
 Excalidraw's dark mode is a **CSS filter over the canvas**
 (`invert(93%) hue-rotate(180deg)`), not a change to element colours. Draw in
-dark mode and the scene stores `#1e1e1e` strokes on a `#ffffff` canvas — the
-palettes have no dark canvas swatch and no white stroke swatch — and while the
+dark mode and the scene stores `#1e1e1e` strokes on a `#ffffff` canvas (the
+palettes have no dark canvas swatch and no white stroke swatch), and while the
 canvas is inverted the pickers are inverted too, so the "white" you chose is
 stored as near-black. `theme` is not in `APP_STATE_KEYS` and both capture paths
 pass `exportWithDarkMode: false`, so **no drawing can produce a dark snapshot
@@ -177,7 +177,7 @@ apply the same filter at VIEW time
 ([`client/web/components/draw/snapshot-theme.ts`](../client/web/components/draw/snapshot-theme.ts)):
 the `/draw` list and detail previews, and drawings embedded in a page. Nothing
 stored or exported changes, and the share surface, `/print` and both exports are
-deliberately excluded — they leave the brain, where there is no app theme to
+deliberately excluded: they leave the brain, where there is no app theme to
 follow.
 
 **A drawing that places pasted images opts out.** Upstream cancels its own
@@ -185,7 +185,7 @@ inversion per image element so a photo isn't shown as a negative; one filter
 over a flat `<img>` cannot, and rendering the snapshot as inline markup instead
 is exactly what §4's security rule forbids. Those keep the light rendition.
 The test is `snapshotPlacesImage`, run against the SNAPSHOT rather than
-`file_refs` — the snapshot is the thing on screen, so a scene that no longer
+`file_refs`. The snapshot is the thing on screen, so a scene that no longer
 places an image it once held gives the right answer, and no surface needs a
 database flag plumbed to it.
 
@@ -194,7 +194,7 @@ holds the snapshot, so it decides before rendering. A page embed is a plain
 `<img>` from a static `renderHTML` (`page-editor/image.ts`) that knows neither
 the theme nor the drawing, so it always carries a class ARMED on
 `data-draw-theme="invert"`, and `useDrawEmbedTheme` stamps that attribute after
-checking the snapshot — re-fetched at the URL the `<img>` already used, so it is
+checking the snapshot, re-fetched at the URL the `<img>` already used, so it is
 a cache hit, and memoised per drawing. The default is therefore un-inverted (the
 old rendering), so a slow or failed check never flashes through a wrong state.
 
@@ -210,7 +210,7 @@ stroke colours. Then darkness is data, not a viewer preference.
 ## 5c. Looking at a drawing without editing it
 
 The preview shows the committed snapshot: one flat image. That is the right
-default — instant, identical to every other surface, and browsing the list
+default: instant, identical to every other surface, and browsing the list
 never pays for the editor bundle. But an image cannot be panned or zoomed, so a
 diagram bigger than the pane could only be read by opening it for EDITING,
 which is a strange thing to have to do to LOOK at something.
@@ -225,7 +225,7 @@ Three properties worth keeping:
 
 - **On demand, not by default.** The canvas mounts on the click, so selecting a
   row still costs one image. The cheap-list decision survives.
-- **The COMMITTED scene, never the draft** — the viewer must agree with the
+- **The COMMITTED scene, never the draft.** The viewer must agree with the
   snapshot beside it, the same rule every non-editor surface follows.
 - **It reads the scene, not the snapshot**, so it is offered ahead of the
   snapshot checks: a drawing whose render failed, or one an agent authored, can

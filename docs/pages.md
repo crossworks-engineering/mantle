@@ -290,12 +290,12 @@ cache + `extract_cost_cap_micro_usd`.
   _(The MCP surface above is still read-only; only the in-app agent authors.)_
 - **Public sharing:** a page can be shared read-only at `/s/[token]`, see
   [`sharing.md`](./sharing.md). Offered on the **list preview** as well as in
-  the editor, so sharing doesn't mean opening the page first — the preview's
+  the editor, so sharing doesn't mean opening the page first. The preview's
   link serves the last committed content (sharing.md §7).
 - **Reading, not just writing:** the preview header carries the same
   `<FocusToggle />` the editor does. Focus mode hides the shell's four chrome
   regions, and on a list screen it drops the list column too
-  (`components/layout/focus-layout.ts`) so the page gets the whole viewport —
+  (`components/layout/focus-layout.ts`) so the page gets the whole viewport,
   otherwise the chrome would go and the biggest distraction would stay. The
   list is hidden rather than unmounted, so search text, scroll position and
   page number survive the round trip. The toggle is the only control in and

@@ -243,7 +243,7 @@ incident.
   and wrong quietly, on some diagrams rather than loudly on all of them.
 - **No PNG alongside the SVG**, and no second renderer of any kind. (Shipped
   since: the Word export rasterizes a snapshot on demand, `render-draw-png.ts`.
-  The rule still holds — that is a screenshot of the existing snapshot, thrown
+  The rule still holds: that is a screenshot of the existing snapshot, thrown
   away after the download, not a stored second representation and not a second
   renderer.)
 
