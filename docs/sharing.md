@@ -48,12 +48,12 @@ Two of these carry extra semantics:
 
 Settled design decisions:
 
-| Decision | Choice | Why |
-|---|---|---|
-| Share model | **Revocable tokens** (a `shares` table) | revoke + expiry + view counts; hides internal node ids |
-| Page rendering | **Server static sanitized HTML** | fast, crawlable-by-choice, no client JS for anonymous visitors, safest |
-| Indexing | **`noindex` by default** | unlisted, only people with the link; per-link opt-in later |
-| Links per item | **One active link per item** | simple mental model (toggle on/off) |
+| Decision       | Choice                                  | Why                                                                    |
+| -------------- | --------------------------------------- | ---------------------------------------------------------------------- |
+| Share model    | **Revocable tokens** (a `shares` table) | revoke + expiry + view counts; hides internal node ids                 |
+| Page rendering | **Server static sanitized HTML**        | fast, crawlable-by-choice, no client JS for anonymous visitors, safest |
+| Indexing       | **`noindex` by default**                | unlisted, only people with the link; per-link opt-in later             |
+| Links per item | **One active link per item**            | simple mental model (toggle on/off)                                    |
 
 ---
 
@@ -180,7 +180,8 @@ NodeViews), then post-processes:
 
 > This is a **third** representation of the page schema (the TipTap editor,
 > `markdownToDoc`, and now JSON→HTML). They're kept in sync by the shared schema
-> + tests; consolidating is a future cleanup.
+>
+> - tests; consolidating is a future cleanup.
 
 ---
 
@@ -188,31 +189,39 @@ NodeViews), then post-processes:
 
 Clean, centered, media-appropriate (`apps/web/components/share/`):
 
-| Type | Presentation |
-|---|---|
-| **Page** | `renderPageDoc` HTML; centered reading column (respect `data.width`), title + icon. Full formatting (callouts/columns/tables/code/math/images). |
-| **Note** | Markdown via `ReactMarkdown` + `remarkGfm` + `prose`, centered. |
-| **File** | Switch on `mimeType`: image (centered, zoom) · pdf (embedded viewer) · video/audio (`<video>`/`<audio controls>`) · text/markdown/code (rendered / lowlight) · else download card (icon, name, size). |
-| **Task** | Card: title, status badge, priority, due date, body markdown. |
-| **Event** | Card: title, formatted date/time range, location, body, **"Add to calendar" (.ics)**. |
-| **Table** | Read-only grid (client): tab bar for multi-tab workbooks, sticky header, "Load more" offset paging via `GET /s/[token]/rows`; legacy JSONB docs render inline. |
-| **Folder** | Read-only listing (server): breadcrumbs scoped to the share, subfolder navigation via `?p=`, per-file **Download** through the scoped asset route. |
+| Type       | Presentation                                                                                                                                                                                          |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Page**   | `renderPageDoc` HTML; centered reading column (respect `data.width`), title + icon. Full formatting (callouts/columns/tables/code/math/images).                                                       |
+| **Note**   | Markdown via `ReactMarkdown` + `remarkGfm` + `prose`, centered.                                                                                                                                       |
+| **File**   | Switch on `mimeType`: image (centered, zoom) · pdf (embedded viewer) · video/audio (`<video>`/`<audio controls>`) · text/markdown/code (rendered / lowlight) · else download card (icon, name, size). |
+| **Task**   | Card: title, status badge, priority, due date, body markdown.                                                                                                                                         |
+| **Event**  | Card: title, formatted date/time range, location, body, **"Add to calendar" (.ics)**.                                                                                                                 |
+| **Table**  | Read-only grid (client): tab bar for multi-tab workbooks, sticky header, "Load more" offset paging via `GET /s/[token]/rows`; legacy JSONB docs render inline.                                        |
+| **Folder** | Read-only listing (server): breadcrumbs scoped to the share, subfolder navigation via `?p=`, per-file **Download** through the scoped asset route.                                                    |
 
-All themed via tokens. *(Note: the in-app file view only handles text today, the
-media presenters are net-new here.)*
+All themed via tokens. _(Note: the in-app file view only handles text today, the
+media presenters are net-new here.)_
 
 ---
 
 ## 7. Owner-side UX
 
 A reusable **`<ShareControl>`** (`components/share/share-control.tsx`) on every
-detail screen (pages, notes, tasks, events, files, apps, tables, folders): a *"Anyone with the link can
-view"* toggle → mint token → show URL + **Copy** → **Revoke** (and, P4, expiry +
+detail screen (pages, notes, tasks, events, files, apps, tables, folders): a _"Anyone with the link can
+view"_ toggle → mint token → show URL + **Copy** → **Revoke** (and, P4, expiry +
 "allow search engines"). **Every** shareable type also offers the
 public/team admission toggle (`teamMode`), pages/apps/tables/folders carry
 kind-specific hints; notes/tasks/events/files use the default. The `/team`
 workspace lists shares of **both** modes per section (public ones marked with
 a `public` badge); the mode only controls who can open the `/s/` link.
+
+Pages and Draw carry it on their **list preview** as well as in the editor, so
+an item can be shared without opening it. The preview's control deliberately
+passes no `beforeEnable`: a list screen holds no draft to commit (for Draw it
+could not, since committing means capturing the snapshot in the editor), so the
+link serves the last **committed** content. That is what `/s` renders in either
+case; the "Draft · uncommitted" badge beside the title is what tells the owner
+their newer edits aren't in it yet.
 API (owner-scoped via `requireOwner`):
 
 - `POST /api/shares` `{ nodeId }` → `{ token, url }`
@@ -238,7 +247,7 @@ the parent public↔team and the shared children follow.
   (descendants via the `parent_id` recursion, `listPageDescendantIds`). A page
   added later isn't auto-shared, re-toggle to pick it up.
 - **Helpers** (`packages/content/src/shares.ts`): `setShareCascade(ownerId,
-  parentNodeId, on)`, and the cascade-aware drop-ins `applyShareMode` /
+parentNodeId, on)`, and the cascade-aware drop-ins `applyShareMode` /
   `revokeShareTree` used by the PATCH / DELETE routes.
 - **Hub interaction:** team-mode pages are hub cards, so `listTeamHubSections`
   returns the whole shared set but tags each section with the `parentToken` of
@@ -261,11 +270,11 @@ thin, confirm-gated wrappers over the same `createShare` path (its validation
 owns the rules). Pages keep their dedicated pair, which adds the sub-page
 cascade
 ([`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts)),
-so *"share that page and send me the link"* works end to end:
+so _"share that page and send me the link"_ works end to end:
 
 - **`page_share { id, mode?, children? }`** → `createShare` (idempotent, one
   active link per node) → returns `{ url, token, mode }`. `mode: 'public' |
-  'team'` sets admission via `applyShareMode` (team also lists the page on the
+'team'` sets admission via `applyShareMode` (team also lists the page on the
   hub); `children: true|false` shares/unshares the subtree via `setShareCascade`
   (§7b) and reports `subpagesShared` / `subpagesRevoked`. The URL is built with
   `shareUrlForToken`.

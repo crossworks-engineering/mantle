@@ -3,15 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Check,
-  GitCommitHorizontal,
-  Loader2,
-  Maximize2,
-  Minimize2,
-  Trash2,
-  Undo2,
-} from 'lucide-react';
+import { Check, GitCommitHorizontal, Loader2, Trash2, Undo2 } from 'lucide-react';
 import type {
   AppState,
   BinaryFiles,
@@ -23,7 +15,7 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { TagInput } from '@/components/tag-input';
 import { EmojiPicker } from '@/components/emoji-picker';
-import { useZenMode } from '@/components/layout/zen-mode';
+import { FocusToggle } from '@/components/layout/focus-toggle';
 import { ShareControl } from '@/components/share-control';
 import { ExportMenu } from '@/components/export/export-menu';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
@@ -128,7 +120,6 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const { zen, toggle: toggleZen } = useZenMode();
 
   const [title, setTitle] = useState(initial.title);
   const [icon, setIcon] = useState<string | null>(initial.icon);
@@ -540,16 +531,7 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
           {/* Focus mode: the shell hides its chrome and this toolbar stays, so
               this button is the whole control — enter AND exit. Leaving the
               drawing exits too (the shell drops focus on navigation). */}
-          <Button
-            size="sm"
-            variant={zen ? 'default' : 'ghost'}
-            onClick={toggleZen}
-            aria-pressed={zen}
-            aria-label={zen ? 'Exit focus mode' : 'Focus mode'}
-            title={zen ? 'Exit focus mode' : 'Focus mode — hide the app chrome'}
-          >
-            {zen ? <Minimize2 /> : <Maximize2 />}
-          </Button>
+          <FocusToggle />
           {dirty && (
             <Button
               size="sm"

@@ -229,10 +229,12 @@ function ShellFrame({
   const [zen, setZen] = useState(false);
   const zenCtx = useMemo(() => ({ zen, toggle: () => setZen((v) => !v) }), [zen]);
 
-  // Leaving the screen leaves focus mode. Only the editors offer the toggle, so
-  // any navigation (the toolbar's "All pages"/"All drawings" link included)
-  // means the reason for hiding the chrome is gone — and arriving somewhere
-  // that has no way OUT of focus mode would be a trap.
+  // Leaving the screen leaves focus mode. Four screens offer the toggle (the
+  // Pages and Draw editors and their list previews); everywhere else has no way
+  // OUT, so arriving there with the chrome hidden would be a trap. Note this
+  // watches the PATHNAME: picking another row in a list writes a query param,
+  // so reading one page after another in focus mode does not drop you out of
+  // it, while navigating to a different screen does.
   useEffect(() => {
     setZen(false);
   }, [pathname]);

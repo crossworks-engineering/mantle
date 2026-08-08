@@ -13,8 +13,6 @@ import {
   GitCompareArrows,
   Highlighter,
   Loader2,
-  Maximize2,
-  Minimize2,
   StretchHorizontal,
   Trash2,
   Undo2,
@@ -23,7 +21,7 @@ import { computeDiffOverlay, type DiffOverlay } from '@mantle/content/page-diff'
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { TagInput } from '@/components/tag-input';
-import { useZenMode } from '@/components/layout/zen-mode';
+import { FocusToggle } from '@/components/layout/focus-toggle';
 import { EmojiPicker } from '@/components/emoji-picker';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { ShareControl } from '@/components/share-control';
@@ -136,7 +134,6 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const { zen, toggle: toggleZen } = useZenMode();
 
   const initialDoc = (initial.draft ?? initial.doc) as JSONContent;
 
@@ -987,16 +984,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
           {/* Focus mode: the shell hides its chrome and this toolbar stays, so
               this button is the whole control — enter AND exit. Leaving the
               page exits too (the shell drops focus on navigation). */}
-          <Button
-            size="sm"
-            variant={zen ? 'default' : 'ghost'}
-            onClick={toggleZen}
-            aria-pressed={zen}
-            aria-label={zen ? 'Exit focus mode' : 'Focus mode'}
-            title={zen ? 'Exit focus mode' : 'Focus mode — hide the app chrome'}
-          >
-            {zen ? <Minimize2 /> : <Maximize2 />}
-          </Button>
+          <FocusToggle />
           <Button
             size="sm"
             variant="ghost"

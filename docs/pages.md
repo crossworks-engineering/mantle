@@ -6,20 +6,21 @@
 >
 > Companion docs: [`architecture.md`](./architecture.md) (the `nodes`
 > abstraction + extractor), [`memory.md`](./memory.md) (the six memory layers
-> + `content_chunks`), [`content.md`](./content.md) (the lighter notes / tasks
-> / events surfaces).
+>
+> - `content_chunks`), [`content.md`](./content.md) (the lighter notes / tasks
+>   / events surfaces).
 
 ---
 
 ## 1. What pages are (and aren't)
 
-Pages are Mantle's answer to Notion **pages**: *not* Notion databases. The
+Pages are Mantle's answer to Notion **pages**: _not_ Notion databases. The
 goal is "present, share, plan": long-form, structured, visually rich
 documents. Three deliberate constraints:
 
 - **One document per page.** Not block-per-row like Notion. A page is a single
   ProseMirror/TipTap JSON document in a sidecar table. Single-user, self-hosted
-; none of the per-block fan-out Notion needs for multiplayer applies here.
+  ; none of the per-block fan-out Notion needs for multiplayer applies here.
 - **No real-time collaboration, ever.** Federation between Mantle instances
   happens system-to-system over MCP, never live co-editing. So the storage
   substrate stays a plain JSON blob (no CRDT/Yjs).
@@ -55,7 +56,7 @@ pages (sidecar, packages/db/src/schema/pages.ts)
   version    int
 ```
 
-`doc` is the canonical ProseMirror JSON, *not* markdown. Markdown is lossy for
+`doc` is the canonical ProseMirror JSON, _not_ markdown. Markdown is lossy for
 callouts/columns/mentions, so JSON is the source of truth and `doc_text`
 (via `docToText`) is the derived plaintext the brain consumes.
 
@@ -70,12 +71,12 @@ mirroring `notes.ts`. Migrations: `0037` (enum value), `0038` (sidecar), `0039`
 The single most important behavioural decision. **Autosave is a private draft;
 only an explicit Commit publishes and indexes.**
 
-| | Autosave (draft) | Commit |
-|---|---|---|
-| Writes | `pages.draft_doc` only | promotes `draft_doc` → `doc`, recomputes `doc_text`, clears the draft, bumps `version` |
-| Rendered elsewhere? | **No**: list preview, read-only view, MCP all read the published `doc` | Yes |
-| Indexed (extractor)? | **Never** | Yes, fires `node_ingested` |
-| When | ~1.5s after a pause (8s max), flushed on blur/leave | Commit button, or ⌘/Ctrl+S; enabled only when there are uncommitted changes |
+|                      | Autosave (draft)                                                       | Commit                                                                                 |
+| -------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Writes               | `pages.draft_doc` only                                                 | promotes `draft_doc` → `doc`, recomputes `doc_text`, clears the draft, bumps `version` |
+| Rendered elsewhere?  | **No**: list preview, read-only view, MCP all read the published `doc` | Yes                                                                                    |
+| Indexed (extractor)? | **Never**                                                              | Yes, fires `node_ingested`                                                             |
+| When                 | ~1.5s after a pause (8s max), flushed on blur/leave                    | Commit button, or ⌘/Ctrl+S; enabled only when there are uncommitted changes            |
 
 Why: the extractor (LLM summary + embedding + facts + entities) is expensive
 and was being re-run on every editing pause. Drafts make typing cheap and
@@ -95,14 +96,14 @@ durable; commits make indexing deliberate. A 30-minute editing session is now
   later block tool and `page_get` returned both.
 - The editor loads `draft ?? doc`, so you resume unsaved work; status shows
   Saving → Draft·uncommitted → Committed.
-- Title/tags/width save *live* (cheap metadata; never index).
+- Title/tags/width save _live_ (cheap metadata; never index).
 - **Embedded assets are folded into the index.** A page references its images
   and file chips by `nodeId` (they're real `file` nodes from the files
   pipeline, so each is vision/OCR'd or parsed once on its own ingest). On
   **commit**, `commitPage()` appends those referenced files' extracted
   `data.text` to the page's `doc_text` (`foldEmbeddedText`, bounded
   4 KB/file · 16 KB total, doc order preserved). So the page is searchable by,
-  and its summary reflects, what's *inside* its images/docs, not just their
+  and its summary reflects, what's _inside_ its images/docs, not just their
   filenames. A referenced file whose own extraction hasn't landed yet is
   skipped and picked up on the next commit (no reactive re-extract).
 
@@ -113,21 +114,21 @@ durable; commits make indexing deliberate. A 30-minute editing session is now
 TipTap (which is ProseMirror) does the heavy lifting; we wrote the glue. The
 strategy throughout: **reuse libraries, write only what they don't provide.**
 
-| Capability | Library | What we wrote |
-|---|---|---|
-| Core, marks, lists, headings, history, **link, underline** | `@tiptap/starter-kit` | Link tuned (autolink/paste); link dialog |
-| Highlight, typography | `@tiptap/extension-highlight`, `-typography` | bubble-menu wiring + themed CSS |
-| **Highlight + text colour** | extended `Highlight` mark + a custom `textColor` mark | bubble-menu swatch popovers; themed-token palette (`chart-1..5`, stored as a token key, never a raw colour); rendered in editor + public; authored by Saskia via `[text]{color=…}` / `{highlight=…}` (see [`rich-writing.md`](./rich-writing.md)) |
-| To-do lists | `@tiptap/extension-task-list/-item` | slash item, themed CSS, `[x]`/`[ ]` in `docToText` |
-| Tables | `@tiptap/extension-table` (`TableKit`) | the `+` add row/column controls, themed CSS |
-| Drag handle | `@tiptap/extension-drag-handle-react` | grip + click-menu (Duplicate/Delete) |
-| Slash menu, @-mentions | `@tiptap/suggestion` | the popups + commands |
-| Callout, columns |, | custom schema nodes + CSS |
-| Aside |, | custom `aside` node + NodeView; themed gradient (selected `chart-N` + angle) painted from one shared helper (`aside-style.ts`) so editor/public/email match; ✨ swatch reshuffles |
-| Code highlighting | `@tiptap/extension-code-block-lowlight` + `lowlight` | `.hljs-*` mapped to theme tokens (CSS) |
-| Math | `@tiptap/extension-mathematics` + `katex` | `$…$` / `$$…$$`; `latex` surfaced in `docToText` |
-| Diagrams | `mermaid` (lazy-loaded in the NodeView, exact-pinned) | custom `diagram` node + NodeView (```mermaid fence; dual-mode source panel with live preview; theme-token `themeVariables`, `securityLevel: 'strict'` + `htmlLabels: false`; `source` surfaced in `docToText`; PDF export renders real SVG in the print sidecar's Chromium; /s, team reader, docx and email show the labelled source until the SVG cache pipeline) |
-| Image / file embeds |, | custom `image` + `fileEmbed` nodes; upload via the files pipeline; slash + drag/paste |
+| Capability                                                 | Library                                               | What we wrote                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Core, marks, lists, headings, history, **link, underline** | `@tiptap/starter-kit`                                 | Link tuned (autolink/paste); link dialog                                                                                                                                                                                                                                                                                                                           |
+| Highlight, typography                                      | `@tiptap/extension-highlight`, `-typography`          | bubble-menu wiring + themed CSS                                                                                                                                                                                                                                                                                                                                    |
+| **Highlight + text colour**                                | extended `Highlight` mark + a custom `textColor` mark | bubble-menu swatch popovers; themed-token palette (`chart-1..5`, stored as a token key, never a raw colour); rendered in editor + public; authored by Saskia via `[text]{color=…}` / `{highlight=…}` (see [`rich-writing.md`](./rich-writing.md))                                                                                                                  |
+| To-do lists                                                | `@tiptap/extension-task-list/-item`                   | slash item, themed CSS, `[x]`/`[ ]` in `docToText`                                                                                                                                                                                                                                                                                                                 |
+| Tables                                                     | `@tiptap/extension-table` (`TableKit`)                | the `+` add row/column controls, themed CSS                                                                                                                                                                                                                                                                                                                        |
+| Drag handle                                                | `@tiptap/extension-drag-handle-react`                 | grip + click-menu (Duplicate/Delete)                                                                                                                                                                                                                                                                                                                               |
+| Slash menu, @-mentions                                     | `@tiptap/suggestion`                                  | the popups + commands                                                                                                                                                                                                                                                                                                                                              |
+| Callout, columns                                           | ,                                                     | custom schema nodes + CSS                                                                                                                                                                                                                                                                                                                                          |
+| Aside                                                      | ,                                                     | custom `aside` node + NodeView; themed gradient (selected `chart-N` + angle) painted from one shared helper (`aside-style.ts`) so editor/public/email match; ✨ swatch reshuffles                                                                                                                                                                                  |
+| Code highlighting                                          | `@tiptap/extension-code-block-lowlight` + `lowlight`  | `.hljs-*` mapped to theme tokens (CSS)                                                                                                                                                                                                                                                                                                                             |
+| Math                                                       | `@tiptap/extension-mathematics` + `katex`             | `$…$` / `$$…$$`; `latex` surfaced in `docToText`                                                                                                                                                                                                                                                                                                                   |
+| Diagrams                                                   | `mermaid` (lazy-loaded in the NodeView, exact-pinned) | custom `diagram` node + NodeView (```mermaid fence; dual-mode source panel with live preview; theme-token `themeVariables`, `securityLevel: 'strict'` + `htmlLabels: false`; `source` surfaced in `docToText`; PDF export renders real SVG in the print sidecar's Chromium; /s, team reader, docx and email show the labelled source until the SVG cache pipeline) |
+| Image / file embeds                                        | ,                                                     | custom `image` + `fileEmbed` nodes; upload via the files pipeline; slash + drag/paste                                                                                                                                                                                                                                                                              |
 
 **Agent authoring:** an agent can now create/update pages too, `markdownToDoc`
 ([`packages/content/src/markdown-to-doc.ts`](../packages/content/src/markdown-to-doc.ts))
@@ -164,14 +165,15 @@ Components live in [`client/web/components/page-editor/`](../client/web/componen
   via a native `onClick` (a Radix trigger preventDefaults pointerdown and kills
   the native dragstart, that was the "grab cursor but won't move" bug).
 - `table-controls.tsx`, floating `+` buttons positioned off the live table
-  rect (the TipTap DragHandle only positions the *left* gutter).
+  rect (the TipTap DragHandle only positions the _left_ gutter).
 - `callout.ts`/`callout-view.tsx`, `aside.ts`/`aside-view.tsx`/`aside-style.ts`
   (the gradient cousin of callout), `column.ts`, `mention.ts`/`mention-list.tsx`.
 
-Editor route: [`client/web/app/(app)/pages/[id]`](../client/web/app/(app)/pages);
+Editor route: [`client/web/app/(app)/pages/[id]`](<../client/web/app/(app)/pages>);
 list (master-detail) at `/pages`. The page body uses base `prose` (16px).
 
 ### Custom-node pattern
+
 `Node.create()` + `ReactNodeViewRenderer` (for interactive nodes like callout)
 → add to the **shared** `pageExtensions` → add a slash item → ensure
 `docToText` walks it (see `BLOCK_TYPES`). Columns/tables are pure layout, so
@@ -192,19 +194,20 @@ they're schema + CSS with no NodeView.
   `[x]`/`[ ]`, mention/atom labels surfaced, callout/column/table content
   walked).
 
-So on commit a page flows through the *existing* pipeline, summary, embedding,
+So on commit a page flows through the _existing_ pipeline, summary, embedding,
 facts, entity reconciliation, exactly like a note. Saskia can find pages,
 they contribute facts and `mentioned_in` edges, all via code that was already
 there. **Pages are a new room wired into the existing electrical, not new
 wiring.**
 
 ### @-mentions / links → graph edges (non-invasive)
-`@` opens one picker over the owner's **existing** references, read-only via
-`GET /api/mentions/search` (grouped: *Pages & notes* first, then *People &
-things*). Each chip carries `{ id, label, ref, kind }`:
 
-- **`ref:'node'`**: a page/note. (Notes are markdown so they can't *author*
-  mentions, but they're valid *targets*.)
+`@` opens one picker over the owner's **existing** references, read-only via
+`GET /api/mentions/search` (grouped: _Pages & notes_ first, then _People &
+things_). Each chip carries `{ id, label, ref, kind }`:
+
+- **`ref:'node'`**: a page/note. (Notes are markdown so they can't _author_
+  mentions, but they're valid _targets_.)
 - **`ref:'entity'`**: a person/project/place. ("Person" is an `entities` row,
   never `auth.users`.)
 
@@ -218,13 +221,14 @@ entity ids and node ids:
   targets skipped.
 
 Both are tagged `data.explicit:true` and fully idempotent: the step clears the
-node's inbound `mentioned_in` *and* its outbound `references` before rebuilding
+node's inbound `mentioned_in` _and_ its outbound `references` before rebuilding
 (Phase-4b rule), so re-commits never duplicate. Single edge writer (the
 extractor), no commit-path edge code. The mention name also lands in
-`doc_text`, so NER still contributes edges for *un-chipped* names typed as
+`doc_text`, so NER still contributes edges for _un-chipped_ names typed as
 plain text.
 
 ### Chunked retrieval (`content_chunks`, Phase 4)
+
 A long document squeezed into one embedding searches poorly. The extractor now
 also writes **per-section chunks**:
 
@@ -247,16 +251,16 @@ This is generalised, not pages-specific, long emails/files benefit too.
 A frequently-asked question; verified against the extractor. When a node is
 re-indexed, derived brain data is **rebuilt, not duplicated**:
 
-| Artifact | On re-extract |
-|---|---|
-| `data.summary` + `embedding` | overwritten in place |
-| Entities | `reconcileEntity` reuses by name (no duplicate rows) |
-| Facts | vector-dedup + ADD/UPDATE/DELETE/**NOOP** classifier (an LLM call per candidate when a near-match exists) |
-| `content_chunks` | delete-for-node, then re-insert (idempotent) |
-| `mentioned_in` edges (inbound) | **cleared for the node, then re-inserted** (idempotent) |
-| `references` edges (outbound page→node links) | **cleared for the node, then re-inserted** (idempotent) |
+| Artifact                                      | On re-extract                                                                                             |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `data.summary` + `embedding`                  | overwritten in place                                                                                      |
+| Entities                                      | `reconcileEntity` reuses by name (no duplicate rows)                                                      |
+| Facts                                         | vector-dedup + ADD/UPDATE/DELETE/**NOOP** classifier (an LLM call per candidate when a near-match exists) |
+| `content_chunks`                              | delete-for-node, then re-insert (idempotent)                                                              |
+| `mentioned_in` edges (inbound)                | **cleared for the node, then re-inserted** (idempotent)                                                   |
+| `references` edges (outbound page→node links) | **cleared for the node, then re-inserted** (idempotent)                                                   |
 
-The last row was a fix landed in Phase 4, previously the extractor *appended*
+The last row was a fix landed in Phase 4, previously the extractor _appended_
 `mentioned_in` edges on every run, so re-extracts accumulated duplicates. Both
 new derived artifacts (chunks, edges) follow the same **delete-then-rebuild
 per node** rule.
@@ -283,9 +287,21 @@ cache + `extract_cost_cap_micro_usd`.
   into sub-pages along its headings, see §8 Phase 4b).
   Authoring goes through `markdownToDoc` (the LLM writes the rich-markdown
   dialect, not raw ProseMirror JSON), see [`rich-writing.md`](./rich-writing.md).
-  *(The MCP surface above is still read-only; only the in-app agent authors.)*
+  _(The MCP surface above is still read-only; only the in-app agent authors.)_
 - **Public sharing:** a page can be shared read-only at `/s/[token]`, see
-  [`sharing.md`](./sharing.md).
+  [`sharing.md`](./sharing.md). Offered on the **list preview** as well as in
+  the editor, so sharing doesn't mean opening the page first — the preview's
+  link serves the last committed content (sharing.md §7).
+- **Reading, not just writing:** the preview header carries the same
+  `<FocusToggle />` the editor does. Focus mode hides the shell's four chrome
+  regions, and on a list screen it drops the list column too
+  (`components/layout/focus-layout.ts`) so the page gets the whole viewport —
+  otherwise the chrome would go and the biggest distraction would stay. The
+  list is hidden rather than unmounted, so search text, scroll position and
+  page number survive the round trip. The toggle is the only control in and
+  out; the shell also drops focus on any change of PATHNAME, so selecting
+  another row keeps it while navigating to a different screen ends it. Draw's
+  preview works the same way ([`draw.md`](./draw.md)).
 - **Export to Word (`.docx`):** a page (or a note) renders to a real Word
   document via `renderDocx` in `@mantle/content`; it walks the same ProseMirror
   tree the email renderer does, embedding page images through an injected loader;
@@ -414,7 +430,7 @@ cache + `extract_cost_cap_micro_usd`.
   for the surrounding /assistant context.
 
 - **Gutter focus marker**: ✅ **built (2026-05-28).** A left-gutter
-  "highlighter" for marking *many* sections of a page, then handing exactly
+  "highlighter" for marking _many_ sections of a page, then handing exactly
   those blocks to Pages, the scalable answer to "rephrase these bits, leave
   the rest alone". Deliberately NOT a pen-over-text highlighter (that fights
   ProseMirror's selection model and spans partial blocks); the gutter maps
@@ -453,9 +469,9 @@ cache + `extract_cost_cap_micro_usd`.
   this shape (text + tool_slugs); the pattern matches `rich_writing`,
   which Pages + Saskia both attach. Don't extract prematurely, premature
   abstraction is its own cost; do it when the duplication actually arises.
-  Origin: 2026-05-27 testing conversation, Alex's prompt: *"we must
+  Origin: 2026-05-27 testing conversation, Alex's prompt: _"we must
   remember Skills... maybe design a more structured ruleset for the
-  models that does tasks like pages."*
+  models that does tasks like pages."_
 
 - **Hierarchy / sub-pages (Phase 4)**: **4a + 4b + 4c shipped.**
   The architectural lever for documents past ~50 KB. Insight
@@ -502,7 +518,7 @@ cache + `extract_cost_cap_micro_usd`.
 
   - **4b (`page_split` tool for Pages**) ✅ **built.** The AI-driven
     scaling lever. Signature: `page_split({ page_id, by: 'h1' | 'h2',
-    preserve_intro?: boolean })`. Walks the doc, every Hx heading becomes
+preserve_intro?: boolean })`. Walks the doc, every Hx heading becomes
     a child page's title, content until the next Hx becomes the child's
     body. Original page becomes a TOC of `childPage` blocks. Server-side,
     deterministic, byte-faithful (blocks redistributed, never rewritten,
@@ -515,7 +531,7 @@ cache + `extract_cost_cap_micro_usd`.
     holds it); the persona proposes a split when a whole-doc transform is
     too large. Indexing win: search becomes granular ("find the section
     about X" returns a child page, not a haystack), the brain gets
-    *better*, not just smaller per-page.
+    _better_, not just smaller per-page.
 
   - **4c (Promote-to-sub-page**) ✅ **built.** The surgical cousin of 4b:
     lift ONE section into a sub-page. Pure core `extractSection`
@@ -526,7 +542,7 @@ cache + `extract_cost_cap_micro_usd`.
     blocks. `extractSectionToChild` (pages.ts) wraps it like `splitPage`
     (child via `createPage` → indexed; parent rewritten to `draft_doc`).
     Two surfaces: the agent tool `page_extract_section({ page_id,
-    heading_block_id })` (in the `pages` group), and a **drag-handle
+heading_block_id })` (in the `pages` group), and a **drag-handle
     "Extract to sub-page"** action shown on top-level headings
     ([`drag-handle.tsx`](../client/web/components/page-editor/drag-handle.tsx)),
     client-side mirror that reuses the same `extractSection`, creates the

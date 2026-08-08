@@ -27,6 +27,10 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { syncSelectionParam } from '@/lib/url-sync';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { drawSnapshotClass } from '@/components/draw/snapshot-theme';
+import { ShareControl } from '@/components/share-control';
+import { FocusToggle } from '@/components/layout/focus-toggle';
+import { useZenMode } from '@/components/layout/zen-mode';
+import { focusGridClass } from '@/components/layout/focus-layout';
 
 type DrawRow = {
   id: string;
@@ -72,6 +76,9 @@ export function DrawsClient() {
 
   const [deleteTarget, setDeleteTarget] = useState<DrawRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Focus mode drops the list column so a drawing can be LOOKED AT full-width,
+  // not only drawn that way. The toggle lives in the preview header below.
+  const { zen } = useZenMode();
 
   async function deleteActive() {
     if (!deleteTarget || deleting) return;
@@ -157,9 +164,17 @@ export function DrawsClient() {
   }
 
   return (
-    <div className="relative md:grid md:h-full md:grid-cols-[360px_1fr] md:overflow-hidden">
+    <div className={cn('relative md:grid md:h-full md:overflow-hidden', focusGridClass(zen))}>
       {/* ── Left: list ─────────────────────────────────────────────── */}
-      <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
+      {/* Hidden, not unmounted, in focus mode: the search box, scroll position
+          and page number survive, so leaving focus puts the screen back as it
+          was. */}
+      <div
+        className={cn(
+          'flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r',
+          zen && 'hidden',
+        )}
+      >
         <div className="space-y-2 border-b border-border p-4">
           <div className="flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
@@ -409,6 +424,15 @@ function DrawPreview({
         </div>
         <div className="flex shrink-0 gap-2">
           <ExportMenu nodeId={draw.id} kind="draw" />
+          {/* Share without opening the canvas. No `beforeEnable` here, unlike
+              the editor's: committing a drawing means capturing its snapshot in
+              the editor, which a list screen cannot do, so the link serves the
+              last COMMITTED scene. The "Draft · uncommitted" badge says when
+              that is behind. */}
+          <ShareControl nodeId={draw.id} />
+          {/* Survives focus mode (the shell's chrome doesn't), so this is the
+              whole control — enter and exit. */}
+          <FocusToggle />
           <Button asChild variant="outline" size="sm">
             <Link href={`/draw/${draw.id}`}>
               <Pencil /> Edit

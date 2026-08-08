@@ -121,7 +121,7 @@ validator being exhaustive; it rests on every surface rendering the snapshot
 
 | Surface                       | How                                                                                                                                 |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL), theme-inverted in dark mode (§5b)                                             |
+| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL), theme-inverted in dark mode (§5b); header carries Share + focus mode          |
 | Page embed                    | `![alt](draw:<id>)` = an image node with `attrs.drawId`; `<img>` into `/api/draws/:id/svg?raw=1`, theme-inverted in dark mode (§5b) |
 | Share (`/s/[token]`)          | cache-only image routes; a shared page serves exactly the drawings its doc places (`referencedDrawIds`), nothing else               |
 | PDF export                    | the print sidecar, embeds with `?nofill=1`                                                                                          |

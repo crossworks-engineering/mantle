@@ -78,6 +78,10 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { TagPill } from '@mantle/web-ui/tag-pill';
 import { TagInput } from '@/components/tag-input';
 import { PageView } from '@/components/page-editor/page-view';
+import { ShareControl } from '@/components/share-control';
+import { FocusToggle } from '@/components/layout/focus-toggle';
+import { useZenMode } from '@/components/layout/zen-mode';
+import { focusGridColumns } from '@/components/layout/focus-layout';
 import { ExportMenu } from '@/components/export/export-menu';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
@@ -167,6 +171,9 @@ export function PagesClient() {
   const LIST_MAX = 560;
   const gridRef = useRef<HTMLDivElement>(null);
   const [listWidth, setListWidth] = useState(300);
+  // Focus mode drops the list column so a page can be READ full-width, not
+  // only written that way. The toggle lives in the preview header below.
+  const { zen } = useZenMode();
 
   useEffect(() => {
     try {
@@ -472,19 +479,30 @@ export function PagesClient() {
       className="relative md:grid md:h-full md:overflow-hidden"
       // Inline template columns drive the draggable left width. Only takes
       // effect at md+ (below md the container is block-stacked, not a grid).
-      style={{ gridTemplateColumns: `${listWidth}px minmax(0, 1fr)` }}
+      // Focus mode collapses it to the preview alone.
+      style={{ gridTemplateColumns: focusGridColumns(zen, listWidth) }}
     >
       {/* Draggable divider between list + preview (md+ only). */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize list"
-        onPointerDown={startResize}
-        className="absolute inset-y-0 z-20 hidden w-2 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-primary/20 md:block"
-        style={{ left: `${listWidth}px` }}
-      />
+      {zen ? null : (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize list"
+          onPointerDown={startResize}
+          className="absolute inset-y-0 z-20 hidden w-2 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-primary/20 md:block"
+          style={{ left: `${listWidth}px` }}
+        />
+      )}
       {/* ── Left: list / tree ───────────────────────────────────────── */}
-      <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
+      {/* Hidden, not unmounted, in focus mode: the search box, scroll position
+          and page number survive, so leaving focus puts the screen back as it
+          was. */}
+      <div
+        className={cn(
+          'flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r',
+          zen && 'hidden',
+        )}
+      >
         <div className="space-y-3 border-b border-border p-4">
           <div className="flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
@@ -1042,6 +1060,15 @@ function PagePreview({ row, onDelete }: { row: PageRow; onDelete: () => void }) 
         </h2>
         <div className="flex shrink-0 gap-2">
           <ExportMenu nodeId={row.id} />
+          {/* Share without opening the editor. No `beforeEnable` here, unlike
+              the editor's: a list screen holds no draft to commit, so the link
+              serves the last COMMITTED page — which is what /s renders in any
+              case. The "Draft · uncommitted" badge beside the title is what
+              says so. */}
+          <ShareControl nodeId={row.id} teamMode allowCascade />
+          {/* This header survives focus mode (the shell's chrome doesn't), so
+              the toggle here is the whole control, enter and exit. */}
+          <FocusToggle />
           <Button asChild variant="outline" size="sm">
             <Link href={`/pages/${row.id}`}>
               <Pencil /> Edit
