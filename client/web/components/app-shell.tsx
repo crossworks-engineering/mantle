@@ -28,8 +28,6 @@ import { DesktopBridge } from '@/components/desktop/desktop-bridge';
 import { PickMode } from '@/components/assistant/pick-mode';
 import { FooterBar } from '@/components/layout/footer-bar';
 import { ZenModeContext } from '@/components/layout/zen-mode';
-import { Minimize2 } from 'lucide-react';
-import { Button } from '@mantle/web-ui/ui/button';
 import { recordNavVisit } from '@/lib/nav-usage';
 import { matchNavItem } from '@mantle/web-ui/layout/nav-items';
 import { SearchPalette } from '@/components/search/search-palette';
@@ -231,6 +229,14 @@ function ShellFrame({
   const [zen, setZen] = useState(false);
   const zenCtx = useMemo(() => ({ zen, toggle: () => setZen((v) => !v) }), [zen]);
 
+  // Leaving the screen leaves focus mode. Only the editors offer the toggle, so
+  // any navigation (the toolbar's "All pages"/"All drawings" link included)
+  // means the reason for hiding the chrome is gone — and arriving somewhere
+  // that has no way OUT of focus mode would be a trap.
+  useEffect(() => {
+    setZen(false);
+  }, [pathname]);
+
   const toggleNav = () =>
     setNavCollapsed((v) => {
       writeCookie(NAV_COOKIE, !v);
@@ -332,20 +338,6 @@ function ShellFrame({
             onMenuClick={() => setMobileOpen(true)}
             onSearchClick={() => setSearchOpen(true)}
           />
-        )}
-
-        {/* Floating exit for focus mode — the one piece of chrome it keeps. */}
-        {zen && (
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setZen(false)}
-            aria-label="Exit focus mode"
-            title="Exit focus mode"
-            className="fixed right-3 top-3 z-50 size-8 bg-background/80 backdrop-blur"
-          >
-            <Minimize2 />
-          </Button>
         )}
 
         {/* Global search palette — one instance for the whole shell, summoned by

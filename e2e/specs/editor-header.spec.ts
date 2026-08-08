@@ -45,12 +45,21 @@ test.describe('editor header layout', () => {
       await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}editor-header-page.png` });
 
       // Focus mode: the shell chrome (top header, nav, activity, footer)
-      // disappears, a floating exit brings it back.
+      // disappears. The editor toolbar stays, so its own button is the only
+      // control — it flips to "Exit focus mode" and brings the chrome back.
       await ownerPage.getByRole('button', { name: 'Focus mode' }).click();
       await expect(ownerPage.getByRole('link', { name: /home$/ })).toBeHidden();
       await expect(ownerPage.locator('footer, [role="contentinfo"]').first()).toBeHidden();
       await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}editor-zen-page.png` });
       await ownerPage.getByRole('button', { name: 'Exit focus mode' }).click();
+      await expect(ownerPage.getByRole('link', { name: /home$/ })).toBeVisible();
+
+      // Leaving the editor drops focus mode by itself, so the list is never
+      // reached with the chrome hidden and no way to bring it back.
+      await ownerPage.getByRole('button', { name: 'Focus mode' }).click();
+      await expect(ownerPage.getByRole('link', { name: /home$/ })).toBeHidden();
+      await ownerPage.getByRole('link', { name: 'All pages' }).click();
+      await expect(ownerPage).toHaveURL(/\/pages(\?|$)/);
       await expect(ownerPage.getByRole('link', { name: /home$/ })).toBeVisible();
     } finally {
       await ownerApi.delete(`/api/pages/${row.id}`);

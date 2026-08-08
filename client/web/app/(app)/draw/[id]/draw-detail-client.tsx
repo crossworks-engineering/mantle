@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, GitCommitHorizontal, Loader2, Maximize2, Trash2, Undo2 } from 'lucide-react';
+import {
+  Check,
+  GitCommitHorizontal,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Trash2,
+  Undo2,
+} from 'lucide-react';
 import type {
   AppState,
   BinaryFiles,
@@ -120,7 +128,7 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const { toggle: toggleZen } = useZenMode();
+  const { zen, toggle: toggleZen } = useZenMode();
 
   const [title, setTitle] = useState(initial.title);
   const [icon, setIcon] = useState<string | null>(initial.icon);
@@ -529,16 +537,18 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
               the minted link never points at a stale or absent snapshot. */}
           <ShareControl nodeId={initial.id} beforeEnable={commit} />
           <ExportMenu nodeId={initial.id} kind="draw" />
-          {/* Focus mode: the shell hides its chrome; this toolbar stays, the
-              floating shell button exits. */}
+          {/* Focus mode: the shell hides its chrome and this toolbar stays, so
+              this button is the whole control — enter AND exit. Leaving the
+              drawing exits too (the shell drops focus on navigation). */}
           <Button
             size="sm"
-            variant="ghost"
+            variant={zen ? 'default' : 'ghost'}
             onClick={toggleZen}
-            aria-label="Focus mode"
-            title="Focus mode — hide the app chrome"
+            aria-pressed={zen}
+            aria-label={zen ? 'Exit focus mode' : 'Focus mode'}
+            title={zen ? 'Exit focus mode' : 'Focus mode — hide the app chrome'}
           >
-            <Maximize2 />
+            {zen ? <Minimize2 /> : <Maximize2 />}
           </Button>
           {dirty && (
             <Button

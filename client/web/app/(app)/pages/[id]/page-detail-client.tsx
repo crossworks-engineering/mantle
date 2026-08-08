@@ -14,6 +14,7 @@ import {
   Highlighter,
   Loader2,
   Maximize2,
+  Minimize2,
   StretchHorizontal,
   Trash2,
   Undo2,
@@ -135,7 +136,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const { toggle: toggleZen } = useZenMode();
+  const { zen, toggle: toggleZen } = useZenMode();
 
   const initialDoc = (initial.draft ?? initial.doc) as JSONContent;
 
@@ -983,16 +984,18 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
           </Button>
           <ExportMenu nodeId={initial.id} />
           <ShareControl nodeId={initial.id} beforeEnable={commit} teamMode allowCascade />
-          {/* Focus mode: the shell hides its chrome; this toolbar stays (it
-              scrolls with the page), the floating shell button exits. */}
+          {/* Focus mode: the shell hides its chrome and this toolbar stays, so
+              this button is the whole control — enter AND exit. Leaving the
+              page exits too (the shell drops focus on navigation). */}
           <Button
             size="sm"
-            variant="ghost"
+            variant={zen ? 'default' : 'ghost'}
             onClick={toggleZen}
-            aria-label="Focus mode"
-            title="Focus mode — hide the app chrome"
+            aria-pressed={zen}
+            aria-label={zen ? 'Exit focus mode' : 'Focus mode'}
+            title={zen ? 'Exit focus mode' : 'Focus mode — hide the app chrome'}
           >
-            <Maximize2 />
+            {zen ? <Minimize2 /> : <Maximize2 />}
           </Button>
           <Button
             size="sm"
