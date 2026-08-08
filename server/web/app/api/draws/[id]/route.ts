@@ -7,6 +7,8 @@ const PatchBody = z.object({
   title: z.string().min(1).max(200).optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
   visibility: z.enum(['private', 'public']).optional(),
+  // Emoji beside the title; '' clears it — same contract as pages.
+  icon: z.string().max(16).optional(),
 });
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {

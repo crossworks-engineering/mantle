@@ -92,6 +92,9 @@ export function normalizeScene(scene: unknown): Record<string, unknown> {
 export type DrawRow = {
   id: string;
   title: string;
+  /** Emoji shown beside the title (list, tree, pickers) — same convention as
+   *  pages (`data.icon`); null = the type's default glyph. */
+  icon: string | null;
   tags: string[];
   summary: string | null;
   visibility: DrawVisibility;
@@ -120,6 +123,7 @@ function rowOf(n: Node, hasSvg = false): DrawRow {
   return {
     id: n.id,
     title: n.title,
+    icon: typeof d.icon === 'string' && d.icon ? d.icon : null,
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
     visibility: d.visibility === 'public' ? 'public' : 'private',
@@ -492,6 +496,9 @@ export type UpdateDrawInput = {
   title?: string;
   tags?: string[];
   visibility?: DrawVisibility;
+  /** Emoji beside the title; `''` clears it (rowOf normalises blank → null),
+   *  same contract as pages. */
+  icon?: string;
 };
 
 /** Metadata-only update (title/tags/visibility save live, like pages).
@@ -510,6 +517,7 @@ export async function updateDraw(
 
   const newData: Record<string, unknown> = { ...((node.data ?? {}) as Record<string, unknown>) };
   if (input.visibility !== undefined) newData.visibility = input.visibility;
+  if (input.icon !== undefined) newData.icon = input.icon;
 
   const [row] = await db
     .update(nodes)

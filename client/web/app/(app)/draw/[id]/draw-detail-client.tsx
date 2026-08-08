@@ -14,6 +14,7 @@ import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/ty
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { TagInput } from '@/components/tag-input';
+import { EmojiPicker } from '@/components/emoji-picker';
 import { ShareControl } from '@/components/share-control';
 import { ExportMenu } from '@/components/export/export-menu';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
@@ -37,6 +38,7 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 type DrawDetail = {
   id: string;
   title: string;
+  icon: string | null;
   tags: string[];
   summary: string | null;
   visibility: 'private' | 'public';
@@ -118,6 +120,7 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
   const toast = useToast();
 
   const [title, setTitle] = useState(initial.title);
+  const [icon, setIcon] = useState<string | null>(initial.icon);
   const [tags, setTags] = useState<string[]>(initial.tags);
   const [dirty, setDirty] = useState(initial.draft !== null);
   const [draftSaving, setDraftSaving] = useState(false);
@@ -143,7 +146,9 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
   const draftRevRef = useRef(initial.draftRev ?? 0);
   const committedHashRef = useRef<number>(0); // hash of the published elements
   const savedHashRef = useRef<number>(0); // hash last autosaved (or published)
-  const metaSavedRef = useRef(JSON.stringify({ title: initial.title, tags: initial.tags }));
+  const metaSavedRef = useRef(
+    JSON.stringify({ title: initial.title, tags: initial.tags, icon: initial.icon ?? '' }),
+  );
   const lastDraftAtRef = useRef(Date.now());
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const metaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -260,7 +265,9 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
   // ── Title / tags save live (cheap metadata, never indexes). ───────────
   const saveMeta = useCallback(async () => {
     if (deletedRef.current) return;
-    const payload = { title: title.trim() || 'Untitled drawing', tags };
+    // `icon: ''` clears it — updateDraw stores the blank and rowOf normalises
+    // it back to null, same contract as pages.
+    const payload = { title: title.trim() || 'Untitled drawing', tags, icon: icon ?? '' };
     const s = JSON.stringify(payload);
     if (s === metaSavedRef.current) return;
     try {
@@ -269,7 +276,7 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
     } catch {
       // Silent — reverts on next load; apiSend's 401 bounce still fires.
     }
-  }, [initial.id, title, tags]);
+  }, [initial.id, title, tags, icon]);
 
   // ── Commit: publish + index + capture the SVG snapshot. ───────────────
   const commit = useCallback(async () => {
@@ -413,7 +420,7 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
       return;
     }
     scheduleMeta();
-  }, [title, tags, scheduleMeta]);
+  }, [title, tags, icon, scheduleMeta]);
 
   // Leaving the editor flushes the draft + metadata — never commits. The
   // pagehide flush covers hard reloads/closes (best-effort; the debounce
@@ -533,19 +540,41 @@ function DrawEditor({ initial }: { initial: DrawDetail }) {
         </div>
       </div>
 
-      <header className="border-b border-border bg-muted/40">
-        <div className="w-full px-6 py-3">
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="New drawing"
-            aria-label="Drawing title"
-            className="h-auto min-w-0 flex-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-2xl font-bold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-2xl"
-          />
-          <div className="mt-2">
-            <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />
-          </div>
-        </div>
+      {/* Header row — icon + name left, tags right. One compact full-width
+          row, start-aligned, no band box (the toolbar above draws the
+          separating border) — the same layout as the pages header, so the
+          two workspaces read identically. */}
+      <header className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 px-4 py-1.5">
+        <EmojiPicker
+          value={icon}
+          onSelect={setIcon}
+          onClear={() => setIcon(null)}
+          align="start"
+          trigger={
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label="Change drawing icon"
+              title="Change icon"
+              className="size-8 shrink-0 rounded-lg p-0 text-xl leading-none hover:bg-accent"
+            >
+              {icon ?? '✏️'}
+            </Button>
+          }
+        />
+        <Input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="New drawing"
+          aria-label="Drawing title"
+          className="h-auto min-w-48 flex-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-lg font-semibold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-lg"
+        />
+        <TagInput
+          value={tags}
+          onChange={setTags}
+          placeholder="Add tags…"
+          className="ml-auto min-h-8 w-auto max-w-full basis-auto justify-end border-transparent bg-transparent px-0 py-0 sm:max-w-[45%]"
+        />
       </header>
 
       <div className="min-h-0 flex-1">

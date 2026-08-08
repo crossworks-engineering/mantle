@@ -820,53 +820,50 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
     router.push('/pages');
   };
 
-  // Header band — page chrome (name + tags). A themed strip with a bottom
-  // border so the title reads as a label ABOUT the page, not as the document's
-  // first line. Full-width bg; content stays centred. Rendered identically by
-  // both pane layouts (rich-editor scroller and the flat markdown pane).
+  // Header row — page chrome (icon + name left, tags right). One compact
+  // full-width row, start-aligned, no band box: the toolbar above already
+  // draws the separating border, so this stays flat and cheap on height.
+  // Wraps on narrow panes (tags drop under the title). Rendered identically
+  // by both pane layouts (rich-editor scroller and the flat markdown pane).
   const headerBand = (
-    <header className="border-b border-border bg-muted/40">
-      <div
-        className={cn('mx-auto w-full px-6 py-3', width !== 'wide' ? 'max-w-3xl' : 'max-w-none')}
-      >
-        {/* Icon + title on one left-aligned row. The icon is still the
-            picker trigger (click to pick or remove); saves with the
-            title/tags metadata and reflects to the tree/list/share via
-            rowOf. */}
-        <div className="flex items-center gap-2">
-          <EmojiPicker
-            value={icon}
-            onSelect={setIcon}
-            onClear={() => setIcon(null)}
-            align="start"
-            trigger={
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label="Change page icon"
-                title="Change icon"
-                className="size-10 shrink-0 rounded-lg p-0 text-2xl leading-none hover:bg-accent"
-              >
-                {icon ?? '📄'}
-              </Button>
-            }
-          />
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={onTitleKeyDown}
-            placeholder="New page"
-            aria-label="Page title"
-            // No box — only a bottom underline that appears (primary) while
-            // editing. A 2px transparent bottom border is always reserved so
-            // focusing doesn't shift the layout.
-            className="h-auto min-w-0 flex-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-2xl font-bold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-2xl"
-          />
-        </div>
-        <div className="mt-2">
-          <TagInput value={tags} onChange={setTags} placeholder="Add tags…" />
-        </div>
-      </div>
+    <header className="flex w-full flex-wrap items-center gap-x-3 gap-y-0.5 px-4 py-1.5">
+      {/* The icon is still the picker trigger (click to pick or remove);
+          saves with the title/tags metadata and reflects to the
+          tree/list/share via rowOf. */}
+      <EmojiPicker
+        value={icon}
+        onSelect={setIcon}
+        onClear={() => setIcon(null)}
+        align="start"
+        trigger={
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label="Change page icon"
+            title="Change icon"
+            className="size-8 shrink-0 rounded-lg p-0 text-xl leading-none hover:bg-accent"
+          >
+            {icon ?? '📄'}
+          </Button>
+        }
+      />
+      <Input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={onTitleKeyDown}
+        placeholder="New page"
+        aria-label="Page title"
+        // No box — only a bottom underline that appears (primary) while
+        // editing. A 2px transparent bottom border is always reserved so
+        // focusing doesn't shift the layout.
+        className="h-auto min-w-48 flex-1 rounded-none border-x-0 border-t-0 border-b-2 border-transparent bg-transparent px-0 py-0.5 text-lg font-semibold shadow-none transition-colors placeholder:text-muted-foreground/40 focus-visible:border-primary focus-visible:ring-0 md:text-lg"
+      />
+      <TagInput
+        value={tags}
+        onChange={setTags}
+        placeholder="Add tags…"
+        className="ml-auto min-h-8 w-auto max-w-full basis-auto justify-end border-transparent bg-transparent px-0 py-0 sm:max-w-[45%]"
+      />
     </header>
   );
 

@@ -18,6 +18,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 type DrawRow = {
   id: string;
   title: string;
+  icon: string | null;
   tags: string[];
   summary: string | null;
   visibility: 'private' | 'public';
@@ -199,7 +200,13 @@ export function DrawsClient() {
                   className="block w-full rounded-lg p-3 text-left transition-colors hover:bg-muted/50"
                 >
                   <div className="flex items-start gap-2">
-                    <PenTool className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    {d.icon ? (
+                      <span className="mt-0.5 w-4 shrink-0 text-center text-sm leading-4">
+                        {d.icon}
+                      </span>
+                    ) : (
+                      <PenTool className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{d.title}</div>
                       {d.summary ? (
