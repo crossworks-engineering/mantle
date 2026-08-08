@@ -67,6 +67,15 @@ test.describe('draw editor theming', () => {
         await expect(island).toHaveCSS('font-family', bodyFont);
 
         await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}draw-theme-${scheme}.png` });
+
+        // The main menu (a portaled dropdown) is the "menu backgrounds"
+        // surface proper — it must take the popover token too.
+        await ownerPage.getByTestId('main-menu-trigger').click();
+        const menu = ownerPage.locator('.dropdown-menu-container').first();
+        await expect(menu).toBeVisible();
+        await expect(menu).toHaveCSS('background-color', popover);
+        await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}draw-theme-${scheme}-menu.png` });
+        await ownerPage.keyboard.press('Escape');
       }
     } finally {
       await ownerApi.delete(`/api/draws/${draw.id}`);
