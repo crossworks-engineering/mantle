@@ -96,7 +96,7 @@ Operational details: renders are capped at 2 concurrent, concurrent misses on
 the same drawing collapse into one render, and a failed render puts the
 drawing in a 5-minute in-memory cooldown so it cannot loop Chromium. Scene
 images load 4 at a time with per-fetch timeouts under an overall deadline; a
-render missing some images is *partial* and may only fill an EMPTY cache,
+render missing some images is _partial_ and may only fill an EMPTY cache,
 never replace an existing snapshot.
 
 **Validation (`acceptSceneSvg`)**: a committed snapshot is validated
@@ -109,14 +109,14 @@ validator being exhaustive; it rests on every surface rendering the snapshot
 
 ## 5. Where drawings render
 
-| Surface | How |
-|---|---|
-| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL) |
-| Page embed | `![alt](draw:<id>)` = an image node with `attrs.drawId`; `<img>` into `/api/draws/:id/svg?raw=1` |
-| Share (`/s/[token]`) | cache-only image routes; a shared page serves exactly the drawings its doc places (`referencedDrawIds`), nothing else |
-| PDF export | the print sidecar, embeds with `?nofill=1` |
-| Markdown / HTML export | the `draw:` reference / an `<img>` |
-| DOCX export | **placeholder `[drawing: alt]`** (known gap: `ImageRun` takes no SVG; a PNG raster via the sidecar is the intended fix) |
+| Surface                       | How                                                                                                                     |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL)                                                                    |
+| Page embed                    | `![alt](draw:<id>)` = an image node with `attrs.drawId`; `<img>` into `/api/draws/:id/svg?raw=1`                        |
+| Share (`/s/[token]`)          | cache-only image routes; a shared page serves exactly the drawings its doc places (`referencedDrawIds`), nothing else   |
+| PDF export                    | the print sidecar, embeds with `?nofill=1`                                                                              |
+| Markdown / HTML export        | the `draw:` reference / an `<img>`                                                                                      |
+| DOCX export                   | **placeholder `[drawing: alt]`** (known gap: `ImageRun` takes no SVG; a PNG raster via the sidecar is the intended fix) |
 
 Embedding in a page has three entry points: the **`/drawing` slash item**
 (picker dialog: search, thumbnails, "New drawing" which creates + embeds +
@@ -157,11 +157,16 @@ stored scenes in dev, run `draws-re-render.ts --all`, and diff the snapshots
 before shipping. `svg_engine` marks every pre-upgrade snapshot stale, so the
 fleet heals lazily on owner views either way.
 
-## 8. Known gaps
+## 8. Team + peers
+
+Shared drawings appear in the member workspace (`/team/draw`, via
+`TEAM_WORKSPACE_TYPES`) and in the hub stat tiles, and a peer can be granted
+drawings by category (`PEER_SHAREABLE_TYPES`, a pinned allowlist whose test
+makes widening deliberate). Members and peers only ever see committed
+content; drafts stay private.
+
+## 9. Known gaps
 
 - DOCX export degrades to a placeholder (§5).
-- Not in `TEAM_WORKSPACE_TYPES` (no `/team/draw`) or `PEER_SHAREABLE_TYPES`
-  (not federated by category); both are deliberate small additions when
-  wanted, not oversights.
 - Creating a drawing fires `node_ingested` via the `nodes` INSERT trigger, so
   a brand-new empty drawing costs one summarizer call.

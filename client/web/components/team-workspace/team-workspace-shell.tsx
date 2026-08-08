@@ -25,6 +25,7 @@ import {
   LayoutDashboard,
   Menu,
   MessagesSquare,
+  PenTool,
   Table2,
   type LucideIcon,
 } from 'lucide-react';
@@ -71,6 +72,7 @@ export const WORKSPACE_NAV: Array<{
   { type: 'note', name: 'Notes', href: '/team/notes', icon: FileText },
   { type: 'page', name: 'Pages', href: '/team/pages', icon: BookText },
   { type: 'table', name: 'Tables', href: '/team/tables', icon: Table2 },
+  { type: 'draw', name: 'Drawings', href: '/team/draw', icon: PenTool },
   { type: 'app', name: 'Apps', href: '/team/apps', icon: AppWindow },
   { type: 'task', name: 'Tasks', href: '/team/tasks', icon: CheckSquare },
   { type: 'event', name: 'Events', href: '/team/events', icon: CalendarDays },

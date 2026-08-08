@@ -410,6 +410,7 @@ export const PEER_SHAREABLE_TYPES = [
   'file',
   'contact',
   'table',
+  'draw',
   'event',
   'task',
 ] as const;

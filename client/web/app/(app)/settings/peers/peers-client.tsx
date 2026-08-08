@@ -52,6 +52,7 @@ const CATEGORIES = [
   { type: 'file', label: 'Files' },
   { type: 'contact', label: 'Contacts' },
   { type: 'table', label: 'Tables' },
+  { type: 'draw', label: 'Drawings' },
   { type: 'event', label: 'Events' },
   { type: 'task', label: 'Tasks' },
 ] as const;

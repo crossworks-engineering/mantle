@@ -9,7 +9,7 @@ import { PEER_SHAREABLE_TYPES, isPeerShareableType } from './peers';
 describe('PEER_SHAREABLE_TYPES', () => {
   it('offers exactly the agreed categories', () => {
     expect([...PEER_SHAREABLE_TYPES].sort()).toEqual(
-      ['contact', 'event', 'file', 'note', 'page', 'table', 'task'].sort(),
+      ['contact', 'draw', 'event', 'file', 'note', 'page', 'table', 'task'].sort(),
     );
   });
 
