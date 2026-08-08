@@ -128,4 +128,52 @@ test.describe('editor header layout', () => {
       await ownerApi.delete(`/api/draws/${draw.id}`);
     }
   });
+
+  test('an uncommitted draft is announced in the list, not silently invisible', async ({
+    ownerApi,
+    ownerPage,
+  }) => {
+    // A draft is never rendered anywhere (rendering happens at commit), so
+    // without a marker the preview shows the last commit — or nothing at all —
+    // and the user reasonably concludes their work was lost. It wasn't; the
+    // list has to SAY so.
+    const title = `E2E draft badge ${Date.now()}`;
+    const created = await ownerApi.post('/api/draws', { data: { title } });
+    const { draw } = (await created.json()) as { draw: { id: string } };
+
+    try {
+      // Never committed, one autosaved draft — the exact "did it save?" case.
+      const saved = await ownerApi.put(`/api/draws/${draw.id}/draft`, {
+        data: {
+          scene: { elements: [{ id: 'd1', type: 'text', text: 'unsaved?', isDeleted: false }] },
+          if_rev: 0,
+        },
+      });
+      expect(saved.ok()).toBeTruthy();
+
+      // The list row carries hasDraft, so the API is the source of the badge.
+      const list = await ownerApi.get(`/api/draws?q=${encodeURIComponent(title)}`);
+      const { draws } = (await list.json()) as { draws: { id: string; hasDraft: boolean }[] };
+      expect(draws.find((d) => d.id === draw.id)?.hasDraft).toBe(true);
+
+      await ownerPage.goto(`/draw?q=${encodeURIComponent(title)}`);
+      await expect(ownerPage.getByText('Draft · uncommitted')).toBeVisible();
+      await expect(ownerPage.getByText(/uncommitted edits are saved/i)).toBeVisible();
+
+      // Committing clears it — the badge tracks state, it isn't sticky.
+      const committed = await ownerApi.post(`/api/draws/${draw.id}/commit`, {
+        data: {
+          scene: { elements: [{ id: 'd1', type: 'text', text: 'unsaved?', isDeleted: false }] },
+        },
+      });
+      expect(committed.ok()).toBeTruthy();
+      const after = await ownerApi.get(`/api/draws?q=${encodeURIComponent(title)}`);
+      const { draws: afterRows } = (await after.json()) as {
+        draws: { id: string; hasDraft: boolean }[];
+      };
+      expect(afterRows.find((d) => d.id === draw.id)?.hasDraft).toBe(false);
+    } finally {
+      await ownerApi.delete(`/api/draws/${draw.id}`);
+    }
+  });
 });

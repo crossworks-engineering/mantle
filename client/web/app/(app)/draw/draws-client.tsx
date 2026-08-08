@@ -36,6 +36,7 @@ type DrawRow = {
   summary: string | null;
   visibility: 'private' | 'public';
   hasSvg: boolean;
+  hasDraft: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -241,7 +242,18 @@ export function DrawsClient() {
                       <PenTool className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{d.title}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="min-w-0 truncate text-sm font-medium">{d.title}</span>
+                        {/* A dot, not a word: the row is a scan target and the
+                            preview pane carries the full explanation. */}
+                        {d.hasDraft && (
+                          <span
+                            className="size-1.5 shrink-0 rounded-full bg-primary"
+                            title="Uncommitted edits"
+                            aria-label="Uncommitted edits"
+                          />
+                        )}
+                      </div>
                       {d.summary ? (
                         <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                           {d.summary}
@@ -377,6 +389,16 @@ function DrawPreview({
           <h2 className="flex min-w-0 items-center gap-2 text-xl font-semibold">
             <span aria-hidden>{draw.icon ?? '✏️'}</span>
             <span className="min-w-0 truncate">{draw.title}</span>
+            {/* Uncommitted edits exist but cannot be previewed: a draft is
+                never rendered (rendering happens at commit, and the sidecar
+                only ever draws the committed scene). Say so, rather than let
+                the last commit read as "my work was lost" — same badge Pages
+                uses for the same situation. */}
+            {draw.hasDraft && (
+              <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                Draft · uncommitted
+              </span>
+            )}
           </h2>
           {/* The user's own one-liner wins; the extractor's summary fills in
               when none was written. */}
@@ -416,14 +438,25 @@ function DrawPreview({
           <Spinner />
         </div>
       ) : src ? (
-        /* The snapshot fills its pane plainly — no border, mat or box; the
-           SVG carries its own background. Still an IMAGE, never inline
-           markup (see the loader note above). */
-        // eslint-disable-next-line @next/next/no-img-element -- blob: URL of an owner-generated SVG; next/image can't take it
-        <img src={src} alt={draw.title} className="h-auto w-full" />
+        <>
+          {draw.hasDraft && (
+            <p className="text-xs text-muted-foreground">
+              Showing the last commit — your newer edits are saved in the drawing.
+            </p>
+          )}
+          {/* The snapshot fills its pane plainly — no border, mat or box; the
+              SVG carries its own background. Still an IMAGE, never inline
+              markup (see the loader note above). */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- blob: URL of an owner-generated SVG; next/image can't take it */}
+          <img src={src} alt={draw.title} className="h-auto w-full" />
+        </>
       ) : (
         <PreviewEmpty
-          label="Nothing to preview yet. Open the drawing and commit to create one."
+          label={
+            draw.hasDraft
+              ? 'Your uncommitted edits are saved — open the drawing to carry on. The preview appears once you commit.'
+              : 'Nothing to preview yet. Open the drawing and commit to create one.'
+          }
           onOpen={onOpen}
         />
       )}

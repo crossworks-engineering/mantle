@@ -103,6 +103,10 @@ export type DrawRow = {
   visibility: DrawVisibility;
   /** Whether a committed SVG snapshot exists (the list fetches it lazily). */
   hasSvg: boolean;
+  /** Whether uncommitted edits are parked in `draft_scene`. A draft is never
+   *  rendered (that is the whole point of the commit gate), so the list can
+   *  only SAY it exists — see the badge in the preview pane. */
+  hasDraft: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -121,7 +125,7 @@ export type DrawDetail = DrawRow & {
   fileRefs: Record<string, string>;
 };
 
-function rowOf(n: Node, hasSvg = false): DrawRow {
+function rowOf(n: Node, hasSvg = false, hasDraft = false): DrawRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   return {
     id: n.id,
@@ -132,6 +136,7 @@ function rowOf(n: Node, hasSvg = false): DrawRow {
     summary: typeof d.summary === 'string' ? d.summary : null,
     visibility: d.visibility === 'public' ? 'public' : 'private',
     hasSvg,
+    hasDraft,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -144,7 +149,7 @@ function detailOf(
   extra: { draftRev?: number; fileRefs?: Record<string, string>; hasSvg?: boolean } = {},
 ): DrawDetail {
   return {
-    ...rowOf(n, extra.hasSvg ?? false),
+    ...rowOf(n, extra.hasSvg ?? false, draft !== null),
     scene,
     draft,
     fileRefs: extra.fileRefs ?? {},
@@ -238,14 +243,20 @@ export async function listDraws(
   opts: ListDrawsOpts & { limit?: number; offset?: number } = {},
 ): Promise<DrawRow[]> {
   const rows = await db
-    .select({ node: nodes, hasSvg: sql<boolean>`${draws.sceneSvg} IS NOT NULL` })
+    .select({
+      node: nodes,
+      hasSvg: sql<boolean>`${draws.sceneSvg} IS NOT NULL`,
+      // The draft's CONTENT never leaves the editor; only its existence does,
+      // so the list can tell the user their uncommitted work is safe.
+      hasDraft: sql<boolean>`${draws.draftScene} IS NOT NULL`,
+    })
     .from(nodes)
     .leftJoin(draws, eq(draws.nodeId, nodes.id))
     .where(and(...drawConds(ownerId, opts)))
     .orderBy(drawOrderBy(opts.sort))
     .limit(opts.limit ?? 500)
     .offset(opts.offset ?? 0);
-  return rows.map((r) => rowOf(r.node, r.hasSvg ?? false));
+  return rows.map((r) => rowOf(r.node, r.hasSvg ?? false, r.hasDraft ?? false));
 }
 
 export async function countDraws(ownerId: string, opts: ListDrawsOpts = {}): Promise<number> {
