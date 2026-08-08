@@ -287,6 +287,63 @@ test.describe('drawing embedded in a page', () => {
   });
 });
 
+test.describe('the /drawing slash item', () => {
+  test.skip(({ topology }) => topology === 'same-origin', 'owner UI lives on the client app');
+
+  test('opens the picker and embeds the chosen drawing at the caret', async ({
+    ownerApi,
+    ownerPage,
+  }) => {
+    // The human entry point for 4a in docs/draw-audit-handover.md: before the
+    // picker existed only markdown or an agent could create a draw embed.
+    const title = `E2E pickable draw ${Date.now()}`;
+    const created = await ownerApi.post('/api/draws', { data: { title } });
+    const { draw } = (await created.json()) as { draw: { id: string } };
+    const host = await ownerApi.post('/api/pages', {
+      data: {
+        title: `E2E picker host ${Date.now()}`,
+        doc: { type: 'doc', content: [{ type: 'paragraph' }] },
+      },
+    });
+    const { page: hostPage } = (await host.json()) as { page: { id: string } };
+
+    try {
+      await ownerApi.post(`/api/draws/${draw.id}/commit`, {
+        data: { scene: sceneWith('picker canary'), svg: GOOD_SVG, if_rev: 0 },
+      });
+
+      await ownerPage.goto(`/pages/${hostPage.id}`);
+      const editor = ownerPage.locator('.ProseMirror');
+      await editor.click();
+      await ownerPage.keyboard.type('/drawing');
+      // "Drawing" is the only slash item matching the query; Enter commits it.
+      await expect(ownerPage.getByRole('button', { name: /^Drawing/ })).toBeVisible();
+      await ownerPage.keyboard.press('Enter');
+
+      // The picker dialog lists drawings; search narrows to ours.
+      const dialog = ownerPage.getByRole('dialog');
+      await expect(dialog.getByText('Embed a drawing')).toBeVisible();
+      await dialog.getByPlaceholder('Search drawings…').fill(title);
+      await dialog.getByRole('button', { name: title }).click();
+
+      // The embed is the standard image node backed by the drawing (the same
+      // shape `![alt](draw:<id>)` parses into), rendered live in the editor.
+      await expect(editor.locator(`img[data-draw-id="${draw.id}"]`)).toHaveCount(1);
+
+      // And the autosaved page draft carries the drawId reference.
+      await expect
+        .poll(
+          async () => JSON.stringify(await (await ownerApi.get(`/api/pages/${hostPage.id}`)).json()),
+          { timeout: 15_000 },
+        )
+        .toContain(draw.id);
+    } finally {
+      await ownerApi.delete(`/api/pages/${hostPage.id}`);
+      await ownerApi.delete(`/api/draws/${draw.id}`);
+    }
+  });
+});
+
 test.describe('scene image integrity', () => {
   test.skip(({ topology }) => topology === 'same-origin', 'owner UI lives on the client app');
 

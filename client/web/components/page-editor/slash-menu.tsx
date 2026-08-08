@@ -26,6 +26,7 @@ import {
   ListTodo,
   Minus,
   Paperclip,
+  PenTool,
   Sigma,
   Sparkles,
   Table as TableIcon,
@@ -39,6 +40,7 @@ import { apiSend } from '@mantle/web-ui/api-fetch';
 import { columnsContent } from './column';
 import { randomAsideAngle, randomAsideColor } from '@mantle/web-ui/aside-style';
 import { uploadAndInsert } from './upload';
+import { openDrawPicker } from './draw-picker';
 
 /** Open a native file picker, upload the chosen file, and insert the matching
  *  node (image or file chip) at the current selection. */
@@ -263,6 +265,19 @@ const ITEMS: SlashItem[] = [
     icon: ImageIcon,
     keywords: ['image', 'picture', 'photo', 'upload', 'img'],
     command: ({ editor, range }) => pickAndUpload(editor, range, 'image/*'),
+  },
+  {
+    group: 'Media',
+    title: 'Drawing',
+    description: 'Embed a whiteboard drawing (live snapshot).',
+    icon: PenTool,
+    keywords: ['draw', 'drawing', 'sketch', 'whiteboard', 'canvas', 'excalidraw'],
+    // The picker dialog lives in PageEditor (a static item can't render React);
+    // remove the "/drawing" text, then ask it to open at this selection.
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      openDrawPicker(editor);
+    },
   },
   {
     group: 'Media',

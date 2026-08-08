@@ -9,6 +9,7 @@ import { nodeHref } from '@/lib/node-href';
 import { EditorBubbleMenu } from './bubble-menu';
 import { EditorDragHandle } from './drag-handle';
 import { TableControls } from './table-controls';
+import { DrawPicker } from './draw-picker';
 import { SlashCommand } from './slash-command';
 import { FocusMarks, focusMarksKey } from './focus-marks';
 import { FocusGutter } from './focus-gutter';
@@ -259,6 +260,7 @@ export function PageEditor({
           focus strip owns the left band. Marks stay highlighted either way. */}
       {markerMode ? null : <EditorDragHandle editor={editor} />}
       <TableControls editor={editor} />
+      <DrawPicker editor={editor} />
       <div className="relative">
         {markerMode && onMarksChange && (
           <FocusGutter editor={editor} marks={marks ?? []} onChange={onMarksChange} />
