@@ -29,6 +29,8 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import { drawSnapshotClass } from '@/components/draw/snapshot-theme';
 import { ShareControl } from '@/components/share-control';
 import { FocusToggle } from '@/components/layout/focus-toggle';
+import { DrawViewer } from '@/components/draw/draw-viewer';
+import { Move } from 'lucide-react';
 import { useZenMode } from '@/components/layout/zen-mode';
 import { focusGridClass } from '@/components/layout/focus-layout';
 
@@ -385,6 +387,11 @@ function DrawPreview({
   });
 
   const svg = svgQuery.data;
+  // The interactive view-mode canvas, off by default. Resets per drawing (the
+  // pane is keyed on the id), so selecting another row starts from the cheap
+  // snapshot again rather than mounting a canvas you didn't ask for.
+  const [interactive, setInteractive] = useState(false);
+  const { zen } = useZenMode();
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     if (!svg) {
@@ -430,6 +437,25 @@ function DrawPreview({
               last COMMITTED scene. The "Draft · uncommitted" badge says when
               that is behind. */}
           <ShareControl nodeId={draw.id} />
+          {/* The snapshot can't be panned or zoomed, so a diagram bigger than
+              the pane was unreadable without opening it for EDITING. This
+              mounts the real canvas in upstream's view mode instead: pan and
+              zoom, no editing. Off by default so browsing the list keeps
+              costing one image rather than the editor bundle. */}
+          <Button
+            size="sm"
+            variant={interactive ? 'default' : 'outline'}
+            onClick={() => setInteractive((v) => !v)}
+            aria-pressed={interactive}
+            aria-label={interactive ? 'Show the snapshot' : 'Pan and zoom'}
+            title={
+              interactive
+                ? 'Back to the snapshot'
+                : 'Pan and zoom the drawing (read-only, no editing)'
+            }
+          >
+            <Move />
+          </Button>
           {/* Survives focus mode (the shell's chrome doesn't), so this is the
               whole control — enter and exit. */}
           <FocusToggle />
@@ -458,17 +484,32 @@ function DrawPreview({
         </div>
       )}
 
-      {svgQuery.isPending ? (
+      {draw.hasDraft && (
+        <p className="text-xs text-muted-foreground">
+          Showing the last commit — your newer edits are saved in the drawing.
+        </p>
+      )}
+
+      {/* The viewer reads the SCENE, not the snapshot, so it is offered ahead
+          of the snapshot checks below — a drawing whose render failed (or that
+          an agent authored) can still be looked at properly. */}
+      {interactive ? (
+        // Given real height, because a canvas has no intrinsic one — and more
+        // of it in focus mode, where the shell's chrome is gone.
+        <div
+          className={cn(
+            'w-full overflow-hidden rounded-lg border border-border',
+            zen ? 'h-[calc(100vh-13rem)]' : 'h-[70vh]',
+          )}
+        >
+          <DrawViewer drawId={draw.id} />
+        </div>
+      ) : svgQuery.isPending ? (
         <div className="flex h-64 items-center justify-center">
           <Spinner />
         </div>
       ) : src ? (
         <>
-          {draw.hasDraft && (
-            <p className="text-xs text-muted-foreground">
-              Showing the last commit — your newer edits are saved in the drawing.
-            </p>
-          )}
           {/* The snapshot fills its pane plainly — no border, mat or box; the
               SVG carries its own background. Still an IMAGE, never inline
               markup (see the loader note above). Under the dark theme it takes

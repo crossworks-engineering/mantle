@@ -119,14 +119,14 @@ validator being exhaustive; it rests on every surface rendering the snapshot
 
 ## 5. Where drawings render
 
-| Surface                       | How                                                                                                                                 |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL), theme-inverted in dark mode (§5b); header carries Share + focus mode          |
-| Page embed                    | `![alt](draw:<id>)` = an image node with `attrs.drawId`; `<img>` into `/api/draws/:id/svg?raw=1`, theme-inverted in dark mode (§5b) |
-| Share (`/s/[token]`)          | cache-only image routes; a shared page serves exactly the drawings its doc places (`referencedDrawIds`), nothing else               |
-| PDF export                    | the print sidecar, embeds with `?nofill=1`                                                                                          |
-| Markdown / HTML export        | the `draw:` reference / an `<img>`                                                                                                  |
-| DOCX export                   | a PNG **raster of the snapshot**, screenshotted off `/print/draws/:id` in the sidecar (`ImageRun` takes no SVG)                     |
+| Surface                       | How                                                                                                                                                             |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/draw` list + detail preview | snapshot via `/api/draws/:id/svg` (JSON -> blob URL), theme-inverted in dark mode (§5b); header carries Share + focus mode + an on-demand pan/zoom viewer (§5c) |
+| Page embed                    | `![alt](draw:<id>)` = an image node with `attrs.drawId`; `<img>` into `/api/draws/:id/svg?raw=1`, theme-inverted in dark mode (§5b)                             |
+| Share (`/s/[token]`)          | cache-only image routes; a shared page serves exactly the drawings its doc places (`referencedDrawIds`), nothing else                                           |
+| PDF export                    | the print sidecar, embeds with `?nofill=1`                                                                                                                      |
+| Markdown / HTML export        | the `draw:` reference / an `<img>`                                                                                                                              |
+| DOCX export                   | a PNG **raster of the snapshot**, screenshotted off `/print/draws/:id` in the sidecar (`ImageRun` takes no SVG)                                                 |
 
 Embedding in a page has three entry points: the **`/drawing` slash item**
 (picker dialog: search, thumbnails, "New drawing" which creates + embeds +
@@ -206,6 +206,35 @@ the file's own source for exactly this.
 A genuinely dark drawing is still available and travels everywhere: set the
 canvas background to a dark colour with the custom picker and choose light
 stroke colours. Then darkness is data, not a viewer preference.
+
+## 5c. Looking at a drawing without editing it
+
+The preview shows the committed snapshot: one flat image. That is the right
+default — instant, identical to every other surface, and browsing the list
+never pays for the editor bundle. But an image cannot be panned or zoomed, so a
+diagram bigger than the pane could only be read by opening it for EDITING,
+which is a strange thing to have to do to LOOK at something.
+
+Upstream's **`viewModeEnabled`** is the missing piece, and
+`ExcalidrawCanvas` already took a `viewMode` prop for it. A toggle in the
+preview header swaps the snapshot for the real canvas in view mode: pan and
+zoom, no editing UI, no draft, nothing written
+([`client/web/components/draw/draw-viewer.tsx`](../client/web/components/draw/draw-viewer.tsx)).
+
+Three properties worth keeping:
+
+- **On demand, not by default.** The canvas mounts on the click, so selecting a
+  row still costs one image. The cheap-list decision survives.
+- **The COMMITTED scene, never the draft** — the viewer must agree with the
+  snapshot beside it, the same rule every non-editor surface follows.
+- **It reads the scene, not the snapshot**, so it is offered ahead of the
+  snapshot checks: a drawing whose render failed, or one an agent authored, can
+  still be looked at properly. Scene images rehydrate through the editor's own
+  `loadSceneFiles`, and `restore()` runs first, so an old scene renders as the
+  current version understands it.
+
+It composes with focus mode (§ Pages doc): focus + viewer is a full-screen
+read-only whiteboard, which is what "preview" should have meant all along.
 
 ## 6. Brain wiring + agents
 
