@@ -128,6 +128,26 @@ embeds it. On page commit, each embedded drawing's `scene_text` is folded into
 the page's indexed text, so a term that appears only inside the diagram still
 finds the page.
 
+## 5a. Editor chrome follows the Mantle theme
+
+The editor's UI is styled entirely by CSS custom properties (the package's
+`theme.scss`), and
+[`client/web/components/draw/draw-theme.css`](../client/web/components/draw/draw-theme.css)
+re-points the chrome-level ones at the app's tokens: islands, menus, dialogs
+and the sidebar on `--popover`, hovers on `--accent`, a `--primary`-derived
+brand ramp via oklab `color-mix`, and `--ui-font` on the user's interface
+font. One selector list covers light and dark (Mantle tokens flip with the
+mode; including `.theme--dark` lets cascade order beat the package's own dark
+block, which is why the file MUST stay imported after the package CSS in
+`excalidraw-canvas.tsx`). Rules are global on `.excalidraw` because dialogs
+and tooltips portal to `<body>` outside the canvas wrapper.
+
+Content is deliberately untouched: canvas colors, the drawing palette, label
+fonts, selection and the dark `--theme-filter` inversion stay stock, so
+committed snapshots do not vary with the app theme. Guarded by
+`e2e/specs/draw-theme.spec.ts` (computed-style assertions + a screenshot per
+theme in `e2e/.artifacts/`).
+
 ## 6. Brain wiring + agents
 
 Commit fires `node_ingested`; the extractor reads `scene_text` via
@@ -155,7 +175,10 @@ pnpm e2e   # hermetic suite incl. the draw lifecycle; Linux only (needs setsid)
 **Upgrading the pin**: bump `@excalidraw/excalidraw` (exact), load a corpus of
 stored scenes in dev, run `draws-re-render.ts --all`, and diff the snapshots
 before shipping. `svg_engine` marks every pre-upgrade snapshot stale, so the
-fleet heals lazily on owner views either way.
+fleet heals lazily on owner views either way. Also re-check `draw-theme.css`
+(§5a) against the new version's `theme.scss` — a renamed variable silently
+reverts that surface to stock styling (the `draw-theme` e2e spec catches the
+two big ones).
 
 ## 8. Team + peers
 
