@@ -17,6 +17,8 @@
  */
 
 import '@excalidraw/excalidraw/index.css';
+// AFTER the package css — cascade order is what lets the overrides win.
+import './draw-theme.css';
 
 import type {
   AppState,

@@ -1,0 +1,135 @@
+/*
+ * Excalidraw chrome → Mantle theme tokens.
+ *
+ * The editor's whole UI hangs off CSS custom properties declared in the
+ * package's theme.scss (light on `.excalidraw`, dark re-declared on
+ * `.excalidraw.theme--dark`). This file re-points the chrome-level ones at the
+ * app's theme so islands, menus, dialogs, inputs and the UI font follow the
+ * active Mantle theme in both modes. CONTENT is deliberately untouched: the
+ * canvas, the drawing palette, label fonts, `--color-selection` and the dark
+ * `--theme-filter` inversion all stay stock, so committed snapshots are not
+ * affected by the app theme.
+ *
+ * Three constraints shape the selectors:
+ * - Dialogs/tooltips portal to <body> in fresh `.excalidraw` divs OUTSIDE our
+ *   canvas wrapper, so these rules must be global, not wrapper-scoped. Safe:
+ *   only Draw mounts the class.
+ * - The selector list includes `.excalidraw.theme--dark` so one block beats
+ *   the package's own dark re-declarations on cascade order — which is why
+ *   this file MUST be imported AFTER '@excalidraw/excalidraw/index.css'
+ *   (excalidraw-canvas.tsx does).
+ * - Reference only the shadcn-style aliases (--popover, --primary, --border,
+ *   ...). The Tailwind `--color-*` namespace collides with Excalidraw's own
+ *   palette inside this scope, and `--background` is one of its private
+ *   button vars — use `--color-background` (not shadowed) for the page color.
+ *
+ * Pin-coupled: variable names come from @excalidraw/excalidraw@0.18.1. On a
+ * pin bump, re-check against the package's theme.scss (docs/draw.md §7); a
+ * renamed var just falls back to stock styling for that surface.
+ */
+
+.excalidraw,
+.excalidraw.theme--dark {
+  /* Chrome font: the app's interface font (user-selectable), not the bundled
+     Assistant. Drawing LABEL fonts are content and unaffected. */
+  --ui-font: var(--font-sans);
+
+  /* Surfaces: islands (toolbars, panels, menus), popups, sidebar, dialogs. */
+  --island-bg-color: var(--popover);
+  --island-bg-color-alt: var(--popover);
+  --popup-bg-color: var(--popover);
+  --popup-secondary-bg-color: var(--muted);
+  --popup-text-color: var(--popover-foreground);
+  --sidebar-bg-color: var(--popover);
+  --sidebar-border-color: var(--border);
+  --dialog-border-color: var(--border);
+  --default-bg-color: var(--color-background);
+  --color-surface-lowest: var(--color-background);
+  --color-surface-low: var(--muted);
+  --color-surface-mid: var(--muted);
+  --color-surface-high: var(--accent);
+
+  /* Text + icons. */
+  --color-on-surface: var(--foreground);
+  --text-primary-color: var(--foreground);
+  --icon-fill-color: var(--foreground);
+  --keybinding-color: var(--muted-foreground);
+
+  /* Borders, hovers, focus. */
+  --default-border-color: var(--border);
+  --button-hover-bg: var(--accent);
+  --button-active-bg: var(--accent);
+  --button-active-border: var(--ring);
+  --focus-highlight-color: var(--ring);
+  --select-highlight-color: var(--ring);
+  --avatar-border-color: var(--border);
+
+  /* Brand ramp, derived from --primary so all ~40 themes carry through.
+     oklab mixes: shade toward the theme's own foreground/background rather
+     than literal black/white, which keeps tinted themes coherent. */
+  --color-primary: var(--primary);
+  --color-primary-hover: color-mix(in oklab, var(--primary) 90%, var(--foreground));
+  --color-primary-darker: color-mix(in oklab, var(--primary) 85%, var(--foreground));
+  --color-primary-darkest: color-mix(in oklab, var(--primary) 75%, var(--foreground));
+  --color-primary-light: color-mix(in oklab, var(--primary) 15%, var(--color-background));
+  --color-primary-light-darker: color-mix(in oklab, var(--primary) 25%, var(--color-background));
+  --color-brand-hover: color-mix(in oklab, var(--primary) 90%, var(--foreground));
+  --color-brand-active: color-mix(in oklab, var(--primary) 80%, var(--foreground));
+  --color-surface-primary-container: color-mix(
+    in oklab,
+    var(--primary) 18%,
+    var(--color-background)
+  );
+  --color-on-primary-container: color-mix(in oklab, var(--primary) 55%, var(--foreground));
+  --color-promo: var(--primary);
+  --link-color: var(--primary);
+  --link-color-hover: color-mix(in oklab, var(--primary) 85%, var(--foreground));
+  --link-color-active: color-mix(in oklab, var(--primary) 70%, var(--foreground));
+
+  /* Inputs. */
+  --input-bg-color: var(--color-background);
+  --input-border-color: var(--input);
+  --input-hover-bg-color: var(--muted);
+  --input-label-color: var(--muted-foreground);
+
+  /* Danger (delete confirms, destructive menu items). */
+  --color-danger: var(--destructive);
+  --color-danger-dark: color-mix(in oklab, var(--destructive) 90%, var(--foreground));
+  --color-danger-darker: color-mix(in oklab, var(--destructive) 80%, var(--foreground));
+  --color-danger-darkest: color-mix(in oklab, var(--destructive) 70%, var(--foreground));
+  --button-destructive-bg-color: color-mix(
+    in oklab,
+    var(--destructive) 12%,
+    var(--color-background)
+  );
+  --button-destructive-color: var(--destructive);
+
+  /* Scrollbars + radii. */
+  --scrollbar-thumb: var(--border);
+  --scrollbar-thumb-hover: var(--muted-foreground);
+  --border-radius-md: var(--radius-md);
+  --border-radius-lg: var(--radius-lg);
+}
+
+/* Text on a primary fill must be the token's own contrast pair. The stock
+   choice (surface-lowest, i.e. the page background) is only correct when
+   primary is dark-on-light / light-on-dark — not guaranteed across themes. */
+.excalidraw .ExcButton--color-primary.ExcButton--variant-filled {
+  --text-color: var(--primary-foreground);
+  --spinner-color: var(--primary-foreground);
+}
+
+/* Two dark-mode hovers are hardcoded hex on element rules, not vars — the
+   triple-class selector matches the package's own specificity so cascade
+   order (this file loads later) decides. */
+.excalidraw.theme--dark.excalidraw .dropdown-menu-button:hover,
+.excalidraw.theme--dark.excalidraw .HelpDialog__btn:hover {
+  --background: var(--accent);
+}
+
+/* Tooltips portal to <body> WITHOUT the .excalidraw class and re-declare the
+   font stack locally, so they need their own override. */
+.excalidraw-tooltip {
+  --ui-font: var(--font-sans);
+  font-family: var(--font-sans);
+}
