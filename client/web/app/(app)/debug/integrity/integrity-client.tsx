@@ -42,7 +42,20 @@ import type {
 
 /** The node types the live view tracks — mirrors `LANDED_TYPES` in landed.ts
  *  (kept as a literal here so the server module never enters the browser bundle). */
-const LIVE_TYPES = ['note', 'page', 'task', 'event', 'contact', 'secret', 'file', 'email'];
+const LIVE_TYPES = [
+  'note',
+  'page',
+  'task',
+  'event',
+  'contact',
+  'secret',
+  'file',
+  'email',
+  'table',
+  'journal',
+  'formula',
+  'draw',
+];
 const LIVE_PAGE_SIZE = 25;
 const TYPE_LABELS: Record<string, string> = {
   note: 'Notes',
@@ -53,6 +66,10 @@ const TYPE_LABELS: Record<string, string> = {
   secret: 'Secrets',
   file: 'Files',
   email: 'Email',
+  table: 'Tables',
+  journal: 'Journal',
+  formula: 'Formulas',
+  draw: 'Drawings',
 };
 
 function CheckPill({ check }: { check: CheckResult }) {

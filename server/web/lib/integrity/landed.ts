@@ -35,6 +35,10 @@ export const LANDED_TYPES = [
   'secret',
   'file',
   'email',
+  'table',
+  'journal',
+  'formula',
+  'draw',
 ] as const;
 
 /** A run is only meaningful once it has terminated. */
