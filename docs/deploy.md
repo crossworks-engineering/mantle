@@ -229,7 +229,27 @@ MANTLE_IMAGE_NAMESPACE=youruser MANTLE_IMAGE_TAG=v2 scripts/docker-build-push.sh
 #   bump MANTLE_IMAGE_TAG=v2 in .env, then:
 docker compose pull
 docker compose up -d --wait        # migrate runs first (gated); then app rolls
+
+#   …AND the client stack. Since the v0.200 split a box runs TWO compose
+#   projects off one .env: the server project (this file) and `mantle-client`
+#   (docker-compose.client.yml). `docker compose up -d` only rolls the one it
+#   was pointed at, so a release that changes the OWNER UI lands invisibly —
+#   the API and migrations move, every container reports healthy, and the
+#   screens the user actually opens stay on the old image. Roll both:
+docker compose -f docker-compose.client.yml --project-directory . pull
+docker compose -f docker-compose.client.yml --project-directory . up -d --wait
+#   Then assert BOTH tags rather than inferring the roll worked from health:
+for c in mantle_web mantle_client_web; do \
+  printf "%-18s %s\n" "$c" "$(docker inspect --format '{{.Config.Image}}' $c)"; done
 ```
+
+> A box whose stack is NOT in `~/mantle` (the dev box lives in
+> `~/stack-rehearsal`) derives a different project name from
+> `--project-directory .`. Read the real one and pass it with `-p`:
+> `docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' mantle_client_web`.
+> Full per-box runbook, including the backup and verify steps:
+> [`update-prod.md`](./update-prod.md) — it applies to ANY box, dev included,
+> not just the prod one in its title.
 
 **Always `scripts/db-dump.sh` before a deploy that includes a migration**: a
 backup is cheap insurance for a brain. Migrations are the one thing you never

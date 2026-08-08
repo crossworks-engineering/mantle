@@ -1,4 +1,9 @@
-# Updating production (registry-pull)
+# Updating a box (registry-pull)
+
+> Titled for prod, but the procedure is the same for ANY box — the dev box
+> included. Only the ssh alias and the stack directory change (dev's lives in
+> `~/stack-rehearsal`, not `~/mantle`), which matters for step 3b's project
+> name.
 
 How to ship the latest tagged release to the Contabo prod box. Prod runs the
 **CI-built multi-arch image** and updates by **pulling** it, no build, no rsync,
@@ -100,7 +105,7 @@ ssh mantle-prod 'cd ~/mantle && docker compose ps'                          # al
 # and it is the only one the user actually looks at — assert it explicitly
 # rather than inferring the roll worked from the server being healthy.
 ssh mantle-prod 'for c in mantle_web mantle_api mantle_client_web; do printf "%-20s %s\n" "$c" "$(docker inspect --format "{{.Config.Image}}" $c)"; done'
-ssh mantle-prod 'docker exec mantle_web sh -c "grep -m1 version /app/apps/web/package.json"'  # == the shipped vX.Y.Z
+ssh mantle-prod 'docker exec mantle_web node -p "require(\"/app/package.json\").version"'   # == the shipped vX.Y.Z
 ssh mantle-prod 'docker logs mantle_migrate 2>&1 | tail'                    # migration applied (or no-op)
 ssh mantle-prod 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from nodes"'  # unchanged
 curl -sI https://jason.crossworks.network | head -3                         # 307 → /login, valid cert
