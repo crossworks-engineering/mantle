@@ -43,6 +43,15 @@ test.describe('editor header layout', () => {
       expect(tagsBox!.x).toBeGreaterThan(titleBox!.x);
 
       await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}editor-header-page.png` });
+
+      // Focus mode: the shell chrome (top header, nav, activity, footer)
+      // disappears, a floating exit brings it back.
+      await ownerPage.getByRole('button', { name: 'Focus mode' }).click();
+      await expect(ownerPage.getByRole('link', { name: /home$/ })).toBeHidden();
+      await expect(ownerPage.locator('footer, [role="contentinfo"]').first()).toBeHidden();
+      await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}editor-zen-page.png` });
+      await ownerPage.getByRole('button', { name: 'Exit focus mode' }).click();
+      await expect(ownerPage.getByRole('link', { name: /home$/ })).toBeVisible();
     } finally {
       await ownerApi.delete(`/api/pages/${row.id}`);
     }

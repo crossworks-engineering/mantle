@@ -13,6 +13,7 @@ import {
   GitCompareArrows,
   Highlighter,
   Loader2,
+  Maximize2,
   StretchHorizontal,
   Trash2,
   Undo2,
@@ -21,6 +22,7 @@ import { computeDiffOverlay, type DiffOverlay } from '@mantle/content/page-diff'
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { TagInput } from '@/components/tag-input';
+import { useZenMode } from '@/components/layout/zen-mode';
 import { EmojiPicker } from '@/components/emoji-picker';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { ShareControl } from '@/components/share-control';
@@ -133,6 +135,7 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { toggle: toggleZen } = useZenMode();
 
   const initialDoc = (initial.draft ?? initial.doc) as JSONContent;
 
@@ -980,6 +983,17 @@ function PageDetailEditor({ initial, backlinks }: { initial: PageDetail; backlin
           </Button>
           <ExportMenu nodeId={initial.id} />
           <ShareControl nodeId={initial.id} beforeEnable={commit} teamMode allowCascade />
+          {/* Focus mode: the shell hides its chrome; this toolbar stays (it
+              scrolls with the page), the floating shell button exits. */}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={toggleZen}
+            aria-label="Focus mode"
+            title="Focus mode — hide the app chrome"
+          >
+            <Maximize2 />
+          </Button>
           <Button
             size="sm"
             variant="ghost"

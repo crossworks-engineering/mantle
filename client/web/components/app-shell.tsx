@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch, upgradeOwnerCookie } from '@mantle/web-ui/api-fetch';
@@ -27,6 +27,9 @@ import { PendingQuestionWatcher } from '@/components/pending/question-watcher';
 import { DesktopBridge } from '@/components/desktop/desktop-bridge';
 import { PickMode } from '@/components/assistant/pick-mode';
 import { FooterBar } from '@/components/layout/footer-bar';
+import { ZenModeContext } from '@/components/layout/zen-mode';
+import { Minimize2 } from 'lucide-react';
+import { Button } from '@mantle/web-ui/ui/button';
 import { recordNavVisit } from '@/lib/nav-usage';
 import { matchNavItem } from '@mantle/web-ui/layout/nav-items';
 import { SearchPalette } from '@/components/search/search-palette';
@@ -222,6 +225,12 @@ function ShellFrame({
     if (item) recordNavVisit(item.href);
   }, [pathname]);
 
+  // Distraction-free ("focus") mode — hides all four chrome regions and gives
+  // the content the whole viewport. Ephemeral by design (no cookie); the
+  // floating exit button below is the way back.
+  const [zen, setZen] = useState(false);
+  const zenCtx = useMemo(() => ({ zen, toggle: () => setZen((v) => !v) }), [zen]);
+
   const toggleNav = () =>
     setNavCollapsed((v) => {
       writeCookie(NAV_COOKIE, !v);
@@ -293,63 +302,86 @@ function ShellFrame({
   );
 
   return (
-    <div
-      className="group/shell h-screen bg-background"
-      data-nav-collapsed={navCollapsed ? 'true' : 'false'}
-      data-activity-collapsed={activityCollapsed ? 'true' : 'false'}
-      style={
-        {
-          '--nav-w': navCollapsed ? '3.5rem' : '16rem',
-          '--activity-w': activityCollapsed ? '3.5rem' : '20rem',
-          '--assistant-w': assistantW,
-          '--help-w': helpW,
-          '--footer-h': '2.75rem',
-        } as React.CSSProperties
-      }
-    >
-      <Header
-        email={email}
-        userAvatar={userAvatar}
-        siteName={shellQuery.data?.siteName ?? null}
-        peerName={shellQuery.data?.peerName ?? null}
-        logoVersion={shellQuery.data?.logoVersion ?? null}
-        logoDarkVersion={shellQuery.data?.logoDarkVersion ?? null}
-        onMenuClick={() => setMobileOpen(true)}
-        onSearchClick={() => setSearchOpen(true)}
-      />
+    <ZenModeContext.Provider value={zenCtx}>
+      <div
+        className="group/shell h-screen bg-background"
+        data-nav-collapsed={navCollapsed ? 'true' : 'false'}
+        data-activity-collapsed={activityCollapsed ? 'true' : 'false'}
+        data-zen={zen ? 'true' : 'false'}
+        style={
+          {
+            // Focus mode zeroes every chrome offset — the SAME vars the whole
+            // frame already positions against, so one flip reflows everything.
+            '--nav-w': zen ? '0px' : navCollapsed ? '3.5rem' : '16rem',
+            '--activity-w': zen ? '0px' : activityCollapsed ? '3.5rem' : '20rem',
+            '--assistant-w': assistantW,
+            '--help-w': helpW,
+            '--footer-h': zen ? '0px' : '2.75rem',
+            '--header-h': zen ? '0px' : '4rem',
+          } as React.CSSProperties
+        }
+      >
+        {zen ? null : (
+          <Header
+            email={email}
+            userAvatar={userAvatar}
+            siteName={shellQuery.data?.siteName ?? null}
+            peerName={shellQuery.data?.peerName ?? null}
+            logoVersion={shellQuery.data?.logoVersion ?? null}
+            logoDarkVersion={shellQuery.data?.logoDarkVersion ?? null}
+            onMenuClick={() => setMobileOpen(true)}
+            onSearchClick={() => setSearchOpen(true)}
+          />
+        )}
 
-      {/* Global search palette — one instance for the whole shell, summoned by
+        {/* Floating exit for focus mode — the one piece of chrome it keeps. */}
+        {zen && (
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setZen(false)}
+            aria-label="Exit focus mode"
+            title="Exit focus mode"
+            className="fixed right-3 top-3 z-50 size-8 bg-background/80 backdrop-blur"
+          >
+            <Minimize2 />
+          </Button>
+        )}
+
+        {/* Global search palette — one instance for the whole shell, summoned by
             ⌘K or the header magnifier. */}
-      <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
+        <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
 
-      {/* Desktop sidebar — ends above the footer bar, which now owns the
-            collapse toggle (see <FooterBar/>). */}
-      <aside className="fixed top-0 bottom-[var(--footer-h)] left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar pt-16 transition-[width] duration-200 ease-in-out md:flex">
-        {/* Generated backdrop for this area — renders nothing when Settings →
+        {/* Desktop sidebar — ends above the footer bar, which now owns the
+            collapse toggle (see <FooterBar/>). Unmounted in focus mode. */}
+        {zen ? null : (
+          <aside className="fixed top-0 bottom-[var(--footer-h)] left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar pt-16 transition-[width] duration-200 ease-in-out md:flex">
+            {/* Generated backdrop for this area — renders nothing when Settings →
               Appearance has the menu switched off. See
               @mantle/web-ui/area-backdrop. */}
-        <AreaBackdrop area="menu" />
-        {/* `relative` is load-bearing: the backdrop is absolutely positioned and
+            <AreaBackdrop area="menu" />
+            {/* `relative` is load-bearing: the backdrop is absolutely positioned and
               would otherwise paint OVER this in-flow content regardless of DOM
               order. */}
-        <div className="relative flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
-          {body(undefined, navCollapsed)}
-        </div>
-      </aside>
+            <div className="relative flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
+              {body(undefined, navCollapsed)}
+            </div>
+          </aside>
+        )}
 
-      {/* Mobile sidebar drawer — portaled outside the shell root, so it
+        {/* Mobile sidebar drawer — portaled outside the shell root, so it
             always renders expanded regardless of collapse state. */}
-      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="w-80 overflow-y-auto p-0 pt-4 scrollbar-thin">
-          <SheetTitle className="sr-only">Navigation</SheetTitle>
-          {body(() => setMobileOpen(false))}
-        </SheetContent>
-      </Sheet>
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <SheetContent side="left" className="w-80 overflow-y-auto p-0 pt-4 scrollbar-thin">
+            <SheetTitle className="sr-only">Navigation</SheetTitle>
+            {body(() => setMobileOpen(false))}
+          </SheetContent>
+        </Sheet>
 
-      {/* Right live-activity column */}
-      <LiveColumn collapsed={activityCollapsed} onToggle={toggleActivity} />
+        {/* Right live-activity column */}
+        {zen ? null : <LiveColumn collapsed={activityCollapsed} onToggle={toggleActivity} />}
 
-      {/* Content area. Own Suspense boundary: a page (children) that suspends
+        {/* Content area. Own Suspense boundary: a page (children) that suspends
             during SSR would otherwise bubble to the route boundary, wrapping the
             whole shell — header included — in a streaming boundary that's absent
             at client hydration, which shifts every radix `useId` in the header
@@ -357,40 +389,43 @@ function ShellFrame({
             is slow enough to stream). Containing it here, below the header, keeps
             the header's tree-context symmetric. Same rationale as UsageCard's
             boundary in layout.tsx. */}
-      <main className="fixed inset-0 top-16 bottom-[var(--footer-h)] overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w)+var(--help-w))]">
-        <Suspense fallback={null}>{children}</Suspense>
-      </main>
+        <main className="fixed inset-0 top-[var(--header-h)] bottom-[var(--footer-h)] overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w)+var(--help-w))]">
+          <Suspense fallback={null}>{children}</Suspense>
+        </main>
 
-      {/* The full assistant as a content-area overlay — fills the same box as
+        {/* The full assistant as a content-area overlay — fills the same box as
             <main>, above every route, summoned from anywhere by the bubble/⌘I. */}
-      <AssistantPanel />
-      <HelpRail />
+        <AssistantPanel />
+        <HelpRail />
 
-      {/* Marker pick mode — highlights markable rows + intercepts their clicks
+        {/* Marker pick mode — highlights markable rows + intercepts their clicks
             while picking; renders nothing otherwise. */}
-      <PickMode />
+        <PickMode />
 
-      {/* Headless: toasts a blocked run's question the moment it arrives, with
+        {/* Headless: toasts a blocked run's question the moment it arrives, with
             an "Answer" action that opens the assistant. Renders nothing. */}
-      <PendingQuestionWatcher />
-      <DesktopBridge />
+        <PendingQuestionWatcher />
+        <DesktopBridge />
 
-      {/* Upload dock — floats just above the footer bar. Inside the shell so it
+        {/* Upload dock — floats just above the footer bar. Inside the shell so it
             inherits --activity-w (sits left of the activity rail) and persists
             across route changes. pointer-events-none lets clicks fall through the
             gaps; the dock re-enables its own. */}
-      <div className="pointer-events-none fixed bottom-[calc(var(--footer-h)+1rem)] right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+var(--assistant-w)+1rem)]">
-        <UploadDock />
-      </div>
+        <div className="pointer-events-none fixed bottom-[calc(var(--footer-h)+1rem)] right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+var(--assistant-w)+1rem)]">
+          <UploadDock />
+        </div>
 
-      {/* Footer toolbar: sidebar collapse · quick-menu · Highlight/Assistant ·
+        {/* Footer toolbar: sidebar collapse · quick-menu · Highlight/Assistant ·
             activity collapse. Full width, owns every shell collapse control. */}
-      <FooterBar
-        navCollapsed={navCollapsed}
-        onToggleNav={toggleNav}
-        activityCollapsed={activityCollapsed}
-        onToggleActivity={toggleActivity}
-      />
-    </div>
+        {zen ? null : (
+          <FooterBar
+            navCollapsed={navCollapsed}
+            onToggleNav={toggleNav}
+            activityCollapsed={activityCollapsed}
+            onToggleActivity={toggleActivity}
+          />
+        )}
+      </div>
+    </ZenModeContext.Provider>
   );
 }

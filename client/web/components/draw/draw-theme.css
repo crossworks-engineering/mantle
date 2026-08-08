@@ -127,6 +127,39 @@
   --background: var(--accent);
 }
 
+/* Menu rows must pair a fill with its OWN contrast color (the style-guide
+   rule). Stock pairs the hover fill with --popup-bg-color as the TEXT color,
+   which blends into white text on light-accent themes; dropdown rows change
+   the fill but keep the resting text. Pair both with accent/accent-foreground,
+   the same treatment as the app's own menus. */
+.excalidraw .context-menu-item:hover {
+  color: var(--accent-foreground);
+  background-color: var(--accent);
+}
+.excalidraw .context-menu-item.dangerous .context-menu-item__label {
+  color: var(--destructive);
+}
+.excalidraw .context-menu-item.dangerous:hover .context-menu-item__label {
+  color: var(--accent-foreground);
+}
+.excalidraw .dropdown-menu-item:hover,
+.excalidraw .dropdown-menu-item--hovered {
+  color: var(--accent-foreground);
+  --icon-fill-color: var(--accent-foreground);
+}
+
+/* Scroll surfaces get the app's thin scrollbar: the shape-properties island
+   (revealed by selecting an element), the right-click context menu (whose
+   Popover sets overflow-y inline when it would leave the viewport), and the
+   main-menu dropdown. Standard properties, so every engine renders the same
+   thin, theme-colored bar as .scrollbar-thin. */
+.excalidraw .App-menu__left,
+.excalidraw .context-menu-popover,
+.excalidraw .dropdown-menu-container {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent) transparent;
+}
+
 /* Tooltips portal to <body> WITHOUT the .excalidraw class and re-declare the
    font stack locally, so they need their own override. */
 .excalidraw-tooltip {
