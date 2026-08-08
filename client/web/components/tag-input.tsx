@@ -91,6 +91,7 @@ export function TagInput({
       <input
         ref={inputRef}
         id={id}
+        aria-label="Tags"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={onKeyDown}

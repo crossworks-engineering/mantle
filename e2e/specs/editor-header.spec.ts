@@ -34,7 +34,7 @@ test.describe('editor header layout', () => {
 
       // Title and tags share the row (two columns, not stacked).
       const titleBox = await title.boundingBox();
-      const tagsBox = await ownerPage.getByPlaceholder('Add tags…').boundingBox();
+      const tagsBox = await ownerPage.getByRole('textbox', { name: 'Tags' }).boundingBox();
       const centerDelta = Math.abs(
         titleBox!.y + titleBox!.height / 2 - (tagsBox!.y + tagsBox!.height / 2),
       );
@@ -84,7 +84,7 @@ test.describe('editor header layout', () => {
       const desc = ownerPage.locator('input[aria-label="Drawing description"]');
       await expect(desc).toHaveValue('A canary description');
       const descBox = await desc.boundingBox();
-      const tagsBox = await ownerPage.getByPlaceholder('Add tags…').boundingBox();
+      const tagsBox = await ownerPage.getByRole('textbox', { name: 'Tags' }).boundingBox();
       for (const other of [descBox, tagsBox]) {
         expect(
           Math.abs(titleBox!.y + titleBox!.height / 2 - (other!.y + other!.height / 2)),
