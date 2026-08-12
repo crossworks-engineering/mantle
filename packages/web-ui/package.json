@@ -78,6 +78,7 @@
     "./token-refresh": "./src/token-refresh.ts",
     "./token-store": "./src/token-store.ts",
     "./traces-format": "./src/traces-format.ts",
+    "./assistant-limits": "./src/assistant-limits.ts",
     "./turn-streaming": "./src/turn-streaming.ts",
     "./types/integrity": "./src/types/integrity.ts",
     "./types/maintenance": "./src/types/maintenance.ts",

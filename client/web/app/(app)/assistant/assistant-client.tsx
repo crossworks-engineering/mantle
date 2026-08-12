@@ -31,6 +31,7 @@ import { agentAccent } from '@/lib/agent-color';
 import { composerKeyAction } from '@/lib/composer-keys';
 import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { RichText } from '@/components/assistant/rich-text';
+import { ASSISTANT_TURN_MAX_CHARS, longMessageNoteTitle } from '@mantle/web-ui/assistant-limits';
 import { CopyButton } from '@mantle/web-ui/copy-button';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -387,6 +388,9 @@ export function AssistantClient({
     null,
   );
   const [error, setError] = useState<string>();
+  // An over-long message that was parked in a note — shown as a normal (not
+  // destructive) line with a link, so the user can open what was sent.
+  const [notice, setNotice] = useState<{ id: string; title: string } | null>(null);
   // ── Voice-in state ──
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -910,6 +914,9 @@ export function AssistantClient({
     // `let`: the replace path below folds the original prompt into a combined
     // correction turn by reassigning this.
     let text = (textOverride ?? draft).trim();
+    // What the user actually typed. A failed send must never destroy it —
+    // the composer is cleared optimistically below, and restored in the catch.
+    const typedAtSend = text;
     // Allow attachment-only submits — the API route fills in a default
     // prompt server-side when text is empty.
     if ((!text && !attachedFile) || supersedingRef.current) return;
@@ -986,6 +993,7 @@ export function AssistantClient({
     }
 
     setError(undefined);
+    setNotice(null);
     // Remember this turn's prompt so a Stop can drop it back into the composer.
     lastPromptRef.current = text;
 
@@ -994,10 +1002,39 @@ export function AssistantClient({
     // was typed). The agent reads them with its tools (file_read / page_get / …).
     // A surface focus directive (Pages marks, the Apps inspect region) follows,
     // so the specialist narrows the same way the old in-screen panels did.
-    const sentText =
-      text +
-      buildContextPreamble(pinnedContext, pickedContext) +
+    const compose = (body: string, picked: ContextRef[]) =>
+      body +
+      buildContextPreamble(pinnedContext, picked) +
       (extraDirective ? `\n\n${extraDirective}` : '');
+
+    let sentText = compose(text, pickedContext);
+
+    // Over the route's ceiling, the turn would 400 and the paste would be gone.
+    // Park the body in a note instead and send a short stand-in that carries the
+    // note as attached context — the agent reads it whole with `note_get`, and
+    // the user keeps a durable copy they can open. Runs BEFORE the draft is
+    // cleared, so a failure here leaves everything they typed in the box.
+    if (sentText.length > ASSISTANT_TURN_MAX_CHARS) {
+      const title = longMessageNoteTitle(text);
+      const note = await apiFetch<{ id: string }>('/api/notes', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title, content: text, tags: ['long-message'] }),
+      }).catch(() => null);
+      if (!note?.id) {
+        setError(
+          `That message is ${text.length.toLocaleString()} characters — over the ` +
+            `${ASSISTANT_TURN_MAX_CHARS.toLocaleString()} limit for one turn — and saving it as a ` +
+            'note failed, so nothing was sent. Your text is still in the box; try again or shorten it.',
+        );
+        return;
+      }
+      setNotice({ id: note.id, title });
+      text =
+        `My message was too long to send in one turn (${text.length.toLocaleString()} characters), ` +
+        `so I saved it as the attached note "${title}". Read it in full before replying.`;
+      sentText = compose(text, [...pickedContext, { id: note.id, kind: 'note', label: title }]);
+    }
 
     const hasFile = attachedFile != null;
     const isImage = hasFile && attachedFile.type.startsWith('image/');
@@ -1136,6 +1173,11 @@ export function AssistantClient({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
+      // Put the text back. The composer is cleared optimistically at send time,
+      // so without this a rejected turn silently destroys whatever was typed —
+      // which is exactly how a long paste came to vanish with no trace anywhere.
+      // Only when the box is still empty, so a fresh draft is never clobbered.
+      setDraft((cur) => (cur.trim() ? cur : typedAtSend));
       // Drop the optimistic row on error so the user can retry without dupes.
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
       setSending(false);
@@ -1870,6 +1912,15 @@ export function AssistantClient({
               )}
             </div>
             {error && <p className="text-xs text-destructive-ink">{error}</p>}
+            {notice && (
+              <p className="text-xs text-muted-foreground">
+                Too long to send in one turn — saved as the note{' '}
+                <a className="underline underline-offset-2" href={`/notes/${notice.id}`}>
+                  {notice.title}
+                </a>{' '}
+                and attached for {agentName ?? 'the assistant'} to read.
+              </p>
+            )}
           </div>
         </div>
       </form>

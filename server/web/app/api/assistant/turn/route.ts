@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { getOwnerOr401WithSource } from '@/lib/auth';
 import { getAssignedAgent } from '@/lib/agents';
 import { getDbosClient } from '@/lib/dbos-client';
+import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/web-ui/assistant-limits';
 import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
 import {
   ASSISTANT_TURN_WORKFLOW,
@@ -51,7 +52,7 @@ import type { ToolArtifact } from '@mantle/tools';
 import { recordIngest, startTrace, step } from '@mantle/tracing';
 
 const Body = z.object({
-  text: z.string().min(1).max(20_000),
+  text: z.string().min(1).max(ASSISTANT_TURN_MAX_CHARS),
   agentSlug: z.string().optional(),
   // Device location the companion app attaches to each message. Validated by
   // sanitizeLocationPing (tolerant: bad fields drop, never fatal), not zod —
