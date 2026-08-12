@@ -188,4 +188,49 @@ describe('checkToolPreconditions — markdown_refs', () => {
     expect(res).toBeNull();
     expect(lookup).not.toHaveBeenCalled();
   });
+
+  // ── mermaid_labels ──
+  // An unquoted `(` inside a node label kills the whole diagram at parse time.
+  // The model can't see the render, so the write must be what tells it.
+  const MERMAID_PRE: readonly ToolPrecondition[] = [{ kind: 'mermaid_labels', param: 'markdown' }];
+  const BAD_DIAGRAM = '```mermaid\nflowchart TD\n  I --> R[deputy approver (backup)]\n```';
+
+  it('refuses a body whose mermaid label has unquoted parentheses', async () => {
+    const res = await checkToolPreconditions(MERMAID_PRE, { markdown: BAD_DIAGRAM }, 'o1');
+    expect(res?.ok).toBe(false);
+    if (res && !res.ok) {
+      expect(res.error).toContain("'markdown'");
+      expect(res.error).toContain('R[deputy approver (backup)]');
+      expect(res.error).toContain('Nothing was written');
+      expect(res.error).toContain('R["deputy approver (backup)"]'); // the fix, spelled out
+    }
+  });
+
+  it('accepts the quoted form', async () => {
+    const res = await checkToolPreconditions(
+      MERMAID_PRE,
+      { markdown: '```mermaid\nflowchart TD\n  I --> R["deputy approver (backup)"]\n```' },
+      'o1',
+    );
+    expect(res).toBeNull();
+  });
+
+  it('names the ops[] path when the bad diagram rides in a block op', async () => {
+    const opsPre: readonly ToolPrecondition[] = [
+      { kind: 'mermaid_labels', param: 'ops', itemKey: 'markdown' },
+    ];
+    const res = await checkToolPreconditions(
+      opsPre,
+      { ops: [{ op: 'append', markdown: BAD_DIAGRAM }] },
+      'o1',
+    );
+    expect(res?.ok).toBe(false);
+    if (res && !res.ok) expect(res.error).toContain("'ops[].markdown'");
+  });
+
+  it('never touches the node lookup — the mermaid check is pure', async () => {
+    const lookup = vi.fn(async () => 'page');
+    await checkToolPreconditions(MERMAID_PRE, { markdown: BAD_DIAGRAM }, 'o1', lookup);
+    expect(lookup).not.toHaveBeenCalled();
+  });
 });

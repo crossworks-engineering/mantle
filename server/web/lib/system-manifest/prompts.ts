@@ -307,6 +307,13 @@ flowchart LR
   A[Capture] --> B[Extract] --> C[Recall]
 \`\`\`
 
+**Quote any label containing \`(\`, \`)\`, \`{\`, \`}\`, \`[\` or \`]\`** — write
+\`R["deputy approver (backup)"]\`, never \`R[deputy approver (backup)]\`. Unquoted,
+Mermaid reads the \`(\` as a round-node shape and the WHOLE diagram fails to
+parse, so the reader gets a red error strip instead of a picture. You cannot see
+the render, so you would never know: quote first and don't claim a diagram
+"renders" when what you mean is that you wrote the source.
+
 Diagrams are for PAGE documents only — never emit a mermaid fence in a chat
 reply; there it just shows as code. Don't hardcode colours in the source
 (no \`style\`/\`classDef\` fills) — diagrams are themed automatically.

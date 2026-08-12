@@ -68,11 +68,15 @@ const FILE_ID_PRE: readonly ToolPrecondition[] = [
 const NOTE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'note_id', nodeType: 'note', lookup: 'note_list / search_nodes' },
 ];
-// Every `media:` / `page:` / `mention:node:` id inside the body must name a real
-// node before we store it. A dangling ref renders blank and reports nothing, so
-// this is the only rung that can catch it (see preconditions.ts).
+// Two body checks that share a reason: the write looks fine, the page renders
+// broken, and nothing reports it. Every `media:` / `page:` / `mention:node:` id
+// must name a real node (a dangling ref renders blank), and no ```mermaid fence
+// may carry an unquoted label with parentheses (the diagram fails to parse).
+// The model cannot see either outcome, so this is the only rung that can catch
+// them (see preconditions.ts).
 const MARKDOWN_REFS_PRE: readonly ToolPrecondition[] = [
   { kind: 'markdown_refs', param: 'markdown' },
+  { kind: 'mermaid_labels', param: 'markdown' },
 ];
 
 const MARKDOWN_HINT =
@@ -1745,7 +1749,11 @@ const MAX_APPLY_OPS = 50;
 
 const page_blocks_apply: BuiltinToolDef = {
   slug: 'page_blocks_apply',
-  preconditions: [...PAGE_ID_PRE, { kind: 'markdown_refs', param: 'ops', itemKey: 'markdown' }],
+  preconditions: [
+    ...PAGE_ID_PRE,
+    { kind: 'markdown_refs', param: 'ops', itemKey: 'markdown' },
+    { kind: 'mermaid_labels', param: 'ops', itemKey: 'markdown' },
+  ],
   name: 'Apply a batch of block edits to a page (atomic)',
   description:
     "Apply MANY block edits to one page in a SINGLE atomic call — the batch path between one-off block tools and a whole-body `page_update_draft` rewrite. `ops` is an ordered list of `{ op: 'update' | 'insert_before' | 'insert_after' | 'delete' | 'wrap', block_id?, markdown?, block_ids?, container?, variant? }` applied sequentially against the editing baseline; the draft is saved ONCE at the end, so the batch is all-or-nothing: if any op fails (unknown block id, bad markdown, refused delete or wrap) NOTHING is saved and the error names the failing op's index. " +
