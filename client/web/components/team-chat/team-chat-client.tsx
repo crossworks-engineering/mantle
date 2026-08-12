@@ -30,6 +30,7 @@ import { Textarea } from '@mantle/web-ui/ui/textarea';
 import { CopyButton } from '@mantle/web-ui/copy-button';
 import { TokenGate } from '@/components/team-chat/token-gate';
 import { teamFetch, teamEventStream } from '@mantle/web-ui/team-fetch';
+import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/web-ui/assistant-limits';
 import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
 import {
   applyLiveTurnEvent,
@@ -335,6 +336,17 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
   const send = async () => {
     const text = draft.trim();
     if ((!text && !file) || sending) return;
+    // Refuse over-long text BEFORE the optimistic clear — the route rejects it
+    // anyway, and clearing first is how a long paste used to vanish with only a
+    // raw error string as its trace. The draft stays put for the member to trim.
+    if (text.length > ASSISTANT_TURN_MAX_CHARS) {
+      setSendError(
+        `That message is ${text.length.toLocaleString()} characters — over the ` +
+          `${ASSISTANT_TURN_MAX_CHARS.toLocaleString()} limit per message. Shorten it or split ` +
+          'it; nothing was sent and your text is still in the box.',
+      );
+      return;
+    }
     const outgoingFile = file;
     setSendError(null);
     setSending(true);
@@ -403,13 +415,24 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
       if (!r.ok) {
         const body = (await r.json().catch(() => ({}))) as { error?: string };
         setSendError(body.error ?? 'Sending failed — try again.');
+        restoreDraft();
         finishTurn();
         return;
       }
       finishTurn(); // blocking path: reply is durable, refetch renders it
     } catch {
       setSendError('Could not reach the server — try again.');
+      restoreDraft();
       finishTurn();
+    }
+
+    // A failed send must hand back what was typed — the composer was cleared
+    // optimistically, and finishTurn's refetch drops the optimistic bubble, so
+    // without this the member's text existed nowhere. Only when the box is
+    // still empty, so a freshly typed draft is never clobbered.
+    function restoreDraft() {
+      setDraft((cur) => (cur.trim() ? cur : text));
+      if (outgoingFile) setFile((cur) => cur ?? outgoingFile);
     }
   };
 

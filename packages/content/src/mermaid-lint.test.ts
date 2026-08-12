@@ -14,7 +14,12 @@ describe('mermaidLabelProblems', () => {
       ),
     );
     expect(problems).toEqual([
-      { node: 'R', label: 'Route to reviewer,<br/>deputy approver (backup),<br/>Records Office' },
+      {
+        node: 'R',
+        label: 'Route to reviewer,<br/>deputy approver (backup),<br/>Records Office',
+        open: '[',
+        close: ']',
+      },
     ]);
   });
 
@@ -24,10 +29,58 @@ describe('mermaidLabelProblems', () => {
     ).toEqual([]);
   });
 
-  it('flags a diamond label too', () => {
+  it('flags a diamond label too, and reports the diamond BRACKETS', () => {
+    // The teaching error renders the label back in the node's own shape — a
+    // `{diamond}` echoed as `[a box]` invites the agent to change the shape.
     expect(
       mermaidLabelProblems(fence('flowchart TD\n    A --> B{Is it step 2 (revised)?}')),
-    ).toEqual([{ node: 'B', label: 'Is it step 2 (revised)?' }]);
+    ).toEqual([{ node: 'B', label: 'Is it step 2 (revised)?', open: '{', close: '}' }]);
+  });
+
+  it('flags a fence whose info string carries extra words (```mermaid title=x)', () => {
+    // markdown-to-doc classifies a fence by the FIRST word of its info string,
+    // so this IS a diagram node — the first version of this lint anchored the
+    // regex at end-of-line and let exactly this form ship broken.
+    expect(
+      mermaidLabelProblems('```mermaid title=Approval flow\nflowchart TD\n  A[x (y)]\n```'),
+    ).toEqual([{ node: 'A', label: 'x (y)', open: '[', close: ']' }]);
+  });
+
+  it('does not treat ```mermaidjs (or other prefixed languages) as mermaid', () => {
+    expect(mermaidLabelProblems('```mermaidjs\nflowchart TD\n  A[x (y)]\n```')).toEqual([]);
+  });
+
+  it('never scans a mermaid example nested inside another fence', () => {
+    // A ````md documentation block SHOWING the broken form: marked lexes the
+    // outer fence as one code block (no diagram node is born), so linting the
+    // inner text would refuse a legitimate page write — unfixably, since
+    // quoting the label would destroy the example.
+    expect(mermaidLabelProblems('````md\n```mermaid\nflowchart TD\n  A[x (y)]\n```\n````')).toEqual(
+      [],
+    );
+    // Same via a bare ``` fence.
+    expect(mermaidLabelProblems('```\n```mermaid\nflowchart TD\n  A[x (y)]\n```')).toEqual([]);
+  });
+
+  it('lints an UNCLOSED mermaid fence to end of input, like the parser', () => {
+    expect(mermaidLabelProblems('```mermaid\nflowchart TD\n  A[x (y)]')).toHaveLength(1);
+  });
+
+  it('requires the closer to be at least as long as the opener', () => {
+    // ````mermaid … ``` … ```` — the 3-tick line is body, not a closer.
+    expect(
+      mermaidLabelProblems('````mermaid\nflowchart TD\n  A[x (y)]\n```\n  B[z (w)]\n````'),
+    ).toHaveLength(2);
+  });
+
+  it('skips bodies larger than the lint cap instead of stalling', () => {
+    // Best-effort: a huge body (here: many unclosed-opener lines, the regex
+    // version's quadratic worst case) returns [] fast rather than blocking the
+    // tool loop. The render side still reports its own error.
+    const big = ('```mermaid\n' + 'flowchart TD\n  A[x (y)]\n').repeat(4000);
+    const t0 = Date.now();
+    expect(mermaidLabelProblems(big)).toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(200);
   });
 
   it('leaves clean labels alone', () => {
@@ -86,6 +139,10 @@ describe('mermaidLabelProblems', () => {
     expect(mermaidLabelProblems('  ```mermaid\n  flowchart TD\n    A[x (y)]\n  ```')).toHaveLength(
       1,
     );
+  });
+
+  it('does not close a backtick fence with tildes (or vice versa)', () => {
+    expect(mermaidLabelProblems('```mermaid\nflowchart TD\n~~~\n  A[x (y)]\n```')).toHaveLength(1);
   });
 
   it('reports each distinct bad label once, across multiple fences', () => {

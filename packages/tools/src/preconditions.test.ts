@@ -203,6 +203,22 @@ describe('checkToolPreconditions — markdown_refs', () => {
       expect(res.error).toContain('R[deputy approver (backup)]');
       expect(res.error).toContain('Nothing was written');
       expect(res.error).toContain('R["deputy approver (backup)"]'); // the fix, spelled out
+      // A pre-existing bad diagram in a re-submitted body is the same refusal —
+      // the error must say to quote it in passing, not leave the agent stuck.
+      expect(res.error).toContain('already on the page');
+    }
+  });
+
+  it('echoes a diamond label in ITS OWN brackets, not as a box', async () => {
+    const res = await checkToolPreconditions(
+      MERMAID_PRE,
+      { markdown: '```mermaid\nflowchart TD\n  A --> D{Is it step 2 (revised)?}\n```' },
+      'o1',
+    );
+    expect(res?.ok).toBe(false);
+    if (res && !res.ok) {
+      expect(res.error).toContain('D{Is it step 2 (revised)?}');
+      expect(res.error).not.toContain('D[Is it step 2 (revised)?]');
     }
   });
 

@@ -35,7 +35,7 @@ import { ASSISTANT_TURN_MAX_CHARS, longMessageNoteTitle } from '@mantle/web-ui/a
 import { CopyButton } from '@mantle/web-ui/copy-button';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { apiFetch } from '@mantle/web-ui/api-fetch';
+import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { assetUrl } from '@mantle/web-ui/asset-url';
 import { fileRawSrc, mediaFileId } from '@mantle/content/markdown-refs';
 import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
@@ -391,6 +391,14 @@ export function AssistantClient({
   // An over-long message that was parked in a note — shown as a normal (not
   // destructive) line with a link, so the user can open what was sent.
   const [notice, setNotice] = useState<{ id: string; title: string } | null>(null);
+  // Closes the double-submit window while the offload's note POST is in flight
+  // (the only await before `sending` flips true). Ref, not state — the guard
+  // must be visible in the same tick the second Enter arrives.
+  const parkingRef = useRef(false);
+  // The note already created for an over-long text, keyed by the exact text —
+  // a retry after a failed send (the catch restores the draft) reuses it
+  // instead of minting a duplicate note per attempt.
+  const parkedNoteRef = useRef<{ source: string; id: string; title: string } | null>(null);
   // ── Voice-in state ──
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -1015,25 +1023,58 @@ export function AssistantClient({
     // the user keeps a durable copy they can open. Runs BEFORE the draft is
     // cleared, so a failure here leaves everything they typed in the box.
     if (sentText.length > ASSISTANT_TURN_MAX_CHARS) {
-      const title = longMessageNoteTitle(text);
-      const note = await apiFetch<{ id: string }>('/api/notes', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ title, content: text, tags: ['long-message'] }),
-      }).catch(() => null);
-      if (!note?.id) {
-        setError(
-          `That message is ${text.length.toLocaleString()} characters — over the ` +
-            `${ASSISTANT_TURN_MAX_CHARS.toLocaleString()} limit for one turn — and saving it as a ` +
-            'note failed, so nothing was sent. Your text is still in the box; try again or shorten it.',
-        );
-        return;
+      // The note POST is the only await before the composer locks (`sending` is
+      // still false, the box still full) — without this guard a second Enter
+      // during the round-trip would mint a second idempotency key and run a
+      // whole second turn. Synchronous ref, not state: it must close the window
+      // in the SAME tick.
+      if (parkingRef.current) return;
+      parkingRef.current = true;
+      try {
+        // Re-sending the same text (after a failed turn, or a premature Enter)
+        // reuses the note already parked for it instead of minting a duplicate.
+        let parked = parkedNoteRef.current?.source === text ? parkedNoteRef.current : null;
+        if (!parked) {
+          const title = longMessageNoteTitle(text);
+          const res = await apiSend<{ note: { id: string } }>('/api/notes', 'POST', {
+            title,
+            content: text,
+            tags: ['long-message'],
+          }).catch(() => null);
+          if (!res?.note?.id) {
+            setError(
+              `That message is ${text.length.toLocaleString()} characters — over the ` +
+                `${ASSISTANT_TURN_MAX_CHARS.toLocaleString()} limit for one turn — and saving it as a ` +
+                'note failed, so nothing was sent. Your text is still in the box; try again or shorten it.',
+            );
+            return;
+          }
+          parked = { source: text, id: res.note.id, title };
+          parkedNoteRef.current = parked;
+        }
+        const standIn =
+          `My message was too long to send in one turn (${text.length.toLocaleString()} characters), ` +
+          `so I saved it as the attached note "${parked.title}". Read it in full before replying.`;
+        const offloaded = compose(standIn, [
+          ...pickedContext,
+          { id: parked.id, kind: 'note', label: parked.title },
+        ]);
+        // The gate measured the COMPOSED text, so shrinking the body may not be
+        // enough — a huge context preamble/focus directive can still exceed the
+        // ceiling, and sending would 400 with the note already written.
+        if (offloaded.length > ASSISTANT_TURN_MAX_CHARS) {
+          setError(
+            'The attached context alone exceeds the send limit — remove some attached items ' +
+              'or marks and try again. Your text is still in the box.',
+          );
+          return;
+        }
+        setNotice({ id: parked.id, title: parked.title });
+        text = standIn;
+        sentText = offloaded;
+      } finally {
+        parkingRef.current = false;
       }
-      setNotice({ id: note.id, title });
-      text =
-        `My message was too long to send in one turn (${text.length.toLocaleString()} characters), ` +
-        `so I saved it as the attached note "${title}". Read it in full before replying.`;
-      sentText = compose(text, [...pickedContext, { id: note.id, kind: 'note', label: title }]);
     }
 
     const hasFile = attachedFile != null;
@@ -1173,6 +1214,11 @@ export function AssistantClient({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
+      // A failed turn must not leave the offload's success line standing — the
+      // error and "saved as a note and attached" would render stacked, each
+      // contradicting the other. (The parked note itself is kept and reused on
+      // the retry via parkedNoteRef.)
+      setNotice(null);
       // Put the text back. The composer is cleared optimistically at send time,
       // so without this a rejected turn silently destroys whatever was typed —
       // which is exactly how a long paste came to vanish with no trace anywhere.

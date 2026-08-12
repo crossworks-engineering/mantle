@@ -20,6 +20,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getDbosClient } from '@/lib/dbos-client';
 import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
+import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/web-ui/assistant-limits';
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller, teamCallerName, mintTeamTurnId } from '@/lib/team-chat-gate';
 import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';
@@ -43,7 +44,17 @@ import { db, nodes, type ConversationAttachment } from '@mantle/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { recordIngest } from '@mantle/tracing';
 
-const Body = z.object({ text: z.string().min(1).max(20_000) });
+// Same shared ceiling as the assistant turn route — a plain-language message,
+// because the raw zod default is what team members would see beside the box.
+const tooLong = (length: number) =>
+  `message too long: ${length.toLocaleString('en-US')} characters, the limit per turn is ` +
+  `${ASSISTANT_TURN_MAX_CHARS.toLocaleString('en-US')}`;
+const Body = z.object({
+  text: z
+    .string()
+    .min(1)
+    .max(ASSISTANT_TURN_MAX_CHARS, { error: (iss) => tooLong(String(iss.input).length) }),
+});
 
 const TEAM_UPLOADS_SLUG = 'team-uploads';
 
@@ -103,10 +114,13 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (contentType.includes('multipart/form-data')) {
       const form = await req.formData().catch(() => null);
       if (!form) return NextResponse.json({ error: 'invalid multipart body' }, { status: 400 });
-      // Clamp to the same bound as the JSON path — the multipart branch would
-      // otherwise accept an unbounded `text` field, defeating the per-turn cost
-      // assumption behind the rate + daily caps.
-      userText = ((form.get('text') as string | null) ?? '').trim().slice(0, 20_000);
+      userText = ((form.get('text') as string | null) ?? '').trim();
+      // Reject, don't clamp: the silent `.slice(0, 20_000)` this replaces cut a
+      // long message off mid-sentence with no error anywhere — the agent then
+      // answered a truncated question as if it were the whole thing.
+      if (userText.length > ASSISTANT_TURN_MAX_CHARS) {
+        return NextResponse.json({ error: tooLong(userText.length) }, { status: 400 });
+      }
       const file = form.get('file') ?? form.get('image');
       if (file instanceof Blob && file.size > 0) {
         if (file.size > MAX_UPLOAD_BYTES) {

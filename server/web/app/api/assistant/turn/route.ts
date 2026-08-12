@@ -51,8 +51,22 @@ import {
 import type { ToolArtifact } from '@mantle/tools';
 import { recordIngest, startTrace, step } from '@mantle/tracing';
 
+/** Human-readable over-limit error — zod's default ("Too big: expected string
+ *  to have <=20000 characters") reaches real users through clients without the
+ *  composer's note-offload (the companion app, the dock), so say it plainly. */
+function tooLongError(length: number): string {
+  return (
+    `message too long: ${length.toLocaleString('en-US')} characters, the limit per turn is ` +
+    `${ASSISTANT_TURN_MAX_CHARS.toLocaleString('en-US')}. Send the overflow as an attachment ` +
+    'or split the message.'
+  );
+}
+
 const Body = z.object({
-  text: z.string().min(1).max(ASSISTANT_TURN_MAX_CHARS),
+  text: z
+    .string()
+    .min(1)
+    .max(ASSISTANT_TURN_MAX_CHARS, { error: (iss) => tooLongError(String(iss.input).length) }),
   agentSlug: z.string().optional(),
   // Device location the companion app attaches to each message. Validated by
   // sanitizeLocationPing (tolerant: bad fields drop, never fatal), not zod —
@@ -258,6 +272,11 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       const form = await req.formData().catch(() => null);
       if (!form) return { status: 400, body: { error: 'invalid multipart body' } };
       userText = ((form.get('text') as string | null) ?? '').trim();
+      // Same ceiling as the JSON branch — an uncapped multipart path meant the
+      // limit was two different numbers depending on whether a file rode along.
+      if (userText.length > ASSISTANT_TURN_MAX_CHARS) {
+        return { status: 400, body: { error: tooLongError(userText.length) } };
+      }
       agentSlug = ((form.get('agentSlug') as string | null) ?? '').trim() || undefined;
       location = locationFromForm(form.get('location'));
       // Images arrive under 'image', documents under 'file'; accept either.

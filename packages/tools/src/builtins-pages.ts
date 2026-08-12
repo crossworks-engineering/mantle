@@ -74,13 +74,16 @@ const NOTE_ID_PRE: readonly ToolPrecondition[] = [
 // may carry an unquoted label with parentheses (the diagram fails to parse).
 // The model cannot see either outcome, so this is the only rung that can catch
 // them (see preconditions.ts).
+// The mermaid check runs first: it is pure string work, while markdown_refs
+// does one node lookup per ref — fail on the free check before paying for the
+// DB round-trips.
 const MARKDOWN_REFS_PRE: readonly ToolPrecondition[] = [
-  { kind: 'markdown_refs', param: 'markdown' },
   { kind: 'mermaid_labels', param: 'markdown' },
+  { kind: 'markdown_refs', param: 'markdown' },
 ];
 
 const MARKDOWN_HINT =
-  'Rich-markdown body. GFM markdown plus: callouts (`:::info` … `:::`, variants info|success|warning|danger), asides (`:::aside` … `:::`, a themed-gradient box; optional colour `:::aside chart-3`), columns (`:::columns` … `+++` … `:::`, 2+ parts), task lists (`- [ ]` / `- [x]`), tables, `==highlight==`, coloured spans (`[text]{color=chart-2}` / `[text]{highlight=chart-4}`, accents chart-1…chart-5), KaTeX math (`$E=mc^2$` inline, `$$` … `$$` block), diagrams (a ```mermaid fence renders as a real themed diagram), and reference links that keep rich chips intact (`[Label](mention:entity:<id>)`, `![alt](media:<file-id>)`, `[name](media:<file-id>)`, `[Title](page:<page-id>)` — real ids only, standalone lines for the block forms). Same dialect you write replies in.';
+  'Rich-markdown body. GFM markdown plus: callouts (`:::info` … `:::`, variants info|success|warning|danger), asides (`:::aside` … `:::`, a themed-gradient box; optional colour `:::aside chart-3`), columns (`:::columns` … `+++` … `:::`, 2+ parts), task lists (`- [ ]` / `- [x]`), tables, `==highlight==`, coloured spans (`[text]{color=chart-2}` / `[text]{highlight=chart-4}`, accents chart-1…chart-5), KaTeX math (`$E=mc^2$` inline, `$$` … `$$` block), diagrams (a ```mermaid fence renders as a real themed diagram; DOUBLE-QUOTE any node label containing brackets or parentheses — `R["step (2)"]`, never `R[step (2)]`, or the whole diagram fails to parse), and reference links that keep rich chips intact (`[Label](mention:entity:<id>)`, `![alt](media:<file-id>)`, `[name](media:<file-id>)`, `[Title](page:<page-id>)` — real ids only, standalone lines for the block forms). Same dialect you write replies in.';
 
 const page_create: BuiltinToolDef = {
   slug: 'page_create',
@@ -1751,8 +1754,8 @@ const page_blocks_apply: BuiltinToolDef = {
   slug: 'page_blocks_apply',
   preconditions: [
     ...PAGE_ID_PRE,
-    { kind: 'markdown_refs', param: 'ops', itemKey: 'markdown' },
     { kind: 'mermaid_labels', param: 'ops', itemKey: 'markdown' },
+    { kind: 'markdown_refs', param: 'ops', itemKey: 'markdown' },
   ],
   name: 'Apply a batch of block edits to a page (atomic)',
   description:

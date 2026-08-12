@@ -86,7 +86,7 @@ BLOCK KIND:
     bullet list item: a single-item list \`- new text\`
     ordered list item: \`1. new text\`
     code block: a fenced triple-backtick block with a language
-    diagram: a \`\`\`mermaid fence containing the (updated) Mermaid source — bare text would turn the diagram into a paragraph
+    diagram: a \`\`\`mermaid fence containing the (updated) Mermaid source — bare text would turn the diagram into a paragraph. DOUBLE-QUOTE any node label containing brackets or parentheses (\`R["step (2)"]\`, never \`R[step (2)]\`) or the whole diagram fails to parse — you cannot see the render, so quote first
 - Changing the kind deliberately (promote a paragraph to a heading, wrap a quote in a callout) is valid — just tell the operator what you changed and why.
 
 Pre-flight before every page_block_update / page_update_draft:
