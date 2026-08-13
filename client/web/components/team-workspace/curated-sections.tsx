@@ -14,7 +14,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { teamFetch } from '@mantle/web-ui/team-fetch';
-import type { CuratedTeamSection } from '@mantle/content';
+import type { CuratedTeamSection } from '@mantle/client-types';
 
 function relTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();

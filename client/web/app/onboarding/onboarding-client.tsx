@@ -17,7 +17,10 @@ import {
 // Import the browser-safe LEAVES directly, NOT the @mantle/content barrel —
 // the barrel pulls identity-context → @mantle/db (postgres) into the client
 // bundle. Same discipline as contacts-format / journal-options.
-import { PURPOSE_ARCHETYPES, type PurposeArchetype } from '@mantle/content-core/onboarding-questions';
+import {
+  PURPOSE_ARCHETYPES,
+  type PurposeArchetype,
+} from '@mantle/content-core/onboarding-questions';
 import {
   PERSONA_PRESETS,
   DEFAULT_PERSONA_NAMES,

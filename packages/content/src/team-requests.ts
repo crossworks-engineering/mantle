@@ -9,23 +9,10 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { appendTeamMessage } from './team-messages';
+import type { TeamRequest } from '@mantle/client-types';
+export type { TeamRequest };
 
 export const TEAM_REQUEST_TAG = 'team-request';
-
-export type TeamRequest = {
-  taskId: string;
-  title: string;
-  body: string;
-  status: 'open' | 'done';
-  priority: string;
-  createdAt: string;
-  /** Provenance from data.teamRequest — null contactId means a malformed row
-   *  (shouldn't happen; team_request_create always stamps it). */
-  contactId: string | null;
-  contactName: string | null;
-  /** When the owner last posted a resolution to the member for this request. */
-  notifiedAt: string | null;
-};
 
 type TeamRequestData = {
   contactId?: string;

@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Mail, Plug, UserCheck } from 'lucide-react';
 import type { MessageDetailDTO } from '@mantle/client-types';
-import type { PublicEmailAccount, FolderFacet, MessageListItem } from '@mantle/email';
+import type { PublicEmailAccount, FolderFacet, MessageListItem } from '@mantle/client-types';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';

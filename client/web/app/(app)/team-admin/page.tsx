@@ -26,7 +26,7 @@ import type {
   ForumMemberActivity,
   ForumMemberPost,
   ForumAuthoredTopic,
-} from '@mantle/content';
+} from '@mantle/client-types';
 import { SharedLinksPanel, type SharedLinkRow } from '@/components/share/shared-links-panel';
 import { HubAppPicker } from '@/components/team-chat/hub-app-picker';
 import { DashboardTagsPanel } from '@/components/team-chat/dashboard-tags-panel';

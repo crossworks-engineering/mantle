@@ -36,7 +36,7 @@ import {
   formatRelativeShort,
 } from '@mantle/web-ui/lib/event-time';
 import { EventForm, eventToForm, type EventPayload } from './event-form';
-import type { EventRow } from '@mantle/content';
+import type { EventRow } from '@mantle/client-types';
 
 // Wire shape is the GET /api/events mapper's output — single source of truth.
 // Re-exported so the list client keeps importing it from here; drift is a

@@ -25,7 +25,8 @@
     "mailparser": "^3.9.14",
     "nodemailer": "^9.0.3",
     "pg-boss": "^12.26.1",
-    "sanitize-html": "^2.17.6"
+    "sanitize-html": "^2.17.6",
+    "@mantle/client-types": "workspace:*"
   },
   "devDependencies": {
     "@types/mailparser": "^3.4.5",

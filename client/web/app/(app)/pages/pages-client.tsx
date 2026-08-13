@@ -98,7 +98,7 @@ import { ExportMenu } from '@/components/export/export-menu';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { buildChildrenIndex } from '@mantle/web-ui/page-tree';
-import type { PageRow, PageWidth } from '@mantle/content';
+import type { PageRow, PageWidth } from '@mantle/client-types';
 
 // Wire shape is the GET /api/pages mapper's output — single source of truth
 // (the canonical row also carries `width`, unused by this list view). Drift

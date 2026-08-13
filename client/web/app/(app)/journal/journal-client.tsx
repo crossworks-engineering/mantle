@@ -4,7 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { NotebookPen, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
-import { MOODS, CATEGORIES, moodDisplay, categoryLabel } from '@mantle/content-core/journal-options';
+import {
+  MOODS,
+  CATEGORIES,
+  moodDisplay,
+  categoryLabel,
+} from '@mantle/content-core/journal-options';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import {

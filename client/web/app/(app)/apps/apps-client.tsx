@@ -39,7 +39,7 @@ import { FocusToggle } from '@/components/layout/focus-toggle';
 import { useZenMode } from '@/components/layout/zen-mode';
 import { focusGridClass } from '@/components/layout/focus-layout';
 import { cn } from '@mantle/web-ui/lib/utils';
-import type { AppRow } from '@mantle/content';
+import type { AppRow } from '@mantle/client-types';
 
 type AppsPage = { apps: AppRow[]; total: number; page: number; pageSize: number };
 

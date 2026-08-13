@@ -12,6 +12,10 @@
  */
 import { and, eq, gt, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { apps, db, nodes, pages, shares } from '@mantle/db';
+import type { CuratedTeamSection } from '@mantle/client-types';
+import type { TeamVisibleShare } from '@mantle/client-types';
+export type { TeamVisibleShare };
+export type { CuratedTeamSection };
 
 export type TeamHubSection = {
   /** Share token — the hub links to /s/<token>. */
@@ -234,22 +238,6 @@ export const TEAM_WORKSPACE_TYPES = [
 ] as const;
 export type TeamWorkspaceType = (typeof TEAM_WORKSPACE_TYPES)[number];
 
-export type TeamVisibleShare = {
-  /** Share token — the workspace opens /s/<token>. */
-  token: string;
-  nodeId: string;
-  title: string;
-  icon: string | null;
-  summary: string | null;
-  updatedAt: string;
-  /** 'team' or 'public' — a member may open both, the badge tells them apart. */
-  mode: 'team' | 'public';
-  /** Parent node id — lets the pages section rebuild the sub-page tree over
-   *  the SHARED subset (an unshared parent leaves its children as roots). */
-  parentId: string | null;
-  tags: string[];
-};
-
 /** Sort orders offered by the /team section list. `newest`/`oldest` rank by
  *  when the OWNER shared (share createdAt); `updated` by the node's last edit;
  *  `title` alphabetically. Default is `newest`. */
@@ -464,14 +452,6 @@ export async function listTeamShareTags(
 
 /** Items per curated Dashboard tag section. */
 export const TEAM_CURATED_SECTION_LIMIT = 5;
-
-export type CuratedTeamSection = {
-  /** The curated tag — the section heading (display-cased by the UI). */
-  tag: string;
-  /** Up to {@link TEAM_CURATED_SECTION_LIMIT} team-visible page shares carrying
-   *  the tag, newest node update first. */
-  items: TeamVisibleShare[];
-};
 
 /**
  * The member Dashboard's curated sections: one per owner-picked tag

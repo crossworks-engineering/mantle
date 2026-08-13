@@ -33,6 +33,10 @@ import { childPagePath } from './page-path';
 import { insertAfterBlock, type PMBlockNode } from './block-edit';
 import { buildMentionParagraph, type MentionRef } from './mention-refs';
 import { splitDocByHeading, extractSection, type SplitLevel } from './page-split';
+import type { PageWidth, PageRow } from '@mantle/client-types';
+import type { PageVisibility } from '@mantle/client-types';
+export type { PageVisibility };
+export type { PageWidth, PageRow };
 
 export const PAGES_ROOT_LABEL = 'pages';
 
@@ -40,25 +44,6 @@ export const PAGES_ROOT_LABEL = 'pages';
 export const EMPTY_DOC: Record<string, unknown> = {
   type: 'doc',
   content: [{ type: 'paragraph' }],
-};
-
-export type PageVisibility = 'private' | 'public';
-/** Notion-style content width: centered/narrow vs full available space. */
-export type PageWidth = 'narrow' | 'wide';
-
-export type PageRow = {
-  id: string;
-  /** Parent page id, or null for a top-level page. Drives the /pages tree
-   *  and the `childPage` card (Phase 4a sub-pages). */
-  parentId: string | null;
-  title: string;
-  icon: string | null;
-  tags: string[];
-  summary: string | null;
-  visibility: PageVisibility;
-  width: PageWidth;
-  createdAt: string;
-  updatedAt: string;
 };
 
 export type PageDetail = PageRow & {

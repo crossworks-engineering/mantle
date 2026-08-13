@@ -18,7 +18,7 @@ import {
 import { DateTimePicker } from '@mantle/web-ui/ui/date-time-picker';
 import { TagInput } from '@/components/tag-input';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import type { JournalRow } from '@mantle/content';
+import type { JournalRow } from '@mantle/client-types';
 
 // Wire shape is the GET /api/journal mapper's output — single source of truth.
 // Re-exported so the list client keeps importing it from here; drift is a

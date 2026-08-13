@@ -26,7 +26,7 @@ import { AppAccessLog } from '@mantle/web-ui/app-sandbox/access-log';
 import { CodeEditor } from '@mantle/web-ui/app-sandbox/code-editor';
 import { FileTree } from '@mantle/web-ui/app-sandbox/file-tree';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
-import type { AppDetail } from '@mantle/content';
+import type { AppDetail } from '@mantle/client-types';
 
 type BuildMsg = { text: string; location: { file: string; line: number; column: number } | null };
 

@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from '@mantle/web-ui/ui/select';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import type { BackupConfig, BackupFile, BackupStatus } from '@mantle/content';
+import type { BackupConfig, BackupFile, BackupStatus } from '@mantle/client-types';
 
 type BackupsData = {
   config: BackupConfig;

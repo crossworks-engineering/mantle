@@ -58,7 +58,8 @@
     "marked": "^18.0.7",
     "mathjs": "15.2.0",
     "tz-lookup": "^6.1.25",
-    "@mantle/content-core": "workspace:*"
+    "@mantle/content-core": "workspace:*",
+    "@mantle/client-types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

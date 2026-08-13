@@ -35,6 +35,13 @@ import {
 } from './forum-visibility';
 import { matchSnippet } from './forum-search';
 import { bindForumUploadsTx } from './forum-uploads';
+import type {
+  ForumTopicListItem,
+  ForumMemberActivity,
+  ForumMemberPost,
+  ForumAuthoredTopic,
+} from '@mantle/client-types';
+export type { ForumTopicListItem, ForumMemberActivity, ForumMemberPost, ForumAuthoredTopic };
 
 // Re-exported so existing importers (index.ts, callers) keep resolving these
 // from '@mantle/content'; the definitions live in forum-visibility.ts, next to
@@ -390,25 +397,6 @@ export async function finalizeForumPost(args: FinalizeForumPostInput): Promise<F
   return row ?? null;
 }
 
-export type ForumTopicListItem = {
-  id: string;
-  title: string;
-  kind: ForumTopicKind;
-  visibility: ForumTopicVisibility;
-  pinned: boolean;
-  status: ForumTopicStatus;
-  authorName: string;
-  createdByContactId: string | null;
-  postCount: number;
-  lastPostAt: string;
-  createdAt: string;
-  lastPostAuthor: string | null;
-  lastPostPreview: string | null;
-  /** Posts by OTHERS since this viewer last read the topic (all of them when
-   *  never read). Drives the unread dot. */
-  unread: number;
-};
-
 /** The reader id a viewer's cursors are keyed by (owner cursors use ownerId). */
 function readerIdOf(ownerId: string, viewer: ForumViewer): string {
   return viewer.kind === 'owner' ? ownerId : viewer.contactId;
@@ -664,19 +652,6 @@ export async function countForumMemberPostsSince(
 // including `private` ones (visibleTopicCond returns undefined for owners).
 // Do NOT reuse them for a member-facing surface without that filter.
 
-export type ForumMemberActivity = {
-  contactId: string;
-  postCount: number;
-  topicsStarted: number;
-  lastPostAt: string | null;
-  lastPostBody: string | null;
-  lastPostTopicTitle: string | null;
-  /** This member's posts newer than the OWNER's read cursor on the containing
-   *  topic. Deliberately only cleared by opening the TOPIC — reading someone's
-   *  activity feed is not reading the thread the whole room saw. */
-  unread: number;
-};
-
 /**
  * Forum activity per member, for the admin member index. Keyed by contact;
  * members who have never posted simply don't appear — the caller (which
@@ -766,30 +741,6 @@ export async function listForumMemberActivity(ownerId: string): Promise<ForumMem
     unread: r.unread,
   }));
 }
-
-export type ForumMemberPost = {
-  id: string;
-  body: string;
-  createdAt: string;
-  /** Set when this post filed a review/feature/bug request. */
-  kind: ForumPostRequestKind | null;
-  attachments: ConversationAttachment[];
-  topicId: string;
-  topicTitle: string;
-  topicVisibility: ForumTopicVisibility;
-  topicStatus: ForumTopicStatus;
-  /** The agent's answer to THIS post, or null when the turn was waved off
-   *  ("no answer needed") or is still owed. */
-  reply: {
-    id: string;
-    body: string;
-    authorName: string;
-    traceId: string | null;
-    status: 'pending' | 'complete' | 'failed';
-    error: string | null;
-    createdAt: string;
-  } | null;
-};
 
 /**
  * One member's posts across every topic, newest first, each paired with the
@@ -900,18 +851,6 @@ export async function countForumPostsByContact(
     );
   return row?.n ?? 0;
 }
-
-export type ForumAuthoredTopic = {
-  id: string;
-  title: string;
-  kind: ForumTopicKind;
-  visibility: ForumTopicVisibility;
-  status: ForumTopicStatus;
-  pinned: boolean;
-  postCount: number;
-  lastPostAt: string | null;
-  createdAt: string;
-};
 
 /** Topics this member STARTED, newest first. Cheap — `forum_topics_author_idx`
  *  covers (owner_id, created_by_contact_id) exactly. */

@@ -15,6 +15,8 @@ import {
   type Email,
   type EmailAttachment,
 } from '@mantle/db';
+import type { FolderFacet, MessageListItem } from '@mantle/client-types';
+export type { FolderFacet, MessageListItem };
 
 export const INBOX_LIMIT = 100;
 
@@ -35,12 +37,6 @@ export function navAccounts(userId: string): Promise<NavAccount[]> {
     .from(emailAccounts)
     .where(eq(emailAccounts.userId, userId))
     .orderBy(emailAccounts.address);
-}
-
-export interface FolderFacet {
-  folder: string;
-  count: number;
-  unread: number;
 }
 
 /**
@@ -71,16 +67,6 @@ export interface ListMessagesInput {
   folder?: string | null;
   unreadOnly?: boolean;
   limit?: number;
-}
-
-export interface MessageListItem {
-  id: string;
-  fromAddr: string;
-  fromName: string | null;
-  subject: string | null;
-  snippet: string | null;
-  internalDate: Date;
-  isRead: boolean;
 }
 
 /** Message list for the centre pane of one owned account. */

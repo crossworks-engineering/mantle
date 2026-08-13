@@ -46,7 +46,7 @@ import { PURPOSE_ARCHETYPES } from '@mantle/content-core/onboarding-questions';
 // Same leaf rule as above: thinking-tiers.ts has no imports at all, whereas
 // profile-preferences.ts (which re-exports it) pulls in @mantle/db.
 import { THINKING_TIERS, thinkingEffortForBudget } from '@mantle/content-core/thinking-tiers';
-import type { ProfilePreferences } from '@mantle/content';
+import type { ProfilePreferences } from '@mantle/client-types';
 
 /** Sentinel for "no pinned responder" — Radix Select can't use an empty-string
  *  value, so we map this to '' before submitting. */

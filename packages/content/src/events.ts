@@ -26,32 +26,6 @@ export type { RecurFreq } from './events-time';
 
 export const EVENTS_ROOT_LABEL = 'events';
 
-export type EventRow = {
-  id: string;
-  title: string;
-  body: string;
-  startsAt: string;
-  endsAt: string | null;
-  location: string | null;
-  remindMinutesBefore: number;
-  remindAt: string;
-  reminderSentAt: string | null;
-  /** IANA timezone (e.g. "Africa/Johannesburg") captured from the
-   *  client at create time. Used for display only — `starts_at` is
-   *  always a UTC instant so the reminder fires at the right moment
-   *  regardless of where the agent process or DB run. Defaults to
-   *  'UTC' if the client didn't supply one. */
-  timezone: string;
-  /** Recurrence frequency; 'none' for a one-shot event. */
-  recur: RecurFreq;
-  /** Optional end-of-series cutoff (ISO). null = repeats until deleted. */
-  recurUntil: string | null;
-  tags: string[];
-  summary: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
 function rowOf(n: Node): EventRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   const startsAt = typeof d.starts_at === 'string' ? d.starts_at : new Date().toISOString();
@@ -190,6 +164,8 @@ import {
   sanitiseTimezone,
   type RecurFreq,
 } from './events-time';
+import type { EventRow } from '@mantle/client-types';
+export type { EventRow };
 
 export async function createEvent(ownerId: string, input: CreateEventInput): Promise<EventRow> {
   await ensureRoot(ownerId);

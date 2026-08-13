@@ -13,6 +13,8 @@ import { db, emailAccounts, syncRuns, type EmailAccount, type SyncRun } from '@m
 import { seal } from '@mantle/crypto';
 import { probeImapConnection, unsealImapPassword } from './providers/imap';
 import { probeSmtpConnection } from './send';
+import type { AccountFoldersResult } from '@mantle/client-types';
+export type { AccountFoldersResult };
 
 /** Immediate-rescan queue — must match the email-sync worker's queue name. */
 const SYNC_QUEUE = 'mantle.email.sync';
@@ -51,6 +53,23 @@ export function accountBranchPath(address: string): string {
 
 /** An account with the sealed IMAP secret stripped — safe to send over HTTP. */
 export type PublicEmailAccount = Omit<EmailAccount, 'imapConfigEnc'>;
+
+// Key-set drift guards for the hand-mirrored wire DTOs in @mantle/client-types.
+// Dates are ISO strings on the wire but `Date` here, so value types can't be
+// compared — the key sets can, and renamed/added/removed columns fail here.
+type AssertSameKeys<A, B> = [Exclude<keyof A, keyof B>, Exclude<keyof B, keyof A>] extends [
+  never,
+  never,
+]
+  ? true
+  : { missingInDto: Exclude<keyof A, keyof B>; extraInDto: Exclude<keyof B, keyof A> };
+const _publicEmailAccountDrift: AssertSameKeys<
+  PublicEmailAccount,
+  import('@mantle/client-types').PublicEmailAccount
+> = true;
+void _publicEmailAccountDrift;
+const _syncRunDrift: AssertSameKeys<SyncRun, import('@mantle/client-types').SyncRun> = true;
+void _syncRunDrift;
 
 /** Drop the sealed credential before an account row crosses the HTTP boundary. */
 export function redactAccount(account: EmailAccount): PublicEmailAccount {
@@ -363,21 +382,6 @@ export async function connectImapAccount(
   if (!saved.ok) return saved;
   return { intent: 'save', ok: true, id: saved.id };
 }
-
-export type AccountFoldersResult =
-  | {
-      ok: true;
-      address: string;
-      /** Every folder the server reports right now (the pick list). */
-      allFolders: string[];
-      /** The current explicit allow-list, or null = "scan all non-excluded". */
-      included: string[] | null;
-      /** Folders the operator opted OUT of (rendered disabled). */
-      excluded: string[];
-      /** Folders the sync has actually touched (per the cursor). */
-      scanned: string[];
-    }
-  | { ok: false; error: string };
 
 /**
  * List the live folder tree for one IMAP account, plus its current scan config.

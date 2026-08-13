@@ -10,7 +10,7 @@
 import { useSearchParams } from 'next/navigation';
 import { CheckCircle2, Cloud, Plus } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import type { MsConfigStatus, PublicMsAccount } from '@mantle/microsoft';
+import type { MsConfigStatus, PublicMsAccount } from '@mantle/client-types';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';

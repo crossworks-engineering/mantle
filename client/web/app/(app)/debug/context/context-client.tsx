@@ -7,7 +7,7 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { DebugPager, DebugSearchBox } from '@/components/debug/list-nav';
 import { fmtRelative } from '../format';
 import type { ContextTurnRow } from '@server/lib/debug';
-import type { ContextSnapshot, SnapshotItem } from '@mantle/agent-runtime';
+import type { ContextSnapshot, SnapshotItem } from '@mantle/client-types';
 
 const PAGE_SIZE = 15;
 

@@ -28,8 +28,10 @@ import {
   type AppManifest,
   type BuildRef,
 } from '@mantle/db';
-import { shareModeOf, type ShareMode } from './shares';
+import { shareModeOf } from './shares';
 import { loadProfilePreferences } from './profile-preferences';
+import type { AppRow, AppDetail } from '@mantle/client-types';
+export type { AppRow, AppDetail };
 
 export const APPS_ROOT_LABEL = 'apps';
 
@@ -81,38 +83,6 @@ export function assertSourceWithinLimits(source: AppSource): void {
     }
   }
 }
-
-export type AppRow = {
-  id: string;
-  title: string;
-  icon: string | null;
-  tags: string[];
-  summary: string | null;
-  description: string | null;
-  /** Number of declared api_tool slugs. */
-  toolCount: number;
-  /** Whether the published source has a green build (renders today). */
-  hasBuild: boolean;
-  /** Whether an uncommitted draft exists. */
-  hasDraft: boolean;
-  /**
-   * The app's exposure: mode of its active share ('public' | 'team'), or null
-   * when it has never been shared / the share is revoked (owner-only).
-   */
-  shareMode: ShareMode | null;
-  /** Whether this app is the designated Team Hub (prefs.teamHubAppId). */
-  isHub: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type AppDetail = AppRow & {
-  source: AppSource;
-  draft: AppSource | null;
-  manifest: AppManifest;
-  draftBuild: BuildRef | null;
-  publishedBuild: BuildRef | null;
-};
 
 type SidecarCols = {
   source: AppSource;

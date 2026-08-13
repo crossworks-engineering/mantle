@@ -19,7 +19,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { ShareControl } from '@/components/share-control';
 import { TaskForm, taskToForm, type Priority, type TaskPayload } from './task-form';
-import type { TaskRow } from '@mantle/content';
+import type { TaskRow } from '@mantle/client-types';
 
 export type Status = 'open' | 'done';
 

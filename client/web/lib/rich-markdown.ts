@@ -48,7 +48,12 @@
  * dropped gracefully rather than shown raw.
  */
 import { Marked, type TokenizerAndRendererExtension } from 'marked';
-import { drawNodeId, drawRawSrc, fileRawSrc, mediaFileId } from '@mantle/content-core/markdown-refs';
+import {
+  drawNodeId,
+  drawRawSrc,
+  fileRawSrc,
+  mediaFileId,
+} from '@mantle/content-core/markdown-refs';
 
 const CALLOUT_VARIANTS = ['info', 'success', 'warning', 'danger'] as const;
 type CalloutVariant = (typeof CALLOUT_VARIANTS)[number];

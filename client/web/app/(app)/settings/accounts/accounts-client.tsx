@@ -11,7 +11,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Activity, FolderTree, Mail, Pencil, Plus, SlidersHorizontal } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import type { PublicEmailAccount, SyncRun, AccountFoldersResult } from '@mantle/email';
+import type { PublicEmailAccount, SyncRun, AccountFoldersResult } from '@mantle/client-types';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { Button } from '@mantle/web-ui/ui/button';

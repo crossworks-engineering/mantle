@@ -8,6 +8,8 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db, nodes, shares, type Share } from '@mantle/db';
+import type { ShareMode } from '@mantle/client-types';
+export type { ShareMode };
 
 /** Node types that may be shared publicly. Sensitive types are excluded.
  *  `branch` = a FILES FOLDER only — sharing one shares every file under it,
@@ -43,19 +45,6 @@ export function isShareable(type: string): type is ShareableType {
 export function isShareableFolderPath(path: string | null | undefined): boolean {
   return typeof path === 'string' && path.startsWith('files.');
 }
-
-/**
- * Who a share admits. Lives in `shares.settings.mode` (absent = 'public', so
- * every pre-existing share keeps its behavior).
- *
- *   public — anyone with the link (the original model).
- *   team   — the visitor must additionally present a live team credential
- *            (see @mantle/content/team-tokens). Enforced for every kind on
- *            the /s/ surface (page render, asset bytes, app brokers).
- *            Team-mode PAGE shares double as the /team hub's briefing
- *            sections (see ./team-hub).
- */
-export type ShareMode = 'public' | 'team';
 
 /** Read the mode off a raw share row (settings.mode, default public). */
 export function shareModeOf(s: Pick<Share, 'settings'>): ShareMode {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import type { AccountFoldersResult } from '@mantle/email';
+import type { AccountFoldersResult } from '@mantle/client-types';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { FolderPicker } from './folder-picker';

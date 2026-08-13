@@ -8,7 +8,7 @@ import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
-import type { MsConfigStatus } from '@mantle/microsoft';
+import type { MsConfigStatus } from '@mantle/client-types';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 
 /**

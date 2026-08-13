@@ -13,28 +13,17 @@
  */
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import type { TaskRow, TaskStatus, TaskPriority } from '@mantle/client-types';
+export type { TaskRow, TaskStatus, TaskPriority };
 
 // ltree root label for the Tasks branch. Existing brains were re-pathed to it by
 // migration 0108; queries filter by `type='task'` (below),
 // so this label is purely organizational.
 export const TASKS_ROOT_LABEL = 'tasks';
-export const TASK_STATUSES = ['open', 'done'] as const;
-export const TASK_PRIORITIES = ['low', 'normal', 'high'] as const;
-export type TaskStatus = (typeof TASK_STATUSES)[number];
-export type TaskPriority = (typeof TASK_PRIORITIES)[number];
-
-export type TaskRow = {
-  id: string;
-  title: string;
-  body: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  dueAt: string | null;
-  tags: string[];
-  summary: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+// `satisfies` pins these consts to the wire unions in @mantle/client-types, so
+// adding a status here without updating the contract is a compile error.
+export const TASK_STATUSES = ['open', 'done'] as const satisfies readonly TaskStatus[];
+export const TASK_PRIORITIES = ['low', 'normal', 'high'] as const satisfies readonly TaskPriority[];
 
 function rowOf(n: Node): TaskRow {
   const d = (n.data ?? {}) as Record<string, unknown>;

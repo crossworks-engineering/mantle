@@ -21,7 +21,8 @@
     "@mantle/tools": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.2",
+    "@mantle/client-types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

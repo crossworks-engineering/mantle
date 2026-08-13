@@ -17,6 +17,8 @@ import {
   type TeamChannel,
   type TeamMessage,
 } from '@mantle/db';
+import type { TeamMemberActivity } from '@mantle/client-types';
+export type { TeamMemberActivity };
 
 export type AppendTeamMessageInput = {
   ownerId: string;
@@ -142,22 +144,6 @@ export async function countTeamInboundSince(
     );
   return row?.n ?? 0;
 }
-
-export type TeamMemberActivity = {
-  contactId: string;
-  /** Contact node title; '(deleted contact)' can't occur here — membership
-   *  rows cascade with the contact. */
-  contactName: string;
-  memberSince: string;
-  tokenLastUsedAt: string | null;
-  lastMessageAt: string | null;
-  lastMessageText: string | null;
-  lastMessageDirection: 'inbound' | 'outbound' | null;
-  messageCount: number;
-  /** Member inbound messages since the owner last read this thread in
-   *  /team-admin (all inbound when never read). Drives the unread badge. */
-  unread: number;
-};
 
 /**
  * The admin member-index: EVERY current team member (a live

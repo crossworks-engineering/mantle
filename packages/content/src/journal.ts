@@ -36,6 +36,8 @@ export {
   type MoodKey,
   type CategoryKey,
 } from './journal-options';
+import type { JournalRow } from '@mantle/client-types';
+export type { JournalRow };
 
 /**
  * Sort key for journal entries: the "about" date when set, else the row's update
@@ -54,19 +56,6 @@ export function journalSortSql(): SQL {
     ${nodes.updatedAt}
   ) desc`;
 }
-
-export type JournalRow = {
-  id: string;
-  title: string;
-  body: string;
-  mood: string | null;
-  category: string | null;
-  entryDate: string | null;
-  tags: string[];
-  summary: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
 
 function str(d: Record<string, unknown>, k: string): string | null {
   const v = d[k];

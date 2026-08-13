@@ -57,6 +57,8 @@ import type {
   HistoryTurn,
   RelationLine,
 } from './messages';
+import type { SnapshotItem, ContextSnapshot } from '@mantle/client-types';
+export type { SnapshotItem, ContextSnapshot };
 
 void agents; // referenced for the Agent type's provenance; silence unused-import lint.
 
@@ -85,45 +87,6 @@ export type ConversationContext = {
 // persist it as the output of their 'load_context' trace step at turn time.
 // Text is snipped and the near-miss lists capped, so a snapshot stays well
 // under the tracing layer's 64KB truncation ceiling.
-
-/** One retrieved (or near-miss) item: capped text + its ranking distance. */
-export type SnapshotItem = {
-  text: string;
-  /** Ranking distance (cosine, salience/recency-adjusted where the section
-   *  ranks that way). Null for always-injected items (preferences) that
-   *  bypass the vector race. */
-  dist: number | null;
-  kind?: string | null;
-  entity?: string | null;
-  nodeId?: string | null;
-  title?: string | null;
-  heading?: string | null;
-};
-
-export type ContextSnapshot = {
-  query: {
-    /** The inbound text as given to retrieval (snipped). */
-    inbound: string;
-    /** The anaphora-enriched text actually embedded, when it differs. */
-    enriched: string | null;
-    /** False when embedding was skipped or failed — retrieval ran blind. */
-    embedded: boolean;
-  };
-  facts: { sent: SnapshotItem[]; dropped: SnapshotItem[]; guard: number };
-  contentHits: { sent: SnapshotItem[]; dropped: SnapshotItem[]; cutoff: number };
-  chunkHits: { sent: SnapshotItem[]; dropped: SnapshotItem[]; cutoff: number };
-  relations: string[];
-  digests: { count: number; topics: string[] };
-  history: {
-    count: number;
-    /** How many outbound turns carried a [tool record: …] read-back suffix. */
-    toolRecords: number;
-    /** How many turns carried a [media record: …] read-back suffix. */
-    mediaRecords: number;
-  };
-  personaNotes: { count: number };
-  corpusMap: { count: number; truncated: boolean };
-};
 
 const SNAP_SNIP = 240;
 const SNAP_DROPPED_CAP = 5;

@@ -95,24 +95,12 @@ importers:
       '@excalidraw/excalidraw':
         specifier: 0.18.1
         version: 0.18.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@mantle/agent-runtime':
-        specifier: workspace:*
-        version: link:../../packages/agent-runtime
       '@mantle/client-types':
         specifier: workspace:*
         version: link:../../packages/client-types
-      '@mantle/content':
-        specifier: workspace:*
-        version: link:../../packages/content
       '@mantle/content-core':
         specifier: workspace:*
         version: link:../../packages/content-core
-      '@mantle/email':
-        specifier: workspace:*
-        version: link:../../packages/email
-      '@mantle/microsoft':
-        specifier: workspace:*
-        version: link:../../packages/microsoft
       '@mantle/voice-client':
         specifier: workspace:*
         version: link:../../packages/voice-client
@@ -282,6 +270,9 @@ importers:
       '@mantle/api-keys':
         specifier: workspace:*
         version: link:../api-keys
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/content':
         specifier: workspace:*
         version: link:../content
@@ -434,6 +425,9 @@ importers:
 
   packages/content:
     dependencies:
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/content-core':
         specifier: workspace:*
         version: link:../content-core
@@ -520,6 +514,9 @@ importers:
 
   packages/email:
     dependencies:
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/content':
         specifier: workspace:*
         version: link:../content
@@ -729,6 +726,9 @@ importers:
 
   packages/microsoft:
     dependencies:
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/crypto':
         specifier: workspace:*
         version: link:../crypto
