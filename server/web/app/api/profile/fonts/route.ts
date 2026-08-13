@@ -21,6 +21,11 @@ import { savePreferencesFor } from '@mantle/content';
  * (projectFontKey). Sizes are a closed set and ARE validated by value on read
  * (projectFontSize), because an unknown size has no registry to fall through.
  */
+/** The zod shape is DERIVED from this list, so the accepted body, the persisted
+ *  patch and the response projection can never disagree about which fields
+ *  exist — a field present in one list but not another would be accepted,
+ *  silently dropped, and returned as null, which reads as a successful save
+ *  that never happened. */
 const FIELDS = [
   'fontLogo',
   'fontTitle',
@@ -32,16 +37,12 @@ const FIELDS = [
   'fontProseSize',
 ] as const;
 
-const Body = z.object({
-  fontLogo: z.string().max(64).optional(),
-  fontTitle: z.string().max(64).optional(),
-  fontUi: z.string().max(64).optional(),
-  fontProse: z.string().max(64).optional(),
-  fontSize: z.string().max(16).optional(),
-  fontLogoSize: z.string().max(16).optional(),
-  fontTitleSize: z.string().max(16).optional(),
-  fontProseSize: z.string().max(16).optional(),
-});
+const Body = z.object(
+  Object.fromEntries(FIELDS.map((f) => [f, z.string().max(64).optional()])) as Record<
+    (typeof FIELDS)[number],
+    z.ZodOptional<z.ZodString>
+  >,
+);
 
 export async function PUT(req: Request) {
   const user = await getOwnerOr401();
@@ -50,14 +51,10 @@ export async function PUT(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: `${FIELDS.join('/')} (strings) expected` }, { status: 400 });
   }
-  // Only fields the caller actually sent are written: an absent key must stay
-  // absent rather than being cleared by a partial save.
-  const patch: Record<string, string> = {};
-  for (const field of FIELDS) {
-    const value = parsed.data[field];
-    if (value !== undefined) patch[field] = value;
-  }
-  const prefs = await savePreferencesFor(user.id, patch);
+  // zod already strips unknown keys and omits absent optionals, so the parsed
+  // body IS the patch: only fields the caller actually sent are written, and an
+  // absent key stays absent rather than being cleared by a partial save.
+  const prefs = await savePreferencesFor(user.id, parsed.data);
   return NextResponse.json(
     Object.fromEntries(FIELDS.map((field) => [field, prefs[field] ?? null])),
   );

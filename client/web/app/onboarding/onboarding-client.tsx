@@ -1226,7 +1226,7 @@ function Header({ index }: { index: number }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="font-logo text-3xl leading-none text-primary-ink">mantle</span>
+        <span className="wordmark-brand text-3xl leading-none text-primary-ink">mantle</span>
         <span className="text-xs text-muted-foreground">
           Step {index + 1} of {STEPS.length} · {STEPS[index]!.title}
         </span>

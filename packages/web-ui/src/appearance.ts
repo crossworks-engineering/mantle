@@ -97,6 +97,57 @@ const FONT_SLOTS = [
 
 const SIZE_FIELDS = ['fontSize', 'fontLogoSize', 'fontTitleSize', 'fontProseSize'] as const;
 
+/**
+ * The `<html>` data-attribute name for every font field, and the CSS var name
+ * for every resolved font-family — THE canonical tables. Two renderers stamp an
+ * appearance onto a document (the client root layout and the server htmlPage),
+ * and the original bug this feature fixed was exactly those two drifting: the
+ * server copy missed `--font-sans` for months and every share rendered in
+ * Inter. Both renderers now consume these projections, so an attribute can no
+ * longer exist in one document and not the other; display-fonts.test.ts holds
+ * the tables complete against AppearanceAttrs itself.
+ */
+const FONT_ATTR_NAMES = [
+  ['data-font-logo', 'fontLogo'],
+  ['data-font-title', 'fontTitle'],
+  ['data-font-ui', 'fontUi'],
+  ['data-font-prose', 'fontProse'],
+  ['data-font-size', 'fontSize'],
+  ['data-logo-size', 'fontLogoSize'],
+  ['data-title-size', 'fontTitleSize'],
+  ['data-prose-size', 'fontProseSize'],
+] as const;
+
+const FONT_VAR_NAMES = [
+  ['--font-wordmark', 'wordmark'],
+  ['--font-page-title', 'pageTitle'],
+  ['--font-sans', 'ui'],
+  ['--font-prose', 'prose'],
+] as const;
+
+/** The font data-* attributes of a resolved appearance, ready to spread onto
+ *  `<html>` (client) or serialize into the tag (server). Defaults are already
+ *  absent from AppearanceAttrs, so absence needs no handling here. */
+export function appearanceFontAttrs(a: AppearanceAttrs): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [attr, field] of FONT_ATTR_NAMES) {
+    const value = a[field];
+    if (value) out[attr] = value;
+  }
+  return out;
+}
+
+/** The font-family CSS vars of a resolved appearance, for the `<html>` inline
+ *  style. Same single-source contract as appearanceFontAttrs. */
+export function appearanceFontVars(a: AppearanceAttrs): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, key] of FONT_VAR_NAMES) {
+    const value = a.fontVars[key];
+    if (value) out[name] = value;
+  }
+  return out;
+}
+
 export function resolveAppearanceAttrs(a: BrainAppearance | null | undefined): AppearanceAttrs {
   const out: AppearanceAttrs = { fontVars: {} };
   if (!a) return out;

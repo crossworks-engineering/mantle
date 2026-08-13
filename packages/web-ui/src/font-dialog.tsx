@@ -9,6 +9,7 @@ import {
   FONT_LIBRARY,
   FONT_SHELVES,
   FONT_SIZES,
+  axisCount,
   fontFamilyValue,
   type FontFace,
   type FontShelf,
@@ -168,12 +169,6 @@ function FaceButton({
   active: boolean;
   onSelect: () => void;
 }) {
-  // Count what the face can actually do, from the registry's own record: the
-  // CSS-addressable descriptors plus the axes with no descriptor. Every face
-  // here has at least two.
-  const axisCount =
-    [face.weight, face.stretch, face.style].filter(Boolean).length + (face.axes?.length ?? 0);
-
   return (
     <button
       type="button"
@@ -182,6 +177,14 @@ function FaceButton({
       className={cn(
         'flex w-full items-center justify-between gap-2 rounded-lg border p-3 text-left transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        // content-visibility defers rendering (and so the lazy font FETCH) of
+        // off-screen cards until they scroll near — without it, opening the
+        // dialog pulls the entire library's woff2 at once to paint previews
+        // (~5MB, one face alone ~1.9MB). The intrinsic size keeps the
+        // scrollbar honest while cards are skipped. A real subsetted-preview
+        // pipeline would beat this; until then the fetch at least follows the
+        // scroll.
+        '[contain-intrinsic-size:auto_5rem] [content-visibility:auto]',
         active ? 'border-primary ring-1 ring-primary' : 'border-border hover:bg-accent/40',
       )}
     >
@@ -199,9 +202,9 @@ function FaceButton({
         >
           {sample}
         </span>
-        <span className="mt-1 block truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+        <span className="mt-1 block truncate text-xs uppercase tracking-wide text-muted-foreground">
           {face.label}
-          {face.family ? ` · ${axisCount} axes` : ''}
+          {face.family ? ` · ${axisCount(face)} axes` : ''}
           {face.italicFile ? ' · true italic' : ''}
         </span>
       </span>

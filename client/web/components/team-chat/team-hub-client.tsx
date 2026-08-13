@@ -335,7 +335,7 @@ export function TeamHubShell() {
         {/* Top bar */}
         <header className="flex items-center justify-between py-5">
           <span className="text-sm font-semibold">
-            {data.siteName ?? <span className="font-logo lowercase">mantle</span>}
+            {data.siteName ?? <span className="wordmark-brand lowercase">mantle</span>}
           </span>
           <span className="text-xs text-muted-foreground">Team Hub</span>
         </header>
@@ -531,7 +531,7 @@ export function TeamHubShell() {
 
         <footer className="flex items-center justify-between border-t border-border/60 pt-5 text-xs text-muted-foreground">
           <span>
-            Powered by <span className="font-logo lowercase">mantle</span>
+            Powered by <span className="wordmark-brand lowercase">mantle</span>
           </span>
           <span>v{data.version}</span>
         </footer>

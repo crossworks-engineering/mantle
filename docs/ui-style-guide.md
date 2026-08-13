@@ -159,6 +159,12 @@ Rules:
   code/`font-mono`).
 - **Do not add per-theme fonts.** Typography is a brain-level choice, orthogonal
   to the colour theme.
+- Headings: page title lives in the **top bar** (see §8): don't add a big
+  on-page `<h1>` that duplicates it. Section headings: `h2`,
+  `text-base`/`text-lg font-semibold`.
+- **Sizing, keep it readable.** Primary text `text-sm`, secondary/meta
+  `text-xs`. Avoid `text-[10px]`/`text-[11px]` except for tiny corner
+  tags/badges, list/table meta was deliberately bumped up a notch this round.
 
 ### 3a. Adding a face
 
@@ -179,12 +185,6 @@ A declared range that is wider than the file's own is clamped by the browser, bu
 a MISSING one is not — without `font-weight` the browser treats a variable file
 as a single 400 and synthesises bold, which reads as smeared headings everywhere.
 That is the whole reason the ranges are machine-read.
-- Headings: page title lives in the **top bar** (see §8): don't add a big
-  on-page `<h1>` that duplicates it. Section headings: `h2`,
-  `text-base`/`text-lg font-semibold`.
-- **Sizing, keep it readable.** Primary text `text-sm`, secondary/meta
-  `text-xs`. Avoid `text-[10px]`/`text-[11px]` except for tiny corner
-  tags/badges, list/table meta was deliberately bumped up a notch this round.
 
 ---
 

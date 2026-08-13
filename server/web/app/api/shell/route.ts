@@ -51,6 +51,12 @@ export async function GET() {
     fontTitle: prefs.fontTitle ?? null,
     fontUi: prefs.fontUi ?? null,
     fontProse: prefs.fontProse ?? null,
+    // The sizes travel with the faces: the client adopts both as one choice,
+    // since a face reconciled at a stale scale is a half-applied brand.
+    fontSize: prefs.fontSize ?? null,
+    fontLogoSize: prefs.fontLogoSize ?? null,
+    fontTitleSize: prefs.fontTitleSize ?? null,
+    fontProseSize: prefs.fontProseSize ?? null,
     // Brand logo (replaces the wordmark when set) — src is the public
     // /api/appearance/logo, these are the cache-busting versions. The dark
     // variant is optional; renderers fall back dark → base → wordmark.

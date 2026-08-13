@@ -1,5 +1,9 @@
 import { displayFontFaceCss } from '@mantle/web-ui/display-fonts';
-import type { AppearanceAttrs } from '@mantle/web-ui/appearance';
+import {
+  appearanceFontAttrs,
+  appearanceFontVars,
+  type AppearanceAttrs,
+} from '@mantle/web-ui/appearance';
 
 /**
  * HTML shells for the server-rendered surfaces (/s, /print, stubs) — the
@@ -80,28 +84,16 @@ function htmlAttrs(a: AppearanceAttrs | undefined): string {
   if (!a) return '';
   const parts: string[] = [];
   if (a.colorTheme) parts.push(`data-color-theme="${escapeHtml(a.colorTheme)}"`);
-  // Every font attribute the client layout stamps is stamped here too. These
-  // used to be only the two header faces, which meant the interface font never
-  // reached /s or /print at all: a share rendered in Inter no matter what the
-  // brain had chosen. The prose font makes that gap load-bearing rather than
-  // cosmetic, because /print IS the PDF export.
-  for (const [attr, value] of [
-    ['data-font-logo', a.fontLogo],
-    ['data-font-title', a.fontTitle],
-    ['data-font-ui', a.fontUi],
-    ['data-font-prose', a.fontProse],
-    ['data-font-size', a.fontSize],
-    ['data-logo-size', a.fontLogoSize],
-    ['data-title-size', a.fontTitleSize],
-    ['data-prose-size', a.fontProseSize],
-  ] as const) {
-    if (value) parts.push(`${attr}="${escapeHtml(value)}"`);
+  // Every font attribute and var comes from the SAME projections the client
+  // root layout consumes (appearance.ts) — never a hand-copied list. This
+  // renderer's copy used to carry only the two header faces, which meant the
+  // interface font never reached /s or /print at all: a share rendered in Inter
+  // no matter what the brain had chosen. The prose font makes that gap
+  // load-bearing rather than cosmetic, because /print IS the PDF export.
+  for (const [attr, value] of Object.entries(appearanceFontAttrs(a))) {
+    parts.push(`${attr}="${escapeHtml(value)}"`);
   }
-  const vars: string[] = [];
-  if (a.fontVars.wordmark) vars.push(`--font-wordmark:${a.fontVars.wordmark}`);
-  if (a.fontVars.pageTitle) vars.push(`--font-page-title:${a.fontVars.pageTitle}`);
-  if (a.fontVars.ui) vars.push(`--font-sans:${a.fontVars.ui}`);
-  if (a.fontVars.prose) vars.push(`--font-prose:${a.fontVars.prose}`);
+  const vars = Object.entries(appearanceFontVars(a)).map(([name, value]) => `${name}:${value}`);
   if (vars.length) parts.push(`style="${escapeHtml(vars.join(';'))}"`);
   // The lock rides along even when everything is default: an owner surface is
   // owner-branded regardless, and the lock is what stops a mounted island's
@@ -165,7 +157,7 @@ ${islands}
 export function shareShell(inner: string): string {
   return `<div class="flex h-dvh flex-col overflow-y-auto scrollbar-thin bg-background text-foreground">
 <main class="flex-1">${inner}</main>
-<footer class="border-t border-border/60 py-6"><p class="text-center text-xs text-muted-foreground">Shared via <span class="font-logo lowercase">mantle</span></p></footer>
+<footer class="border-t border-border/60 py-6"><p class="text-center text-xs text-muted-foreground">Shared via <span class="wordmark-brand lowercase">mantle</span></p></footer>
 </div>`;
 }
 

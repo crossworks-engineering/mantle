@@ -464,7 +464,7 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between">
           <h1 className="text-sm font-semibold">
             {archive ? 'Chat archive' : 'Team Chat'}{' '}
-            <span className="font-logo lowercase text-muted-foreground">mantle</span>
+            <span className="wordmark-brand lowercase text-muted-foreground">mantle</span>
           </h1>
           <p className="text-xs text-muted-foreground">
             {archive
@@ -495,7 +495,10 @@ export function TeamChatClient({ archive = false }: { archive?: boolean } = {}) 
           <div ref={contentRef}>
             {turns.length === 0 && !live ? (
               <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/30 px-4 py-10 text-center">
-                <span className="font-logo lowercase text-lg text-muted-foreground" aria-hidden>
+                <span
+                  className="wordmark-brand lowercase text-lg text-muted-foreground"
+                  aria-hidden
+                >
                   mantle
                 </span>
                 <p className="text-sm text-muted-foreground">

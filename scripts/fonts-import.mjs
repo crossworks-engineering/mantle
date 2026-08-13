@@ -92,11 +92,19 @@ function readName(buf, table, nameId) {
   const o = table.offset;
   const count = buf.readUInt16BE(o + 2);
   const stringOffset = buf.readUInt16BE(o + 4);
+  // Ranked, not first-match: a font can carry several platform-3 records
+  // (symbol encoding, localized languages) sorted ahead of the canonical one,
+  // and the slug/registry key derive from this string. Prefer Windows Unicode
+  // BMP English (3/1/0x409), then any Windows Unicode, then anything readable.
+  let win = null;
+  let winEnglish = null;
   let best = null;
   for (let i = 0; i < count; i++) {
     const p = o + 6 + i * 12;
     if (buf.readUInt16BE(p + 6) !== nameId) continue;
     const platformId = buf.readUInt16BE(p);
+    const encodingId = buf.readUInt16BE(p + 2);
+    const languageId = buf.readUInt16BE(p + 4);
     const len = buf.readUInt16BE(p + 8);
     const at = o + stringOffset + buf.readUInt16BE(p + 10);
     const raw = buf.subarray(at, at + len);
@@ -104,10 +112,13 @@ function readName(buf, table, nameId) {
     if (unicode && raw.length % 2 !== 0) continue;
     const value = unicode ? Buffer.from(raw).swap16().toString('utf16le') : raw.toString('latin1');
     if (!value) continue;
-    if (platformId === 3) return value;
+    if (platformId === 3 && (encodingId === 1 || encodingId === 10)) {
+      if (languageId === 0x409) winEnglish ??= value;
+      win ??= value;
+    }
     best ??= value;
   }
-  return best;
+  return winEnglish ?? win ?? best;
 }
 
 /** OS/2 fsSelection bit 0 — the font's OWN claim to being italic, which is the

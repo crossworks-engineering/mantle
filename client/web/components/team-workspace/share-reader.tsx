@@ -175,7 +175,7 @@ function PageReader({ view }: { view: Extract<ShareViewPayload, { kind: 'page' }
       <div className="min-w-0 flex-1">
         <article className={`mx-auto w-full ${widthClass}`}>
           <div
-            className="ProseMirror prose dark:prose-invert prose-accent max-w-none"
+            className="ProseMirror prose dark:prose-invert prose-accent prose-document max-w-none"
             // Sanitized server-side by renderPageDoc — built from a known tag
             // set with all text + attributes escaped, never user HTML.
             dangerouslySetInnerHTML={{ __html: view.html }}

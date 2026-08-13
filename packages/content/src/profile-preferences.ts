@@ -110,7 +110,8 @@ export type ProfilePreferences = {
    *  font LIST lives in the web app (apps/web/lib/display-fonts.ts); the server
    *  stores any well-formed slug and the client falls back to the default for
    *  keys it doesn't know, so trimming the library never strands the preference.
-   *  Unset ⇒ the default Bukhari wordmark. Read via projectFontKey, never raw. */
+   *  Unset ⇒ the default wordmark face (Bricolage Grotesque). Read via
+   *  projectFontKey, never raw. */
   fontLogo?: string;
   /** Selectable header page-TITLE font key — same contract as `fontLogo`.
    *  Unset ⇒ the default UI sans. Read via projectFontKey, never raw. */

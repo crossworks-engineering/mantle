@@ -18,10 +18,10 @@ Brand identity (the uploaded logo) is set on the logo screen rather than here.
 
 Four things can be set in their own typeface, each with its own size:
 
-- **Interface font** — the app itself: menus, tables, buttons, forms.
-- **Wordmark** — the brain's name in the header.
-- **Peer name** — this node's federation-facing label, in the header centre.
-- **Pages and Notes** — long-form writing, in the editor, on shared pages, and
+- **Interface font**: the app itself (menus, tables, buttons, forms).
+- **Wordmark**: the brain's name in the header.
+- **Peer name**: this node's federation-facing label, in the header centre.
+- **Pages and Notes**: long-form writing, in the editor, on shared pages, and
   in the PDF export.
 
 Each row opens the same chooser, filtered by kind (sans, serif, mono, display)

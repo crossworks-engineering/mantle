@@ -2,8 +2,7 @@
 /**
  * Convert vendored .ttf/.otf faces to .woff2, in place.
  *
- * The display-font library and the Bukhari wordmark ship as static files in
- * BOTH apps' `public/`. woff2 is the only format any browser that can render
+ * The font library ships as static files in BOTH apps' `public/`. woff2 is the only format any browser that can render
  * Mantle has needed since 2016, and it is ~70% smaller — a 1.6M face like Nabla
  * becomes ~400K, which is what a visitor pays the moment they select it.
  *

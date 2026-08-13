@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 import {
-  FONT_LIBRARY,
   DEFAULT_LOGO_FONT,
   DEFAULT_TITLE_FONT,
   DEFAULT_UI_FONT,
@@ -88,8 +87,14 @@ type Ctx = {
   setFont: (slot: FontSlot, key: string) => void;
   setSize: (slot: FontSlot, size: FontSize) => void;
   /** Apply server-stored choices (shell load) without writing back — the DB
-   *  copy is already the source they came from. */
-  adoptServerFonts: (fonts: Partial<Record<FontSlot, string | null>>) => void;
+   *  copy is already the source they came from. A choice is a face AND a size
+   *  (the .wordmark class applies them as one), so both reconcile together —
+   *  adopting only the face would repaint browser B in the new family at the
+   *  old scale, exactly the half-applied state the class design prevents. */
+  adoptServerFonts: (
+    fonts: Partial<Record<FontSlot, string | null>>,
+    sizes?: Partial<Record<FontSlot, string | null>>,
+  ) => void;
 };
 
 const FontContext = React.createContext<Ctx | null>(null);
@@ -117,10 +122,14 @@ function syncAttr(prop: string, value: string, defaultValue: string) {
 
 /** Read a server-rendered key attribute off <html>, falling back to the default
  *  when absent or unknown (a key removed from the registry must not become
- *  picker state). */
-function readKey(value: string | undefined, fallback: string): string {
+ *  picker state). 'inherit' on the ui slot is rejected the same way — the
+ *  server never emits it, but a stale or hand-edited document must not seed
+ *  state the dialog cannot display. */
+function readKey(slot: FontSlot, value: string | undefined, fallback: string): string {
   const known = fontByKey(value);
-  return known ? known.key : fallback;
+  if (!known) return fallback;
+  if (slot === 'ui' && known.key === 'inherit') return fallback;
+  return known.key;
 }
 
 const SLOT_KEYS = Object.keys(SLOTS) as FontSlot[];
@@ -142,7 +151,7 @@ export function FontProvider({ children }: { children: React.ReactNode }) {
   // repaint needed, the DOM is already correct.
   React.useEffect(() => {
     const d = document.documentElement.dataset;
-    setFonts(defaults((s) => readKey(d[SLOTS[s].attr], SLOTS[s].default)));
+    setFonts(defaults((s) => readKey(s, d[SLOTS[s].attr], SLOTS[s].default)));
     setSizes(defaults((s) => resolveFontSize(d[SLOTS[s].sizeAttr])));
   }, []);
 
@@ -161,6 +170,13 @@ export function FontProvider({ children }: { children: React.ReactNode }) {
     (slot: FontSlot, key: string) => {
       const face = fontByKey(key);
       if (!face) return;
+      // 'inherit' means "follow the interface font" — a relationship the
+      // interface slot cannot have with itself. Applied there it would set
+      // --font-sans to var(--font-sans, …), a self-referential custom property
+      // that invalidates the var and drops the whole app to the UA default
+      // font. The dialog never offers it for this slot; this guards the data
+      // path (see resolveFontVars for the server-render twin of this check).
+      if (slot === 'ui' && face.key === 'inherit') return;
       const spec = SLOTS[slot];
       setFonts((prev) => ({ ...prev, [slot]: face.key }));
       applyVar(spec.var, face.key, spec.default);
@@ -188,15 +204,29 @@ export function FontProvider({ children }: { children: React.ReactNode }) {
   // "never saved": the server-rendered document already reflects that (no
   // attribute), so there is nothing to undo.
   const adoptServerFonts = React.useCallback(
-    (incoming: Partial<Record<FontSlot, string | null>>) => {
+    (
+      incoming: Partial<Record<FontSlot, string | null>>,
+      incomingSizes?: Partial<Record<FontSlot, string | null>>,
+    ) => {
       for (const slot of SLOT_KEYS) {
         const key = incoming[slot];
         const face = key ? fontByKey(key) : undefined;
-        if (!face) continue;
-        const spec = SLOTS[slot];
-        setFonts((prev) => ({ ...prev, [slot]: face.key }));
-        applyVar(spec.var, face.key, spec.default);
-        syncAttr(spec.attr, face.key, spec.default);
+        if (face && !(slot === 'ui' && face.key === 'inherit')) {
+          // Same self-reference guard as setFont: 'inherit' is not a value the
+          // interface slot can hold.
+          const spec = SLOTS[slot];
+          setFonts((prev) => ({ ...prev, [slot]: face.key }));
+          applyVar(spec.var, face.key, spec.default);
+          syncAttr(spec.attr, face.key, spec.default);
+        }
+        // Sizes ride the same null contract: null/absent means "never saved",
+        // and the server-rendered document already reflects that.
+        const size = incomingSizes?.[slot];
+        if (size) {
+          const resolved = resolveFontSize(size);
+          setSizes((prev) => ({ ...prev, [slot]: resolved }));
+          syncAttr(SLOTS[slot].sizeAttr, resolved, DEFAULT_FONT_SIZE);
+        }
       }
     },
     [],
@@ -215,7 +245,3 @@ export function useFonts() {
   if (!ctx) throw new Error('useFonts must be used within FontProvider');
   return ctx;
 }
-
-/** The full offered list — re-exported so the modal doesn't import the registry
- *  directly (keeps the provider the one UI-facing seam). */
-export { FONT_LIBRARY };

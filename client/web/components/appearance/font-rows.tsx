@@ -33,7 +33,7 @@ const ROWS: Row[] = [
   {
     slot: 'ui',
     label: 'Interface font',
-    description: 'Everything the app itself is set in — menus, tables, buttons, forms.',
+    description: 'Everything the app itself is set in: menus, tables, buttons, forms.',
     sample: () => 'Handgloves',
   },
   {
@@ -52,7 +52,7 @@ const ROWS: Row[] = [
     slot: 'prose',
     label: 'Pages and Notes',
     description:
-      'Long-form writing in the editor, on shared pages, and in the PDF export — the one choice that leaves the browser.',
+      'Long-form writing in the editor, on shared pages, and in the PDF export. The one choice that leaves the browser.',
     sample: () => 'The quick brown fox',
   },
 ];
@@ -115,17 +115,24 @@ export function FontRows() {
         })}
       </div>
 
-      {ROWS.map((row) => (
-        <FontDialog
-          key={row.slot}
-          slot={row.slot}
-          title={row.label}
-          description={row.description}
-          sample={row.sample(ctx)}
-          open={openSlot === row.slot}
-          onOpenChange={(open) => setOpenSlot(open ? row.slot : null)}
-        />
-      ))}
+      {/* ONE dialog, fed the open row's props — at most one can be open, so
+          four always-mounted copies would be four sets of dialog state for no
+          behavior. The key remounts it per slot, resetting the shelf filter. */}
+      {(() => {
+        const row = ROWS.find((r) => r.slot === openSlot);
+        if (!row) return null;
+        return (
+          <FontDialog
+            key={row.slot}
+            slot={row.slot}
+            title={row.label}
+            description={row.description}
+            sample={row.sample(ctx)}
+            open
+            onOpenChange={(open) => setOpenSlot(open ? row.slot : null)}
+          />
+        );
+      })()}
     </section>
   );
 }

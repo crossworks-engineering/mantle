@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   DEFAULT_FONT_SIZE,
+  axisCount,
   DEFAULT_LOGO_FONT,
   DEFAULT_PROSE_FONT,
   DEFAULT_TITLE_FONT,
@@ -19,7 +20,12 @@ import {
   resolveFontSize,
   resolveFontVars,
 } from './display-fonts';
-import { resolveAppearanceAttrs, type BrainAppearance } from './appearance';
+import {
+  appearanceFontAttrs,
+  appearanceFontVars,
+  resolveAppearanceAttrs,
+  type BrainAppearance,
+} from './appearance';
 
 /** A fully-default appearance row; individual tests override one field, so
  *  adding a field to BrainAppearance can't silently skip a case. */
@@ -82,6 +88,79 @@ describe('resolveFontVars', () => {
     expect(resolveFontVars('sans', null, null, null).wordmark).toBe(
       'var(--font-sans, ui-sans-serif, sans-serif)',
     );
+  });
+
+  // 'inherit' resolves to `var(--font-sans, …)`, so letting the ui slot emit it
+  // would stamp `--font-sans: var(--font-sans, …)` on <html> — a
+  // self-referential custom property, invalid at computed-value time, which
+  // drops the ENTIRE interface to the browser default font. The PUT route is
+  // shape-only validation, so the stored value can be anything; this projection
+  // is the guard.
+  it("never resolves 'inherit' (or legacy 'sans') for the interface slot", () => {
+    expect(resolveFontVars(null, null, 'inherit', null).ui).toBeUndefined();
+    expect(resolveFontVars(null, null, 'sans', null).ui).toBeUndefined();
+    const attrs = resolveAppearanceAttrs({ ...DEFAULTS, fontUi: 'inherit' });
+    expect(attrs.fontUi).toBeUndefined();
+    expect(attrs.fontVars.ui).toBeUndefined();
+  });
+});
+
+/**
+ * TWO renderers stamp an appearance onto a document: the client root layout and
+ * the server htmlPage. They must emit the same attributes and vars, and the way
+ * that historically failed was a hand-copied list in one of them going stale
+ * (the server missed `--font-sans` for months; every share rendered in Inter).
+ * Both now consume appearanceFontAttrs/appearanceFontVars; this holds those
+ * projections complete against resolveAppearanceAttrs itself, so a slot added
+ * to the resolver without extending the tables fails here instead of shipping
+ * half-stamped.
+ */
+describe('renderer parity projections', () => {
+  const FULL = resolveAppearanceAttrs({
+    ...DEFAULTS,
+    fontLogo: 'fredoka',
+    fontTitle: 'playfair',
+    fontUi: 'saira',
+    fontProse: 'fraunces',
+    fontSize: 'xsmall',
+    fontLogoSize: 'large',
+    fontTitleSize: 'small',
+    fontProseSize: 'large',
+  });
+
+  it('emits every font field of a fully non-default appearance as an attribute', () => {
+    expect(appearanceFontAttrs(FULL)).toEqual({
+      'data-font-logo': 'fredoka',
+      'data-font-title': 'playfair',
+      'data-font-ui': 'saira',
+      'data-font-prose': 'fraunces',
+      'data-font-size': 'xsmall',
+      'data-logo-size': 'large',
+      'data-title-size': 'small',
+      'data-prose-size': 'large',
+    });
+    // Completeness against the resolver itself: every font-ish field the
+    // resolver produced must have travelled — a field it sets that the table
+    // misses is exactly the drift this projection exists to prevent.
+    const fontFields = Object.keys(FULL).filter((k) => k.startsWith('font'));
+    expect(Object.keys(appearanceFontAttrs(FULL))).toHaveLength(fontFields.length - 1); // -1: fontVars
+  });
+
+  it('emits every resolved font-family var', () => {
+    const vars = appearanceFontVars(FULL);
+    expect(vars).toEqual({
+      '--font-wordmark': '"Fredoka", sans-serif',
+      '--font-page-title': '"Playfair", serif',
+      '--font-sans': '"Saira", sans-serif',
+      '--font-prose': '"Fraunces", serif',
+    });
+    expect(Object.keys(vars)).toHaveLength(Object.keys(FULL.fontVars).length);
+  });
+
+  it('emits nothing for a fully-default appearance', () => {
+    const empty = resolveAppearanceAttrs(DEFAULTS);
+    expect(appearanceFontAttrs(empty)).toEqual({});
+    expect(appearanceFontVars(empty)).toEqual({});
   });
 });
 
@@ -232,8 +311,7 @@ describe('the font library', () => {
   it('gives every shipped face at least two axes', () => {
     for (const f of FONT_LIBRARY) {
       if (!f.file) continue;
-      const count = [f.weight, f.stretch, f.style].filter(Boolean).length + (f.axes?.length ?? 0);
-      expect(count, `${f.key} is not a multi-axis variable face`).toBeGreaterThanOrEqual(2);
+      expect(axisCount(f), `${f.key} is not a multi-axis variable face`).toBeGreaterThanOrEqual(2);
     }
   });
 

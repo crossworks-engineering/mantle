@@ -348,6 +348,14 @@ export function resolveFontSize(v: string | null | undefined): FontSize {
 
 // ── lookup ──────────────────────────────────────────────────────────────────
 
+/** How many variable axes a face carries: the CSS-addressable descriptors
+ *  (weight/stretch/style) plus the descriptorless axes. The dialog's "· N axes"
+ *  label and the test's two-axis-floor assertion both count through here, so
+ *  the number users see is the same one the invariant enforces. */
+export function axisCount(f: FontFace): number {
+  return [f.weight, f.stretch, f.style].filter(Boolean).length + (f.axes?.length ?? 0);
+}
+
 const BY_KEY = new Map(FONT_LIBRARY.map((f) => [f.key, f]));
 
 export function fontByKey(key: string | null | undefined): FontFace | undefined {
@@ -452,9 +460,20 @@ export function resolveFontVars(
   // and every element inheriting from the root — follows the choice with no
   // further wiring. Custom properties inherit, so setting it once at the root
   // is the whole mechanism.
-  if (ui && fontByKey(ui)?.key !== DEFAULT_UI_FONT) {
-    const v = fontFamilyValue(ui);
-    if (v) out.ui = v;
+  //
+  // 'inherit' (and the legacy 'sans' that aliases to it) must be REJECTED for
+  // this slot, not resolved: its value is `var(--font-sans, …)`, and stamping
+  // that as --font-sans is a self-referential custom property — invalid at
+  // computed-value time regardless of the fallback, which drops the ENTIRE
+  // interface to the browser default font. The dialog never offers it for this
+  // slot, but the PUT route is shape-only validation, so the stored value can
+  // be anything.
+  if (ui) {
+    const key = fontByKey(ui)?.key;
+    if (key !== DEFAULT_UI_FONT && key !== 'inherit') {
+      const v = fontFamilyValue(ui);
+      if (v) out.ui = v;
+    }
   }
   if (prose && fontByKey(prose)?.key !== DEFAULT_PROSE_FONT) {
     const v = fontFamilyValue(prose);

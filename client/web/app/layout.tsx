@@ -13,7 +13,11 @@ import { BackgroundProvider } from '@mantle/web-ui/background-provider';
 import { FontProvider } from '@mantle/web-ui/font-provider';
 import { QueryProvider } from '@mantle/web-ui/query-provider';
 import { displayFontFaceCss } from '@mantle/web-ui/display-fonts';
-import { resolveAppearanceAttrs } from '@mantle/web-ui/appearance';
+import {
+  appearanceFontAttrs,
+  appearanceFontVars,
+  resolveAppearanceAttrs,
+} from '@mantle/web-ui/appearance';
 import { loadBrainAppearance } from '@/lib/appearance';
 import { MEMBER_SURFACE_HEADER } from '@/lib/member-surface';
 
@@ -50,23 +54,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // brand. The attributes themselves are the same for every surface — the
   // brain has ONE appearance.
   const memberSurface = hdrs.get(MEMBER_SURFACE_HEADER) === '1';
-  const fontStyle: Record<string, string> = {};
-  if (appearance.fontVars.wordmark) fontStyle['--font-wordmark'] = appearance.fontVars.wordmark;
-  if (appearance.fontVars.pageTitle) fontStyle['--font-page-title'] = appearance.fontVars.pageTitle;
-  // Pages, Notes and the PDF export. Defaults to following --font-sans, so the
-  // var is only ever set when the brain deliberately typeset its prose apart
-  // from its interface.
-  if (appearance.fontVars.prose) fontStyle['--font-prose'] = appearance.fontVars.prose;
-  // The UI font overrides `--font-sans`, which next/font declares via the
-  // `fontSans.variable` CLASS — so both have to sit on the SAME element for
-  // inline style to win. Hence the font classes moved from <body> to <html>
-  // (which is also what next/font documents); on <body> the class would
-  // redeclare the var below this override and quietly win it back.
-  if (appearance.fontVars.ui) fontStyle['--font-sans'] = appearance.fontVars.ui;
-  // Always published, override or not: the modal's own "Inter" row previews
-  // through this, and resolving it through --font-sans would make that row
-  // render in whatever face is currently chosen instead of in Inter.
-  fontStyle['--font-sans-base'] = fontSans.style.fontFamily;
+  // Font attributes + vars come from the shared projections in appearance.ts —
+  // the same tables the server htmlPage renders, so the two documents cannot
+  // drift (the drift is exactly how /s and /print lost the interface font for
+  // months). The chosen UI font overrides `--font-sans`, which next/font
+  // declares via the `fontSans.variable` CLASS — so both have to sit on the
+  // SAME element for inline style to win. Hence the font classes live on
+  // <html>, not <body>; on <body> the class would redeclare the var below this
+  // override and quietly win it back.
+  const fontStyle: Record<string, string> = {
+    ...appearanceFontVars(appearance),
+    // Always published, override or not: the modal's own "Inter" row previews
+    // through this, and resolving it through --font-sans would make that row
+    // render in whatever face is currently chosen instead of in Inter.
+    '--font-sans-base': fontSans.style.fontFamily,
+  };
   return (
     <html
       lang="en"
@@ -74,14 +76,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       suppressHydrationWarning
       data-color-theme={appearance.colorTheme}
       data-color-theme-owner={memberSurface ? '1' : undefined}
-      data-font-logo={appearance.fontLogo}
-      data-font-title={appearance.fontTitle}
-      data-font-ui={appearance.fontUi}
-      data-font-prose={appearance.fontProse}
-      data-font-size={appearance.fontSize}
-      data-logo-size={appearance.fontLogoSize}
-      data-title-size={appearance.fontTitleSize}
-      data-prose-size={appearance.fontProseSize}
+      {...appearanceFontAttrs(appearance)}
       data-avatar-style={appearance.avatarStyle}
       data-avatar-tint={appearance.avatarTint}
       data-backgrounds={appearance.backgrounds}

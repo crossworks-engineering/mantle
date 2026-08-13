@@ -71,12 +71,17 @@ type ShellData = {
   /** The DB-stored colour theme (the cross-browser source of truth); null ⇒
    *  never saved. Adopted once per shell load. */
   colorTheme: string | null;
-  /** DB-stored font keys for the four slots (Settings → Appearance → Fonts);
-   *  null ⇒ the defaults. Adopted once per shell load, like the colour theme. */
+  /** DB-stored font keys + sizes for the four slots (Settings → Appearance →
+   *  Fonts); null ⇒ the defaults. Adopted once per shell load, like the colour
+   *  theme — face and size together, since they are one choice. */
   fontLogo: string | null;
   fontTitle: string | null;
   fontUi: string | null;
   fontProse: string | null;
+  fontSize: string | null;
+  fontLogoSize: string | null;
+  fontTitleSize: string | null;
+  fontProseSize: string | null;
   /** Short-lived asset-access token for browser-native srcs in detached mode
    *  (see lib/asset-url). Absent/ignored same-origin. */
   assetToken?: string;
@@ -187,12 +192,20 @@ function ShellFrame({
     if (adoptedFonts.current) return;
     if (shellQuery.data === undefined) return;
     adoptedFonts.current = true;
-    adoptServerFonts({
-      logo: shellQuery.data.fontLogo ?? null,
-      title: shellQuery.data.fontTitle ?? null,
-      ui: shellQuery.data.fontUi ?? null,
-      prose: shellQuery.data.fontProse ?? null,
-    });
+    adoptServerFonts(
+      {
+        logo: shellQuery.data.fontLogo ?? null,
+        title: shellQuery.data.fontTitle ?? null,
+        ui: shellQuery.data.fontUi ?? null,
+        prose: shellQuery.data.fontProse ?? null,
+      },
+      {
+        ui: shellQuery.data.fontSize ?? null,
+        logo: shellQuery.data.fontLogoSize ?? null,
+        title: shellQuery.data.fontTitleSize ?? null,
+        prose: shellQuery.data.fontProseSize ?? null,
+      },
+    );
   }, [shellQuery.data, adoptServerFonts]);
 
   // Publish the asset-access token so `assetUrl()` can sign browser-native srcs
