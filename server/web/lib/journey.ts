@@ -2,7 +2,7 @@ import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db, entities, entityEdges, facts, isWriteRefused, nodes, traces } from '@mantle/db';
 import { getTrace } from './traces';
-import type { TraceDetail } from '@mantle/web-ui/traces-format';
+import type { TraceDetail } from '@mantle/client-types/traces-format';
 import {
   deriveAction,
   type ActionCategory,

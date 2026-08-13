@@ -14,7 +14,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import type { MaintenanceTask } from './registry';
-import type { MaintenanceRunView, RunState } from '@mantle/web-ui/types/maintenance';
+import type { MaintenanceRunView, RunState } from '@mantle/client-types/types/maintenance';
 import { finishRun, recordRunStart } from './history';
 
 const MAX_LINES = 2000;

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { APP_VERSION } from '@mantle/web-ui/version';
+import { APP_VERSION } from '@mantle/client-types/version';
 
 /**
  * The release-check cache splits its TTL: a confirmed update is cached long

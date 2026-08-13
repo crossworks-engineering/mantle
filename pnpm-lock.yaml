@@ -428,9 +428,9 @@ importers:
 
   packages/client-types:
     devDependencies:
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
 
   packages/content:
     dependencies:
@@ -997,6 +997,9 @@ importers:
       '@dicebear/styles':
         specifier: ^10.3.0
         version: 10.3.0
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       '@mantle/content-core':
         specifier: workspace:*
         version: link:../content-core

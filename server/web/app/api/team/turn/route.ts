@@ -19,8 +19,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getDbosClient } from '@/lib/dbos-client';
-import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
-import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/web-ui/assistant-limits';
+import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
+import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/client-types/assistant-limits';
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller, teamCallerName, mintTeamTurnId } from '@/lib/team-chat-gate';
 import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';

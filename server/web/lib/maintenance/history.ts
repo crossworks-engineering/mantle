@@ -8,7 +8,7 @@
 import { desc, eq, and, gte, lt, sql } from 'drizzle-orm';
 import { db, isWriteRefused, maintenanceRuns, type MaintenanceRunRow } from '@mantle/db';
 
-import type { RunState } from '@mantle/web-ui/types/maintenance';
+import type { RunState } from '@mantle/client-types/types/maintenance';
 
 export type RunSource = 'cli' | 'ui' | 'cron';
 

@@ -5,7 +5,7 @@ import type {
   TraceFilter,
   TraceStepSummary,
   TraceSummary,
-} from '@mantle/web-ui/traces-format';
+} from '@mantle/client-types/traces-format';
 
 /**
  * Read-only helpers for /traces. Owner-scoped — pass the user's id.
@@ -20,8 +20,8 @@ export type {
   TraceFilter,
   TraceStepSummary,
   TraceDetail,
-} from '@mantle/web-ui/traces-format';
-export { formatMicroUsd, formatDuration } from '@mantle/web-ui/traces-format';
+} from '@mantle/client-types/traces-format';
+export { formatMicroUsd, formatDuration } from '@mantle/client-types/traces-format';
 
 /** Shared WHERE for trace list/count queries. */
 function traceConds(userId: string, filter: TraceFilter) {

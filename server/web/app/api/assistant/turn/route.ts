@@ -24,8 +24,8 @@ import { z } from 'zod';
 import { getOwnerOr401WithSource } from '@/lib/auth';
 import { getAssignedAgent } from '@/lib/agents';
 import { getDbosClient } from '@/lib/dbos-client';
-import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/web-ui/assistant-limits';
-import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
+import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/client-types/assistant-limits';
+import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
 import {
   ASSISTANT_TURN_WORKFLOW,
   RUNNER_QUEUE,

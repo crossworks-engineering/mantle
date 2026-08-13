@@ -23,7 +23,7 @@ import { listSkills } from '@/lib/skills';
 import { listToolGroups } from '@/lib/tool-groups';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { checkSystemIntegrity, PERSONA_SLUG, MANIFEST_AGENTS } from '@/lib/system-manifest';
-import type { SystemReport } from '@mantle/web-ui/types/integrity';
+import type { SystemReport } from '@mantle/client-types/types/integrity';
 
 // ── Canvas primitives ────────────────────────────────────────────────────────
 

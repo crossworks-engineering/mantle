@@ -4,9 +4,9 @@ import { buildInternalRenderCookie, getOwnerForAsset } from '@/lib/auth';
 import { resolveExport, getPage, getDraw, referencedDrawIds } from '@mantle/content';
 import { getDrawSvgOrRender, getDrawPngOrRender } from '@/lib/draw-snapshot';
 import { readFileById } from '@/lib/files';
-import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
+import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { renderUrlToPdf, printOrigin, PdfRendererUnavailableError } from '@/lib/render-pdf';
-import { slugify } from '@mantle/web-ui/slugify';
+import { slugify } from '@mantle/client-types/slugify';
 
 const IdParams = z.object({ id: z.string().uuid() });
 // Absent ⇒ docx (the original type-driven behavior; existing links keep working).

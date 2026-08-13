@@ -15,7 +15,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { subscribeTurnStream } from '@/lib/realtime';
-import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
+import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
 import { resolveTeamChatCaller, contactOfTeamTurnId } from '@/lib/team-chat-gate';
 
 export async function GET(

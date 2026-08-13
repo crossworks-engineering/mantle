@@ -7,7 +7,7 @@ import {
   type PersonaGender,
   type PersonaPresetKey,
 } from '@mantle/content';
-import { azureDeploymentName, WORKER_MODEL_KINDS } from '@mantle/web-ui/model-choices';
+import { azureDeploymentName, WORKER_MODEL_KINDS } from '@mantle/client-types/model-choices';
 import { updateAiWorker, listAiWorkers } from '@/lib/ai-workers';
 import { createAgent, updateAgent } from '@/lib/agents';
 // Workers, the persona's structure, and the specialist stack are all seeded from

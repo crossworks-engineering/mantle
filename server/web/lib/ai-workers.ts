@@ -28,7 +28,7 @@ import {
   type NewAiWorker,
 } from '@mantle/db';
 import type { AiWorkerDTO } from '@mantle/client-types';
-import { slugify } from '@mantle/web-ui/slugify';
+import { slugify } from '@mantle/client-types/slugify';
 
 // Resolution helpers live in @mantle/db so apps/agent can use them
 // without depending on apps/web. Re-exported here for convenience.

@@ -8,7 +8,7 @@ import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { runTableStorageProbes } from '@mantle/tabledb';
 
 import { readUpdaterStatus, updaterAvailable } from '../updates';
-import type { SanityCheck, SanityReport } from '@mantle/web-ui/types/sanity';
+import type { SanityCheck, SanityReport } from '@mantle/client-types/types/sanity';
 
 /**
  * System sanity checks — the CONFIG-correctness counterpart to lib/system-health

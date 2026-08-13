@@ -10,7 +10,7 @@
  * data (plus invariant assertions) — it must stay importable from CLI, worker,
  * and Next.js contexts alike, so no side effects and no app imports.
  */
-import type { TaskCost, TaskKind, TaskStatus } from '@mantle/web-ui/types/maintenance';
+import type { TaskCost, TaskKind, TaskStatus } from '@mantle/client-types/types/maintenance';
 export type { TaskCost, TaskKind, TaskStatus };
 
 /** What a LIVE run of the task spends. `sql` and `io` are free; `imap` costs

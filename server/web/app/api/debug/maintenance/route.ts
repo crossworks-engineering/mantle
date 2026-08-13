@@ -9,7 +9,7 @@ import type {
   MaintenanceTaskInfo,
   RunHistoryEntry,
   RunState,
-} from '@mantle/web-ui/types/maintenance';
+} from '@mantle/client-types/types/maintenance';
 
 // Registry overview + current/last run. Read-only; runs start via ./run.
 

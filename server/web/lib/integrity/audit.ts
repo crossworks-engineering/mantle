@@ -16,7 +16,7 @@ import { db } from '@mantle/db';
 import { sql, type SQL } from 'drizzle-orm';
 
 import { rowsOf } from './sql-util';
-import type { AuditCheck, AuditReport, AuditSeverity } from '@mantle/web-ui/types/integrity';
+import type { AuditCheck, AuditReport, AuditSeverity } from '@mantle/client-types/types/integrity';
 
 const CAP = 200;
 

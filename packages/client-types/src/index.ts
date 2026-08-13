@@ -9,6 +9,12 @@
  * frontend/backend contract as screens move to client data-fetching (Phase 2 ·
  * Task 4); the server aliases its summary types to these so drift is a type error.
  *
+ * Since the jackdaw-repo-split P0 this package is the CONTRACT package: subpath
+ * modules (`version`, `turn-streaming`, `traces-format`, `types/*`, `lib/*`, …)
+ * carry the small dependency-free constants and helpers both sides of the wire
+ * share. This root index stays types-only; subpaths may hold runtime code but
+ * must remain zero-dependency and browser-safe.
+ *
  * Dates are ISO strings here — that's how they cross the wire (JSON has no Date).
  */
 

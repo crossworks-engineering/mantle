@@ -4,4 +4,4 @@
  * shared UI package now. This shim keeps the manifest's canonical import path
  * (and the single-source rule) intact for server-side consumers.
  */
-export * from '@mantle/web-ui/model-choices';
+export * from '@mantle/client-types/model-choices';

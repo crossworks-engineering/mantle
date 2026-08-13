@@ -7,7 +7,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getSessionUser } from '@/lib/auth';
 import { readUpdaterLog, readUpdaterStatus, updaterAvailable } from '@/lib/updates';
-import { APP_VERSION } from '@mantle/web-ui/version';
+import { APP_VERSION } from '@mantle/client-types/version';
 
 export async function GET() {
   const user = await getSessionUser();

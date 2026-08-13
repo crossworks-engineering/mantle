@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { getOwnerOr401 } from '@/lib/auth';
 import { subscribeTurnStream } from '@/lib/realtime';
-import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
+import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
 import { loadProfilePreferences, isStreamThoughtsEnabled } from '@mantle/content';
 
 /**

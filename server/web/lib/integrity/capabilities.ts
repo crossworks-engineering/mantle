@@ -14,7 +14,7 @@
 import { db, sql, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
 import { tikaIsUp } from '@mantle/files';
 
-import type { Capability, Capabilities } from '@mantle/web-ui/types/integrity';
+import type { Capability, Capabilities } from '@mantle/client-types/types/integrity';
 
 async function workerCap(
   ownerId: string,

@@ -11,7 +11,7 @@
 
 import { db, agents, skills, toolGroups, tools, eq, and, type AgentMemoryConfig } from '@mantle/db';
 import { listAiWorkers } from '@/lib/ai-workers';
-import type { SystemCheck, SystemReport, SystemSample } from '@mantle/web-ui/types/integrity';
+import type { SystemCheck, SystemReport, SystemSample } from '@mantle/client-types/types/integrity';
 import {
   MANIFEST_AGENTS,
   MANIFEST_TOOL_GROUPS,
