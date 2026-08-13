@@ -7,7 +7,7 @@
 # public scope at publish time (the @mantle npm scope is third-party-owned).
 #
 # Needs the NPM_TOKEN repo secret: an npm *automation* token for a member of
-# the @jackdaw-run org. Until the org + token exist, the job skips cleanly
+# the @crossworks org. Until the org + token exist, the job skips cleanly
 # rather than failing the release.
 name: publish-contract
 
