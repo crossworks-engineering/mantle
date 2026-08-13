@@ -19,7 +19,7 @@ import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ListCard } from '@mantle/web-ui/ui/list-card';
-import type { ExplorerModel, ModelSort } from '@server/lib/model-explorer';
+import type { ExplorerModel, ModelSort } from '@mantle/client-types';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
 export type ProviderMeta = {

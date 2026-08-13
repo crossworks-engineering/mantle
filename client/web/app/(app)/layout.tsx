@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { AppShell } from '@/components/app-shell';
 import { UsageCard } from '@/components/usage-card';
-import type { SpendRange } from '@server/lib/metrics';
+import type { SpendRange } from '@mantle/client-types';
 
 /**
  * App shell: the rail on the left (brand, account, search, nav, launchers),

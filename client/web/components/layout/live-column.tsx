@@ -19,7 +19,7 @@ import {
   STALL_THRESHOLD_S,
   useLiveActivity,
 } from '@/components/journey/use-live-activity';
-import type { ActivityItem } from '@server/lib/journey';
+import type { ActivityItem } from '@mantle/client-types/journey-format';
 import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
 import { formatElapsed } from './elapsed';
 

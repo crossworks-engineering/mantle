@@ -5,7 +5,7 @@ import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { DebugPager, DebugSearchBox } from '@/components/debug/list-nav';
 import { fmtRelative, fmtShort } from '../format';
-import type { DigestRow } from '@server/lib/debug';
+import type { DigestRow } from '@mantle/client-types';
 
 const PAGE_SIZE = 25;
 

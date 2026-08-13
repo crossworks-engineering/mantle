@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { LiveActivity } from '@server/lib/journey';
+import type { LiveActivity } from '@mantle/client-types/journey-format';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 
 /**

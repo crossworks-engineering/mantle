@@ -31,7 +31,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Star } from 'lucide-react';
-import type { StudioNode, StudioEdge } from '@server/lib/studio/graph';
+import type { StudioNode, StudioEdge } from '@mantle/client-types';
 
 const NODE_W = 220;
 const NODE_H = 66;

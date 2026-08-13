@@ -12,7 +12,7 @@ import { deriveAction, sourceLabel } from '@mantle/web-ui/journey-format';
 import { ActionIcon } from '@/components/journey/action-icon';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SetPageTitle } from '@/components/layout/page-title';
-import type { JourneyDetail } from '@server/lib/journey';
+import type { JourneyDetail } from '@mantle/client-types/journey-format';
 
 function strOf(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null;

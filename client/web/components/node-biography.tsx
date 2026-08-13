@@ -14,7 +14,7 @@
 import Link from 'next/link';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { formatDuration, formatMicroUsd } from '@mantle/web-ui/traces-format';
-import type { NodeBiographyView } from '@server/lib/node-biography';
+import type { NodeBiographyView } from '@mantle/client-types';
 import type { TraceDetail, TraceStepSummary } from '@mantle/web-ui/traces-format';
 
 const KIND_LABELS: Record<string, string> = {

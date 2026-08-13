@@ -35,6 +35,8 @@ import { buildMentionParagraph, type MentionRef } from './mention-refs';
 import { splitDocByHeading, extractSection, type SplitLevel } from './page-split';
 import type { PageWidth, PageRow } from '@mantle/client-types';
 import type { PageVisibility } from '@mantle/client-types';
+import type { PageSort, Backlink } from '@mantle/client-types';
+export type { PageSort, Backlink };
 export type { PageVisibility };
 export type { PageWidth, PageRow };
 
@@ -172,9 +174,6 @@ async function ensureRoot(ownerId: string): Promise<void> {
       where: sql`${nodes.type} = 'branch'`,
     });
 }
-
-/** Sort order for the pages list. 'edited' (last updated) is the default. */
-export type PageSort = 'edited' | 'newest' | 'oldest' | 'title';
 
 type ListPagesOpts = { query?: string; tag?: string; sort?: PageSort };
 
@@ -537,15 +536,6 @@ export async function movePage(
   const [updated] = await db.select().from(nodes).where(eq(nodes.id, id)).limit(1);
   return updated ? rowOf(updated) : null;
 }
-
-/** A node that links TO a given page — one inbound `references` edge, resolved
- *  to its source node. Powers the "Referenced by" panel. */
-export type Backlink = {
-  id: string;
-  title: string;
-  type: Node['type'];
-  icon: string | null;
-};
 
 /**
  * Nodes that reference this page — the inbound `node --references--> node` edges

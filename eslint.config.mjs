@@ -178,13 +178,11 @@ export default tseslint.config(
                 'jackdaw split boundary — the client tier may import only @mantle/{client-types,content-core,voice-client,web-ui}',
             },
             {
-              // Remaining P0 follow-up: 59 type-only reach-throughs into
-              // server/web. Erased at runtime, but they must migrate into
-              // @mantle/client-types before the repo cut (split plan P2).
+              // Gone since the P0 follow-up: the tsconfig alias itself was
+              // removed, so this is a tripwire against reintroducing it.
               group: ['@server/*'],
-              allowTypeImports: true,
               message:
-                '@server/* is a TYPE-only reach-through into server/web — values would bundle server code',
+                '@server/* no longer exists — wire types live in @mantle/client-types (or content-core)',
             },
           ],
         },

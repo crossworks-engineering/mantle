@@ -13,7 +13,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@mantle/web-ui/ui/popover';
 import { Button } from '@mantle/web-ui/ui/button';
 import { cn } from '@mantle/web-ui/lib/utils';
-import type { ExplorerModel } from '@server/lib/model-explorer';
+import type { ExplorerModel } from '@mantle/client-types';
 import {
   formatContext,
   formatPriceCompact,

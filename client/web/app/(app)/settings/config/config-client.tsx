@@ -21,13 +21,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@mantle/web-ui/ui/alert-dialog';
-import type { AdoptKind } from '@server/lib/system-manifest';
-import type {
-  ConfigDiffReport,
-  EntityDiff,
-  FieldDiff,
-  DiffStatus,
-} from '@server/lib/system-manifest/config-diff';
+import type { AdoptKind } from '@mantle/client-types';
+import type { ConfigDiffReport, EntityDiff, FieldDiff, DiffStatus } from '@mantle/client-types';
 
 // Status → text accent. Fills stay token-based (bg-muted); only the text/border
 // carry the status colour, mirroring the sky hint precedent in tool-groups.

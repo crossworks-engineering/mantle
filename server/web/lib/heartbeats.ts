@@ -38,6 +38,8 @@ export type {
   HeartbeatScheduleSpec,
   HeartbeatSurface,
 } from '@mantle/db';
+import type { HeartbeatFireSummary } from '@mantle/client-types';
+export type { HeartbeatFireSummary };
 
 /**
  * The summary the CRUD layer returns and `GET /api/heartbeats` serializes.
@@ -251,18 +253,6 @@ export async function deleteHeartbeat(ownerId: string, id: string): Promise<bool
     .returning({ id: heartbeats.id });
   return rows.length > 0;
 }
-
-export type HeartbeatFireSummary = {
-  id: string;
-  firedAt: string;
-  traceId: string | null;
-  disposition: string;
-  stateBefore: Record<string, unknown> | null;
-  stateAfter: Record<string, unknown> | null;
-  replyText: string | null;
-  replySurfaceRef: Record<string, unknown> | null;
-  errorMessage: string | null;
-};
 
 function toFireSummary(f: HeartbeatFire): HeartbeatFireSummary {
   return {

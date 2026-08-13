@@ -819,3 +819,52 @@ export function diffTableDocs(prev: TableDoc, next: TableDoc): TableDocOp[] | nu
 
   return ops;
 }
+
+// ── Table wire DTOs (jackdaw split P0 follow-up) ──────────────────────────────
+// Moved from @mantle/content's tables surface; they live here beside TableDoc
+// because the client grid needs the real doc shape and @mantle/client-types is
+// zero-dep by rule.
+
+export type TableVisibility = 'private' | 'public';
+
+export type TableTabInfo = { id: string; name: string; rows: number; columns: number };
+
+export type TableRow = {
+  id: string;
+  title: string;
+  icon: string | null;
+  tags: string[];
+  summary: string | null;
+  /** Author-set caveat shown to a reader BEFORE they query — see
+   *  `CreateTableInput.description`. Distinct from `summary`, which the
+   *  extractor generates and may replace. */
+  description: string | null;
+  visibility: TableVisibility;
+  /** Quick stats for the list (cheap to compute from the doc). */
+  columnCount: number;
+  rowCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TableDetail = TableRow & {
+  /** Published grid — what's rendered everywhere and what the extractor
+   *  indexes. Only changes on commit. For tables past the materialize window
+   *  this is a LEADING WINDOW (`docClipped`) — page the rest via the rows
+   *  route / windowed readers; `rowCount` stays the true total. For multi-tab
+   *  workbooks this is ONE tab (the requested one, default first). */
+  data: TableDoc;
+  /** Autosaved working copy if uncommitted edits exist, else null. */
+  draft: TableDoc | null;
+  /** True when data/draft rows were clipped at the materialize window. */
+  docClipped?: boolean;
+  /** Draft-op etag: send back as if_rev so a stale client loses loudly. */
+  draftRev?: number;
+  /** Workbook tabs in position order (from registry stats; absent for legacy
+   *  JSONB tables). `data`/`draft` carry the tab identified by `tabId`. */
+  tabs?: TableTabInfo[];
+  /** Which tab `data`/`draft` materialize (multi-tab workbooks). */
+  tabId?: string;
+};
+
+export type TableSort = 'edited' | 'newest' | 'oldest' | 'title';

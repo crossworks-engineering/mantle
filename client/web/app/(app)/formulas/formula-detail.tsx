@@ -3,15 +3,10 @@
 import { useMemo, useState } from 'react';
 import katex from 'katex';
 import { AlertTriangle, Pencil, Sigma, Trash2 } from 'lucide-react';
-import type {
-  CoverageGap,
-  DimensionIssue,
-  FormulaSpec,
-  FormulaValue,
-  SignatureInput,
-  TargetSignature,
-  TraceStep,
-} from '@server/lib/formulas';
+import type { CoverageGap, FormulaSpec, FormulaValue } from '@mantle/content-core/formula-spec';
+import type { DimensionIssue } from '@mantle/content-core/formula-dimensions';
+import type { SignatureInput, TargetSignature } from '@mantle/content-core/formula-signature';
+import type { TraceStep } from '@mantle/content-core/formula-eval';
 import { Badge } from '@mantle/web-ui/ui/badge';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';

@@ -6,7 +6,7 @@ import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { TagPill } from '@mantle/web-ui/tag-pill';
 import { fmtRelative } from '../format';
-import type { AgentActivityRow, PersonaNotesRow } from '@server/lib/debug';
+import type { AgentActivityRow, PersonaNotesRow } from '@mantle/client-types';
 
 type AgentsData = { agents: AgentActivityRow[]; personaNotes: PersonaNotesRow[] };
 

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { formatMicroUsd } from '@mantle/web-ui/traces-format';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
-import type { AgentSpend, ModelSpend } from '@server/lib/metrics';
+import type { AgentSpend, ModelSpend } from '@mantle/client-types';
 
 type SpendData = { modelSpend: ModelSpend[]; agentSpend: AgentSpend[] };
 

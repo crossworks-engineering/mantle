@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis } from 'recharts';
-import type { IngestDay } from '@server/lib/dashboard';
+import type { IngestDay } from '@mantle/client-types';
 import { formatCount } from '@mantle/web-ui/lib/format-bytes';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
 import {

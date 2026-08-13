@@ -21,6 +21,8 @@ import {
   PERSONA_SLUG,
   PERSONA_TOOL_GROUP_SLUGS,
 } from '@/lib/system-manifest';
+import type { ProvisionResult } from '@mantle/client-types';
+export type { ProvisionResult };
 
 /**
  * Onboarding provisioner — turns the API keys the user just entered into a
@@ -54,18 +56,6 @@ export function voiceForGender(gender: PersonaGender): string {
 }
 
 export const PERSONA_AGENT_SLUG = PERSONA_SLUG;
-
-export type ProvisionResult = {
-  createdWorkers: { kind: string; name: string; provider: string; model: string }[];
-  createdAgent: { slug: string; name: string } | null;
-  /** Capabilities skipped because the optional key wasn't provided. */
-  skipped: string[];
-  /** Specialist agents seeded alongside the persona (Pages, Ledger, Remy,
-   *  Researcher, Coder) and wired into the assistant's delegate_to. Names of the
-   *  ones that seeded successfully; a seed that throws is logged + omitted (it
-   *  never aborts onboarding — the persona is what matters). */
-  seededSpecialists: string[];
-};
 
 /**
  * Seed the specialist stack a fresh brain needs for delegation + the editor

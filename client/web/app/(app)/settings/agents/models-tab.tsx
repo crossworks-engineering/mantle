@@ -30,7 +30,7 @@ import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { ModelSelect } from '@/components/ui/model-select';
 import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { getProvider, isProviderWired, providersForCapability } from '@mantle/voice-client';
-import type { ExplorerModel } from '@server/lib/model-explorer';
+import type { ExplorerModel } from '@mantle/client-types';
 import type { AgentDTO } from '@mantle/client-types';
 
 /** The primary chat route — the ONLY thing this tab reads or writes. Backup

@@ -33,7 +33,7 @@ import {
   AlertDialogTitle,
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import type { ComposeStatus, UpdateCheck, UpdaterStatus } from '@server/lib/updates';
+import type { ComposeStatus, UpdateCheck, UpdaterStatus } from '@mantle/client-types';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';

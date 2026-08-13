@@ -43,7 +43,7 @@ import {
   AlertDialogTitle,
 } from '@mantle/web-ui/ui/alert-dialog';
 import { TableDetailClient } from './[id]/table-detail-client';
-import type { TableDetail, TableRow, TableSort } from '@server/lib/tables';
+import type { TableDetail, TableRow, TableSort } from '@mantle/content-core/table-model';
 
 const MIN_W = 220;
 const MAX_W = 520;

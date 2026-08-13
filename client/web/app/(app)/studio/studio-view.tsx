@@ -47,7 +47,7 @@ import type {
   StudioSkillDetail,
   StudioToolGroupDetail,
   StudioWorkerDetail,
-} from '@server/lib/studio/graph';
+} from '@mantle/client-types';
 
 function Prose({ text }: { text: string }) {
   return (

@@ -25,7 +25,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@mantle/web-ui/ui/alert-dialog';
-import type { ExplorerModel } from '@server/lib/model-explorer';
+import type { ExplorerModel } from '@mantle/client-types';
 
 export type SkillOpt = { slug: string; name: string; usedByAgentSlugs: string[] };
 export type AgentOpt = { slug: string; name: string; enabled: boolean };

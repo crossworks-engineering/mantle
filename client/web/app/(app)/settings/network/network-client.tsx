@@ -14,8 +14,8 @@ import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
-import type { TailnetResult } from '@server/lib/tailscale';
-import type { TailscaleConfigSummary } from '@server/lib/tailscale-config';
+import type { TailnetResult } from '@mantle/client-types';
+import type { TailscaleConfigSummary } from '@mantle/client-types';
 
 type NetworkData = { status: TailnetResult; config: TailscaleConfigSummary | null };
 type NetworkResult = { ok: boolean; message: string };

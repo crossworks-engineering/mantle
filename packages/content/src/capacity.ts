@@ -16,32 +16,16 @@
  */
 import { and, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
-
-export type CapacityZone = 'green' | 'watch' | 'split';
+import type { CapacityZone, BrainCapacity } from '@mantle/client-types';
+import type { CapacityMetric } from '@mantle/client-types';
+export type { CapacityMetric };
+export type { CapacityZone, BrainCapacity };
 
 export type CapacityLimits = { watch: number; split: number };
 
 export const CAPACITY_POLICY: { docs: CapacityLimits; chunkVectors: CapacityLimits } = {
   docs: { watch: 10_000, split: 20_000 },
   chunkVectors: { watch: 50_000, split: 100_000 },
-};
-
-export type CapacityMetric = {
-  count: number;
-  watch: number;
-  split: number;
-  /** count / split — may exceed 1 when the split point is passed. */
-  ratio: number;
-  zone: CapacityZone;
-};
-
-export type BrainCapacity = {
-  docs: CapacityMetric;
-  chunkVectors: CapacityMetric;
-  /** Worst zone across both axes — the brain's headline state. */
-  zone: CapacityZone;
-  /** Worst-axis fill as an integer percentage of the split budget (may exceed 100). */
-  pctOfSplit: number;
 };
 
 export function capacityZone(count: number, limits: CapacityLimits): CapacityZone {

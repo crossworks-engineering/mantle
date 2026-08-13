@@ -17,6 +17,15 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { APP_VERSION } from '@mantle/client-types/version';
+import type { ComposeStatus, UpdateCheck, UpdaterStatus } from '@mantle/client-types';
+import type {
+  UpdaterPhase,
+  UpdaterScriptState,
+  ComposeState,
+  ReleaseInfo,
+} from '@mantle/client-types';
+export type { UpdaterPhase, UpdaterScriptState, ComposeState, ReleaseInfo };
+export type { ComposeStatus, UpdateCheck, UpdaterStatus };
 
 export const RELEASES_REPO = 'crossworks-engineering/mantle';
 export const RELEASES_URL = `https://github.com/${RELEASES_REPO}/releases`;
@@ -34,25 +43,6 @@ const CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 const STALE_TTL_MS = 30 * 60 * 1000;
 
 // ── release check ────────────────────────────────────────────────────────────
-
-export type ReleaseInfo = {
-  /** Tag as published, e.g. "v0.20.67". */
-  tag: string;
-  /** Bare version, e.g. "0.20.67". */
-  version: string;
-  name: string;
-  url: string;
-  publishedAt: string | null;
-};
-
-export type UpdateCheck = {
-  currentVersion: string;
-  latest: ReleaseInfo | null;
-  updateAvailable: boolean;
-  checkedAt: string;
-  /** Set when the check itself failed (network, rate limit, no releases yet). */
-  error: string | null;
-};
 
 /** Numeric segment-wise semver compare; pre-release suffixes (-alpha) are
  *  ignored for ordering. >0 when a > b. */
@@ -147,18 +137,6 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
 
 // ── updater signalling ───────────────────────────────────────────────────────
 
-export type UpdaterPhase =
-  'idle' | 'pulling' | 'rolling' | 'done' | 'error' | 'unconfigured' | 'requested';
-
-export type UpdaterStatus = {
-  phase: UpdaterPhase;
-  target: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  ok: boolean | null;
-  error: string | null;
-};
-
 /** Whether the signal volume is mounted and writable (i.e. the updater
  *  sidecar deployment shape is in place). */
 export async function updaterAvailable(): Promise<boolean> {
@@ -213,39 +191,6 @@ const RELEASE_COMPOSE_PATH =
 const RELEASE_CLIENT_COMPOSE_PATH =
   process.env.MANTLE_RELEASE_CLIENT_COMPOSE_PATH ?? '/app/release/docker-compose.client.yml';
 const RELEASE_UPDATER_PATH = process.env.MANTLE_RELEASE_UPDATER_PATH ?? '/app/release/updater.sh';
-
-export type ComposeState =
-  | 'in-sync' // box compose == this release's canonical
-  | 'stale' // pristine (== baseline) but not this release's — refresh hasn't run
-  | 'modified' // hand-edited canonical file — auto-refresh disabled, needs adoption
-  | 'no-baseline' // pre-adoption box — run scripts/compose-adopt.sh once
-  | 'unknown'; // no stack.json (old updater.sh / no sidecar / dev)
-
-/** The updater SCRIPT's own currency. Deliberately not `ComposeState`: the
- *  script has no `no-baseline` standoff (it self-adopts, having no supported
- *  box-local variation), so a missing baseline is not a state an operator can
- *  act on — the only actionable state is `modified`. */
-export type UpdaterScriptState =
-  | 'in-sync' // box script == this release's canonical
-  | 'stale' // differs — self-refreshes on the next successful update
-  | 'modified' // differs from its baseline: hand-edited, refresh refused
-  | 'unknown'; // no stack.json, or a pre-v0.206 updater that reports no sha
-
-export type ComposeStatus = {
-  state: ComposeState;
-  /** The updater's last refresh outcome verbatim (e.g. 'refreshed',
-   *  'modified', 'no-baseline', 'unavailable'), for the details view. */
-  refresh: string | null;
-  /** The CLIENT stack's compose (v0.200 split). 'absent' state = a
-   *  server-only box (no docker-compose.client.yml — nothing to drift). */
-  client: { state: ComposeState | 'absent'; refresh: string | null };
-  /** The updater sidecar's own script (v0.206+). Before the self-refresh
-   *  landed this was the silent failure: a stale script rolled the server
-   *  stack, reported ok, and skipped the client stack with no error anywhere.
-   *  'unknown' on any box still running that script — it reports no sha. */
-  updater: { state: UpdaterScriptState; refresh: string | null };
-  checkedAt: string | null;
-};
 
 /** Canonical-compose hashes are constant for the life of the build. */
 const canonicalShaCache = new Map<string, string | null>();

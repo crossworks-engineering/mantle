@@ -23,112 +23,30 @@ import { listSkills } from '@/lib/skills';
 import { listToolGroups } from '@/lib/tool-groups';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { checkSystemIntegrity, PERSONA_SLUG, MANIFEST_AGENTS } from '@/lib/system-manifest';
-import type { SystemReport } from '@mantle/client-types/types/integrity';
+import type { StudioNode, StudioEdge } from '@mantle/client-types';
+import type { StudioNodeKind } from '@mantle/client-types';
+import type {
+  StudioGraph,
+  StudioAgentDetail,
+  StudioSkillDetail,
+  StudioToolGroupDetail,
+  StudioWorkerDetail,
+  ComposedSkillBlock,
+} from '@mantle/client-types';
+export type {
+  StudioGraph,
+  StudioAgentDetail,
+  StudioSkillDetail,
+  StudioToolGroupDetail,
+  StudioWorkerDetail,
+  ComposedSkillBlock,
+};
+export type { StudioNodeKind };
+export type { StudioNode, StudioEdge };
 
 // ── Canvas primitives ────────────────────────────────────────────────────────
 
-export type StudioNodeKind = 'agent' | 'skill' | 'group';
-
-export type StudioNode = {
-  /** Stable canvas id, namespaced by kind: `agent:<slug>` / `skill:<slug>`. */
-  id: string;
-  kind: StudioNodeKind;
-  slug: string;
-  label: string;
-  /** Secondary line — model for agents, tool-count for skills. */
-  sublabel: string;
-  enabled: boolean;
-  isPersona: boolean;
-  /** Node-local referential problems (dangling tool/skill/delegate, disabled). */
-  issues: string[];
-};
-
-export type StudioEdge = {
-  id: string;
-  source: string;
-  target: string;
-  kind: 'skill' | 'delegate' | 'group';
-};
-
 // ── Inspector detail ─────────────────────────────────────────────────────────
-
-export type ComposedSkillBlock = { slug: string; name: string; instructions: string };
-
-export type StudioAgentDetail = {
-  id: string;
-  slug: string;
-  name: string;
-  model: string;
-  role: string;
-  enabled: boolean;
-  isPersona: boolean;
-  skillSlugs: string[];
-  /** Skills attached but NOT resolved (missing or disabled) — surfaced honestly. */
-  missingSkillSlugs: string[];
-  delegateSlugs: string[];
-  /** Tool groups granted to this agent. */
-  toolGroupSlugs: string[];
-  /** Granted groups that are missing or disabled — surfaced honestly. */
-  missingToolGroupSlugs: string[];
-  toolCount: number;
-  params: { temperature?: number; max_tokens?: number };
-  maxIterations?: number;
-  /** Whether this is a manifest agent that can be reset to its canonical default. */
-  resettable: boolean;
-  /** The base system prompt (editable prose in Phase 2). */
-  systemPrompt: string;
-  /** The enabled, attached skills in composition order. */
-  skillBlocks: ComposedSkillBlock[];
-  /** The full assembled system prompt the model receives (base + skill blocks),
-   *  exactly as `composeSystemPromptWithSkills` builds it on a real turn. */
-  composedPrompt: string;
-};
-
-export type StudioSkillDetail = {
-  id: string;
-  slug: string;
-  name: string;
-  enabled: boolean;
-  instructions: string;
-  /** Fan-out: every agent that attaches this skill (the many-to-many). */
-  usedByAgentSlugs: string[];
-};
-
-export type StudioToolGroupDetail = {
-  id: string;
-  slug: string;
-  name: string;
-  enabled: boolean;
-  toolSlugs: string[];
-  /** Fan-out: every agent that grants this group. */
-  usedByAgentSlugs: string[];
-};
-
-export type StudioWorkerDetail = {
-  id: string;
-  kind: string;
-  name: string;
-  model: string;
-  enabled: boolean;
-  isDefault: boolean;
-  /** Worker prose (registry): the chat-worker system prompt + the vision/document
-   *  extraction prompt, when present. */
-  systemPrompt: string | null;
-  extractionPrompt: string | null;
-  issues: string[];
-};
-
-export type StudioGraph = {
-  generatedAt: string;
-  nodes: StudioNode[];
-  edges: StudioEdge[];
-  agents: StudioAgentDetail[];
-  skills: StudioSkillDetail[];
-  toolGroups: StudioToolGroupDetail[];
-  workers: StudioWorkerDetail[];
-  /** Live config-integrity report (the same checker behind /debug/integrity). */
-  report: SystemReport;
-};
 
 const agentNodeId = (slug: string) => `agent:${slug}`;
 const skillNodeId = (slug: string) => `skill:${slug}`;

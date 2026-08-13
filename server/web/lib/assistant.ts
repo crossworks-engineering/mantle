@@ -11,7 +11,7 @@
  */
 
 import { and, desc, eq, inArray, lt } from 'drizzle-orm';
-import { db, agents, assistantMessages, type Agent, type ConversationAttachment } from '@mantle/db';
+import { db, agents, assistantMessages, type Agent } from '@mantle/db';
 import {
   CHATTABLE_ROLES,
   resolveAssistantAgent as resolveAssistantAgentRuntime,
@@ -24,6 +24,10 @@ export {
   resolveAssistantAgent,
   type AssistantTurnResult,
 } from '@mantle/assistant-runtime';
+import type { AssistantAgentOption, AssistantTimelineRow } from '@mantle/client-types';
+import type { ToolOutcomeStatsRow } from '@mantle/client-types';
+export type { ToolOutcomeStatsRow };
+export type { AssistantAgentOption, AssistantTimelineRow };
 
 /**
  * `resolveAssistantAgent`, but aware of WHICH LOGIN is asking.
@@ -51,51 +55,6 @@ export async function resolveAgentForActor(
   }
   return resolveAssistantAgentRuntime(user.id, slug);
 }
-
-export type AssistantTimelineRow = {
-  id: string;
-  direction: 'inbound' | 'outbound';
-  text: string;
-  model: string | null;
-  /** Transport the turn arrived/left on — drives the channel badge in the UI.
-   *  'web' for native /assistant turns; 'telegram' (etc.) for turns that came
-   *  in on another surface and now show in the unified stream. */
-  channel: string;
-  /** Execution state (migration 0105). 'complete' for every historical/inbound
-   *  row; an outbound row is 'pending' while the durable runner works and
-   *  'failed' if it errored — so a reload mid-turn renders a live "thinking…"
-   *  bubble (or the error) instead of nothing. See docs/live-turn-streaming.md. */
-  status: 'pending' | 'complete' | 'failed';
-  /** Human-readable failure reason for a 'failed' turn; null otherwise. */
-  error: string | null;
-  /** Persisted media (images, voice notes, docs) so the turn renders its
-   *  attachments on load — no bytes, just node/file references. */
-  attachments: ConversationAttachment[];
-  /** Persisted thought trail (grounded action labels), present on an outbound
-   *  row when the brain has trail-persistence on — lets the "Thought process"
-   *  record survive a reload. Undefined when not persisted. */
-  thoughts?: Array<{ kind: string; label: string; elapsedMs?: number }>;
-  /** Deterministic tool-outcome tally for the turn — the runtime's own
-   *  ledger, persisted at finalize. Drives the "N tool calls · M failed"
-   *  footer so the record is independent of the reply's claims. */
-  toolStats?: ToolOutcomeStatsRow;
-  /** True when this row belongs to a superseded (replaced) turn pair — the
-   *  user cancelled the turn mid-stream and re-sent original + correction as
-   *  one combined turn (data.superseded_by). The pair stays in the transcript,
-   *  rendered dimmed with a "replaced" tag; prompt history and digests skip it. */
-  superseded?: boolean;
-  createdAt: string;
-};
-
-export type ToolOutcomeStatsRow = {
-  calls: number;
-  succeeded: number;
-  failed: number;
-  skipped: number;
-  /** Confirm-gated calls parked behind operator approval — not yet run. */
-  queued: number;
-  failures: Array<{ slug: string; error: string }>;
-};
 
 /** Pull a persisted thought trail out of a row's `data` jsonb, defensively. */
 function thoughtsFromData(data: unknown): AssistantTimelineRow['thoughts'] {
@@ -229,14 +188,6 @@ export async function assistantMessagesBefore(
     createdAt: r.createdAt.toISOString(),
   }));
 }
-
-export type AssistantAgentOption = {
-  id: string;
-  slug: string;
-  name: string;
-  role: string;
-  model: string;
-};
 
 /** Enabled, chat-capable agents the /assistant selector can target. */
 export async function listAssistantAgents(ownerId: string): Promise<AssistantAgentOption[]> {

@@ -51,6 +51,8 @@ import {
 import { convergeManifestSkills } from './reconcile-util';
 import { resolveWorkerRoute } from './worker-route';
 import { resolveEffectivePersona } from './persona';
+import type { AdoptKind } from '@mantle/client-types';
+export type { AdoptKind };
 
 export type ApplyMode = 'gap-fill' | 'overwrite';
 export type ApplyManifestOpts = {
@@ -485,8 +487,6 @@ export async function applyManifest(
 //     (detaches a retired default like rich_writing); never the prompt/model/params.
 //   - worker: create the missing one, or re-model an existing one to the route
 //     (an explicit click MAY overwrite an operator-tuned model).
-
-export type AdoptKind = 'persona' | 'agent' | 'skill' | 'tool-group' | 'worker';
 
 /** MERGE a manifest specialist onto the brain: overwrite product-owned fields,
  *  union grants. Missing → create + wire delegation. Mirrors the boot reconcile

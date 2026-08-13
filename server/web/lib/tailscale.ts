@@ -1,4 +1,8 @@
 import http from 'node:http';
+import type { TailnetStatus, TailnetUnavailable, TailnetResult } from '@mantle/client-types';
+import type { TailnetPeer } from '@mantle/client-types';
+export type { TailnetPeer };
+export type { TailnetStatus, TailnetUnavailable, TailnetResult };
 
 /**
  * Read-only view of the local tailscaled node, for the /settings/network status
@@ -18,40 +22,6 @@ import http from 'node:http';
  * later" contract — the socket read can only be exercised end-to-end once a
  * tailnet is actually up (e.g. on the Contabo VPS).
  */
-
-/** One peer on the tailnet (another device sharing your tailnet). */
-export interface TailnetPeer {
-  /** MagicDNS name, trailing dot stripped — e.g. "gemma-box.tail1234.ts.net".
-   *  This is what you'd put in a route base URL: http://<dnsName>:<port>/v1 */
-  dnsName: string;
-  /** Short hostname — e.g. "gemma-box". */
-  hostName: string;
-  /** Tailscale IPs (100.x.y.z / fd7a:…). Surfaced for reference; prefer names. */
-  ips: string[];
-  online: boolean;
-  /** OS string tailscaled reports (linux / windows / macOS …), best-effort. */
-  os: string | null;
-}
-
-export interface TailnetStatus {
-  available: true;
-  /** tailscaled backend state: "Running" when connected; "NeedsLogin",
-   *  "Stopped", "Starting" otherwise. */
-  backendState: string;
-  /** This node's MagicDNS name + hostname (how peers reach US). */
-  self: { dnsName: string; hostName: string; online: boolean } | null;
-  /** The tailnet domain, e.g. "tail1234.ts.net". */
-  magicDNSSuffix: string | null;
-  peers: TailnetPeer[];
-}
-
-export interface TailnetUnavailable {
-  available: false;
-  /** Human-readable why — shown in the status tile. */
-  reason: string;
-}
-
-export type TailnetResult = TailnetStatus | TailnetUnavailable;
 
 function sockPath(): string {
   return process.env.MANTLE_TAILSCALE_SOCK?.trim() || '/var/run/tailscale/tailscaled.sock';

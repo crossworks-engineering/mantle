@@ -65,7 +65,7 @@ import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { Switch } from '@mantle/web-ui/ui/switch';
 import { ModelSelect } from '@/components/ui/model-select';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import type { ExplorerModel } from '@server/lib/model-explorer';
+import type { ExplorerModel } from '@mantle/client-types';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { TtsTestButton } from './tts-test-button';
 import { SttTestButton } from './stt-test-button';

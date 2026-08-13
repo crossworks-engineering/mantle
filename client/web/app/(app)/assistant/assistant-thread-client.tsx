@@ -14,7 +14,7 @@ import { ActiveRunsStrip } from '@/components/runs/active-runs-strip';
 import { PendingQuestionsStrip } from '@/components/pending/pending-questions-strip';
 import { AssistantClient } from './assistant-client';
 import { AgentSelect } from './agent-select';
-import type { AssistantAgentOption, AssistantTimelineRow } from '@server/lib/assistant';
+import type { AssistantAgentOption, AssistantTimelineRow } from '@mantle/client-types';
 
 /** The fields the header + chat need off the resolved agent. */
 type ResolvedAgent = {

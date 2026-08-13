@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SetPageTitle } from '@/components/layout/page-title';
-import type { HeartbeatSummary, HeartbeatFireSummary } from '@server/lib/heartbeats';
+import type { HeartbeatSummary, HeartbeatFireSummary } from '@mantle/client-types';
 
 type DetailLabels = {
   nextFireAt: string;

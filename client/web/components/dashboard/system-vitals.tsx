@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Cpu, Database, HardDrive, MemoryStick } from 'lucide-react';
-import type { SystemHealth } from '@server/lib/system-health';
+import type { SystemHealth } from '@mantle/client-types';
 import { Badge } from '@mantle/web-ui/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
 import { Skeleton } from '@mantle/web-ui/ui/skeleton';

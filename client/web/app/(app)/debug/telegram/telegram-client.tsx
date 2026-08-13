@@ -6,7 +6,7 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { DebugPager, DebugSearchBox } from '@/components/debug/list-nav';
 import { ChatAgentOverride } from '../chat-agent-override';
 import { fmtRelative } from '../format';
-import type { AgentActivityRow, ChatRow } from '@server/lib/debug';
+import type { AgentActivityRow, ChatRow } from '@mantle/client-types';
 
 const PAGE_SIZE = 50;
 

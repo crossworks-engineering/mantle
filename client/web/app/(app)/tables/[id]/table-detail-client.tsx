@@ -43,7 +43,7 @@ import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import { diffTableDocs, ensureTableDoc, type TableDoc } from '@mantle/content-core/table-model';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { uuid } from '@mantle/web-ui/lib/secure-context-fallbacks';
-import type { TableDetail } from '@server/lib/tables';
+import type { TableDetail } from '@mantle/content-core/table-model';
 
 const DRAFT_DEBOUNCE_MS = 1200;
 const META_DEBOUNCE_MS = 800;

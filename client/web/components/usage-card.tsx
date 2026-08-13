@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { formatMicroUsd } from '@mantle/web-ui/traces-format';
-import type { AgentContext, SpendRange } from '@server/lib/metrics';
+import type { AgentContext, SpendRange } from '@mantle/client-types';
 import { UsageCardPills } from '@/components/usage-card-pills';
 import { VitalsBar, vitalsLevel, type VitalsLevel } from '@/components/dashboard/vitals-bar';
 

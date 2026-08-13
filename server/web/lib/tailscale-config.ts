@@ -10,12 +10,8 @@ import { eq } from 'drizzle-orm';
 import { db, tailscaleConfig } from '@mantle/db';
 import { seal, open } from '@mantle/crypto';
 import { maskPlaintext } from '@mantle/api-keys';
-
-export type TailscaleConfigSummary = {
-  hostname: string;
-  masked: string;
-  lastActivatedAt: Date | null;
-};
+import type { TailscaleConfigSummary } from '@mantle/client-types';
+export type { TailscaleConfigSummary };
 
 /** Masked summary for the UI — never the plaintext key. */
 export async function getTailscaleConfig(ownerId: string): Promise<TailscaleConfigSummary | null> {

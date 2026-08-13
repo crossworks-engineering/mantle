@@ -2,12 +2,14 @@ import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db, entities, entityEdges, facts, isWriteRefused, nodes, traces } from '@mantle/db';
 import { getTrace } from './traces';
-import type { TraceDetail } from '@mantle/client-types/traces-format';
-import {
-  deriveAction,
-  type ActionCategory,
-  type ActionPresentation,
-} from '@mantle/web-ui/journey-format';
+import { deriveAction, type ActionCategory } from '@mantle/client-types/journey-format';
+import type {
+  LandedLayers,
+  ActivityItem,
+  JourneyDetail,
+  LiveActivity,
+} from '@mantle/client-types/journey-format';
+export type { LandedLayers, ActivityItem, JourneyDetail, LiveActivity };
 
 /**
  * Journey view data layer (server-only). Reads the observability tables and
@@ -17,54 +19,6 @@ import {
  *
  * Owner-scoped throughout — pass the user's id. Read-only; never mutates.
  */
-
-export type ActivityItem = ActionPresentation & {
-  traceId: string;
-  kind: string;
-  status: string;
-  startedAt: string;
-  durationMs: number | null;
-  costMicroUsd: number;
-  stepCount: number;
-  /** Node title (or recorded filename) for the subject of the action. */
-  title: string | null;
-  subjectKind: string | null;
-  subjectId: string | null;
-  /** Outcome — what entered the brain. Facts mined + entities linked +
-   *  relations drawn from this action's node (0 for non-content / dialog
-   *  actions). */
-  factCount: number;
-  mentionCount: number;
-  relationCount: number;
-};
-
-/** Live snapshot for the always-on Activity surfaces: what's running right now,
- *  what recently succeeded, and what failed. */
-export type LiveActivity = {
-  active: ActivityItem[];
-  recent: ActivityItem[];
-  failures: ActivityItem[];
-};
-
-export type LandedLayers = {
-  /** L6 content_store — the node itself. */
-  node: { id: string; type: string; title: string } | null;
-  /** L5 content_index — the searchable catalogue entry. */
-  index: {
-    summary: string | null;
-    hasEmbedding: boolean;
-    hasText: boolean;
-    tags: string[];
-  } | null;
-  /** L4 profile — durable facts mined from this node (currently-valid only). */
-  facts: { content: string; kind: string; entityName: string | null }[];
-  /** Graph — entities mentioned in this node. */
-  mentions: { name: string; kind: string }[];
-  /** Graph — relations this node drew between entities (subject→object). */
-  relations: { subject: string; relation: string; object: string }[];
-};
-
-export type JourneyDetail = TraceDetail & { landed: LandedLayers | null };
 
 /** Normalise db.execute / select result shapes. */
 function strOf(v: unknown): string | null {

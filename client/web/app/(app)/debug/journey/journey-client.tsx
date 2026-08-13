@@ -9,7 +9,7 @@ import { formatDuration, formatMicroUsd } from '@mantle/web-ui/traces-format';
 import { PIPELINE_LEGEND, type ActionCategory } from '@mantle/web-ui/journey-format';
 import { ActionIcon } from '@/components/journey/action-icon';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
-import type { ActivityItem } from '@server/lib/journey';
+import type { ActivityItem } from '@mantle/client-types/journey-format';
 
 const CATS: { key: ActionCategory | 'all'; label: string }[] = [
   { key: 'all', label: 'All' },

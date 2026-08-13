@@ -7,7 +7,7 @@
  * (which would chain through `@/components/ui/command` and friends, paths
  * vitest's root config doesn't resolve).
  */
-import type { ExplorerModel } from '@server/lib/model-explorer';
+import type { ExplorerModel } from '@mantle/client-types';
 
 export type ModelSelectSortKey = 'newest' | 'name' | 'cheapest' | 'context';
 

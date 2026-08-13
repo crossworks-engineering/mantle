@@ -35,7 +35,7 @@ import { PageBacklinks } from '@/components/page-editor/page-backlinks';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
 import type { SurfaceSelection } from '@/components/assistant/assistant-dock';
 import { buildFocusDirective } from '@/lib/focus-directive';
-import type { Backlink } from '@server/lib/pages';
+import type { Backlink } from '@mantle/client-types';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { buildPageToc, type TocEntry } from '@mantle/content-core/page-toc';

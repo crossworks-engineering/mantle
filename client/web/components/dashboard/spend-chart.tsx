@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
-import type { DailySpend } from '@server/lib/metrics';
+import type { DailySpend } from '@mantle/client-types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
 import {
   ChartContainer,

@@ -19,7 +19,7 @@ import { Loader2, Send } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
-import type { AgentTelegramBinding, AgentTelegramChat } from '@server/lib/agent-telegram';
+import type { AgentTelegramBinding, AgentTelegramChat } from '@mantle/client-types';
 
 export function TelegramBotSection({ agentId }: { agentId: string }) {
   const toast = useToast();

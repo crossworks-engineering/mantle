@@ -7,7 +7,7 @@ import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 import { TagInput } from '@/components/tag-input';
 import { DateTimePicker } from '@mantle/web-ui/ui/date-time-picker';
-import type { RecurFreq } from '@server/lib/events';
+import type { RecurFreq } from '@mantle/client-types';
 
 export const REMIND_PRESETS: { value: number; label: string }[] = [
   { value: 0, label: 'At start' },

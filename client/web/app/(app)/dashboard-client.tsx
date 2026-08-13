@@ -22,8 +22,8 @@ import type {
   IngestDay,
   TelegramStats,
   VectorCounts,
-} from '@server/lib/dashboard';
-import type { DailySpend, RecentFailure, TopError } from '@server/lib/metrics';
+} from '@mantle/client-types';
+import type { DailySpend, RecentFailure, TopError } from '@mantle/client-types';
 
 type DashboardData = {
   brain: BrainCounts;

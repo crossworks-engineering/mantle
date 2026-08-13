@@ -23,52 +23,8 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db, agents, nodes, traces, traceSteps } from '@mantle/db';
 import type { TraceDetail, TraceStepSummary } from '@mantle/client-types/traces-format';
-
-export type NodeBiographyView = {
-  node: {
-    id: string;
-    type: string;
-    title: string;
-    path: string;
-    tags: string[];
-    createdAt: string;
-    updatedAt: string;
-    /** First N chars of the summary the extractor wrote — null if
-     *  the extractor hasn't run (or refused to). */
-    summary: string | null;
-    /** True when the node has an embedding vector — second half of
-     *  the "is this node ready for retrieval?" check. */
-    hasEmbedding: boolean;
-    /** Bytes of the content field (text-shaped nodes) or 0
-     *  otherwise. Useful for "did extractor skip because body too
-     *  short?" debugging. */
-    contentChars: number;
-    /** First 4KB of content. Lets the biography page show a quick
-     *  preview of what was actually saved. */
-    contentPreview: string | null;
-    /** The data jsonb truncated and key-summarised so we don't blow
-     *  up the page rendering a 1MB blob inline. */
-    dataKeys: string[];
-  };
-  /** Traces in chronological order (oldest first). Operators read
-   *  these top-to-bottom as a story: ingest → extractor → ... */
-  traces: TraceDetail[];
-  stats: {
-    totalTraces: number;
-    totalCostMicroUsd: number;
-    totalTokensIn: number;
-    totalTokensOut: number;
-    /** ISO timestamp of the earliest trace touching this node, or
-     *  the node's own createdAt if there are no traces. */
-    firstSeen: string;
-    /** ISO timestamp of the most recent trace. Equal to firstSeen
-     *  when there's only one. */
-    lastTouched: string;
-    /** Counts by kind + status for the header chips. */
-    byKind: Record<string, number>;
-    byStatus: Record<string, number>;
-  };
-};
+import type { NodeBiographyView } from '@mantle/client-types';
+export type { NodeBiographyView };
 
 /** Pull the node + every trace + every step that touched it, into
  *  one bundle the page renders. Returns null when the node doesn't

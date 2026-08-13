@@ -6,7 +6,7 @@ import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { formatDateTime, localDay } from '@mantle/web-ui/lib/format-datetime';
 import { formatDuration, formatMicroUsd } from '@mantle/web-ui/traces-format';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
-import type { ContentIndexCoverage, DuplicateEdgeStats } from '@server/lib/debug';
+import type { ContentIndexCoverage, DuplicateEdgeStats } from '@mantle/client-types';
 import type {
   AgentSpend,
   CacheHitStats,
@@ -16,7 +16,7 @@ import type {
   RecentFailure,
   TopError,
   Traffic,
-} from '@server/lib/metrics';
+} from '@mantle/client-types';
 
 type OverviewData = {
   traffic24h: Traffic;

@@ -11,20 +11,8 @@
  */
 import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter, getProvider, getSttAdapter, getTtsAdapter } from '@mantle/voice';
-
-export type TestApiKeyResult = {
-  ok: boolean;
-  /** One-line summary for the UI — e.g. '13 models accessible' or
-   *  'OpenAI rejected the key (401)'. */
-  message: string;
-  /** Provider label for the result line. Empty when we can't resolve the
-   *  provider from the key's service. */
-  provider: string;
-  /** Which adapter ran the probe ('openai-tts', 'anthropic-chat', …). */
-  adapter: string;
-  /** Number of models accessible to this key, if discovery succeeded. */
-  modelsFound?: number;
-};
+import type { TestApiKeyResult } from '@mantle/client-types';
+export type { TestApiKeyResult };
 
 export async function probeApiKey(keyId: string, service: string): Promise<TestApiKeyResult> {
   const provider = getProvider(service);

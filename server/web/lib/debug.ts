@@ -11,37 +11,33 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import type { ContextSnapshot } from '@mantle/agent-runtime';
+import type {
+  AgentActivityRow,
+  ChatRow,
+  PersonaNotesRow,
+  ContentIndexCoverage,
+  DuplicateEdgeStats,
+  ContextTurnRow,
+  DigestRow,
+  FactRow,
+  TopicRow,
+} from '@mantle/client-types';
+export type {
+  AgentActivityRow,
+  ChatRow,
+  PersonaNotesRow,
+  ContentIndexCoverage,
+  DuplicateEdgeStats,
+  ContextTurnRow,
+  DigestRow,
+  FactRow,
+  TopicRow,
+};
 
 /**
  * Read-only helpers for the /debug page. All owner-scoped — pass the user's
  * id explicitly; the page never accepts a user id from the client.
  */
-
-export type DigestRow = {
-  id: string;
-  title: string;
-  createdAt: string;
-  /** All fields below are pulled out of nodes.data (jsonb). */
-  chatId: string;
-  telegramChatId: string | null;
-  periodStart: string;
-  periodEnd: string;
-  sourceTurnCount: number;
-  model: string;
-  agent: string;
-  summary: string;
-  topic: string | null;
-  topicSlug: string | null;
-};
-
-export type TopicRow = {
-  topic: string;
-  topicSlug: string;
-  digestCount: number;
-  turnCount: number;
-  firstSeen: string;
-  lastSeen: string;
-};
 
 /** Pagination + free-text search options for the debug list helpers. */
 export type ListOpts = { limit?: number; offset?: number; query?: string };
@@ -169,19 +165,6 @@ export async function countTopics(userId: string, opts: { query?: string } = {})
   return row?.n ?? 0;
 }
 
-export type ChatRow = {
-  id: string;
-  title: string | null;
-  username: string | null;
-  telegramChatId: string;
-  allowlistStatus: string;
-  totalTurns: number;
-  digested: number;
-  undigested: number;
-  lastActivity: string | null;
-  responderAgentId: string | null;
-};
-
 /** Shared WHERE for telegram chat queries. */
 function chatConds(userId: string, query?: string) {
   const conds = [eq(telegramChats.userId, userId)];
@@ -244,18 +227,6 @@ export async function countTelegramChats(
   return row?.n ?? 0;
 }
 
-export type AgentActivityRow = {
-  id: string;
-  slug: string;
-  name: string;
-  role: string;
-  model: string;
-  priority: number;
-  enabled: boolean;
-  lastUsedAt: string | null;
-  usageCount: number;
-};
-
 export async function listAgentActivity(userId: string): Promise<AgentActivityRow[]> {
   const rows = await db
     .select({
@@ -285,18 +256,6 @@ export async function listAgentActivity(userId: string): Promise<AgentActivityRo
     usageCount: r.usageCount ?? 0,
   }));
 }
-
-export type FactRow = {
-  id: string;
-  content: string;
-  kind: string;
-  confidence: number;
-  entityName: string | null;
-  entityKind: string | null;
-  sourceNodeId: string | null;
-  sourceTitle: string | null;
-  createdAt: string;
-};
 
 /** Shared WHERE for fact queries. */
 function factConds(userId: string, query?: string) {
@@ -353,12 +312,6 @@ export async function countFacts(userId: string, opts: { query?: string } = {}):
   return row?.n ?? 0;
 }
 
-export type ContentIndexCoverage = {
-  total: number;
-  indexed: number;
-  byType: Array<{ type: string; total: number; indexed: number }>;
-};
-
 export async function contentIndexCoverage(userId: string): Promise<ContentIndexCoverage> {
   const rows = await db
     .select({
@@ -389,19 +342,6 @@ export async function contentIndexCoverage(userId: string): Promise<ContentIndex
   byType.sort((a, b) => b.total - a.total);
   return { total, indexed, byType };
 }
-
-/**
- * Awareness of duplicate graph edges. Going forward the extractor rebuilds
- * edges per node (idempotent), but content re-edited *before* that fix may
- * carry historical duplicate `mentioned_in` / `references` rows. This surfaces
- * the count + a few labelled samples so the operator knows to run
- * `pnpm dedupe:edges`. Read-only — cleaning stays the deliberate CLI tool.
- */
-export type DuplicateEdgeStats = {
-  groups: number; // logical edges with >1 row
-  redundant: number; // rows that could be removed (sum of count-1)
-  samples: { relation: string; label: string; count: number }[];
-};
 
 const DEDUPE_RELATIONS = ['mentioned_in', 'references'];
 
@@ -490,13 +430,6 @@ export async function duplicateEdgeStats(userId: string): Promise<DuplicateEdgeS
   return { groups, redundant, samples };
 }
 
-export type PersonaNotesRow = {
-  agentId: string;
-  agentName: string;
-  agentSlug: string;
-  notes: PersonaNote[];
-};
-
 export async function listPersonaNotes(userId: string): Promise<PersonaNotesRow[]> {
   const rows = await db
     .select({
@@ -520,22 +453,6 @@ export async function listPersonaNotes(userId: string): Promise<PersonaNotesRow[
 }
 
 // ─── /debug/context — per-turn retrieval audit ────────────────────────────────
-
-/** One responder turn: the question, the retrieval snapshot the turn's
- *  'load_context' trace step persisted (null for pre-instrumentation turns),
- *  and the outbound reply. See ContextSnapshot in @mantle/agent-runtime. */
-export type ContextTurnRow = {
-  traceId: string;
-  startedAt: string;
-  status: string;
-  surface: string | null;
-  agentSlug: string | null;
-  model: string | null;
-  durationMs: number | null;
-  question: string | null;
-  snapshot: ContextSnapshot | null;
-  response: string | null;
-};
 
 /** Shared FROM (joins) for list + count. The question comes from the trace's
  *  subject row (full text; web = assistant_message, telegram =

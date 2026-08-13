@@ -53,8 +53,8 @@ type OnboardingState = {
 function onboardingPost<T>(action: string, payload?: Record<string, unknown>): Promise<T> {
   return apiSend<T>('/api/onboarding', 'POST', { action, ...(payload ?? {}) });
 }
-import type { TestApiKeyResult } from '@server/lib/api-key-test';
-import type { ProvisionResult } from '@server/lib/onboarding-provision';
+import type { TestApiKeyResult } from '@mantle/client-types';
+import type { ProvisionResult } from '@mantle/client-types';
 import {
   ASSISTANT_MODEL_CHOICES,
   WORKER_MODEL_CHOICES,

@@ -6,7 +6,7 @@ import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { DebugPager, DebugSearchBox } from '@/components/debug/list-nav';
 import { fmtRelative } from '../format';
-import type { ContextTurnRow } from '@server/lib/debug';
+import type { ContextTurnRow } from '@mantle/client-types';
 import type { ContextSnapshot, SnapshotItem } from '@mantle/client-types';
 
 const PAGE_SIZE = 15;

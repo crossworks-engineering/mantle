@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 import { AlertTriangle, Mail, MessageCircle, HeartPulse } from 'lucide-react';
-import type { EmailStats, HeartbeatStats, TelegramStats } from '@server/lib/dashboard';
-import type { RecentFailure, TopError } from '@server/lib/metrics';
+import type { EmailStats, HeartbeatStats, TelegramStats } from '@mantle/client-types';
+import type { RecentFailure, TopError } from '@mantle/client-types';
 import { formatCount } from '@mantle/web-ui/lib/format-bytes';
 import { Badge } from '@mantle/web-ui/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';

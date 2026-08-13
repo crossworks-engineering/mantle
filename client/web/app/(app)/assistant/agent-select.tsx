@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from '@mantle/web-ui/ui/select';
 import { useAssistantDock } from '@/components/assistant/assistant-dock';
-import type { AssistantAgentOption } from '@server/lib/assistant';
+import type { AssistantAgentOption } from '@mantle/client-types';
 
 /** Agent picker for the assistant panel. Switching updates the selected agent
  *  in the app-wide dock (which re-keys the thread query in place AND persists

@@ -17,35 +17,8 @@
  */
 import { getApiKey } from '@mantle/api-keys';
 import { isProviderId, type ProviderId } from '@mantle/voice';
-
-/** One model as shown in the explorer. Normalised fields are best-effort
- *  (absent when the provider's API doesn't return them); `raw` is always the
- *  untouched object the API gave us. */
-export type ExplorerModel = {
-  /** Provider model id / slug (e.g. 'anthropic/claude-sonnet-4.6'). */
-  id: string;
-  /** Friendly display name if the API provides one. */
-  name?: string;
-  description?: string;
-  /** Total context window in tokens. */
-  contextTokens?: number;
-  /** Max output/completion tokens, when stated separately. */
-  maxOutputTokens?: number;
-  /** USD per 1M input (prompt) tokens. 0 means free; undefined means unknown. */
-  inputPricePerM?: number;
-  /** USD per 1M output (completion) tokens. */
-  outputPricePerM?: number;
-  /** Other priced dimensions the API exposes, surfaced verbatim. */
-  extraPricing?: { label: string; value: string }[];
-  /** e.g. 'text+image→text'. */
-  modality?: string;
-  /** Coarse type: chat | embedding | image | tts | stt | rerank | other. */
-  kind?: string;
-  /** Release/creation time as ISO, when provided. */
-  created?: string;
-  /** The provider's untouched model object. */
-  raw: unknown;
-};
+import type { ExplorerModel, ModelSort } from '@mantle/client-types';
+export type { ExplorerModel, ModelSort };
 
 export type ProviderModelsResult = {
   provider: ProviderId;
@@ -484,8 +457,6 @@ export function explorerCanFetch(provider: string): boolean {
 }
 
 // ── search / sort / paginate (server-side, over the cached catalog) ───────────
-
-export type ModelSort = 'name' | 'context' | 'input' | 'output' | 'created';
 
 export type ModelQuery = {
   q?: string;

@@ -1,6 +1,6 @@
 'use client';
 
-import type { SpendRange } from '@server/lib/metrics';
+import type { SpendRange } from '@mantle/client-types';
 
 const COOKIE = 'mantle_spend_range';
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;

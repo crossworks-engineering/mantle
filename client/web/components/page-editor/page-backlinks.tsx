@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { FileText, Link2, StickyNote, type LucideIcon } from 'lucide-react';
-import type { Backlink } from '@server/lib/pages';
+import type { Backlink } from '@mantle/client-types';
 import { nodeHref } from '@/lib/node-href';
 
 const TYPE_ICON: Record<string, LucideIcon> = {

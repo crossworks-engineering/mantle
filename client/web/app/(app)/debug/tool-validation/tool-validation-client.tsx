@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { Badge } from '@mantle/web-ui/ui/badge';
-import type { ToolValidationAgg, ToolValidationEvent } from '@server/lib/metrics';
+import type { ToolValidationAgg, ToolValidationEvent } from '@mantle/client-types';
 
 type ToolValidationData = {
   mode: 'off' | 'warn' | 'enforce';

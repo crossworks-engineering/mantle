@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch, ApiError } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { NodeBiography } from '@/components/node-biography';
-import type { NodeBiographyView } from '@server/lib/node-biography';
+import type { NodeBiographyView } from '@mantle/client-types';
 
 /**
  * Data-free node biography. Fetches the fully-resolved view from

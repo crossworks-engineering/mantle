@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatContext, formatPriceCompact, sortModels } from './model-select-utils';
-import type { ExplorerModel } from '@server/lib/model-explorer';
+import type { ExplorerModel } from '@mantle/client-types';
 
 /** Pure-helper coverage for the ModelSelect combobox — the JSX is exercised
  *  live on /settings/agents and /settings/ai-workers; here we lock the

@@ -32,7 +32,9 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { syncSelectionParam } from '@/lib/url-sync';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { ListCard } from '@mantle/web-ui/ui/list-card';
-import type { CoverageGap, DimensionIssue, TargetSignature } from '@server/lib/formulas';
+import type { CoverageGap } from '@mantle/content-core/formula-spec';
+import type { DimensionIssue } from '@mantle/content-core/formula-dimensions';
+import type { TargetSignature } from '@mantle/content-core/formula-signature';
 import { FormulaDetail, type FormulaRow } from './formula-detail';
 
 type ListResponse = {

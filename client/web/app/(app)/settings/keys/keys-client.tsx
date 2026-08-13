@@ -9,7 +9,7 @@ import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
-import type { TestApiKeyResult } from '@server/lib/api-key-test';
+import type { TestApiKeyResult } from '@mantle/client-types';
 import {
   Dialog,
   DialogContent,

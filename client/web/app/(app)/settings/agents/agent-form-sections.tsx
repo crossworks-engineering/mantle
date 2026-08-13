@@ -10,7 +10,7 @@ import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { ModelSelect } from '@/components/ui/model-select';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { isProviderWired, providersForCapability } from '@mantle/voice-client';
-import type { ExplorerModel } from '@server/lib/model-explorer';
+import type { ExplorerModel } from '@mantle/client-types';
 import type { FormState } from './agents-client';
 
 /** Built-in node types the extractor can be allow-listed against. Matches

@@ -58,7 +58,7 @@ import {
   CommandList,
 } from '@mantle/web-ui/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@mantle/web-ui/ui/popover';
-import type { PageSort } from '@server/lib/pages';
+import type { PageSort } from '@mantle/client-types';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';

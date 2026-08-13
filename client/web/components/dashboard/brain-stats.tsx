@@ -1,5 +1,5 @@
 import { AlertTriangle, Boxes, CheckCircle2, Network, Sparkles } from 'lucide-react';
-import type { BrainCounts, GraphIntegrity, VectorCounts } from '@server/lib/dashboard';
+import type { BrainCounts, GraphIntegrity, VectorCounts } from '@mantle/client-types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@mantle/web-ui/ui/card';
 import { formatCount } from '@mantle/web-ui/lib/format-bytes';
 import { VitalsBar } from './vitals-bar';
