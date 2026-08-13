@@ -24,7 +24,6 @@
     "@mantle/content": "workspace:*",
     "@mantle/email": "workspace:*",
     "@mantle/microsoft": "workspace:*",
-    "@mantle/voice": "workspace:*",
     "@mantle/web-ui": "workspace:*",
     "@tanstack/react-query": "^5.101.3",
     "@tanstack/react-table": "^8.21.3",
@@ -66,7 +65,8 @@
     "yaml": "^2.9.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.14",
-    "@mantle/content-core": "workspace:*"
+    "@mantle/content-core": "workspace:*",
+    "@mantle/voice-client": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

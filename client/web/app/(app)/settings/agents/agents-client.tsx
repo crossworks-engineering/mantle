@@ -25,7 +25,7 @@ import { Slider } from '@mantle/web-ui/ui/slider';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ListCard } from '@mantle/web-ui/ui/list-card';
 import type { ExplorerModel } from '@server/lib/model-explorer';
-import { getProvider, isProviderWired, providersForCapability } from '@mantle/voice/client';
+import { getProvider, isProviderWired, providersForCapability } from '@mantle/voice-client';
 import type {
   AgentDTO,
   AgentAvatarDTO,

@@ -113,9 +113,9 @@ importers:
       '@mantle/microsoft':
         specifier: workspace:*
         version: link:../../packages/microsoft
-      '@mantle/voice':
+      '@mantle/voice-client':
         specifier: workspace:*
-        version: link:../../packages/voice
+        version: link:../../packages/voice-client
       '@mantle/web-ui':
         specifier: workspace:*
         version: link:../../packages/web-ui
@@ -960,6 +960,9 @@ importers:
       '@mantle/api-keys':
         specifier: workspace:*
         version: link:../api-keys
+      '@mantle/voice-client':
+        specifier: workspace:*
+        version: link:../voice-client
       '@openrouter/sdk':
         specifier: ^1.2.7
         version: 1.2.7
@@ -979,6 +982,12 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@22.20.1)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+
+  packages/voice-client:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
 
   packages/web-ui:
     dependencies:

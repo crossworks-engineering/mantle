@@ -1,0 +1,16 @@
+{
+  "name": "@mantle/voice-client",
+  "version": "0.0.1",
+  "description": "Browser-safe surface of the voice/model layer — provider catalogue, model catalogs, audio tags, and the adapter type/metadata contract. Zero deps by design: nothing here may reach the network adapters or node builtins (the jackdaw-repo-split P0 boundary).",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1"
+  }
+}

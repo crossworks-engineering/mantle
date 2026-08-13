@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import type { AiWorkerConfig, AiWorkerDTO, AiWorkerKind } from '@mantle/client-types';
-import { getProvider } from '@mantle/voice/client';
+import { getProvider } from '@mantle/voice-client';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { buildWorkerBody } from '@/lib/ai-worker-form';
 import { Spinner } from '@mantle/web-ui/ui/spinner';

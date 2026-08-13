@@ -35,31 +35,8 @@ type ListModelsResponse = {
   }>;
 };
 
-export type DiscoveryResult<T> = {
-  /** The catalog entries the key can actually use, in catalog order. */
-  available: T[];
-  /** True if the live filter succeeded; false if we fell back to the
-   *  full catalog because the API call failed. The UI surfaces a hint
-   *  in that case ("couldn't verify; showing everything"). */
-  filtered: boolean;
-  /** When `filtered=false`, the reason. Null on success. */
-  error: string | null;
-  /**
-   * EVERY model id the provider reported, before we intersected it with our
-   * catalog. Optional: only the adapters that curate a static catalog and
-   * filter it need to set this.
-   *
-   * It exists because `available` answers "which of OUR models are live?" and
-   * deliberately discards the other half of the answer — "which of THEIRS
-   * aren't ours?" That discarded half is the only automatic signal that a
-   * catalog has gone stale, and we were computing it on every discovery call
-   * and dropping it. grok-4.5 shipped, our dropdown never mentioned it, and
-   * nothing anywhere could have said so.
-   *
-   * Consumed by `pnpm -C server/web models:drift`. See {@link catalogDrift}.
-   */
-  liveIds?: string[];
-};
+import type { DiscoveryResult } from '@mantle/voice-client/catalog';
+export type { DiscoveryResult };
 
 /**
  * Compare what a provider serves against what we catalogue.

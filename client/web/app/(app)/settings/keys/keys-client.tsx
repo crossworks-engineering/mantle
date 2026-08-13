@@ -33,7 +33,7 @@ import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { cn } from '@mantle/web-ui/lib/utils';
-import { SUPPORTED_PROVIDERS, wiredCapabilitiesFor } from '@mantle/voice/client';
+import { SUPPORTED_PROVIDERS, wiredCapabilitiesFor } from '@mantle/voice-client';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
 type KeyRow = {
