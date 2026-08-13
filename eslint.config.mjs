@@ -29,13 +29,6 @@ export default tseslint.config(
       // gitignored) — not ours to lint.
       '**/next-env.d.ts',
       'server/web/public/app-runtime/**',
-      'client/web/public/app-runtime/**',
-      // The desktop shell's STAGED copy of the built owner UI — a whole
-      // Next standalone tree (gitignored). CI never sees it because it
-      // lints a fresh checkout, but anyone who runs `build:ui` locally and
-      // then `pnpm verify` gets hundreds of errors from minified vendor
-      // bundles that are not ours to lint.
-      'client/desktop/ui/**',
       // Generated share-surface bundle + route manifest (gitignored).
       'server/web/public/share-runtime/**',
       'server/web/server/route-manifest.gen.ts',
@@ -109,12 +102,7 @@ export default tseslint.config(
     // the share presenters — were silently unlinted. A missing `tint` dep in
     // the avatar component shipped a picker whose previews never repainted:
     // the state changed, the memo did not.
-    files: [
-      'server/web/**/*.{ts,tsx}',
-      'client/web/**/*.{ts,tsx}',
-      'packages/web-ui/**/*.{ts,tsx}',
-      'packages/share-ui/**/*.{ts,tsx}',
-    ],
+    files: ['server/web/**/*.{ts,tsx}', 'packages/share-ui/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
     rules: {
       'react-hooks/rules-of-hooks': 'warn',
@@ -131,7 +119,6 @@ export default tseslint.config(
     files: [
       'client/web/**/*.{ts,tsx}',
       'server/web/**/*.{ts,tsx}',
-      'packages/web-ui/**/*.{ts,tsx}',
       'packages/share-ui/**/*.{ts,tsx}',
     ],
     plugins: { mantle: mantlePlugin },
@@ -142,80 +129,6 @@ export default tseslint.config(
     files: ['**/*.test.ts', '**/*.test.tsx', 'scripts/**', '**/scripts/**'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
-    },
-  },
-  {
-    // ── The split boundary ──────────────────────────────────────────────────
-    // client/web + packages/web-ui are the ZERO-SECRET tier: server packages
-    // may be imported as TYPES only (erased at compile); values would drag
-    // Postgres/node into the browser bundle. The content BARREL is banned as a
-    // value even server-side of the fence — clients use its runtime-pure
-    // subpaths. `@server/*` and `@/…`-fallback resolution exist for TYPE
-    // reach-through only.
-    files: ['client/**/*.{ts,tsx}', 'packages/web-ui/**/*.{ts,tsx}'],
-    rules: {
-      '@typescript-eslint/no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              // The jackdaw-repo-split P0 boundary: the client tier may import
-              // ONLY the four split-safe packages — not even `import type` from
-              // a server package, because after the repo cut those types no
-              // longer exist on this side. Wire shapes live in
-              // @mantle/client-types; browser-safe logic in content-core /
-              // voice-client.
-              group: [
-                '@mantle/*',
-                '!@mantle/client-types',
-                '!@mantle/client-types/*',
-                '!@mantle/content-core',
-                '!@mantle/content-core/*',
-                '!@mantle/voice-client',
-                '!@mantle/voice-client/*',
-                '!@mantle/share-ui',
-                '!@mantle/share-ui/*',
-                '!@mantle/web-ui',
-                '!@mantle/web-ui/*',
-              ],
-              message:
-                'jackdaw split boundary — the client tier may import only @mantle/{client-types,content-core,voice-client,share-ui,web-ui}',
-            },
-            {
-              // Gone since the P0 follow-up: the tsconfig alias itself was
-              // removed, so this is a tripwire against reintroducing it.
-              group: ['@server/*'],
-              message:
-                '@server/* no longer exists — wire types live in @mantle/client-types (or content-core)',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    // The published contract/browser-safe packages are self-contained by
-    // design: no @mantle sibling may leak in, or the repo split (and npm
-    // publish) breaks. web-ui is deliberately NOT here — it may consume the
-    // three packages below (enforced by the client-tier block above).
-    files: [
-      'packages/client-types/**/*.ts',
-      'packages/content-core/**/*.ts',
-      'packages/voice-client/**/*.ts',
-    ],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['@mantle/*'],
-              message:
-                'contract packages are zero-dep by design (jackdaw split P0) — move shared code here instead of importing it',
-            },
-          ],
-        },
-      ],
     },
   },
   {

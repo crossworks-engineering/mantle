@@ -97,10 +97,12 @@ test run. If you hit it, you almost certainly merged the wrong direction:
 
 ## Other guidance
 
-- **Frontend-only dev (no local Docker/DB): `pnpm dev:fe`**: runs the owner UI
-  (`client/web`) detached against a deployed brain (the test box). Setup + troubleshooting:
-  [docs/db-less-dev.md](docs/db-less-dev.md). Plain `pnpm dev` expects a full
-  local stack and will 500 without one.
+- **The frontend lives in its own repo since 2026-08-13**:
+  [crossworks-engineering/jackdaw](https://github.com/crossworks-engineering/jackdaw)
+  (the owner UI + Electron shell + web-ui kit + UI e2e). It consumes this
+  repo's published contract packages (@crossworks/{client-types,content-core,
+  voice-client,share-ui,app-build}). Plain `pnpm dev` here runs the BRAIN
+  (server + workers) and expects a full local stack.
 - UI conventions: [server/web/CLAUDE.md](server/web/CLAUDE.md).
 - What a brain ships with (agents/skills/tool-groups/workers/persona): the system
   manifest is the single source of truth, see

@@ -3,11 +3,9 @@
 #   --target server → mantle-server: every backend service — API/web host,
 #     DBOS runner, the workers, one-shot migrate — same image, different
 #     compose `command:` per service (docker-compose.yml).
-#   --target client → mantle-client: the ZERO-SECRET owner UI (client/web),
-#     one Next server, no DB/no secrets (docker-compose.client.yml).
+#   (the owner-UI / client image moved to the jackdaw repo at the split)
 #
 # Build:  docker build --target server -t <ns>/mantle-server:<tag> .
-#         docker build --target client -t <ns>/mantle-client:<tag> .
 # One MANTLE_IMAGE_TAG drives both composes — releases are lockstep.
 #
 # Note: server/mcp is intentionally NOT run here. The MCP server is stdio-only
@@ -32,11 +30,11 @@ FROM node:26-slim AS deps
 WORKDIR /app
 
 # Copy manifests first so the install layer is cached when only source changes.
-# This list MUST contain every workspace package.json (server/* + client/* + packages/*) or
+# This list MUST contain every workspace package.json (server/* + packages/*) or
 # `pnpm install --frozen-lockfile` below fails ("missing"/"lockfile mismatch")
 # because the workspace it sees doesn't match the lockfile. Keep it in sync when
 # adding a package — verify with:
-#   diff <(grep -oE '(server|client|packages)/[a-z-]+/package.json|e2e/package.json' Dockerfile | sort -u) \
+#   diff <(grep -oE '(server|packages)/[a-z-]+/package.json' Dockerfile | sort -u) \
 #        <(find server client packages e2e -maxdepth 2 -name package.json -not -path '*/node_modules/*' | sort -u)
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 # pnpm-workspace.yaml's `patchedDependencies` are resolved DURING install, so
@@ -50,9 +48,6 @@ COPY server/api/package.json server/api/package.json
 COPY server/mcp/package.json server/mcp/package.json
 COPY server/sandboxd/package.json server/sandboxd/package.json
 COPY server/web/package.json server/web/package.json
-COPY client/desktop/package.json client/desktop/package.json
-COPY client/web/package.json client/web/package.json
-COPY e2e/package.json e2e/package.json
 COPY packages/agent-runtime/package.json packages/agent-runtime/package.json
 COPY packages/api-keys/package.json packages/api-keys/package.json
 COPY packages/app-build/package.json packages/app-build/package.json
@@ -78,7 +73,6 @@ COPY packages/tools/package.json packages/tools/package.json
 COPY packages/tracing/package.json packages/tracing/package.json
 COPY packages/turn-stream/package.json packages/turn-stream/package.json
 COPY packages/voice/package.json packages/voice/package.json
-COPY packages/web-ui/package.json packages/web-ui/package.json
 
 # Install the build toolchain (python3 / build-essential, needed to COMPILE
 # native modules), pnpm, and the workspace — then PURGE the toolchain in the
@@ -161,17 +155,5 @@ EXPOSE 3000
 # `pnpm exec next start` CMD and every worker service).
 CMD ["pnpm", "-C", "server/web", "exec", "tsx", "server/main.ts"]
 
-# ── 3. client: the zero-secret owner-UI image ────────────────────────────────
-# Same deps layer (one lockfile, shared cache); only client/web is built. No
-# DB, no SESSION_SECRET — runtime config is compose env (MANTLE_SERVER_ORIGIN)
-# read per-request by /env.js. Small public surface: `next start` only.
-FROM deps AS client
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-ARG MANTLE_GIT_SHA=""
-ARG MANTLE_BUILD_TIME=""
-ENV MANTLE_GIT_SHA=$MANTLE_GIT_SHA
-ENV MANTLE_BUILD_TIME=$MANTLE_BUILD_TIME
-RUN pnpm -C client/web build && rm -rf client/web/.next/cache
-EXPOSE 3000
-CMD ["pnpm", "-C", "client/web", "exec", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
+# The owner-UI (client) image moved to the jackdaw repo at the split
+# (2026-08-13): https://github.com/crossworks-engineering/jackdaw

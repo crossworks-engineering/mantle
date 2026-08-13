@@ -30,12 +30,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // client/desktop rides too: its version is what the packaged app reports
 // (app.getVersion) and what electron-updater compares against releases — a
 // drift there would stall or loop desktop auto-updates.
-const targets = [
-  'package.json',
-  'server/web/package.json',
-  'client/web/package.json',
-  'client/desktop/package.json',
-].map((p) => join(root, p));
+const targets = ['package.json', 'server/web/package.json'].map((p) => join(root, p));
 
 const args = process.argv.slice(2);
 const force = args.includes('--force');

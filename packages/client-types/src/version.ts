@@ -47,3 +47,12 @@ export function versionDetail(): string {
  * "server too old / too new" banner instead of failing obscurely.
  */
 export const CONTRACT_VERSION = 1;
+
+/**
+ * The pinned @excalidraw/excalidraw version, stamped onto every stored draw
+ * snapshot so an upgrade can mark old renders stale. A LITERAL because the
+ * package's exports map hides its own package.json. Tripwires on BOTH sides
+ * of the repo split assert their local pin equals this: mantle's
+ * server/web/lib/excalidraw-engine.test.ts and jackdaw's client/web mirror.
+ */
+export const EXCALIDRAW_ENGINE = '0.18.1';

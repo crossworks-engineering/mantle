@@ -33,11 +33,11 @@
  * the one we ship any more, so it re-renders on next owner view or in bulk via
  * the `draws:re-render` maintenance task.
  *
- * Kept as a literal rather than read from the package, whose `exports` map
- * does not expose package.json. `excalidraw-engine.test.ts` is the tripwire:
- * it fails if this drifts from the exact pin declared by either app.
+ * The literal lives in @mantle/client-types/version since the repo split, so
+ * BOTH repos' tripwires (server/web/lib/excalidraw-engine.test.ts here, the
+ * client/web mirror in jackdaw) assert their local pin against ONE constant.
  */
-export const EXCALIDRAW_ENGINE = '0.18.1';
+export { EXCALIDRAW_ENGINE } from '@mantle/client-types/version';
 
 /** Hard cap. Generous because exportToSvg INLINES the fonts it uses as data
  *  URIs (that is what makes the snapshot render standalone on /s, email and

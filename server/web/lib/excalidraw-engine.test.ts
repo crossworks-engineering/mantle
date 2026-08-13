@@ -13,6 +13,7 @@ import { EXCALIDRAW_ENGINE } from '@mantle/content';
  * was drawn by a different renderer.
  *
  * Asserted against the declared pins rather than the installed package because
+ * (the client half of this tripwire lives in the jackdaw repo since the split)
  * the package's `exports` map does not expose its own package.json.
  */
 const repoRoot = join(import.meta.dirname, '../../..');
@@ -30,12 +31,12 @@ describe('EXCALIDRAW_ENGINE', () => {
   // Both tiers render snapshots — the editor at commit, the sidecar on a cache
   // miss — so a drift between them would produce two different renderers
   // writing the same stamp.
-  it.each(['client/web', 'server/web'])('matches the pin declared by %s', (app) => {
+  it.each(['server/web'])('matches the pin declared by %s', (app) => {
     expect(declaredPin(app)).toBe(EXCALIDRAW_ENGINE);
   });
 
   it('is pinned exactly, so the stamp cannot drift under us', () => {
-    for (const app of ['client/web', 'server/web']) {
+    for (const app of ['server/web']) {
       expect(declaredPin(app)).toMatch(/^\d+\.\d+\.\d+$/);
     }
   });

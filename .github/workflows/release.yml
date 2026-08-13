@@ -4,10 +4,10 @@
 #   git push origin main v0.20.71
 #
 # 1. Builds BOTH Mantle images (v0.200.0 split — mantle-server runs web/agent/
-#    workers/migrate; mantle-client is the zero-secret owner UI) for amd64 +
+#    workers/migrate) for amd64 + (the owner-UI image builds in the jackdaw repo)
 #    arm64, each (target, arch) on its OWN native GitHub runner in parallel,
 #    then merges each target's digests into a multi-arch manifest pushed to
-#    Docker Hub as <namespace>/mantle-{server,client}:<tag> and :latest.
+#    Docker Hub as <namespace>/mantle-server:<tag> and :latest.
 # 2. Cuts a GitHub Release carrying the deploy bundle (docker-compose.yml,
 #    .env.prod.example, infra/, install.sh, db scripts) so compose + image are
 #    versioned TOGETHER — the contract docs/self-hosting.md documents.
@@ -44,7 +44,7 @@ jobs:
         # v0.202.0 shipped arm64-only manifests for both images exactly that
         # way. As original keys this is a true 4-job cross product, and the
         # includes merely attach the right runner to each platform.
-        target: [server, client]
+        target: [server]
         platform: [linux/amd64, linux/arm64]
         include:
           - platform: linux/amd64
@@ -108,7 +108,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [server, client]
+        target: [server]
     runs-on: ubuntu-24.04
     permissions:
       contents: read

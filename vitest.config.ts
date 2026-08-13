@@ -8,13 +8,7 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
-    include: [
-      'packages/**/src/**/*.test.ts',
-      'server/**/*.test.ts',
-      'client/**/*.test.ts',
-      'e2e/lib/**/*.test.ts',
-      'eslint-rules/**/*.test.ts',
-    ],
+    include: ['packages/**/src/**/*.test.ts', 'server/**/*.test.ts', 'eslint-rules/**/*.test.ts'],
     environment: 'node',
     globals: false,
     // The 5s default assumes a test only times its own logic. Several tests
