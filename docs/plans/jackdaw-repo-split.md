@@ -148,9 +148,9 @@ Learned along the way, feeding later phases:
 
 Two decisions taken (Jason):
 
-- **npm scope: `@jackdaw-run`** — the `@mantle` npm scope is owned by a third
+- **npm scope: `@crossworks`** — the `@mantle` npm scope is owned by a third
   party (so is `@jackdaw`). Workspace names STAY `@mantle/*` (Mantle is the
-  engine scope); `scripts/publish-contract.mjs` renames to `@jackdaw-run/*`
+  engine scope); `scripts/publish-contract.mjs` renames to `@crossworks/*`
   at publish time and restores the tree afterwards.
 - **Share/docs surface: a `packages/share-ui` package that stays in mantle**,
   published like the other contract packages; web-ui/jackdaw consume it. Single
@@ -160,9 +160,9 @@ Two decisions taken (Jason):
 What shipped:
 
 - `.github/workflows/publish-contract.yml`: on every `v*` tag, publishes
-  `@jackdaw-run/{client-types,content-core,voice-client}` (TS source — the
+  `@crossworks/{client-types,content-core,voice-client}` (TS source — the
   jackdaw Next app transpiles them like workspace deps). Skips cleanly until
-  the `NPM_TOKEN` secret exists. **Jason to-do: create the `@jackdaw-run` npm
+  the `NPM_TOKEN` secret exists. **Jason to-do: create the `@crossworks` npm
   org + an automation token, add it as the `NPM_TOKEN` repo secret.**
 - `CONTRACT_VERSION` (integer, bumped only on breaking wire changes) lives in
   `@mantle/client-types/version` and is served by `GET /api/version` as
@@ -174,7 +174,7 @@ What shipped:
 mini-app sandbox (app-sandbox + app-bridge protocol), page-outline, nav-items,
 help-topics, and its own copies of button/input/label + cn. It may import only
 client-types + content-core (eslint block), publishes as
-`@jackdaw-run/share-ui` with the other contract packages, and both tailwind
+`@crossworks/share-ui` with the other contract packages, and both tailwind
 builds (`globals.css` @source) and the islands bundle build green against it.
 event-time and seven more pure modules (text-colors, search-query,
 mermaid-theme, highlight-colors, docs-labels, display-fonts, aside-style)

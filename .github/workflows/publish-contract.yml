@@ -1,4 +1,4 @@
-# Publishes the contract packages (@jackdaw-run/{client-types,content-core,
+# Publishes the contract packages (@crossworks/{client-types,content-core,
 # voice-client}) to npm on every release tag, so the jackdaw repo — the split
 # frontend — can consume the server's wire contract as ordinary npm deps
 # (split plan P1, docs/plans/jackdaw-repo-split.md).

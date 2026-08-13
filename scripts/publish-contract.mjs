@@ -6,7 +6,7 @@
  * The workspace keeps the @mantle/* names (Mantle is the engine scope, a
  * deliberate naming split — see the Jackdaw rebrand notes); the @mantle npm
  * scope belongs to a third party, so the PUBLISHED names live under
- * @jackdaw-run/*. The rename happens here, at publish time, and the files are
+ * @crossworks/*. The rename happens here, at publish time, and the files are
  * restored afterwards so a local run leaves the tree clean.
  *
  * These packages ship TypeScript source (their exports point at ./src/*.ts).
@@ -23,7 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const NPM_SCOPE = '@jackdaw-run';
+const NPM_SCOPE = '@crossworks';
 // Order matters only for readability — pnpm rewrites workspace:* deps to the
 // stamped version on pack, so share-ui's deps resolve to this same release.
 const PACKAGES = ['client-types', 'content-core', 'voice-client', 'share-ui'];
