@@ -1,6 +1,6 @@
 {
   "name": "@mantle/client-web",
-  "version": "0.230.22",
+  "version": "0.230.23",
   "private": true,
   "description": "Mantle owner UI — the zero-secret client Next app. Talks to the server origin via bearer + CORS; holds no SESSION_SECRET, no DB, no server packages.",
   "scripts": {
