@@ -81,12 +81,12 @@ export function LiveColumn({ collapsed, onToggle }: { collapsed: boolean; onTogg
               <Activity
                 className={cn(
                   'size-4',
-                  live ? 'animate-pulse text-emerald-500' : 'text-muted-foreground',
+                  live ? 'animate-pulse text-success-ink' : 'text-muted-foreground',
                 )}
                 aria-hidden
               />
               <h2 className="text-sm font-semibold">Activity</h2>
-              {live && <span className="text-xs text-emerald-500">{active.length} live</span>}
+              {live && <span className="text-xs text-success-ink">{active.length} live</span>}
             </div>
             <Link
               href="/debug/journey"
@@ -121,7 +121,7 @@ export function LiveColumn({ collapsed, onToggle }: { collapsed: boolean; onTogg
                             {/* Always spinning — a long-running process is busy,
                                 not broken; the elapsed timer shows progress. */}
                             <Loader2
-                              className="size-3.5 shrink-0 animate-spin text-emerald-500"
+                              className="size-3.5 shrink-0 animate-spin text-success-ink"
                               aria-hidden
                             />
                             <ActionIcon
@@ -185,7 +185,7 @@ export function LiveColumn({ collapsed, onToggle }: { collapsed: boolean; onTogg
                           <div className="flex items-center gap-2 pl-5 text-xs text-muted-foreground">
                             {it.title && <span className="truncate">{it.title}</span>}
                             {outcome && (
-                              <span className="ml-auto shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-300">
+                              <span className="ml-auto shrink-0 rounded bg-success/10 px-1.5 py-0.5 text-success-ink">
                                 {outcome}
                               </span>
                             )}
@@ -244,7 +244,7 @@ function CollapsedRail({
         count={active}
         title={`${active} running`}
         onClick={onToggle}
-        icon={<Loader2 className="size-4 animate-spin text-emerald-500" aria-hidden />}
+        icon={<Loader2 className="size-4 animate-spin text-success-ink" aria-hidden />}
       />
       <StatusPip
         show={failures > 0}
