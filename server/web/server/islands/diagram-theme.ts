@@ -7,7 +7,7 @@
  * bundled and hung off globalThis for it to call. Same self-hosted shape as
  * mermaid.min.js next to it; no CDN, nothing interpolated from user data.
  */
-import { mermaidThemeVariablesFromDocument } from '@mantle/web-ui/mermaid-theme';
+import { mermaidThemeVariablesFromDocument } from '@mantle/client-types/mermaid-theme';
 
 declare global {
   var mantleMermaidTheme: typeof mermaidThemeVariablesFromDocument | undefined;

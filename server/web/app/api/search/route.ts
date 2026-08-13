@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
-import { parseSearchQuery } from '@mantle/web-ui/search-query';
+import { parseSearchQuery } from '@mantle/client-types/search-query';
 import { resolveSupersededTargets, searchChunks, searchNodes } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
 import { nodeUrl } from '@mantle/content';

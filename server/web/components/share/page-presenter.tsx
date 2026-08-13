@@ -1,6 +1,6 @@
 import { buildPageToc } from '@mantle/content/page-toc';
 import { renderPageDoc } from '@/lib/render-page-doc';
-import { PageOutline } from '@mantle/web-ui/page-outline';
+import { PageOutline } from '@mantle/share-ui/page-outline';
 
 /**
  * Public page render. Server-rendered sanitized HTML (see render-page-doc.ts)

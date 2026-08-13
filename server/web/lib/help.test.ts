@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { allHelpTopics, helpTopicForPath } from '@mantle/web-ui/layout/help-topics';
-import { ALL_NAV_ITEMS } from '@mantle/web-ui/layout/nav-items';
+import { allHelpTopics, helpTopicForPath } from '@mantle/share-ui/help-topics';
+import { ALL_NAV_ITEMS } from '@mantle/share-ui/nav-items';
 import { MANIFEST_TOOL_GROUPS } from './system-manifest/manifest';
 import { parseFrontmatter, splitSections } from './help';
 

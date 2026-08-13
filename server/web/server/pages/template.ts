@@ -1,4 +1,4 @@
-import { displayFontFaceCss } from '@mantle/web-ui/display-fonts';
+import { displayFontFaceCss } from '@mantle/client-types/display-fonts';
 import {
   appearanceFontAttrs,
   appearanceFontVars,

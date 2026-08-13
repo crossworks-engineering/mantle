@@ -15,14 +15,14 @@ import katex from 'katex';
 import { common, createLowlight } from 'lowlight';
 import { toHtml } from 'hast-util-to-html';
 // Relative (not `@/`) so the vitest unit test, which has no path-alias, resolves it.
-import { highlightColor } from '@mantle/web-ui/highlight-colors';
-import { textColor } from '@mantle/web-ui/text-colors';
+import { highlightColor } from '@mantle/client-types/highlight-colors';
+import { textColor } from '@mantle/client-types/text-colors';
 import {
   asideBackground,
   asideBorderColor,
   normalizeAsideAngle,
   normalizeAsideColor,
-} from '@mantle/web-ui/aside-style';
+} from '@mantle/client-types/aside-style';
 
 const lowlight = createLowlight(common);
 
