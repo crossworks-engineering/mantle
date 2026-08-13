@@ -113,9 +113,10 @@ Rules:
   colours are `code-*`; both are AA-guaranteed inks. Don't use `primary` for
   categorical sets.
 - **Selected / active state, mark it with an ACCENT, not a background fill.**
-  For list selection use a **left accent bar only**: `border-l-[3px]
-  border-l-primary` (keep a visible `border-l-border` at rest so radius doesn't
-  break; flip only the colour on select). **Do not add a `bg-accent` fill on the
+  For list selection use a **left accent bar only**: `<ListCard>`'s
+  `border-l-[6px] border-l-primary` (keep a visible `border-l-border` at rest so
+  radius doesn't break; flip only the colour on select; compact nav rows like
+  docs-nav use a slimmer `border-l-[3px]`). **Do not add a `bg-accent` fill on the
   selected or hovered row**, in many themes `accent` is saturated and the row's
   text is `foreground`/`muted-foreground` (not `accent-foreground`), so the text
   becomes unreadable. For hover use a neutral `hover:bg-muted/50`. (Swept
