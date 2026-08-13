@@ -21,7 +21,7 @@ import { SetPageTitle } from '@/components/layout/page-title';
 import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { EmojiPicker } from '@/components/emoji-picker';
 import { ShareControl } from '@/components/share-control';
-import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
+import { AppSandbox } from '@mantle/share-ui/app-sandbox';
 import { AppAccessLog } from '@mantle/web-ui/app-sandbox/access-log';
 import { CodeEditor } from '@mantle/web-ui/app-sandbox/code-editor';
 import { FileTree } from '@mantle/web-ui/app-sandbox/file-tree';

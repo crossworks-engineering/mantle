@@ -5,13 +5,13 @@ import { loadAppearanceAttrs } from './appearance';
 import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
 import { resolveShareVisitor } from '@/lib/team-gate';
 import { PagePresenter } from '@/components/share/page-presenter';
-import { NotePresenter } from '@mantle/web-ui/share/note-presenter';
-import { FilePresenter } from '@mantle/web-ui/share/file-presenter';
-import { TaskPresenter } from '@mantle/web-ui/share/task-presenter';
-import { EventPresenter } from '@mantle/web-ui/share/event-presenter';
+import { NotePresenter } from '@mantle/share-ui/note-presenter';
+import { FilePresenter } from '@mantle/share-ui/file-presenter';
+import { TaskPresenter } from '@mantle/share-ui/task-presenter';
+import { EventPresenter } from '@mantle/share-ui/event-presenter';
 import { FolderPresenter, loadFolderListing } from '@/components/share/folder-presenter';
-import { FormulaPresenter } from '@mantle/web-ui/share/formula-presenter';
-import { DrawPresenter } from '@mantle/web-ui/share/draw-presenter';
+import { FormulaPresenter } from '@mantle/share-ui/formula-presenter';
+import { DrawPresenter } from '@mantle/share-ui/draw-presenter';
 import { htmlPage, islandDiv, shareShell } from './template';
 
 /**

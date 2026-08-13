@@ -113,6 +113,7 @@ export default tseslint.config(
       'server/web/**/*.{ts,tsx}',
       'client/web/**/*.{ts,tsx}',
       'packages/web-ui/**/*.{ts,tsx}',
+      'packages/share-ui/**/*.{ts,tsx}',
     ],
     plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
     rules: {
@@ -131,6 +132,7 @@ export default tseslint.config(
       'client/web/**/*.{ts,tsx}',
       'server/web/**/*.{ts,tsx}',
       'packages/web-ui/**/*.{ts,tsx}',
+      'packages/share-ui/**/*.{ts,tsx}',
     ],
     plugins: { mantle: mantlePlugin },
     rules: { 'mantle/pair-fill-foreground': 'error', 'mantle/use-ink-for-text': 'error' },
@@ -171,11 +173,13 @@ export default tseslint.config(
                 '!@mantle/content-core/*',
                 '!@mantle/voice-client',
                 '!@mantle/voice-client/*',
+                '!@mantle/share-ui',
+                '!@mantle/share-ui/*',
                 '!@mantle/web-ui',
                 '!@mantle/web-ui/*',
               ],
               message:
-                'jackdaw split boundary — the client tier may import only @mantle/{client-types,content-core,voice-client,web-ui}',
+                'jackdaw split boundary — the client tier may import only @mantle/{client-types,content-core,voice-client,share-ui,web-ui}',
             },
             {
               // Gone since the P0 follow-up: the tsconfig alias itself was
@@ -208,6 +212,32 @@ export default tseslint.config(
               group: ['@mantle/*'],
               message:
                 'contract packages are zero-dep by design (jackdaw split P0) — move shared code here instead of importing it',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // share-ui sits one layer up: it may consume the zero-dep contract
+    // packages but nothing else @mantle — in particular NOT web-ui, or the
+    // published package would drag the whole UI kit into the server image.
+    files: ['packages/share-ui/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@mantle/*',
+                '!@mantle/client-types',
+                '!@mantle/client-types/*',
+                '!@mantle/content-core',
+                '!@mantle/content-core/*',
+              ],
+              message:
+                'share-ui may import only @mantle/{client-types,content-core} (jackdaw split boundary)',
             },
           ],
         },

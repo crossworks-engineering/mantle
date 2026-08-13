@@ -11,9 +11,9 @@
  * static content.
  */
 import { createRoot } from 'react-dom/client';
-import { AppPresenter } from '@mantle/web-ui/share/app-presenter';
-import { TablePresenter } from '@mantle/web-ui/share/table-presenter';
-import { FormulaCalculator } from '@mantle/web-ui/share/formula-calculator';
+import { AppPresenter } from '@mantle/share-ui/app-presenter';
+import { TablePresenter } from '@mantle/share-ui/table-presenter';
+import { FormulaCalculator } from '@mantle/share-ui/formula-calculator';
 import { TeamTokenPrompt } from '../../components/share/team-token-prompt';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

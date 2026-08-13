@@ -16,7 +16,8 @@
     "esbuild": "^0.28.1",
     "lucide-react": "^1.25.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "@mantle/share-ui": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

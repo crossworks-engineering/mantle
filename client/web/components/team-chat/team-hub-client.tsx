@@ -33,14 +33,14 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { Button } from '@mantle/web-ui/ui/button';
-import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
+import { AppSandbox } from '@mantle/share-ui/app-sandbox';
 import { TeamChatClient } from '@/components/team-chat/team-chat-client';
 import { TokenGate } from '@/components/team-chat/token-gate';
 import { OpenShare, openShareOnServer } from '@/components/team-workspace/open-on-server';
 import { ShareReader } from '@/components/team-workspace/share-reader';
 import { teamFetch, upgradeTeamCookie, withTeamAuth } from '@mantle/web-ui/team-fetch';
 import { isCrossOrigin, runtimeApiBase } from '@mantle/web-ui/runtime-env';
-import type { HubData as BridgeHubData, HubNavTarget } from '@mantle/web-ui/app-bridge/protocol';
+import type { HubData as BridgeHubData, HubNavTarget } from '@mantle/share-ui/app-bridge-protocol';
 
 /** The /api/team/hub payload — the bridge `HubData` (what `hub.get` answers a
  *  hub app with; `apps` is now part of that contract) plus the shell-only

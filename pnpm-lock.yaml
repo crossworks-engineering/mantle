@@ -101,6 +101,9 @@ importers:
       '@mantle/content-core':
         specifier: workspace:*
         version: link:../../packages/content-core
+      '@mantle/share-ui':
+        specifier: workspace:*
+        version: link:../../packages/share-ui
       '@mantle/voice-client':
         specifier: workspace:*
         version: link:../../packages/voice-client
@@ -329,6 +332,9 @@ importers:
 
   packages/app-build:
     dependencies:
+      '@mantle/share-ui':
+        specifier: workspace:*
+        version: link:../share-ui
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
@@ -806,6 +812,58 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  packages/share-ui:
+    dependencies:
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
+      '@mantle/content-core':
+        specifier: workspace:*
+        version: link:../content-core
+      '@radix-ui/react-label':
+        specifier: ^2.1.12
+        version: 2.1.12(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@radix-ui/react-slot':
+        specifier: ^1.3.0
+        version: 1.3.0(@types/react@19.2.17)(react@19.2.7)
+      class-variance-authority:
+        specifier: ^0.7.1
+        version: 0.7.1
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      katex:
+        specifier: ^0.18.1
+        version: 0.18.1(patch_hash=dbcf9edeb908f2a946cfd690c54b078877fcbb15918e5e1430ee4d0ecddeac7d)
+      lucide-react:
+        specifier: ^1.25.0
+        version: 1.25.0(react@19.2.7)
+      react:
+        specifier: ^19.2.7
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.2.7
+        version: 19.2.7(react@19.2.7)
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.2.17)(react@19.2.7)
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
+      tailwind-merge:
+        specifier: ^3.5.0
+        version: 3.6.0
+    devDependencies:
+      '@types/katex':
+        specifier: ^0.16.8
+        version: 0.16.8
+      '@types/react':
+        specifier: ^19.2.17
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.17)
+
   packages/storage:
     dependencies:
       '@aws-sdk/client-s3':
@@ -1003,6 +1061,9 @@ importers:
       '@mantle/content-core':
         specifier: workspace:*
         version: link:../content-core
+      '@mantle/share-ui':
+        specifier: workspace:*
+        version: link:../share-ui
       '@radix-ui/react-alert-dialog':
         specifier: ^1.1.20
         version: 1.1.20(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -1318,6 +1379,9 @@ importers:
       '@mantle/search':
         specifier: workspace:*
         version: link:../../packages/search
+      '@mantle/share-ui':
+        specifier: workspace:*
+        version: link:../../packages/share-ui
       '@mantle/storage':
         specifier: workspace:*
         version: link:../../packages/storage

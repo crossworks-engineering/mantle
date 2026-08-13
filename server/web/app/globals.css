@@ -10,5 +10,6 @@
  * the server-rendered /s + /print surfaces. web-ui sits outside that cwd, so
  * its class names need an explicit source registration. */
 @source '../../../packages/web-ui/src';
+@source '../../../packages/share-ui/src';
 @plugin 'tailwindcss-animate';
 @plugin '@tailwindcss/typography';

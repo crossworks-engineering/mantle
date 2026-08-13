@@ -62,7 +62,8 @@
     "zod": "^4.4.3",
     "zustand": "^5.0.14",
     "@mantle/content-core": "workspace:*",
-    "@mantle/voice-client": "workspace:*"
+    "@mantle/voice-client": "workspace:*",
+    "@mantle/share-ui": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

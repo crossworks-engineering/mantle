@@ -12,9 +12,9 @@
  */
 import { useState, useTransition } from 'react';
 import { KeyRound } from 'lucide-react';
-import { Button } from '@mantle/web-ui/ui/button';
-import { Input } from '@mantle/web-ui/ui/input';
-import { Label } from '@mantle/web-ui/ui/label';
+import { Button } from '@mantle/share-ui/ui/button';
+import { Input } from '@mantle/share-ui/ui/input';
+import { Label } from '@mantle/share-ui/ui/label';
 
 export function TeamTokenPrompt({ shareToken, title }: { shareToken: string; title: string }) {
   const [token, setToken] = useState('');

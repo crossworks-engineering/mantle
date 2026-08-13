@@ -21,7 +21,7 @@ import {
   eventState,
   formatRelativeShort,
   type DayGroup,
-} from '@mantle/web-ui/lib/event-time';
+} from '@mantle/client-types/lib/event-time';
 import { EventForm, emptyEventForm, type EventPayload } from './event-form';
 import { EventDetail, type EventRow } from './event-detail';
 

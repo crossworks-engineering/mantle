@@ -14,6 +14,7 @@
  * so a toggle looked identical on and off. server/web has always had this line;
  * it was missed when the owner UI moved here in the member carve. */
 @source '../../../packages/web-ui/src';
+@source '../../../packages/share-ui/src';
 @plugin 'tailwindcss-animate';
 @plugin '@tailwindcss/typography';
 

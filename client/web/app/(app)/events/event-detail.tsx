@@ -34,7 +34,7 @@ import {
   eventProgress,
   eventState,
   formatRelativeShort,
-} from '@mantle/web-ui/lib/event-time';
+} from '@mantle/client-types/lib/event-time';
 import { EventForm, eventToForm, type EventPayload } from './event-form';
 import type { EventRow } from '@mantle/client-types';
 
