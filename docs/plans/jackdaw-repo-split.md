@@ -190,13 +190,14 @@ moved to client-types. Server/web's web-ui imports are now ONLY
   packages; gets its own version stream, changelog, `verify`, and CI building
   the `mantle-client` image (rename to `jackdaw` image at this point) and the
   Electron desktop builds.
-- ~~The theme generator moves with `web-ui`~~ **OPEN QUESTION (2026-08-13)**:
-  the share-ui extraction showed the server's last web-ui imports are
-  `appearance` + `avatar` — the THEME LAYER (appearance → lib/themes →
-  theme-registry.gen → backgrounds → avatar/dicebear). If headless brains are
-  to serve BRANDED share/docs pages (the product vision), the theme system —
-  seeds, generator, registry, avatar styles — must stay in MANTLE (likely in
-  share-ui) and jackdaw consumes it, not the reverse. Decide before P2.
+- **DECIDED + SHIPPED (v0.230.36)**: the theme system stays in MANTLE, inside
+  share-ui — Jason: "a true split means it stays in mantle; MCP agents like
+  Claude Desktop can still use the entire theme system where needed."
+  appearance, lib/themes, theme-registry.gen, backgrounds, avatar, the
+  generator (themes/) and the generated styles/themes.css all live in
+  @mantle/share-ui now; `pnpm themes:build` runs there. server/web has ZERO
+  web-ui imports and no longer depends on it — the server tier is fully cut
+  from the UI kit. Nothing gates P2 anymore.
 
 ### P3: replace lockstep with a compat policy
 
