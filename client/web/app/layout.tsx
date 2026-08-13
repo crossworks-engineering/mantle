@@ -39,8 +39,8 @@ import { MEMBER_SURFACE_HEADER } from '@/lib/member-surface';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Mantle',
-  description: 'Your tree of everything.',
+  title: 'Jackdaw',
+  description: 'The data-aware workspace.',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

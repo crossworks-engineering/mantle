@@ -55,10 +55,14 @@ export function BrandBlock({
   inDrawer?: boolean;
   onNavigate?: () => void;
 }) {
-  const name = siteName || 'mantle';
+  // A brain that has never been named wears the BRAND rather than the brand's
+  // name set in type: the row lockup expanded, the badge collapsed. The moment
+  // an owner sets a site name it is theirs, and the text wordmark returns.
+  const named = Boolean(siteName?.trim());
+  const name = siteName?.trim() || 'Jackdaw';
   // Array.from, not charAt: a name starting with an emoji or any astral-plane
   // character would otherwise be cut mid-surrogate-pair and render as a tofu.
-  const mark = Array.from(name.trim())[0] ?? 'm';
+  const mark = Array.from(name)[0] ?? 'J';
 
   return (
     <div
@@ -88,9 +92,13 @@ export function BrandBlock({
           logoVersion={logoVersion}
           logoDarkVersion={logoDarkVersion}
           imgClassName="h-9 w-auto max-w-full object-contain object-left group-data-[nav-collapsed=true]/shell:size-8 group-data-[nav-collapsed=true]/shell:object-center"
-          renderWordmark={(visibility) => (
-            <Wordmark name={name} mark={mark} className={visibility} />
-          )}
+          renderWordmark={(visibility) =>
+            named ? (
+              <Wordmark name={name} mark={mark} className={visibility} />
+            ) : (
+              <JackdawMark className={visibility} />
+            )
+          }
         />
       </Link>
 
@@ -106,6 +114,71 @@ export function BrandBlock({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * The Jackdaw brand art, standing in for the text wordmark on a brain with no
+ * site name of its own. Mirrors `Wordmark`'s structure exactly: BOTH the
+ * expanded and collapsed forms render, and the shell's collapse state picks
+ * one, so no width measurement or JS is involved in the swap.
+ *
+ * Expanded gets the ROW lockup (badge + name on one line, which is what fits a
+ * rail); collapsed gets the badge alone, because a 3.5rem column has no room
+ * for a lockup and shrinking one until it fits reads as a bug. Each is two imgs
+ * swapped by the `dark:` variant — a CSS swap, so flipping the theme never
+ * waits on a fetch.
+ */
+function JackdawMark({ className }: { className?: string }) {
+  const row = 'h-9 w-auto max-w-full object-contain object-left';
+  const badge = 'size-8 shrink-0 object-contain';
+  return (
+    // `contents` keeps this wrapper out of the layout — the imgs stay direct
+    // flex children of the Link. It exists only so the caller's visibility
+    // class lands ONCE, above the collapse/theme swaps: `dark:hidden` here
+    // beats `contents` on specificity and takes the whole subtree with it,
+    // which stacking four variant combinations onto four imgs would not
+    // reliably do (the winner would depend on utility order in the sheet).
+    <span className={cn('contents', className)}>
+      <span className="contents group-data-[nav-collapsed=true]/shell:hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/brand/jackdaw-row-light.png"
+          alt="Jackdaw"
+          width={129}
+          height={36}
+          className={cn(row, 'dark:hidden')}
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/brand/jackdaw-row-dark.png"
+          alt="Jackdaw"
+          width={127}
+          height={36}
+          className={cn(row, 'hidden dark:block')}
+        />
+      </span>
+      <span className="hidden group-data-[nav-collapsed=true]/shell:contents">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/brand/jackdaw-badge-light.png"
+          alt=""
+          aria-hidden
+          width={32}
+          height={32}
+          className={cn(badge, 'dark:hidden')}
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/brand/jackdaw-badge-dark.png"
+          alt=""
+          aria-hidden
+          width={32}
+          height={32}
+          className={cn(badge, 'hidden dark:block')}
+        />
+      </span>
+    </span>
   );
 }
 
