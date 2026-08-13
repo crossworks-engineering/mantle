@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import YAML from 'yaml';
-import { parseFormulaSpec } from '@mantle/content/formula-spec';
+import { parseFormulaSpec } from '@mantle/content-core/formula-spec';
 import { listOf, normalised, prune, scalar, toSpec, type Draft } from './formula-draft';
 import { FORMULA_TEMPLATES } from './formula-templates';
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, FileText, ListTree } from 'lucide-react';
 import { cn } from './lib/utils';
-import type { TocEntry } from '@mantle/content/page-toc';
+import type { TocEntry } from '@mantle/content-core/page-toc';
 
 const COLLAPSE_KEY = 'mantle:page-outline-collapsed';
 

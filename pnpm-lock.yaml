@@ -104,6 +104,9 @@ importers:
       '@mantle/content':
         specifier: workspace:*
         version: link:../../packages/content
+      '@mantle/content-core':
+        specifier: workspace:*
+        version: link:../../packages/content-core
       '@mantle/email':
         specifier: workspace:*
         version: link:../../packages/email
@@ -431,6 +434,9 @@ importers:
 
   packages/content:
     dependencies:
+      '@mantle/content-core':
+        specifier: workspace:*
+        version: link:../content-core
       '@mantle/crypto':
         specifier: workspace:*
         version: link:../crypto
@@ -471,6 +477,15 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+
+  packages/content-core:
+    dependencies:
+      marked:
+        specifier: ^18.0.7
+        version: 18.0.7
+      mathjs:
+        specifier: 15.2.0
+        version: 15.2.0
 
   packages/crypto:
     devDependencies:
@@ -973,9 +988,9 @@ importers:
       '@dicebear/styles':
         specifier: ^10.3.0
         version: 10.3.0
-      '@mantle/content':
+      '@mantle/content-core':
         specifier: workspace:*
-        version: link:../content
+        version: link:../content-core
       '@radix-ui/react-alert-dialog':
         specifier: ^1.1.20
         version: 1.1.20(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)

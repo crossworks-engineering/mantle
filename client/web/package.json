@@ -65,7 +65,8 @@
     "sonner": "^2.0.3",
     "yaml": "^2.9.0",
     "zod": "^4.4.3",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.14",
+    "@mantle/content-core": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

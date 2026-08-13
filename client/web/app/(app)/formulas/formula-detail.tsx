@@ -47,7 +47,7 @@ import {
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 import { cn } from '@mantle/web-ui/lib/utils';
-import { parseInputText } from '@mantle/content/formula-eval';
+import { parseInputText } from '@mantle/content-core/formula-eval';
 import { ShareControl } from '@/components/share-control';
 
 export type FormulaRow = {

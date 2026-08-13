@@ -12,15 +12,11 @@
  * Everything else is the presenter's own props, verbatim. Consumed by the
  * client ShareReader and produced by server/web/app/s/[token]/view.
  */
-import type { TocEntry } from '@mantle/content/page-toc';
-import type {
-  FormulaSpec,
-  TargetSignature,
-  CoverageGap,
-  DimensionIssue,
-  Column,
-  Row,
-} from '@mantle/content';
+import type { TocEntry } from '@mantle/content-core/page-toc';
+import type { CoverageGap, FormulaSpec } from '@mantle/content-core/formula-spec';
+import type { TargetSignature } from '@mantle/content-core/formula-signature';
+import type { DimensionIssue } from '@mantle/content-core/formula-dimensions';
+import type { Column, Row } from '@mantle/content-core/table-model';
 
 export type ShareFolderListing = {
   /** ltree path currently being listed (the shared root or a descendant). */

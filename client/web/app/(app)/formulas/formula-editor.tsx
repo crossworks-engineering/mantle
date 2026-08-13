@@ -33,8 +33,8 @@ import {
   parseFormulaSpec,
   type CoverageGap,
   type FormulaSpec,
-} from '@mantle/content/formula-spec';
-import { checkDimensions, type DimensionIssue } from '@mantle/content/formula-dimensions';
+} from '@mantle/content-core/formula-spec';
+import { checkDimensions, type DimensionIssue } from '@mantle/content-core/formula-dimensions';
 import { Badge } from '@mantle/web-ui/ui/badge';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';

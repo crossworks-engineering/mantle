@@ -138,7 +138,6 @@
   "dependencies": {
     "@dicebear/core": "^10.4.0",
     "@dicebear/styles": "^10.3.0",
-    "@mantle/content": "workspace:*",
     "@radix-ui/react-alert-dialog": "^1.1.20",
     "@radix-ui/react-avatar": "^1.2.3",
     "@radix-ui/react-checkbox": "^1.3.8",
@@ -171,7 +170,8 @@
     "recharts": "^3.10.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.5.0",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "@mantle/content-core": "workspace:*"
   },
   "devDependencies": {
     "@types/katex": "^0.16.8",

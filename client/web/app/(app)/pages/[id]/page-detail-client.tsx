@@ -17,7 +17,7 @@ import {
   Trash2,
   Undo2,
 } from 'lucide-react';
-import { computeDiffOverlay, type DiffOverlay } from '@mantle/content/page-diff';
+import { computeDiffOverlay, type DiffOverlay } from '@mantle/content-core/page-diff';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { TagInput } from '@/components/tag-input';
@@ -28,8 +28,8 @@ import { ShareControl } from '@/components/share-control';
 import { ExportMenu } from '@/components/export/export-menu';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { PageEditor } from '@/components/page-editor/page-editor';
-import { docToMarkdown } from '@mantle/content/doc-to-markdown';
-import { markdownToDoc } from '@mantle/content/markdown';
+import { docToMarkdown } from '@mantle/content-core/doc-to-markdown';
+import { markdownToDoc } from '@mantle/content-core/markdown';
 import { PageOutline } from '@mantle/web-ui/page-outline';
 import { PageBacklinks } from '@/components/page-editor/page-backlinks';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
@@ -38,7 +38,7 @@ import { buildFocusDirective } from '@/lib/focus-directive';
 import type { Backlink } from '@server/lib/pages';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
-import { buildPageToc, type TocEntry } from '@mantle/content/page-toc';
+import { buildPageToc, type TocEntry } from '@mantle/content-core/page-toc';
 import {
   AlertDialog,
   AlertDialogAction,

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import YAML from 'yaml';
 import katex from 'katex';
-import { parseFormulaSpec } from '@mantle/content/formula-spec';
-import { FORMULA_SEED_SLUGS } from '@mantle/content/formula-seed';
+import { parseFormulaSpec } from '@mantle/content-core/formula-spec';
+import { FORMULA_SEED_SLUGS } from '@mantle/content-core/formula-seed';
 import { FORMULA_TEMPLATES } from './formula-templates';
 
 /**

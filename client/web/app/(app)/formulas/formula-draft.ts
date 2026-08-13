@@ -10,7 +10,7 @@
  * through either has to be lossless.
  */
 
-import { parseInputText } from '@mantle/content/formula-eval';
+import { parseInputText } from '@mantle/content-core/formula-eval';
 
 export type Row = Record<string, unknown>;
 export type Draft = Record<string, unknown>;

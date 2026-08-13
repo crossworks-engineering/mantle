@@ -89,7 +89,7 @@ import { TagInput } from '@/components/tag-input';
 import { PageView } from '@/components/page-editor/page-view';
 import { ShareControl } from '@/components/share-control';
 import { PageOutline } from '@mantle/web-ui/page-outline';
-import { buildPageToc } from '@mantle/content/page-toc';
+import { buildPageToc } from '@mantle/content-core/page-toc';
 import { StretchHorizontal } from 'lucide-react';
 import { FocusToggle } from '@/components/layout/focus-toggle';
 import { useZenMode } from '@/components/layout/zen-mode';

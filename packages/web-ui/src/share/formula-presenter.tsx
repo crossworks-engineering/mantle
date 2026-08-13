@@ -2,11 +2,11 @@ import katex from 'katex';
 import type { ReactNode } from 'react';
 import type {
   CoverageGap,
-  DimensionIssue,
   FormulaSpec,
   FormulaValue,
   SpecLookup,
-} from '@mantle/content';
+} from '@mantle/content-core/formula-spec';
+import type { DimensionIssue } from '@mantle/content-core/formula-dimensions';
 
 /**
  * Public render of a shared formula: the calculation model, its citation, and

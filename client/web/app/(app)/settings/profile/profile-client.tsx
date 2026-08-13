@@ -42,10 +42,10 @@ import { agentInitials } from '@/lib/agent-color';
 // Import the value from the browser-safe LEAF, not the @mantle/content barrel —
 // the barrel pulls backup.ts (node:os) + identity-context (@mantle/db) into the
 // client bundle. The type is erased, so it's safe from the barrel.
-import { PURPOSE_ARCHETYPES } from '@mantle/content/onboarding-questions';
+import { PURPOSE_ARCHETYPES } from '@mantle/content-core/onboarding-questions';
 // Same leaf rule as above: thinking-tiers.ts has no imports at all, whereas
 // profile-preferences.ts (which re-exports it) pulls in @mantle/db.
-import { THINKING_TIERS, thinkingEffortForBudget } from '@mantle/content/thinking-tiers';
+import { THINKING_TIERS, thinkingEffortForBudget } from '@mantle/content-core/thinking-tiers';
 import type { ProfilePreferences } from '@mantle/content';
 
 /** Sentinel for "no pinned responder" — Radix Select can't use an empty-string

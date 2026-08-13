@@ -37,7 +37,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { assetUrl } from '@mantle/web-ui/asset-url';
-import { fileRawSrc, mediaFileId } from '@mantle/content/markdown-refs';
+import { fileRawSrc, mediaFileId } from '@mantle/content-core/markdown-refs';
 import { COMPOSER_BAND_GRADIENT, COMPOSER_BOX } from '@mantle/web-ui/lib/composer-style';
 import { uuid } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import { isTurnStreamingEnabledClient } from '@mantle/web-ui/turn-streaming';

@@ -21,7 +21,7 @@
  * below so it is a recorded decision rather than an unnoticed gap.
  */
 import { describe, expect, it } from 'vitest';
-import { markdownToDoc } from '@mantle/content/markdown';
+import { markdownToDoc } from '@mantle/content-core/markdown';
 import { richMarkdownToHtml } from './rich-markdown';
 
 type PMNode = { type: string; attrs?: Record<string, unknown>; content?: PMNode[] };

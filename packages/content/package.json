@@ -57,7 +57,8 @@
     "exceljs": "^4.4.0",
     "marked": "^18.0.7",
     "mathjs": "15.2.0",
-    "tz-lookup": "^6.1.25"
+    "tz-lookup": "^6.1.25",
+    "@mantle/content-core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

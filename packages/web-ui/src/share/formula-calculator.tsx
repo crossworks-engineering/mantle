@@ -1,8 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { parseInputText } from '@mantle/content/formula-eval';
-import type { FormulaValue, TargetSignature, TraceStep } from '@mantle/content';
+import { parseInputText } from '@mantle/content-core/formula-eval';
+import type { FormulaValue } from '@mantle/content-core/formula-spec';
+import type { TargetSignature } from '@mantle/content-core/formula-signature';
+import type { TraceStep } from '@mantle/content-core/formula-eval';
 
 /**
  * The live calculator on a shared formula — a client island, because it is the

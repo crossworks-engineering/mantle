@@ -1,0 +1,37 @@
+{
+  "name": "@mantle/content-core",
+  "version": "0.0.1",
+  "description": "Browser-safe content logic — markdown, blocks, pages, tables, formulas — shared by the server and any client. Zero server deps by design: nothing here may reach @mantle/db, node-only APIs, or the network (the jackdaw-repo-split P0 boundary).",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    "./markdown": "./src/markdown-to-doc.ts",
+    "./markdown-refs": "./src/markdown-refs.ts",
+    "./doc-to-markdown": "./src/doc-to-markdown.ts",
+    "./block-ids": "./src/block-ids.ts",
+    "./block-list": "./src/block-list.ts",
+    "./block-diff": "./src/block-diff.ts",
+    "./page-toc": "./src/page-toc.ts",
+    "./page-split": "./src/page-split.ts",
+    "./page-diff": "./src/page-diff.ts",
+    "./table-model": "./src/table-model.ts",
+    "./table-formula": "./src/table-formula.ts",
+    "./table-formula-mathjs": "./src/table-formula-mathjs.ts",
+    "./formula-spec": "./src/formula-spec.ts",
+    "./formula-eval": "./src/formula-eval.ts",
+    "./formula-seed": "./src/formula-seed.ts",
+    "./formula-dimensions": "./src/formula-dimensions.ts",
+    "./contacts-format": "./src/contacts-format.ts",
+    "./journal-options": "./src/journal-options.ts",
+    "./onboarding-questions": "./src/onboarding-questions.ts",
+    "./persona-bank": "./src/persona-bank.ts",
+    "./thinking-tiers": "./src/thinking-tiers.ts",
+    "./formula-signature": "./src/formula-signature.ts"
+  },
+  "dependencies": {
+    "marked": "^18.0.7",
+    "mathjs": "15.2.0"
+  }
+}

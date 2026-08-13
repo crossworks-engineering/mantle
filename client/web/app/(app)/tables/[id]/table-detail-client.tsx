@@ -40,7 +40,7 @@ import { EmojiPicker } from '@/components/emoji-picker';
 import { ShareControl } from '@/components/share-control';
 import { TableGrid } from '@/components/table-grid/table-grid';
 import { useSurfaceAssist } from '@/components/assistant/use-surface-assist';
-import { diffTableDocs, ensureTableDoc, type TableDoc } from '@mantle/content/table-model';
+import { diffTableDocs, ensureTableDoc, type TableDoc } from '@mantle/content-core/table-model';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { uuid } from '@mantle/web-ui/lib/secure-context-fallbacks';
 import type { TableDetail } from '@server/lib/tables';

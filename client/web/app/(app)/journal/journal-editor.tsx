@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { MOODS, CATEGORIES } from '@mantle/content/journal-options';
+import { MOODS, CATEGORIES } from '@mantle/content-core/journal-options';
 import { Button } from '@mantle/web-ui/ui/button';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';

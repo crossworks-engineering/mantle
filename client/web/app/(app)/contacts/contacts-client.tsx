@@ -50,7 +50,7 @@ import {
   isPlausibleEmailOrDomain,
   normalizeCountryCode,
   type ContactRow,
-} from '@mantle/content/contacts-format';
+} from '@mantle/content-core/contacts-format';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';

@@ -109,7 +109,7 @@ import {
   type ColumnType,
   type Row,
   type TableDoc,
-} from '@mantle/content/table-model';
+} from '@mantle/content-core/table-model';
 
 const TYPE_LABEL: Record<ColumnType, string> = {
   text: 'Text',

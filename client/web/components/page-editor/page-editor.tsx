@@ -16,8 +16,8 @@ import { FocusMarks, focusMarksKey } from './focus-marks';
 import { FocusGutter } from './focus-gutter';
 import { DiffReview, diffReviewKey, DIFF_ACTION_EVENT } from './diff-review';
 import { handleDroppedFiles } from './upload';
-import { markdownToDoc } from '@mantle/content/markdown';
-import type { DiffOverlay } from '@mantle/content/page-diff';
+import { markdownToDoc } from '@mantle/content-core/markdown';
+import type { DiffOverlay } from '@mantle/content-core/page-diff';
 import type { JSONContent as TipTapJSON } from '@tiptap/react';
 
 /**

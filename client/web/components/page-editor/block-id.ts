@@ -44,7 +44,7 @@ import { Plugin, PluginKey, type Transaction } from '@tiptap/pm/state';
 // db/client → postgres, which is Node-only and breaks Turbopack's client
 // bundle ("Module not found: Can't resolve 'fs'"). Mirrors the same
 // browser-safe pattern as @mantle/content/contacts-format.
-import { BLOCK_NODE_TYPES } from '@mantle/content/block-ids';
+import { BLOCK_NODE_TYPES } from '@mantle/content-core/block-ids';
 
 const blockIdKey = new PluginKey('blockIdUnique');
 

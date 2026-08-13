@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { checkDimensions } from '@mantle/content/formula-dimensions';
-import { checkLookupCoverage, parseFormulaSpec } from '@mantle/content/formula-spec';
+import { checkDimensions } from '@mantle/content-core/formula-dimensions';
+import { checkLookupCoverage, parseFormulaSpec } from '@mantle/content-core/formula-spec';
 import { FormulaPresenter } from './formula-presenter';
 
 /**

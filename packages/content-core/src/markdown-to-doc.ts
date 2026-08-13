@@ -1,0 +1,567 @@
+/**
+ * markdownToDoc — the inverse of `docToText` for authoring. Converts Saskia's
+ * rich-markdown dialect into a ProseMirror / TipTap JSON document so an agent
+ * can CREATE and UPDATE pages (which store `pages.doc` as ProseMirror JSON, not
+ * markdown). The node names/attrs here MUST match the Pages editor schema
+ * (`apps/web/components/page-editor/extensions.ts`): paragraph, heading,
+ * bulletList/orderedList/listItem, taskList/taskItem, codeBlock, blockquote,
+ * horizontalRule, table/tableRow/tableHeader/tableCell, callout, columnList/
+ * column, plus the bold/italic/strike/code/link/highlight/textColor marks.
+ *
+ * The dialect is GFM markdown (via `marked`) plus three container constructs
+ * markdown lacks — identical to what the assistant renderer accepts and what
+ * the rich_writing skill teaches:
+ *
+ *   Callout:  :::info … :::      (variants info|success|warning|danger)
+ *   Aside:    :::aside … :::     (optional themed colour: :::aside chart-3)
+ *             also accepts Notion's `<aside> … </aside>` callout export, which
+ *             imports as an aside block (colour/angle cycled for variety)
+ *   Columns:  :::columns … +++ … :::   (2+ parts split by a lone +++)
+ *   Highlight: ==text==
+ *   Colour:    [text]{color=chart-2}  /  [text]{highlight=chart-3}  (chart-1..5)
+ *
+ * Pure (only `marked`) and DB-free, so it's safe to call from the tool
+ * runtime. Defensive: anything it can't map degrades to a paragraph rather
+ * than throwing.
+ */
+import { Marked, type TokenizerAndRendererExtension } from 'marked';
+import { ensureBlockIds } from './block-ids';
+// The reference-link schemes live in their own leaf so the client converter
+// (client/web/lib/rich-markdown.ts) reads the SAME definitions. See
+// markdown-refs.ts for why, and rich-markdown.drift.test.ts for the guard.
+import { MENTION_HREF, MEDIA_HREF, PAGE_HREF, DRAW_HREF } from './markdown-refs';
+
+type PMMark = { type: string; attrs?: Record<string, unknown> };
+type PMNode = {
+  type: string;
+  attrs?: Record<string, unknown>;
+  content?: PMNode[];
+  text?: string;
+  marks?: PMMark[];
+};
+
+/** Loose view of the marked token shapes we read. */
+type Tok = {
+  type: string;
+  text?: string;
+  depth?: number;
+  lang?: string;
+  ordered?: boolean;
+  task?: boolean;
+  checked?: boolean;
+  href?: string;
+  latex?: string;
+  color?: string;
+  highlight?: string;
+  tokens?: Tok[];
+  items?: Tok[];
+  header?: Array<{ tokens?: Tok[] }>;
+  rows?: Array<Array<{ tokens?: Tok[] }>>;
+};
+
+const highlightExtension: TokenizerAndRendererExtension = {
+  name: 'highlight',
+  level: 'inline',
+  start(src) {
+    return src.indexOf('==');
+  },
+  tokenizer(src) {
+    const m = /^==(?=\S)([\s\S]*?\S)==/.exec(src);
+    if (!m) return undefined;
+    return { type: 'highlight', raw: m[0], text: m[1]!, tokens: this.lexer.inlineTokens(m[1]!) };
+  },
+  renderer(token) {
+    return `<mark>${this.parser.parseInline(token.tokens ?? [])}</mark>`;
+  },
+};
+
+// `[text]{color=chart-2}` / `[text]{highlight=chart-3}` → themed text-colour and
+// highlight marks (tokens chart-1..5; both keys may appear in one span). Kept in
+// lockstep with apps/web/lib/rich-markdown.ts + the rich_writing skill.
+const COLOR_TOKEN_RE = /^chart-[1-5]$/;
+function parseColorAttrs(attrStr: string): { color?: string; highlight?: string } {
+  const res: { color?: string; highlight?: string } = {};
+  for (const part of attrStr.trim().split(/\s+/)) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    const key = part.slice(0, eq).trim();
+    const val = part.slice(eq + 1).trim();
+    if ((key === 'color' || key === 'highlight') && COLOR_TOKEN_RE.test(val)) res[key] = val;
+  }
+  return res;
+}
+const colorSpanExtension: TokenizerAndRendererExtension = {
+  name: 'colorSpan',
+  level: 'inline',
+  start(src) {
+    return src.indexOf('[');
+  },
+  tokenizer(src) {
+    const m = /^\[([\s\S]*?\S)\]\{([^}]+)\}/.exec(src);
+    if (!m) return undefined;
+    const { color, highlight } = parseColorAttrs(m[2]!);
+    if (!color && !highlight) return undefined; // not a colour span — let link/text handle it
+    return {
+      type: 'colorSpan',
+      raw: m[0],
+      text: m[1]!,
+      tokens: this.lexer.inlineTokens(m[1]!),
+      color,
+      highlight,
+    };
+  },
+  renderer() {
+    return ''; // unused — this converter reads the token, not rendered HTML
+  },
+};
+
+// Inline `$…$` → an inlineMath token (block `$$…$$` is handled at line level).
+const inlineMathExtension: TokenizerAndRendererExtension = {
+  name: 'inlineMath',
+  level: 'inline',
+  start(src) {
+    return src.indexOf('$');
+  },
+  tokenizer(src) {
+    const m = /^\$(?!\s)([^$\n]+?)(?<!\s)\$/.exec(src);
+    if (!m) return undefined;
+    return { type: 'inlineMath', raw: m[0], latex: m[1]! };
+  },
+  renderer() {
+    return ''; // unused — this converter reads the token, not the rendered HTML
+  },
+};
+
+const md = new Marked({ gfm: true });
+md.use({ extensions: [highlightExtension, colorSpanExtension, inlineMathExtension] });
+
+const CALLOUT_VARIANTS = new Set(['info', 'success', 'warning', 'danger']);
+const ASIDE_COLORS = new Set(['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5']);
+// Imported `<aside>` blocks (Notion callout export) cycle through the themed
+// colours + a spread of angles so a doc full of asides reads varied, not
+// monotone. Deterministic (by occurrence order) → a re-import is stable.
+const ASIDE_COLOR_CYCLE = ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5'] as const;
+const ASIDE_ANGLE_CYCLE = [135, 60, 200, 300, 20];
+// Optional trailing token after the kind carries an aside's themed colour
+// (`:::aside chart-3`); ignored for callout/columns. Backward compatible.
+const FENCE_OPEN = /^:::([A-Za-z]+)(?:\s+([A-Za-z0-9-]+))?\s*$/;
+const BLOCK_MATH_INLINE = /^\$\$(.+?)\$\$\s*$/;
+// Notion exports callout blocks as `<aside> … </aside>` (often with a leading
+// emoji). Recognise the open/close tags so they import as real aside blocks
+// instead of falling through to `marked` as literal `<aside>` text.
+const ASIDE_HTML_OPEN = /^<aside\b[^>]*>\s*(.*)$/i;
+const ASIDE_HTML_CLOSE = /<\/aside\s*>/i;
+
+function lex(src: string): Tok[] {
+  return md.lexer(src) as unknown as Tok[];
+}
+
+function withMark(marks: PMMark[], m: PMMark): PMMark[] {
+  return [...marks, m];
+}
+
+/** Map marked inline tokens to ProseMirror text/hardBreak nodes. */
+function inline(tokens: Tok[] | undefined, marks: PMMark[] = []): PMNode[] {
+  const out: PMNode[] = [];
+  for (const t of tokens ?? []) {
+    switch (t.type) {
+      case 'text':
+      case 'escape':
+      case 'html': {
+        const text = t.text ?? '';
+        if (text)
+          out.push(
+            marks.length ? { type: 'text', text, marks: [...marks] } : { type: 'text', text },
+          );
+        break;
+      }
+      case 'strong':
+        out.push(...inline(t.tokens, withMark(marks, { type: 'bold' })));
+        break;
+      case 'em':
+        out.push(...inline(t.tokens, withMark(marks, { type: 'italic' })));
+        break;
+      case 'del':
+        out.push(...inline(t.tokens, withMark(marks, { type: 'strike' })));
+        break;
+      case 'highlight':
+        out.push(...inline(t.tokens, withMark(marks, { type: 'highlight' })));
+        break;
+      case 'colorSpan': {
+        let m = marks;
+        if (t.color) m = withMark(m, { type: 'textColor', attrs: { color: t.color } });
+        if (t.highlight) m = withMark(m, { type: 'highlight', attrs: { color: t.highlight } });
+        out.push(...inline(t.tokens, m));
+        break;
+      }
+      case 'codespan': {
+        const text = t.text ?? '';
+        if (text) out.push({ type: 'text', text, marks: withMark(marks, { type: 'code' }) });
+        break;
+      }
+      case 'link': {
+        // [label](mention:<ref>:<id>) → a mention chip (the round-trip form
+        // docToMarkdown emits). Anything else stays an ordinary link mark.
+        const m = MENTION_HREF.exec(t.href ?? '');
+        if (m) {
+          out.push({
+            type: 'mention',
+            attrs: { id: m[2]!, label: t.text ?? m[2]!, ref: m[1] ?? 'entity', kind: null },
+          });
+          break;
+        }
+        out.push(
+          ...inline(t.tokens, withMark(marks, { type: 'link', attrs: { href: t.href ?? '' } })),
+        );
+        break;
+      }
+      case 'inlineMath':
+        out.push({ type: 'inlineMath', attrs: { latex: t.latex ?? t.text ?? '' } });
+        break;
+      case 'image':
+        // Block image — handled at paragraph level (paragraphAndImages); skip
+        // here so it never lands inside inline content.
+        break;
+      case 'br':
+        out.push({ type: 'hardBreak' });
+        break;
+      default:
+        if (t.text)
+          out.push(
+            marks.length
+              ? { type: 'text', text: t.text, marks: [...marks] }
+              : { type: 'text', text: t.text },
+          );
+    }
+  }
+  return out;
+}
+
+function paragraph(tokens: Tok[] | undefined, fallback?: string): PMNode {
+  const content = inline(tokens);
+  if (content.length === 0 && fallback) content.push({ type: 'text', text: fallback });
+  return content.length ? { type: 'paragraph', content } : { type: 'paragraph' };
+}
+
+/** A paragraph's inline tokens, with any markdown images (`![alt](url)`) lifted
+ *  out as standalone block image nodes (the image node is block-level). */
+function paragraphAndImages(tokens: Tok[] | undefined): PMNode[] {
+  const out: PMNode[] = [];
+  let buf: Tok[] = [];
+  const flush = () => {
+    const content = inline(buf);
+    if (content.length) out.push({ type: 'paragraph', content });
+    buf = [];
+  };
+  for (const t of tokens ?? []) {
+    if (t.type === 'image') {
+      flush();
+      // ![alt](media:<fileId>) → an uploaded (nodeId-backed) image;
+      // ![alt](draw:<drawId>)  → an embedded drawing, which is still an IMAGE
+      // node (block-level picture with alt text) — only the bytes come from a
+      // drawing's committed snapshot instead of an uploaded file, so the whole
+      // image pipeline carries it. Anything else is a plain URL image.
+      const media = MEDIA_HREF.exec(t.href ?? '');
+      const draw = DRAW_HREF.exec(t.href ?? '');
+      out.push(
+        media
+          ? { type: 'image', attrs: { src: null, alt: t.text ?? null, nodeId: media[1]! } }
+          : draw
+            ? { type: 'image', attrs: { src: null, alt: t.text ?? null, drawId: draw[1]! } }
+            : { type: 'image', attrs: { src: t.href ?? '', alt: t.text ?? null } },
+      );
+    } else {
+      buf.push(t);
+    }
+  }
+  flush();
+  return out;
+}
+
+/** A paragraph consisting solely of one link (whitespace allowed around it)
+ *  returns that link token; used to lift [file](media:…) and [Title](page:…)
+ *  standalone lines into their block nodes (fileEmbed / childPage). */
+function soleLink(tokens: Tok[] | undefined): Tok | null {
+  let link: Tok | null = null;
+  for (const t of tokens ?? []) {
+    if (t.type === 'link') {
+      if (link) return null;
+      link = t;
+    } else if (t.type === 'text' || t.type === 'escape') {
+      if ((t.text ?? '').trim() !== '') return null;
+    } else {
+      return null;
+    }
+  }
+  return link;
+}
+
+/** Lift a standalone media:/page: link paragraph into its block node, else null. */
+function blockRefNode(tokens: Tok[] | undefined): PMNode | null {
+  const link = soleLink(tokens);
+  if (!link) return null;
+  const media = MEDIA_HREF.exec(link.href ?? '');
+  if (media) {
+    return {
+      type: 'fileEmbed',
+      attrs: { nodeId: media[1]!, filename: link.text || 'file' },
+    };
+  }
+  const page = PAGE_HREF.exec(link.href ?? '');
+  if (page) {
+    return {
+      type: 'childPage',
+      attrs: { pageId: page[1]!, title: link.text || 'Untitled page', icon: null },
+    };
+  }
+  return null;
+}
+
+/** Block content must be non-empty for listItem/blockquote/cell/etc. */
+function nonEmpty(b: PMNode[]): PMNode[] {
+  return b.length ? b : [{ type: 'paragraph' }];
+}
+
+function listNode(t: Tok): PMNode {
+  const items = t.items ?? [];
+  if (items.some((it) => it.task)) {
+    return {
+      type: 'taskList',
+      content: items.map((it) => ({
+        type: 'taskItem',
+        attrs: { checked: !!it.checked },
+        content: nonEmpty(blocks(it.tokens)),
+      })),
+    };
+  }
+  return {
+    type: t.ordered ? 'orderedList' : 'bulletList',
+    content: items.map((it) => ({ type: 'listItem', content: nonEmpty(blocks(it.tokens)) })),
+  };
+}
+
+function tableNode(t: Tok): PMNode {
+  const headerRow: PMNode = {
+    type: 'tableRow',
+    content: (t.header ?? []).map((c) => ({ type: 'tableHeader', content: [paragraph(c.tokens)] })),
+  };
+  const bodyRows: PMNode[] = (t.rows ?? []).map((row) => ({
+    type: 'tableRow',
+    content: row.map((c) => ({ type: 'tableCell', content: [paragraph(c.tokens)] })),
+  }));
+  return { type: 'table', content: [headerRow, ...bodyRows] };
+}
+
+/** Map marked block tokens to ProseMirror block nodes. */
+function blocks(tokens: Tok[] | undefined): PMNode[] {
+  const out: PMNode[] = [];
+  for (const t of tokens ?? []) {
+    switch (t.type) {
+      case 'space':
+      case 'def':
+        break;
+      case 'heading':
+        out.push({
+          type: 'heading',
+          attrs: { level: Math.min(Math.max(t.depth ?? 1, 1), 3) },
+          content: inline(t.tokens),
+        });
+        break;
+      case 'paragraph': {
+        const ref = blockRefNode(t.tokens);
+        if (ref) {
+          out.push(ref);
+          break;
+        }
+        const parts = paragraphAndImages(t.tokens);
+        if (parts.length) out.push(...parts);
+        break;
+      }
+      case 'text': {
+        const ref = blockRefNode(t.tokens);
+        if (ref) {
+          out.push(ref);
+          break;
+        }
+        const parts = paragraphAndImages(t.tokens);
+        if (parts.length) out.push(...parts);
+        else if (t.text) out.push(paragraph(undefined, t.text));
+        break;
+      }
+      case 'blockquote':
+        out.push({ type: 'blockquote', content: nonEmpty(blocks(t.tokens)) });
+        break;
+      case 'code': {
+        const codeText = t.text ?? '';
+        // A ```mermaid fence is a diagram node (source kept verbatim), not a
+        // code block. marked's `lang` carries the FULL info string, so match
+        // on its first word — '```mermaid title=x' is still a diagram (the
+        // rest of the info string carries no meaning for us and is dropped).
+        const fenceLang = (t.lang ?? '').trim().split(/\s+/, 1)[0]?.toLowerCase();
+        if (fenceLang === 'mermaid') {
+          out.push({ type: 'diagram', attrs: { source: codeText } });
+          break;
+        }
+        out.push({
+          type: 'codeBlock',
+          attrs: { language: t.lang ? t.lang : null },
+          ...(codeText ? { content: [{ type: 'text', text: codeText }] } : {}),
+        });
+        break;
+      }
+      case 'hr':
+        out.push({ type: 'horizontalRule' });
+        break;
+      case 'list':
+        out.push(listNode(t));
+        break;
+      case 'table':
+        out.push(tableNode(t));
+        break;
+      default:
+        if (t.tokens) out.push(paragraph(t.tokens));
+        else if (t.text) out.push(paragraph(undefined, t.text));
+    }
+  }
+  return out;
+}
+
+function asideNode(body: string[], color: string, angle: number): PMNode {
+  return {
+    type: 'aside',
+    attrs: { color, angle },
+    content: nonEmpty(blocks(lex(body.join('\n')))),
+  };
+}
+
+function columnsNode(body: string[]): PMNode | null {
+  const segs: string[][] = [[]];
+  for (const l of body) {
+    if (/^\+\+\+\s*$/.test(l.trim())) segs.push([]);
+    else segs[segs.length - 1]!.push(l);
+  }
+  const cols = segs.map((s) => s.join('\n').trim()).filter((s) => s.length > 0);
+  if (cols.length < 2) return null;
+  return {
+    type: 'columnList',
+    content: cols.map((c) => ({ type: 'column', content: nonEmpty(blocks(lex(c))) })),
+  };
+}
+
+export function markdownToDoc(source: string): Record<string, unknown> {
+  const lines = (source ?? '').replace(/\r\n/g, '\n').split('\n');
+  const content: PMNode[] = [];
+  let plain: string[] = [];
+  const flush = () => {
+    if (plain.length) {
+      const text = plain.join('\n');
+      if (text.trim()) content.push(...blocks(lex(text)));
+      plain = [];
+    }
+  };
+
+  let i = 0;
+  let asideSeq = 0; // cycles colour/angle across imported <aside> blocks
+  while (i < lines.length) {
+    const line = lines[i]!;
+
+    // Notion `<aside> … </aside>` callout export → a real aside block. Handle it
+    // at the line level (before `marked`), like the `:::` fences, so the tags
+    // never reach the lexer as literal text. Body content (incl. any leading
+    // emoji) is parsed as blocks; colour/angle cycle for visual variety.
+    const asideHtml = ASIDE_HTML_OPEN.exec(line.trim());
+    if (asideHtml) {
+      flush();
+      const body: string[] = [];
+      const rest = asideHtml[1] ?? '';
+      if (ASIDE_HTML_CLOSE.test(rest)) {
+        // single line: <aside> … </aside>
+        const inner = rest.replace(/<\/aside\s*>.*$/i, '').trim();
+        if (inner) body.push(inner);
+        i++;
+      } else {
+        if (rest.trim()) body.push(rest);
+        i++;
+        while (i < lines.length) {
+          const l = lines[i]!;
+          if (ASIDE_HTML_CLOSE.test(l)) {
+            const before = l.replace(/<\/aside\s*>.*$/i, '');
+            if (before.trim()) body.push(before);
+            i++; // consume the closing tag line
+            break;
+          }
+          body.push(l);
+          i++;
+        }
+      }
+      const color = ASIDE_COLOR_CYCLE[asideSeq % ASIDE_COLOR_CYCLE.length]!;
+      const angle = ASIDE_ANGLE_CYCLE[asideSeq % ASIDE_ANGLE_CYCLE.length]!;
+      asideSeq++;
+      content.push(asideNode(body, color, angle));
+      continue;
+    }
+
+    // Block math: `$$ … $$` on one line, or a `$$` fence over several lines.
+    const oneLineMath = BLOCK_MATH_INLINE.exec(line.trim());
+    if (oneLineMath) {
+      flush();
+      content.push({ type: 'blockMath', attrs: { latex: oneLineMath[1]!.trim() } });
+      i++;
+      continue;
+    }
+    if (line.trim() === '$$') {
+      flush();
+      const body: string[] = [];
+      i++;
+      while (i < lines.length && lines[i]!.trim() !== '$$') {
+        body.push(lines[i]!);
+        i++;
+      }
+      i++; // consume closing $$
+      content.push({ type: 'blockMath', attrs: { latex: body.join('\n').trim() } });
+      continue;
+    }
+
+    const fence = FENCE_OPEN.exec(line.trim());
+    if (fence) {
+      flush();
+      const kind = fence[1]!.toLowerCase();
+      const arg = fence[2]?.toLowerCase();
+      const body: string[] = [];
+      i++;
+      while (i < lines.length && lines[i]!.trim() !== ':::') {
+        body.push(lines[i]!);
+        i++;
+      }
+      i++; // consume closing :::
+      if (kind === 'columns') {
+        const col = columnsNode(body);
+        if (col) content.push(col);
+        else content.push(...blocks(lex(body.join('\n'))));
+      } else if (kind === 'aside') {
+        const color = arg && ASIDE_COLORS.has(arg) ? arg : 'chart-1';
+        content.push(asideNode(body, color, 135));
+      } else {
+        const variant = CALLOUT_VARIANTS.has(kind) ? kind : 'info';
+        content.push({
+          type: 'callout',
+          attrs: { variant },
+          content: nonEmpty(blocks(lex(body.join('\n')))),
+        });
+      }
+      continue;
+    }
+    plain.push(line);
+    i++;
+  }
+  flush();
+
+  // Inject stable per-block ids so the produced doc is addressable by the
+  // Phase 2b block-edit tools + the Phase 3a editor diff view. Pure pass —
+  // doc shape unchanged except for added `attrs.id` on every block node.
+  // See block-ids.ts for the coverage list.
+  return ensureBlockIds({
+    type: 'doc',
+    content: content.length ? content : [{ type: 'paragraph' }],
+  });
+}
