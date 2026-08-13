@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
 import { BrandLogo } from './brand-logo';
+import { JackdawBadge, JackdawRow } from './jackdaw-mark';
 
 /**
  * Identity block at the head of the rail: the wordmark (or the uploaded brand
@@ -130,54 +131,19 @@ export function BrandBlock({
  * waits on a fetch.
  */
 function JackdawMark({ className }: { className?: string }) {
-  const row = 'h-9 w-auto max-w-full object-contain object-left';
-  const badge = 'size-8 shrink-0 object-contain';
   return (
-    // `contents` keeps this wrapper out of the layout — the imgs stay direct
-    // flex children of the Link. It exists only so the caller's visibility
-    // class lands ONCE, above the collapse/theme swaps: `dark:hidden` here
-    // beats `contents` on specificity and takes the whole subtree with it,
-    // which stacking four variant combinations onto four imgs would not
-    // reliably do (the winner would depend on utility order in the sheet).
+    // Both forms render and the shell's collapse state picks one, exactly as
+    // `Wordmark` does below — no width measurement, no JS. The outer `contents`
+    // carries the caller's visibility class once, above both swaps.
     <span className={cn('contents', className)}>
-      <span className="contents group-data-[nav-collapsed=true]/shell:hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/jackdaw-row-light.png"
-          alt="Jackdaw"
-          width={129}
-          height={36}
-          className={cn(row, 'dark:hidden')}
-        />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/jackdaw-row-dark.png"
-          alt="Jackdaw"
-          width={127}
-          height={36}
-          className={cn(row, 'hidden dark:block')}
-        />
-      </span>
-      <span className="hidden group-data-[nav-collapsed=true]/shell:contents">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/jackdaw-badge-light.png"
-          alt=""
-          aria-hidden
-          width={32}
-          height={32}
-          className={cn(badge, 'dark:hidden')}
-        />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/jackdaw-badge-dark.png"
-          alt=""
-          aria-hidden
-          width={32}
-          height={32}
-          className={cn(badge, 'hidden dark:block')}
-        />
-      </span>
+      <JackdawRow
+        className="h-9 max-w-full"
+        visibility="group-data-[nav-collapsed=true]/shell:hidden"
+      />
+      <JackdawBadge
+        className="size-8 shrink-0"
+        visibility="hidden group-data-[nav-collapsed=true]/shell:contents"
+      />
     </span>
   );
 }

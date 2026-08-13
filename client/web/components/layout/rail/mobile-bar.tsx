@@ -6,6 +6,7 @@ import { cn } from '@mantle/web-ui/lib/utils';
 import { Button } from '@mantle/web-ui/ui/button';
 import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
 import { BrandLogo } from './brand-logo';
+import { JackdawRow } from './jackdaw-mark';
 import { ProfileMenu, type ProfileIdentity } from './profile-menu';
 
 /**
@@ -40,7 +41,11 @@ export function MobileBar({
   onMenuClick: () => void;
   onSearchClick: () => void;
 }) {
-  const name = siteName || 'mantle';
+  // As in the rail: an unnamed brain wears the brand art rather than the
+  // brand's name set in type. There is no collapsed state here — the bar is
+  // one line at every width it exists at — so the row lockup is the only form.
+  const named = Boolean(siteName?.trim());
+  const name = siteName?.trim() || 'Jackdaw';
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex h-[var(--top-bar-h)] items-center gap-1 border-b border-sidebar-border bg-sidebar px-2 md:hidden">
@@ -65,18 +70,22 @@ export function MobileBar({
           logoVersion={logoVersion}
           logoDarkVersion={logoDarkVersion}
           imgClassName="h-7 w-auto max-w-[40vw] object-contain object-left"
-          renderWordmark={(visibility) => (
-            /* Width-only clipping, as in the rail: the wordmark faces overshoot
-               the em box and `truncate` would shave the letterforms. */
-            <span
-              className={cn(
-                'wordmark -mx-1 max-w-[40vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-1 leading-none text-primary-ink',
-                visibility,
-              )}
-            >
-              {name}
-            </span>
-          )}
+          renderWordmark={(visibility) =>
+            named ? (
+              /* Width-only clipping, as in the rail: the wordmark faces overshoot
+                 the em box and `truncate` would shave the letterforms. */
+              <span
+                className={cn(
+                  'wordmark -mx-1 max-w-[40vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-1 leading-none text-primary-ink',
+                  visibility,
+                )}
+              >
+                {name}
+              </span>
+            ) : (
+              <JackdawRow className="h-7 max-w-[40vw]" visibility={visibility} />
+            )
+          }
         />
       </Link>
 
