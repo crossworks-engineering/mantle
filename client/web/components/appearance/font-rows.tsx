@@ -29,6 +29,9 @@ type Row = {
   sample: (ctx: { wordmark: string; peer: string }) => string;
 };
 
+/** Order is the LAYOUT: the cards render into a two-column row-major grid, so
+ *  this sequence puts the reading faces down the left (interface, Pages/Notes)
+ *  and the header faces down the right (wordmark, peer name). */
 const ROWS: Row[] = [
   {
     slot: 'ui',
@@ -43,35 +46,25 @@ const ROWS: Row[] = [
     sample: ({ wordmark }) => wordmark,
   },
   {
-    slot: 'title',
-    label: 'Peer name',
-    description: 'This node’s federation-facing label, shown in the centre of the header.',
-    sample: ({ peer }) => peer,
-  },
-  {
     slot: 'prose',
     label: 'Pages and Notes',
     description:
       'Long-form writing in the editor, on shared pages, and in the PDF export. The one choice that leaves the browser.',
     sample: () => 'The quick brown fox',
   },
+  {
+    slot: 'title',
+    label: 'Peer name',
+    description: 'This node’s federation-facing label, shown in the centre of the header.',
+    sample: ({ peer }) => peer,
+  },
 ];
 
-export function FontRows({
-  title = 'Fonts',
-  slots,
-}: {
-  /** Section heading above the cards. */
-  title?: string;
-  /** Which of the four slots this instance shows, in order. Omit for all —
-   *  the Appearance screen splits them across two columns (reading faces left,
-   *  header faces right), and each instance owns only its own dialog. */
-  slots?: FontSlot[];
-} = {}) {
+export function FontRows() {
   const { fonts, sizes } = useFonts();
   const [openSlot, setOpenSlot] = React.useState<FontSlot | null>(null);
 
-  const rows = slots ? slots.flatMap((s) => ROWS.filter((r) => r.slot === s)) : ROWS;
+  const rows = ROWS;
 
   const shell = useQuery({
     queryKey: ['shell'],
@@ -85,9 +78,11 @@ export function FontRows({
   return (
     <section className="space-y-2">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {title}
+        Fonts
       </h2>
-      <div className="space-y-2">
+      {/* One section, two columns: grid rows keep the left and right cards
+          height-aligned, which two separately stacked columns could not. */}
+      <div className="grid gap-2 sm:grid-cols-2">
         {rows.map((row) => {
           const face = fontByKey(fonts[row.slot]);
           const size = FONT_SIZES.find((s) => s.id === sizes[row.slot]);
