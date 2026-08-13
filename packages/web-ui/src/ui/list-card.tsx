@@ -48,13 +48,18 @@ export function ListCardTitle({ className, ...props }: React.HTMLAttributes<HTML
 /** Two-line body/summary preview under the title. */
 export function ListCardSnippet({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('mt-0.5 line-clamp-2 text-xs text-muted-foreground', className)} {...props} />
+    <div
+      className={cn('mt-0.5 line-clamp-2 text-xs text-muted-foreground', className)}
+      {...props}
+    />
   );
 }
 
 /** One-line metadata (dates, counts, model ids). */
 export function ListCardMeta({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('mt-0.5 truncate text-xs text-muted-foreground', className)} {...props} />;
+  return (
+    <div className={cn('mt-0.5 truncate text-xs text-muted-foreground', className)} {...props} />
+  );
 }
 
 /** Wrapping row of `TagPill`s / chips at the card's foot. */
