@@ -1,5 +1,5 @@
 import { loadProfilePreferences } from '@mantle/content';
-import { resolveAppearanceAttrs, type AppearanceAttrs } from '@mantle/web-ui/appearance';
+import { resolveAppearanceAttrs, type AppearanceAttrs } from '@mantle/share-ui/appearance';
 
 /**
  * The brain's stored appearance — colour theme, the four fonts and their sizes,

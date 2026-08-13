@@ -69,7 +69,6 @@
     "./share/view-payload": "./src/share/view-payload.ts",
     "./sign-out": "./src/sign-out.ts",
     "./slugify": "./src/slugify.ts",
-    "./styles/themes.css": "./styles/themes.css",
     "./tag-pill": "./src/tag-pill.tsx",
     "./team-fetch": "./src/team-fetch.ts",
     "./text-colors": "./src/text-colors.ts",
@@ -126,10 +125,7 @@
     "./version": "./src/version.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "themes:build": "node themes/generate.mjs",
-    "themes:check": "node themes/generate.mjs --check",
-    "themes:report": "node themes/generate.mjs --report"
+    "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
     "react": "^19.2.7",

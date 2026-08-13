@@ -4,7 +4,7 @@
  * Both live in packages/web-ui so the two front ends cannot drift apart.
  * Relative paths: Tailwind's CSS @import resolver does not follow package
  * `exports`. */
-@import '../../../packages/web-ui/styles/themes.css';
+@import '../../../packages/share-ui/styles/themes.css';
 @import '../../../packages/web-ui/styles/app.css';
 /* Compiled by scripts/build-share-runtime.ts (Tailwind CLI, cwd server/web) for
  * the server-rendered /s + /print surfaces. web-ui sits outside that cwd, so

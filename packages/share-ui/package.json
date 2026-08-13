@@ -4,7 +4,10 @@
   "description": "The server-rendered share surface — the /s/<token> presenters, view-payload contract, mini-app sandbox, and the few primitives they need. Lives in MANTLE (the server renders these), published for jackdaw to consume; may depend only on @mantle/{client-types,content-core} (the jackdaw-repo-split boundary).",
   "private": true,
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "themes:build": "node themes/generate.mjs",
+    "themes:check": "node themes/generate.mjs --check",
+    "themes:report": "node themes/generate.mjs --report"
   },
   "exports": {
     "./app-presenter": "./src/app-presenter.tsx",
@@ -25,7 +28,12 @@
     "./lib/utils": "./src/lib/utils.ts",
     "./page-outline": "./src/page-outline.tsx",
     "./nav-items": "./src/nav-items.ts",
-    "./help-topics": "./src/help-topics.ts"
+    "./help-topics": "./src/help-topics.ts",
+    "./appearance": "./src/appearance.ts",
+    "./backgrounds": "./src/backgrounds.ts",
+    "./avatar": "./src/avatar.ts",
+    "./lib/themes": "./src/lib/themes.ts",
+    "./styles/themes.css": "./styles/themes.css"
   },
   "dependencies": {
     "@mantle/client-types": "workspace:*",
@@ -38,7 +46,9 @@
     "lucide-react": "^1.25.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "@dicebear/core": "^10.4.0",
+    "@dicebear/styles": "^10.3.0"
   },
   "peerDependencies": {
     "react": "^19.2.7",
@@ -47,6 +57,7 @@
   "devDependencies": {
     "@types/katex": "^0.16.8",
     "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "@types/node": "^22.20.1"
   }
 }

@@ -26,7 +26,7 @@ import { parseThemeBlocks } from './theme-css-blocks';
  *          are authored artwork and exempt from the chart bar.
  */
 const CSS = readFileSync(
-  fileURLToPath(new URL('../../styles/themes.css', import.meta.url)),
+  fileURLToPath(new URL('../../../share-ui/styles/themes.css', import.meta.url)),
   'utf8',
 );
 

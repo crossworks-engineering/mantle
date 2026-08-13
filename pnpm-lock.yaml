@@ -814,6 +814,12 @@ importers:
 
   packages/share-ui:
     dependencies:
+      '@dicebear/core':
+        specifier: ^10.4.0
+        version: 10.4.0
+      '@dicebear/styles':
+        specifier: ^10.3.0
+        version: 10.3.0
       '@mantle/client-types':
         specifier: workspace:*
         version: link:../client-types
@@ -857,6 +863,9 @@ importers:
       '@types/katex':
         specifier: ^0.16.8
         version: 0.16.8
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
       '@types/react':
         specifier: ^19.2.17
         version: 19.2.17
@@ -1403,9 +1412,6 @@ importers:
       '@mantle/voice':
         specifier: workspace:*
         version: link:../../packages/voice
-      '@mantle/web-ui':
-        specifier: workspace:*
-        version: link:../../packages/web-ui
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)

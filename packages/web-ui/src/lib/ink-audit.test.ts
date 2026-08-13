@@ -30,7 +30,10 @@ import { parseThemeBlocks } from './theme-css-blocks';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const REPO = join(HERE, '..', '..', '..', '..');
-const THEME_CSS = readFileSync(join(HERE, '..', '..', 'styles', 'themes.css'), 'utf8');
+const THEME_CSS = readFileSync(
+  join(HERE, '..', '..', '..', 'share-ui', 'styles', 'themes.css'),
+  'utf8',
+);
 
 /** Every stylesheet that ships to a browser. Discovered, not listed, so a new
  *  globals.css cannot quietly opt out of the audit. */

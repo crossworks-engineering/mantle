@@ -3,7 +3,7 @@ import {
   appearanceFontAttrs,
   appearanceFontVars,
   type AppearanceAttrs,
-} from '@mantle/web-ui/appearance';
+} from '@mantle/share-ui/appearance';
 
 /**
  * HTML shells for the server-rendered surfaces (/s, /print, stubs) — the

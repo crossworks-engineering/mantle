@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
  * swatches and are excluded by name.
  */
 const CSS = readFileSync(
-  fileURLToPath(new URL('../../../../packages/web-ui/styles/themes.css', import.meta.url)),
+  fileURLToPath(new URL('../../../../packages/share-ui/styles/themes.css', import.meta.url)),
   'utf8',
 );
 const SOURCE = readFileSync(fileURLToPath(new URL('./color-palette.tsx', import.meta.url)), 'utf8');

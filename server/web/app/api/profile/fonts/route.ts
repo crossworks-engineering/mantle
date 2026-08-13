@@ -16,7 +16,7 @@ import { savePreferencesFor } from '@mantle/content';
  * must not revert each other).
  *
  * Shape-only validation here; the font LIST lives in the web layer
- * (@mantle/web-ui/display-fonts) and the client resolves unknown keys to the
+ * (@mantle/client-types/display-fonts) and the client resolves unknown keys to the
  * default, so garbage stores harmlessly and projects to unset on read
  * (projectFontKey). Sizes are a closed set and ARE validated by value on read
  * (projectFontSize), because an unknown size has no registry to fall through.

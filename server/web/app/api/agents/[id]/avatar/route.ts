@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { getOwnerOr401 } from '@/lib/auth';
 import { loadProfilePreferences } from '@mantle/content';
-import { renderAvatarSvg, resolveAvatarTint } from '@mantle/web-ui/avatar';
+import { renderAvatarSvg, resolveAvatarTint } from '@mantle/share-ui/avatar';
 import { db, agents } from '@mantle/db';
 
 // Server-render the agent's avatar SVG so non-web clients (the mobile

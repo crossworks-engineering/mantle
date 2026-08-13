@@ -17,7 +17,7 @@ Non-negotiables (full detail in the guide):
   `success`/`warning`/`info` (+`-ink` for text); `chart-1..5` = chart data ONLY (3:1,
   not legible as text, use the `-ink` roles or `code-*` instead).
   **Never hardcode colors**; opacity via `/NN`. Hardcoded colors break the ~40 themes.
-  The theme CSS is GENERATED from `packages/web-ui/themes/seeds.mjs` (`pnpm themes:build`,
+  The theme CSS is GENERATED from `packages/share-ui/themes/seeds.mjs` (`pnpm themes:build`,
   docs/themes.md), never edit `themes.css` by hand.
   **Pair every fill with its OWN `-foreground`** (`bg-accent`+`text-accent-foreground`,
   `bg-primary`+`text-primary-foreground`, …), never mix pairs like `bg-accent text-foreground`
@@ -47,7 +47,7 @@ Non-negotiables (full detail in the guide):
   a face and a size for the **interface**, the **wordmark**, the **peer name**
   and **Pages/Notes prose**. Defaults: Inter, Bricolage Grotesque, and "same as
   interface" for the last two.
-  - The single registry is `packages/web-ui/src/display-fonts.ts`. It drives the
+  - The single registry is `packages/client-types/src/display-fonts.ts`. It drives the
     `@font-face` block, the selection dialog, and the runtime CSS-var override.
     Every face in it is a VARIABLE font with **at least two axes**, and MUST
     carry its real `weight` range, or the browser treats the file as a single
@@ -106,7 +106,7 @@ plane and the `/s` share brokers; member credential model:
 [`docs/team-chat.md`](../../docs/team-chat.md) topology note). The hub-app
 authoring contract (thin `host.hub` SDK, sandbox rules, fallback chain) is
 [`docs/team-hub-app-sdk.md`](../../docs/team-hub-app-sdk.md); the bridge
-protocol (`@mantle/web-ui/app-bridge/protocol`) and the `@host` kit string
+protocol (`@mantle/share-ui/app-bridge-protocol`) and the `@host` kit string
 (`packages/app-build/src/kit.ts`) MUST stay mirrored (tripwire: `kit.test.ts`).
 
 **Changing what a brain ships with** (default agents, skills, tool groups, workers,
