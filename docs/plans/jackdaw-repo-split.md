@@ -181,7 +181,27 @@ mermaid-theme, highlight-colors, docs-labels, display-fonts, aside-style)
 moved to client-types. Server/web's web-ui imports are now ONLY
 `appearance` + `avatar` — the theme-layer question above.
 
-### P2: cut the repo
+### P2: cut the repo — EXECUTED 2026-08-13 (v0.230.41)
+
+**https://github.com/crossworks-engineering/jackdaw is live**: client/web,
+client/desktop, packages/web-ui, e2e, and brand/ moved with full per-file
+history (git filter-repo, 475 commits). Workspace imports keep their
+@mantle/* names — pnpm overrides map them to the published @crossworks/*
+packages, so the cut changed no source. jackdaw has its own Dockerfile +
+release workflow (image stays `mantle-client` for fleet compatibility, tagged
+by jackdaw's own version stream + latest) and the client half of the
+excalidraw-engine tripwire (the constant now lives in the contract).
+Mantle keeps docker-compose.client.yml in the deploy bundle, pinned by
+MANTLE_CLIENT_IMAGE_TAG (default latest) instead of tag lockstep.
+
+Still pending to be fully live: (1) the npm token must be an Automation /
+Granular token (the first was OTP-gated; publish-contract fails until
+swapped), then rerun the publish for v0.230.41 and validate jackdaw against
+the real packages (install + build + tests + commit its lockfile);
+(2) DOCKERHUB_* secrets on the jackdaw repo for its image builds;
+(3) jackdaw needs its own bump/merge tooling (follow-up).
+
+### P2 original plan (for reference)
 
 - `git filter-repo` (path filter: `client/`, `packages/web-ui/`, UI e2e) into
   the new `jackdaw` repo, preserving history. mantle deletes those trees in the
