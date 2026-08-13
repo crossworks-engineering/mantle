@@ -12,7 +12,7 @@ import { cn } from '../lib/utils';
  * contrast guarantee). `data-dimmed` fades disabled/past/off records.
  */
 export const listCardClass =
-  'block w-full rounded-lg border border-l-[6px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:border-l-primary data-[dimmed=true]:opacity-60';
+  'block w-full rounded-lg border border-l-4 border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:border-l-primary data-[dimmed=true]:opacity-60';
 
 export interface ListCardProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   /** Render the child element (a `<Link>`, `<div>`, …) instead of a `<button>`. */

@@ -114,7 +114,7 @@ Rules:
   categorical sets.
 - **Selected / active state, mark it with an ACCENT, not a background fill.**
   For list selection use a **left accent bar only**: `<ListCard>`'s
-  `border-l-[6px] border-l-primary` (keep a visible `border-l-border` at rest so
+  `border-l-4 border-l-primary` (keep a visible `border-l-border` at rest so
   radius doesn't break; flip only the colour on select; compact nav rows like
   docs-nav use a slimmer `border-l-[3px]`). **Do not add a `bg-accent` fill on the
   selected or hovered row**, in many themes `accent` is saturated and the row's
