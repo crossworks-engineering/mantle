@@ -57,9 +57,21 @@ const ROWS: Row[] = [
   },
 ];
 
-export function FontRows() {
+export function FontRows({
+  title = 'Fonts',
+  slots,
+}: {
+  /** Section heading above the cards. */
+  title?: string;
+  /** Which of the four slots this instance shows, in order. Omit for all —
+   *  the Appearance screen splits them across two columns (reading faces left,
+   *  header faces right), and each instance owns only its own dialog. */
+  slots?: FontSlot[];
+} = {}) {
   const { fonts, sizes } = useFonts();
   const [openSlot, setOpenSlot] = React.useState<FontSlot | null>(null);
+
+  const rows = slots ? slots.flatMap((s) => ROWS.filter((r) => r.slot === s)) : ROWS;
 
   const shell = useQuery({
     queryKey: ['shell'],
@@ -73,10 +85,10 @@ export function FontRows() {
   return (
     <section className="space-y-2">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Fonts
+        {title}
       </h2>
       <div className="space-y-2">
-        {ROWS.map((row) => {
+        {rows.map((row) => {
           const face = fontByKey(fonts[row.slot]);
           const size = FONT_SIZES.find((s) => s.id === sizes[row.slot]);
           return (
@@ -119,7 +131,7 @@ export function FontRows() {
           four always-mounted copies would be four sets of dialog state for no
           behavior. The key remounts it per slot, resetting the shelf filter. */}
       {(() => {
-        const row = ROWS.find((r) => r.slot === openSlot);
+        const row = rows.find((r) => r.slot === openSlot);
         if (!row) return null;
         return (
           <FontDialog

@@ -14,9 +14,10 @@ import { ColorPalette } from '@/components/theme-preview/color-palette';
  *
  * TWO columns now, not three. The font library used to occupy two of them as
  * scrolling lists of every face; it lives in a dialog since the faces became
- * real text families that want previewing at reading size. What is left is the
- * brand column (logo, then the four font rows, each its own preview) beside the
- * avatar controls.
+ * real text families that want previewing at reading size. The four font rows
+ * split across the columns by what they govern: the READING faces (interface,
+ * Pages/Notes) sit left under the logo, the HEADER faces (wordmark, peer name)
+ * open the right column above the avatar controls.
  *
  * The avatar STYLE LIST is the exception and sits full-width below the grid: 50
  * cards of four live previews each is the one thing here that needs the width.
@@ -30,7 +31,7 @@ export function AppearanceContent() {
   return (
     <div className="space-y-8">
       <div className="grid items-start gap-6 md:grid-cols-2">
-        {/* Column 1: the brand — what the product is called and how it is set. */}
+        {/* Column 1: the logo and the reading faces. */}
         <div className="space-y-6">
           <section className="space-y-2">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -39,11 +40,15 @@ export function AppearanceContent() {
             <LogoControl />
           </section>
 
-          <FontRows />
+          <FontRows slots={['ui', 'prose']} />
         </div>
 
-        {/* Column 2: the avatar controls. Its 50-card gallery is below. */}
-        <AvatarStyleControls />
+        {/* Column 2: the header faces, then the avatar controls (their 50-card
+            gallery is below the grid). */}
+        <div className="space-y-6">
+          <FontRows title="Header fonts" slots={['logo', 'title']} />
+          <AvatarStyleControls />
+        </div>
       </div>
 
       {/* Full-width: 50 style cards, each carrying four live previews, is the one
