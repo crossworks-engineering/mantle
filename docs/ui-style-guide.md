@@ -112,19 +112,17 @@ Rules:
   names at 1.02:1 once). Status colours are `success`/`warning`/`info`; code
   colours are `code-*`; both are AA-guaranteed inks. Don't use `primary` for
   categorical sets.
-- **Selected / active state, mark it with an ACCENT, not a background fill.**
-  For list selection use a **left accent bar only**: `<ListCard>`'s
-  `border-l-4 border-l-primary` (keep a visible `border-l-border` at rest so
-  radius doesn't break; flip only the colour on select; compact nav rows like
-  docs-nav use a slimmer `border-l-[3px]`). **Do not add a `bg-accent` fill on the
-  selected or hovered row**, in many themes `accent` is saturated and the row's
-  text is `foreground`/`muted-foreground` (not `accent-foreground`), so the text
-  becomes unreadable. For hover use a neutral `hover:bg-muted/50`. (Swept
-  app-wide 2026-06-02; the borderless Contacts rows use a `border-l-2
-  border-l-transparent` base so the accent bar doesn't shift text.) `bg-accent`
-  is fine where text is paired with `accent-foreground` (e.g. a chip that sets
-  both), and a faint `bg-primary/10` tint is acceptable when contrast is
-  verified, but the default selection idiom is border-only.
+- **Selected / active state: the checked-card idiom, never a full `bg-accent`
+  fill.** For list/card selection use `<ListCard>`'s selected state (shared with
+  `RadioGroupCard`'s checked state in the Appearance galleries):
+  `border-primary ring-1 ring-primary` (reads as one thick brand border) over a
+  soft `bg-accent/50` tint. The *tint* is safe where a full fill is not: it sits
+  on `bg-card` under normal `foreground` text, while **an opaque `bg-accent`
+  fill under text that isn't `accent-foreground` is unreadable on
+  saturated-accent themes** — that ban stands. For hover use a neutral
+  `hover:bg-muted/50` (or `hover:bg-accent/40` on picker cards). Compact nav
+  rows (docs-nav, tree rows) keep the slim `border-l-[3px]` accent-bar variant
+  instead — a ring is too heavy at that density.
 - **Hover on a `bg-sidebar` surface (Activity column, nav):** `--sidebar` equals
   `--muted` in some themes, so `hover:bg-muted` is invisible there. Use a neutral
   overlay `hover:bg-foreground/[0.06]`; it differs from any sidebar value in
@@ -399,10 +397,10 @@ Rules:
   one cutting off text. This bit tool-groups/skills/tools (whose tall tool-picker
   lists pushed content to ~8000px); agents never had it because its pane was
   already `relative`. Always include `relative` on the detail pane.
-- **Accent card** (selectable list item): use the shared **`<ListCard>`**
+- **List card** (selectable list item): use the shared **`<ListCard>`**
   (`@mantle/web-ui/ui/list-card`) — never hand-roll the class string again.
-  It keeps the left border *visible* so rounded corners don't break; only its
-  colour flips on select (accent bar only — no `bg-accent` fill, see §2):
+  Selection = `border-primary` + `ring-1 ring-primary` + a soft `bg-accent/50`
+  tint (the checked-card idiom, see §2):
   ```tsx
   import { ListCard } from '@mantle/web-ui/ui/list-card';
 

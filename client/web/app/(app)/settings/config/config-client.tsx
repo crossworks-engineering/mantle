@@ -361,7 +361,13 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
                   <ListCard
                     key={key}
                     onClick={() => setSelectedKey(key)}
-                    className={cn(STATUS_BORDER[e.status], isSel && 'bg-muted/50 ring-1 ring-ring')}
+                    className={cn(
+                      // Status keeps its own left bar here — it encodes the
+                      // template diff, not selection.
+                      'border-l-[3px]',
+                      STATUS_BORDER[e.status],
+                      isSel && 'bg-muted/50 ring-1 ring-ring',
+                    )}
                   >
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium">{e.name}</span>

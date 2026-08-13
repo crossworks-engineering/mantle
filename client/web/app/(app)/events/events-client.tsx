@@ -179,8 +179,9 @@ export function EventsClient() {
         data-mark-id={e.id}
         data-mark-kind="event"
         data-mark-label={e.title}
-        selected={isSel || live}
+        selected={isSel}
         dimmed={isPast && !isSel}
+        className={cn(live && !isSel && 'border-primary')}
       >
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{e.title}</span>

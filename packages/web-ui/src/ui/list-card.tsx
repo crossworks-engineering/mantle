@@ -3,21 +3,23 @@ import { Slot } from '@radix-ui/react-slot';
 import { cn } from '../lib/utils';
 
 /**
- * Accent card — THE selectable list item for master-detail listing screens
+ * List card — THE selectable list item for master-detail listing screens
  * (style guide §8). One source of truth for the card chrome; screens compose
  * their own anatomy inside (icon, title row, snippet, tags).
  *
- * Selection flips only the left accent bar's colour (`data-selected`) — never
- * a `bg-accent` fill (§2: fills without their paired foreground have no
- * contrast guarantee). `data-dimmed` fades disabled/past/off records.
+ * Selection uses the RadioGroupCard checked idiom (the Appearance galleries):
+ * a primary border thickened by a matching ring, over a soft `bg-accent/50`
+ * tint. The tint sits on `bg-card` under normal `foreground` text, so it stays
+ * readable where a full `bg-accent` fill would not (§2). `data-dimmed` fades
+ * disabled/past/off records.
  */
 export const listCardClass =
-  'block w-full rounded-lg border border-l-4 border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:border-l-primary data-[dimmed=true]:opacity-60';
+  'block w-full rounded-lg border border-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:border-primary data-[selected=true]:ring-1 data-[selected=true]:ring-primary data-[selected=true]:bg-accent/50 data-[dimmed=true]:opacity-60';
 
 export interface ListCardProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   /** Render the child element (a `<Link>`, `<div>`, …) instead of a `<button>`. */
   asChild?: boolean;
-  /** Paints the left accent bar `primary`. */
+  /** Primary border + ring with a soft accent tint (the checked-card idiom). */
   selected?: boolean;
   /** Fades the card — disabled agents, past events, drafts, … */
   dimmed?: boolean;

@@ -291,7 +291,7 @@ export function TasksClient() {
                   selected={isSel}
                   className={cn(
                     'flex items-start gap-2.5',
-                    t.priority === 'high' && !isSel && 'border-l-destructive',
+                    t.priority === 'high' && !isSel && 'border-destructive',
                   )}
                 >
                   <div>
