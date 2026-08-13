@@ -33,7 +33,8 @@
     "./backgrounds": "./src/backgrounds.ts",
     "./avatar": "./src/avatar.ts",
     "./lib/themes": "./src/lib/themes.ts",
-    "./styles/themes.css": "./styles/themes.css"
+    "./styles/themes.css": "./styles/themes.css",
+    "./styles/app.css": "./styles/app.css"
   },
   "dependencies": {
     "@mantle/client-types": "workspace:*",

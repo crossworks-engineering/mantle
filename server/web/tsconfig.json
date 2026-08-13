@@ -20,12 +20,12 @@
     "**/*.ts",
     "**/*.tsx",
     // tsx (the runtime) applies THIS tsconfig only to files its `include`
-    // matches — web-ui ships raw .tsx that the /s SSR renders, and without
-    // this line those files compile with esbuild's default CLASSIC jsx
-    // (`React is not defined` at render). Typecheck cost is nil: web-ui is
+    // matches — share-ui ships raw .tsx that the /s SSR renders, and without
+    // these lines those files compile with esbuild's default CLASSIC jsx
+    // (`React is not defined` at render). Typecheck cost is nil: share-ui is
     // typechecked in its own package with the same base config.
-    "../../packages/web-ui/src/**/*.ts",
-    "../../packages/web-ui/src/**/*.tsx"
+    "../../packages/share-ui/src/**/*.ts",
+    "../../packages/share-ui/src/**/*.tsx"
   ],
   "exclude": ["node_modules"]
 }

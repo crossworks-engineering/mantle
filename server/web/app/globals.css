@@ -1,15 +1,15 @@
 @import 'tailwindcss';
 /* Shared theme layer (tokens + ~40 palettes + @theme inline mapping) and the
  * shared application styles (editor, prose, highlighting, KaTeX, React Flow).
- * Both live in packages/web-ui so the two front ends cannot drift apart.
+ * Both live in packages/share-ui (published as @crossworks/share-ui) so this
+ * repo and jackdaw cannot drift apart.
  * Relative paths: Tailwind's CSS @import resolver does not follow package
  * `exports`. */
 @import '../../../packages/share-ui/styles/themes.css';
-@import '../../../packages/web-ui/styles/app.css';
+@import '../../../packages/share-ui/styles/app.css';
 /* Compiled by scripts/build-share-runtime.ts (Tailwind CLI, cwd server/web) for
  * the server-rendered /s + /print surfaces. web-ui sits outside that cwd, so
  * its class names need an explicit source registration. */
-@source '../../../packages/web-ui/src';
 @source '../../../packages/share-ui/src';
 @plugin 'tailwindcss-animate';
 @plugin '@tailwindcss/typography';
