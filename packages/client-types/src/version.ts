@@ -31,3 +31,19 @@ export function versionDetail(): string {
   if (BUILD_TIME) parts.push(BUILD_TIME.slice(0, 10));
   return parts.join(' · ');
 }
+
+/**
+ * The WIRE-CONTRACT version — the client/server compatibility handshake for
+ * the jackdaw repo split (plan P1/P3, docs/plans/jackdaw-repo-split.md).
+ *
+ * Bump this integer ONLY when the HTTP API or a shared DTO shape changes in a
+ * way an older client cannot tolerate (removed/renamed fields, changed
+ * semantics). Additive changes do NOT bump it. Distinct from APP_VERSION: the
+ * app version keeps moving with every release on both sides of the split,
+ * while this only moves on breaking wire changes.
+ *
+ * Served by the server at /api/version (`contractVersion`); after P3 the
+ * client compares it against its own supported value and shows a
+ * "server too old / too new" banner instead of failing obscurely.
+ */
+export const CONTRACT_VERSION = 1;

@@ -1,0 +1,48 @@
+# Publishes the contract packages (@jackdaw-run/{client-types,content-core,
+# voice-client}) to npm on every release tag, so the jackdaw repo — the split
+# frontend — can consume the server's wire contract as ordinary npm deps
+# (split plan P1, docs/plans/jackdaw-repo-split.md).
+#
+# Workspace names stay @mantle/*; scripts/publish-contract.mjs renames to the
+# public scope at publish time (the @mantle npm scope is third-party-owned).
+#
+# Needs the NPM_TOKEN repo secret: an npm *automation* token for a member of
+# the @jackdaw-run org. Until the org + token exist, the job skips cleanly
+# rather than failing the release.
+name: publish-contract
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          registry-url: 'https://registry.npmjs.org'
+
+      # `secrets.*` is not readable inside `if:` on a step directly; stage it
+      # through an env probe so a missing token skips instead of erroring.
+      - name: Check for the npm token
+        id: token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then echo "have=true" >> "$GITHUB_OUTPUT";
+          else echo "have=false" >> "$GITHUB_OUTPUT"; echo "::notice::NPM_TOKEN not set — skipping contract publish"; fi
+
+      - name: Publish contract packages
+        if: steps.token.outputs.have == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/publish-contract.mjs "${GITHUB_REF_NAME}"

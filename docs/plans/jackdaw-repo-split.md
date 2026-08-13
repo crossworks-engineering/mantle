@@ -144,14 +144,29 @@ Learned along the way, feeding later phases:
   `@mantle/contract` — 51 importing files, zero functional gain; the npm
   publish at P1 can use the existing name.
 
-### P1: publish the contract
+### P1: publish the contract — SHIPPED 2026-08-13
 
-- CI publishes `@mantle/contract`, `@mantle/content-core`,
-  `@mantle/voice-client` to npm on every release tag (they version with the
-  server).
-- Server exposes its contract version at `/env.js` (or `/api/health`); the
-  client already reads `/env.js` per-request, so the handshake ride-along is
-  cheap.
+Two decisions taken (Jason):
+
+- **npm scope: `@jackdaw-run`** — the `@mantle` npm scope is owned by a third
+  party (so is `@jackdaw`). Workspace names STAY `@mantle/*` (Mantle is the
+  engine scope); `scripts/publish-contract.mjs` renames to `@jackdaw-run/*`
+  at publish time and restores the tree afterwards.
+- **Share/docs surface: a `packages/share-ui` package that stays in mantle**,
+  published like the other contract packages; web-ui/jackdaw consume it. Single
+  implementation, dependency direction stays mantle → jackdaw. (This closes the
+  last P2 gate decision; the extraction itself is the next work item.)
+
+What shipped:
+
+- `.github/workflows/publish-contract.yml`: on every `v*` tag, publishes
+  `@jackdaw-run/{client-types,content-core,voice-client}` (TS source — the
+  jackdaw Next app transpiles them like workspace deps). Skips cleanly until
+  the `NPM_TOKEN` secret exists. **Jason to-do: create the `@jackdaw-run` npm
+  org + an automation token, add it as the `NPM_TOKEN` repo secret.**
+- `CONTRACT_VERSION` (integer, bumped only on breaking wire changes) lives in
+  `@mantle/client-types/version` and is served by `GET /api/version` as
+  `contractVersion`. P3 adds the client-side comparison + banner.
 
 ### P2: cut the repo
 

@@ -1,5 +1,5 @@
 import { NextResponse } from '@/server/http-compat';
-import { APP_VERSION, GIT_SHA, BUILD_TIME } from '@mantle/client-types/version';
+import { APP_VERSION, GIT_SHA, BUILD_TIME, CONTRACT_VERSION } from '@mantle/client-types/version';
 
 // Build identity for ops / uptime checks. Values are baked in at compile time
 // (next.config.ts), so this is constant for the life of the build — serve it
@@ -9,6 +9,7 @@ import { APP_VERSION, GIT_SHA, BUILD_TIME } from '@mantle/client-types/version';
 export function GET() {
   return NextResponse.json({
     version: APP_VERSION,
+    contractVersion: CONTRACT_VERSION,
     gitSha: GIT_SHA || null,
     buildTime: BUILD_TIME || null,
   });
