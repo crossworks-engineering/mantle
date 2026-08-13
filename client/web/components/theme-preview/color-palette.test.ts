@@ -24,7 +24,10 @@ const SOURCE = readFileSync(fileURLToPath(new URL('./color-palette.tsx', import.
 /** Tokens the baseline `:root` block declares — every theme block is a
  *  same-shaped override of it, so this is the full shipped vocabulary. */
 function shippedTokens(): string[] {
-  const at = CSS.indexOf(':root {');
+  // By pattern, not `indexOf(':root {')`: the baseline block's selector list
+  // also carries the forced-light island (`:root, .light { … }`, see
+  // themes/generate.mjs), and an exact-string lookup went blind to it.
+  const at = CSS.search(/(^|\n):root[^{}]*\{/);
   const body = CSS.slice(at, CSS.indexOf('\n}', at));
   return [...body.matchAll(/--([\w-]+):/g)].map((m) => m[1]!);
 }

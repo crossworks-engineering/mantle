@@ -25,12 +25,12 @@ import { useToast } from '@mantle/web-ui/ui/toast';
  * gradient — with the collapsed square crop beside it, because this screen is
  * the only feedback an owner gets before saving: a wide lockup that "fit" a
  * full-width preview used to look broken the moment the nav collapsed.
- * The DARK strip is wrapped in a forced `dark` class — the theme tokens live
- * in `:root` / `.dark`, so the wrapper re-resolves every var inside to the
- * dark palette and the strip is truthful in either app mode. The reverse
- * (forcing LIGHT while the app is dark) is not expressible — no theme ships a
- * `.light` block — so the light strip simply follows the app mode, as the
- * single preview always did.
+ * BOTH strips are mode-forced so each is truthful in either app mode: the dark
+ * strip wraps in `dark` (the tokens re-resolve to the dark palette), and the
+ * light strip wraps in `light` — an island selector the theme generator emits
+ * on every light block for exactly this preview, since a light-mode logo shown
+ * on a dark surface is the one thing this screen exists to catch. The islands
+ * change TOKENS only; a `dark:` utility inside would still follow the app.
  *
  * Reads live state from the shared ['shell'] query and invalidates it on
  * change, so the actual header above updates the moment an upload lands.
@@ -186,7 +186,7 @@ function VariantControl({
         <span className="text-xs font-medium text-muted-foreground">{label}</span>
         {hint && <span className="text-xs text-muted-foreground/70">{hint}</span>}
       </div>
-      {variant === 'dark' ? <div className="dark">{strip}</div> : strip}
+      <div className={variant === 'dark' ? 'dark' : 'light'}>{strip}</div>
 
       <div className="flex items-center gap-2">
         <input

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { COLOR_THEMES } from './themes';
+import { parseThemeBlocks } from './theme-css-blocks';
 
 /**
  * INK AUDIT — discovers what is used as text, instead of being told.
@@ -112,13 +113,12 @@ const contrast = (a: string, b: string) => {
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 };
 
+const BLOCKS = parseThemeBlocks(THEME_CSS);
+
 function tokensOf(selector: string): Record<string, string> {
-  const at = THEME_CSS.indexOf(`${selector} {`);
-  if (at < 0) throw new Error(`no block for ${selector}`);
-  const body = THEME_CSS.slice(at, THEME_CSS.indexOf('\n}', at));
-  const out: Record<string, string> = {};
-  for (const m of body.matchAll(/--([\w-]+):\s*([^;]+);/g)) out[m[1]!] = m[2]!.trim();
-  return out;
+  const block = BLOCKS.get(selector);
+  if (!block) throw new Error(`no block for ${selector}`);
+  return block;
 }
 const resolved = (sel: string) => ({ ...tokensOf(':root'), ...tokensOf(sel) });
 

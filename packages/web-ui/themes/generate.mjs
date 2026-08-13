@@ -456,19 +456,33 @@ export function generateCss() {
   ];
   const [base, ...rest] = THEME_SEEDS;
   if (base.id !== 'clean-slate') throw new Error('clean-slate must stay the baseline seed');
-  parts.push(emitBlock(':root', generateMode(base.light, { mode: 'light' }), base.light.extras));
+  // MODE ISLANDS: `.light` rides every light selector, and each theme's dark
+  // block also matches a `.dark` WRAPPER under the themed root. A wrapper
+  // carrying either class re-declares that mode's tokens on itself, which
+  // beats whatever it would inherit — so a subtree can preview the opposite
+  // mode truthfully in the CURRENT theme. Costs only selector text (each
+  // block is emitted once), and exists for the logo strips in Settings →
+  // Appearance, which must show both modes at once. Without the
+  // `[data-color-theme] .dark` arm, a `.dark` wrapper's own declarations came
+  // from the BASELINE `.dark` block and beat the theme's inherited values —
+  // the forced-dark preview showed clean-slate's palette on every other
+  // theme. Note the islands change TOKENS only: `dark:` Tailwind variants
+  // inside still follow the real ancestor class.
+  parts.push(
+    emitBlock(':root, .light', generateMode(base.light, { mode: 'light' }), base.light.extras),
+  );
   parts.push(emitBlock('.dark', generateMode(base.dark, { mode: 'dark' }), base.dark.extras));
   for (const t of rest) {
     parts.push(
       emitBlock(
-        `[data-color-theme="${t.id}"]`,
+        `[data-color-theme="${t.id}"], [data-color-theme="${t.id}"] .light`,
         generateMode(t.light, { mode: 'light' }),
         t.light.extras,
       ),
     );
     parts.push(
       emitBlock(
-        `.dark[data-color-theme="${t.id}"]`,
+        `.dark[data-color-theme="${t.id}"], [data-color-theme="${t.id}"] .dark`,
         generateMode(t.dark, { mode: 'dark' }),
         t.dark.extras,
       ),
@@ -535,15 +549,22 @@ function main(arg) {
     // Fidelity report: what would visibly change vs the css at `baseline` path.
     const baselinePath = process.argv[3] ?? CSS_PATH;
     const baseline = readFileSync(baselinePath, 'utf8');
-    const blockOf = (selector) => {
-      const at = baseline.indexOf(`${selector} {`);
-      if (at < 0) return null;
-      const body = baseline.slice(at, baseline.indexOf('\n}', at));
-      const t = {};
-      for (const m of body.matchAll(/--([\w-]+):\s*([^;]+);/g)) t[m[1]] = m[2].trim();
-      return t;
+    // Light blocks carry the `.light` island selector since it was added;
+    // candidates are tried in order so a pre-island baseline still reports.
+    // (The bare `:root {` / `[data-color-theme="x"] {` forms MUST come second:
+    // as substrings they also occur inside the dark selectors.)
+    const blockOf = (selectors) => {
+      for (const selector of Array.isArray(selectors) ? selectors : [selectors]) {
+        const at = baseline.indexOf(`${selector} {`);
+        if (at < 0) continue;
+        const body = baseline.slice(at, baseline.indexOf('\n}', at));
+        const t = {};
+        for (const m of body.matchAll(/--([\w-]+):\s*([^;]+);/g)) t[m[1]] = m[2].trim();
+        return t;
+      }
+      return null;
     };
-    const rootBase = blockOf(':root');
+    const rootBase = blockOf([':root, .light', ':root']);
     const buckets = {};
     let moved = 0;
     let total = 0;
@@ -552,11 +573,17 @@ function main(arg) {
         const sel =
           t.id === 'clean-slate'
             ? mode === 'light'
-              ? ':root'
-              : '.dark'
+              ? [':root, .light', ':root']
+              : ['.dark']
             : mode === 'light'
-              ? `[data-color-theme="${t.id}"]`
-              : `.dark[data-color-theme="${t.id}"]`;
+              ? [
+                  `[data-color-theme="${t.id}"], [data-color-theme="${t.id}"] .light`,
+                  `[data-color-theme="${t.id}"]`,
+                ]
+              : [
+                  `.dark[data-color-theme="${t.id}"], [data-color-theme="${t.id}"] .dark`,
+                  `.dark[data-color-theme="${t.id}"]`,
+                ];
         const authored = { ...rootBase, ...(blockOf(sel) ?? {}) };
         const gen = generateMode(t[mode], { mode });
         for (const [token, hex] of Object.entries(gen)) {

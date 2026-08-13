@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { COLOR_THEMES } from './themes';
+import { parseThemeBlocks } from './theme-css-blocks';
 
 /**
  * Contrast contract for EVERY theme — light and dark.
@@ -29,15 +30,12 @@ const CSS = readFileSync(
   'utf8',
 );
 
+const BLOCKS = parseThemeBlocks(CSS);
+
 function tokens(selector: string): Record<string, string> {
-  const at = CSS.indexOf(`${selector} {`);
-  if (at < 0) throw new Error(`no block for ${selector}`);
-  const body = CSS.slice(at, CSS.indexOf('\n}', at));
-  const out: Record<string, string> = {};
-  for (const m of body.matchAll(/--([\w-]+):\s*([^;]+);/g)) {
-    out[m[1]!] = m[2]!.trim();
-  }
-  return out;
+  const block = BLOCKS.get(selector);
+  if (!block) throw new Error(`no block for ${selector}`);
+  return block;
 }
 
 const clamp = (x: number) => Math.min(1, Math.max(0, x));

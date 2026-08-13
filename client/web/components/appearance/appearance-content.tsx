@@ -35,16 +35,16 @@ export function AppearanceContent() {
       <FontRows />
 
       <div className="grid items-start gap-6 md:grid-cols-2">
-        {/* Column 1: the logo. */}
+        {/* Column 1: the avatar controls (their 50-card gallery is below). */}
+        <AvatarStyleControls />
+
+        {/* Column 2: the logo. */}
         <section className="space-y-2">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Logo
           </h2>
           <LogoControl />
         </section>
-
-        {/* Column 2: the avatar controls (their 50-card gallery is below). */}
-        <AvatarStyleControls />
       </div>
 
       {/* Full-width: 50 style cards, each carrying four live previews, is the one
