@@ -387,6 +387,14 @@ export async function updateAppMeta(
   return loadDetail(ownerId, id);
 }
 
+// INVARIANT: `draft_build` is a build OF `draft_source`, so every writer below
+// clears it. Without that, a green build outlives the source it came from and
+// `publishApp` promotes the pair — shipping NEW source with an OLD bundle. The
+// app then serves code that provably isn't in its own source, which reads to
+// everyone (including the agent, which inspects source) as "the edit silently
+// did nothing": the source is correct, the served bundle is not, and no cache
+// clear or rebuild-less republish can converge them.
+
 /** Replace the entire draft source tree (autosave). Returns false if missing. */
 export async function saveDraftSource(
   ownerId: string,
@@ -397,7 +405,7 @@ export async function saveDraftSource(
   assertSourceWithinLimits(source);
   await db
     .update(apps)
-    .set({ draftSource: source, draftUpdatedAt: new Date() })
+    .set({ draftSource: source, draftUpdatedAt: new Date(), draftBuild: null })
     .where(eq(apps.nodeId, id));
   return true;
 }
@@ -417,7 +425,7 @@ export async function writeDraftFile(
   assertSourceWithinLimits(next);
   await db
     .update(apps)
-    .set({ draftSource: next, draftUpdatedAt: new Date() })
+    .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
     .where(eq(apps.nodeId, id));
   return next;
 }
@@ -443,7 +451,7 @@ export async function deleteDraftFile(
   const next: AppSource = { entry: base.entry, files };
   await db
     .update(apps)
-    .set({ draftSource: next, draftUpdatedAt: new Date() })
+    .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
     .where(eq(apps.nodeId, id));
   return next;
 }
@@ -488,7 +496,10 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
 
 export class NoGreenBuildError extends Error {
   constructor() {
-    super('publishApp: draft has no successful build to publish');
+    super(
+      'publishApp: draft has no successful build to publish — every source edit ' +
+        'clears the build, so run a build after your last edit and before publishing',
+    );
     this.name = 'NoGreenBuildError';
   }
 }
