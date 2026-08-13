@@ -134,10 +134,12 @@ Learned along the way, feeding later phases:
   jackdaw UI package for share pages, or (c) share pages become a
   server-shipped static bundle built in jackdaw. Until decided, server keeps
   its web-ui dependency for exactly this surface.
-- **`@server/*` type reach-through remains**: 59 type-only imports from
-  client/web into server/web source. Erased at runtime (eslint keeps them
-  type-only), but every one must migrate into client-types before the P2 cut.
-  This is the P0 follow-up work item.
+- **`@server/*` type reach-through — RESOLVED (v0.230.30)**: all 59 type-only
+  imports are gone. ~70 view/query DTOs moved into client-types (journey-format
+  moved wholesale; table DTOs live in content-core/table-model beside TableDoc).
+  The @server tsconfig alias and the @/* server fallback were deleted from
+  client/web, and the eslint rule now bans @server/* outright. client/web no
+  longer resolves ANY server/web source.
 - Package name: kept `@mantle/client-types` rather than renaming to
   `@mantle/contract` — 51 importing files, zero functional gain; the npm
   publish at P1 can use the existing name.
