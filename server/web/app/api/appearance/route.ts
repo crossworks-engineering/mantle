@@ -4,7 +4,8 @@ import { loadProfilePreferences } from '@mantle/content';
 
 /**
  * GET /api/appearance — the brain's SYSTEM-WIDE appearance: colour theme, the
- * two display fonts and the avatar style. Deliberately unauthenticated (in PUBLIC_PATHS).
+ * four fonts and their sizes, the avatar style. Deliberately unauthenticated
+ * (in PUBLIC_PATHS).
  *
  * Why public: the client app is a separate origin after the carve and is
  * zero-secret, so it cannot read prefs from the DB — but it must know the
@@ -22,10 +23,14 @@ export async function GET() {
     colorTheme: null,
     fontLogo: null,
     fontTitle: null,
+    fontUi: null,
+    fontProse: null,
+    fontSize: null,
+    fontLogoSize: null,
+    fontTitleSize: null,
+    fontProseSize: null,
     avatarStyle: null,
     avatarTint: null,
-    fontUi: null,
-    fontSize: null,
     backgrounds: null,
   };
   const headers = { 'Cache-Control': 'public, max-age=30' };
@@ -43,10 +48,14 @@ export async function GET() {
         colorTheme: prefs.colorTheme ?? null,
         fontLogo: prefs.fontLogo ?? null,
         fontTitle: prefs.fontTitle ?? null,
+        fontUi: prefs.fontUi ?? null,
+        fontProse: prefs.fontProse ?? null,
+        fontSize: prefs.fontSize ?? null,
+        fontLogoSize: prefs.fontLogoSize ?? null,
+        fontTitleSize: prefs.fontTitleSize ?? null,
+        fontProseSize: prefs.fontProseSize ?? null,
         avatarStyle: prefs.avatarStyle ?? null,
         avatarTint: prefs.avatarTint ?? null,
-        fontUi: prefs.fontUi ?? null,
-        fontSize: prefs.fontSize ?? null,
         backgrounds: prefs.backgrounds ?? null,
       },
       { headers },

@@ -5,7 +5,7 @@ import './globals.css';
 // KaTeX styles for math nodes (inlineMath/blockMath) — bundled locally from the
 // npm package (no CDN), matching the self-hosted ethos.
 import 'katex/dist/katex.min.css';
-import { fontSans, fontLogo } from '@/lib/fonts';
+import { fontSans } from '@/lib/fonts';
 import { ThemeProvider } from '@mantle/web-ui/theme-provider';
 import { ColorThemeProvider } from '@mantle/web-ui/color-theme-provider';
 import { AvatarStyleProvider } from '@mantle/web-ui/avatar-style-provider';
@@ -22,10 +22,10 @@ import { MEMBER_SURFACE_HEADER } from '@/lib/member-surface';
  * the static default (the server app's logged-in metadata personalization
  * doesn't apply here; the shell adopts siteName client-side after /api/shell).
  *
- * The brain's SYSTEM-WIDE appearance (colour theme, display fonts, avatar
- * style) is
+ * The brain's SYSTEM-WIDE appearance (colour theme, the four fonts and their
+ * sizes, avatar style) is
  * rendered straight into the <html> tag: attributes for the ids and inline
- * style for the two font vars, fetched server-to-server from the public
+ * style for the font-family vars, fetched server-to-server from the public
  * GET /api/appearance (cached in lib/appearance.ts). The document arrives
  * correct — no before-paint scripts, no localStorage, nothing to coordinate;
  * the client providers read these attributes back on mount. That fetch is
@@ -53,28 +53,37 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const fontStyle: Record<string, string> = {};
   if (appearance.fontVars.wordmark) fontStyle['--font-wordmark'] = appearance.fontVars.wordmark;
   if (appearance.fontVars.pageTitle) fontStyle['--font-page-title'] = appearance.fontVars.pageTitle;
+  // Pages, Notes and the PDF export. Defaults to following --font-sans, so the
+  // var is only ever set when the brain deliberately typeset its prose apart
+  // from its interface.
+  if (appearance.fontVars.prose) fontStyle['--font-prose'] = appearance.fontVars.prose;
   // The UI font overrides `--font-sans`, which next/font declares via the
   // `fontSans.variable` CLASS — so both have to sit on the SAME element for
   // inline style to win. Hence the font classes moved from <body> to <html>
   // (which is also what next/font documents); on <body> the class would
   // redeclare the var below this override and quietly win it back.
   if (appearance.fontVars.ui) fontStyle['--font-sans'] = appearance.fontVars.ui;
-  // Always published, override or not: the picker's own "Inter" row previews
+  // Always published, override or not: the modal's own "Inter" row previews
   // through this, and resolving it through --font-sans would make that row
   // render in whatever face is currently chosen instead of in Inter.
   fontStyle['--font-sans-base'] = fontSans.style.fontFamily;
   return (
     <html
       lang="en"
-      className={`${fontSans.variable} ${fontLogo.variable} h-full`}
+      className={`${fontSans.variable} h-full`}
       suppressHydrationWarning
       data-color-theme={appearance.colorTheme}
       data-color-theme-owner={memberSurface ? '1' : undefined}
       data-font-logo={appearance.fontLogo}
       data-font-title={appearance.fontTitle}
+      data-font-ui={appearance.fontUi}
+      data-font-prose={appearance.fontProse}
+      data-font-size={appearance.fontSize}
+      data-logo-size={appearance.fontLogoSize}
+      data-title-size={appearance.fontTitleSize}
+      data-prose-size={appearance.fontProseSize}
       data-avatar-style={appearance.avatarStyle}
       data-avatar-tint={appearance.avatarTint}
-      data-font-size={appearance.fontSize}
       data-backgrounds={appearance.backgrounds}
       style={fontStyle as React.CSSProperties}
     >

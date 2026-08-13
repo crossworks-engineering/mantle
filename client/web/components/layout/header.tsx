@@ -102,10 +102,7 @@ export function Header({
                 }
               />
             ) : (
-              <span
-                className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary-ink dark:hidden"
-                style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
-              >
+              <span className="wordmark -mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-primary-ink dark:hidden">
                 {siteName || 'mantle'}
               </span>
             )}
@@ -124,12 +121,10 @@ export function Header({
              max-w) and let the height overflow freely (overflow-y-visible) so the
              64px header's spare vertical room is used instead of shaving the ink —
              plain `truncate` clips both axes. -mx-2/px-2 give the sides room too.
-             Font: the user-selectable wordmark var (Settings → Appearance → Fonts),
-             defaulting to the next/font Bukhari when unset. */
-          <span
-            className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary-ink"
-            style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
-          >
+             Face and size both come from the `.wordmark` class (Settings →
+             Appearance → Fonts), which pairs --font-wordmark with the wordmark
+             scale so the two choices can't be applied half. */
+          <span className="wordmark -mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-primary-ink">
             {siteName || 'mantle'}
           </span>
         )}
@@ -137,13 +132,12 @@ export function Header({
 
       {peerName && (
         <span
-          className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-[2px] text-center text-lg font-bold leading-normal text-primary-ink md:block"
-          // Peer name in the user-selectable header-centre font (Settings →
-          // Appearance → Fonts; unset ⇒ inherits the UI sans). Width is clipped
+          // Peer name face + scale via `.peer-name` (Settings → Appearance →
+          // Fonts; unset ⇒ inherits the UI sans). Width is clipped
           // (overflow-x-clip, bounded by max-w) but the height overflows freely
           // (overflow-y-visible), so tall script/display glyphs use the header's
           // spare vertical room instead of being shaved — `truncate` clips both.
-          style={{ fontFamily: 'var(--font-page-title)' }}
+          className="peer-name pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-[2px] text-center font-bold leading-normal text-primary-ink md:block"
         >
           {peerName}
         </span>

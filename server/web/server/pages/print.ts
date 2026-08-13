@@ -176,7 +176,7 @@ export function mountPrint(app: Hono): void {
         },
         // WYSIWYG: render only the page content — no injected page-name
         // heading, matching the public share surface and the Markdown export.
-        `<article class="ProseMirror prose prose-accent mx-auto ${widthClass} px-10 py-8"><div>${html}</div></article>${diagramScripts}`,
+        `<article class="ProseMirror prose prose-accent prose-document mx-auto ${widthClass} px-10 py-8"><div>${html}</div></article>${diagramScripts}`,
       ),
     );
   });

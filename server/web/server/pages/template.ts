@@ -27,14 +27,28 @@ export function scriptSafeJson(value: unknown): string {
     .replace(/\u2029/g, '\\u2029');
 }
 
-/** Replacement for the next/font(lib/fonts.ts) output: the same self-hosted
- *  faces declared by hand, wired to the theme vars (--font-sans/--font-logo)
- *  that themes.css maps onto the font-sans/font-logo utilities. */
+/**
+ * Replacement for the next/font (client/web/lib/fonts.ts) output: the default
+ * interface face declared by hand, wired to `--font-sans` and to
+ * `--font-sans-base`.
+ *
+ * Inter is the only face declared here because it is the only one that is
+ * ALWAYS loaded. Every selectable face comes from the shared registry's
+ * `@font-face` block below, which is lazy — a file is fetched only when
+ * something actually paints in it.
+ *
+ * `--font-sans-base` must hold Inter unconditionally, even when the brain has
+ * chosen another interface font: it is what the "Inter" row in the selection
+ * modal previews through, and resolving that row through `--font-sans` (the var
+ * the choice overrides) would render it in whatever face is currently selected.
+ *
+ * A brain's own choices arrive as inline style on `<html>` (see htmlAttrs), and
+ * inline style outranks these `:root` rules, so this block is purely the floor.
+ */
 const FONT_CSS = `
 @font-face{font-family:'InterVariable';font-style:normal;font-weight:100 900;font-display:swap;src:url('/Inter/Inter-VariableFont_opsz,wght.woff2') format('woff2')}
 @font-face{font-family:'InterVariable';font-style:italic;font-weight:100 900;font-display:swap;src:url('/Inter/Inter-Italic-VariableFont_opsz,wght.woff2') format('woff2')}
-@font-face{font-family:'Bukhari Script';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/BukhariScript-Regular.woff2') format('woff2')}
-:root{--font-sans:'InterVariable',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif;--font-logo:'Bukhari Script'}
+:root{--font-sans:'InterVariable',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif;--font-sans-base:'InterVariable',ui-sans-serif,system-ui,sans-serif}
 `.trim();
 
 export type PageMeta = {
@@ -66,11 +80,28 @@ function htmlAttrs(a: AppearanceAttrs | undefined): string {
   if (!a) return '';
   const parts: string[] = [];
   if (a.colorTheme) parts.push(`data-color-theme="${escapeHtml(a.colorTheme)}"`);
-  if (a.fontLogo) parts.push(`data-font-logo="${escapeHtml(a.fontLogo)}"`);
-  if (a.fontTitle) parts.push(`data-font-title="${escapeHtml(a.fontTitle)}"`);
+  // Every font attribute the client layout stamps is stamped here too. These
+  // used to be only the two header faces, which meant the interface font never
+  // reached /s or /print at all: a share rendered in Inter no matter what the
+  // brain had chosen. The prose font makes that gap load-bearing rather than
+  // cosmetic, because /print IS the PDF export.
+  for (const [attr, value] of [
+    ['data-font-logo', a.fontLogo],
+    ['data-font-title', a.fontTitle],
+    ['data-font-ui', a.fontUi],
+    ['data-font-prose', a.fontProse],
+    ['data-font-size', a.fontSize],
+    ['data-logo-size', a.fontLogoSize],
+    ['data-title-size', a.fontTitleSize],
+    ['data-prose-size', a.fontProseSize],
+  ] as const) {
+    if (value) parts.push(`${attr}="${escapeHtml(value)}"`);
+  }
   const vars: string[] = [];
   if (a.fontVars.wordmark) vars.push(`--font-wordmark:${a.fontVars.wordmark}`);
   if (a.fontVars.pageTitle) vars.push(`--font-page-title:${a.fontVars.pageTitle}`);
+  if (a.fontVars.ui) vars.push(`--font-sans:${a.fontVars.ui}`);
+  if (a.fontVars.prose) vars.push(`--font-prose:${a.fontVars.prose}`);
   if (vars.length) parts.push(`style="${escapeHtml(vars.join(';'))}"`);
   // The lock rides along even when everything is default: an owner surface is
   // owner-branded regardless, and the lock is what stops a mounted island's

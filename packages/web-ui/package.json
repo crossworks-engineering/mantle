@@ -27,6 +27,7 @@
     "./copy-button": "./src/copy-button.tsx",
     "./display-fonts": "./src/display-fonts.ts",
     "./docs-labels": "./src/docs-labels.ts",
+    "./font-dialog": "./src/font-dialog.tsx",
     "./font-provider": "./src/font-provider.tsx",
     "./forum-meta": "./src/forum-meta.tsx",
     "./generated-avatar": "./src/generated-avatar.tsx",

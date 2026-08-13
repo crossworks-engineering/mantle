@@ -214,10 +214,7 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
                     }
                   />
                 ) : (
-                  <span
-                    className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary-ink dark:hidden"
-                    style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
-                  >
+                  <span className="wordmark -mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-primary-ink dark:hidden">
                     {data.siteName || 'mantle'}
                   </span>
                 )}
@@ -233,19 +230,13 @@ export function TeamWorkspaceShell({ children }: { children: ReactNode }) {
             ) : (
               /* Script/display faces overshoot the em box — clip only the WIDTH
                  and let the height overflow, same as the owner header. */
-              <span
-                className="-mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-2xl text-primary-ink"
-                style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
-              >
+              <span className="wordmark -mx-2 max-w-[45vw] overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-1 text-primary-ink">
                 {data.siteName || 'mantle'}
               </span>
             )}
           </Link>
           {data.peerName && (
-            <span
-              className="pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-[2px] text-center text-lg font-bold leading-normal text-primary-ink md:block"
-              style={{ fontFamily: 'var(--font-page-title)' }}
-            >
+            <span className="peer-name pointer-events-none absolute left-1/2 top-1/2 hidden max-w-[40vw] -translate-x-1/2 -translate-y-1/2 overflow-x-clip overflow-y-visible whitespace-nowrap px-2 py-[2px] text-center font-bold leading-normal text-primary-ink md:block">
               {data.peerName}
             </span>
           )}

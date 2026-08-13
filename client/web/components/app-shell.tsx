@@ -71,10 +71,12 @@ type ShellData = {
   /** The DB-stored colour theme (the cross-browser source of truth); null ⇒
    *  never saved. Adopted once per shell load. */
   colorTheme: string | null;
-  /** DB-stored wordmark + page-title font keys (Settings → Appearance → Fonts);
+  /** DB-stored font keys for the four slots (Settings → Appearance → Fonts);
    *  null ⇒ the defaults. Adopted once per shell load, like the colour theme. */
   fontLogo: string | null;
   fontTitle: string | null;
+  fontUi: string | null;
+  fontProse: string | null;
   /** Short-lived asset-access token for browser-native srcs in detached mode
    *  (see lib/asset-url). Absent/ignored same-origin. */
   assetToken?: string;
@@ -175,16 +177,22 @@ function ShellFrame({
   }, [shellQuery.data, activeColorTheme, adoptServerTheme]);
 
   // Font sync — same shape as the colour theme: adopt the DB choices once per
-  // shell load (the pre-paint script already applied this browser's cache; this
-  // reconciles to the cross-browser source of truth). Unknown keys fall back to
-  // the defaults inside adoptServerFonts.
+  // shell load, reconciling to the cross-browser source of truth in case another
+  // browser changed the brand mid-session. Unknown and absent keys are ignored
+  // inside adoptServerFonts, so a slot the server has never stored keeps
+  // whatever the server-rendered document already painted.
   const { adoptServerFonts } = useFonts();
   const adoptedFonts = useRef(false);
   useEffect(() => {
     if (adoptedFonts.current) return;
     if (shellQuery.data === undefined) return;
     adoptedFonts.current = true;
-    adoptServerFonts(shellQuery.data.fontLogo ?? null, shellQuery.data.fontTitle ?? null);
+    adoptServerFonts({
+      logo: shellQuery.data.fontLogo ?? null,
+      title: shellQuery.data.fontTitle ?? null,
+      ui: shellQuery.data.fontUi ?? null,
+      prose: shellQuery.data.fontProse ?? null,
+    });
   }, [shellQuery.data, adoptServerFonts]);
 
   // Publish the asset-access token so `assetUrl()` can sign browser-native srcs

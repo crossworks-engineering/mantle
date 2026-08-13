@@ -43,26 +43,38 @@ Non-negotiables (full detail in the guide):
   must scroll itself (`h-dvh overflow-y-auto`) because globals.css pins `html/body` to
   `overflow:hidden` for the shell. Pages render via the server `renderPageDoc` (sanitized
   HTML), not the client editor.
-- **Fonts**: Inter is the DEFAULT UI body font, and the only one that is always
-  loaded (next/font). It is no longer pinned: the **interface font** is
-  user-selectable too (Settings → Appearance → Interface font), as are the
-  **wordmark + header page-title**, from the same display-font library. A UI
-  choice overrides `--font-sans` on `<html>`, which is why the next/font
-  variable CLASSES live on `<html>` and not `<body>`, since inline style only
-  outranks a class on the SAME element. Alongside it, **Interface size**
-  (small/medium/large) sets the ROOT font-size via `html[data-font-size]` in
-  `app.css`, so the rem-based shell scales whole rather than just the type.
-  Every selectable UI face is a VARIABLE font and MUST carry a `weight` range in
-  the registry, or the browser synthesises bold across the entire app.
-  The single registry is
-  `packages/web-ui/src/display-fonts.ts`; it drives the `@font-face` block, both
-  pickers, and the runtime CSS-var override. To add a face: drop it in
-  `public/fonts/library/`, run `node scripts/fonts-to-woff2.mjs --prune <file>`,
-  mirror the `.woff2` into **both** apps' public dirs (`client/web` + `server/web`
-  each serve their own), then add a row keyed `<key>.woff2`. **woff2 only**: a
-  `.ttf` left behind fails `display-fonts.test.ts`, which asserts registry and
-  shipped files agree in both directions, per app. Defaults: Bukhari wordmark,
-  sans title.
+- **Fonts**: FOUR user-selectable slots, ONE library. Settings → Appearance picks
+  a face and a size for the **interface**, the **wordmark**, the **peer name**
+  and **Pages/Notes prose**. Defaults: Inter, Bricolage Grotesque, and "same as
+  interface" for the last two.
+  - The single registry is `packages/web-ui/src/display-fonts.ts`. It drives the
+    `@font-face` block, the selection dialog, and the runtime CSS-var override.
+    Every face in it is a VARIABLE font with **at least two axes**, and MUST
+    carry its real `weight` range, or the browser treats the file as a single
+    400 and synthesises bold across the whole app.
+  - **Never hand-write a range.** `node scripts/fonts-import.mjs <file.ttf>`
+    reads `fvar`/`name`/`OS/2` out of the binary, converts to woff2, installs
+    into **both** apps' public dirs with the licence, and prints the row to
+    paste. It refuses a face with fewer than two axes. `display-fonts.test.ts`
+    asserts registry, files and licences agree in both directions, per app, and
+    that the two apps' payloads are byte-identical. **woff2 only.**
+  - Inter is the only always-loaded face (next/font) and deliberately carries no
+    library file, so it is not shipped twice. The interface choice overrides
+    `--font-sans` on `<html>`, which is why the next/font variable CLASS lives on
+    `<html>` and not `<body>`: inline style only outranks a class on the SAME
+    element. `--font-sans-base` always holds Inter so the modal's Inter row
+    previews truthfully.
+  - **Sizes are attributes, never resolved numbers.** `app.css` owns every
+    multiplier: `html[data-font-size]` sets the ROOT font-size (so the rem-based
+    shell scales whole), and `data-logo-size`/`data-title-size`/`data-prose-size`
+    set local scale vars. Consume them through the `.wordmark`, `.peer-name` and
+    `.prose-document` classes, which pair each face with its size.
+  - `.prose-document` is for DOCUMENTS only — the Pages editor, the Notes
+    reader, their share pages, and `/print` (which IS the PDF export). Chat, the
+    changelog and help markdown are interface prose and stay on plain `.prose`.
+  - The share/print shell (`server/pages/template.ts`) stamps the same
+    attributes and vars as the client root layout. It has to: without them a
+    PDF exports in the wrong face.
 - **Tailwind v4**: no dynamically built class names (use literal-string arrays).
 - **Editing CSS in `packages/web-ui/styles/` needs a dev-server RESTART.** HMR
   does not reliably pick up changes to the shared stylesheets, and the failure is

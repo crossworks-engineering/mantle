@@ -131,7 +131,7 @@ export function PageEditor({
         // run — scoping it to [contenteditable='true'] dropped the padding the
         // moment setEditable(false) fired, sliding text under the gutter.
         class:
-          'page-gutter prose dark:prose-invert prose-accent max-w-none min-h-[50vh] focus:outline-none',
+          'page-gutter prose dark:prose-invert prose-accent prose-document max-w-none min-h-[50vh] focus:outline-none',
       },
       // Drop images/files onto the canvas → upload + insert at the drop point.
       handleDrop: (view, event) => {

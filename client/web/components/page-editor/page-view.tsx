@@ -21,7 +21,9 @@ export function PageView({ content }: { content: JSONContent }) {
     editable: false,
     immediatelyRender: false,
     editorProps: {
-      attributes: { class: 'prose dark:prose-invert prose-accent max-w-none focus:outline-none' },
+      attributes: {
+        class: 'prose dark:prose-invert prose-accent prose-document max-w-none focus:outline-none',
+      },
     },
   });
 

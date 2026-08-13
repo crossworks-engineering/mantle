@@ -155,12 +155,7 @@ function VariantControl({
         // eslint-disable-next-line @next/next/no-img-element
         <img src={shownSrc} alt={wordmark} className="h-10 w-auto max-w-full object-contain" />
       ) : (
-        <span
-          className="text-2xl text-primary-ink"
-          style={{ fontFamily: 'var(--font-wordmark, var(--font-logo))' }}
-        >
-          {wordmark}
-        </span>
+        <span className="wordmark text-primary-ink">{wordmark}</span>
       )}
     </div>
   );

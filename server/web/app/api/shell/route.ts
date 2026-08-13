@@ -49,6 +49,8 @@ export async function GET() {
     colorTheme: prefs.colorTheme ?? null,
     fontLogo: prefs.fontLogo ?? null,
     fontTitle: prefs.fontTitle ?? null,
+    fontUi: prefs.fontUi ?? null,
+    fontProse: prefs.fontProse ?? null,
     // Brand logo (replaces the wordmark when set) — src is the public
     // /api/appearance/logo, these are the cache-busting versions. The dark
     // variant is optional; renderers fall back dark → base → wordmark.

@@ -21,8 +21,9 @@ widgets.
 - **Token-first.** Style with semantic theme tokens, never hardcoded colors.
   The app ships ~40 color themes (tweakcn) × light/dark; hardcoded hex/oklch
   breaks all of them.
-- **Self-hosted ethos.** No external CDNs for fonts/assets. Fonts are
-  self-hosted via `next/font/local` (`lib/fonts.ts`).
+- **Self-hosted ethos.** No external CDNs for fonts/assets. Inter is
+  self-hosted via `next/font/local` (`client/web/lib/fonts.ts`); the rest of the
+  face library is self-hosted woff2 under `public/fonts/library/`.
 - **Consistency over cleverness.** A new screen should feel like it was built
   by the same hand as the last one.
 
@@ -144,14 +145,40 @@ Rules:
 
 ## 3. Typography & fonts
 
-- **Sans (everything):** Inter, self-hosted, wired as `--font-sans` on
-  `<body>` via `lib/fonts.ts`. Just use default text, don't set font-family.
-- **Logo / wordmark only:** Bukhari Script via `font-logo` (`--font-logo`).
-  Do **not** use it for anything else, the centered top-bar page title is
-  Inter (`text-lg font-bold text-chart-2`).
+- **Four slots, one library.** Settings → Appearance picks a face and a size for
+  the interface, the wordmark, the peer name and Pages/Notes prose. The registry
+  is `packages/web-ui/src/display-fonts.ts`; every face in it is a variable font
+  with at least two axes. See §3a.
+- **Sans (everything):** Inter by default, self-hosted, wired as `--font-sans`
+  on `<html>`. Just use default text, don't set font-family — the interface
+  choice overrides that var and everything inheriting from the root follows.
+- **Never set a wordmark/peer/prose font by hand.** Use the `.wordmark`,
+  `.peer-name` and `.prose-document` classes in `app.css`, which pair each face
+  with its size so the two halves of a choice can't be applied separately.
 - `--font-serif` / `--font-mono` are fallback strings only (mono is fine for
-  code/`font-mono`); no serif font is actually loaded.
-- **Do not add per-theme fonts.** All themes share Inter by design.
+  code/`font-mono`).
+- **Do not add per-theme fonts.** Typography is a brain-level choice, orthogonal
+  to the colour theme.
+
+### 3a. Adding a face
+
+Never hand-write a `@font-face` range. Run the importer, which reads the axis
+ranges out of the file's own `fvar` table, converts to woff2, installs into
+**both** apps' public dirs with the licence, and prints the registry row:
+
+```sh
+node scripts/fonts-import.mjs <family>/<Face>-VariableFont_*.ttf
+```
+
+Paste the row into `display-fonts.ts` and fill in `fallback` + `shelf`. The
+importer refuses a face with fewer than two axes, and `display-fonts.test.ts`
+asserts the registry, the shipped files and the licences agree in both
+directions, per app. woff2 only: a `.ttf` left behind fails that test.
+
+A declared range that is wider than the file's own is clamped by the browser, but
+a MISSING one is not — without `font-weight` the browser treats a variable file
+as a single 400 and synthesises bold, which reads as smeared headings everywhere.
+That is the whole reason the ranges are machine-read.
 - Headings: page title lives in the **top bar** (see §8): don't add a big
   on-page `<h1>` that duplicates it. Section headings: `h2`,
   `text-base`/`text-lg font-semibold`.
@@ -498,7 +525,10 @@ as deep links** even after a master-detail supersedes the in-app navigation
 - ❌ Native `<select>`/`<input type=checkbox>` when `Select`/`Checkbox` exist.
 - ❌ Inline error banners for transient failures (use toasts).
 - ❌ A big on-page `<h1>` duplicating the top-bar page title.
-- ❌ Per-theme or decorative fonts beyond Inter + the Bukhari logo.
+- ❌ Per-theme fonts, or a face outside the registry.
+- ❌ A hand-rolled `font-family: var(--font-wordmark)` — use `.wordmark` etc.
+- ❌ Putting `.prose-document` on chat, changelog or help markdown: that class is
+  for DOCUMENTS (Pages, Notes, their shares, and /print), not for interface prose.
 - ❌ Dynamically built Tailwind class names.
 - ❌ A flex/grid scroll pane without `min-h-0`, or a master-detail detail pane
   without `relative` (either causes a second, outer scrollbar, see §8).

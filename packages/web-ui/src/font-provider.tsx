@@ -3,56 +3,101 @@
 import * as React from 'react';
 import { apiSend } from '@mantle/web-ui/api-fetch';
 import {
-  DISPLAY_FONTS,
-  UI_FONTS,
+  FONT_LIBRARY,
   DEFAULT_LOGO_FONT,
   DEFAULT_TITLE_FONT,
   DEFAULT_UI_FONT,
-  DEFAULT_UI_FONT_SIZE,
+  DEFAULT_PROSE_FONT,
+  DEFAULT_FONT_SIZE,
   fontFamilyValue,
   fontByKey,
-  resolveUiFontSize,
-  type UiFontSize,
+  resolveFontSize,
+  type FontSize,
 } from './display-fonts';
 
 /**
- * Typography selection — the two display faces, the INTERFACE font, and the UI
- * scale. Admin choices (Settings → Appearance) override CSS variables at
- * runtime:
- *   --font-wordmark   → the header wordmark (default: the next/font Bukhari)
- *   --font-page-title → the centered header page title (default: the UI sans)
+ * Typography selection — four faces and four sizes. Admin choices (Settings →
+ * Appearance) override CSS variables and `<html>` attributes at runtime:
+ *
  *   --font-sans       → the whole interface (default: the next/font Inter)
- * plus `data-font-size` on <html>, which app.css turns into a root font-size.
- * The header elements read them with a var() fallback, so "default" is simply
- * *not setting* the variable. Live: setting a choice repaints instantly.
+ *   --font-wordmark   → the header wordmark (default: Bricolage Grotesque)
+ *   --font-page-title → the header-centre peer name (default: follow the UI)
+ *   --font-prose      → Pages, Notes and the PDF export (default: follow the UI)
+ *
+ *   data-font-size    → the ROOT font-size, so the rem-based shell scales
+ *   data-logo-size / data-title-size / data-prose-size
+ *                     → local multipliers, resolved to numbers by app.css
+ *
+ * Elements read the vars with a var() fallback, so "default" is simply *not
+ * setting* the variable, and app.css keys the size rules off the absence of an
+ * attribute. Live: setting a choice repaints instantly.
  *
  * Persistence mirrors the colour theme exactly: the DB copy
  * (profiles.preferences on the anchor owner) is the source of truth, rendered
- * server-side into `<html data-font-logo/-title>` + the inline style vars
- * (see @mantle/web-ui/appearance) — the document arrives painted; this
- * provider reads the attributes back on mount and writes changes through
+ * server-side into the `<html>` attributes + inline style vars (see
+ * @mantle/web-ui/appearance) — the document arrives painted; this provider
+ * reads the attributes back on mount and writes changes through
  * fire-and-forget.
  */
 
+/** The four selectable slots. One record per slot keeps every setter, every
+ *  attribute and every persisted field derivable from a single table instead of
+ *  four near-identical copies that drift. */
+const SLOTS = {
+  ui: {
+    var: '--font-sans',
+    attr: 'fontUi',
+    field: 'fontUi',
+    default: DEFAULT_UI_FONT,
+    sizeAttr: 'fontSize',
+    sizeField: 'fontSize',
+  },
+  logo: {
+    var: '--font-wordmark',
+    attr: 'fontLogo',
+    field: 'fontLogo',
+    default: DEFAULT_LOGO_FONT,
+    sizeAttr: 'logoSize',
+    sizeField: 'fontLogoSize',
+  },
+  title: {
+    var: '--font-page-title',
+    attr: 'fontTitle',
+    field: 'fontTitle',
+    default: DEFAULT_TITLE_FONT,
+    sizeAttr: 'titleSize',
+    sizeField: 'fontTitleSize',
+  },
+  prose: {
+    var: '--font-prose',
+    attr: 'fontProse',
+    field: 'fontProse',
+    default: DEFAULT_PROSE_FONT,
+    sizeAttr: 'proseSize',
+    sizeField: 'fontProseSize',
+  },
+} as const;
+
+export type FontSlot = keyof typeof SLOTS;
+
 type Ctx = {
-  logoFont: string;
-  titleFont: string;
-  uiFont: string;
-  fontSize: UiFontSize;
-  setLogoFont: (key: string) => void;
-  setTitleFont: (key: string) => void;
-  setUiFont: (key: string) => void;
-  setFontSize: (size: UiFontSize) => void;
-  /** Apply the server-stored choices (shell load): paints + caches localStorage,
-   *  never writes back — the DB copy is already the source it came from. */
-  adoptServerFonts: (logo: string | null, title: string | null) => void;
+  /** The chosen key per slot; always a key the registry knows. */
+  fonts: Record<FontSlot, string>;
+  /** The chosen size per slot. */
+  sizes: Record<FontSlot, FontSize>;
+  setFont: (slot: FontSlot, key: string) => void;
+  setSize: (slot: FontSlot, size: FontSize) => void;
+  /** Apply server-stored choices (shell load) without writing back — the DB
+   *  copy is already the source they came from. */
+  adoptServerFonts: (fonts: Partial<Record<FontSlot, string | null>>) => void;
 };
 
 const FontContext = React.createContext<Ctx | null>(null);
 
-/** Set/clear a var on <html>. Default choice clears (element falls to its var()
- *  fallback); anything else sets the resolved font-family value. Unknown keys
- *  clear too, so a key removed from the registry never strands the wordmark. */
+/** Set/clear a var on <html>. The default choice CLEARS (the element falls to
+ *  its var() fallback, which app.css defines); anything else sets the resolved
+ *  font-family. Unknown keys clear too, so a key removed from the registry
+ *  never strands an element on a face that no longer ships. */
 function applyVar(prop: string, key: string, defaultKey: string) {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
@@ -61,147 +106,105 @@ function applyVar(prop: string, key: string, defaultKey: string) {
   else root.style.removeProperty(prop);
 }
 
-/** Mirror a chosen key into the <html> dataset (default clears the attribute,
+/** Mirror a chosen value into the <html> dataset (default clears the attribute,
  *  matching the server render, where "default" is the attribute's absence). */
-function syncAttr(
-  prop: 'fontLogo' | 'fontTitle' | 'fontUi' | 'fontSize',
-  key: string,
-  defaultKey: string,
-) {
+function syncAttr(prop: string, value: string, defaultValue: string) {
   if (typeof document === 'undefined') return;
   const d = document.documentElement.dataset;
-  if (key === defaultKey) delete d[prop];
-  else d[prop] = key;
+  if (value === defaultValue) delete d[prop];
+  else d[prop] = value;
 }
 
-/** Read a server-rendered key attribute off <html>, falling back to the
- *  default when absent or unknown (a key removed from the registry must not
- *  become picker state). */
-function readAttr(value: string | undefined, fallback: string): string {
-  return value && fontByKey(value) ? value : fallback;
+/** Read a server-rendered key attribute off <html>, falling back to the default
+ *  when absent or unknown (a key removed from the registry must not become
+ *  picker state). */
+function readKey(value: string | undefined, fallback: string): string {
+  const known = fontByKey(value);
+  return known ? known.key : fallback;
+}
+
+const SLOT_KEYS = Object.keys(SLOTS) as FontSlot[];
+
+function defaults<T>(fn: (slot: FontSlot) => T): Record<FontSlot, T> {
+  return Object.fromEntries(SLOT_KEYS.map((s) => [s, fn(s)])) as Record<FontSlot, T>;
 }
 
 export function FontProvider({ children }: { children: React.ReactNode }) {
-  const [logoFont, setLogoState] = React.useState(DEFAULT_LOGO_FONT);
-  const [titleFont, setTitleState] = React.useState(DEFAULT_TITLE_FONT);
-  const [uiFont, setUiState] = React.useState(DEFAULT_UI_FONT);
-  const [fontSize, setSizeState] = React.useState<UiFontSize>(DEFAULT_UI_FONT_SIZE);
+  const [fonts, setFonts] = React.useState<Record<FontSlot, string>>(() =>
+    defaults((s) => SLOTS[s].default),
+  );
+  const [sizes, setSizes] = React.useState<Record<FontSlot, FontSize>>(() =>
+    defaults(() => DEFAULT_FONT_SIZE),
+  );
 
   // The document arrived with the brain's fonts already rendered (attributes +
   // inline vars, server-side). Read the attributes back as initial state — no
   // repaint needed, the DOM is already correct.
   React.useEffect(() => {
     const d = document.documentElement.dataset;
-    setLogoState(readAttr(d.fontLogo, DEFAULT_LOGO_FONT));
-    setTitleState(readAttr(d.fontTitle, DEFAULT_TITLE_FONT));
-    setUiState(readAttr(d.fontUi, DEFAULT_UI_FONT));
-    setSizeState(resolveUiFontSize(d.fontSize));
+    setFonts(defaults((s) => readKey(d[SLOTS[s].attr], SLOTS[s].default)));
+    setSizes(defaults((s) => resolveFontSize(d[SLOTS[s].sizeAttr])));
   }, []);
 
-  const persist = React.useCallback(
-    (body: { fontLogo?: string; fontTitle?: string; fontUi?: string; fontSize?: string }) => {
-      // The DB copy is the cross-browser source of truth; localStorage above is
-      // the pre-paint cache. Fire-and-forget — a failed write costs only the sync.
-      void apiSend('/api/profile/fonts', 'PUT', body).catch(() => {});
+  const persist = React.useCallback((body: Record<string, string>) => {
+    // The DB copy is the cross-browser source of truth. Fire-and-forget — a
+    // failed write costs only the sync, never the repaint the user just saw.
+    void apiSend('/api/profile/fonts', 'PUT', body).catch(() => {});
+  }, []);
+
+  // Each setter touches ONLY its own slot and persists ONLY its own field — no
+  // dependence on another slot's state. (A combined apply() reading the others
+  // from a closure could revert one when two change before a re-render.) The
+  // dataset key is kept in sync with the style var so the DOM stays
+  // self-consistent with what the server would have rendered.
+  const setFont = React.useCallback(
+    (slot: FontSlot, key: string) => {
+      const face = fontByKey(key);
+      if (!face) return;
+      const spec = SLOTS[slot];
+      setFonts((prev) => ({ ...prev, [slot]: face.key }));
+      applyVar(spec.var, face.key, spec.default);
+      syncAttr(spec.attr, face.key, spec.default);
+      persist({ [spec.field]: face.key });
+    },
+    [persist],
+  );
+
+  const setSize = React.useCallback(
+    (slot: FontSlot, size: FontSize) => {
+      const spec = SLOTS[slot];
+      const resolved = resolveFontSize(size);
+      setSizes((prev) => ({ ...prev, [slot]: resolved }));
+      // No var: app.css keys every size off the attribute, so the cascade does
+      // the scaling and there is nothing to recompute here.
+      syncAttr(spec.sizeAttr, resolved, DEFAULT_FONT_SIZE);
+      persist({ [spec.sizeField]: resolved });
+    },
+    [persist],
+  );
+
+  // Live sync from /api/shell (another browser changed the brain's fonts
+  // mid-session) — adopt ONLY slots the server actually has. A null means
+  // "never saved": the server-rendered document already reflects that (no
+  // attribute), so there is nothing to undo.
+  const adoptServerFonts = React.useCallback(
+    (incoming: Partial<Record<FontSlot, string | null>>) => {
+      for (const slot of SLOT_KEYS) {
+        const key = incoming[slot];
+        const face = key ? fontByKey(key) : undefined;
+        if (!face) continue;
+        const spec = SLOTS[slot];
+        setFonts((prev) => ({ ...prev, [slot]: face.key }));
+        applyVar(spec.var, face.key, spec.default);
+        syncAttr(spec.attr, face.key, spec.default);
+      }
     },
     [],
   );
 
-  // Each setter touches ONLY its own var + persists ONLY its own field — no
-  // dependence on the other font's state. (A combined apply() reading the other
-  // choice from a closure could revert it when both change before a re-render.)
-  // The dataset key is kept in sync with the style var so the DOM stays
-  // self-consistent with what the server would have rendered.
-  const setLogoFont = React.useCallback(
-    (key: string) => {
-      if (!fontByKey(key)) return;
-      setLogoState(key);
-      applyVar('--font-wordmark', key, DEFAULT_LOGO_FONT);
-      syncAttr('fontLogo', key, DEFAULT_LOGO_FONT);
-      persist({ fontLogo: key });
-    },
-    [persist],
-  );
-
-  const setTitleFont = React.useCallback(
-    (key: string) => {
-      if (!fontByKey(key)) return;
-      setTitleState(key);
-      applyVar('--font-page-title', key, DEFAULT_TITLE_FONT);
-      syncAttr('fontTitle', key, DEFAULT_TITLE_FONT);
-      persist({ fontTitle: key });
-    },
-    [persist],
-  );
-
-  // The interface font overrides `--font-sans` itself, so every element that
-  // resolves it — the `font-sans` utility and everything inheriting from the
-  // root — follows with no further wiring. It lands on <html>, the same element
-  // next/font's variable CLASS sits on, because inline style beats a class only
-  // on the same element.
-  const setUiFont = React.useCallback(
-    (key: string) => {
-      if (!fontByKey(key)) return;
-      setUiState(key);
-      applyVar('--font-sans', key, DEFAULT_UI_FONT);
-      syncAttr('fontUi', key, DEFAULT_UI_FONT);
-      persist({ fontUi: key });
-    },
-    [persist],
-  );
-
-  const setFontSize = React.useCallback(
-    (size: UiFontSize) => {
-      const resolved = resolveUiFontSize(size);
-      setSizeState(resolved);
-      // No var: app.css keys the root font-size off the attribute, so the
-      // cascade does the scaling and there is nothing to recompute here.
-      syncAttr('fontSize', resolved, DEFAULT_UI_FONT_SIZE);
-      persist({ fontSize: resolved });
-    },
-    [persist],
-  );
-
-  // Live sync from /api/shell (another browser changed the brain's fonts mid-
-  // session) — adopt ONLY fields the server actually has. A null means "never
-  // saved": the server-rendered document already reflects that (no attribute),
-  // so there is nothing to undo.
-  const adoptServerFonts = React.useCallback((logo: string | null, title: string | null) => {
-    if (logo && fontByKey(logo)) {
-      setLogoState(logo);
-      applyVar('--font-wordmark', logo, DEFAULT_LOGO_FONT);
-      syncAttr('fontLogo', logo, DEFAULT_LOGO_FONT);
-    }
-    if (title && fontByKey(title)) {
-      setTitleState(title);
-      applyVar('--font-page-title', title, DEFAULT_TITLE_FONT);
-      syncAttr('fontTitle', title, DEFAULT_TITLE_FONT);
-    }
-  }, []);
-
   const value = React.useMemo(
-    () => ({
-      logoFont,
-      titleFont,
-      uiFont,
-      fontSize,
-      setLogoFont,
-      setTitleFont,
-      setUiFont,
-      setFontSize,
-      adoptServerFonts,
-    }),
-    [
-      logoFont,
-      titleFont,
-      uiFont,
-      fontSize,
-      setLogoFont,
-      setTitleFont,
-      setUiFont,
-      setFontSize,
-      adoptServerFonts,
-    ],
+    () => ({ fonts, sizes, setFont, setSize, adoptServerFonts }),
+    [fonts, sizes, setFont, setSize, adoptServerFonts],
   );
 
   return <FontContext.Provider value={value}>{children}</FontContext.Provider>;
@@ -213,6 +216,6 @@ export function useFonts() {
   return ctx;
 }
 
-/** The full offered list — re-exported so pickers don't import the registry
+/** The full offered list — re-exported so the modal doesn't import the registry
  *  directly (keeps the provider the one UI-facing seam). */
-export { DISPLAY_FONTS, UI_FONTS };
+export { FONT_LIBRARY };

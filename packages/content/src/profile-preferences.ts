@@ -119,10 +119,23 @@ export type ProfilePreferences = {
    *  ornament. Same contract as `fontLogo`; unset ⇒ Inter (the always-loaded
    *  next/font face). Read via projectFontKey, never raw. */
   fontUi?: string;
-  /** UI scale: 'small' | 'medium' | 'large'. Drives the ROOT font-size, so the
-   *  rem-based shell scales with it rather than only the letters. Unset ⇒
-   *  'medium'. Read via projectFontSize, never raw. */
+  /** The PAGES/NOTES font key — what long-form prose is set in, in the editor,
+   *  on shared pages, and in the PDF export. Same contract as `fontLogo`; unset
+   *  ⇒ 'inherit' (follow the interface font). This is the one slot where the
+   *  choice leaves the browser: a page exported to PDF is typeset in it. */
+  fontProse?: string;
+  /** UI scale: 'xsmall' | 'small' | 'medium' | 'large'. Drives the ROOT
+   *  font-size, so the rem-based shell scales with it rather than only the
+   *  letters. Unset ⇒ 'medium'. Read via projectFontSize, never raw. */
   fontSize?: string;
+  /** Wordmark scale — same vocabulary as `fontSize`, but a LOCAL multiplier on
+   *  one element rather than the root font-size (a wordmark that rescaled the
+   *  whole shell would be a bug). Unset ⇒ 'medium'. */
+  fontLogoSize?: string;
+  /** Peer-name scale. Same contract as `fontLogoSize`. */
+  fontTitleSize?: string;
+  /** Pages/Notes prose scale. Same contract as `fontLogoSize`. */
+  fontProseSize?: string;
   /** Brand logo: the content-addressed storage key of the uploaded image
    *  (attachments/aa/bb/<sha256> — @mantle/storage contentKey). Set/cleared
    *  ONLY via PUT/DELETE /api/profile/logo, which validates the bytes; when
@@ -431,13 +444,14 @@ export function projectBackgrounds(raw: unknown): string | undefined {
   return /^[a-z0-9-]+=[a-z0-9-]+(,[a-z0-9-]+=[a-z0-9-]+)*$/.test(t) ? t : undefined;
 }
 
-/** Project a stored `fontSize`. A closed set like avatarTint, validated by
- *  value: an unknown size would rescale the entire interface and there is no
- *  registry to fall back through. Anything else ⇒ unset ⇒ 'medium'. */
+/** Project a stored font size (the interface scale and the three local ones).
+ *  A closed set like avatarTint, validated by value: an unknown size would
+ *  rescale the entire interface and there is no registry to fall back through.
+ *  Anything else ⇒ unset ⇒ 'medium'. */
 export function projectFontSize(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
   const t = raw.trim().toLowerCase();
-  return t === 'small' || t === 'medium' || t === 'large' ? t : undefined;
+  return t === 'xsmall' || t === 'small' || t === 'medium' || t === 'large' ? t : undefined;
 }
 
 /** Project a stored `avatarTint`. Unlike the style this IS a closed set, so it
@@ -620,7 +634,11 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     fontLogo: projectFontKey(prefs.fontLogo),
     fontTitle: projectFontKey(prefs.fontTitle),
     fontUi: projectFontKey(prefs.fontUi),
+    fontProse: projectFontKey(prefs.fontProse),
     fontSize: projectFontSize(prefs.fontSize),
+    fontLogoSize: projectFontSize(prefs.fontLogoSize),
+    fontTitleSize: projectFontSize(prefs.fontTitleSize),
+    fontProseSize: projectFontSize(prefs.fontProseSize),
     logoKey: projectLogoKey(prefs.logoKey),
     logoType: projectLogoType(prefs.logoType),
     logoDarkKey: projectLogoKey(prefs.logoDarkKey),
@@ -810,7 +828,11 @@ export async function updateProfilePreferences(
     fontLogo: projectFontKey(merged.fontLogo),
     fontTitle: projectFontKey(merged.fontTitle),
     fontUi: projectFontKey(merged.fontUi),
+    fontProse: projectFontKey(merged.fontProse),
     fontSize: projectFontSize(merged.fontSize),
+    fontLogoSize: projectFontSize(merged.fontLogoSize),
+    fontTitleSize: projectFontSize(merged.fontTitleSize),
+    fontProseSize: projectFontSize(merged.fontProseSize),
     logoKey: projectLogoKey(merged.logoKey),
     logoType: projectLogoType(merged.logoType),
     logoDarkKey: projectLogoKey(merged.logoDarkKey),
@@ -865,7 +887,11 @@ export const BRAIN_PREFERENCE_KEYS = [
   'fontLogo',
   'fontTitle',
   'fontUi',
+  'fontProse',
   'fontSize',
+  'fontLogoSize',
+  'fontTitleSize',
+  'fontProseSize',
   // The avatar STYLE is branding, like the theme and the fonts: it sets the
   // visual language every generated avatar in the brain is drawn in, so it
   // cannot be one admin's private choice. `avatarSeed` stays personal — that

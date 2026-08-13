@@ -4,6 +4,65 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: Four fonts, one library, every face variable (branch claude/variable-font-refactor)
+
+**A typeface library is not a list of decorations.** The old one had grown into
+two registries with different rules: twenty-two display faces for the wordmark,
+twelve for the interface, most of them chosen to be striking for two words of
+header. Anything you would actually set a document in was accidental.
+
+There is now one library of sixteen families, and every one is a variable font
+with at least two axes. One file carries every weight, and where a family has a
+slant axis, its italic too.
+
+### Four things you can set
+
+Settings and Appearance now offers a face and a size for each of the interface,
+the wordmark, the peer name, and a new one: **Pages and Notes**. That last is
+the only typography choice in the product that leaves the browser, because it
+typesets the PDF export as well as the editor and the share page.
+
+Each row opens the same chooser rather than spilling the whole library down the
+page: filtered by kind, previewing every face in your own text. The peer name
+and Pages/Notes default to "same as interface", so a brain that picks one font
+still looks deliberate. Sizes gained an Extra small, and the three new ones
+scale only what they name; Interface size still scales the whole shell.
+
+### The ranges are read out of the files, not typed
+
+`scripts/fonts-import.mjs` parses each font's own `fvar` table for its real axis
+ranges, converts to woff2, installs into both apps with the licence, and prints
+the registry row. It refuses a face with fewer than two axes.
+
+This is not tidiness. A variable font declared without its weight range makes
+the browser treat the file as a single regular and fake the bold, which shows up
+as smeared headings across every screen. Hand-typing sixteen sets of ranges is
+sixteen chances to introduce that quietly.
+
+Faces stay lazily fetched: a file downloads only when something actually paints
+in it, so the library costs nothing until you choose from it.
+
+### Two things that were already broken
+
+The interface font never reached share links or `/print` at all. Only the two
+header faces were stamped into those documents, so a share always rendered in
+Inter no matter what the brain had chosen. Both surfaces now carry every font
+the app does, which is what makes the Pages/Notes choice reach a PDF.
+
+Separately, the Appearance screen showed Inter as the selected interface font
+however you had it set. The face was applied correctly; the attribute the picker
+reads its state back from was never rendered.
+
+### What went away
+
+Bukhari Script and the twenty-two decorative faces are gone. An existing brain
+that had chosen one falls back to the new default rather than stranding, which
+is what the registry contract has always promised. The default wordmark is now
+Bricolage Grotesque, and Mantle's own mark in the footer follows it.
+
+Only one monospace family survives the two-axis floor (Inconsolata). More can be
+added at any time: that is now one command and one pasted row.
+
 ## Unreleased — The models you pinned, and whether they still exist (branch feat/model-drift)
 
 **A pinned model is a decision, not a subscription.** It was right the day it

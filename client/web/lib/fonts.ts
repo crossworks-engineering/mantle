@@ -47,19 +47,14 @@ export const fontSans = localFont({
   ],
 });
 
-/**
- * Display/logo font — used only for the "Mantle" wordmark. Self-hosted
- * Bukhari Script. Exposed as `--font-logo` (mapped to the `font-logo`
- * utility in globals.css @theme inline).
+/*
+ * There is no second next/font face any more. The wordmark used to be a
+ * separate always-loaded Bukhari Script here; it is now just another entry in
+ * the font library (@mantle/web-ui/display-fonts), declared in the shared
+ * `@font-face` block and fetched lazily like every other selectable face. Its
+ * default lives in one place, `--font-brand` in app.css, which is also what the
+ * product mark in the footer reads.
+ *
+ * Inter stays here because it is the one face that is ALWAYS painted, which is
+ * exactly the case next/font is right for.
  */
-export const fontLogo = localFont({
-  variable: '--font-logo',
-  display: 'swap',
-  src: [
-    {
-      path: '../public/fonts/BukhariScript-Regular.woff2',
-      style: 'normal',
-      weight: '400',
-    },
-  ],
-});
