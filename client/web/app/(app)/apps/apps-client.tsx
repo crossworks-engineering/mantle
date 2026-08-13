@@ -34,6 +34,11 @@ import { useListNav } from '@/lib/use-list-nav';
 import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
 import { ListCard } from '@mantle/web-ui/ui/list-card';
+import { ShareControl } from '@/components/share-control';
+import { FocusToggle } from '@/components/layout/focus-toggle';
+import { useZenMode } from '@/components/layout/zen-mode';
+import { focusGridClass } from '@/components/layout/focus-layout';
+import { cn } from '@mantle/web-ui/lib/utils';
 import type { AppRow } from '@mantle/content';
 
 type AppsPage = { apps: AppRow[]; total: number; page: number; pageSize: number };
@@ -112,6 +117,7 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { pending, go } = useListNav();
+  const { zen } = useZenMode();
 
   const [selectedId, setSelectedId] = useState<string | null>(apps[0]?.id ?? null);
   const [q, setQ] = useState(query);
@@ -138,9 +144,15 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-rows-[1fr] md:grid-cols-[340px_1fr]">
-      {/* Left: list */}
-      <div className="flex min-h-0 flex-col border-r border-border">
+    <div
+      className={cn(
+        'grid h-full min-h-0 grid-rows-[1fr]',
+        focusGridClass(zen, 'md:grid-cols-[340px_1fr]'),
+      )}
+    >
+      {/* Left: list — hidden (never unmounted) in focus mode, so the search box
+          and scroll position survive the round trip. */}
+      <div className={cn('flex min-h-0 flex-col border-r border-border', zen && 'hidden')}>
         <div className="flex items-center gap-2 border-b border-border p-2">
           <form
             className="flex-1"
@@ -240,6 +252,21 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                {/* Share the published app at a full-screen /s/<token> URL —
+                    only once there's a published build to point the link at.
+                    Same control and hint as the editor header. */}
+                {selected.hasBuild && (
+                  <ShareControl
+                    nodeId={selected.id}
+                    teamMode
+                    teamHint="Visitors must enter their team token, and every action is audited to that member. Team members can use the app’s Mantle tools and write to its data — a public link can only read the app’s own data. Grant it to people you trust."
+                  />
+                )}
+                {/* Focus mode: the shell drops its chrome and the list column
+                    collapses, leaving the app alone in the viewport — the same
+                    read-only preview Pages offers outside its editor. This
+                    header survives focus mode, so the toggle stays reachable. */}
+                <FocusToggle />
                 <Button asChild size="sm" variant="outline">
                   <Link href={`/apps/${selected.id}`}>
                     <Pencil />

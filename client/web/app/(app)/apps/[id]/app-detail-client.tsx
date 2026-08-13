@@ -3,15 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Hammer,
-  Rocket,
+  Eye,
+  GitCommitHorizontal,
   Undo2,
   SquareDashedMousePointer,
   X,
   Save,
   WandSparkles,
 } from 'lucide-react';
-import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
+import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Badge } from '@mantle/web-ui/ui/badge';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
@@ -104,7 +104,7 @@ function AppDetailView({ app }: { app: AppDetail }) {
   const paths = useMemo(() => Object.keys(files).sort(), [files]);
   const [activePath, setActivePath] = useState(source.entry);
   const [reloadKey, setReloadKey] = useState(0);
-  const [busy, setBusy] = useState<null | 'build' | 'publish' | 'discard' | 'save' | 'format'>(
+  const [busy, setBusy] = useState<null | 'preview' | 'commit' | 'discard' | 'save' | 'format'>(
     null,
   );
   const [buildErrors, setBuildErrors] = useState<BuildMsg[]>([]);
@@ -129,10 +129,11 @@ function AppDetailView({ app }: { app: AppDetail }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey]);
 
-  async function build() {
+  /** Compile the draft and refresh the preview. Does NOT go live. */
+  async function preview() {
     // Unsaved editor changes must reach the draft before we compile it.
     if (dirty && !(await saveDraft())) return;
-    setBusy('build');
+    setBusy('preview');
     setBuildErrors([]);
     try {
       const data = await apiSend<{ errors?: BuildMsg[]; buildOk?: boolean }>(
@@ -141,28 +142,40 @@ function AppDetailView({ app }: { app: AppDetail }) {
       );
       setBuildErrors(data.errors ?? []);
       if (data.buildOk) {
-        toast.success('Build succeeded.');
+        toast.success('Preview updated.');
         await queryClient.invalidateQueries({ queryKey: ['apps', app.id] });
         setReloadKey((k) => k + 1);
       } else {
-        toast.error(`Build failed (${data.errors?.length ?? 0} error(s)).`);
+        toast.error(`${data.errors?.length ?? 0} error(s) — preview not updated.`);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Build failed.');
+      toast.error(err instanceof Error ? err.message : 'Could not build the preview.');
     } finally {
       setBusy(null);
     }
   }
 
-  async function publish() {
-    setBusy('publish');
+  /** Go live: the route compiles the draft itself and promotes it only on a
+   *  clean build, so the live source and the live bundle always agree. */
+  async function commit() {
+    if (dirty && !(await saveDraft())) return;
+    setBusy('commit');
+    setBuildErrors([]);
     try {
       await apiSend(`/api/apps/${app.id}/publish`, 'POST');
-      toast.success('Published.');
+      toast.success('Committed — the live app is updated.');
       await queryClient.invalidateQueries({ queryKey: ['apps', app.id] });
       setReloadKey((k) => k + 1);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Publish failed.');
+      // 422 = the commit's own build failed; surface the errors in the panel
+      // rather than a bare toast, exactly as a Preview failure would.
+      if (err instanceof ApiError && err.status === 422) {
+        const errors = (err.body?.errors as BuildMsg[] | undefined) ?? [];
+        setBuildErrors(errors);
+        toast.error(`${errors.length} error(s) — nothing was committed.`);
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Commit failed.');
+      }
     } finally {
       setBusy(null);
     }
@@ -185,7 +198,7 @@ function AppDetailView({ app }: { app: AppDetail }) {
   // Wire the global assistant overlay to this app: arm the Appsmith specialist,
   // pin this app as context, fold the inspect-selected region into a focus
   // directive, and rebuild the preview when Appsmith edits the draft. Replaces
-  // the old in-builder Appsmith panel; the draft/Publish flow is unchanged.
+  // the old in-builder Appsmith panel; the draft/Commit flow is unchanged.
   const focusDirective = useMemo(
     () =>
       focusRegion
@@ -205,8 +218,8 @@ function AppDetailView({ app }: { app: AppDetail }) {
     onEdited: onAppEdited,
   });
 
-  // Persist the edited file tree to the draft. Returns true on success so the
-  // Build action can save-then-build when there are unsaved edits.
+  // Persist the edited file tree to the draft. Returns true on success so
+  // Preview and Commit can save-then-compile when there are unsaved edits.
   async function saveDraft(): Promise<boolean> {
     setBusy('save');
     try {
@@ -270,9 +283,15 @@ function AppDetailView({ app }: { app: AppDetail }) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={build} disabled={busy !== null}>
-            <Hammer />
-            Build
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={preview}
+            disabled={busy !== null}
+            title="Compile the draft and refresh the preview — does not go live"
+          >
+            <Eye />
+            Preview
           </Button>
           {app.hasDraft && (
             <Button size="sm" variant="ghost" onClick={discard} disabled={busy !== null}>
@@ -280,9 +299,16 @@ function AppDetailView({ app }: { app: AppDetail }) {
               Discard
             </Button>
           )}
-          <Button size="sm" onClick={publish} disabled={busy !== null || !app.draftBuild?.ok}>
-            <Rocket />
-            Publish
+          {/* Commit compiles the draft itself, so it gates on there being
+              something staged, not on a build having been run by hand. */}
+          <Button
+            size="sm"
+            onClick={commit}
+            disabled={busy !== null || (!app.hasDraft && !dirty)}
+            title="Compile the draft and make it live"
+          >
+            <GitCommitHorizontal />
+            Commit
           </Button>
           {/* Share the published app at a public full-screen /s/<token> URL.
               Only once there's a published build to point the link at. */}
@@ -361,7 +387,7 @@ function AppDetailView({ app }: { app: AppDetail }) {
               // shrink-0 + its own scroll so the flex-1 sandbox above can't
               // squeeze the errors to zero height in the non-scrolling column.
               <div className="mt-3 max-h-48 shrink-0 overflow-y-auto rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive-ink">
-                <p className="mb-1 font-medium">Build errors</p>
+                <p className="mb-1 font-medium">Compile errors</p>
                 <ul className="flex flex-col gap-1">
                   {buildErrors.map((e, i) => (
                     <li key={i}>

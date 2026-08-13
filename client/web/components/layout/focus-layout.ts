@@ -18,9 +18,11 @@ export function focusGridColumns(zen: boolean, listWidth: number): string {
   return zen ? 'minmax(0, 1fr)' : `${listWidth}px minmax(0, 1fr)`;
 }
 
-/** The same for a fixed-width left column (Draw). Both arms are written out in
- *  full: Tailwind v4 scans source text, so a class built from a variable emits
- *  no rule and the column silently keeps its default width. */
-export function focusGridClass(zen: boolean): string {
-  return zen ? 'md:grid-cols-[minmax(0,1fr)]' : 'md:grid-cols-[360px_1fr]';
+/** The same for a fixed-width left column (Draw, Apps). Both arms are written
+ *  out in full: Tailwind v4 scans source text, so a class built from a variable
+ *  emits no rule and the column silently keeps its default width. That is also
+ *  why `expanded` is passed as a whole literal class by callers that don't use
+ *  the default width, rather than composed from a number here. */
+export function focusGridClass(zen: boolean, expanded = 'md:grid-cols-[360px_1fr]'): string {
+  return zen ? 'md:grid-cols-[minmax(0,1fr)]' : expanded;
 }
