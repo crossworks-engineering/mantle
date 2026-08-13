@@ -17,6 +17,7 @@ import { BackLink } from '@mantle/web-ui/layout/back-link';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { apiFetch } from '@mantle/web-ui/api-fetch';
 import { ImapForm } from './imap/imap-form';
 import { FolderPicker } from './[id]/folders/folder-picker';
@@ -103,32 +104,26 @@ export function AccountsClient() {
               const latest = latestRuns[r.id];
               const isSelected = !showAdd && selectedId === r.id;
               return (
-                <Link
-                  key={r.id}
-                  href={`/settings/accounts?selected=${r.id}`}
-                  className={cn(
-                    'block rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 transition-colors hover:bg-muted/50',
-                    isSelected && 'border-l-primary',
-                    !r.enabled && 'opacity-70',
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <Mail className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                    <span className="truncate text-sm font-medium">{r.address}</span>
-                    <span className={cn('ml-auto shrink-0', statusBadgeClass(r, latest))}>
-                      {statusLabel(r, latest)}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {r.provider}
-                    {r.provider === 'imap' && r.imapHost ? ` · ${r.imapHost}:${r.imapPort}` : ''}
-                  </div>
-                  {r.lastSyncError && (
-                    <div className="mt-0.5 truncate text-xs text-destructive-ink">
-                      ⚠ {r.lastSyncError}
+                <ListCard key={r.id} asChild selected={isSelected} dimmed={!r.enabled}>
+                  <Link href={`/settings/accounts?selected=${r.id}`}>
+                    <div className="flex items-center gap-2">
+                      <Mail className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="truncate text-sm font-medium">{r.address}</span>
+                      <span className={cn('ml-auto shrink-0', statusBadgeClass(r, latest))}>
+                        {statusLabel(r, latest)}
+                      </span>
                     </div>
-                  )}
-                </Link>
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {r.provider}
+                      {r.provider === 'imap' && r.imapHost ? ` · ${r.imapHost}:${r.imapPort}` : ''}
+                    </div>
+                    {r.lastSyncError && (
+                      <div className="mt-0.5 truncate text-xs text-destructive-ink">
+                        ⚠ {r.lastSyncError}
+                      </div>
+                    )}
+                  </Link>
+                </ListCard>
               );
             })
           )}

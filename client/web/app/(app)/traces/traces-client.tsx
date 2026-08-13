@@ -14,6 +14,7 @@ import {
   type TraceSummary,
 } from '@mantle/web-ui/traces-format';
 import { Button } from '@mantle/web-ui/ui/button';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { TraceDetailView } from './trace-detail-view';
 import { cn } from '@mantle/web-ui/lib/utils';
@@ -230,53 +231,48 @@ export function TracesClient({
               </p>
             ) : (
               rows.map((r) => (
-                <Link
-                  key={r.id}
-                  href={href({ selected: r.id })}
-                  className={cn(
-                    'block rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 transition-colors hover:bg-muted/50',
-                    selectedId === r.id && 'border-l-primary',
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <span
-                        className={cn('size-2 shrink-0 rounded-full', statusDot(r.status))}
-                        aria-hidden
-                      />
-                      <span className="truncate text-sm font-medium">
-                        {KIND_LABEL[r.kind] ?? r.kind}
-                      </span>
-                      <span
-                        className={cn(
-                          'shrink-0 text-[10px] uppercase tracking-wider',
-                          statusTextClass(r.status),
-                        )}
-                      >
-                        {r.status}
+                <ListCard key={r.id} asChild selected={selectedId === r.id}>
+                  <Link href={href({ selected: r.id })}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span
+                          className={cn('size-2 shrink-0 rounded-full', statusDot(r.status))}
+                          aria-hidden
+                        />
+                        <span className="truncate text-sm font-medium">
+                          {KIND_LABEL[r.kind] ?? r.kind}
+                        </span>
+                        <span
+                          className={cn(
+                            'shrink-0 text-[10px] uppercase tracking-wider',
+                            statusTextClass(r.status),
+                          )}
+                        >
+                          {r.status}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                        {formatDateTime(r.startedAt)}
                       </span>
                     </div>
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                      {formatDateTime(r.startedAt)}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs tabular-nums text-muted-foreground">
-                    <span>{formatDuration(r.durationMs)}</span>
-                    <span>{formatMicroUsd(r.costMicroUsd)}</span>
-                    <span>
-                      {r.tokensIn + r.tokensOut > 0 ? `${r.tokensIn + r.tokensOut}` : '—'} tok
-                    </span>
-                    <span>{r.stepCount} steps</span>
-                  </div>
-                  {r.error ? (
-                    <div className="mt-0.5 truncate text-xs text-destructive-ink">{r.error}</div>
-                  ) : r.agentName ? (
-                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {r.agentName}
-                      {r.agentSlug ? ` / ${r.agentSlug}` : ''}
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs tabular-nums text-muted-foreground">
+                      <span>{formatDuration(r.durationMs)}</span>
+                      <span>{formatMicroUsd(r.costMicroUsd)}</span>
+                      <span>
+                        {r.tokensIn + r.tokensOut > 0 ? `${r.tokensIn + r.tokensOut}` : '—'} tok
+                      </span>
+                      <span>{r.stepCount} steps</span>
                     </div>
-                  ) : null}
-                </Link>
+                    {r.error ? (
+                      <div className="mt-0.5 truncate text-xs text-destructive-ink">{r.error}</div>
+                    ) : r.agentName ? (
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {r.agentName}
+                        {r.agentSlug ? ` / ${r.agentSlug}` : ''}
+                      </div>
+                    ) : null}
+                  </Link>
+                </ListCard>
               ))
             )}
           </div>

@@ -398,14 +398,16 @@ Rules:
   one cutting off text. This bit tool-groups/skills/tools (whose tall tool-picker
   lists pushed content to ~8000px); agents never had it because its pane was
   already `relative`. Always include `relative` on the detail pane.
-- **Accent card** (selectable list item): keep the left border *visible* so
-  rounded corners don't break; only its colour flips on select:
+- **Accent card** (selectable list item): use the shared **`<ListCard>`**
+  (`@mantle/web-ui/ui/list-card`) — never hand-roll the class string again.
+  It keeps the left border *visible* so rounded corners don't break; only its
+  colour flips on select (accent bar only — no `bg-accent` fill, see §2):
   ```tsx
-  <button className={cn(
-    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-    selected && 'border-l-primary',   // accent bar only — no bg-accent fill (see §2)
-    disabled && 'opacity-70',
-  )} />
+  import { ListCard } from '@mantle/web-ui/ui/list-card';
+
+  <ListCard selected={isSel} dimmed={!row.enabled} onClick={…}>…</ListCard>
+  // Link rows: <ListCard asChild selected={…}><Link href={…}>…</Link></ListCard>
+  // Extra layout via className (merged): className="group flex items-start gap-2"
   ```
 - **Auto-select the first item** so the right pane is never blank:
   `selected ?? items[0]`.

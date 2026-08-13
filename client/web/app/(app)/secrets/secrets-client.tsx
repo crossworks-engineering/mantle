@@ -10,7 +10,8 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
+import { TagPill } from '@mantle/web-ui/tag-pill';
 import { SecretForm, emptySecretForm, KINDS, type SecretBody } from './secret-form';
 import { SecretDetail, type SecretRow } from './secret-detail';
 
@@ -173,14 +174,10 @@ function SecretsView({ data, query, kind }: { data: SecretsPage; query: string; 
             secrets.map((s) => {
               const isSel = sel?.mode === 'view' && sel.id === s.id;
               return (
-                <button
+                <ListCard
                   key={s.id}
-                  type="button"
                   onClick={() => setSel({ mode: 'view', id: s.id })}
-                  className={cn(
-                    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                    isSel && 'border-l-primary',
-                  )}
+                  selected={isSel}
                 >
                   <div className="flex items-center gap-2">
                     <KeyRound className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -194,20 +191,24 @@ function SecretsView({ data, query, kind }: { data: SecretsPage; query: string; 
                       {s.description || s.summary}
                     </p>
                   )}
-                  <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                    {s.fieldCount > 0 && (
-                      <span>
-                        {s.fieldCount} field{s.fieldCount === 1 ? '' : 's'}
-                      </span>
-                    )}
-                    {s.hasNote && <span>· note</span>}
-                    {s.tags.map((t) => (
-                      <span key={t} className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                </button>
+                  {(s.fieldCount > 0 || s.hasNote) && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                      {s.fieldCount > 0 && (
+                        <span>
+                          {s.fieldCount} field{s.fieldCount === 1 ? '' : 's'}
+                        </span>
+                      )}
+                      {s.hasNote && <span>· note</span>}
+                    </div>
+                  )}
+                  {s.tags.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {s.tags.map((t) => (
+                        <TagPill key={t} tag={t} />
+                      ))}
+                    </div>
+                  )}
+                </ListCard>
               );
             })
           )}

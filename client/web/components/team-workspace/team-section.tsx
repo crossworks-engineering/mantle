@@ -64,6 +64,7 @@ import { isCrossOrigin } from '@mantle/web-ui/runtime-env';
 import { OpenShare } from './open-on-server';
 import { ShareReader } from './share-reader';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 
 type Item = {
   token: string;
@@ -369,13 +370,9 @@ export function TeamSection({
             <ul className="flex flex-col gap-1 p-2">
               {items.map((item) => (
                 <li key={item.token}>
-                  <button
-                    type="button"
+                  <ListCard
                     onClick={() => select(item.token)}
-                    className={cn(
-                      'block w-full rounded-md border border-l-[3px] border-border border-l-border px-3 py-2 text-left transition-colors hover:bg-muted/50',
-                      item.token === selectedToken && 'border-l-primary bg-muted/40',
-                    )}
+                    selected={item.token === selectedToken}
                   >
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="min-w-0 truncate text-sm font-medium">
@@ -399,7 +396,7 @@ export function TeamSection({
                     <p className="mt-0.5 text-xs text-muted-foreground/70">
                       {formatDate(item.updatedAt)}
                     </p>
-                  </button>
+                  </ListCard>
                 </li>
               ))}
             </ul>

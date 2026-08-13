@@ -18,7 +18,7 @@ import {
 import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { useListNav } from '@/lib/use-list-nav';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import type { ExplorerModel, ModelSort } from '@server/lib/model-explorer';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
 
@@ -277,14 +277,10 @@ function ModelsView({ data }: { data: ExploreBundle }) {
             <EmptyList meta={meta} provider={current} filtered={Boolean(q) || kind !== 'all'} />
           ) : (
             rows.map((m) => (
-              <button
+              <ListCard
                 key={m.id}
-                type="button"
                 onClick={() => setSelectedId(m.id)}
-                className={cn(
-                  'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                  selectedId === m.id && 'border-l-primary',
-                )}
+                selected={selectedId === m.id}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium">{m.name ?? m.id}</span>
@@ -305,7 +301,7 @@ function ModelsView({ data }: { data: ExploreBundle }) {
                     </span>
                   )}
                 </div>
-              </button>
+              </ListCard>
             ))
           )}
         </div>

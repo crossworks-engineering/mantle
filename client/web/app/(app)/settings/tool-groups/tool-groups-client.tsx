@@ -32,7 +32,7 @@ import {
   integrationToPayload,
   type IntegrationForm,
 } from '@/components/tool-group-integration';
-import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { slugify } from '@mantle/web-ui/slugify';
 
 // List items carry the agent-grant fan-out from GET /api/tool-groups.
@@ -226,15 +226,11 @@ export function ToolGroupsClient() {
               const selected = editing?.mode === 'edit' && editing.group.id === g.id;
               const agents = g.grantedTo ?? [];
               return (
-                <button
+                <ListCard
                   key={g.id}
-                  type="button"
                   onClick={() => openEdit(g)}
-                  className={cn(
-                    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                    selected && 'border-l-primary',
-                    !g.enabled && 'opacity-70',
-                  )}
+                  selected={selected}
+                  dimmed={!g.enabled}
                 >
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{g.name}</span>
@@ -271,7 +267,7 @@ export function ToolGroupsClient() {
                       ↳ granted to {agents.length} agent{agents.length === 1 ? '' : 's'}
                     </div>
                   )}
-                </button>
+                </ListCard>
               );
             })
           )}

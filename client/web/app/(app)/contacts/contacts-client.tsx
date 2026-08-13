@@ -52,6 +52,7 @@ import {
   type ContactRow,
 } from '@mantle/content/contacts-format';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 
 type ContactsListResponse = {
@@ -158,14 +159,11 @@ export function ContactsClient() {
           ) : (
             contacts.map((c) => (
               <li key={c.id}>
-                <button
-                  type="button"
+                <ListCard
                   onClick={() => go({ id: c.id })}
                   disabled={pending}
-                  className={cn(
-                    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left text-sm transition-colors hover:bg-muted/50',
-                    selected?.id === c.id && 'border-l-primary',
-                  )}
+                  selected={selected?.id === c.id}
+                  className="text-sm"
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="truncate font-medium">{c.title}</span>
@@ -190,7 +188,7 @@ export function ContactsClient() {
                       <span className="ml-auto whitespace-nowrap">✉ {c.contactCounts.email}</span>
                     ) : null}
                   </div>
-                </button>
+                </ListCard>
               </li>
             ))
           )}

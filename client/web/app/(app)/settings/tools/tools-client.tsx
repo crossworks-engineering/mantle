@@ -24,6 +24,7 @@ import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { slugify } from '@mantle/web-ui/slugify';
 
@@ -804,15 +805,7 @@ function ToolCard({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-        selected && 'border-l-primary',
-        !tool.enabled && 'opacity-70',
-      )}
-    >
+    <ListCard onClick={onClick} selected={selected} dimmed={!tool.enabled}>
       <div className="flex items-center gap-2">
         <code className="truncate font-mono text-sm font-medium">{tool.slug}</code>
         <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -835,6 +828,6 @@ function ToolCard({
       {tool.description && (
         <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{tool.description}</p>
       )}
-    </button>
+    </ListCard>
   );
 }

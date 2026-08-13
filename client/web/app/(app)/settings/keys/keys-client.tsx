@@ -31,6 +31,7 @@ import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { SUPPORTED_PROVIDERS, wiredCapabilitiesFor } from '@mantle/voice/client';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
@@ -241,21 +242,17 @@ export function KeysClient() {
             keys.map((k) => {
               const selected = sel?.mode === 'view' && sel.id === k.id;
               return (
-                <button
+                <ListCard
                   key={k.id}
-                  type="button"
                   onClick={() => setSel({ mode: 'view', id: k.id })}
-                  className={cn(
-                    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                    selected && 'border-l-primary',
-                  )}
+                  selected={selected}
                 >
                   <div className="flex items-baseline gap-2">
                     <span className="truncate text-sm font-medium">{k.service}</span>
                     <span className="shrink-0 text-xs text-muted-foreground">/ {k.label}</span>
                   </div>
                   <code className="font-mono text-xs text-muted-foreground">{k.masked}</code>
-                </button>
+                </ListCard>
               );
             })
           )}

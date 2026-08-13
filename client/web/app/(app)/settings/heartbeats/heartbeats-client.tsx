@@ -22,6 +22,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
@@ -458,15 +459,11 @@ export function HeartbeatsClient() {
             heartbeats.map((h) => {
               const selected = editing?.mode === 'edit' && editing.hb.id === h.id;
               return (
-                <button
+                <ListCard
                   key={h.id}
-                  type="button"
                   onClick={() => openEdit(h)}
-                  className={cn(
-                    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                    selected && 'border-l-primary',
-                    h.status !== 'active' && 'opacity-70',
-                  )}
+                  selected={selected}
+                  dimmed={h.status !== 'active'}
                 >
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{h.name}</span>
@@ -489,7 +486,7 @@ export function HeartbeatsClient() {
                       next {formatDateTime(h.nextFireAt)}
                     </div>
                   )}
-                </button>
+                </ListCard>
               );
             })
           )}

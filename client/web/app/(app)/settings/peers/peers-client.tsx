@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { copyText } from '@mantle/web-ui/lib/secure-context-fallbacks';
@@ -161,18 +162,14 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
             peers.map((p) => {
               const isSel = sel.mode === 'view' && sel.id === p.id;
               return (
-                <button
+                <ListCard
                   key={p.id}
-                  type="button"
                   onClick={() => {
                     setReveal(null);
                     setSel({ mode: 'view', id: p.id });
                   }}
-                  className={cn(
-                    'block w-full rounded-lg border border-l-[3px] border-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                    isSel ? 'border-l-primary' : 'border-l-border',
-                    !p.enabled && 'opacity-60',
-                  )}
+                  selected={isSel}
+                  dimmed={!p.enabled}
                 >
                   <div className="flex items-center gap-2">
                     <Network className="size-4 shrink-0 text-muted-foreground" />
@@ -196,7 +193,7 @@ function PeersView({ initialPeers }: { initialPeers: Peer[] }) {
                     />
                   </div>
                   <div className="truncate text-xs text-muted-foreground">{p.baseUrl}</div>
-                </button>
+                </ListCard>
               );
             })
           )}

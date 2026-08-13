@@ -28,6 +28,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { timeAgo } from '@mantle/web-ui/forum-meta';
 import { useListNav } from '@/lib/use-list-nav';
 import { cn } from '@mantle/web-ui/lib/utils';
@@ -350,14 +351,10 @@ export function SandboxesClient() {
             </p>
           ) : (
             sandboxes.map((s) => (
-              <button
+              <ListCard
                 key={s.id}
-                type="button"
                 onClick={() => go({ sandbox: s.id })}
-                className={cn(
-                  'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                  selected === s.id && 'border-l-primary',
-                )}
+                selected={selected === s.id}
               >
                 <div className="flex items-center gap-2">
                   <span className="truncate font-mono text-sm font-medium">{s.name}</span>
@@ -376,7 +373,7 @@ export function SandboxesClient() {
                 <div className="mt-0.5 text-xs text-muted-foreground">
                   used {timeAgo(s.lastUsedAt)}
                 </div>
-              </button>
+              </ListCard>
             ))
           )}
         </div>

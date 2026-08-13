@@ -26,6 +26,7 @@ import {
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { useRealtime } from '@/components/realtime/use-realtime';
 import { useListNav } from '@/lib/use-list-nav';
@@ -396,15 +397,7 @@ export function RunsClient() {
               </p>
             ) : (
               runs.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => go({ run: r.id })}
-                  className={cn(
-                    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                    selected === r.id && 'border-l-primary',
-                  )}
-                >
+                <ListCard key={r.id} onClick={() => go({ run: r.id })} selected={selected === r.id}>
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{r.title}</span>
                     <span
@@ -420,7 +413,7 @@ export function RunsClient() {
                     <span>{new Date(r.createdAt).toLocaleString()}</span>
                     <span className="ml-auto tabular-nums">{usd(r.costMicroUsd)}</span>
                   </div>
-                </button>
+                </ListCard>
               ))
             )}
           </div>

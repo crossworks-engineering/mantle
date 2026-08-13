@@ -26,6 +26,7 @@ import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { syncSelectionParam } from '@/lib/url-sync';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { drawSnapshotClass } from '@/components/draw/snapshot-theme';
 import { ShareControl } from '@/components/share-control';
 import { FocusToggle } from '@/components/layout/focus-toggle';
@@ -237,69 +238,65 @@ export function DrawsClient() {
             </div>
           ) : (
             draws.map((d) => (
-              <div
-                key={d.id}
-                className={cn(
-                  'rounded-lg border border-l-[3px] border-border border-l-border bg-card',
-                  activeId === d.id && 'border-l-primary',
-                )}
-              >
-                <button
-                  onClick={() => select(d.id)}
-                  data-mark-id={d.id}
-                  data-mark-kind="draw"
-                  data-mark-label={d.title}
-                  className="block w-full rounded-lg p-3 text-left transition-colors hover:bg-muted/50"
-                >
-                  <div className="flex items-start gap-2">
-                    {d.icon ? (
-                      <span className="mt-0.5 w-4 shrink-0 text-center text-sm leading-4">
-                        {d.icon}
-                      </span>
-                    ) : (
-                      <PenTool className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="min-w-0 truncate text-sm font-medium">{d.title}</span>
-                        {/* A dot, not a word: the row is a scan target and the
+              <ListCard key={d.id} asChild selected={activeId === d.id} className="p-0">
+                <div>
+                  <button
+                    onClick={() => select(d.id)}
+                    data-mark-id={d.id}
+                    data-mark-kind="draw"
+                    data-mark-label={d.title}
+                    className="block w-full rounded-lg p-2.5 text-left"
+                  >
+                    <div className="flex items-start gap-2">
+                      {d.icon ? (
+                        <span className="mt-0.5 w-4 shrink-0 text-center text-sm leading-4">
+                          {d.icon}
+                        </span>
+                      ) : (
+                        <PenTool className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="min-w-0 truncate text-sm font-medium">{d.title}</span>
+                          {/* A dot, not a word: the row is a scan target and the
                             preview pane carries the full explanation. */}
-                        {d.hasDraft && (
-                          <span
-                            className="size-1.5 shrink-0 rounded-full bg-primary"
-                            title="Uncommitted edits"
-                            aria-label="Uncommitted edits"
-                          />
-                        )}
-                      </div>
-                      {d.summary ? (
-                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                          {d.summary}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                </button>
-                {d.tags.length > 0 ? (
-                  <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 pl-9">
-                    {d.tags.map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => go({ tag: t === tag ? null : t, page: null })}
-                        title={t === tag ? `Clear the ${t} filter` : `Show only ${t}`}
-                      >
-                        <TagPill
-                          tag={t}
-                          className={cn(
-                            'transition-opacity hover:opacity-80',
-                            t === tag && 'ring-1 ring-primary',
+                          {d.hasDraft && (
+                            <span
+                              className="size-1.5 shrink-0 rounded-full bg-primary"
+                              title="Uncommitted edits"
+                              aria-label="Uncommitted edits"
+                            />
                           )}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
+                        </div>
+                        {d.summary ? (
+                          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                            {d.summary}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </button>
+                  {d.tags.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1 px-2.5 pb-2.5 pl-[34px]">
+                      {d.tags.map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => go({ tag: t === tag ? null : t, page: null })}
+                          title={t === tag ? `Clear the ${t} filter` : `Show only ${t}`}
+                        >
+                          <TagPill
+                            tag={t}
+                            className={cn(
+                              'transition-opacity hover:opacity-80',
+                              t === tag && 'ring-1 ring-primary',
+                            )}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </ListCard>
             ))
           )}
         </div>

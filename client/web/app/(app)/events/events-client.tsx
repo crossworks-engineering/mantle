@@ -13,6 +13,8 @@ import { useListNav } from '@/lib/use-list-nav';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { TagPill } from '@mantle/web-ui/tag-pill';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { useNow } from '@/components/use-now';
 import {
   dayGroup,
@@ -171,19 +173,14 @@ export function EventsClient() {
     const live = state === 'in_progress';
     const isPast = state === 'past';
     return (
-      <button
+      <ListCard
         key={e.id}
-        type="button"
         onClick={() => setSel({ mode: 'view', id: e.id })}
         data-mark-id={e.id}
         data-mark-kind="event"
         data-mark-label={e.title}
-        className={cn(
-          'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-          isSel && 'border-l-primary',
-          live && !isSel && 'border-l-primary',
-          isPast && !isSel && 'opacity-60',
-        )}
+        selected={isSel || live}
+        dimmed={isPast && !isSel}
       >
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{e.title}</span>
@@ -203,20 +200,18 @@ export function EventsClient() {
           <span className="truncate">{fmt(e.startsAt)}</span>
         </div>
         {(e.location || e.tags.length > 0) && (
-          <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+          <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
             {e.location && (
               <span className="inline-flex items-center gap-0.5">
                 <MapPin className="size-3" /> {e.location}
               </span>
             )}
             {e.tags.map((t) => (
-              <span key={t} className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
-                {t}
-              </span>
+              <TagPill key={t} tag={t} />
             ))}
           </div>
         )}
-      </button>
+      </ListCard>
     );
   };
 
@@ -275,7 +270,7 @@ export function EventsClient() {
             <option value="all">All</option>
           </select>
         </div>
-        <div className="space-y-3 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
+        <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
           {all.length === 0 ? (
             <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
               {query || window !== 'upcoming' ? (

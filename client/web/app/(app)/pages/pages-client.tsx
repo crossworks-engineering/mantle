@@ -84,6 +84,7 @@ import { Label } from '@mantle/web-ui/ui/label';
 import { Skeleton } from '@mantle/web-ui/ui/skeleton';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { TagPill } from '@mantle/web-ui/tag-pill';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { TagInput } from '@/components/tag-input';
 import { PageView } from '@/components/page-editor/page-view';
 import { ShareControl } from '@/components/share-control';
@@ -607,16 +608,13 @@ export function PagesClient() {
             </DndContext>
           ) : (
             pages.map((p) => (
-              <button
+              <ListCard
                 key={p.id}
                 onClick={() => setSelectedId(p.id)}
                 data-mark-id={p.id}
                 data-mark-kind="page"
                 data-mark-label={p.title}
-                className={cn(
-                  'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-muted/50',
-                  selected?.id === p.id && 'border-l-primary',
-                )}
+                selected={selected?.id === p.id}
               >
                 <div className="flex items-start gap-2">
                   <span
@@ -641,7 +639,7 @@ export function PagesClient() {
                     )}
                   </div>
                 </div>
-              </button>
+              </ListCard>
             ))
           )}
         </div>

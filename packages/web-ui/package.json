@@ -100,6 +100,7 @@
     "./ui/field-hint": "./src/ui/field-hint.tsx",
     "./ui/input": "./src/ui/input.tsx",
     "./ui/label": "./src/ui/label.tsx",
+    "./ui/list-card": "./src/ui/list-card.tsx",
     "./ui/popover": "./src/ui/popover.tsx",
     "./ui/radio-group": "./src/ui/radio-group.tsx",
     "./ui/resizable": "./src/ui/resizable.tsx",

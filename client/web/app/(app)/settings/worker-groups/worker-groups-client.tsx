@@ -30,6 +30,7 @@ import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { slugify } from '@mantle/web-ui/slugify';
 
@@ -169,15 +170,11 @@ export function WorkerGroupsClient() {
             </p>
           ) : (
             groups.map((g) => (
-              <button
+              <ListCard
                 key={g.id}
-                type="button"
                 onClick={() => openGroup(g)}
-                className={cn(
-                  'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                  selectedId === g.id && 'border-l-primary',
-                  !g.enabled && 'opacity-70',
-                )}
+                selected={selectedId === g.id}
+                dimmed={!g.enabled}
               >
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium">{g.name}</span>
@@ -193,7 +190,7 @@ export function WorkerGroupsClient() {
                 <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
                   {g.slug}
                 </div>
-              </button>
+              </ListCard>
             ))
           )}
         </div>

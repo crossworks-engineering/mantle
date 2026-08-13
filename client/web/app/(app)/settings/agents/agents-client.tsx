@@ -23,7 +23,7 @@ import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { ModelSelect } from '@/components/ui/model-select';
 import { Slider } from '@mantle/web-ui/ui/slider';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import type { ExplorerModel } from '@server/lib/model-explorer';
 import { getProvider, isProviderWired, providersForCapability } from '@mantle/voice/client';
 import type {
@@ -966,7 +966,7 @@ export function AgentsClient() {
                   <Plus /> New
                 </Button>
               </div>
-              <div className="space-y-1.5 p-2 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
+              <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
                 {agents.length === 0 ? (
                   <p className="rounded-md border border-dashed border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
                     No agents yet. Click <strong>New</strong> to create one — you&apos;ll need an
@@ -976,18 +976,11 @@ export function AgentsClient() {
                   agents.map((a) => {
                     const selected = selectedId === a.id;
                     return (
-                      <button
+                      <ListCard
                         key={a.id}
-                        type="button"
                         onClick={() => openEdit(a)}
-                        className={cn(
-                          'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                          // Selection = left accent bar only. A bg-accent fill is
-                          // unreadable in themes where `accent` is saturated (the
-                          // content uses text-foreground, not accent-foreground).
-                          selected && 'border-l-primary',
-                          !a.enabled && 'opacity-60',
-                        )}
+                        selected={selected}
+                        dimmed={!a.enabled}
                       >
                         <div className="flex items-center gap-2.5">
                           {/* Every agent gets an avatar, stored record or not:
@@ -1020,7 +1013,7 @@ export function AgentsClient() {
                             </div>
                           </div>
                         </div>
-                      </button>
+                      </ListCard>
                     );
                   })
                 )}

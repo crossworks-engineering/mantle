@@ -26,6 +26,7 @@ import { formatDate } from '@mantle/web-ui/lib/format-datetime';
 import { SetPageTitle } from '@/components/layout/page-title';
 import { ShareControl } from '@/components/share-control';
 import { Button } from '@mantle/web-ui/ui/button';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
@@ -1123,12 +1124,12 @@ function ChildFolders({
       <ul className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-3">
         {children.map((f) => (
           <li key={f.id}>
-            <button
+            <ListCard
               onClick={() => onNavigate(f.path)}
               data-mark-id={f.id}
               data-mark-kind="folder"
               data-mark-label={f.slug}
-              className="flex w-full items-start gap-2 rounded-md border border-border px-3 py-2 text-left hover:bg-muted/40"
+              className="flex items-start gap-2"
             >
               <Folder className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
@@ -1142,7 +1143,7 @@ function ChildFolders({
                   {f.childFolderCount} folders · {f.fileCount} files
                 </div>
               </div>
-            </button>
+            </ListCard>
           </li>
         ))}
       </ul>

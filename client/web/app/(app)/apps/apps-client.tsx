@@ -33,7 +33,7 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 import { useListNav } from '@/lib/use-list-nav';
 import { ListPager } from '@mantle/web-ui/layout/list-pager';
 import { AppSandbox } from '@mantle/web-ui/app-sandbox/app-sandbox';
-import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import type { AppRow } from '@mantle/content';
 
 type AppsPage = { apps: AppRow[]; total: number; page: number; pageSize: number };
@@ -171,26 +171,17 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
           </Dialog>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-3">
           {apps.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground">
               No apps yet. Create one, or ask Saskia to “build me an app”.
             </div>
           ) : (
-            <ul className="flex flex-col gap-1">
+            <ul className="space-y-2">
               {apps.map((app) => (
                 <li key={app.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(app.id)}
-                    className={cn(
-                      'flex w-full flex-col gap-1 rounded-lg border px-3 py-2 text-left transition-colors',
-                      app.id === selectedId
-                        ? 'border-border bg-accent text-accent-foreground'
-                        : 'border-transparent hover:bg-foreground/[0.06]',
-                    )}
-                  >
-                    <span className="flex items-center gap-2 font-medium">
+                  <ListCard selected={app.id === selectedId} onClick={() => setSelectedId(app.id)}>
+                    <span className="flex items-center gap-2 text-sm font-medium">
                       <span aria-hidden>{app.icon ?? '🧩'}</span>
                       <span className="truncate">{app.title}</span>
                       <span className="ml-auto flex shrink-0 items-center gap-1">
@@ -199,11 +190,11 @@ function AppsView({ data, query }: { data: AppsPage; query: string }) {
                       </span>
                     </span>
                     {app.description && (
-                      <span className="line-clamp-1 text-xs text-muted-foreground">
+                      <span className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
                         {app.description}
                       </span>
                     )}
-                  </button>
+                  </ListCard>
                 </li>
               ))}
             </ul>

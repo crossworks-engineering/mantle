@@ -13,6 +13,8 @@ import { syncSelectionParam } from '@/lib/url-sync';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { TagPill } from '@mantle/web-ui/tag-pill';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { TaskForm, emptyTaskForm, PRIORITIES, type Priority, type TaskPayload } from './task-form';
 import { TaskDetail, type Status, type TaskRow } from './task-detail';
 
@@ -283,75 +285,75 @@ export function TasksClient() {
               const done = t.status === 'done';
               const overdue = !!t.dueAt && new Date(t.dueAt) < new Date() && !done;
               return (
-                <div
+                <ListCard
                   key={t.id}
+                  asChild
+                  selected={isSel}
                   className={cn(
-                    'flex items-start gap-2.5 rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 transition-colors',
-                    isSel ? 'border-l-primary' : 'hover:bg-muted/50',
+                    'flex items-start gap-2.5',
                     t.priority === 'high' && !isSel && 'border-l-destructive',
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => toggleStatus(t)}
-                    className={cn(
-                      'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors',
-                      done
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-input hover:bg-muted',
-                    )}
-                    aria-label={done ? 'Mark open' : 'Mark done'}
-                    aria-pressed={done}
-                  >
-                    {done && <Check className="size-3" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSel({ mode: 'view', id: t.id })}
-                    data-mark-id={t.id}
-                    data-mark-kind="task"
-                    data-mark-label={t.title}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <div className="flex items-baseline gap-2">
-                      <span
-                        className={cn(
-                          'truncate text-sm font-medium',
-                          done && 'text-muted-foreground line-through',
-                        )}
-                      >
-                        {t.title}
-                      </span>
-                      {t.dueAt && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => toggleStatus(t)}
+                      className={cn(
+                        'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors',
+                        done
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-input hover:bg-muted',
+                      )}
+                      aria-label={done ? 'Mark open' : 'Mark done'}
+                      aria-pressed={done}
+                    >
+                      {done && <Check className="size-3" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSel({ mode: 'view', id: t.id })}
+                      data-mark-id={t.id}
+                      data-mark-kind="task"
+                      data-mark-label={t.title}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="flex items-baseline gap-2">
                         <span
                           className={cn(
-                            'ml-auto shrink-0 text-xs tabular-nums',
-                            overdue ? 'font-medium text-destructive-ink' : 'text-muted-foreground',
+                            'truncate text-sm font-medium',
+                            done && 'text-muted-foreground line-through',
                           )}
                         >
-                          {dueLabel(t.dueAt)}
+                          {t.title}
                         </span>
-                      )}
-                    </div>
-                    {(t.body || t.summary) && (
-                      <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-                        {t.body || t.summary}
-                      </p>
-                    )}
-                    {t.tags.length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {t.tags.map((tag) => (
+                        {t.dueAt && (
                           <span
-                            key={tag}
-                            className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                            className={cn(
+                              'ml-auto shrink-0 text-xs tabular-nums',
+                              overdue
+                                ? 'font-medium text-destructive-ink'
+                                : 'text-muted-foreground',
+                            )}
                           >
-                            {tag}
+                            {dueLabel(t.dueAt)}
                           </span>
-                        ))}
+                        )}
                       </div>
-                    )}
-                  </button>
-                </div>
+                      {(t.body || t.summary) && (
+                        <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                          {t.body || t.summary}
+                        </p>
+                      )}
+                      {t.tags.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {t.tags.map((tag) => (
+                            <TagPill key={tag} tag={tag} />
+                          ))}
+                        </div>
+                      )}
+                    </button>
+                  </div>
+                </ListCard>
               );
             })
           )}

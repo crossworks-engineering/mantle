@@ -22,7 +22,7 @@ import {
   AlertDialogTitle,
 } from '@mantle/web-ui/ui/alert-dialog';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { WorkerForm } from './worker-form';
 
 type KeyOption = { id: string; service: string; label: string; masked: string };
@@ -287,15 +287,11 @@ export function AiWorkersClient() {
                     items.map((w) => {
                       const selected = selectedId === w.id;
                       return (
-                        <button
+                        <ListCard
                           key={w.id}
-                          type="button"
                           onClick={() => setSel({ mode: 'edit', id: w.id })}
-                          className={cn(
-                            'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                            selected && 'border-l-primary',
-                            !w.enabled && 'opacity-60',
-                          )}
+                          selected={selected}
+                          dimmed={!w.enabled}
                         >
                           <div className="flex items-center gap-2">
                             {w.isDefault ? (
@@ -324,7 +320,7 @@ export function AiWorkersClient() {
                               </div>
                             </div>
                           </div>
-                        </button>
+                        </ListCard>
                       );
                     })
                   )}

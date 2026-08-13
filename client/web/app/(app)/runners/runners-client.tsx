@@ -22,6 +22,7 @@ import {
   type RunnerRunDetail,
 } from '@mantle/web-ui/runners-types';
 import { Button } from '@mantle/web-ui/ui/button';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { cn } from '@mantle/web-ui/lib/utils';
@@ -243,48 +244,43 @@ export function RunnersClient({
               <Empty>No runs match these filters.</Empty>
             ) : (
               rows.map((r) => (
-                <Link
-                  key={r.workflowID}
-                  href={href({ selected: r.workflowID })}
-                  className={cn(
-                    'block rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 transition-colors hover:bg-muted/50',
-                    selectedId === r.workflowID && 'border-l-primary',
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <span
-                        className={cn('size-2 shrink-0 rounded-full', runnerStatusDot(r.status))}
-                        aria-hidden
-                      />
-                      <span className="truncate text-sm font-medium">{r.name}</span>
-                      <span
-                        className={cn(
-                          'shrink-0 text-[10px] uppercase tracking-wider',
-                          runnerStatusText(r.status),
-                        )}
-                      >
-                        {runnerStatusLabel(r.status)}
+                <ListCard key={r.workflowID} asChild selected={selectedId === r.workflowID}>
+                  <Link href={href({ selected: r.workflowID })}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span
+                          className={cn('size-2 shrink-0 rounded-full', runnerStatusDot(r.status))}
+                          aria-hidden
+                        />
+                        <span className="truncate text-sm font-medium">{r.name}</span>
+                        <span
+                          className={cn(
+                            'shrink-0 text-[10px] uppercase tracking-wider',
+                            runnerStatusText(r.status),
+                          )}
+                        >
+                          {runnerStatusLabel(r.status)}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                        {formatDateTime(new Date(r.createdAt).toISOString())}
                       </span>
                     </div>
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                      {formatDateTime(new Date(r.createdAt).toISOString())}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs tabular-nums text-muted-foreground">
-                    <span>run {formatDuration(r.runMs ?? null)}</span>
-                    <span>queued {formatDuration(r.queuedMs ?? null)}</span>
-                    {r.queue && <span>{r.queue}</span>}
-                    {(r.recoveryAttempts ?? 0) > 1 && (
-                      <span className="text-amber-700 dark:text-amber-300">
-                        ↻ {r.recoveryAttempts}
-                      </span>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs tabular-nums text-muted-foreground">
+                      <span>run {formatDuration(r.runMs ?? null)}</span>
+                      <span>queued {formatDuration(r.queuedMs ?? null)}</span>
+                      {r.queue && <span>{r.queue}</span>}
+                      {(r.recoveryAttempts ?? 0) > 1 && (
+                        <span className="text-amber-700 dark:text-amber-300">
+                          ↻ {r.recoveryAttempts}
+                        </span>
+                      )}
+                    </div>
+                    {r.error && (
+                      <div className="mt-0.5 truncate text-xs text-destructive-ink">{r.error}</div>
                     )}
-                  </div>
-                  {r.error && (
-                    <div className="mt-0.5 truncate text-xs text-destructive-ink">{r.error}</div>
-                  )}
-                </Link>
+                  </Link>
+                </ListCard>
               ))
             )}
           </div>

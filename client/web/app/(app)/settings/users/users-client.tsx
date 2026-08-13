@@ -15,7 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
-import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { Badge } from '@mantle/web-ui/ui/badge';
 import { Button } from '@mantle/web-ui/ui/button';
 import {
@@ -145,14 +145,10 @@ export function UsersClient() {
         </div>
         <div className="space-y-2 p-3 md:flex-1 md:overflow-y-auto md:scrollbar-thin">
           {users.map((u) => (
-            <button
+            <ListCard
               key={u.id}
-              type="button"
               onClick={() => setSelectedId(u.id)}
-              className={cn(
-                'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                selected?.id === u.id && 'border-l-primary',
-              )}
+              selected={selected?.id === u.id}
             >
               <div className="flex items-center gap-2">
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">
@@ -176,7 +172,7 @@ export function UsersClient() {
                     ? `Last login ${formatDateTime(u.lastLoginAt)}`
                     : 'Never signed in'}
               </div>
-            </button>
+            </ListCard>
           ))}
         </div>
       </div>

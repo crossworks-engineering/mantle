@@ -23,6 +23,7 @@ import { Button } from '@mantle/web-ui/ui/button';
 import { Input } from '@mantle/web-ui/ui/input';
 import { SubmitButton } from '@mantle/web-ui/ui/submit-button';
 import { TagPill } from '@mantle/web-ui/tag-pill';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import {
   Dialog,
@@ -331,23 +332,20 @@ export function TablesShell() {
             )}
           </div>
 
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto scrollbar-thin p-2">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto scrollbar-thin p-3">
             {tables.length === 0 ? (
               <p className="px-1 py-10 text-center text-sm text-muted-foreground">No tables yet.</p>
             ) : (
               tables.map((t) => (
-                <button
+                <ListCard
                   key={t.id}
                   onClick={() => selectTable(t.id)}
                   data-mark-id={t.id}
                   data-mark-kind="table"
                   data-mark-label={t.title}
                   aria-busy={pendingId === t.id}
-                  className={cn(
-                    'group flex w-full items-start gap-2 rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                    selectedId === t.id && 'border-l-primary',
-                    pendingId === t.id && 'border-l-primary',
-                  )}
+                  selected={selectedId === t.id || pendingId === t.id}
+                  className="group flex items-start gap-2"
                 >
                   <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-base leading-none">
                     {pendingId === t.id ? (
@@ -384,7 +382,7 @@ export function TablesShell() {
                   >
                     <Trash2 className="size-4" />
                   </span>
-                </button>
+                </ListCard>
               ))
             )}
           </div>

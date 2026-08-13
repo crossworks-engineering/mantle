@@ -32,6 +32,7 @@ import { ShareControl } from '@/components/share-control';
 import { ExportButton } from '@/components/export/export-button';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { TagPill } from '@mantle/web-ui/tag-pill';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { syncSelectionParam } from '@/lib/url-sync';
@@ -411,16 +412,13 @@ export function NotesClient() {
             </div>
           ) : (
             notes.map((n) => (
-              <button
+              <ListCard
                 key={n.id}
                 onClick={() => selectNote(n.id)}
                 data-mark-id={n.id}
                 data-mark-kind="note"
                 data-mark-label={n.title}
-                className={cn(
-                  'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-muted/50',
-                  selected?.id === n.id && !creating && 'border-l-primary',
-                )}
+                selected={selected?.id === n.id && !creating}
               >
                 <div className="flex items-start gap-2">
                   <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -440,7 +438,7 @@ export function NotesClient() {
                     )}
                   </div>
                 </div>
-              </button>
+              </ListCard>
             ))
           )}
         </div>

@@ -31,6 +31,7 @@ import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { syncSelectionParam } from '@/lib/url-sync';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import type { CoverageGap, DimensionIssue, TargetSignature } from '@server/lib/formulas';
 import { FormulaDetail, type FormulaRow } from './formula-detail';
 
@@ -349,52 +350,48 @@ export function FormulasClient() {
               // The tags are filter buttons, so they sit OUTSIDE the row button
               // rather than inside it — a button nested in a button is invalid
               // and swallows the inner click in some browsers.
-              <div
-                key={f.id}
-                className={cn(
-                  'rounded-lg border border-l-[3px] border-border border-l-border bg-card',
-                  activeId === f.id && 'border-l-primary',
-                )}
-              >
-                <button
-                  onClick={() => select(f.id)}
-                  data-mark-id={f.id}
-                  data-mark-kind="formula"
-                  data-mark-label={f.title}
-                  className="block w-full rounded-lg p-3 text-left transition-colors hover:bg-muted/50"
-                >
-                  <div className="flex items-start gap-2">
-                    <Sigma className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{f.title}</div>
-                      {f.spec?.source?.standard ? (
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                          {f.spec.source.standard}
-                        </p>
-                      ) : null}
+              <ListCard key={f.id} asChild selected={activeId === f.id} className="p-0">
+                <div>
+                  <button
+                    onClick={() => select(f.id)}
+                    data-mark-id={f.id}
+                    data-mark-kind="formula"
+                    data-mark-label={f.title}
+                    className="block w-full rounded-lg p-2.5 text-left"
+                  >
+                    <div className="flex items-start gap-2">
+                      <Sigma className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{f.title}</div>
+                        {f.spec?.source?.standard ? (
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {f.spec.source.standard}
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                </button>
-                {f.tags.length > 0 ? (
-                  <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 pl-9">
-                    {f.tags.map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => go({ tag: t === tag ? null : t, page: null })}
-                        title={t === tag ? `Clear the ${t} filter` : `Show only ${t}`}
-                      >
-                        <TagPill
-                          tag={t}
-                          className={cn(
-                            'transition-opacity hover:opacity-80',
-                            t === tag && 'ring-1 ring-primary',
-                          )}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
+                  </button>
+                  {f.tags.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1 px-2.5 pb-2.5 pl-[34px]">
+                      {f.tags.map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => go({ tag: t === tag ? null : t, page: null })}
+                          title={t === tag ? `Clear the ${t} filter` : `Show only ${t}`}
+                        >
+                          <TagPill
+                            tag={t}
+                            className={cn(
+                              'transition-opacity hover:opacity-80',
+                              t === tag && 'ring-1 ring-primary',
+                            )}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </ListCard>
             ))
           )}
         </div>

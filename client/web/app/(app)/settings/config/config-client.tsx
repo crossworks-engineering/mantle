@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { diffLines } from 'diff';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { apiFetch, apiSend } from '@mantle/web-ui/api-fetch';
 import { Button } from '@mantle/web-ui/ui/button';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
@@ -357,15 +358,10 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
                 const key = `${e.kind}:${e.slug}`;
                 const isSel = selected ? `${selected.kind}:${selected.slug}` === key : false;
                 return (
-                  <button
+                  <ListCard
                     key={key}
-                    type="button"
                     onClick={() => setSelectedKey(key)}
-                    className={cn(
-                      'block w-full rounded-lg border border-l-[3px] border-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                      STATUS_BORDER[e.status],
-                      isSel && 'bg-muted/50 ring-1 ring-ring',
-                    )}
+                    className={cn(STATUS_BORDER[e.status], isSel && 'bg-muted/50 ring-1 ring-ring')}
                   >
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium">{e.name}</span>
@@ -374,7 +370,7 @@ function ConfigView({ report }: { report: ConfigDiffReport }) {
                     <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
                       {e.slug}
                     </div>
-                  </button>
+                  </ListCard>
                 );
               })}
             </div>

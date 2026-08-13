@@ -30,6 +30,7 @@ import { apiFetch, apiSend, ApiError } from '@mantle/web-ui/api-fetch';
 import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { useToast } from '@mantle/web-ui/ui/toast';
 import { TagPill } from '@mantle/web-ui/tag-pill';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatDateTime } from '@mantle/web-ui/lib/format-datetime';
 import { syncSelectionParam } from '@/lib/url-sync';
@@ -200,7 +201,7 @@ export function JournalClient() {
   }
 
   return (
-    <div className="relative md:grid md:h-full md:grid-cols-[360px_1fr] md:overflow-hidden">
+    <div className="relative md:grid md:h-full md:grid-cols-[340px_1fr] md:overflow-hidden">
       {/* ── Left: list ─────────────────────────────────────────────── */}
       <div className="flex flex-col border-b border-border md:h-full md:min-h-0 md:border-b-0 md:border-r">
         <div className="space-y-3 border-b border-border p-4">
@@ -298,16 +299,13 @@ export function JournalClient() {
               const md = moodDisplay(n.mood);
               const cat = categoryLabel(n.category);
               return (
-                <button
+                <ListCard
                   key={n.id}
                   onClick={() => selectEntry(n.id)}
                   data-mark-id={n.id}
                   data-mark-kind="journal"
                   data-mark-label={n.title}
-                  className={cn(
-                    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-3 text-left transition-colors hover:bg-muted/50',
-                    selected?.id === n.id && !creating && 'border-l-primary',
-                  )}
+                  selected={selected?.id === n.id && !creating}
                 >
                   <div className="flex items-start gap-2">
                     <span className="mt-0.5 w-4 shrink-0 text-center text-sm" aria-hidden>
@@ -332,7 +330,7 @@ export function JournalClient() {
                       </div>
                     </div>
                   </div>
-                </button>
+                </ListCard>
               );
             })
           )}

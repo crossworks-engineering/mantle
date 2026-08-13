@@ -24,7 +24,7 @@ import { Input } from '@mantle/web-ui/ui/input';
 import { Label } from '@mantle/web-ui/ui/label';
 import { FieldHint, hintId } from '@mantle/web-ui/ui/field-hint';
 import { useToast } from '@mantle/web-ui/ui/toast';
-import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import { slugify } from '@mantle/web-ui/slugify';
 
 // Row + backref shapes come from the shared client-types package (the wire
@@ -244,15 +244,11 @@ export function SkillsClient() {
               const refs = heartbeatBackrefs[s.slug] ?? [];
               const activeRefs = refs.filter((r) => r.status === 'active').length;
               return (
-                <button
+                <ListCard
                   key={s.id}
-                  type="button"
                   onClick={() => openEdit(s)}
-                  className={cn(
-                    'block w-full rounded-lg border border-l-[3px] border-border border-l-border bg-card p-2.5 text-left transition-colors hover:bg-muted/50',
-                    selected && 'border-l-primary',
-                    !s.enabled && 'opacity-70',
-                  )}
+                  selected={selected}
+                  dimmed={!s.enabled}
                 >
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{s.name}</span>
@@ -281,7 +277,7 @@ export function SkillsClient() {
                         : `${refs.length} heartbeats`}
                     </div>
                   )}
-                </button>
+                </ListCard>
               );
             })
           )}

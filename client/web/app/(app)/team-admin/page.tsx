@@ -56,6 +56,7 @@ import {
 } from 'lucide-react';
 import { MemberActivityPager } from '@/components/team-admin/member-activity-pager';
 import { cn } from '@mantle/web-ui/lib/utils';
+import { ListCard } from '@mantle/web-ui/ui/list-card';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -215,35 +216,29 @@ function MemberList({ members, selectedId }: { members: MemberRow[]; selectedId:
     );
   }
   return (
-    <ul className="flex flex-col gap-1 p-2">
+    <ul className="flex flex-col gap-2 p-3">
       {members.map((m) => (
         <li key={m.contactId}>
-          <Link
-            href={`/team-admin?contact=${m.contactId}`}
-            className={cn(
-              // Selection = left accent bar only (the repo's list idiom) — a
-              // bg-accent fill is unreadable in saturated-accent themes.
-              'block rounded-md border border-l-[3px] border-border border-l-border px-3 py-2 transition-colors hover:bg-muted/50',
-              m.contactId === selectedId && 'border-l-primary bg-muted/40',
-            )}
-          >
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-sm font-medium">{m.contactName}</span>
-              <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                {(m.forum?.unread ?? 0) > 0 ? (
-                  <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
-                    {m.forum?.unread}
-                  </span>
-                ) : null}
-                {fmtWhen(m.forum?.lastPostAt ?? null)}
-              </span>
-            </div>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {m.forum?.lastPostBody
-                ? `${m.forum.lastPostTopicTitle ? `${m.forum.lastPostTopicTitle} — ` : ''}${m.forum.lastPostBody}`
-                : `member since ${fmtWhen(m.memberSince)} — no posts yet`}
-            </p>
-          </Link>
+          <ListCard asChild selected={m.contactId === selectedId}>
+            <Link href={`/team-admin?contact=${m.contactId}`}>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="truncate text-sm font-medium">{m.contactName}</span>
+                <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                  {(m.forum?.unread ?? 0) > 0 ? (
+                    <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                      {m.forum?.unread}
+                    </span>
+                  ) : null}
+                  {fmtWhen(m.forum?.lastPostAt ?? null)}
+                </span>
+              </div>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {m.forum?.lastPostBody
+                  ? `${m.forum.lastPostTopicTitle ? `${m.forum.lastPostTopicTitle} — ` : ''}${m.forum.lastPostBody}`
+                  : `member since ${fmtWhen(m.memberSince)} — no posts yet`}
+              </p>
+            </Link>
+          </ListCard>
         </li>
       ))}
     </ul>
@@ -722,46 +717,42 @@ function TopicsTab({ topic, q: query, page }: { topic?: string; q?: string; page
                   : 'No forum topics yet. Members start them at /team/forum — pinned topics float to the top of everyone’s list.'}
               </div>
             ) : (
-              <ul className="flex flex-col gap-1 p-2">
+              <ul className="flex flex-col gap-2 p-3">
                 {data.topics.map((t) => {
                   const ctx =
                     `${ctxQuery ? `&q=${encodeURIComponent(ctxQuery)}` : ''}` +
                     `${data.page > 1 ? `&page=${data.page}` : ''}`;
                   return (
                     <li key={t.id}>
-                      <Link
-                        href={`/team-admin?view=topics&topic=${t.id}${ctx}`}
-                        className={cn(
-                          'block rounded-md border border-l-[3px] border-border border-l-border px-3 py-2 transition-colors hover:bg-muted/50',
-                          t.id === selected?.topic.id && 'border-l-primary bg-muted/40',
-                        )}
-                      >
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span className="flex min-w-0 items-center gap-1.5">
-                            {t.unread > 0 ? (
-                              <span
-                                className="size-2 shrink-0 rounded-full bg-primary"
-                                aria-hidden
-                              />
-                            ) : null}
-                            <span className="truncate text-sm font-medium">{t.title}</span>
-                          </span>
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {fmtWhen(t.lastPostAt)}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <TopicFlags
-                            pinned={t.pinned}
-                            visibility={t.visibility}
-                            status={t.status}
-                          />
-                          <KindBadge kind={t.kind} />
-                          <span className="min-w-0 truncate">
-                            {t.authorName} · {t.postCount} {t.postCount === 1 ? 'post' : 'posts'}
-                          </span>
-                        </div>
-                      </Link>
+                      <ListCard asChild selected={t.id === selected?.topic.id}>
+                        <Link href={`/team-admin?view=topics&topic=${t.id}${ctx}`}>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              {t.unread > 0 ? (
+                                <span
+                                  className="size-2 shrink-0 rounded-full bg-primary"
+                                  aria-hidden
+                                />
+                              ) : null}
+                              <span className="truncate text-sm font-medium">{t.title}</span>
+                            </span>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {fmtWhen(t.lastPostAt)}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <TopicFlags
+                              pinned={t.pinned}
+                              visibility={t.visibility}
+                              status={t.status}
+                            />
+                            <KindBadge kind={t.kind} />
+                            <span className="min-w-0 truncate">
+                              {t.authorName} · {t.postCount} {t.postCount === 1 ? 'post' : 'posts'}
+                            </span>
+                          </div>
+                        </Link>
+                      </ListCard>
                     </li>
                   );
                 })}
