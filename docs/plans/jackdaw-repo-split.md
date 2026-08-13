@@ -168,6 +168,19 @@ What shipped:
   `@mantle/client-types/version` and is served by `GET /api/version` as
   `contractVersion`. P3 adds the client-side comparison + banner.
 
+### Share-ui extraction — SHIPPED 2026-08-13 (v0.230.33 + v0.230.34)
+
+`packages/share-ui` exists: the nine /s/<token> presenters, view-payload, the
+mini-app sandbox (app-sandbox + app-bridge protocol), page-outline, nav-items,
+help-topics, and its own copies of button/input/label + cn. It may import only
+client-types + content-core (eslint block), publishes as
+`@jackdaw-run/share-ui` with the other contract packages, and both tailwind
+builds (`globals.css` @source) and the islands bundle build green against it.
+event-time and seven more pure modules (text-colors, search-query,
+mermaid-theme, highlight-colors, docs-labels, display-fonts, aside-style)
+moved to client-types. Server/web's web-ui imports are now ONLY
+`appearance` + `avatar` — the theme-layer question above.
+
 ### P2: cut the repo
 
 - `git filter-repo` (path filter: `client/`, `packages/web-ui/`, UI e2e) into
@@ -177,8 +190,13 @@ What shipped:
   packages; gets its own version stream, changelog, `verify`, and CI building
   the `mantle-client` image (rename to `jackdaw` image at this point) and the
   Electron desktop builds.
-- The theme generator moves with `web-ui` (themes are a UI concern; the seeds
-  and `themes:build` go to jackdaw).
+- ~~The theme generator moves with `web-ui`~~ **OPEN QUESTION (2026-08-13)**:
+  the share-ui extraction showed the server's last web-ui imports are
+  `appearance` + `avatar` — the THEME LAYER (appearance → lib/themes →
+  theme-registry.gen → backgrounds → avatar/dicebear). If headless brains are
+  to serve BRANDED share/docs pages (the product vision), the theme system —
+  seeds, generator, registry, avatar styles — must stay in MANTLE (likely in
+  share-ui) and jackdaw consumes it, not the reverse. Decide before P2.
 
 ### P3: replace lockstep with a compat policy
 
