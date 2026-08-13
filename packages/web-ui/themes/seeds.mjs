@@ -3642,4 +3642,53 @@ export const THEME_SEEDS = [
       border: '#423b35',
     },
   },
+  {
+    id: 'jackdaw-harvest',
+    label: 'Jackdaw Harvest',
+    // Variant B — the badge's FULL stripe range, teal and green included,
+    // against Variant A ('jackdaw') which is the warm half only.
+    //
+    // The cool half earns its keep twice. Deep teal #14565D is the one brand
+    // colour dark enough to carry white (8.3:1), so it is the primary; and
+    // because teal/green are present, the supplied cool greys #3F4245 and
+    // #8F9092 (hue 248/264) sit ~45 deg from family instead of stranded, so
+    // they ship as-is here — unlike in Variant A, where the same kind of grey
+    // had to be re-cut warm.
+    //
+    // #DB5113 is NOT the destructive fill: at L* 53 it is in the dead zone
+    // where neither white (4.04) nor near-black (4.08) reaches AA. Darkened
+    // to L* 47 as #c94000, white clears at 4.98.
+    light: {
+      background: '#f8deb9',
+      foreground: '#1f1f1f',
+      card: '#fff0dd',
+      primary: '#14565d',
+      'primary-foreground': '#ffffff',
+      secondary: '#fdd09b',
+      'secondary-foreground': '#1f1f1f',
+      muted: '#e5caa8',
+      'muted-foreground': '#784a3a',
+      accent: '#c4e5e8',
+      'accent-foreground': '#14565d',
+      destructive: '#c94000',
+      'destructive-foreground': '#ffffff',
+      border: '#c8b297',
+    },
+    dark: {
+      background: '#1f1f1f',
+      foreground: '#f8deb9',
+      card: '#2e2a24',
+      primary: '#49a8b3',
+      'primary-foreground': '#1f1f1f',
+      secondary: '#3f4245',
+      'secondary-foreground': '#f8deb9',
+      muted: '#36322c',
+      'muted-foreground': '#8f9092',
+      accent: '#14565d',
+      'accent-foreground': '#fdd09b',
+      destructive: '#c94000',
+      'destructive-foreground': '#ffffff',
+      border: '#3e484a',
+    },
+  },
 ];

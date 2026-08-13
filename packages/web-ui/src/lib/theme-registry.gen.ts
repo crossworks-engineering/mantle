@@ -341,4 +341,12 @@ export const GENERATED_COLOR_THEMES: ColorTheme[] = [
       dark: ['#eb9f13', '#452a18', '#120f0e'],
     },
   },
+  {
+    id: 'jackdaw-harvest',
+    label: 'Jackdaw Harvest',
+    swatches: {
+      light: ['#14565d', '#c4e5e8', '#f8deb9'],
+      dark: ['#49a8b3', '#14565d', '#1f1f1f'],
+    },
+  },
 ];

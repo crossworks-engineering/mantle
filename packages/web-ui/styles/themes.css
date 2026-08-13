@@ -6013,6 +6013,108 @@
   --sidebar-ring: #eb9f13;
 }
 
+[data-color-theme="jackdaw-harvest"], [data-color-theme="jackdaw-harvest"] .light {
+  --background: #f8deb9;
+  --foreground: #1f1f1f;
+  --card: #fff0dd;
+  --card-foreground: #1f1f1f;
+  --popover: #fff0dd;
+  --popover-foreground: #1f1f1f;
+  --primary: #14565d;
+  --primary-foreground: #ffffff;
+  --primary-ink: #14565d;
+  --secondary: #fdd09b;
+  --secondary-foreground: #1f1f1f;
+  --muted: #e5caa8;
+  --muted-foreground: #784a3a;
+  --accent: #c4e5e8;
+  --accent-foreground: #14565d;
+  --destructive: #c94000;
+  --destructive-foreground: #ffffff;
+  --destructive-ink: #ab2000;
+  --success: #008939;
+  --success-foreground: #ffffff;
+  --success-ink: #006715;
+  --warning: #a56600;
+  --warning-foreground: #ffffff;
+  --warning-ink: #854900;
+  --info: #0079ca;
+  --info-foreground: #ffffff;
+  --info-ink: #0058a7;
+  --code-keyword: #14565d;
+  --code-string: #006723;
+  --code-number: #854900;
+  --code-title: #005a9e;
+  --code-variable: #873981;
+  --border: #c8b297;
+  --input: #c8b297;
+  --ring: #14565d;
+  --chart-1: #005f73;
+  --chart-2: #5e65c7;
+  --chart-3: #ae467e;
+  --chart-4: #ad5700;
+  --chart-5: #4b8310;
+  --sidebar: #e5caa8;
+  --sidebar-foreground: #1f1f1f;
+  --sidebar-primary: #14565d;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #c4e5e8;
+  --sidebar-accent-foreground: #14565d;
+  --sidebar-border: #c8b297;
+  --sidebar-ring: #14565d;
+}
+
+.dark[data-color-theme="jackdaw-harvest"], [data-color-theme="jackdaw-harvest"] .dark {
+  --background: #1f1f1f;
+  --foreground: #f8deb9;
+  --card: #2e2a24;
+  --card-foreground: #f8deb9;
+  --popover: #2e2a24;
+  --popover-foreground: #f8deb9;
+  --primary: #49a8b3;
+  --primary-foreground: #1f1f1f;
+  --primary-ink: #49a8b3;
+  --secondary: #3f4245;
+  --secondary-foreground: #f8deb9;
+  --muted: #36322c;
+  --muted-foreground: #999a9c;
+  --accent: #14565d;
+  --accent-foreground: #fdd09b;
+  --destructive: #c94000;
+  --destructive-foreground: #ffffff;
+  --destructive-ink: #fc6f40;
+  --success: #008939;
+  --success-foreground: #ffffff;
+  --success-ink: #40af5d;
+  --warning: #a56600;
+  --warning-foreground: #ffffff;
+  --warning-ink: #ce8c3c;
+  --info: #0079ca;
+  --info-foreground: #ffffff;
+  --info-ink: #3d9ff3;
+  --code-keyword: #49a8b3;
+  --code-string: #65c67d;
+  --code-number: #e1a035;
+  --code-title: #57b6ff;
+  --code-variable: #df8cd8;
+  --border: #3e484a;
+  --input: #3e484a;
+  --ring: #49a8b3;
+  --chart-1: #00b1c5;
+  --chart-2: #8993fa;
+  --chart-3: #e174ac;
+  --chart-4: #df8624;
+  --chart-5: #77b24a;
+  --sidebar: #36322c;
+  --sidebar-foreground: #f8deb9;
+  --sidebar-primary: #49a8b3;
+  --sidebar-primary-foreground: #1f1f1f;
+  --sidebar-accent: #14565d;
+  --sidebar-accent-foreground: #fdd09b;
+  --sidebar-border: #3e484a;
+  --sidebar-ring: #49a8b3;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
