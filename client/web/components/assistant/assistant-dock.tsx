@@ -31,8 +31,8 @@ import type { TurnEvent } from '@mantle/client-types';
  * by idempotency-key, so even a reload doesn't lose it.
  *
  * This provider ALSO owns the global panel UI state: the full assistant opens as
- * a content-area overlay (<AssistantPanel/>) on any screen, summoned by the
- * footer <AssistantButton/> or ⌘I.
+ * a content-area overlay (<AssistantPanel/>) on any screen, summoned by ⌘I or by
+ * the <AssistantButton/> at the foot of the left rail.
  */
 export type TurnResponse = {
   inbound: { id: string; text: string; createdAt: string; artifacts?: unknown[] };
@@ -353,6 +353,26 @@ export function AssistantDockProvider({ children }: { children: React.ReactNode 
     setPicking(false); // showing the chat (or minimising it) ends pick mode
   }, []);
 
+  // ⌘I / Ctrl+I toggles the panel. Registered HERE, once per app, not in
+  // <AssistantButton/>: the button now renders in the rail body, which is
+  // mounted twice whenever the mobile drawer is open (the CSS-hidden desktop
+  // aside plus the drawer), and two per-button listeners each calling toggle()
+  // cancel out — ⌘I became a no-op exactly when the drawer was open. Skipped
+  // while typing so it never steals a keystroke from an input or the page
+  // editor (where ⌘I is italic).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (e.key.toLowerCase() !== 'i') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      e.preventDefault();
+      toggle();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggle]);
+
   // Any route change steps an open panel aside so the screen you navigated to is
   // actually visible behind the bubble. This is the single, declarative
   // guarantee — it covers the left nav, the right activity column (journey
@@ -660,20 +680,9 @@ export function AssistantButton() {
     if (panel === 'open' && latestReplyId) setSeenId(latestReplyId);
   }, [panel, latestReplyId]);
 
-  // ⌘I / Ctrl+I toggles the panel. Skipped while typing so it never steals a
-  // keystroke from an input or the page editor (where ⌘I is italic).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
-      if (e.key.toLowerCase() !== 'i') return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
-      e.preventDefault();
-      toggle();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [toggle]);
+  // ⌘I lives on the PROVIDER, not here — this button can be mounted more than
+  // once (desktop aside + open mobile drawer), and per-instance listeners
+  // toggling the same panel cancel each other out.
 
   const open = panel === 'open';
   const unread = !busy && latestReplyId != null && latestReplyId !== seenId;
@@ -688,7 +697,16 @@ export function AssistantButton() {
       size="sm"
       variant={open ? 'default' : needsYou ? 'default' : 'ghost'}
       className={cn(
-        'relative',
+        // `min-w-0` + a truncating label: this button ends the rail's toolbar
+        // row, which is full to the pixel at 16rem. Shrinking the word is
+        // right; pushing anything out of the rail is not — which is also why
+        // the needs-you COUNT is an absolutely-positioned corner badge below
+        // rather than an inline flex item: inline it adds ~26px of min-content
+        // that `min-w-0` cannot shrink (the label is display:none in the
+        // collapsed rail, so there is nothing left to give), and the button
+        // overflowed the 3.5rem rail in exactly the state that most needs to
+        // be read. The collapsed px-2 trims the last of the slack the same way.
+        'relative min-w-0 group-data-[nav-collapsed=true]/shell:px-2',
         needsYou && 'mantle-attention-pulse ring-2 ring-primary ring-offset-1 ring-offset-sidebar',
       )}
       aria-pressed={open}
@@ -710,9 +728,21 @@ export function AssistantButton() {
       ) : (
         <Sparkles aria-hidden />
       )}
-      <span className="hidden sm:inline">Assistant</span>
+      {/* The one labelled control in the rail's toolbar — it is the anchor of
+          that strip, and the three icons beside it read as its neighbours
+          rather than as a row of anonymous glyphs. Gone at icon-rail width;
+          the mobile drawer portals outside the shell root, so it keeps the
+          label there regardless. */}
+      <span className="truncate group-data-[nav-collapsed=true]/shell:hidden">Assistant</span>
       {needsYou ? (
-        <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-background px-1 text-[10px] font-semibold tabular-nums text-foreground">
+        /* Corner badge, same shape as HighlightButton's attachment count —
+           absolutely positioned so it adds NO min-content width (see the
+           className comment above). aria-hidden: the count is already in the
+           accessible name. */
+        <span
+          className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-background px-1 text-[10px] font-semibold tabular-nums text-foreground ring-2 ring-primary"
+          aria-hidden
+        >
           {questionCount}
         </span>
       ) : (
@@ -728,7 +758,7 @@ export function AssistantButton() {
 }
 
 /**
- * Highlight-content button — the "pick context first" entry point in the footer
+ * Highlight-content button — the "pick context first" entry point in the rail
  * toolbar. Toggles pick mode (<PickMode/> highlights markable rows on the screen
  * behind); a trailing count shows how many nodes are attached.
  */
@@ -737,13 +767,26 @@ export function HighlightButton() {
   const count = pendingContext.length;
 
   return (
+    /* Icon-only: this lives in the rail's bottom toolbar, where "Highlight
+       content" is three times the width of the column's whole control strip.
+       Active state is the accent surface rather than `variant="default"` — it
+       matches the help launcher beside it, and it leaves `primary` free to mean
+       the attachment count (a primary pip on a primary fill is invisible). */
     <Button
       onClick={togglePicking}
-      size="sm"
-      variant={picking ? 'default' : 'ghost'}
-      className={cn('relative', picking && 'ring-2 ring-ring ring-offset-1 ring-offset-sidebar')}
+      size="icon"
+      variant="ghost"
+      className={cn(
+        'relative size-8',
+        picking &&
+          'bg-accent text-accent-foreground ring-2 ring-ring ring-offset-1 ring-offset-sidebar',
+      )}
       aria-pressed={picking}
-      aria-label={picking ? 'Stop highlighting' : 'Highlight content to send to the assistant'}
+      aria-label={
+        picking
+          ? 'Stop highlighting'
+          : `Highlight content to send to the assistant${count > 0 ? ` — ${count} attached` : ''}`
+      }
       title={
         picking
           ? 'Picking — click a row to attach (Esc when done)'
@@ -751,9 +794,11 @@ export function HighlightButton() {
       }
     >
       <SquareDashedMousePointer aria-hidden />
-      <span className="hidden sm:inline">Highlight content</span>
       {count > 0 && (
-        <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground">
+        <span
+          className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground ring-2 ring-sidebar"
+          aria-hidden
+        >
           {count}
         </span>
       )}
@@ -762,9 +807,10 @@ export function HighlightButton() {
 }
 
 /**
- * Full-display ⇄ side-column toggle for the footer toolbar. Only meaningful while
+ * Full-display ⇄ side-column toggle, rendered in the assistant's own header
+ * (assistant-thread-client) beside minimise. Only meaningful while
  * the assistant panel is open, and only on lg+ (below lg the panel is always the
- * full overlay), so it renders nothing otherwise — keeping the footer clean when
+ * full overlay), so it renders nothing otherwise — keeping that header clean when
  * the assistant is closed.
  */
 export function AssistantDockToggle() {

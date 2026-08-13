@@ -4,8 +4,9 @@ import { UsageCard } from '@/components/usage-card';
 import type { SpendRange } from '@server/lib/metrics';
 
 /**
- * App shell: header on top, sidebar on the left, live-activity column on the
- * right, content in the middle.
+ * App shell: the rail on the left (brand, account, search, nav, launchers),
+ * live-activity column on the right, content in the middle running the full
+ * height of the window. No header, no footer bar — see components/app-shell.
  *
  * ZERO-SECRET variant — this app cannot verify a session (no SESSION_SECRET,
  * no DB), so there is NO server-side auth or onboarding gate here. This is
@@ -45,7 +46,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AppShell
-      email={null}
       contextCard={<UsageCard initialRange={spendRange} />}
       initialExpandedGroups={expandedGroups}
       initialNavCollapsed={navCollapsed}

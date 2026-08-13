@@ -16,3 +16,35 @@
 @source '../../../packages/web-ui/src';
 @plugin 'tailwindcss-animate';
 @plugin '@tailwindcss/typography';
+
+/* ---------------------------------------------------------------------------
+ * Shell top offset.
+ *
+ * The shell has no header and no footer bar: every control that lived in them
+ * now sits in the left rail (see components/layout/rail/). What remains is a
+ * slim bar that exists ONLY below `md`, where the rail is a hidden drawer and
+ * would otherwise leave a phone with no way to open the menu.
+ *
+ * It has to be a CSS variable rather than an inline style like `--nav-w`: the
+ * value is BREAKPOINT-dependent, and inline styles can't hold a media query.
+ * Every framed region offsets its top against it, so the bar's existence is
+ * declared once here instead of being re-derived at six call sites.
+ * ------------------------------------------------------------------------- */
+.mantle-shell {
+  --top-bar-h: 3rem;
+}
+/* 48rem, NOT 768px: this must flip at exactly the same instant as the bar's
+ * own `md:hidden` and the rail's `md:flex`. Tailwind v4 emits `md` as
+ * `min-width: 48rem`, and rem in a media query resolves against the BROWSER
+ * default font size — a user who raised that default would cross 768px and
+ * 48rem at different window widths, leaving a zero-height bar with visible
+ * buttons and no rail in the gap. Same unit ⇒ same instant, always. */
+@media (min-width: 48rem) {
+  .mantle-shell {
+    --top-bar-h: 0px;
+  }
+}
+/* Focus mode hides the bar at every width, so nothing offsets against it. */
+.mantle-shell[data-zen='true'] {
+  --top-bar-h: 0px;
+}

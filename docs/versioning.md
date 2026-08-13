@@ -1,8 +1,8 @@
 # Versioning
 
 Mantle uses [semantic versioning](https://semver.org/). The version is shown in
-small text next to the **mantle** wordmark in the top bar, and served at
-`/api/version` for ops/uptime probes.
+small text beside the **mantle** wordmark at the foot of the left rail's nav
+(the changelog link), and served at `/api/version` for ops/uptime probes.
 
 ## Scheme
 

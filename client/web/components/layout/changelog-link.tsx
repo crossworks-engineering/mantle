@@ -15,11 +15,19 @@ import {
 } from '@mantle/web-ui/version';
 
 /**
- * "Version x.y.z" link at the foot of the sidebar nav → /changelog. Shows a
- * "What's new?" pill until this build's changelog has been viewed (localStorage
- * last-seen vs APP_VERSION; the /changelog page stamps it and fires
- * CHANGELOG_SEEN_EVENT so the pill clears without a remount). In the collapsed
- * icon rail the pill becomes the same dot the nav badges use.
+ * Build identity at the foot of the rail's nav → /changelog: the Mantle
+ * wordmark, this build's version, and a "What's new?" pill until the changelog
+ * has been viewed (localStorage last-seen vs APP_VERSION; the /changelog page
+ * stamps it and fires CHANGELOG_SEEN_EVENT so the pill clears without a
+ * remount). In the collapsed icon rail the wordmark gives way to the megaphone
+ * and the pill becomes the same dot the nav badges use.
+ *
+ * The wordmark is the one the footer bar used to carry, moved here when that
+ * bar was removed. It uses `.wordmark-brand` (`--font-brand`, the product's
+ * own face), NOT `--font-wordmark`: this line says the software is Mantle
+ * regardless of what the owner named their brain or which display face they
+ * picked for it, which is exactly why it cannot share a row with the brand
+ * block up top.
  */
 export function ChangelogLink({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
@@ -57,7 +65,7 @@ export function ChangelogLink({ onNavigate }: { onNavigate?: () => void }) {
         // it surfaces since the header wordmark badge was removed.
         title={`${versionDetail()} — changelog`}
         className={cn(
-          'relative flex items-center gap-3 rounded-md px-3 py-2 text-xs font-medium transition-colors',
+          'relative flex items-center gap-2 rounded-md px-3 py-2 text-xs font-medium transition-colors',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           'group-data-[nav-collapsed=true]/shell:justify-center group-data-[nav-collapsed=true]/shell:gap-0 group-data-[nav-collapsed=true]/shell:px-0',
           active
@@ -65,8 +73,14 @@ export function ChangelogLink({ onNavigate }: { onNavigate?: () => void }) {
             : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
         )}
       >
-        <Megaphone className="size-4 shrink-0" aria-hidden />
-        <span className="flex-1 truncate group-data-[nav-collapsed=true]/shell:hidden">
+        <Megaphone
+          className="hidden size-4 shrink-0 group-data-[nav-collapsed=true]/shell:block"
+          aria-hidden
+        />
+        <span className="wordmark-brand select-none text-lg leading-none text-primary-ink group-data-[nav-collapsed=true]/shell:hidden">
+          mantle
+        </span>
+        <span className="flex-1 truncate text-muted-foreground group-data-[nav-collapsed=true]/shell:hidden">
           {VERSION_LABEL}
         </span>
         {showWhatsNew && (

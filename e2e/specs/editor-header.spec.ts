@@ -44,12 +44,17 @@ test.describe('editor header layout', () => {
 
       await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}editor-header-page.png` });
 
-      // Focus mode: the shell chrome (top header, nav, activity, footer)
-      // disappears. The editor toolbar stays, so its own button is the only
-      // control — it flips to "Exit focus mode" and brings the chrome back.
+      // Focus mode: the shell chrome (the rail — brand, nav, its bottom
+      // toolbar — and the activity column) disappears. The editor toolbar
+      // stays, so its own button is the only control — it flips to "Exit
+      // focus mode" and brings the chrome back. The rail toolbar is asserted
+      // VISIBLE first: the shell has no <footer> any more, and asserting a
+      // never-rendered element hidden passes vacuously, guarding nothing.
+      const railToolbar = ownerPage.getByRole('toolbar', { name: 'Shell controls' });
+      await expect(railToolbar).toBeVisible();
       await ownerPage.getByRole('button', { name: 'Focus mode' }).click();
       await expect(ownerPage.getByRole('link', { name: /home$/ })).toBeHidden();
-      await expect(ownerPage.locator('footer, [role="contentinfo"]').first()).toBeHidden();
+      await expect(railToolbar).toBeHidden();
       await ownerPage.screenshot({ path: `${ARTIFACTS_DIR}editor-zen-page.png` });
       await ownerPage.getByRole('button', { name: 'Exit focus mode' }).click();
       await expect(ownerPage.getByRole('link', { name: /home$/ })).toBeVisible();

@@ -325,19 +325,25 @@ root, so it always renders expanded). Shortcuts: **⌘/Ctrl+B** toggles the nav,
 **⌘/Ctrl+J** toggles Activity (suppressed while typing/editing, so ⌘B still bolds
 in the page editor).
 
-### Footer status bar (`--footer-h`)
-A full-width bottom bar (`FooterBar`, `components/layout/footer-bar.tsx`) is the
-shell's single control strip. Height is published as **`--footer-h`** on the
-shell root, and **every full-height fixed region must end at
-`bottom-[var(--footer-h)]`** (not `bottom-0`) so its content never hides behind
-the bar, `main`, the sidebar, the Activity rail, the assistant panel,
-`FleetLayout`, and the mail shell all do. Layout: **start** = sidebar collapse
-toggle (⌘B), **centre** = the five most-used menus (ranked from local usage,
-`lib/nav-usage.ts`, keyed off the shared nav list in `layout/nav-items.ts`),
-**end** = the Highlight-content + Assistant launchers, the full-display ⇄
-side-column dock toggle (only while the assistant is open), then the Activity
-collapse toggle (⌘J). The two collapse toggles live here, not on the rails they
-control, icon-only, mirrored so they read as a symmetric pair.
+### No header, no footer — the rail owns the chrome (`--top-bar-h`)
+The shell has NO fixed header and NO footer bar; every control they held lives
+in the left rail (`components/layout/rail/`): the brand block (wordmark + peer
+name), the account/theme/search rows, the nav, and a bottom toolbar holding the
+sidebar collapse toggle (⌘B), the per-screen Help launcher, Highlight content,
+and the Assistant (⌘I, registered ONCE on the assistant provider, never
+per-button). The Activity column owns its own collapse toggle (⌘J) in its
+header, with the mirrored expand control on its icon rail.
+
+Full-height fixed regions end at **`bottom-0`** and start at
+**`top-[var(--top-bar-h)]`** — `main`, the assistant panel, the help rail,
+`FleetLayout`, and the mail shell all do. `--top-bar-h` is defined on
+`.mantle-shell` in `client/web/app/globals.css`, NOT inline: it is
+breakpoint-dependent (3rem below `md` for the mobile-only top bar, 0 at `md`+
+and in focus mode), and the media query is written as `48rem` so it flips at
+exactly the same instant as Tailwind's `md` (rem in a media query resolves
+against the browser default font size — a hand-written `768px` diverges when
+that default isn't 16px). `--footer-h`/`--header-h` no longer exist; a region
+written against them gets an invalid `var()` and loses its anchor silently.
 
 ### Full-height pages
 The app `<main>` is a fixed, full-height `overflow-y-auto scrollbar-thin`

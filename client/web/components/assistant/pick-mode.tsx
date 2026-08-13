@@ -70,8 +70,13 @@ export function PickMode() {
   const count = pendingContext.length;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center px-4">
-      <div className="pointer-events-auto flex items-center gap-3 rounded-b-lg border border-t-0 border-border bg-card px-4 py-2 text-sm shadow-lg">
+    <div className="pointer-events-none fixed inset-x-0 top-[calc(var(--top-bar-h)+0.75rem)] z-40 flex justify-center px-4">
+      {/* A floating pill, fully bordered and rounded on all corners. The old
+          `rounded-b-lg border-t-0` was flush-tab styling for a banner that sat
+          against the fixed header's bottom edge; there is no header now, the
+          pill floats 0.75rem clear of the top at every width, and a shape with
+          a missing edge reads as clipped rather than attached. */}
+      <div className="pointer-events-auto flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-2 text-sm shadow-lg">
         <SquareDashedMousePointer className="size-4 shrink-0 text-primary-ink" aria-hidden />
         <span className="text-foreground">
           Click items to send to {agentName}

@@ -36,7 +36,7 @@ export function HelpRail() {
   return (
     <div
       className={cn(
-        'fixed inset-x-0 bottom-[var(--footer-h)] top-16 z-20 flex flex-col border-border transition-[left,right,width] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w))]',
+        'fixed inset-x-0 bottom-0 top-[var(--top-bar-h)] z-20 flex flex-col border-border transition-[left,right,width] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w))]',
         'lg:left-auto lg:w-[var(--help-w)] lg:border-l',
         // The wash: same family as the header's, so the column reads as shell
         // chrome rather than content. Built from `primary`, so it re-tints with

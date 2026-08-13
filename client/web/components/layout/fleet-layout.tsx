@@ -9,7 +9,7 @@ import { Scrollable, type ScrollbarStyle } from '@mantle/web-ui/ui/scrollable';
  *  - Right column: detail/content for the selected item (desktop only)
  *
  * Renders a fixed overlay filling the shell's content area — it offsets
- * for the header (top-16) and the collapsible sidebar / live column via
+ * for the mobile bar (--top-bar-h) and the collapsible rail / live column via
  * the shell's `--nav-w` / `--activity-w` CSS vars, so it reflows with them.
  * Each column scrolls independently while the page itself never scrolls.
  * Below lg the right column hides and the list takes the full width (mobile
@@ -37,7 +37,7 @@ export function FleetLayout({
   return (
     <div
       className={cn(
-        'fixed inset-x-0 bottom-[var(--footer-h)] top-16 z-10 flex flex-col overflow-hidden bg-background transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]',
+        'fixed inset-x-0 bottom-0 top-[var(--top-bar-h)] z-10 flex flex-col overflow-hidden bg-background transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[var(--activity-w)]',
         className,
       )}
     >

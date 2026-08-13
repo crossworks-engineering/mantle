@@ -31,7 +31,7 @@ export type BackgroundArea = {
 
 export const BACKGROUND_AREAS: BackgroundArea[] = [
   { id: 'menu', label: 'Menu', hint: 'The left navigation column' },
-  { id: 'header', label: 'Header', hint: 'The bar across the top' },
+  { id: 'header', label: 'Brand', hint: 'Behind the logo and peer name' },
   { id: 'chat', label: 'Chat', hint: 'Behind the conversation' },
   { id: 'activity', label: 'Activity', hint: 'The right-hand live column' },
 ];

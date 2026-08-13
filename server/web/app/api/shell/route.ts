@@ -44,6 +44,13 @@ export async function GET() {
     avatar,
     pendingApprovals,
     assetToken,
+    // Who this browser is signed in AS, for the rail's profile row. The ACTOR,
+    // not the anchor account: additional logins are ways into the one brain
+    // rather than tenants, and the actor is what the audit trail records — so
+    // this names the person at the keyboard even on a shared brain. Name first,
+    // email as the fallback and as the menu's secondary line.
+    displayName: user.actor.displayName ?? null,
+    email: user.actor.email ?? null,
     siteName: prefs.siteName ?? null,
     peerName: prefs.peerName ?? null,
     colorTheme: prefs.colorTheme ?? null,

@@ -31,10 +31,14 @@ export function agentAccent(seed: string): AgentAccent {
   };
 }
 
-/** 1–2 letter monogram for the avatar. */
+/** 1–2 letter monogram for the avatar. The ONE initials algorithm — the rail's
+ *  profile row and the profile settings preview both call this, so the monogram
+ *  a user checks in Settings is the monogram the shell actually draws.
+ *  Array.from, not [0]/slice: those cut an astral-plane first character (an
+ *  emoji in a display name) mid-surrogate-pair and render a tofu. */
 export function agentInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
-  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+  if (parts.length === 1) return Array.from(parts[0]!).slice(0, 2).join('').toUpperCase();
+  return (Array.from(parts[0]!)[0]! + Array.from(parts[parts.length - 1]!)[0]!).toUpperCase();
 }

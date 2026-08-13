@@ -10,7 +10,10 @@ import { COLOR_THEMES } from '@mantle/web-ui/lib/themes';
 import { setAssetToken } from '@mantle/web-ui/asset-url';
 import { maybeRefreshToken } from '@mantle/web-ui/token-refresh';
 import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
-import { Header } from '@/components/layout/header';
+import { BrandBlock } from '@/components/layout/rail/brand-block';
+import { RailControls } from '@/components/layout/rail/rail-controls';
+import { RailToolbar } from '@/components/layout/rail/rail-toolbar';
+import { MobileBar } from '@/components/layout/rail/mobile-bar';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { ChangelogLink } from '@/components/layout/changelog-link';
 import { UpdateBanner } from '@/components/layout/update-banner';
@@ -26,23 +29,35 @@ import { HelpRail } from '@/components/help/help-rail';
 import { PendingQuestionWatcher } from '@/components/pending/question-watcher';
 import { DesktopBridge } from '@/components/desktop/desktop-bridge';
 import { PickMode } from '@/components/assistant/pick-mode';
-import { FooterBar } from '@/components/layout/footer-bar';
 import { ZenModeContext } from '@/components/layout/zen-mode';
 import { recordNavVisit } from '@/lib/nav-usage';
 import { matchNavItem } from '@mantle/web-ui/layout/nav-items';
 import { SearchPalette } from '@/components/search/search-palette';
 
 /**
- * App shell — three fixed regions (header, left sidebar, right live
- * column) framing a scrollable content area. The sidebar collapses into
- * a Sheet drawer below md. The server-rendered context+cost card is
- * passed in as a prop.
+ * App shell — TWO fixed regions, the left rail and the right live column,
+ * framing a scrollable content area that runs the full height of the window.
+ * The rail collapses into a Sheet drawer below md. The server-rendered
+ * context+cost card is passed in as a prop.
  *
- * Collapse: the left nav and right Activity column each collapse to an
- * icon rail. Their widths are published as the `--nav-w` / `--activity-w`
- * CSS variables on the shell root, which every framing element (sidebar,
- * main, FleetLayout, mail shell, live column) offsets against — so one
- * state flip reflows the whole shell. Collapsed state is also mirrored as
+ * NO HEADER, NO FOOTER BAR. Both were full-width strips — 4rem and 2.75rem,
+ * 108px of every screen at every window size — holding roughly a dozen
+ * controls that each occupied a few hundred pixels of a bar spanning thousands.
+ * They now live in the left rail (components/layout/rail/), which was already
+ * on screen and had height to spare: identity at the top, account/theme/search
+ * under it, the nav in the middle, the four launchers at the foot. The wider
+ * the display, the better that trade gets, which is the whole reason for it.
+ *
+ * What survives across the top is `<MobileBar/>`, below md ONLY, where the rail
+ * is a closed drawer and a phone would otherwise have no way to open it.
+ *
+ * Collapse: the left nav and right Activity column each collapse to an icon
+ * rail. Their widths are published as the `--nav-w` / `--activity-w` CSS
+ * variables on the shell root, which every framing element (rail, main,
+ * FleetLayout, mail shell, live column) offsets against — so one state flip
+ * reflows the whole shell. The top offset is the same idea in the other axis,
+ * but it is breakpoint-dependent, so `--top-bar-h` is set in globals.css rather
+ * than inline here. Collapsed state is also mirrored as
  * `data-{nav,activity}-collapsed` for descendants to restyle via
  * `group-data-[…]/shell:` (the mobile drawer portals outside this root, so
  * it always renders expanded). State is persisted to cookies and seeded
@@ -60,9 +75,14 @@ type ShellData = {
   onboarded: boolean;
   avatar: { style: string; seed: string } | null;
   pendingApprovals: number;
-  /** Custom header wordmark (Settings → Profile → Site name); null ⇒ "mantle". */
+  /** Who this browser is signed in AS (the actor, not the anchor account) —
+   *  the rail's profile row. Both null on a brain that stores neither. */
+  displayName?: string | null;
+  email?: string | null;
+  /** Custom wordmark (Settings → Profile → Site name); null ⇒ "mantle". */
   siteName: string | null;
-  /** Header-centre peer name (Settings → Profile → Peer name); null ⇒ empty centre. */
+  /** This brain's peer name (Settings → Profile → Peer name), the brand block's
+   *  second line; null ⇒ the line is not rendered. */
   peerName: string | null;
   /** Brand logo cache-busting version (Settings → Appearance → Logo); null ⇒
    *  no logo, the siteName wordmark renders. Src is /api/appearance/logo. */
@@ -88,7 +108,6 @@ type ShellData = {
 };
 
 export function AppShell(props: {
-  email: string | null;
   contextCard: React.ReactNode;
   initialNavCollapsed?: boolean;
   initialActivityCollapsed?: boolean;
@@ -116,14 +135,12 @@ export function AppShell(props: {
 }
 
 function ShellFrame({
-  email,
   contextCard,
   initialNavCollapsed = false,
   initialActivityCollapsed = true,
   initialExpandedGroups = [],
   children,
 }: {
-  email: string | null;
   contextCard: React.ReactNode;
   initialNavCollapsed?: boolean;
   initialActivityCollapsed?: boolean;
@@ -236,9 +253,10 @@ function ShellFrame({
     setMobileOpen(false);
   }, [pathname]);
 
-  // Tally which primary menu the user landed on, so the footer quick-menu can
-  // rank by actual usage. Attributed to one canonical nav item (sub-routes fold
-  // into their section); unmatched paths are ignored.
+  // Tally which primary menu the user landed on, so a collapsible nav group can
+  // rank its folded HEAD by actual usage (see useGroupHead). Attributed to one
+  // canonical nav item (sub-routes fold into their section); unmatched paths are
+  // ignored.
   useEffect(() => {
     const item = matchNavItem(pathname);
     if (item) recordNavVisit(item.href);
@@ -311,29 +329,84 @@ function ShellFrame({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const body = (onNavigate?: () => void, collapsed = false) => (
+  // Who the profile row names. Undefined until /api/shell lands, at which point
+  // the row fills in — it renders a neutral "Signed in" in the meantime rather
+  // than reserving an empty slot.
+  const identity = {
+    displayName: shellQuery.data?.displayName ?? null,
+    email: shellQuery.data?.email ?? null,
+    avatar: userAvatar,
+  };
+
+  /**
+   * The rail's contents, shared by the desktop aside and the mobile drawer.
+   *
+   * Three bands: pinned identity + controls at the top, ONE scroll region in
+   * the middle (the nav is the only part long enough to need it, and a rail
+   * that scrolls its own brand away loses the thing that tells you where you
+   * are), then the pinned toolbar. `min-h-0` on the scroller is what stops the
+   * flex column from growing past the viewport and taking the toolbar with it.
+   */
+  const body = (onNavigate?: () => void, collapsed = false, inDrawer = false) => (
     <>
-      {contextCard}
-      <UpdateBanner onNavigate={onNavigate} />
-      <SidebarNav
-        initialExpandedGroups={initialExpandedGroups}
-        onRequestExpandRail={() => {
-          if (!navCollapsed) return;
-          setNavCollapsed(false);
-          writeCookie(NAV_COOKIE, false);
-        }}
-        pendingApprovals={pendingApprovals}
+      <BrandBlock
+        siteName={shellQuery.data?.siteName ?? null}
+        peerName={shellQuery.data?.peerName ?? null}
+        logoVersion={shellQuery.data?.logoVersion ?? null}
+        logoDarkVersion={shellQuery.data?.logoDarkVersion ?? null}
+        inDrawer={inDrawer}
         onNavigate={onNavigate}
-        collapsed={collapsed}
       />
-      <ChangelogLink onNavigate={onNavigate} />
+      <RailControls
+        identity={identity}
+        onSearchClick={() => {
+          onNavigate?.();
+          setSearchOpen(true);
+        }}
+        onNavigate={onNavigate}
+      />
+
+      {/* `relative` is load-bearing: the menu backdrop is absolutely positioned
+          and would otherwise paint OVER this in-flow content regardless of DOM
+          order. Same reason the brand block and the toolbar carry it. */}
+      <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
+        {contextCard}
+        <UpdateBanner onNavigate={onNavigate} />
+        <SidebarNav
+          initialExpandedGroups={initialExpandedGroups}
+          onRequestExpandRail={() => {
+            if (!navCollapsed) return;
+            setNavCollapsed(false);
+            writeCookie(NAV_COOKIE, false);
+          }}
+          pendingApprovals={pendingApprovals}
+          onNavigate={onNavigate}
+          collapsed={collapsed}
+        />
+        <ChangelogLink onNavigate={onNavigate} />
+      </div>
+
+      <RailToolbar
+        navCollapsed={navCollapsed}
+        onToggleNav={toggleNav}
+        showCollapse={!inDrawer}
+        // The launchers open surfaces that live BEHIND the modal drawer
+        // (assistant z-20, help z-20, pick-mode z-40 vs the Sheet's z-50), so
+        // in the drawer every toolbar tap must also close it or the tap
+        // appears dead. Not wired to navigation like the other bands' —
+        // launchers don't navigate — hence its own prop.
+        onLaunch={onNavigate}
+      />
     </>
   );
 
   return (
     <ZenModeContext.Provider value={zenCtx}>
       <div
-        className="group/shell h-screen bg-background"
+        // `mantle-shell` is the hook for `--top-bar-h` (globals.css): the top
+        // offset is breakpoint-dependent, so unlike the widths below it cannot
+        // be an inline style.
+        className="mantle-shell group/shell h-screen bg-background"
         data-nav-collapsed={navCollapsed ? 'true' : 'false'}
         data-activity-collapsed={activityCollapsed ? 'true' : 'false'}
         data-zen={zen ? 'true' : 'false'}
@@ -345,17 +418,14 @@ function ShellFrame({
             '--activity-w': zen ? '0px' : activityCollapsed ? '3.5rem' : '20rem',
             '--assistant-w': assistantW,
             '--help-w': helpW,
-            '--footer-h': zen ? '0px' : '2.75rem',
-            '--header-h': zen ? '0px' : '4rem',
           } as React.CSSProperties
         }
       >
+        {/* Below md only — see <MobileBar/>. Wide screens have no top chrome. */}
         {zen ? null : (
-          <Header
-            email={email}
-            userAvatar={userAvatar}
+          <MobileBar
+            identity={identity}
             siteName={shellQuery.data?.siteName ?? null}
-            peerName={shellQuery.data?.peerName ?? null}
             logoVersion={shellQuery.data?.logoVersion ?? null}
             logoDarkVersion={shellQuery.data?.logoDarkVersion ?? null}
             onMenuClick={() => setMobileOpen(true)}
@@ -367,44 +437,50 @@ function ShellFrame({
             ⌘K or the header magnifier. */}
         <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
 
-        {/* Desktop sidebar — ends above the footer bar, which now owns the
-            collapse toggle (see <FooterBar/>). Unmounted in focus mode. */}
+        {/* The rail. Full window height now that nothing brackets it: it owns
+            the brand, the account/theme/search controls, the nav and the
+            launcher toolbar. Unmounted in focus mode. */}
         {zen ? null : (
-          <aside className="fixed top-0 bottom-[var(--footer-h)] left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar pt-16 transition-[width] duration-200 ease-in-out md:flex">
+          <aside className="fixed inset-y-0 left-0 z-30 hidden w-[var(--nav-w)] flex-col border-r bg-sidebar transition-[width] duration-200 ease-in-out md:flex">
             {/* Generated backdrop for this area — renders nothing when Settings →
               Appearance has the menu switched off. See
               @mantle/web-ui/area-backdrop. */}
             <AreaBackdrop area="menu" />
-            {/* `relative` is load-bearing: the backdrop is absolutely positioned and
-              would otherwise paint OVER this in-flow content regardless of DOM
-              order. */}
-            <div className="relative flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
-              {body(undefined, navCollapsed)}
-            </div>
+            {body(undefined, navCollapsed)}
           </aside>
         )}
 
-        {/* Mobile sidebar drawer — portaled outside the shell root, so it
-            always renders expanded regardless of collapse state. */}
+        {/* Mobile rail drawer — portaled outside the shell root, so it always
+            renders expanded regardless of collapse state. Same three bands as
+            the aside, so a phone gets every control a desktop has; `flex-col`
+            + the body's own `min-h-0` scroller keep the toolbar pinned to the
+            bottom of the sheet instead of scrolling away with the nav. */}
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetContent side="left" className="w-80 overflow-y-auto p-0 pt-4 scrollbar-thin">
+          {/* `gap-0`: the sheet variant's base carries `gap-4`, which was inert
+              while this was a block container and became LIVE when the drawer
+              went `flex flex-col` — 1rem background seams between bands the
+              desktop aside doesn't have. */}
+          <SheetContent side="left" className="flex w-80 flex-col gap-0 p-0">
             <SheetTitle className="sr-only">Navigation</SheetTitle>
-            {body(() => setMobileOpen(false))}
+            {body(() => setMobileOpen(false), false, true)}
           </SheetContent>
         </Sheet>
 
         {/* Right live-activity column */}
         {zen ? null : <LiveColumn collapsed={activityCollapsed} onToggle={toggleActivity} />}
 
-        {/* Content area. Own Suspense boundary: a page (children) that suspends
-            during SSR would otherwise bubble to the route boundary, wrapping the
-            whole shell — header included — in a streaming boundary that's absent
-            at client hydration, which shifts every radix `useId` in the header
-            and trips a hydration-id mismatch (intermittent: only when the server
-            is slow enough to stream). Containing it here, below the header, keeps
-            the header's tree-context symmetric. Same rationale as UsageCard's
-            boundary in layout.tsx. */}
-        <main className="fixed inset-0 top-[var(--header-h)] bottom-[var(--footer-h)] overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w)+var(--help-w))]">
+        {/* Content area — now the full height of the window at md and up, which
+            is what removing the two bars bought.
+
+            Own Suspense boundary: a page (children) that suspends during SSR
+            would otherwise bubble to the route boundary, wrapping the whole
+            shell — chrome included — in a streaming boundary that's absent at
+            client hydration, which shifts every radix `useId` in that chrome
+            and trips a hydration-id mismatch (intermittent: only when the
+            server is slow enough to stream). Containing it here, beside the
+            chrome rather than around it, keeps the chrome's tree-context
+            symmetric. Same rationale as UsageCard's boundary in layout.tsx. */}
+        <main className="fixed inset-0 top-[var(--top-bar-h)] overflow-y-auto scrollbar-thin transition-[left,right] duration-200 ease-in-out md:left-[var(--nav-w)] lg:right-[calc(var(--activity-w)+var(--assistant-w)+var(--help-w))]">
           <Suspense fallback={null}>{children}</Suspense>
         </main>
 
@@ -422,24 +498,14 @@ function ShellFrame({
         <PendingQuestionWatcher />
         <DesktopBridge />
 
-        {/* Upload dock — floats just above the footer bar. Inside the shell so it
+        {/* Upload dock — floats in the bottom-right corner of the content area,
+            which now runs to the bottom of the window. Inside the shell so it
             inherits --activity-w (sits left of the activity rail) and persists
             across route changes. pointer-events-none lets clicks fall through the
             gaps; the dock re-enables its own. */}
-        <div className="pointer-events-none fixed bottom-[calc(var(--footer-h)+1rem)] right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+var(--assistant-w)+1rem)]">
+        <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex w-96 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-3 lg:right-[calc(var(--activity-w)+var(--assistant-w)+1rem)]">
           <UploadDock />
         </div>
-
-        {/* Footer toolbar: sidebar collapse · quick-menu · Highlight/Assistant ·
-            activity collapse. Full width, owns every shell collapse control. */}
-        {zen ? null : (
-          <FooterBar
-            navCollapsed={navCollapsed}
-            onToggleNav={toggleNav}
-            activityCollapsed={activityCollapsed}
-            onToggleActivity={toggleActivity}
-          />
-        )}
       </div>
     </ZenModeContext.Provider>
   );

@@ -9,7 +9,7 @@ import { Spinner } from '@mantle/web-ui/ui/spinner';
 import { Button } from '@mantle/web-ui/ui/button';
 import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
 import { AreaBackdrop } from '@mantle/web-ui/area-backdrop';
-import { useAssistantDock } from '@/components/assistant/assistant-dock';
+import { AssistantDockToggle, useAssistantDock } from '@/components/assistant/assistant-dock';
 import { ActiveRunsStrip } from '@/components/runs/active-runs-strip';
 import { PendingQuestionsStrip } from '@/components/pending/pending-questions-strip';
 import { AssistantClient } from './assistant-client';
@@ -131,8 +131,12 @@ export function AssistantThreadClient({ slugHint }: { slugHint?: string }) {
         </div>
         <div className="flex items-center gap-1.5">
           {agentList.length > 0 && <AgentSelect agents={agentList} selected={agent?.slug ?? ''} />}
-          {/* Full-display ⇄ side-column now lives in the footer toolbar
-              (<AssistantDockToggle/>); minimise stays here. */}
+          {/* Full-display ⇄ side-column, beside minimise. It sat in the shell's
+              footer toolbar while there was one; with the controls moved into
+              the left rail it belongs here instead — a rail on the far left is
+              the wrong place to resize a panel on the right, and the rail's
+              4-control strip has no room to grow a fifth only sometimes. */}
+          <AssistantDockToggle />
           <Button
             variant="ghost"
             size="icon"

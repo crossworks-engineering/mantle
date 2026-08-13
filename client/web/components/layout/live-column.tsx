@@ -2,7 +2,14 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Activity, AlertCircle, CheckCircle2, Loader2, PanelRight } from 'lucide-react';
+import {
+  Activity,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+  PanelRight,
+  PanelRightClose,
+} from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
 import { formatMicroUsd } from '@mantle/web-ui/traces-format';
 import { ActionIcon } from '@/components/journey/action-icon';
@@ -25,6 +32,9 @@ import { formatElapsed } from './elapsed';
  * Collapses to a narrow icon rail (`collapsed`): just status pips — running /
  * failed / recent counts — that expand the panel on click. Width tracks the
  * shell's `--activity-w` var so `main`/FleetLayout offsets stay in lockstep.
+ * Both collapse and expand are controls on THIS column (header button one way,
+ * rail button the other); they used to share the shell's footer bar with the
+ * left rail's toggle, and that bar no longer exists.
  */
 
 /** "what entered the brain" — outcome summary for content actions. */
@@ -61,7 +71,7 @@ export function LiveColumn({ collapsed, onToggle }: { collapsed: boolean; onTogg
   const hasAny = active.length + failures.length + recent.length > 0;
 
   return (
-    <aside className="fixed top-0 bottom-[var(--footer-h)] right-0 z-30 hidden w-[var(--activity-w)] flex-col border-l bg-sidebar pt-16 transition-[width] duration-200 ease-in-out lg:flex">
+    <aside className="fixed inset-y-0 right-0 z-30 hidden w-[var(--activity-w)] flex-col border-l bg-sidebar transition-[width] duration-200 ease-in-out lg:flex">
       {/* `-z-10`: the aside is `fixed z-30` and so owns a stacking context, in
           which a negative-z child paints above its background but below the
           content. Renders nothing when the activity area is switched off. */}
@@ -76,24 +86,39 @@ export function LiveColumn({ collapsed, onToggle }: { collapsed: boolean; onTogg
         />
       ) : (
         <>
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Activity
-                className={cn(
-                  'size-4',
-                  live ? 'animate-pulse text-success-ink' : 'text-muted-foreground',
-                )}
-                aria-hidden
-              />
-              <h2 className="text-sm font-semibold">Activity</h2>
-              {live && <span className="text-xs text-success-ink">{active.length} live</span>}
-            </div>
+          <div className="flex items-center gap-2 border-b px-4 py-3">
+            <Activity
+              className={cn(
+                'size-4 shrink-0',
+                live ? 'animate-pulse text-success-ink' : 'text-muted-foreground',
+              )}
+              aria-hidden
+            />
+            <h2 className="text-sm font-semibold">Activity</h2>
+            {live && (
+              <span className="shrink-0 text-xs text-success-ink">{active.length} live</span>
+            )}
             <Link
               href="/debug/journey"
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="ml-auto shrink-0 text-xs text-muted-foreground hover:text-foreground"
             >
               View all
             </Link>
+            {/* Collapse lives on the column it collapses. It used to sit in the
+                shell's footer bar, which spanned the whole window and could
+                reasonably hold both rails' toggles; with the footer gone its
+                only other home would be the left rail, which is the wrong end
+                of the screen to reach for when shrinking this one. The
+                collapsed rail's own expand button is the mirror of this. */}
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label="Collapse activity"
+              title="Collapse activity (⌘J)"
+              className="-mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+            >
+              <PanelRightClose className="size-4" aria-hidden />
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto scrollbar-thin">

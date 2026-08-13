@@ -18,9 +18,12 @@ import { BACKGROUND_OFF, type BackgroundAreaId } from './backgrounds';
  * - `menu` and `activity` are tall, narrow, and text-dense at the TOP. The crop
  *   anchors to the bottom (where wave crests sit) and the artwork is masked
  *   away upward, so the labels sit on clean surface.
- * - `header` is a thin horizontal strip. A gradient mask across ~48px reads as
- *   a smudge rather than a fade, so it gets none, and a lower opacity instead,
- *   because the wordmark and the icon row cross the whole width.
+ * - `header` is the brand: the logo-and-peer-name block at the head of the rail,
+ *   plus the slim mobile bar that shows the same thing below `md`. Both are
+ *   short strips, and a gradient mask across ~48px reads as a smudge rather
+ *   than a fade, so it gets none and a lower opacity instead. The id predates
+ *   the removal of the fixed header; the setting kept its meaning when the
+ *   wordmark moved into the rail, so the stored value did not have to migrate.
  * - `chat` is the largest surface and the one people READ. It gets the lowest
  *   opacity of the four: at panel size a chart colour behind body text is the
  *   easiest way to fail contrast in the whole app.

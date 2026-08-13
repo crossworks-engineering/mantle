@@ -45,9 +45,12 @@ export function RandomThemeToggle() {
   return (
     <>
       {/* One spelling of a theme's name everywhere: the picker says "Amethyst
-          Haze", so a shuffle landing on it must not report "amethyst-haze". */}
+          Haze", so a shuffle landing on it must not report "amethyst-haze".
+          Sized to flex inside the rail's theme row and truncate rather than
+          push the two round buttons out of the column; gone entirely at
+          icon-rail width, where the buttons stack instead. */}
       <span
-        className="hidden select-none pr-2 text-xs text-muted-foreground/70 sm:inline"
+        className="min-w-0 flex-1 select-none truncate pr-1 text-xs text-muted-foreground group-data-[nav-collapsed=true]/shell:hidden"
         title="Current theme"
       >
         {themeLabel(colorTheme)}

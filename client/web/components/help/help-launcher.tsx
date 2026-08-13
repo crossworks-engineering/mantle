@@ -7,9 +7,9 @@ import { helpTopicForPath } from '@mantle/web-ui/layout/help-topics';
 import { useHelpRail } from './help-rail-context';
 
 /**
- * The footer launcher — sits left of the Highlight-content button, alongside
- * the other panel launchers, because that strip is where this shell keeps
- * "open a column" controls.
+ * The launcher in the left rail's bottom toolbar — left of Highlight content
+ * and the Assistant, because that strip is where this shell keeps its "open a
+ * column" controls.
  *
  * Still the only part of the help system in the default bundle: an icon, a
  * pathname lookup and a boolean. The rail and its content load on first open.
@@ -31,7 +31,10 @@ export function HelpLauncher() {
       aria-label={open ? 'Close about this screen' : 'About this screen'}
       title={open ? 'Close about this screen' : 'About this screen'}
       className={cn(
-        'flex size-7 items-center justify-center rounded-md transition-colors',
+        // size-8 to match the toggles and launchers it sits beside; a lone
+        // odd-sized control in a four-icon strip reads as a mistake.
+        'flex size-8 shrink-0 items-center justify-center rounded-md transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
         open
           ? 'bg-accent text-accent-foreground'
           : 'text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground',

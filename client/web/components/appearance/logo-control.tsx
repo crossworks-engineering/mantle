@@ -10,17 +10,21 @@ import { useToast } from '@mantle/web-ui/ui/toast';
 
 /**
  * Brand logo upload (Settings → Appearance), one strip per THEME VARIANT.
- * The uploaded image replaces the siteName WORDMARK in both headers (owner +
- * /team) at a fixed height, width free — never distorted, bounded by the
- * header bar like the peer name.
+ * The uploaded image replaces the siteName WORDMARK at a fixed height, width
+ * free — never distorted. Its real home is the RAIL's brand block (a 16rem
+ * column, h-9), which becomes a size-8 SQUARE CROP in the collapsed icon
+ * rail, plus an h-7 slot in the phone top bar — not a full-width header.
  *
  * Two variants, each set/cleared independently:
  *  - Light — the base logo, shown everywhere until a dark variant exists.
  *  - Dark — an optional override for dark mode (a dark-on-transparent mark
- *    goes invisible on a dark header; this is the escape hatch). Falls back
+ *    goes invisible on a dark surface; this is the escape hatch). Falls back
  *    to the base when unset, so one universal logo never needs two uploads.
  *
- * Each preview strip mimics the real header (h-16, the primary gradient).
+ * Each preview mimics the real brand block — the rail's width, height and
+ * gradient — with the collapsed square crop beside it, because this screen is
+ * the only feedback an owner gets before saving: a wide lockup that "fit" a
+ * full-width preview used to look broken the moment the nav collapsed.
  * The DARK strip is wrapped in a forced `dark` class — the theme tokens live
  * in `:root` / `.dark`, so the wrapper re-resolves every var inside to the
  * dark palette and the strip is truthful in either app mode. The reverse
@@ -149,13 +153,29 @@ function VariantControl({
     }
   };
 
+  // Two swatches, matching the two real renders: the rail's brand block
+  // (16rem column, h-9, the same gradient) and the collapsed icon rail's
+  // size-8 square crop (`object-cover object-center` stands in for the
+  // block's fixed square box). Same classes as brand-block.tsx — if that
+  // changes, change this, or the preview lies again.
   const strip = (
-    <div className="flex h-16 items-center rounded-lg border border-border bg-gradient-to-b from-primary/10 to-background px-4">
-      {shownSrc ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={shownSrc} alt={wordmark} className="h-10 w-auto max-w-full object-contain" />
-      ) : (
-        <span className="wordmark text-primary-ink">{wordmark}</span>
+    <div className="flex items-center gap-2">
+      <div className="flex h-14 w-64 items-center rounded-lg border border-border bg-sidebar bg-gradient-to-b from-primary/[0.07] to-transparent px-3">
+        {shownSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={shownSrc} alt={wordmark} className="h-9 w-auto max-w-full object-contain" />
+        ) : (
+          <span className="wordmark text-primary-ink">{wordmark}</span>
+        )}
+      </div>
+      {shownSrc && (
+        <div
+          className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-sidebar"
+          title="Collapsed rail (⌘B): the logo crops to this square"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={shownSrc} alt="" aria-hidden className="size-8 object-contain object-center" />
+        </div>
       )}
     </div>
   );
