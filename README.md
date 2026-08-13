@@ -270,7 +270,7 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.230.14, 2,464 commits and 178 releases since 2026-05-14 (91 days, ~27.1 commits/day).
+**Velocity** — v0.230.15, 2,466 commits and 178 releases since 2026-05-14 (91 days, ~27.1 commits/day).
 
 ```
 commits/week, last 13 weeks   ▄▇▆▄▂▃█▄▃▅▆▅▃   peak 371
