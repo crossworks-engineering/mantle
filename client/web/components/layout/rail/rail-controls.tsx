@@ -3,8 +3,6 @@
 import { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import { cn } from '@mantle/web-ui/lib/utils';
-import { ThemeToggle } from '@mantle/web-ui/theme-toggle';
-import { RandomThemeToggle } from '@/components/random-theme-toggle';
 import { ProfileMenu, type ProfileIdentity } from './profile-menu';
 
 /**
@@ -36,15 +34,11 @@ export function RailControls({
     // statically-positioned band paints UNDER it while its siblings paint over
     // — this was the one band that missed it.
     <div className="relative flex shrink-0 flex-col gap-1 border-b border-sidebar-border px-3 py-2 group-data-[nav-collapsed=true]/shell:items-center group-data-[nav-collapsed=true]/shell:gap-1.5 group-data-[nav-collapsed=true]/shell:px-2">
+      {/* Appearance used to be a row of its own here. It now hangs off the
+          profile menu (Appearance / Theme submenus): a column that has to hold
+          the entire nav should not also spend a permanent row on a decision
+          made about once a month. */}
       <ProfileMenu identity={identity} onNavigate={onNavigate} />
-
-      {/* Theme: the current palette's name, the shuffle menu, then light/dark.
-          Stacks vertically in the icon rail — two 2rem circles do not fit side
-          by side in a 3.5rem column. */}
-      <div className="flex items-center gap-1 px-2 group-data-[nav-collapsed=true]/shell:flex-col group-data-[nav-collapsed=true]/shell:px-0">
-        <RandomThemeToggle />
-        <ThemeToggle />
-      </div>
 
       <SearchButton onClick={onSearchClick} />
     </div>

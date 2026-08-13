@@ -11,9 +11,30 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 
-export function ThemeToggle() {
+/**
+ * The three mode choices as BARE menu items, so a host menu can nest them in a
+ * submenu rather than opening a second popup beside its own. `ThemeToggle`
+ * below is the standalone button that wraps these same items in its own menu —
+ * one list of modes, two placements.
+ */
+export function ThemeModeItems() {
   const { setTheme } = useTheme();
+  return (
+    <>
+      <DropdownMenuItem onClick={() => setTheme('light')}>
+        <Sun className="size-4" /> Light
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setTheme('dark')}>
+        <Moon className="size-4" /> Dark
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setTheme('system')}>
+        <Monitor className="size-4" /> System
+      </DropdownMenuItem>
+    </>
+  );
+}
 
+export function ThemeToggle() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -28,15 +49,7 @@ export function ThemeToggle() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme('light')}>
-          <Sun className="size-4" /> Light
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('dark')}>
-          <Moon className="size-4" /> Dark
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('system')}>
-          <Monitor className="size-4" /> System
-        </DropdownMenuItem>
+        <ThemeModeItems />
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronsUpDown, LogOut, User as UserIcon } from 'lucide-react';
+import { ChevronsUpDown, Dices, LogOut, SunMoon, User as UserIcon } from 'lucide-react';
 import { performSignOut } from '@mantle/web-ui/sign-out';
 import { cn } from '@mantle/web-ui/lib/utils';
 import {
@@ -11,11 +11,19 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuPortal,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@mantle/web-ui/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@mantle/web-ui/ui/avatar';
 import { GeneratedAvatar } from '@mantle/web-ui/generated-avatar';
+import { ThemeModeItems } from '@mantle/web-ui/theme-toggle';
+import { useColorTheme } from '@mantle/web-ui/color-theme-provider';
+import { themeLabel } from '@mantle/web-ui/lib/themes';
+import { RandomThemeItems } from '@/components/random-theme-toggle';
 import { agentInitials } from '@/lib/agent-color';
 
 export type ProfileIdentity = {
@@ -68,6 +76,7 @@ export function ProfileMenu({
   const [busy, setBusy] = useState(false);
   const { primary, initials } = identityOf(identity);
   const { avatar, email } = identity;
+  const { colorTheme } = useColorTheme();
 
   async function signOut() {
     setBusy(true);
@@ -132,6 +141,42 @@ export function ProfileMenu({
             <UserIcon className="size-4" /> Profile
           </Link>
         </DropdownMenuItem>
+
+        {/* Appearance lives here rather than as its own rail row: it is a
+            once-a-month decision sitting permanently in a column that has to
+            hold the whole nav. Submenus, not nested DropdownMenus — a menu
+            inside a menu ITEM opens a second popup that the parent's own
+            dismiss logic then fights. */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="cursor-pointer">
+            <SunMoon className="size-4" /> Appearance
+          </DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent>
+              <ThemeModeItems />
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="cursor-pointer">
+            <Dices className="size-4" />
+            <span className="flex-1">Theme</span>
+            {/* The name the rail's theme row used to carry, kept as the
+                trigger's trailing text so the current palette is still legible
+                without opening anything. */}
+            <span className="ml-2 max-w-24 truncate text-xs text-muted-foreground">
+              {themeLabel(colorTheme)}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent className="w-52">
+              <DropdownMenuLabel>Random theme</DropdownMenuLabel>
+              <RandomThemeItems />
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
+        <DropdownMenuSeparator />
+
         <DropdownMenuItem
           onClick={signOut}
           disabled={busy}
