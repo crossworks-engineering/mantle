@@ -26,7 +26,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const NPM_SCOPE = '@crossworks';
 // Order matters only for readability — pnpm rewrites workspace:* deps to the
 // stamped version on pack, so share-ui's deps resolve to this same release.
-const PACKAGES = ['client-types', 'content-core', 'voice-client', 'share-ui'];
+const PACKAGES = ['client-types', 'content-core', 'voice-client', 'share-ui', 'app-build'];
 
 const version = (process.argv[2] ?? '').replace(/^v/, '');
 const dryRun = process.argv.includes('--dry-run');
