@@ -3591,4 +3591,55 @@ export const THEME_SEEDS = [
       },
     },
   },
+  {
+    id: 'jackdaw',
+    label: 'Jackdaw',
+    // The Jackdaw brand palette — the retro badge colours.
+    //
+    // TEMPERATURE. Ten of the eleven brand colours sit in a warm band (oklch
+    // hue 37–86°). The supplied neutrals #3C3C3F (hue 286°, blue-violet) and
+    // #52524C (107°, green) fall outside it, and a cool border line against
+    // warm cream reads as dirty rather than neutral. Both are re-cut here at
+    // their ORIGINAL lightness on the family hue (62°): #423b35 and #57504a.
+    //
+    // LADDER. Surfaces ship verbatim (only text tokens get contrast-solved),
+    // so each mode is an authored L* ladder with ~4–6 per step. Six warm tones
+    // this close in hue need that spacing or cards stop reading as elevated
+    // and secondary/accent collapse into the same button.
+    //
+    // ORANGE WEARS DARK TEXT. White on #E46E08 is 3.2:1 and fails AA; the
+    // brand brown on it is 5.0:1 — and matches how the badge itself is drawn.
+    light: {
+      background: '#fde7bc',
+      foreground: '#341a00',
+      card: '#fff9ec',
+      primary: '#e46e08',
+      'primary-foreground': '#341a00',
+      secondary: '#e3b575',
+      'secondary-foreground': '#341a00',
+      muted: '#f5d9a4',
+      'muted-foreground': '#57504a',
+      accent: '#f0c88c',
+      'accent-foreground': '#5c1e02',
+      destructive: '#c83c04',
+      'destructive-foreground': '#ffffff',
+      border: '#baae94',
+    },
+    dark: {
+      background: '#120f0e',
+      foreground: '#fde7bc',
+      card: '#1e1814',
+      primary: '#eb9f13',
+      'primary-foreground': '#120f0e',
+      secondary: '#2f2923',
+      'secondary-foreground': '#f0c88c',
+      muted: '#251f1b',
+      'muted-foreground': '#baae94',
+      accent: '#452a18',
+      'accent-foreground': '#f0c88c',
+      destructive: '#c83c04',
+      'destructive-foreground': '#ffffff',
+      border: '#423b35',
+    },
+  },
 ];

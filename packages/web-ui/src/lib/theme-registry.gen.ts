@@ -333,4 +333,12 @@ export const GENERATED_COLOR_THEMES: ColorTheme[] = [
       dark: ['#8553f6', '#1e293b', '#1a1b1e'],
     },
   },
+  {
+    id: 'jackdaw',
+    label: 'Jackdaw',
+    swatches: {
+      light: ['#e46e08', '#f0c88c', '#fde7bc'],
+      dark: ['#eb9f13', '#452a18', '#120f0e'],
+    },
+  },
 ];
