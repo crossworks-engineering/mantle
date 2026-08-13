@@ -150,52 +150,66 @@ export default tseslint.config(
     // value even server-side of the fence — clients use its runtime-pure
     // subpaths. `@server/*` and `@/…`-fallback resolution exist for TYPE
     // reach-through only.
-    files: ['client/web/**/*.{ts,tsx}', 'packages/web-ui/**/*.{ts,tsx}'],
+    files: ['client/**/*.{ts,tsx}', 'packages/web-ui/**/*.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
         'error',
         {
-          paths: [
-            ...[
-              '@mantle/db',
-              '@mantle/agent-runtime',
-              '@mantle/assistant-runtime',
-              '@mantle/tools',
-              '@mantle/runs',
-              '@mantle/email',
-              '@mantle/microsoft',
-              '@mantle/telegram',
-              '@mantle/storage',
-              '@mantle/files',
-              '@mantle/search',
-              '@mantle/embeddings',
-              '@mantle/rules',
-              '@mantle/heartbeats',
-              '@mantle/calendar',
-              '@mantle/crypto',
-              '@mantle/api-keys',
-              '@mantle/mcp-core',
-              '@mantle/tracing',
-              '@mantle/tabledb',
-              '@mantle/turn-stream',
-            ].map((name) => ({
-              name,
-              allowTypeImports: true,
-              message: 'server-only package — the client tier may import types only',
-            })),
-            {
-              name: '@mantle/content',
-              allowTypeImports: true,
-              message:
-                'import a runtime-pure subpath (e.g. @mantle/content/markdown), never the barrel',
-            },
-          ],
           patterns: [
             {
+              // The jackdaw-repo-split P0 boundary: the client tier may import
+              // ONLY the four split-safe packages — not even `import type` from
+              // a server package, because after the repo cut those types no
+              // longer exist on this side. Wire shapes live in
+              // @mantle/client-types; browser-safe logic in content-core /
+              // voice-client.
+              group: [
+                '@mantle/*',
+                '!@mantle/client-types',
+                '!@mantle/client-types/*',
+                '!@mantle/content-core',
+                '!@mantle/content-core/*',
+                '!@mantle/voice-client',
+                '!@mantle/voice-client/*',
+                '!@mantle/web-ui',
+                '!@mantle/web-ui/*',
+              ],
+              message:
+                'jackdaw split boundary — the client tier may import only @mantle/{client-types,content-core,voice-client,web-ui}',
+            },
+            {
+              // Remaining P0 follow-up: 59 type-only reach-throughs into
+              // server/web. Erased at runtime, but they must migrate into
+              // @mantle/client-types before the repo cut (split plan P2).
               group: ['@server/*'],
               allowTypeImports: true,
               message:
                 '@server/* is a TYPE-only reach-through into server/web — values would bundle server code',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // The published contract/browser-safe packages are self-contained by
+    // design: no @mantle sibling may leak in, or the repo split (and npm
+    // publish) breaks. web-ui is deliberately NOT here — it may consume the
+    // three packages below (enforced by the client-tier block above).
+    files: [
+      'packages/client-types/**/*.ts',
+      'packages/content-core/**/*.ts',
+      'packages/voice-client/**/*.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@mantle/*'],
+              message:
+                'contract packages are zero-dep by design (jackdaw split P0) — move shared code here instead of importing it',
             },
           ],
         },

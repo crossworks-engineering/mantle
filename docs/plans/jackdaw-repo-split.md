@@ -6,7 +6,19 @@ the memory system, ingest, workers, and the HTTP/MCP API. This also formalises
 the second consequence of the FE/BE split: a Mantle brain is deployable
 headless, as a small memory core with no UI at all.
 
-Status: **plan**, written 2026-08-13 from a fresh audit of `main` at v0.230.27.
+Status: **P0 executed** 2026-08-13 (same day; see §3a below for what shipped and
+what it taught us). Plan originally written from a fresh audit of `main` at
+v0.230.27.
+
+**Product direction that motivates the split** (Jason, 2026-08-13): one hosted
+jackdaw should connect to MULTIPLE mantle brains and switch between them — a
+brain switcher in the shell instead of one ~220 MB browser tab per brain. The
+plumbing already leans this way: the client's only config is
+`MANTLE_SERVER_ORIGIN` (read per-request via `/env.js`) and auth is
+bearer + CORS, so multi-brain is an origin registry + per-origin token store +
+per-origin React Query cache partitioning, not an architecture change. This
+lands in jackdaw's own roadmap after P2 (each brain must CORS-allowlist the
+jackdaw origin; the P3 handshake becomes per-brain).
 
 ---
 
@@ -82,6 +94,53 @@ publishable, server-free packages:
 Enforcement: an eslint boundary rule so `client/*` and `packages/web-ui` may
 import only `contract | content-core | voice-client | web-ui`. This makes the
 split mechanical instead of aspirational, and CI holds the line.
+
+### P0 — SHIPPED 2026-08-13 (§3a: what actually happened)
+
+Four commits on `main`, all green under `pnpm verify`:
+
+1. **`@mantle/content-core`** extracted: 22 browser-safe modules (markdown,
+   blocks, page-*, table-model/formula-*, journal-options, persona-bank,
+   onboarding-questions, thinking-tiers, contacts-format; deps: marked +
+   mathjs only). `@mantle/content` keeps same-named one-line shims, so zero
+   server import paths changed.
+2. **`@mantle/voice-client`** extracted: providers, catalog (+ DiscoveryResult,
+   relocated from discover.ts), audio-tags, 12 model catalogs,
+   adapters/{types,retry,registry}. Zero runtime deps. Same shim pattern;
+   `@mantle/voice/client` remains as a shim.
+3. **Contract modules web-ui → client-types**: version, turn-streaming,
+   traces-format, model-choices, slugify, runners-types, assistant-limits,
+   types/{integrity,maintenance,sanity}, lib/{safe-download,format-bytes,
+   format-datetime}. client-types is now the CONTRACT package (root index
+   types-only; subpaths may carry zero-dep runtime).
+4. **Row DTOs → client-types**: 33 literal types moved with alias re-exports
+   at their old homes; db jsonb/enum shapes hand-mirrored (ToolHandler
+   convention); PublicEmailAccount / SyncRun / PublicMsAccount as wire-true
+   mirrors (ISO-string dates) with key-set drift guards beside the server
+   types. `client/web`'s @mantle deps are now EXACTLY
+   `{client-types, content-core, voice-client, web-ui}`.
+5. **Boundary enforced in eslint**: the client tier (client/**, web-ui) may
+   import only the four split-safe packages — type imports of server packages
+   are now hard errors, not allowances; the three contract packages may import
+   no @mantle sibling at all.
+
+Learned along the way, feeding later phases:
+
+- **The share/docs surface is the real residual web-ui coupling.** server/web
+  imports ~26 web-ui subpaths, all of them the `/s/[token]` share presenters
+  (9 node kinds + formula-calculator + view-payload) and the docs/appearance
+  rendering (`server/pages`, `server/islands`). Decision needed before P2:
+  (a) fork a minimal share-ui into server/web, (b) mantle consumes a published
+  jackdaw UI package for share pages, or (c) share pages become a
+  server-shipped static bundle built in jackdaw. Until decided, server keeps
+  its web-ui dependency for exactly this surface.
+- **`@server/*` type reach-through remains**: 59 type-only imports from
+  client/web into server/web source. Erased at runtime (eslint keeps them
+  type-only), but every one must migrate into client-types before the P2 cut.
+  This is the P0 follow-up work item.
+- Package name: kept `@mantle/client-types` rather than renaming to
+  `@mantle/contract` — 51 importing files, zero functional gain; the npm
+  publish at P1 can use the existing name.
 
 ### P1: publish the contract
 
