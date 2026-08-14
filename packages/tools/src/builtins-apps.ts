@@ -325,9 +325,7 @@ const app_build: BuiltinToolDef = {
       if (res.ok && res.code) {
         const buf = Buffer.from(res.code, 'utf8');
         const put = await putContent(buf, 'application/javascript');
-        const cssPut = res.css
-          ? await putContent(Buffer.from(res.css, 'utf8'), 'text/css')
-          : null;
+        const cssPut = res.css ? await putContent(Buffer.from(res.css, 'utf8'), 'text/css') : null;
         await setDraftBuild(ctx.ownerId, id, {
           storageKey: put.key,
           sha256: put.sha256,

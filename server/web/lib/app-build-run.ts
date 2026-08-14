@@ -27,9 +27,7 @@ export async function runAppBuild(ownerId: string, id: string): Promise<AppBuild
   });
   if (res.ok && res.code) {
     const put = await putContent(Buffer.from(res.code, 'utf8'), 'application/javascript');
-    const cssPut = res.css
-      ? await putContent(Buffer.from(res.css, 'utf8'), 'text/css')
-      : null;
+    const cssPut = res.css ? await putContent(Buffer.from(res.css, 'utf8'), 'text/css') : null;
     await setDraftBuild(ownerId, id, {
       storageKey: put.key,
       sha256: put.sha256,
@@ -38,7 +36,9 @@ export async function runAppBuild(ownerId: string, id: string): Promise<AppBuild
       bytes: put.size,
       ok: true,
       ...(res.warnings.length ? { warnings: res.warnings.map((w) => w.text) } : {}),
-      ...(cssPut ? { css: { storageKey: cssPut.key, sha256: cssPut.sha256, bytes: cssPut.size } } : {}),
+      ...(cssPut
+        ? { css: { storageKey: cssPut.key, sha256: cssPut.sha256, bytes: cssPut.size } }
+        : {}),
     });
   }
   return {
