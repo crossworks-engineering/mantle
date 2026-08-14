@@ -826,7 +826,8 @@ fi
 inf "Bringing services up (waits for migrate + health)…"
 "${COMPOSE[@]}" up -d --wait || warn "up --wait returned non-zero — the sanity check below will show what's wrong."
 
-# The owner UI — a SEPARATE stack on the same tag (releases are lockstep).
+# The owner UI — a SEPARATE stack on its own version stream (jackdaw-built;
+# pinned by MANTLE_CLIENT_IMAGE_TAG, default `latest`).
 # Skipping this leaves a brain with no usable interface: signup and every
 # owner screen live here.
 if [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then

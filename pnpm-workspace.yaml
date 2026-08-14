@@ -11,8 +11,6 @@ allowBuilds:
   # tailwind CLI's --watch file watcher; our one-shot share-runtime compile
   # never watches, so the native build is unnecessary.
   '@parcel/watcher': false
-  electron: set this to true or false
-  electron-winstaller: set this to true or false
   esbuild: true
   sharp: true
   unrs-resolver: true

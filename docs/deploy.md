@@ -239,6 +239,9 @@ docker compose up -d --wait        # migrate runs first (gated); then app rolls
 #   screens the user actually opens stay on the old image. Roll both:
 docker compose -f docker-compose.client.yml --project-directory . pull
 docker compose -f docker-compose.client.yml --project-directory . up -d --wait
+#   Note the client image versions on its OWN stream since the repo split: the
+#   pull takes MANTLE_CLIENT_IMAGE_TAG (default `latest`, built by jackdaw),
+#   NOT MANTLE_IMAGE_TAG. Pin it in .env to hold a known-good UI version.
 #   Then assert BOTH tags rather than inferring the roll worked from health:
 for c in mantle_web mantle_client_web; do \
   printf "%-18s %s\n" "$c" "$(docker inspect --format '{{.Config.Image}}' $c)"; done

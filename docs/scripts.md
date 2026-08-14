@@ -80,7 +80,7 @@ remote. Extra args pass through (`pnpm dev:fe --port 3001`).
 The remote must CORS-allowlist the dev origin (`MANTLE_API_CORS_ORIGINS`; the
 wildcard is never honoured on `/api/auth`). **Mutations are live against that
 brain**, point it at a test box, not prod. Setup and troubleshooting:
-[db-less-dev.md](./db-less-dev.md).
+db-less-dev.md in the jackdaw repo (moved with the frontend).
 
 ### `pnpm reset` → `scripts/reset.sh`
 
@@ -597,7 +597,7 @@ because they're wired into `predev` / `prebuild` / `pretypecheck`.
 | `server/web/scripts/gen-route-manifest.ts` | `server/route-manifest.gen.ts` from the `app/**/route.ts` tree, the bridge from Next's file-per-route convention to Hono | `predev`, `build`, `pretypecheck` |
 | `server/web/scripts/build-share-runtime.ts` | `public/share-runtime/`, CSS + JS for the server-rendered `/s` share pages and `/print` | `predev`, `build` |
 | `packages/app-build/scripts/build-runtime.ts` | the shared mini-app runtime into each app's `public/app-runtime/` | `predev`/`prebuild` in both `server/web` and `client/web` |
-| `packages/web-ui/themes/generate.mjs` | `styles/themes.css` + the picker registry from `seeds.mjs` | `pnpm themes:build`; `--check` fails on drift (CI), `--report` prints per-token ΔE against a baseline |
+| `packages/share-ui/themes/generate.mjs` | `styles/themes.css` + the picker registry from `seeds.mjs` | `pnpm themes:build`; `--check` fails on drift (CI), `--report` prints per-token ΔE against a baseline |
 | `scripts/generate-notices.mjs` | `THIRD-PARTY-NOTICES.md` from the production dependency tree, with verbatim license texts | `pnpm licenses:notices`, re-run after any dependency change |
 | `scripts/readme-stats.mjs` | the **By the numbers** block in `README.md` (between the `<!-- stats:start -->` markers), LOC, test cases, migrations, manifest counts, commit cadence, the LOC-by-area pie | `pnpm readme:stats`; auto-run by `version:bump`, so every `release:` commit carries fresh numbers |
 

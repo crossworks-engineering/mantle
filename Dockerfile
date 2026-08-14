@@ -35,7 +35,7 @@ WORKDIR /app
 # because the workspace it sees doesn't match the lockfile. Keep it in sync when
 # adding a package — verify with:
 #   diff <(grep -oE '(server|packages)/[a-z-]+/package.json' Dockerfile | sort -u) \
-#        <(find server client packages e2e -maxdepth 2 -name package.json -not -path '*/node_modules/*' | sort -u)
+#        <(find server packages -maxdepth 2 -name package.json -not -path '*/node_modules/*' | sort -u)
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 # pnpm-workspace.yaml's `patchedDependencies` are resolved DURING install, so
 # every patch file must already be in the context. A missing one is a hard
@@ -55,6 +55,7 @@ COPY packages/assistant-runtime/package.json packages/assistant-runtime/package.
 COPY packages/calendar/package.json packages/calendar/package.json
 COPY packages/client-types/package.json packages/client-types/package.json
 COPY packages/content/package.json packages/content/package.json
+COPY packages/content-core/package.json packages/content-core/package.json
 COPY packages/crypto/package.json packages/crypto/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/email/package.json packages/email/package.json
@@ -66,6 +67,7 @@ COPY packages/microsoft/package.json packages/microsoft/package.json
 COPY packages/rules/package.json packages/rules/package.json
 COPY packages/runs/package.json packages/runs/package.json
 COPY packages/search/package.json packages/search/package.json
+COPY packages/share-ui/package.json packages/share-ui/package.json
 COPY packages/storage/package.json packages/storage/package.json
 COPY packages/tabledb/package.json packages/tabledb/package.json
 COPY packages/telegram/package.json packages/telegram/package.json
@@ -73,6 +75,7 @@ COPY packages/tools/package.json packages/tools/package.json
 COPY packages/tracing/package.json packages/tracing/package.json
 COPY packages/turn-stream/package.json packages/turn-stream/package.json
 COPY packages/voice/package.json packages/voice/package.json
+COPY packages/voice-client/package.json packages/voice-client/package.json
 
 # Install the build toolchain (python3 / build-essential, needed to COMPILE
 # native modules), pnpm, and the workspace — then PURGE the toolchain in the

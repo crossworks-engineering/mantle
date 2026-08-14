@@ -15,17 +15,17 @@ role is derived. That is the whole design; everything below is mechanism.
 
 | file | role |
 |---|---|
-| `packages/web-ui/themes/seeds.mjs` | **The authored source.** One record per theme: surfaces, fills, decor, text *anchors*, non-colour `extras`, optional `charts` brand override. Edit this. |
-| `packages/web-ui/themes/model.mjs` | Colour maths: OKLab/OKLCH, WCAG contrast measured on the emitted 8-bit hex, the anchored solver (`solveText`), the fill+foreground joint solver (`solvePair`). |
-| `packages/web-ui/themes/generate.mjs` | Seeds → full token scale → emits `styles/themes.css` + `src/lib/theme-registry.gen.ts`. Also `--check` (drift) and `--report` (ΔE vs a baseline css). |
-| `packages/web-ui/styles/themes.css` | **Generated. Never edit.** The drift test fails CI if it disagrees with the seeds. |
-| `packages/web-ui/src/lib/theme-registry.gen.ts` | Generated picker registry, `[primary, accent, background]` for **both** modes, so swatches can't desync from the CSS and the picker never advertises light-mode dots to someone browsing in the dark. |
-| `packages/web-ui/themes/preview.html` | Zero-build visual harness: `python3 -m http.server -d packages/web-ui 4173` → `/themes/preview.html`. (`.claude/launch.json` is gitignored, so a `theme-preview` entry there is yours to add locally, not something the clone ships.) |
+| `packages/share-ui/themes/seeds.mjs` | **The authored source.** One record per theme: surfaces, fills, decor, text *anchors*, non-colour `extras`, optional `charts` brand override. Edit this. |
+| `packages/share-ui/themes/model.mjs` | Colour maths: OKLab/OKLCH, WCAG contrast measured on the emitted 8-bit hex, the anchored solver (`solveText`), the fill+foreground joint solver (`solvePair`). |
+| `packages/share-ui/themes/generate.mjs` | Seeds → full token scale → emits `styles/themes.css` + `src/lib/theme-registry.gen.ts`. Also `--check` (drift) and `--report` (ΔE vs a baseline css). |
+| `packages/share-ui/styles/themes.css` | **Generated. Never edit.** The drift test fails CI if it disagrees with the seeds. |
+| `packages/share-ui/src/lib/theme-registry.gen.ts` | Generated picker registry, `[primary, accent, background]` for **both** modes, so swatches can't desync from the CSS and the picker never advertises light-mode dots to someone browsing in the dark. |
+| `packages/share-ui/themes/preview.html` | Zero-build visual harness: `python3 -m http.server -d packages/share-ui 4173` → `/themes/preview.html`. (`.claude/launch.json` is gitignored, so a `theme-preview` entry there is yours to add locally, not something the clone ships.) |
 
 ## Workflow
 
 ```sh
-# edit packages/web-ui/themes/seeds.mjs, then:
+# edit packages/share-ui/themes/seeds.mjs, then:
 pnpm themes:build     # regenerates themes.css + the registry
 pnpm test             # contract + drift + generator suites
 ```

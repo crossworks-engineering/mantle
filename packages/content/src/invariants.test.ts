@@ -42,6 +42,28 @@ function composeServices(rel: string): string[] {
   return names;
 }
 
+/** Service names in `rel` that carry a `profiles:` key (i.e. do NOT start on a
+ *  bare `docker compose up -d`). Indentation-based, same discipline as
+ *  composeServices above. */
+function profiledServices(rel: string): string[] {
+  const lines = read(rel).split('\n');
+  const names: string[] = [];
+  let current: string | null = null;
+  let inServices = false;
+  for (const line of lines) {
+    if (line === 'services:') {
+      inServices = true;
+      continue;
+    }
+    if (/^\S/.test(line)) inServices = false;
+    if (!inServices) continue;
+    const svc = line.match(/^ {2}([a-z][a-z0-9_]*):\s*$/);
+    if (svc) current = svc[1]!;
+    if (current && /^ {4}profiles:/.test(line)) names.push(current);
+  }
+  return names;
+}
+
 /** Major version of the Postgres client apt-installed into the server image. */
 function dockerfileClientMajor(): number {
   const m = read(DOCKERFILE).match(/postgresql-client-(\d+)/);
@@ -90,7 +112,8 @@ describe('brain-core override ↔ main compose', () => {
       .filter((l) => !/^services:$/.test(l));
     for (const line of body) {
       expect(
-        /^ {2}[a-z][a-z0-9_]*:$/.test(line) || /^ {4}profiles: \["full"(, "helpers")?\]$/.test(line),
+        /^ {2}[a-z][a-z0-9_]*:$/.test(line) ||
+          /^ {4}profiles: \["full"(, "helpers")?\]$/.test(line),
         `${COMPOSE_CORE} must stay a pure profile gate; unexpected line: ${JSON.stringify(line)}. ` +
           `Real overrides belong in docker-compose.yml (full) or a box's docker-compose.override.yml.`,
       ).toBe(true);
@@ -118,6 +141,71 @@ describe('brain-core override ↔ main compose', () => {
             : `only tika/browser may carry "helpers"; everything else is full-shape only.`),
       ).toBe(wantHelpers ? '["full", "helpers"]' : '["full"]');
     }
+  });
+
+  // The back-compat contract of the split + P4: a bare `docker compose up -d`
+  // on an existing box must start EXACTLY the set it always has. A `profiles:`
+  // key added to any of these in docker-compose.yml would silently stop that
+  // service on every deployed box at its next update — compose gives no
+  // warning. Removing a name from this list is therefore a fleet-visible act;
+  // do it only alongside the deploy note that announces it.
+  it(`${COMPOSE}'s default (profile-less) service set is exactly the fleet shape`, () => {
+    const DEFAULT_SERVICES = [
+      'postgres',
+      'minio',
+      'createbuckets',
+      'tika',
+      'browser',
+      'tailscale',
+      'migrate',
+      'web',
+      'caddy',
+      'updater',
+      'autoheal',
+      'api',
+      'worker_email',
+      'worker_telegram',
+      'worker_microsoft',
+      'worker_files',
+      'worker_docs',
+      'worker_events',
+      'worker_calendar',
+      'worker_maintenance',
+      'worker_runs',
+      'worker_push',
+    ];
+    const profiled = new Set(profiledServices(COMPOSE));
+    const defaults = composeServices(COMPOSE).filter((s) => !profiled.has(s));
+    expect(
+      defaults.sort(),
+      `${COMPOSE}'s profile-less services changed. A service gaining a profiles: key ` +
+        `silently stops on every existing box; a brand-new default service starts ` +
+        `everywhere. Both are deliberate fleet decisions — update this pin in the same ` +
+        `change, with a deploy note.`,
+    ).toEqual([...DEFAULT_SERVICES].sort());
+  });
+
+  it(`${COMPOSE_CORE} gates exactly the doc helpers + the six channel workers`, () => {
+    // The core shape's OFF list is as load-bearing as the main file's ON list:
+    // gating a data-spine service (postgres, web, migrate…) here would brick
+    // every core box, and quietly UN-gating a channel worker would put LLM-
+    // spending workers back on 4 GB boxes.
+    const GATED = [
+      'tika',
+      'browser',
+      'worker_email',
+      'worker_telegram',
+      'worker_microsoft',
+      'worker_calendar',
+      'worker_push',
+      'worker_runs',
+    ];
+    expect(
+      composeServices(COMPOSE_CORE).sort(),
+      `${COMPOSE_CORE} must gate exactly the doc helpers (tika, browser) and the six ` +
+        `channel workers — nothing from the data spine, nothing more, nothing less. ` +
+        `Changing the core shape is a deliberate decision; update this pin with it.`,
+    ).toEqual([...GATED].sort());
   });
 });
 

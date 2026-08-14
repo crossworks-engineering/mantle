@@ -73,43 +73,5 @@ jobs:
       - name: Build (server/web)
         run: pnpm -C server/web build
 
-  # The e2e regression net for the server/client split (e2e/). Boots the
-  # hermetic throwaway stack (pg + minio + browser sidecar on shifted ports),
-  # runs the web app on :3900, and drives the same-origin Playwright project —
-  # real signup/onboarding, pages CRUD, SSE, ?at= assets, share, team token,
-  # PDF export, /app-runtime CORS. The split project runs off-CI against a
-  # two-origin stack (see e2e/README.md).
-  e2e:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.1.2
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 26
-          cache: pnpm
-
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Playwright chromium
-        run: pnpm -C e2e exec playwright install --with-deps chromium
-
-      - name: Run e2e (same-origin, hermetic stack)
-        run: bash e2e/scripts/run-local.sh
-
-      - name: Upload traces on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-artifacts
-          path: |
-            e2e/.artifacts/web.log
-            e2e/test-results/
-          retention-days: 7
+  # The UI e2e suite moved to the jackdaw repo with the frontend (2026-08-13
+  # split); its CI job left with it. Server-side coverage stays in `verify`.

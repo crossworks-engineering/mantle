@@ -87,9 +87,9 @@ Non-negotiables (full detail in the guide):
   persists), don't rewrite the rule.
 - **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
   with **no agent co-authorship trailers** (repo rule, see the root CLAUDE.md; a
-  commit-msg hook strips them); don't push unless asked. `pnpm dev:fe` now runs the
-  owner UI (`client/web`) detached against a deployed brain
-  ([docs/db-less-dev.md](../../docs/db-less-dev.md)), so it browser-checks **client**
+  commit-msg hook strips them); don't push unless asked. The owner UI lives in the
+  jackdaw repo since the 2026-08-13 split and runs detached against a deployed
+  brain (db-less-dev.md there), so it browser-checks **client**
   changes, not this tier. `server/web` runs under `tsx` (`pnpm -C server/web dev`, no
   `next build`); its own render surfaces (`/s` shares, `/print`) need a running brain
   with a DB to view.

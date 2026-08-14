@@ -377,8 +377,10 @@ while true; do
             echo "[updater] ⚠ caddy did not converge — the previous caddy is still serving; see update.log" | tee -a "$SIG/update.log"
           fi
         fi
-        # v0.200+ lockstep: roll the CLIENT stack with the same tag (its compose
-        # reads the same $STACK/.env, so the persisted MANTLE_IMAGE_TAG applies).
+        # Since the repo split the client image floats on its OWN stream: the
+        # client compose pulls MANTLE_CLIENT_IMAGE_TAG (default `latest`,
+        # jackdaw-built) regardless of the server tag requested here. Pin
+        # MANTLE_CLIENT_IMAGE_TAG in $STACK/.env to hold a client version.
         # A failure here is loud but non-fatal to the server roll (already done).
         if [ -f "$STACK/docker-compose.client.yml" ]; then
           echo "[updater] rolling client stack → $TARGET" | tee -a "$SIG/update.log"

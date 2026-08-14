@@ -31,8 +31,9 @@ import { fileURLToPath } from 'node:url';
 import { compress } from 'wawoff2';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-/** Both apps serve a byte-identical library; display-fonts.test.ts asserts it. */
-const APPS = ['client/web', 'server/web'];
+/** The owner UI's copy lives in the jackdaw repo now; its own
+ *  display-fonts.test.ts asserts that library against the registry. */
+const APPS = ['server/web'];
 const LIB = 'public/fonts/library';
 
 const args = process.argv.slice(2);

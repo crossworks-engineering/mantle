@@ -21,10 +21,9 @@ Pre-1.0, the parts mean:
 ## Single source of truth
 
 The root [`package.json`](../package.json) `version` field.
-`server/web/package.json`, `client/web/package.json` and
-`client/desktop/package.json` are kept in lockstep so they never drift (the
-desktop version is what electron-updater compares, drift there stalls
-auto-updates).
+`server/web/package.json` is kept in lockstep so it never drifts. (The owner
+UI and desktop app version on their own stream in the jackdaw repo since the
+2026-08-13 split.)
 
 ## Bumps happen on main, as part of the merge
 
