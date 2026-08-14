@@ -243,20 +243,47 @@ matching deploy bundle.
 >
 > Do them on separate days, verifying in between.
 
-**Routine update** (image only, the common case):
+**The recommended path is the in-app updater** (Settings → Updates): it
+pulls the release, refreshes the release-owned compose files, runs
+migrations, rolls the server stack, then rolls the owner-UI stack to the
+client tag **paired** with that release, and finally refreshes its own
+script. One button, both stacks, tested pairings.
+
+**Routine MANUAL update** — since the 2026-08 repo split there are TWO
+stacks, and a plain `docker compose pull` only touches the first. The
+owner UI lives in `docker-compose.client.yml`, which the default project
+never loads; skip the second command and every container reports healthy
+while your UI silently stays old:
 
 ```bash
 cd mantle
-docker compose pull && docker compose up -d --wait
+bash scripts/db-dump.sh                                   # cheap insurance
+docker compose pull && docker compose up -d --wait        # server stack
+docker compose -f docker-compose.client.yml --project-directory . pull \
+  && docker compose -f docker-compose.client.yml --project-directory . up -d --wait   # owner UI
 ```
 
 Migrations run automatically before the app services restart (the `migrate`
 gate), so a schema-bearing release applies itself. The whole roll is
 ~a minute of downtime.
 
+**Versions: two streams, one pairing.** The server image
+(`mantle-server`) is released from the mantle repo (`vX.Y.Z`); the owner
+UI (`mantle-client`) is released from the
+[jackdaw repo](https://github.com/crossworks-engineering/jackdaw) on its
+own stream (`vA.B.C`). Each server release embeds the client tag it was
+tested with; the in-app updater applies that pairing automatically. For
+manual updates: set `MANTLE_CLIENT_IMAGE_TAG` in `.env` to the paired tag
+from the release notes (leaving it on `latest` takes whatever jackdaw
+built most recently — usually fine, never guaranteed tested against your
+server).
+
 **Pinned versions** (recommended once you depend on it): set
 `MANTLE_IMAGE_TAG=v0.108.0` in `.env`, and update by editing the tag +
 `pull` + `up -d --wait`. `latest` is convenience; pins are reproducible.
+A hand-set `MANTLE_CLIENT_IMAGE_TAG` is honoured by the in-app updater
+too (it only manages the value when it wrote it), so a pinned UI stays
+pinned until you move it.
 
 **When release notes say the compose changed** (new service, new mount):
 download that release's bundle and replace `docker-compose.yml` + `infra/`

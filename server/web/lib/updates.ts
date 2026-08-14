@@ -29,6 +29,42 @@ export type { ComposeStatus, UpdateCheck, UpdaterStatus };
 
 export const RELEASES_REPO = 'crossworks-engineering/mantle';
 export const RELEASES_URL = `https://github.com/${RELEASES_REPO}/releases`;
+/** The owner UI ships from its own repo (and its own version stream) since
+ *  the 2026-08 split — the check watches BOTH, or UI releases are invisible. */
+export const CLIENT_RELEASES_REPO = 'crossworks-engineering/jackdaw';
+export const CLIENT_RELEASES_URL = `https://github.com/${CLIENT_RELEASES_REPO}/releases`;
+
+/** The jackdaw client tag this server build was released against — the
+ *  "release pair". Baked into the image beside the canonical compose files
+ *  (Dockerfile → /app/release/client-tag, from client-pair.tag at the repo
+ *  root); the updater sidecar reads the same file from the TARGET image when
+ *  it rolls. Null in dev checkouts without the file and on pre-pair images. */
+const RELEASE_CLIENT_TAG_PATH =
+  process.env.MANTLE_RELEASE_CLIENT_TAG_PATH ?? '/app/release/client-tag';
+let pairedTagCache: string | null | undefined;
+async function pairedClientTag(): Promise<string | null> {
+  if (pairedTagCache !== undefined) return pairedTagCache;
+  // Candidates: the baked image path, then the repo-root file for source
+  // checkouts — whose relative position depends on who is running (tsx dev
+  // serves from server/web, the test runner from the repo root).
+  for (const p of [
+    RELEASE_CLIENT_TAG_PATH,
+    path.resolve(process.cwd(), '../../client-pair.tag'),
+    path.resolve(process.cwd(), 'client-pair.tag'),
+  ]) {
+    try {
+      const tag = (await fs.readFile(p, 'utf8')).trim();
+      if (/^[A-Za-z0-9._-]+$/.test(tag)) {
+        pairedTagCache = tag;
+        return tag;
+      }
+    } catch {
+      // try the next candidate
+    }
+  }
+  pairedTagCache = null;
+  return null;
+}
 
 const SIGNAL_DIR = process.env.MANTLE_UPDATE_SIGNAL_DIR ?? '/signal';
 /** How long a POSITIVE result (a newer release exists) stays cached. Once true
@@ -64,18 +100,15 @@ export function compareVersions(a: string, b: string): number {
 
 let cachedCheck: UpdateCheck | null = null;
 
-export async function checkForUpdate(force = false): Promise<UpdateCheck> {
-  if (!force && cachedCheck) {
-    // A confirmed update gets the long TTL; "no update" or an error gets the
-    // short one, so a freshly published release isn't masked for hours.
-    const ttl = cachedCheck.updateAvailable ? CHECK_TTL_MS : STALE_TTL_MS;
-    if (Date.now() - new Date(cachedCheck.checkedAt).getTime() < ttl) {
-      return cachedCheck;
-    }
-  }
-  const checkedAt = new Date().toISOString();
+/** Latest release of one repo via the GitHub API. Failure is a value, not a
+ *  throw — each stream degrades independently (a jackdaw rate-limit must not
+ *  hide a mantle release, or vice versa). */
+async function fetchLatestRelease(
+  repo: string,
+  fallbackUrl: string,
+): Promise<{ latest: ReleaseInfo | null; error: string | null }> {
   try {
-    const res = await fetch(`https://api.github.com/repos/${RELEASES_REPO}/releases/latest`, {
+    const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
       headers: {
         accept: 'application/vnd.github+json',
         'user-agent': `mantle/${APP_VERSION}`,
@@ -86,18 +119,13 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
     });
     if (!res.ok) {
       // 404 = no releases published yet — a state, not a failure worth a toast.
-      const error =
-        res.status === 404
-          ? 'No releases published yet.'
-          : `GitHub API: ${res.status} ${res.statusText}`;
-      cachedCheck = {
-        currentVersion: APP_VERSION,
+      return {
         latest: null,
-        updateAvailable: false,
-        checkedAt,
-        error,
+        error:
+          res.status === 404
+            ? 'No releases published yet.'
+            : `GitHub API: ${res.status} ${res.statusText}`,
       };
-      return cachedCheck;
     }
     const body = (await res.json()) as {
       tag_name?: string;
@@ -106,33 +134,48 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
       published_at?: string;
     };
     const tag = body.tag_name ?? '';
-    const latest: ReleaseInfo | null = tag
-      ? {
-          tag,
-          version: tag.replace(/^v/, ''),
-          name: body.name || tag,
-          url: body.html_url ?? RELEASES_URL,
-          publishedAt: body.published_at ?? null,
-        }
-      : null;
-    cachedCheck = {
-      currentVersion: APP_VERSION,
-      latest,
-      updateAvailable: !!latest && compareVersions(latest.version, APP_VERSION) > 0,
-      checkedAt,
-      error: latest ? null : 'Release response carried no tag.',
+    if (!tag) return { latest: null, error: 'Release response carried no tag.' };
+    return {
+      latest: {
+        tag,
+        version: tag.replace(/^v/, ''),
+        name: body.name || tag,
+        url: body.html_url ?? fallbackUrl,
+        publishedAt: body.published_at ?? null,
+      },
+      error: null,
     };
-    return cachedCheck;
   } catch (err) {
-    cachedCheck = {
-      currentVersion: APP_VERSION,
-      latest: null,
-      updateAvailable: false,
-      checkedAt,
-      error: err instanceof Error ? err.message : String(err),
-    };
-    return cachedCheck;
+    return { latest: null, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+export async function checkForUpdate(force = false): Promise<UpdateCheck> {
+  if (!force && cachedCheck) {
+    // A confirmed update gets the long TTL; "no update" or an error gets the
+    // short one, so a freshly published release isn't masked for hours.
+    const ttl = cachedCheck.updateAvailable ? CHECK_TTL_MS : STALE_TTL_MS;
+    if (Date.now() - new Date(cachedCheck.checkedAt).getTime() < ttl) {
+      return cachedCheck;
+    }
+  }
+  const checkedAt = new Date().toISOString();
+  const [server, client, pairedTag] = await Promise.all([
+    fetchLatestRelease(RELEASES_REPO, RELEASES_URL),
+    fetchLatestRelease(CLIENT_RELEASES_REPO, CLIENT_RELEASES_URL),
+    pairedClientTag(),
+  ]);
+  cachedCheck = {
+    currentVersion: APP_VERSION,
+    latest: server.latest,
+    updateAvailable: !!server.latest && compareVersions(server.latest.version, APP_VERSION) > 0,
+    checkedAt,
+    error: server.error,
+    // Whether the INTERFACE is out of date is decided in the browser: only the
+    // client build knows its own version, so this just carries the facts.
+    client: { latest: client.latest, pairedTag, error: client.error },
+  };
+  return cachedCheck;
 }
 
 // ── updater signalling ───────────────────────────────────────────────────────
@@ -286,13 +329,22 @@ export async function readUpdaterLog(maxLines = 60): Promise<string> {
   }
 }
 
-/** Ask the sidecar to update to `target` (an image tag like "v0.20.68", or
- *  "latest"). Validation mirrors the sidecar's own whitelist. */
+/** Ask the sidecar to update. `target` is the SERVER image tag ("v0.20.68" or
+ *  "latest"); `clientTarget` is the owner-UI (jackdaw) tag. Either alone is
+ *  valid: target-only rolls the server and lets the sidecar pair the client
+ *  from the target image; clientTarget-only rolls just the interface.
+ *  Validation mirrors the sidecar's own whitelist. */
 export async function requestUpdate(
-  target: string,
+  target: string | null,
+  clientTarget?: string | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const tag = target.trim();
-  if (!/^[A-Za-z0-9._-]+$/.test(tag)) return { ok: false, error: `invalid tag '${target}'` };
+  const tag = target?.trim() ?? '';
+  const clientTag = clientTarget?.trim() ?? '';
+  if (!tag && !clientTag) return { ok: false, error: 'no update target given' };
+  if (tag && !/^[A-Za-z0-9._-]+$/.test(tag)) return { ok: false, error: `invalid tag '${target}'` };
+  if (clientTag && !/^[A-Za-z0-9._-]+$/.test(clientTag)) {
+    return { ok: false, error: `invalid client tag '${clientTarget}'` };
+  }
   if (!(await updaterAvailable())) {
     return { ok: false, error: 'updater sidecar not available on this deployment' };
   }
@@ -317,7 +369,13 @@ export async function requestUpdate(
   try {
     await fs.writeFile(
       path.join(SIGNAL_DIR, 'request.json'),
-      JSON.stringify({ target: tag, requested_at: new Date().toISOString() }),
+      JSON.stringify({
+        // Key absence IS the signal: the sidecar treats a missing target as
+        // "interface-only" when client_target is present.
+        ...(tag ? { target: tag } : {}),
+        ...(clientTag ? { client_target: clientTag } : {}),
+        requested_at: new Date().toISOString(),
+      }),
       'utf8',
     );
     return { ok: true };

@@ -42,6 +42,12 @@ no source tree needed on the VPS.
 1. **tag & push** (Mac). `pnpm version:bump <patch|minor|major>` (by change
    extent), commit the `release: vX.Y.Z`, `git tag vX.Y.Z`, `git push origin main
    vX.Y.Z`. The **tag push is the publish trigger**: nothing ships until it lands.
+   `client-pair.tag` at the repo root names the jackdaw client tag this release
+   is tested with — the updater rolls the owner UI to it. When a new jackdaw
+   release should reach the fleet, bump this file and cut a (patch) mantle
+   release; that IS the distribution mechanism. (The reverse order at a
+   contract change: mantle first — the tag publishes the npm contracts — then
+   jackdaw pins them, then the NEXT mantle release records the new pair.)
 2. **CI builds** ([`release.yml`](../.github/workflows/release.yml), fires on
    `v*`): builds amd64 + arm64 in parallel, pushes one multi-arch manifest tagged
    **both** `:vX.Y.Z` and `:latest`, then cuts a GitHub Release with generated
@@ -130,6 +136,18 @@ Then smoke-test the surface the release actually changed in the browser (and
   `grep MANTLE_IMAGE_TAG .env` before pulling; if it names a version, bump it
   or `pull` re-fetches the old one and `up -d` is a no-op that looks like
   success.
+- **The client tag is paired, not lockstep (post-split).** The owner UI
+  versions on jackdaw's own stream; each server image embeds the client tag it
+  was tested with (`/app/release/client-tag`). The updater applies that pairing
+  and records what it set in `data/update-signal/client-tag.auto`; a
+  `MANTLE_CLIENT_IMAGE_TAG` it did NOT write is treated as a user pin and left
+  alone. Manual rolls: set the paired tag yourself before step 3b, or the
+  client compose resolves `latest`.
+- **status.json keeps the PREVIOUS run's result until the new run claims it.**
+  Polling for `"phase":"done"` right after writing `request.json` can match the
+  LAST update's terminal status and report success for a roll that hasn't
+  started. Match the TARGET VERSION in the status line, and confirm with the
+  image tags (the Verify block) — never the phase alone.
 - **Compose is release-owned (v0.142+)**: updates driven by the in-app
   **updater** auto-refresh a pristine `docker-compose.yml` from the target
   image, so compose-level changes (new services, healthchecks, mounts) land

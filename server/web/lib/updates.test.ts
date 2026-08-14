@@ -24,20 +24,26 @@ const bumpMajor = (v: string): string => {
 };
 
 let nextTag: string;
+/** SERVER-repo release fetches only. One check hits GitHub once per repo
+ *  (mantle + jackdaw since the split); the TTL contract under test is "how
+ *  often does a CHECK happen", so we count checks via the mantle call and let
+ *  the jackdaw call answer separately. */
 let fetchCount: number;
 
 function stubFetch() {
   fetchCount = 0;
-  vi.stubGlobal('fetch', async () => {
-    fetchCount += 1;
+  vi.stubGlobal('fetch', async (url: unknown) => {
+    const isServerRepo = String(url).includes('/mantle/');
+    if (isServerRepo) fetchCount += 1;
+    const tag = isServerRepo ? nextTag : 'v0.0.1';
     return {
       ok: true,
       status: 200,
       statusText: 'OK',
       json: async () => ({
-        tag_name: nextTag,
-        name: nextTag,
-        html_url: `https://example.test/${nextTag}`,
+        tag_name: tag,
+        name: tag,
+        html_url: `https://example.test/${tag}`,
         published_at: '2026-06-30T15:17:39Z',
       }),
     } as unknown as Response;
@@ -78,6 +84,19 @@ describe('checkForUpdate cache TTL', () => {
     expect(r.updateAvailable).toBe(true);
     expect(r.latest?.tag).toBe(nextTag);
     expect(fetchCount).toBe(2);
+  });
+
+  it('carries the jackdaw (interface) stream beside the server stream', async () => {
+    const { checkForUpdate } = await import('./updates');
+    nextTag = `v${APP_VERSION}`;
+    const r = await checkForUpdate(true);
+    // The client stream is data, not a verdict: only the browser knows which
+    // interface build it runs, so no updateAvailable is computed here.
+    expect(r.client?.latest?.tag).toBe('v0.0.1');
+    expect(r.client?.error).toBeNull();
+    // The release pair (client-pair.tag at the repo root in dev, baked into
+    // the image in prod) resolves to a plausible tag.
+    expect(r.client?.pairedTag).toMatch(/^v\d/);
   });
 
   it('keeps a positive result cached past the short TTL (long TTL applies)', async () => {

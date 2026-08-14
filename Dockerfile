@@ -150,6 +150,12 @@ COPY docker-compose.client.yml /app/release/docker-compose.client.yml
 COPY docker-compose.core.yml /app/release/docker-compose.core.yml
 COPY infra/caddy/Caddyfile /app/release/Caddyfile
 COPY infra/updater/updater.sh /app/release/updater.sh
+# The jackdaw client tag this server release was tested against (the "release
+# pair"). The updater reads it from the TARGET image during a roll and moves
+# the client stack to it — the client image versions on its own stream since
+# the repo split, so without this the client either floats on :latest
+# (untested pairings) or sits on a hand pin forever (no UI updates).
+COPY client-pair.tag /app/release/client-tag
 EXPOSE 3000
 # `pnpm … exec` (NOT the run-script form): `pnpm run start` interposes an
 # `sh -c` layer that swallows SIGTERM, so compose stop/update would never reach

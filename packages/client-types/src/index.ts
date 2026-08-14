@@ -1929,6 +1929,18 @@ export type UpdateCheck = {
   checkedAt: string;
   /** Set when the check itself failed (network, rate limit, no releases yet). */
   error: string | null;
+  /** The owner-UI (jackdaw) release stream — versioned separately since the
+   *  repo split. `latest` is jackdaw's newest release; `pairedTag` is the
+   *  client tag THIS server release was tested with (from the release-pair
+   *  file baked into the image). The server cannot know which client build a
+   *  browser is running, so "is an interface update available" is computed by
+   *  the client itself against its own APP_VERSION. Absent on servers that
+   *  predate the field. */
+  client?: {
+    latest: ReleaseInfo | null;
+    pairedTag: string | null;
+    error: string | null;
+  } | null;
 };
 
 export type UpdaterStatus = {

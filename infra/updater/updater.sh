@@ -188,6 +188,71 @@ refresh_compose() {
   fi
 }
 
+# ── release pair: which owner-UI tag rides with a server roll ────────────────
+# Since the repo split the client image versions on its OWN stream (built by
+# the jackdaw repo). Each server image embeds the client tag it was released
+# against at /app/release/client-tag; a server roll moves the client to that
+# tag so the pair a user runs is always one that was tested together.
+
+# persist_env <name> <value> — upsert one var in $STACK/.env. Temp-file
+# rewrite, not `sed -i` (busybox/BSD flag drift). Values reach here only via
+# the tag whitelist, so the sed pattern needs no escaping.
+persist_env() {
+  if grep -q "^$1=" "$STACK/.env" 2>/dev/null; then
+    sed "s|^$1=.*|$1=$2|" "$STACK/.env" > "$STACK/.env.updater-tmp" \
+      && mv "$STACK/.env.updater-tmp" "$STACK/.env"
+  else
+    printf '\n%s=%s\n' "$1" "$2" >> "$STACK/.env"
+  fi
+}
+
+# read_paired_tag — the embedded client tag of $IMG (already pulled). Empty on
+# pre-pair images or extraction failure; sanitized against the tag whitelist
+# because it feeds persist_env and a compose pull.
+read_paired_tag() {
+  rpt_out="$SIG/.client-tag.tmp"; rm -f "$rpt_out"
+  rpt_cid=$(docker create "$IMG" 2>> "$SIG/update.log") || return 0
+  docker cp "$rpt_cid:/app/release/client-tag" "$rpt_out" >> "$SIG/update.log" 2>&1
+  docker rm "$rpt_cid" > /dev/null 2>&1
+  rpt_tag=$(head -1 "$rpt_out" 2>/dev/null | tr -d ' \r\n'); rm -f "$rpt_out"
+  case "$rpt_tag" in *[!A-Za-z0-9._-]*) rpt_tag="" ;; esac
+  printf '%s' "$rpt_tag"
+}
+
+# resolve_client_tag — pick the tag for this roll's client stack and persist
+# it. Sets CLIENT_ROLL_TAG ("" = leave the box's current behaviour alone).
+#
+# Precedence: an explicit client_target in the request wins; otherwise a USER
+# pin in .env is honoured and left untouched; otherwise the target image's
+# paired tag. "User pin" is detected by comparison with /signal/client-tag.auto
+# — the last value THIS script wrote. A value we wrote is ours to manage; a
+# value we didn't is the owner holding the UI still, which pairing must not
+# steamroll. Chosen values are persisted to .env (so a later manual
+# `docker compose up` doesn't fall back to :latest and roll the UI by
+# accident) and recorded in client-tag.auto.
+resolve_client_tag() {
+  CLIENT_ROLL_TAG=""
+  rct_env=$(sed -n 's/^MANTLE_CLIENT_IMAGE_TAG=//p' "$STACK/.env" 2>/dev/null | head -1)
+  rct_auto=$(head -1 "$SIG/client-tag.auto" 2>/dev/null | tr -d ' \r\n')
+  if [ -n "$CLIENT_TARGET" ]; then
+    CLIENT_ROLL_TAG="$CLIENT_TARGET"
+    echo "[updater] client tag: $CLIENT_ROLL_TAG (requested)" | tee -a "$SIG/update.log"
+  elif [ -n "$rct_env" ] && [ "$rct_env" != "$rct_auto" ]; then
+    echo "[updater] client tag: $rct_env (pinned in .env — leaving it)" | tee -a "$SIG/update.log"
+    return
+  else
+    CLIENT_ROLL_TAG=$(read_paired_tag)
+    if [ -n "$CLIENT_ROLL_TAG" ]; then
+      echo "[updater] client tag: $CLIENT_ROLL_TAG (paired with $TARGET)" | tee -a "$SIG/update.log"
+    else
+      echo "[updater] client tag: no pair file in the target image — keeping current behaviour" | tee -a "$SIG/update.log"
+      return
+    fi
+  fi
+  persist_env MANTLE_CLIENT_IMAGE_TAG "$CLIENT_ROLL_TAG"
+  printf '%s\n' "$CLIENT_ROLL_TAG" > "$SIG/client-tag.auto"
+}
+
 # ── release-owned updater: self-refresh ──────────────────────────────────────
 # THIS SCRIPT is bind-mounted from the box and was, until v0.206, the one
 # release-owned file nothing ever refreshed. A box whose infra/ predated a
@@ -291,11 +356,20 @@ fi
 while true; do
   if [ -f "$SIG/request.json" ]; then
     TARGET=$(sed -n 's/.*"target"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SIG/request.json" | head -1)
+    # `client_target` (not `target`) names the owner-UI (jackdaw) tag. Present
+    # WITH target: roll both, client to exactly this tag. Present WITHOUT
+    # target: interface-only update, the server stack is not touched.
+    CLIENT_TARGET=$(sed -n 's/.*"client_target"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SIG/request.json" | head -1)
     rm -f "$SIG/request.json"
-    [ -n "$TARGET" ] || TARGET=latest
+    # No target at all (legacy request shape) still means "server → latest";
+    # but a request naming ONLY the client must not drag the server anywhere.
+    if [ -z "$TARGET" ] && [ -z "$CLIENT_TARGET" ]; then TARGET=latest; fi
     # Tag whitelist — the only externally-controlled input that reaches a command.
     case "$TARGET" in
       *[!A-Za-z0-9._-]*) write_status error "$TARGET" "$(now)" "$(now)" false "invalid tag"; continue ;;
+    esac
+    case "$CLIENT_TARGET" in
+      *[!A-Za-z0-9._-]*) write_status error "$CLIENT_TARGET" "$(now)" "$(now)" false "invalid client tag"; continue ;;
     esac
 
     # Re-check config at request time. A request that lands while we're
@@ -304,6 +378,41 @@ while true; do
     if [ -n "$CFG_ERR" ]; then
       write_status error "$TARGET" "$(now)" "$(now)" false "updater not configured: $CFG_ERR"
       echo "[updater] rejected request → $TARGET (not configured: $CFG_ERR)" >&2
+      continue
+    fi
+
+    # ── interface-only update (client_target with no server target) ─────────
+    if [ -z "$TARGET" ]; then
+      STARTED=$(now)
+      : > "$SIG/update.log"
+      write_status pulling "$CLIENT_TARGET" "$STARTED" "" null ""
+      echo "[updater] interface-only update requested → $CLIENT_TARGET" | tee -a "$SIG/update.log"
+      CLIENT_ON=$(grep -E '^MANTLE_CLIENT_ENABLED=' "$STACK/.env" 2>/dev/null | head -1 | cut -d= -f2-)
+      if [ "$CLIENT_ON" = "0" ]; then
+        write_status error "$CLIENT_TARGET" "$STARTED" "$(now)" false "client stack disabled (MANTLE_CLIENT_ENABLED=0)"
+        continue
+      fi
+      if [ ! -f "$STACK/docker-compose.client.yml" ]; then
+        write_status error "$CLIENT_TARGET" "$STARTED" "$(now)" false "no client compose on this box"
+        continue
+      fi
+      # Persist first for the same reason the server path does: a later manual
+      # `docker compose up` must re-resolve to THIS tag, not fall back to
+      # :latest. Recorded as auto-managed — it arrived through the managed path.
+      persist_env MANTLE_CLIENT_IMAGE_TAG "$CLIENT_TARGET"
+      printf '%s\n' "$CLIENT_TARGET" > "$SIG/client-tag.auto"
+      if docker compose -f "$STACK/docker-compose.client.yml" --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1; then
+        write_status rolling "$CLIENT_TARGET" "$STARTED" "" null ""
+        if docker compose -f "$STACK/docker-compose.client.yml" --project-directory "$STACK" up -d --remove-orphans >> "$SIG/update.log" 2>&1; then
+          write_status done "$CLIENT_TARGET" "$STARTED" "$(now)" true ""
+          echo "[updater] done → interface $CLIENT_TARGET" | tee -a "$SIG/update.log"
+        else
+          write_status error "$CLIENT_TARGET" "$STARTED" "$(now)" false "client compose up failed — see update.log"
+        fi
+      else
+        write_status error "$CLIENT_TARGET" "$STARTED" "$(now)" false "client compose pull failed — see update.log"
+      fi
+      write_stack_info
       continue
     fi
 
@@ -377,10 +486,11 @@ while true; do
             echo "[updater] ⚠ caddy did not converge — the previous caddy is still serving; see update.log" | tee -a "$SIG/update.log"
           fi
         fi
-        # Since the repo split the client image floats on its OWN stream: the
-        # client compose pulls MANTLE_CLIENT_IMAGE_TAG (default `latest`,
-        # jackdaw-built) regardless of the server tag requested here. Pin
-        # MANTLE_CLIENT_IMAGE_TAG in $STACK/.env to hold a client version.
+        # The client image versions on its OWN stream since the repo split.
+        # resolve_client_tag picks what rides with this roll — the request's
+        # explicit client_target, else a user pin in .env (honoured), else the
+        # tag PAIRED with $TARGET read from the target image — and persists it
+        # to .env before the compose pull below resolves the image name.
         # A failure here is loud but non-fatal to the server roll (already done).
         # A headless box (MANTLE_CLIENT_ENABLED=0, install.sh --no-client)
         # runs no owner UI — rolling it would resurrect a deliberately
@@ -389,7 +499,8 @@ while true; do
         if [ "$CLIENT_ON" = "0" ]; then
           echo "[updater] client stack disabled (MANTLE_CLIENT_ENABLED=0) — skipping client roll" | tee -a "$SIG/update.log"
         elif [ -f "$STACK/docker-compose.client.yml" ]; then
-          echo "[updater] rolling client stack → $TARGET" | tee -a "$SIG/update.log"
+          resolve_client_tag
+          echo "[updater] rolling client stack" | tee -a "$SIG/update.log"
           if ! docker compose -f "$STACK/docker-compose.client.yml" --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1 \
             || ! docker compose -f "$STACK/docker-compose.client.yml" --project-directory "$STACK" up -d --remove-orphans >> "$SIG/update.log" 2>&1; then
             write_status error "$TARGET" "$STARTED" "$(now)" false "server rolled OK but CLIENT stack roll failed — see update.log"
