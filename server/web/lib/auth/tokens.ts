@@ -18,8 +18,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { SESSION_COOKIE_NAME } from '../auth-constants';
 
-/** The `k` claim: mobile bearer, asset token, team visitor, team chat. */
-type TokenKind = 'm' | 'a' | 't' | 'c';
+/** The `k` claim: mobile bearer, asset token, team visitor, team chat, app frame. */
+type TokenKind = 'm' | 'a' | 't' | 'c' | 'f';
 
 /**
  * Claims whose signature, kind and expiry have already been checked. Every
@@ -279,6 +279,49 @@ export function verifyTeamChatValue(value: string): { ownerId: string; contactId
   const claims = verifySigned(value, 'c');
   if (!claims || typeof claims.own !== 'string' || typeof claims.cid !== 'string') return null;
   return { ownerId: claims.own, contactId: claims.cid };
+}
+
+// ── App-frame tickets (`k:'f'`) ──────────────────────────────────────────────
+// The mini-app sandbox iframe navigates to a real URL (/api/apps/[id]/frame or
+// /s/[token]/frame) instead of an inlined srcdoc. That navigation can carry NO
+// credential: the iframe is sandboxed without allow-same-origin (opaque origin
+// ⇒ no cookies), and an iframe src can't attach a bearer header. So the parent
+// — which CAN authenticate (session cookie, share visitor cookie, or the split
+// client's bearer) — mints this ticket first and puts it in the frame URL
+// (`?t=`). Delivered in a URL, so the TTL is seconds, not hours: it outlives
+// one navigation and nothing else. Claims bind the ticket to ONE app (and, on
+// the share surface, ONE share), so a leaked ticket can serve exactly one
+// app's already-built bundle for a few seconds and can never escalate — the
+// session/mobile/asset verifiers all reject kind 'f'.
+
+const APP_FRAME_TICKET_TTL_SECONDS = 120;
+
+/** Mint an app-frame ticket. `shareId` set ⇒ share surface (published build
+ *  only); absent ⇒ owner surface (`uid` = the owner, draft build allowed). */
+export function buildAppFrameTicket(opts: {
+  ownerId: string;
+  appId: string;
+  shareId?: string;
+}): string {
+  const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
+  if (opts.shareId) claims.sh = opts.shareId;
+  return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
+}
+
+/** Verify an app-frame ticket: signature, expiry, kind (`k:'f'`). No DB —
+ *  callers must still confirm the app (and share, when `shareId` is set)
+ *  matches the route being served. */
+export function verifyAppFrameTicket(
+  value: string,
+): { ownerId: string; appId: string; shareId?: string } | null {
+  const claims = verifySigned(value, 'f');
+  if (!claims || typeof claims.uid !== 'string' || typeof claims.app !== 'string') return null;
+  const out: { ownerId: string; appId: string; shareId?: string } = {
+    ownerId: claims.uid,
+    appId: claims.app,
+  };
+  if (typeof claims.sh === 'string') out.shareId = claims.sh;
+  return out;
 }
 
 /**

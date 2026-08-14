@@ -21,6 +21,7 @@
     "./task-presenter": "./src/task-presenter.tsx",
     "./view-payload": "./src/view-payload.ts",
     "./app-sandbox": "./src/app-sandbox.tsx",
+    "./app-frame-html": "./src/app-frame-html.ts",
     "./app-bridge-protocol": "./src/app-bridge-protocol.ts",
     "./ui/button": "./src/ui/button.tsx",
     "./ui/input": "./src/ui/input.tsx",

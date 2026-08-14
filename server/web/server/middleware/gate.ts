@@ -42,7 +42,14 @@ function isAssetPath(path: string): boolean {
  *  treatment as /api/** — and ONLY they: the /s/<token> HTML page and the
  *  remaining sub-paths (auth, a/, evaluate) stay same-origin cookie surfaces
  *  with no CORS headers at all. */
-const SHARE_BROKER_RE = /^\/s\/[^/]+\/(bundle(\/css)?|tool-broker|db-broker|view|rows)$/;
+const SHARE_BROKER_RE =
+  /^\/s\/[^/]+\/(bundle(\/css)?|frame-ticket|tool-broker|db-broker|view|rows)$/;
+
+/** The owner-surface sandbox frame document. Its iframe navigation carries no
+ *  cookie (sandboxed, opaque origin) — auth is the seconds-lived `?t=` frame
+ *  ticket (kind 'f'), accepted for THIS path shape only; the route re-verifies
+ *  and binds the ticket to the app id. Mirrors the `?at=` asset-path carve. */
+const OWNER_FRAME_RE = /^\/api\/apps\/[^/]+\/frame$/;
 
 /** Old middleware matcher exclusion: bare image paths never hit the gate. */
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
@@ -171,6 +178,16 @@ export function gate(): MiddlewareHandler {
     if (isAssetPath(path) && req.method === 'GET') {
       const at = url.searchParams.get('at');
       if (at && (await verifySignedToken(at, secret)) && tokenKind(at) === 'a') {
+        return proceed();
+      }
+    }
+
+    // The sandbox frame document navigates with a `?t=` frame ticket — same
+    // can't-carry-a-credential shape as the asset paths above, same narrow
+    // acceptance: this path only, GET only, kind 'f' only.
+    if (OWNER_FRAME_RE.test(path) && req.method === 'GET') {
+      const t = url.searchParams.get('t');
+      if (t && (await verifySignedToken(t, secret)) && tokenKind(t) === 'f') {
         return proceed();
       }
     }

