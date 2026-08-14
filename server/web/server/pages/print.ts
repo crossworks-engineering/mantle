@@ -7,67 +7,6 @@ import { jsonForScript } from '@/lib/json-script';
 import { loadAppearanceAttrs } from './appearance';
 
 /**
- * Upgrades diagram degrade blocks to real Mermaid SVG *inside the PDF
- * sidecar's Chromium* — the print page is already a real browser, so it does
- * the render itself; no second pipeline, and nothing is stored or inlined
- * server-side (the SVG becomes pixels in the PDF).
- *
- * Static script, no interpolated user data: each block's source is read back
- * from the degrade markup's <pre><code> textContent (the DOM un-escapes it).
- * Theme comes from the page's own resolved CSS tokens via the shared map in
- * @mantle/web-ui/mermaid-theme, which the in-editor NodeView also calls — this
- * script can't import, so it reads it off globalThis (see
- * server/islands/diagram-theme.ts). `<html>` never carries `dark` here, so the
- * map resolves light tokens, which is what a forced-light PDF wants. On any
- * failure the source block simply stays. `data-diagrams-ready` on <html> is
- * the completion signal lib/render-pdf.ts waits for; it is set on success,
- * failure, and the no-mermaid path alike so the PDF wait can never hang.
- */
-const DIAGRAM_PRINT_SCRIPT = `
-(async () => {
-  const done = () => document.documentElement.setAttribute('data-diagrams-ready', '1');
-  try {
-    const blocks = Array.from(document.querySelectorAll('.diagram[data-diagram-source]'));
-    if (!blocks.length || typeof mermaid === 'undefined') return done();
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: 'strict',
-      theme: 'base',
-      // The ONE token map, shared with the in-app NodeView — bundled to
-      // share-runtime/diagram-theme.js because this script can't import.
-      // Absent (a stale share-runtime build), base's own defaults render
-      // rather than nothing.
-      themeVariables:
-        typeof mantleMermaidTheme === 'function' ? mantleMermaidTheme() : undefined,
-      // BOTH levels: v11 flowchart only honours the top-level flag.
-      htmlLabels: false,
-      flowchart: { htmlLabels: false },
-      // Invalid source keeps its labelled source block — never mermaid's
-      // injected bomb/"Syntax error" graphic in the PDF.
-      suppressErrorRendering: true,
-    });
-    let seq = 0;
-    for (const el of blocks) {
-      const code = el.querySelector('pre code');
-      const src = ((code && code.textContent) || '').trim();
-      if (!src) continue;
-      try {
-        const { svg } = await mermaid.render('print-diagram-' + ++seq, src);
-        const host = document.createElement('div');
-        host.className = 'diagram-render';
-        host.innerHTML = svg;
-        el.replaceWith(host);
-      } catch (e) {
-        /* invalid source: the labelled source block stays in the PDF */
-      }
-    }
-  } finally {
-    done();
-  }
-})();
-`;
-
-/**
  * Owner-only print surface for a Page (port of app/print/pages/[id]) — no app
  * chrome, just the content in the shared `.ProseMirror .prose` container so it
  * reuses the editor CSS from the compiled share-runtime stylesheet. Headless
@@ -152,12 +91,9 @@ export function mountPrint(app: Hono): void {
     });
     const widthClass = page.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl';
 
-    // Diagram blocks render client-side in the sidecar's Chromium (script
-    // above). The script tag carries data-diagram-print so render-pdf can tell
-    // "no diagrams on this page" from "diagrams still rendering".
-    const diagramScripts = html.includes('data-diagram-source')
-      ? `<script src="/share-runtime/mermaid.min.js"></script><script src="/share-runtime/diagram-theme.js"></script><script data-diagram-print>${DIAGRAM_PRINT_SCRIPT}</script>`
-      : '';
+    // Legacy `diagram` blocks print as their degrade markup (a labelled source
+    // block) — the Mermaid engine was retired 2026-08; render-pdf's wait
+    // tolerates the missing data-diagram-print script and passes immediately.
 
     return c.html(
       htmlPage(
@@ -176,7 +112,7 @@ export function mountPrint(app: Hono): void {
         },
         // WYSIWYG: render only the page content — no injected page-name
         // heading, matching the public share surface and the Markdown export.
-        `<article class="ProseMirror prose prose-accent prose-document mx-auto ${widthClass} px-10 py-8"><div>${html}</div></article>${diagramScripts}`,
+        `<article class="ProseMirror prose prose-accent prose-document mx-auto ${widthClass} px-10 py-8"><div>${html}</div></article>`,
       ),
     );
   });

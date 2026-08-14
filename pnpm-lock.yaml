@@ -1238,9 +1238,6 @@ importers:
       mcp-handler:
         specifier: ^1.1.0
         version: 1.1.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
-      mermaid:
-        specifier: 11.16.0
-        version: 11.16.0
       pdf-to-png-converter:
         specifier: ^4.1.1
         version: 4.1.1

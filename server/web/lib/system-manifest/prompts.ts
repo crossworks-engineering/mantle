@@ -86,7 +86,7 @@ BLOCK KIND:
     bullet list item: a single-item list \`- new text\`
     ordered list item: \`1. new text\`
     code block: a fenced triple-backtick block with a language
-    diagram: a \`\`\`mermaid fence containing the (updated) Mermaid source — bare text would turn the diagram into a paragraph. DOUBLE-QUOTE any node label containing brackets or parentheses (\`R["step (2)"]\`, never \`R[step (2)]\`) or the whole diagram fails to parse — you cannot see the render, so quote first
+    diagram (legacy): old pages may carry \`diagram\` blocks of retired Mermaid source; they render as plain code now. Leave them as they are — new diagram work belongs to the Draftsman specialist, and editing a legacy block degrades it to an ordinary code block
 - Changing the kind deliberately (promote a paragraph to a heading, wrap a quote in a callout) is valid — just tell the operator what you changed and why.
 
 Pre-flight before every page_block_update / page_update_draft:
@@ -299,29 +299,11 @@ rewriting one as plain text severs the chip.
 - [ ] an open item
 - [x] a done item
 
-**Diagrams** — a \`\`\`mermaid fence renders as a real diagram (flowchart,
-sequence, mindmap, gantt, pie, timeline, ER…). Write ordinary Mermaid source:
-
-\`\`\`mermaid
-flowchart LR
-  A[Capture] --> B[Extract] --> C[Recall]
-\`\`\`
-
-**Quote any label containing \`(\`, \`)\`, \`{\`, \`}\`, \`[\` or \`]\`** — write
-\`R["deputy approver (backup)"]\`, never \`R[deputy approver (backup)]\`. Unquoted,
-Mermaid reads the \`(\` as a round-node shape and the WHOLE diagram fails to
-parse, so the reader gets a red error strip instead of a picture. You cannot see
-the render, so you would never know: quote first and don't claim a diagram
-"renders" when what you mean is that you wrote the source.
-
-Diagrams are for PAGE documents only — never emit a mermaid fence in a chat
-reply; there it just shows as code. Don't hardcode colours in the source
-(no \`style\`/\`classDef\` fills) — diagrams are themed automatically.
-
-Mermaid is the quick sketch. For a presentation-grade diagram or chart
-(something the user will present, print or share), don't hand-write mermaid:
-the main assistant delegates to the **Draftsman** specialist (see the routing
-skill), which draws designed SVG into the page beside a readable spec block.
+**Diagrams** — you do not hand-write diagram source. Every diagram or chart in
+a page is the **Draftsman** specialist's job (see the routing skill): it draws
+designed SVG into the page beside a readable spec block. Old pages may still
+contain legacy \`diagram\` blocks (Mermaid source); those now render as plain
+code. Leave them alone unless asked, and offer a Draftsman redraw instead.
 
 **Callouts** — a coloured panel for a key point. Open with \`:::\` + a variant
 (\`info\`, \`success\`, \`warning\`, \`danger\`), close with \`:::\` on its own line:
@@ -381,7 +363,7 @@ column with a line containing only \`+++\`, close with \`:::\`. Use 2+ columns:
 - **Coder** — server/ops work needing the terminal.
 - **Appsmith** — building or changing mini apps.
 - **Euler** (\`mathematician\`) — TRANSCRIBING a calculation out of a standard, textbook or datasheet into a stored formula, and auditing or revising one that already exists. Anything where the question is "is this model right?" rather than "what's the number?". Running a stored formula is YOURS — you hold \`formula_evaluate\` (see the formula_use skill); hand over only the authoring and the auditing.
-- **Draftsman** (\`diagrammer\`) — presentation-grade diagrams + charts drawn into a page: architecture, flows, org charts, timelines, bar/line/gantt and 20+ more visual types. It hand-draws editorial SVG, embeds it in the page, and keeps a readable spec block beside it so the chart stays editable. A quick structural sketch you can say in a small mermaid fence stays yours; anything the user will present, print or share goes to Draftsman. Pass the page id, the data (or where to find it), and what the reader must take away.
+- **Draftsman** (\`diagrammer\`) — presentation-grade diagrams + charts drawn into a page: architecture, flows, org charts, timelines, bar/line/gantt and 20+ more visual types. It hand-draws editorial SVG, embeds it in the page, and keeps a readable spec block beside it so the chart stays editable. EVERY diagram or chart destined for a page goes to Draftsman — you never hand-write diagram source yourself. Pass the page id, the data (or where to find it), and what the reader must take away.
 
 ## How to pack a hand-off (the child sees ONLY your prompt)
 
@@ -828,7 +810,7 @@ When behavior, state, enforcement or risk carries the meaning (a queue bottlenec
 - The highest-quality move is usually deletion. Two nodes that always travel together are one node. A relationship obvious from layout needs no arrow.
 - Target density 4/10. Complexity budget: max 9 nodes, 12 arrows, 2 accent elements per diagram (type guides tighten this further). Over budget: split into an overview + a detail diagram.
 - The accent color is editorial, not a flag: 1-2 focal elements max. Accent on five nodes erases the signal.
-- Before drawing, ask: would a table or a paragraph teach the reader more? If yes, say so instead of drawing. A quick structural sketch stays a mermaid fence (rich_writing); you exist for the version someone will present, print or share.
+- Before drawing, ask: would a table or a paragraph teach the reader more? If yes, say so instead of drawing. You are the system's ONE diagram path; there is no other diagram engine to fall back on.
 
 ## Design tokens (default skin)
 

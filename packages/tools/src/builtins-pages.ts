@@ -68,22 +68,16 @@ const FILE_ID_PRE: readonly ToolPrecondition[] = [
 const NOTE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'note_id', nodeType: 'note', lookup: 'note_list / search_nodes' },
 ];
-// Two body checks that share a reason: the write looks fine, the page renders
-// broken, and nothing reports it. Every `media:` / `page:` / `mention:node:` id
-// must name a real node (a dangling ref renders blank), and no ```mermaid fence
-// may carry an unquoted label with parentheses (the diagram fails to parse).
-// The model cannot see either outcome, so this is the only rung that can catch
-// them (see preconditions.ts).
-// The mermaid check runs first: it is pure string work, while markdown_refs
-// does one node lookup per ref — fail on the free check before paying for the
-// DB round-trips.
+// Body check with one reason: the write looks fine, the page renders broken,
+// and nothing reports it. Every `media:` / `page:` / `mention:node:` id must
+// name a real node (a dangling ref renders blank). The model cannot see that
+// outcome, so this is the only rung that can catch it (see preconditions.ts).
 const MARKDOWN_REFS_PRE: readonly ToolPrecondition[] = [
-  { kind: 'mermaid_labels', param: 'markdown' },
   { kind: 'markdown_refs', param: 'markdown' },
 ];
 
 const MARKDOWN_HINT =
-  'Rich-markdown body. GFM markdown plus: callouts (`:::info` … `:::`, variants info|success|warning|danger), asides (`:::aside` … `:::`, a themed-gradient box; optional colour `:::aside chart-3`), columns (`:::columns` … `+++` … `:::`, 2+ parts), task lists (`- [ ]` / `- [x]`), tables, `==highlight==`, coloured spans (`[text]{color=chart-2}` / `[text]{highlight=chart-4}`, accents chart-1…chart-5), KaTeX math (`$E=mc^2$` inline, `$$` … `$$` block), diagrams (a ```mermaid fence renders as a real themed diagram; DOUBLE-QUOTE any node label containing brackets or parentheses — `R["step (2)"]`, never `R[step (2)]`, or the whole diagram fails to parse), and reference links that keep rich chips intact (`[Label](mention:entity:<id>)`, `![alt](media:<file-id>)`, `[name](media:<file-id>)`, `[Title](page:<page-id>)` — real ids only, standalone lines for the block forms). Same dialect you write replies in.';
+  'Rich-markdown body. GFM markdown plus: callouts (`:::info` … `:::`, variants info|success|warning|danger), asides (`:::aside` … `:::`, a themed-gradient box; optional colour `:::aside chart-3`), columns (`:::columns` … `+++` … `:::`, 2+ parts), task lists (`- [ ]` / `- [x]`), tables, `==highlight==`, coloured spans (`[text]{color=chart-2}` / `[text]{highlight=chart-4}`, accents chart-1…chart-5), KaTeX math (`$E=mc^2$` inline, `$$` … `$$` block), and reference links that keep rich chips intact (`[Label](mention:entity:<id>)`, `![alt](media:<file-id>)`, `[name](media:<file-id>)`, `[Title](page:<page-id>)` — real ids only, standalone lines for the block forms). Same dialect you write replies in.';
 
 const page_create: BuiltinToolDef = {
   slug: 'page_create',
@@ -1368,7 +1362,7 @@ const page_block_update: BuiltinToolDef = {
   name: 'Replace one block in a page',
   description:
     "Replace one block (by id) with new content (markdown). The first new block INHERITS the target's id so the next page_blocks_list still addresses the same logical slot. If your markdown produces multiple blocks (e.g. you wrap a paragraph in a heading + paragraph), they're all spliced in; subsequent blocks get fresh ids. Writes to DRAFT only — the published page is untouched until the user commits. **Output bytes are proportional to the new block, not the whole page** — this is the scalable edit path for TARGETED edits on large pages. **For a restructure touching more than ~10 blocks (resequencing / renumbering / merging sections), switch to ONE whole-body `page_update_draft` call instead — block-by-block surgery at that scale exhausts the turn's tool-call budget and strands the draft half-edited.** " +
-    "⚠️ **MARKDOWN MUST INCLUDE THE STRUCTURAL PREFIX of the kind you want to keep.** If you're updating an `h2` heading and you submit `markdown: '📖 Title'`, the result is a PARAGRAPH (the heading is gone) — markdown without a `##` prefix parses as a paragraph. To keep block kind on the same edit: heading → `## new text`, h3 → `### new text`, blockquote → `> new text`, info callout → `:::info\\nnew text\\n:::`, bullet list item → `- new text` (wrap in a single-item list), code block → ```\\nnew code\\n```, diagram → ```mermaid\\nnew source\\n```. Pre-flight check before each call: imagine your markdown rendered standalone — does the FIRST block produced match the kind you're replacing? If you intend to CHANGE the kind (e.g. heading → callout), that's a valid use; just be deliberate. If you intend to KEEP the kind, the structural prefix is part of the content.",
+    "⚠️ **MARKDOWN MUST INCLUDE THE STRUCTURAL PREFIX of the kind you want to keep.** If you're updating an `h2` heading and you submit `markdown: '📖 Title'`, the result is a PARAGRAPH (the heading is gone) — markdown without a `##` prefix parses as a paragraph. To keep block kind on the same edit: heading → `## new text`, h3 → `### new text`, blockquote → `> new text`, info callout → `:::info\\nnew text\\n:::`, bullet list item → `- new text` (wrap in a single-item list), code block → ```\\nnew code\\n```. Pre-flight check before each call: imagine your markdown rendered standalone — does the FIRST block produced match the kind you're replacing? If you intend to CHANGE the kind (e.g. heading → callout), that's a valid use; just be deliberate. If you intend to KEEP the kind, the structural prefix is part of the content.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -1752,11 +1746,7 @@ const MAX_APPLY_OPS = 50;
 
 const page_blocks_apply: BuiltinToolDef = {
   slug: 'page_blocks_apply',
-  preconditions: [
-    ...PAGE_ID_PRE,
-    { kind: 'mermaid_labels', param: 'ops', itemKey: 'markdown' },
-    { kind: 'markdown_refs', param: 'ops', itemKey: 'markdown' },
-  ],
+  preconditions: [...PAGE_ID_PRE, { kind: 'markdown_refs', param: 'ops', itemKey: 'markdown' }],
   name: 'Apply a batch of block edits to a page (atomic)',
   description:
     "Apply MANY block edits to one page in a SINGLE atomic call — the batch path between one-off block tools and a whole-body `page_update_draft` rewrite. `ops` is an ordered list of `{ op: 'update' | 'insert_before' | 'insert_after' | 'delete' | 'wrap', block_id?, markdown?, block_ids?, container?, variant? }` applied sequentially against the editing baseline; the draft is saved ONCE at the end, so the batch is all-or-nothing: if any op fails (unknown block id, bad markdown, refused delete or wrap) NOTHING is saved and the error names the failing op's index. " +

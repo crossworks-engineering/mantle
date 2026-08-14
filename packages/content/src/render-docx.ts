@@ -328,7 +328,7 @@ function renderBlock(node: PMNode, ctx: DocxCtx): DocxBlock[] {
         }),
       ];
     case 'diagram': {
-      // Slice-1 degrade: Mermaid source as a code block (slice 2 rasterizes to PNG).
+      // LEGACY diagram node (Mermaid retired 2026-08): source as a code block.
       const source = str(node.attrs?.source);
       return source.split('\n').map(
         (line, i) =>

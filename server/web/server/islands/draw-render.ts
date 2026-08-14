@@ -4,9 +4,8 @@
  *
  * Excalidraw cannot run outside a browser: text layout depends on real font
  * metrics (measureText / document.fonts), so there is no Node path that
- * produces a correct drawing. The same trick the mermaid bundle already uses
- * for /print applies here — self-host the browser-only renderer and let the
- * sidecar's real Chromium execute it.
+ * produces a correct drawing. So: self-host the browser-only renderer and let
+ * the sidecar's real Chromium execute it.
  *
  * Deliberately does NOT mount <Excalidraw />. `restore` and `exportToSvg` are
  * standalone functions, so this bundle carries the renderer and roughjs but

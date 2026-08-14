@@ -32,7 +32,6 @@
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { markdownRefs, type MarkdownRef } from '@mantle/content/markdown-refs';
-import { mermaidLabelProblems } from '@mantle/content/mermaid-lint';
 import { notFound } from './errors';
 import type { ToolHandlerResult, ToolPrecondition } from './types';
 
@@ -128,41 +127,6 @@ async function checkMarkdownRefs(
   };
 }
 
-/** Check every ```mermaid fence in a body for the one mistake that ships a
- *  broken diagram silently: an unquoted node label containing parentheses. One
- *  combined error per body, same as the ref check. */
-function checkMermaidLabels(
-  input: Record<string, unknown>,
-  param: string,
-  itemKey: string | undefined,
-): ToolHandlerResult | null {
-  const problems = markdownSources(input, param, itemKey).flatMap((md) => mermaidLabelProblems(md));
-  if (problems.length === 0) return null;
-
-  const quoted = problems
-    .map((p) => {
-      const label = p.label.length > 60 ? `${p.label.slice(0, 60)}…` : p.label;
-      // Echo the node in its OWN shape — rendering a `{diamond}` back as
-      // `[a box]` invites the model to "fix" the shape along with the quotes.
-      return `\`${p.node}${p.open}${label}${p.close}\``;
-    })
-    .join(', ');
-  const where = itemKey ? `'${param}[].${itemKey}'` : `'${param}'`;
-  return {
-    ok: false,
-    error:
-      `${where} has ${problems.length} Mermaid node label${problems.length === 1 ? '' : 's'} ` +
-      `containing parentheses but not wrapped in double quotes: ${quoted}. ` +
-      'Nothing was written. Mermaid reads the `(` as the start of a round-node shape, so the ' +
-      'WHOLE diagram fails to parse and renders as an error strip. Add double quotes JUST ' +
-      'INSIDE the node brackets, keeping the brackets themselves — ' +
-      '`R["deputy approver (backup)"]`, `B{"step (2)?"}` — and re-issue. This applies to a ' +
-      'flagged label anywhere in the body you submitted, including a diagram that was already ' +
-      'on the page: it was broken as stored, so quote it as part of your edit — quoting ' +
-      'changes nothing in the rendered text.',
-  };
-}
-
 /**
  * Check a tool's declared preconditions against the (already coerced) input.
  * Returns a teaching-error result to send back to the model, or null when
@@ -177,11 +141,6 @@ export async function checkToolPreconditions(
   for (const pre of preconditions) {
     if (pre.kind === 'markdown_refs') {
       const failure = await checkMarkdownRefs(input, pre.param, pre.itemKey, ownerId, lookup);
-      if (failure) return failure;
-      continue;
-    }
-    if (pre.kind === 'mermaid_labels') {
-      const failure = checkMermaidLabels(input, pre.param, pre.itemKey);
       if (failure) return failure;
       continue;
     }

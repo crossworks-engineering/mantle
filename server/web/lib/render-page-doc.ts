@@ -218,9 +218,9 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       return `<a class="file-embed" href="${escAttr(href || '#')}" target="_blank" rel="noopener">${name}</a>`;
     }
     case 'diagram': {
-      // Slice-1 degrade: the diagram's Mermaid source as an escaped code block
-      // (never a blank). Slice 2 swaps this for cached, sanitized server-rendered
-      // SVG; until then no markup from the source can pass through.
+      // LEGACY diagram node (Mermaid retired 2026-08): the stored source as an
+      // escaped, labelled code block (never a blank). This is the terminal
+      // render — no client script upgrades it anymore.
       const source = str(node.attrs?.source);
       const id = str(node.attrs?.id);
       const idAttr = id ? ` id="${escAttr(id)}"` : '';

@@ -14,14 +14,14 @@ anything you want findable later. (The assistant can create notes for you too:
 
 ## Journal: who you are
 
-**Journal** are short, first-person notes about *you*; what you do, who's in
+**Journal** are short, first-person notes about _you_; what you do, who's in
 your life, what you're working towards, and how you're feeling; each tagged with
 a **mood** and a **life area** (work, family, faith, health, …). Keep them small
 and honest: a sentence or two per entry.
 
 They're different from Notes in one important way: alongside being searchable like
 everything else, your Journal are distilled into an **always-on identity
-context** the assistant carries into *every* conversation. So once you've logged
+context** the assistant carries into _every_ conversation. So once you've logged
 "I run CrossWorks and I'm building Mantle" or "I'm a father of three," you never
 have to re-explain, the assistant already knows who it's talking to. The more you
 log, the better it understands you.
@@ -34,9 +34,9 @@ The assistant can add entries for you, too: "log that I started a new job today,
 
 **Pages** are Notion-style documents for real writing: headings, **callouts**,
 **asides** (gradient note boxes), multi-**column** layouts, tables, to-do lists,
-code blocks, math, images, and **diagrams**: a `/diagram` block (or a
-```` ```mermaid ```` fence) renders flowcharts, mind maps, sequence diagrams,
-pies, timelines and more from plain Mermaid text, themed to match your palette.
+code blocks, math, images, and **diagrams**: ask the assistant for a chart or
+flow and the diagram specialist draws a designed SVG into the page, with a
+readable spec block beside it so the content stays editable as text.
 The editor has a slash menu (`/`) for inserting blocks and a drag handle for moving
 them. Moving from Notion? **Copy a page as Markdown and paste it straight in** —
 headings, callouts, columns, tables and Notion's `<aside>` callouts all convert
@@ -44,7 +44,7 @@ to real Mantle blocks.
 
 A few things worth knowing:
 
-- **Draft vs publish.** Typing autosaves a *draft* continuously; the page is only
+- **Draft vs publish.** Typing autosaves a _draft_ continuously; the page is only
   re-indexed into the brain when you **commit** it. So editing is cheap and
   indexing is deliberate — a long writing session costs one indexing pass, not
   hundreds.
@@ -57,7 +57,7 @@ A few things worth knowing:
 - **Share.** Any page can be turned into a read-only public link (see
   [sharing] below).
 - **Deep search.** Long pages are indexed in sections, so the assistant can find the
-  *specific passage* you need, not just the whole document.
+  _specific passage_ you need, not just the whole document.
 - **Markdown mode.** The **Markdown** button in the page header swaps the
   formatted view for the page's raw markdown — edit it directly and toggle
   back; everything (including mentions, images, file chips, sub-pages and
@@ -83,7 +83,7 @@ A **reference column** offers values from another tab's column — set up a
 Like Pages, Tables use draft/commit (edits autosave, committing re-indexes), and
 the assistant's tables specialist ("Ledger") can add columns and tabs, write
 formulas, set totals, categorise rows, and tidy data — editing a draft you
-commit when happy. Committed tables are indexed by their *structure* (columns,
+commit when happy. Committed tables are indexed by their _structure_ (columns,
 tabs, value profiles), and the assistant queries the actual rows with SQL — so
 it can filter, count, and even join across tabs to answer questions about the
 data at any size.
@@ -101,13 +101,13 @@ them — that's how Saskia can explain Mantle itself.
 
 ## Which one should I use?
 
-| Use | Surface |
-|---|---|
-| Jot a quick thought | **Notes** |
-| Record something about yourself so the assistant knows you | **Journal** |
-| Write a structured document, report, or plan | **Pages** |
-| Track rows of data, do sums/formulas, import a spreadsheet | **Tables** |
-| Read reference docs the assistant can cite | **Docs** |
-| Store an existing file (PDF, image, your own .md) | **[Files](03-files.md)** |
+| Use                                                        | Surface                  |
+| ---------------------------------------------------------- | ------------------------ |
+| Jot a quick thought                                        | **Notes**                |
+| Record something about yourself so the assistant knows you | **Journal**              |
+| Write a structured document, report, or plan               | **Pages**                |
+| Track rows of data, do sums/formulas, import a spreadsheet | **Tables**               |
+| Read reference docs the assistant can cite                 | **Docs**                 |
+| Store an existing file (PDF, image, your own .md)          | **[Files](03-files.md)** |
 
 [sharing]: ../05-technical/03-federation-and-sharing.md

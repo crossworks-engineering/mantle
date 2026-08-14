@@ -121,18 +121,21 @@ describe('docToMarkdown — round-trip stability', () => {
     expect(doc.content?.[0]?.type).toBe('paragraph');
   });
 
-  it('diagrams (```mermaid fence)', () => {
+  it('legacy mermaid fences round-trip as plain code blocks', () => {
     roundTrips('```mermaid\nflowchart LR\n  A[Ingest] --> B{Extract}\n  B --> C[Recall]\n```');
   });
 
-  it('diagram source containing backtick runs widens the fence', () => {
+  it('LEGACY diagram node serializes to a mermaid fence and degrades to a code block', () => {
+    // Stored docs still carry diagram nodes from the retired Mermaid engine.
+    // Serialization keeps the source (widened fence for backtick runs); the
+    // parse back lands as a plain code block — graceful degrade, no data loss.
     const source = 'flowchart LR\n  A["uses ``` inside"] --> B[ok]';
     const doc = { type: 'doc', content: [{ type: 'diagram', attrs: { source } }] };
     const md = docToMarkdown(doc);
     expect(md.startsWith('````mermaid\n')).toBe(true);
     const back = markdownToDoc(md) as N;
-    expect(back.content?.[0]?.type).toBe('diagram');
-    expect(back.content?.[0]?.attrs?.source).toBe(source);
+    expect(back.content?.[0]?.type).toBe('codeBlock');
+    expect(back.content?.[0]?.content?.[0]?.text).toBe(source);
   });
 
   it('text that LOOKS like markdown stays literal', () => {

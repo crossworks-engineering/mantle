@@ -393,15 +393,11 @@ function blocks(tokens: Tok[] | undefined): PMNode[] {
         break;
       case 'code': {
         const codeText = t.text ?? '';
-        // A ```mermaid fence is a diagram node (source kept verbatim), not a
-        // code block. marked's `lang` carries the FULL info string, so match
-        // on its first word — '```mermaid title=x' is still a diagram (the
-        // rest of the info string carries no meaning for us and is dropped).
-        const fenceLang = (t.lang ?? '').trim().split(/\s+/, 1)[0]?.toLowerCase();
-        if (fenceLang === 'mermaid') {
-          out.push({ type: 'diagram', attrs: { source: codeText } });
-          break;
-        }
+        // A ```mermaid fence parses as a PLAIN code block since the Mermaid
+        // engine was retired (2026-08, the Draftsman specialist replaced it).
+        // Legacy `diagram` nodes still exist in stored docs; doc-to-markdown
+        // keeps serializing them, so an edited legacy diagram round-trips
+        // into an ordinary mermaid-tagged code block and degrades gracefully.
         out.push({
           type: 'codeBlock',
           attrs: { language: t.lang ? t.lang : null },

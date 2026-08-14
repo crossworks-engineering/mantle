@@ -283,6 +283,10 @@ function blockToMd(node: PMNode): string {
       return latex.includes('\n') ? `$$\n${latex}\n$$` : `$$${latex}$$`;
     }
     case 'diagram': {
+      // LEGACY: the Mermaid engine was retired 2026-08 (Draftsman replaced
+      // it), but stored docs still carry diagram nodes. Serialize the source
+      // as a mermaid-tagged fence; markdown-to-doc parses that back as a
+      // plain code block, so an edited legacy diagram degrades gracefully.
       const source = s(node.attrs?.source);
       const runs = source.match(/`+/g);
       const fence = '`'.repeat(

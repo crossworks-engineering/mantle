@@ -1,19 +1,32 @@
 # Diagrams: the Draftsman specialist
 
-> Presentation-grade diagrams and charts, drawn as hand-authored SVG into a
-> page, beside a small readable spec block. Agent slug `diagrammer` (display
-> name "Draftsman"), skill `diagram_design`, docs collection `diagram-guides`.
-> Mermaid stays the quick in-page sketch; the Draftsman is the version you
-> present, print, or share.
+> Diagrams and charts, drawn as hand-authored SVG into a page, beside a small
+> readable spec block. Agent slug `diagrammer` (display name "Draftsman"),
+> skill `diagram_design`, docs collection `diagram-guides`. This is the ONE
+> diagram path — the Mermaid engine was retired in the same release cycle
+> (2026-08).
 
 ## Why
 
-Mermaid renders are structurally correct but visually underwhelming, and the
-render is out of our hands. The Draftsman flips the trade: the model draws the
-SVG itself, following an opinionated editorial design system (vendored from the
-MIT-licensed [diagram-design](https://github.com/cathrynlavery/diagram-design)
-project), so layout, palette, and typography are deliberate. The cost is that
-raw SVG is unreadable as source, which the spec block repairs (below).
+Mermaid renders were structurally correct but visually underwhelming, and the
+render was out of our hands, so it was removed outright. The Draftsman flips
+the trade: the model draws the SVG itself, following an opinionated editorial
+design system (vendored from the MIT-licensed
+[diagram-design](https://github.com/cathrynlavery/diagram-design) project), so
+layout, palette, and typography are deliberate. The cost is that raw SVG is
+unreadable as source, which the spec block repairs (below).
+
+## What happened to Mermaid
+
+Removed end to end: agents are no longer taught it, page tools no longer lint
+it, a ```mermaid fence parses as a plain code block, and the renderer + npm
+dependency are gone from both repos. Stored docs keep their legacy `diagram`
+nodes; every surface (editor, /s shares, print/PDF, docx, email) renders them
+as a labelled source block, and editing one degrades it to an ordinary code
+block. No data is lost; nothing draws them anymore. Ask the Draftsman to
+redraw the ones worth keeping. (Excalidraw's own mermaid-paste converter
+remains as a transitive dependency of the Draw feature; that is Excalidraw's
+internals, not this engine.)
 
 ## The page contract: spec block + image
 
@@ -35,12 +48,12 @@ system font stacks.
 
 ## The pieces
 
-| Piece | Where | What |
-|---|---|---|
-| Agent `diagrammer` | `server/web/lib/system-manifest/manifest.ts` | Delegate specialist; groups `pages` + `files` + `memory-core`; skills `diagram_design`, `page_editing`, `writing_style` |
-| Skill `diagram_design` | `server/web/lib/system-manifest/prompts.ts` | The condensed design system: contract, workflow, medium constraints, 27-type index, connector rules, 4px grid, complexity budget, a11y contract |
-| Docs collection `diagram-guides` | `docs/diagram-guides/` + `packages/files/src/docs.ts` | The 27 per-type references + shared guides (semantic patterns, style guide, output sizes, primitives), vendored verbatim from upstream v2.3 |
-| Routing | `specialist_routing` + `rich_writing` skills | The main assistant hands presentation-grade visuals to the Draftsman; quick sketches stay mermaid |
+| Piece                            | Where                                                 | What                                                                                                                                            |
+| -------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent `diagrammer`               | `server/web/lib/system-manifest/manifest.ts`          | Delegate specialist; groups `pages` + `files` + `memory-core`; skills `diagram_design`, `page_editing`, `writing_style`                         |
+| Skill `diagram_design`           | `server/web/lib/system-manifest/prompts.ts`           | The condensed design system: contract, workflow, medium constraints, 27-type index, connector rules, 4px grid, complexity budget, a11y contract |
+| Docs collection `diagram-guides` | `docs/diagram-guides/` + `packages/files/src/docs.ts` | The 27 per-type references + shared guides (semantic patterns, style guide, output sizes, primitives), vendored verbatim from upstream v2.3     |
+| Routing                          | `specialist_routing` + `rich_writing` skills          | The main assistant hands ALL diagram + chart work to the Draftsman; no agent hand-writes diagram source                                         |
 
 ## Guide retrieval
 

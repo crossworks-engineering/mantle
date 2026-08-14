@@ -11,7 +11,7 @@ import { printOrigin } from './render-pdf';
  * on the hot path: see docs/draw-render-fallback-plan.md §4.4 for exactly which
  * callers may fire this (public share traffic may NOT).
  *
- * The mechanism is the one the mermaid diagrams already use for /print: a real
+ * The mechanism: a real
  * Chromium loads our own owner-authed route, the browser-only renderer runs
  * there, and we read the result out of the page. There is no Node path that
  * produces a correct drawing — text layout needs real font metrics.

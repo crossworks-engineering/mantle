@@ -118,23 +118,20 @@ describe('markdownToDoc', () => {
     expect(code?.content?.[0]?.text).toContain('const x = 1;');
   });
 
-  it('maps a ```mermaid fence to a diagram node with the source verbatim', () => {
+  it('maps a ```mermaid fence to a PLAIN code block (Mermaid engine retired)', () => {
     const source = 'flowchart LR\n  A[Start] --> B[End]';
-    const d = find('```mermaid\n' + source + '\n```', 'diagram');
-    expect(d?.attrs?.source).toBe(source);
-    expect(d?.content).toBeUndefined();
-    // Case-insensitive language tag; other languages stay code blocks.
-    expect(find('```Mermaid\ngraph TD\n```', 'diagram')).toBeTruthy();
-    expect(find('```mermaidjs\nx\n```', 'diagram')).toBeUndefined();
-    expect(find('```mermaidjs\nx\n```', 'codeBlock')).toBeTruthy();
-    // marked's `lang` is the FULL info string — match on its first word, so
-    // '```mermaid title=x' still lands as a diagram.
-    expect(find('```mermaid title=x\ngraph TD\n```', 'diagram')).toBeTruthy();
+    // No diagram node is ever produced from markdown anymore; the fence is an
+    // ordinary code block whose language tag is kept verbatim.
+    expect(find('```mermaid\n' + source + '\n```', 'diagram')).toBeUndefined();
+    const code = find('```mermaid\n' + source + '\n```', 'codeBlock');
+    expect(code?.attrs?.language).toBe('mermaid');
+    expect(code?.content?.[0]?.text).toBe(source);
   });
 
-  it('maps a mermaid fence inside a callout to a nested diagram node', () => {
+  it('maps a mermaid fence inside a callout to a nested code block', () => {
     const callout = find(':::info\n```mermaid\npie\n  "a": 1\n```\n:::', 'callout');
-    expect(callout?.content?.some((n) => n.type === 'diagram')).toBe(true);
+    expect(callout?.content?.some((n) => n.type === 'diagram')).toBe(false);
+    expect(callout?.content?.some((n) => n.type === 'codeBlock')).toBe(true);
   });
 
   it('maps a GFM table to table/tableRow/tableHeader/tableCell', () => {

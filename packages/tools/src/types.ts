@@ -182,17 +182,6 @@ export type ToolPrecondition =
       /** When `param` is an array, the key on each item holding the markdown
        *  (e.g. `ops[].markdown` for page_blocks_apply). */
       itemKey?: string;
-    }
-  | {
-      /** A ```mermaid fence in the body must not carry an unquoted node label
-       *  containing parentheses — mermaid reads the `(` as a shape and the whole
-       *  diagram fails to parse. The agent cannot see the render, so without
-       *  this it reports success over a red error strip. */
-      kind: 'mermaid_labels';
-      /** Top-level input key holding the markdown, or an array of op objects. */
-      param: string;
-      /** When `param` is an array, the key on each item holding the markdown. */
-      itemKey?: string;
     };
 
 /** A registered built-in: the handler + the definition the seed step
