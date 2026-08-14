@@ -244,6 +244,13 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['app_authoring']!,
   },
   {
+    slug: 'diagram_design',
+    name: 'Diagram design',
+    description:
+      'Draw presentation-grade SVG diagrams + charts into pages: the spec-block contract, the editorial design system, and per-type guide retrieval.',
+    instructions: SKILL_INSTRUCTIONS['diagram_design']!,
+  },
+  {
     slug: 'mantle-ops',
     name: 'Mantle ops',
     description: 'How Mantle works + the operating workflow (for the coder agent).',
@@ -1055,6 +1062,33 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // caps are the belt-and-braces so a legitimately call-heavy edit still
     // fits in one turn. Mirrors the Pages budget; runtime hard-caps at 200/100.
     memoryConfig: { max_iterations: 30, max_tool_calls: 100, max_calls_per_tool: 40 },
+    priority: 100,
+  },
+  {
+    slug: 'diagrammer',
+    // ⚠ DISPLAY NAME IS JASON'S CALL — "Draftsman" is this plan's placeholder,
+    // chosen to sit alongside Remy / Ledger / Reader. Confirm before release.
+    name: 'Draftsman',
+    description:
+      'Diagram + chart specialist — hand-draws editorial SVG into pages beside a readable spec block (27 visual types).',
+    role: 'custom',
+    model: 'anthropic/claude-sonnet-5',
+    envModelVar: 'DIAGRAMMER_MODEL',
+    systemPrompt: AGENT_PROMPTS['diagrammer']!,
+    // `pages` for the spec block + embed edits, `files` for the SVG upload
+    // (file_create) + source reads, `memory-core` for type-guide retrieval
+    // (search_chunks/read_section on the diagram-guides docs collection) and
+    // for sourcing chart data from the brain. No page-admin/page-share:
+    // deletes and sharing stay deliberate human acts.
+    toolGroupSlugs: ['pages', 'files', 'memory-core'],
+    skillSlugs: ['diagram_design', 'page_editing', 'writing_style'],
+    isDelegate: true,
+    // A single hand-drawn SVG easily runs thousands of tokens; match the
+    // Pages output budget so a two-diagram task doesn't truncate mid-path.
+    params: { temperature: 0.3, max_tokens: 32000 },
+    // Guide retrieval (search + section reads) + draft writes add up; give it
+    // headroom over the flat default.
+    memoryConfig: { max_iterations: 25 },
     priority: 100,
   },
   {
