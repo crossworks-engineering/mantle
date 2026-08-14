@@ -157,19 +157,33 @@ scripts/install.sh --core --domain core.example.com -y
 
 (or `MANTLE_CORE=1` on the one-line installer). A core keeps the full brain
 contract: the HTTP API + MCP + share pages, the owner UI (sign-up and
-settings live there), the ingest pipeline (`api`, `tika`, the file/docs
-workers), reminders + scheduled backups, and nightly maintenance. It sheds
-the channel workers (email, telegram, microsoft, calendar, push, runs) and
-the PDF-export browser. The exact split, and the reasoning per service, is
-the header of `docker-compose.core.yml`.
+settings live there), the ingest pipeline (`api` + the file/docs workers),
+reminders + scheduled backups, and nightly maintenance. It sheds the
+channel workers (email, telegram, microsoft, calendar, push, runs) and the
+**doc helpers**: `tika` (parse fallback for .odt/.pptx/.doc/.rtf — common
+formats like pdf/docx/txt/md parse in-process without it) and the
+PDF-export `browser` (~2 GB chromium image; share pages still serve HTML).
+The exact split, and the reasoning per service, is the header of
+`docker-compose.core.yml`.
 
-The choice persists via `COMPOSE_FILE` in `.env` (absolute paths — the
-in-app updater needs them), so updates keep the shape. Sandboxes default
-OFF on a fresh core box; the local embedder stays opt-in and does NOT fit a
-core box — use online embeddings (the onboarding default). Turn a service
-back on ad hoc with `docker compose up -d <service>` (naming a service
-overrides its profile gate), or return to the full shape with
-`scripts/install.sh --no-core`.
+A core that needs exotic-format ingest or PDF export takes the helpers
+back with:
+
+```bash
+scripts/install.sh --core --helpers
+```
+
+(`--helpers` / `--no-helpers` toggle the `helpers` entry in
+`COMPOSE_PROFILES`, same persistence as `--local-embedder`; the full shape
+always runs both, so the flag only matters on a core.)
+
+The core choice itself persists via `COMPOSE_FILE` in `.env` (absolute
+paths — the in-app updater needs them), so updates keep the shape.
+Sandboxes default OFF on a fresh core box; the local embedder stays opt-in
+and does NOT fit a core box — use online embeddings (the onboarding
+default). Turn any shed service on ad hoc with
+`docker compose up -d <service>` (naming a service overrides its profile
+gate), or return to the full shape with `scripts/install.sh --no-core`.
 
 ### Manual install (no script)
 

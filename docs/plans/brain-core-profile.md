@@ -8,8 +8,10 @@
 > updater runs compose from cwd=/, and compose resolves a relative
 > COMPOSE_FILE against cwd — verified against docker:28-cli, compose
 > v2.40.3, and host v5.3.1). Core keeps api (the extract listeners live
-> there, so ingest needs it), tika, worker_files/docs/events/maintenance;
-> MCP is served by web. Bundled everywhere the release-owned composes
+> there, so ingest needs it) and worker_files/docs/events/maintenance;
+> MCP is served by web. The doc helpers (tika + browser) sit behind a
+> second `helpers` profile: `install.sh --helpers` re-adds them via
+> COMPOSE_PROFILES (common formats parse in-process without tika). Bundled everywhere the release-owned composes
 > travel: Dockerfile /app/release, release.yml bundle, bootstrap install.sh
 > (fetch + baseline), compose-adopt.sh, updater refresh + stack.json.
 > Drift guard: packages/content/src/invariants.test.ts. Docs:

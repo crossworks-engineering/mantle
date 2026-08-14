@@ -15,10 +15,16 @@
 # existing service would silently stop it on every deployed box at its next
 # update, and COMPOSE_PROFILES can only add services, never subtract them).
 #
-# Mechanism: each service listed here gains `profiles: ["full"]`. The main
-# file defines no profiles for them, and compose merges profile lists, so
-# with this override active they only start under `--profile full`. Everything
-# NOT listed here keeps running: that remainder is the core.
+# Mechanism: each service listed here gains a `profiles:` list. The main file
+# defines no profiles for them, and compose merges profile lists, so with
+# this override active they only start when one of their profiles is active.
+# Everything NOT listed here keeps running: that remainder is the core.
+#
+# Two gates, one ladder:
+#   ["full"]             off on a core box, no way back short of --no-core
+#   ["full", "helpers"]  the doc helpers: stateless parse/render sidecars a
+#                        core can re-enable with `scripts/install.sh --helpers`
+#                        (adds `helpers` to COMPOSE_PROFILES in .env)
 #
 # What a core keeps and why (see docker-compose.yml for each service's role):
 #   postgres, minio, createbuckets, migrate   the data spine
@@ -28,17 +34,22 @@
 #                                             listeners live here, so a core
 #                                             that ingests cannot drop it)
 #   caddy, updater, autoheal, tailscale       front door + upkeep sidecars
-#   tika                                      document-parse fallback for file
-#                                             ingest (idles ~40 MB)
 #   worker_files, worker_docs                 file + documentation ingest
 #   worker_events                             reminders AND the scheduled-
 #                                             backup tick (a core still backs
 #                                             itself up)
 #   worker_maintenance                        nightly registry sweeps, cheap
 #
-# What it sheds (start one ad hoc with `docker compose up -d <service>`;
-# naming a service on the command line overrides its profile gate):
+# The doc helpers (back on with --helpers, or ad hoc: naming a service on the
+# command line overrides its profile gate, `docker compose up -d tika browser`):
+#   tika               document-parse fallback for formats the in-process
+#                      parsers don't cover (.odt/.pptx/.doc/.rtf/...). Common
+#                      formats (pdf, docx, txt, md) parse in-process, so a
+#                      helper-less core still ingests them fine.
 #   browser            PDF export only; share pages still serve HTML
+#
+# Full-shape only (channel workers; `full` is not meant to be enabled as a
+# profile — want these back, run `scripts/install.sh --no-core`):
 #   worker_email       IMAP ingest channel
 #   worker_telegram    Telegram channel poller
 #   worker_microsoft   OneDrive/SharePoint sync
@@ -49,15 +60,12 @@
 # Already opt-in via their own profiles, unaffected by this file: ollama +
 # ollama_pull (local-embedder), sandboxd (sandboxes). A core is expected to
 # use ONLINE embeddings; the CPU embedder does not fit a 4 GB box.
-#
-# To turn one of these on PERMANENTLY on a core box, add `full` to
-# COMPOSE_PROFILES in .env... and reconsider: at that point you want the full
-# shape (`scripts/install.sh --no-core`), not a core with everything bolted
-# back on.
 
 services:
+  tika:
+    profiles: ["full", "helpers"]
   browser:
-    profiles: ["full"]
+    profiles: ["full", "helpers"]
   worker_email:
     profiles: ["full"]
   worker_telegram:

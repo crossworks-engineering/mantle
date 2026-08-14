@@ -83,17 +83,40 @@ describe('brain-core override ↔ main compose', () => {
     }
   });
 
-  it(`${COMPOSE_CORE} only ever ADDS the full profile (never redefines a service)`, () => {
+  it(`${COMPOSE_CORE} only ever ADDS profile gates (never redefines a service)`, () => {
     const body = read(COMPOSE_CORE)
       .split('\n')
       .filter((l) => !/^\s*#/.test(l) && l.trim() !== '')
       .filter((l) => !/^services:$/.test(l));
     for (const line of body) {
       expect(
-        /^ {2}[a-z][a-z0-9_]*:$/.test(line) || /^ {4}profiles: \["full"\]$/.test(line),
+        /^ {2}[a-z][a-z0-9_]*:$/.test(line) || /^ {4}profiles: \["full"(, "helpers")?\]$/.test(line),
         `${COMPOSE_CORE} must stay a pure profile gate; unexpected line: ${JSON.stringify(line)}. ` +
           `Real overrides belong in docker-compose.yml (full) or a box's docker-compose.override.yml.`,
       ).toBe(true);
+    }
+  });
+
+  it(`the doc helpers (tika + browser) carry the helpers profile, channel workers don't`, () => {
+    // install.sh --helpers re-enables exactly the stateless parse/render pair
+    // on a core box. A channel worker slipping into the helpers profile would
+    // come back with them — this pins the split.
+    const src = read(COMPOSE_CORE);
+    const gates = new Map(
+      [...src.matchAll(/^ {2}([a-z][a-z0-9_]*):\n {4}profiles: (\[[^\]]*\])$/gm)].map((m) => [
+        m[1]!,
+        m[2]!,
+      ]),
+    );
+    for (const [svc, profiles] of gates) {
+      const wantHelpers = svc === 'tika' || svc === 'browser';
+      expect(
+        profiles,
+        `${COMPOSE_CORE}: '${svc}' has profiles ${profiles} — ` +
+          (wantHelpers
+            ? `the doc helpers must be ["full", "helpers"] so --helpers brings them back.`
+            : `only tika/browser may carry "helpers"; everything else is full-shape only.`),
+      ).toBe(wantHelpers ? '["full", "helpers"]' : '["full"]');
     }
   });
 });

@@ -109,9 +109,13 @@ LOCAL_EMBEDDER="${MANTLE_LOCAL_EMBEDDER:-}"
 # CLI sandboxes (sandboxd): 1=enable, 0=disable, empty=default (ON for a FRESH
 # box, keep .env as-is on a re-run — existing boxes never flip implicitly).
 SANDBOXES="${MANTLE_SANDBOXES:-}"
-# Brain-core shape: 1=core (small memory core — channel workers + PDF export
+# Brain-core shape: 1=core (small memory core — channel workers + doc helpers
 # off), 0=full, empty=keep .env as-is. See docker-compose.core.yml.
 CORE="${MANTLE_CORE:-}"
+# Doc helpers (tika parse fallback + PDF-export browser): 1=enable on a core
+# box, 0=disable, empty=keep .env as-is. Only meaningful on the core shape;
+# the full shape always runs them.
+HELPERS="${MANTLE_HELPERS:-}"
 usage() {
   cat <<EOF
 ${B}Mantle installer${RS}
@@ -151,12 +155,19 @@ ${B}Options${RS}
                          fits a 2 vCPU / 4 GB box with ONLINE embeddings. Keeps
                          the HTTP API, MCP, share pages, file/docs ingest and
                          backups; sheds the channel workers (email/telegram/
-                         microsoft/calendar/push/runs) and the PDF-export
-                         browser. Persists via COMPOSE_FILE in .env so every
-                         later pull/up — the updater included — keeps the
-                         shape. Sandboxes default OFF for a fresh core box.
+                         microsoft/calendar/push/runs) and the doc helpers
+                         (add those back with --helpers). Persists via
+                         COMPOSE_FILE in .env so every later pull/up — the
+                         updater included — keeps the shape. Sandboxes default
+                         OFF for a fresh core box.
   --no-core              Back to the full shape (the shed services start on
                          the next 'docker compose up -d')
+  --helpers              Doc helpers on a core box: tika (parse fallback for
+                         .odt/.pptx/.doc/.rtf — common formats parse in-process
+                         without it) + the PDF-export browser (~2 GB image).
+                         Persists via COMPOSE_PROFILES in .env. No effect on
+                         the full shape, which always runs both.
+  --no-helpers           Shed the doc helpers again on a core box
   -y, --yes              Non-interactive: accept defaults, never prompt
   --skip-up              Write .env only; don't bring the stack up
   --sanity, --check      Only run the post-install sanity check, then exit
@@ -187,6 +198,8 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --no-sandboxes) SANDBOXES=0; shift ;;
   --core) CORE=1; shift ;;
   --no-core) CORE=0; shift ;;
+  --helpers) HELPERS=1; shift ;;
+  --no-helpers) HELPERS=0; shift ;;
   -y|--yes|--non-interactive) ASSUME_YES=1; shift ;;
   --skip-up) SKIP_UP=1; shift ;;
   --sanity|--check) SANITY_ONLY=1; shift ;;
@@ -658,9 +671,14 @@ if [[ -n "$CORE" ]]; then
     # Best-effort: stop + remove the services the core sheds (a fresh box has
     # none of them yet; a downsized box drops them here). Naming a service
     # explicitly overrides its profile gate, so this works post-COMPOSE_FILE.
+    # The doc helpers (tika + browser) are only shed when the helpers profile
+    # isn't active — the --helpers block below runs after this one.
+    SHED="worker_email worker_telegram worker_microsoft worker_calendar worker_push worker_runs"
+    if [[ "$HELPERS" != 1 && "$(getval COMPOSE_PROFILES)" != *helpers* ]]; then SHED="tika browser $SHED"; fi
+    # shellcheck disable=SC2086  # word-splitting $SHED into args is intended
     docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
-      rm -sf browser worker_email worker_telegram worker_microsoft worker_calendar worker_push worker_runs >/dev/null 2>&1 || true
-    ok "Brain-core shape ON — channel workers + PDF export won't start (see docker-compose.core.yml)"
+      rm -sf $SHED >/dev/null 2>&1 || true
+    ok "Brain-core shape ON — channel workers + doc helpers won't start (see docker-compose.core.yml)"
   else
     if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
       tmp="$(mktemp)"; grep -vE '^COMPOSE_FILE=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
@@ -668,6 +686,31 @@ if [[ -n "$CORE" ]]; then
     elif [[ -n "$(getval COMPOSE_FILE)" ]]; then
       warn "COMPOSE_FILE in .env is not the core shape — leaving your custom value alone."
     fi
+  fi
+fi
+# ── Doc helpers (tika + PDF-export browser) on the core shape ────────────────
+# Persisted via COMPOSE_PROFILES exactly like the embedder. Only meaningful
+# when the core override is active (the full shape runs both unconditionally),
+# but writing the profile on a full box is harmless — it simply pre-arms the
+# choice for a later --core. Flag not passed → keep .env as-is.
+if [[ -n "$HELPERS" ]]; then
+  rest="$(getval COMPOSE_PROFILES | tr ',' '\n' | grep -vx 'helpers' | grep -v '^$' | paste -sd, -)" || rest=""
+  if [[ "$HELPERS" == 1 ]]; then
+    upsert COMPOSE_PROFILES "${rest:+$rest,}helpers"
+    ok "Doc helpers ON — tika + the PDF-export browser start with the stack"
+  else
+    if [[ -n "$rest" ]]; then
+      upsert COMPOSE_PROFILES "$rest"
+    elif grep -qE '^COMPOSE_PROFILES=' "$ENV_FILE" 2>/dev/null; then
+      tmp="$(mktemp)"; grep -vE '^COMPOSE_PROFILES=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
+    fi
+    # Best-effort stop, but ONLY on the core shape — on a full box these two
+    # are always-on services and must not be touched.
+    if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
+      docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
+        rm -sf tika browser >/dev/null 2>&1 || true
+    fi
+    ok "Doc helpers OFF — tika + the PDF-export browser won't start on the core shape"
   fi
 fi
 # ── CLI sandboxes (sandboxd + isolated sandbox networks) ─────────────────────
@@ -750,7 +793,7 @@ row "Data"        "$DATA_DIR  ${DIM}(documents, database, backups)${RS}"
 row "Stack"       "$STACK_DIR"
 row "Version"     "$IMAGE_TAG"
 row "Embedder"    "$(if [[ "$(getval COMPOSE_PROFILES)" == *local-embedder* ]]; then printf 'bundled (local)'; else printf 'online — chosen during onboarding'; fi)"
-row "Shape"       "$(if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then printf 'core (memory core: channel workers + PDF export off)'; else printf 'full'; fi)"
+row "Shape"       "$(if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then if [[ "$(getval COMPOSE_PROFILES)" == *helpers* ]]; then printf 'core + doc helpers (channel workers off)'; else printf 'core (channel workers + doc helpers off)'; fi; else printf 'full'; fi)"
 if [[ "$DEBUG_PORT" != 3000 ]]; then row "Debug port" "127.0.0.1:$DEBUG_PORT  ${DIM}(3000 was taken)${RS}"; fi
 existing="$(docker ps -aq --filter "label=com.docker.compose.project=mantle" 2>/dev/null | head -1)"
 if [[ -n "$existing" ]]; then

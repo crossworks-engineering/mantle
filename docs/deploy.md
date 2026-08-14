@@ -53,7 +53,7 @@ box is not steady state; it's two specific events:
 | Profile | vCPU | RAM | Disk | Notes |
 |---|---|---|---|---|
 | **Minimum** (registry-pull deploys) | 2 | 4 GB | 40 GB | Steady state fits with room for embedding spikes; add 2 GB swap as insurance. Ingest is slower, never wrong. |
-| **Brain-core** (`install.sh --core`, online embeddings) | 2 | 4 GB | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + PDF browser (~15 instead of ~21 services). See docs/self-hosting.md "Brain-core shape". |
+| **Brain-core** (`install.sh --core`, online embeddings) | 2 | 4 GB | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + doc helpers (~14 instead of ~22 services; `--helpers` re-adds tika + the PDF browser). See docs/self-hosting.md "Brain-core shape". |
 | **Recommended** (build-on-VPS, only if you build your own image on the box; see §2) | 4 | 8 GB | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache, run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB). |
 | **Reference** (author's prod) | 6 | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes). |
 
