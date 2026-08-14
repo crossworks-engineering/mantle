@@ -65,11 +65,14 @@ try {
     fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
     console.log(`→ ${j.name}@${version}${dryRun ? ' (dry run)' : ''}`);
     try {
-      const out = execSync(`pnpm publish --access public --no-git-checks${dryRun ? ' --dry-run' : ''}`, {
-        cwd: path.join(ROOT, 'packages', pkg),
-        stdio: ['inherit', 'pipe', 'pipe'],
-        encoding: 'utf8',
-      });
+      const out = execSync(
+        `pnpm publish --access public --no-git-checks${dryRun ? ' --dry-run' : ''}`,
+        {
+          cwd: path.join(ROOT, 'packages', pkg),
+          stdio: ['inherit', 'pipe', 'pipe'],
+          encoding: 'utf8',
+        },
+      );
       process.stdout.write(out);
     } catch (err) {
       // npm versions are immutable, so a partially-published release makes
