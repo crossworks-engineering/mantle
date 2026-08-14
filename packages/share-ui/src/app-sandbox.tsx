@@ -156,7 +156,12 @@ const INSPECTOR = `
 })();
 `;
 
-function buildSrcDoc(bundleCode: string, importMapJson: string, viewport: boolean): string {
+function buildSrcDoc(
+  bundleCode: string,
+  appCss: string,
+  importMapJson: string,
+  viewport: boolean,
+): string {
   const html = document.documentElement;
   const cls = html.className || '';
   const colorTheme = html.dataset.colorTheme
@@ -213,6 +218,12 @@ function buildSrcDoc(bundleCode: string, importMapJson: string, viewport: boolea
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
 <script type="importmap">${importMapJson}</script>
 ${styleMarkup}
+<style>${/* Per-app compiled utilities (bundle/css) — classes the app's own source
+   uses that the host sheet never scanned. After the host styles so its @layer
+   order is already established. The `</` guard keeps CSS content (arbitrary
+   values can hold strings) from closing the tag; the app already runs its own
+   JS in this iframe, so this is markup hygiene, not a security boundary. */
+appCss.replace(/<\//g, '<\\/')}</style>
 <style>/* Paint the iframe canvas with the theme background, NOT transparent: a
    sandboxed (opaque-origin) iframe renders WHITE where it's transparent, so any
    gap between the app content and the iframe height showed a white strip. With
@@ -518,8 +529,16 @@ export function AppSandbox({
     setDoc(null);
     everReadyRef.current = false;
     retriedRef.current = false;
-    Promise.all([doFetch(`${apiBase}/bundle`), loadImportMap()])
-      .then(async ([r, importMap]) => {
+    Promise.all([
+      doFetch(`${apiBase}/bundle`),
+      // Per-app stylesheet; 404 (pre-CSS build) or a network hiccup degrades
+      // to host-stylesheet-only rendering, exactly the pre-feature behaviour.
+      doFetch(`${apiBase}/bundle/css`)
+        .then((r) => (r.ok ? r.text() : ''))
+        .catch(() => ''),
+      loadImportMap(),
+    ])
+      .then(async ([r, appCss, importMap]) => {
         if (cancelled) return;
         if (r.status === 404) {
           setStatus('nobuild');
@@ -534,7 +553,10 @@ export function AppSandbox({
         }
         const code = await r.text();
         if (cancelled) return;
-        setDoc({ html: buildSrcDoc(code, importMap, frame === 'viewport'), gen: ++genRef.current });
+        setDoc({
+          html: buildSrcDoc(code, appCss, importMap, frame === 'viewport'),
+          gen: ++genRef.current,
+        });
       })
       .catch((err) => {
         if (cancelled) return;

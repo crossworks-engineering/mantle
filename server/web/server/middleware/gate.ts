@@ -42,7 +42,7 @@ function isAssetPath(path: string): boolean {
  *  treatment as /api/** — and ONLY they: the /s/<token> HTML page and the
  *  remaining sub-paths (auth, a/, evaluate) stay same-origin cookie surfaces
  *  with no CORS headers at all. */
-const SHARE_BROKER_RE = /^\/s\/[^/]+\/(bundle|tool-broker|db-broker|view|rows)$/;
+const SHARE_BROKER_RE = /^\/s\/[^/]+\/(bundle(\/css)?|tool-broker|db-broker|view|rows)$/;
 
 /** Old middleware matcher exclusion: bare image paths never hit the gate. */
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;

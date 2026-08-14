@@ -13,7 +13,9 @@
     "build:runtime": "node scripts/build-runtime.ts"
   },
   "dependencies": {
+    "@tailwindcss/oxide": "^4.3.3",
     "esbuild": "^0.28.1",
+    "tailwindcss": "^4.3.3",
     "lucide-react": "^1.25.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

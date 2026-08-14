@@ -1373,6 +1373,7 @@ export type BuildRef = {
   bytes: number;
   ok: boolean;
   warnings?: string[];
+  css?: { storageKey: string; sha256: string; bytes: number };
 };
 
 // ── Redacted account DTOs (hand-mirrored; jackdaw split P0) ───────────────────

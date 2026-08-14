@@ -11,5 +11,9 @@
  * the server-rendered /s + /print surfaces. web-ui sits outside that cwd, so
  * its class names need an explicit source registration. */
 @source '../../../packages/share-ui/src';
+/* The mini-app UI kit ships as source STRINGS (kit.ts); apps render inside a
+ * sandbox that inlines THIS compiled stylesheet, so the kit's class names must
+ * be scanned here or kit components render unstyled on the /s app surface. */
+@source '../../../packages/app-build/src';
 @plugin 'tailwindcss-animate';
 @plugin '@tailwindcss/typography';

@@ -13,6 +13,7 @@
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import esbuild, { type BuildOptions, type Message, type Plugin } from 'esbuild';
+import { buildAppCss } from './css';
 import { KIT } from './kit';
 
 /** Specifiers provided by the shared runtime via the iframe import map — marked
@@ -41,6 +42,9 @@ export type BuildResult = {
   ok: boolean;
   /** Bundled ESM (present iff ok). */
   code?: string;
+  /** Compiled per-app Tailwind utilities (see css.ts). Absent when the CSS
+   *  compile failed — the app then renders on the host stylesheet alone. */
+  css?: string;
   errors: BuildMessage[];
   warnings: BuildMessage[];
   esbuildVersion: string;
@@ -213,7 +217,25 @@ export async function buildApp(
   const toolWarnings = opts.declaredToolSlugs ? lintToolRefs(source, opts.declaredToolSlugs) : [];
   const withToolWarnings = (r: BuildResult): BuildResult =>
     toolWarnings.length ? { ...r, warnings: [...r.warnings, ...toolWarnings] } : r;
-  return withToolWarnings(await buildAppInner(source));
+  const result = withToolWarnings(await buildAppInner(source));
+  if (!result.ok) return result;
+  // CSS after a green JS build only. A CSS failure is OUR bug (the app's
+  // classes can't be invalid — unknown ones are just dropped), so it degrades
+  // to a warning + no css, never a red build.
+  try {
+    return { ...result, css: await buildAppCss(source) };
+  } catch (err) {
+    return {
+      ...result,
+      warnings: [
+        ...result.warnings,
+        {
+          text: `app CSS compile failed (${err instanceof Error ? err.message : String(err)}); the app will rely on the host stylesheet`,
+          location: null,
+        },
+      ],
+    };
+  }
 }
 
 async function buildAppInner(source: AppSource): Promise<BuildResult> {
