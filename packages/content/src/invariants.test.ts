@@ -25,7 +25,22 @@ const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), 'utf8');
 const DOCKERFILE = 'Dockerfile';
 const COMPOSE = 'docker-compose.yml';
 const COMPOSE_DEV = 'docker-compose.dev.yml';
+const COMPOSE_CORE = 'docker-compose.core.yml';
 const BACKUP = 'packages/content/src/backup.ts';
+
+/** Service names declared under a compose file's top-level `services:` key. */
+function composeServices(rel: string): string[] {
+  const lines = read(rel).split('\n');
+  const start = lines.findIndex((l) => l === 'services:');
+  if (start < 0) throw new Error(`no top-level services: key in ${rel}`);
+  const names: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\S/.test(line)) break; // next top-level key
+    const m = line.match(/^ {2}([a-z][a-z0-9_]*):\s*$/);
+    if (m) names.push(m[1]!);
+  }
+  return names;
+}
 
 /** Major version of the Postgres client apt-installed into the server image. */
 function dockerfileClientMajor(): number {
@@ -50,6 +65,38 @@ function pgDumpCandidates(): string[] {
   if (!block) throw new Error(`could not find the candidates array in ${BACKUP}`);
   return [...block[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
 }
+
+describe('brain-core override ↔ main compose', () => {
+  // docker-compose.core.yml shrinks the stack by adding `profiles: ["full"]`
+  // to services the main file defines. Compose treats an override entry for an
+  // UNKNOWN service as a definition, not an error — so a service renamed in
+  // docker-compose.yml would silently escape the core gate and start on every
+  // 4 GB core box at its next update. Only the pair is checkable.
+  it(`every service ${COMPOSE_CORE} gates exists in ${COMPOSE}`, () => {
+    const main = composeServices(COMPOSE);
+    for (const svc of composeServices(COMPOSE_CORE)) {
+      expect(
+        main,
+        `${COMPOSE_CORE} gates '${svc}' but ${COMPOSE} defines no such service — ` +
+          `renamed or removed? Update the core override in the same change.`,
+      ).toContain(svc);
+    }
+  });
+
+  it(`${COMPOSE_CORE} only ever ADDS the full profile (never redefines a service)`, () => {
+    const body = read(COMPOSE_CORE)
+      .split('\n')
+      .filter((l) => !/^\s*#/.test(l) && l.trim() !== '')
+      .filter((l) => !/^services:$/.test(l));
+    for (const line of body) {
+      expect(
+        /^ {2}[a-z][a-z0-9_]*:$/.test(line) || /^ {4}profiles: \["full"\]$/.test(line),
+        `${COMPOSE_CORE} must stay a pure profile gate; unexpected line: ${JSON.stringify(line)}. ` +
+          `Real overrides belong in docker-compose.yml (full) or a box's docker-compose.override.yml.`,
+      ).toBe(true);
+    }
+  });
+});
 
 describe('pg client ↔ server major', () => {
   it(`${DOCKERFILE}'s client is at least as new as ${COMPOSE}'s default server`, () => {

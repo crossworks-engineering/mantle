@@ -48,6 +48,8 @@ CID=$(docker create "$IMG")
 docker cp "$CID:/app/release/docker-compose.yml" "$TMP/canonical.yml" 2>/dev/null || true
 # v0.200+ also ships the client-stack compose; older images simply don't have it.
 docker cp "$CID:/app/release/docker-compose.client.yml" "$TMP/canonical.client.yml" 2>/dev/null || true
+# v0.231+ ships the brain-core override too (docker-compose.core.yml).
+docker cp "$CID:/app/release/docker-compose.core.yml" "$TMP/canonical.core.yml" 2>/dev/null || true
 docker rm "$CID" >/dev/null
 [ -s "$TMP/canonical.yml" ] || {
   echo "✘ $IMG ships no embedded canonical (image is older than v0.142)" >&2
@@ -89,6 +91,19 @@ if [ -s "$TMP/canonical.client.yml" ]; then
   cp "$TMP/canonical.client.yml" "$STACK/docker-compose.client.yml.tmp"
   mv "$STACK/docker-compose.client.yml.tmp" "$STACK/docker-compose.client.yml"
   echo "✔ client compose canonical installed"
+fi
+# Core override (v0.231+): adopt/baseline it whenever the image ships one. It
+# is inert unless .env COMPOSE_FILE names it, so installing it on a full box
+# costs nothing and lets `install.sh --core` work later without a re-download.
+if [ -s "$TMP/canonical.core.yml" ]; then
+  if [ -f "$STACK/docker-compose.core.yml" ]; then
+    cp "$STACK/docker-compose.core.yml" "$STACK/docker-compose.core.yml.pre-adopt.$TS"
+  fi
+  cp "$TMP/canonical.core.yml" "$STACK/docker-compose.core.yml.release.tmp"
+  mv "$STACK/docker-compose.core.yml.release.tmp" "$STACK/docker-compose.core.yml.release"
+  cp "$TMP/canonical.core.yml" "$STACK/docker-compose.core.yml.tmp"
+  mv "$STACK/docker-compose.core.yml.tmp" "$STACK/docker-compose.core.yml"
+  echo "✔ core compose override installed"
 fi
 echo "  converge with: docker compose up -d --remove-orphans"
 echo "  (client stack: docker compose -f docker-compose.client.yml --project-directory . up -d)"

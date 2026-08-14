@@ -1,5 +1,23 @@
 # Brain-core deploy profile (jackdaw split P4) — handover
 
+> **Status 2026-08-14: BUILT.** Shipped as `docker-compose.core.yml`, an
+> override that gates browser + the six channel workers (email/telegram/
+> microsoft/calendar/push/runs) behind a `full` profile; a core box persists
+> `COMPOSE_FILE=<abs>/docker-compose.yml:<abs>/docker-compose.core.yml` in
+> .env via `scripts/install.sh --core` (absolute paths are load-bearing: the
+> updater runs compose from cwd=/, and compose resolves a relative
+> COMPOSE_FILE against cwd — verified against docker:28-cli, compose
+> v2.40.3, and host v5.3.1). Core keeps api (the extract listeners live
+> there, so ingest needs it), tika, worker_files/docs/events/maintenance;
+> MCP is served by web. Bundled everywhere the release-owned composes
+> travel: Dockerfile /app/release, release.yml bundle, bootstrap install.sh
+> (fetch + baseline), compose-adopt.sh, updater refresh + stack.json.
+> Drift guard: packages/content/src/invariants.test.ts. Docs:
+> self-hosting.md "Brain-core shape", deploy.md §0a row, .env.prod.example.
+> REMAINING: live validation on a small box (sign up, MCP file ingest,
+> search, share link, measured RSS vs the 4 GB claim) — needs a box and
+> Jason's go-ahead.
+
 **Goal.** A SMALL deploy shape for headless memory cores: a full Mantle brain
 (HTTP API + MCP + share pages + ingest) on a 2 vCPU / 4 GB box with online
 embeddings — e.g. a dedicated core for meeting recordings that a main brain

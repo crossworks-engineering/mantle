@@ -109,6 +109,9 @@ LOCAL_EMBEDDER="${MANTLE_LOCAL_EMBEDDER:-}"
 # CLI sandboxes (sandboxd): 1=enable, 0=disable, empty=default (ON for a FRESH
 # box, keep .env as-is on a re-run — existing boxes never flip implicitly).
 SANDBOXES="${MANTLE_SANDBOXES:-}"
+# Brain-core shape: 1=core (small memory core — channel workers + PDF export
+# off), 0=full, empty=keep .env as-is. See docker-compose.core.yml.
+CORE="${MANTLE_CORE:-}"
 usage() {
   cat <<EOF
 ${B}Mantle installer${RS}
@@ -144,6 +147,16 @@ ${B}Options${RS}
                          the data dir, and pre-pulls the sandbox base image.
   --no-sandboxes         Install without CLI sandboxes (or disable them again;
                          sandbox /files dirs are never touched)
+  --core                 Brain-core shape: a small headless memory core that
+                         fits a 2 vCPU / 4 GB box with ONLINE embeddings. Keeps
+                         the HTTP API, MCP, share pages, file/docs ingest and
+                         backups; sheds the channel workers (email/telegram/
+                         microsoft/calendar/push/runs) and the PDF-export
+                         browser. Persists via COMPOSE_FILE in .env so every
+                         later pull/up — the updater included — keeps the
+                         shape. Sandboxes default OFF for a fresh core box.
+  --no-core              Back to the full shape (the shed services start on
+                         the next 'docker compose up -d')
   -y, --yes              Non-interactive: accept defaults, never prompt
   --skip-up              Write .env only; don't bring the stack up
   --sanity, --check      Only run the post-install sanity check, then exit
@@ -172,6 +185,8 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --no-local-embedder) LOCAL_EMBEDDER=0; shift ;;
   --sandboxes) SANDBOXES=1; shift ;;
   --no-sandboxes) SANDBOXES=0; shift ;;
+  --core) CORE=1; shift ;;
+  --no-core) CORE=0; shift ;;
   -y|--yes|--non-interactive) ASSUME_YES=1; shift ;;
   --skip-up) SKIP_UP=1; shift ;;
   --sanity|--check) SANITY_ONLY=1; shift ;;
@@ -626,6 +641,35 @@ if [[ -n "$LOCAL_EMBEDDER" ]]; then
     ok "Local embedder OFF — ollama will not be pulled or started"
   fi
 fi
+# ── Brain-core shape (small headless memory core) ────────────────────────────
+# Persisted via COMPOSE_FILE in .env: compose (and the updater sidecar) load
+# docker-compose.core.yml as an override that gates the channel workers + the
+# PDF-export browser behind a `full` profile — see that file's header for the
+# exact service split. Paths are ABSOLUTE on purpose: the updater runs compose
+# from cwd=/, and a relative COMPOSE_FILE resolves against cwd, not the stack
+# dir (verified against the docker:28-cli compose). COMPOSE_PROFILES stays
+# untouched — a core can still opt into local-embedder etc.
+# Flag not passed → keep whatever .env already has (re-runs never flip it).
+if [[ -n "$CORE" ]]; then
+  if [[ "$CORE" == 1 ]]; then
+    [[ -f "$STACK_DIR/docker-compose.core.yml" ]] \
+      || die "docker-compose.core.yml missing from $STACK_DIR — re-download the deploy bundle (--core needs it)."
+    upsert COMPOSE_FILE "$STACK_DIR/docker-compose.yml:$STACK_DIR/docker-compose.core.yml"
+    # Best-effort: stop + remove the services the core sheds (a fresh box has
+    # none of them yet; a downsized box drops them here). Naming a service
+    # explicitly overrides its profile gate, so this works post-COMPOSE_FILE.
+    docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
+      rm -sf browser worker_email worker_telegram worker_microsoft worker_calendar worker_push worker_runs >/dev/null 2>&1 || true
+    ok "Brain-core shape ON — channel workers + PDF export won't start (see docker-compose.core.yml)"
+  else
+    if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
+      tmp="$(mktemp)"; grep -vE '^COMPOSE_FILE=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
+      ok "Brain-core shape OFF — the full service set starts on the next 'docker compose up -d'"
+    elif [[ -n "$(getval COMPOSE_FILE)" ]]; then
+      warn "COMPOSE_FILE in .env is not the core shape — leaving your custom value alone."
+    fi
+  fi
+fi
 # ── CLI sandboxes (sandboxd + isolated sandbox networks) ─────────────────────
 # Part of the system on NEW boxes: defaults ON for a genuinely fresh install
 # (same freshness rule as the generated DB secrets — no postgres data dir yet).
@@ -633,8 +677,14 @@ fi
 # with --sandboxes, opt out anywhere with --no-sandboxes. Persisted via
 # COMPOSE_PROFILES exactly like the embedder, so the updater keeps it running.
 if [[ -z "$SANDBOXES" && ! -d "$DATA_DIR/postgres" && ! -d "$STACK_DIR/data/postgres" ]]; then
-  SANDBOXES=1
-  inf "Fresh install — CLI sandboxes default ON (skip with --no-sandboxes)"
+  # …except on a core box: sandboxes are a full-shape luxury a 4 GB memory
+  # core shouldn't carry by default (explicit --sandboxes still wins above).
+  if [[ "$CORE" == 1 || "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
+    inf "Core shape — CLI sandboxes stay OFF (enable with --sandboxes)"
+  else
+    SANDBOXES=1
+    inf "Fresh install — CLI sandboxes default ON (skip with --no-sandboxes)"
+  fi
 fi
 if [[ -n "$SANDBOXES" ]]; then
   rest="$(getval COMPOSE_PROFILES | tr ',' '\n' | grep -vx 'sandboxes' | grep -v '^$' | paste -sd, -)" || rest=""
@@ -700,6 +750,7 @@ row "Data"        "$DATA_DIR  ${DIM}(documents, database, backups)${RS}"
 row "Stack"       "$STACK_DIR"
 row "Version"     "$IMAGE_TAG"
 row "Embedder"    "$(if [[ "$(getval COMPOSE_PROFILES)" == *local-embedder* ]]; then printf 'bundled (local)'; else printf 'online — chosen during onboarding'; fi)"
+row "Shape"       "$(if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then printf 'core (memory core: channel workers + PDF export off)'; else printf 'full'; fi)"
 if [[ "$DEBUG_PORT" != 3000 ]]; then row "Debug port" "127.0.0.1:$DEBUG_PORT  ${DIM}(3000 was taken)${RS}"; fi
 existing="$(docker ps -aq --filter "label=com.docker.compose.project=mantle" 2>/dev/null | head -1)"
 if [[ -n "$existing" ]]; then

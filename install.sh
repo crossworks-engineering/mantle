@@ -68,12 +68,14 @@ fetch() { # fetch <repo-path> <local-path>
 
 fetch docker-compose.yml                 docker-compose.yml
 fetch docker-compose.client.yml          docker-compose.client.yml
+fetch docker-compose.core.yml            docker-compose.core.yml
 # Baselines for the release-owned compose contract: the updater sidecar
 # auto-refreshes these files on updates ONLY while each stays byte-identical
 # to its baseline (proof the box never hand-edited it — box-local changes go
 # in docker-compose.override.yml + .env instead).
 cp docker-compose.yml docker-compose.yml.release
 cp docker-compose.client.yml docker-compose.client.yml.release
+cp docker-compose.core.yml docker-compose.core.yml.release
 fetch .env.prod.example                  .env.prod.example
 fetch infra/caddy/Caddyfile              infra/caddy/Caddyfile
 # The same-origin front door (one domain path-routed to BOTH apps). This is

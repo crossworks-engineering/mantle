@@ -1,0 +1,72 @@
+# Brain-core deploy shape: a SMALL memory core on a 2 vCPU / 4 GB box.
+#
+# This is an OVERRIDE, never a standalone file. It is only ever used together
+# with the full docker-compose.yml:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.core.yml
+#
+# written into the box .env by `scripts/install.sh --core` (compose reads
+# COMPOSE_FILE from .env on every pull/up, the updater sidecar included, so
+# the choice persists across updates exactly like COMPOSE_PROFILES does for
+# the local embedder). Boxes WITHOUT that .env line never load this file, so
+# a bare `docker compose up -d` on an existing full box behaves byte-for-byte
+# as before; that back-compat guarantee is the whole reason this is a second
+# FILE and not a profile in the main compose (a `profiles:` key added to an
+# existing service would silently stop it on every deployed box at its next
+# update, and COMPOSE_PROFILES can only add services, never subtract them).
+#
+# Mechanism: each service listed here gains `profiles: ["full"]`. The main
+# file defines no profiles for them, and compose merges profile lists, so
+# with this override active they only start under `--profile full`. Everything
+# NOT listed here keeps running: that remainder is the core.
+#
+# What a core keeps and why (see docker-compose.yml for each service's role):
+#   postgres, minio, createbuckets, migrate   the data spine
+#   web                                       HTTP API + MCP + share pages
+#   api                                       durable turns AND the ingest
+#                                             pipeline (summarize/extract
+#                                             listeners live here, so a core
+#                                             that ingests cannot drop it)
+#   caddy, updater, autoheal, tailscale       front door + upkeep sidecars
+#   tika                                      document-parse fallback for file
+#                                             ingest (idles ~40 MB)
+#   worker_files, worker_docs                 file + documentation ingest
+#   worker_events                             reminders AND the scheduled-
+#                                             backup tick (a core still backs
+#                                             itself up)
+#   worker_maintenance                        nightly registry sweeps, cheap
+#
+# What it sheds (start one ad hoc with `docker compose up -d <service>`;
+# naming a service on the command line overrides its profile gate):
+#   browser            PDF export only; share pages still serve HTML
+#   worker_email       IMAP ingest channel
+#   worker_telegram    Telegram channel poller
+#   worker_microsoft   OneDrive/SharePoint sync
+#   worker_calendar    external calendar (ICS) sync
+#   worker_push        push-notification relay for companion devices
+#   worker_runs        runner-queue engine (MANTLE_RUNS is off by default)
+#
+# Already opt-in via their own profiles, unaffected by this file: ollama +
+# ollama_pull (local-embedder), sandboxd (sandboxes). A core is expected to
+# use ONLINE embeddings; the CPU embedder does not fit a 4 GB box.
+#
+# To turn one of these on PERMANENTLY on a core box, add `full` to
+# COMPOSE_PROFILES in .env... and reconsider: at that point you want the full
+# shape (`scripts/install.sh --no-core`), not a core with everything bolted
+# back on.
+
+services:
+  browser:
+    profiles: ["full"]
+  worker_email:
+    profiles: ["full"]
+  worker_telegram:
+    profiles: ["full"]
+  worker_microsoft:
+    profiles: ["full"]
+  worker_calendar:
+    profiles: ["full"]
+  worker_push:
+    profiles: ["full"]
+  worker_runs:
+    profiles: ["full"]

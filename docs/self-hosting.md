@@ -143,6 +143,34 @@ interface, not in files.
 > your stored API keys; lose it and the vault is unrecoverable).
 > Scheduled DB backups are built in: `/settings/backups`.
 
+### Brain-core shape (small headless memory core)
+
+The default install starts every service: ~17 node processes whose memory
+caps sum to ~15 GB. Caps are guardrails, not reservations, so a 4 GB box
+boots, but it cannot carry that resident set under load. For a **dedicated
+memory core** (say, a box that only ingests meeting recordings and answers
+`search` over MCP, queried by a main brain over federation), install with:
+
+```bash
+scripts/install.sh --core --domain core.example.com -y
+```
+
+(or `MANTLE_CORE=1` on the one-line installer). A core keeps the full brain
+contract: the HTTP API + MCP + share pages, the owner UI (sign-up and
+settings live there), the ingest pipeline (`api`, `tika`, the file/docs
+workers), reminders + scheduled backups, and nightly maintenance. It sheds
+the channel workers (email, telegram, microsoft, calendar, push, runs) and
+the PDF-export browser. The exact split, and the reasoning per service, is
+the header of `docker-compose.core.yml`.
+
+The choice persists via `COMPOSE_FILE` in `.env` (absolute paths — the
+in-app updater needs them), so updates keep the shape. Sandboxes default
+OFF on a fresh core box; the local embedder stays opt-in and does NOT fit a
+core box — use online embeddings (the onboarding default). Turn a service
+back on ad hoc with `docker compose up -d <service>` (naming a service
+overrides its profile gate), or return to the full shape with
+`scripts/install.sh --no-core`.
+
 ### Manual install (no script)
 
 Grab the `mantle-deploy-<version>.tar.gz` bundle from the

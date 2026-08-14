@@ -87,6 +87,7 @@ cur_phase() {
 
 REFRESH=none          # last server-compose refresh outcome (stack.json)
 CLIENT_REFRESH=none   # last client-compose refresh outcome (stack.json)
+CORE_REFRESH=none     # last core-override refresh outcome (stack.json)
 UPDATER_REFRESH=none  # last updater-script refresh outcome (stack.json)
 
 # This script's own path INSIDE the container, reached through the stack-dir
@@ -101,14 +102,16 @@ sha_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 # that cannot self-refresh (modified copy, extraction failure) otherwise
 # reports a perfectly healthy update while silently running old logic.
 write_stack_info() {
-  printf '{"compose_sha":"%s","baseline_sha":"%s","client_compose_sha":"%s","client_baseline_sha":"%s","updater_sha":"%s","updater_baseline_sha":"%s","refresh":"%s","client_refresh":"%s","updater_refresh":"%s","checked_at":"%s"}\n' \
+  printf '{"compose_sha":"%s","baseline_sha":"%s","client_compose_sha":"%s","client_baseline_sha":"%s","core_compose_sha":"%s","core_baseline_sha":"%s","updater_sha":"%s","updater_baseline_sha":"%s","refresh":"%s","client_refresh":"%s","core_refresh":"%s","updater_refresh":"%s","checked_at":"%s"}\n' \
     "$(sha_of "$STACK/docker-compose.yml")" \
     "$(sha_of "$STACK/docker-compose.yml.release")" \
     "$(sha_of "$STACK/docker-compose.client.yml")" \
     "$(sha_of "$STACK/docker-compose.client.yml.release")" \
+    "$(sha_of "$STACK/docker-compose.core.yml")" \
+    "$(sha_of "$STACK/docker-compose.core.yml.release")" \
     "$(sha_of "$STACK/$UPDATER_REL")" \
     "$(sha_of "$STACK/$UPDATER_REL.release")" \
-    "$REFRESH" "$CLIENT_REFRESH" "$UPDATER_REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
+    "$REFRESH" "$CLIENT_REFRESH" "$CORE_REFRESH" "$UPDATER_REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
     && mv "$SIG/stack.json.tmp" "$SIG/stack.json"
 }
 
@@ -171,6 +174,17 @@ refresh_compose() {
     echo "[updater] client compose refresh: $CLIENT_REFRESH" | tee -a "$SIG/update.log"
   else
     CLIENT_REFRESH=absent
+  fi
+  # Core override (brain-core shape, v0.231+): only on boxes whose bundle
+  # shipped it (file present). Refreshing it here is what keeps a core box's
+  # service split current with releases: when a release adds a worker that a
+  # core should NOT run, the gate arrives in the same roll. Inert on full
+  # boxes (the file is only loaded when .env COMPOSE_FILE names it).
+  if [ -f "$STACK/docker-compose.core.yml" ]; then
+    CORE_REFRESH=$(refresh_one docker-compose.core.yml /app/release/docker-compose.core.yml)
+    echo "[updater] core compose refresh: $CORE_REFRESH" | tee -a "$SIG/update.log"
+  else
+    CORE_REFRESH=absent
   fi
 }
 

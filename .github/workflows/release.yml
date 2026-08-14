@@ -183,7 +183,7 @@ jobs:
       - name: Assemble deploy bundle
         run: |
           mkdir -p dist/mantle-deploy
-          cp docker-compose.yml docker-compose.client.yml .env.prod.example install.sh dist/mantle-deploy/
+          cp docker-compose.yml docker-compose.client.yml docker-compose.core.yml .env.prod.example install.sh dist/mantle-deploy/
           cp -R infra dist/mantle-deploy/infra
           mkdir -p dist/mantle-deploy/scripts
           cp scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh scripts/compose-adopt.sh scripts/uninstall.sh dist/mantle-deploy/scripts/

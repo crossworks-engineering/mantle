@@ -144,6 +144,7 @@ RUN pnpm -C server/web build
 # infra/updater/updater.sh (compose refresh) + docs/deploy.md.
 COPY docker-compose.yml /app/release/docker-compose.yml
 COPY docker-compose.client.yml /app/release/docker-compose.client.yml
+COPY docker-compose.core.yml /app/release/docker-compose.core.yml
 COPY infra/caddy/Caddyfile /app/release/Caddyfile
 COPY infra/updater/updater.sh /app/release/updater.sh
 EXPOSE 3000
