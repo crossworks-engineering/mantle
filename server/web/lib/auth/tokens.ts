@@ -297,30 +297,37 @@ export function verifyTeamChatValue(value: string): { ownerId: string; contactId
 const APP_FRAME_TICKET_TTL_SECONDS = 120;
 
 /** Mint an app-frame ticket. `shareId` set ⇒ share surface (published build
- *  only); absent ⇒ owner surface (`uid` = the owner, draft build allowed). */
+ *  only); absent ⇒ owner surface (`uid` = the owner, draft build allowed).
+ *  `contactId` records WHO a team-mode share visitor is, so the frame route
+ *  can re-check membership LIVENESS — a removed member must lose access
+ *  immediately, not at ticket expiry (the team-gate doctrine). */
 export function buildAppFrameTicket(opts: {
   ownerId: string;
   appId: string;
   shareId?: string;
+  contactId?: string | null;
 }): string {
   const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
   if (opts.shareId) claims.sh = opts.shareId;
+  if (opts.contactId) claims.cid = opts.contactId;
   return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
 }
 
 /** Verify an app-frame ticket: signature, expiry, kind (`k:'f'`). No DB —
  *  callers must still confirm the app (and share, when `shareId` is set)
- *  matches the route being served. */
+ *  matches the route being served, and re-check team liveness via
+ *  `contactId` on team-mode shares. */
 export function verifyAppFrameTicket(
   value: string,
-): { ownerId: string; appId: string; shareId?: string } | null {
+): { ownerId: string; appId: string; shareId?: string; contactId?: string } | null {
   const claims = verifySigned(value, 'f');
   if (!claims || typeof claims.uid !== 'string' || typeof claims.app !== 'string') return null;
-  const out: { ownerId: string; appId: string; shareId?: string } = {
+  const out: { ownerId: string; appId: string; shareId?: string; contactId?: string } = {
     ownerId: claims.uid,
     appId: claims.app,
   };
   if (typeof claims.sh === 'string') out.shareId = claims.sh;
+  if (typeof claims.cid === 'string') out.contactId = claims.cid;
   return out;
 }
 

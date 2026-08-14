@@ -29,6 +29,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       ownerId: share.ownerId,
       appId: share.nodeId,
       shareId: share.id,
+      // Team visitors are recorded in the ticket so the frame route can
+      // re-check membership liveness; public visitors have no contact.
+      contactId: visitor.contactId,
     }),
   });
 }

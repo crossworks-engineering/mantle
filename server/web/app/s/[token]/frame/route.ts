@@ -8,7 +8,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { resolveActiveShareByToken } from '@/lib/shares';
 import { verifyAppFrameTicket } from '@/lib/auth';
-import { getApp } from '@mantle/content';
+import { getApp, isTeamMember, shareModeOf } from '@mantle/content';
 import { renderAppFrame } from '@/lib/app-frame';
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
@@ -20,6 +20,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   const ticket = t ? verifyAppFrameTicket(t) : null;
   if (!ticket || ticket.shareId !== share.id || ticket.appId !== share.nodeId) {
     return new NextResponse('frame ticket required', { status: 401 });
+  }
+  // Team liveness, the same doctrine as every broker call: the ticket proves
+  // who the visitor WAS at mint time; membership must still hold NOW. A share
+  // flipped to team mode after a public mint also lands here (no contactId ⇒
+  // refuse) rather than serving the bundle to a now-ungated visitor.
+  if (shareModeOf(share) === 'team') {
+    if (!ticket.contactId || !(await isTeamMember(share.ownerId, ticket.contactId))) {
+      return new NextResponse('team session required', { status: 401 });
+    }
   }
 
   const app = await getApp(share.ownerId, share.nodeId);

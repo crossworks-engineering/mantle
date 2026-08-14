@@ -30,6 +30,13 @@
  *  library). */
 export function buildAppFrameCsp(origin: string): string {
   return (
+    // `sandbox allow-scripts` is the load-bearing directive: it sandboxes the
+    // DOCUMENT itself (opaque origin, no cookies/storage), not just the iframe
+    // that embeds it. Without it, opening the frame URL directly in a tab —
+    // it IS a real URL now — would run AI-written app code on the true server
+    // origin. With it, the frame is opaque-origin no matter how it's reached;
+    // inside the AppSandbox iframe it composes with the identical attribute.
+    `sandbox allow-scripts; ` +
     `default-src 'none'; style-src 'unsafe-inline' ${origin}/share-runtime/; ` +
     `script-src 'unsafe-inline' ${origin}/app-runtime/; ` +
     `img-src data: blob: ${origin}; ` +
