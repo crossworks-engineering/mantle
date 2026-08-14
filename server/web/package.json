@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "app-runtime": "node ../../packages/app-build/scripts/build-runtime.ts server/web",
+    "app-runtime": "node ../../packages/app-build/scripts/build-runtime.ts",
     "apps:push": "tsx --env-file-if-exists=./.env.local scripts/apps-push.ts",
     "backfill:block-ids": "tsx --env-file-if-exists=./.env.local scripts/backfill-block-ids.ts",
     "backfill:conversation": "tsx --env-file-if-exists=./.env.local scripts/backfill-conversation.ts",

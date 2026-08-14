@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build:runtime": "node scripts/build-runtime.ts"
+    "build:runtime": "node scripts/build-runtime.ts ../../server/web"
   },
   "dependencies": {
     "@tailwindcss/oxide": "^4.3.3",
