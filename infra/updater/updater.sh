@@ -382,7 +382,13 @@ while true; do
         # jackdaw-built) regardless of the server tag requested here. Pin
         # MANTLE_CLIENT_IMAGE_TAG in $STACK/.env to hold a client version.
         # A failure here is loud but non-fatal to the server roll (already done).
-        if [ -f "$STACK/docker-compose.client.yml" ]; then
+        # A headless box (MANTLE_CLIENT_ENABLED=0, install.sh --no-client)
+        # runs no owner UI — rolling it would resurrect a deliberately
+        # removed container. Missing from .env means ON.
+        CLIENT_ON=$(grep -E '^MANTLE_CLIENT_ENABLED=' "$STACK/.env" 2>/dev/null | head -1 | cut -d= -f2-)
+        if [ "$CLIENT_ON" = "0" ]; then
+          echo "[updater] client stack disabled (MANTLE_CLIENT_ENABLED=0) — skipping client roll" | tee -a "$SIG/update.log"
+        elif [ -f "$STACK/docker-compose.client.yml" ]; then
           echo "[updater] rolling client stack → $TARGET" | tee -a "$SIG/update.log"
           if ! docker compose -f "$STACK/docker-compose.client.yml" --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1 \
             || ! docker compose -f "$STACK/docker-compose.client.yml" --project-directory "$STACK" up -d --remove-orphans >> "$SIG/update.log" 2>&1; then

@@ -55,9 +55,14 @@ won't answer.
 
 ### Where it serves
 
-The one-line command is non-interactive. Without `MANTLE_DOMAIN` it serves
-**plain HTTP on :80 across the machine's network**: reach it at
-`http://<server-ip>`. Run the configurator directly and it asks instead:
+The one-line command asks its questions on your terminal (it reads
+`/dev/tty`, so `curl | bash` still prompts): how the brain is reached, then
+which components to install on a fresh box — shape (full or small core), CLI
+sandboxes, the bundled local embedder, and the owner web UI. Set
+`MANTLE_YES=1` (or run without a terminal, as CI does) for the old
+zero-question behaviour: plain HTTP on :80 across the machine's network
+without `MANTLE_DOMAIN`, full shape, sandboxes on, UI on. Run the
+configurator directly and the first question looks like:
 
 ```bash
 cd mantle && bash scripts/install.sh

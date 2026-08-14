@@ -19,6 +19,11 @@
 #   MANTLE_CHANNEL=main           git ref to fetch the deploy bundle from
 #                                 (default: main; a release tag like v0.108.0
 #                                 pins compose+infra to that release)
+#   MANTLE_YES=1                  never prompt — take the defaults (the old
+#                                 behaviour). Without it, a terminal gets
+#                                 asked: how the brain is reached, and which
+#                                 components to install (shape, sandboxes,
+#                                 local embedder, owner UI).
 #
 # What it does — and nothing else:
 #   1. checks docker + the compose plugin exist
@@ -109,8 +114,18 @@ ok "deploy bundle fetched"
 # up --wait through the migrate gate, and the per-service sanity check) lives
 # in scripts/install.sh — the same script used to reconfigure a box later
 # (e.g. `scripts/install.sh --domain m.example.com` to add HTTPS).
-ARGS=(--stack-dir "$(pwd -P)" --data-dir ./data -y)
-if [ -n "$DOMAIN" ]; then ARGS+=(--domain "$DOMAIN"); else ARGS+=(--no-domain); fi
+# Interactive when a terminal exists: scripts/install.sh reads its prompts
+# from /dev/tty precisely so `curl … | bash` can still ask questions (access
+# mode, what to install). Forcing -y here used to defeat that machinery and
+# silently install the defaults. MANTLE_YES=1 restores the old zero-question
+# behaviour for scripted runs; no controlling terminal means -y regardless.
+ARGS=(--stack-dir "$(pwd -P)" --data-dir ./data)
+if [ -n "${MANTLE_YES:-}" ] || [ ! -r /dev/tty ]; then ARGS+=(-y); fi
+if [ -n "$DOMAIN" ]; then
+  ARGS+=(--domain "$DOMAIN")
+elif [ -n "${MANTLE_YES:-}" ] || [ ! -r /dev/tty ]; then
+  ARGS+=(--no-domain)   # non-interactive default, unchanged
+fi
 # A release-tag channel pins the image to the same version as the bundle, so
 # compose + image can never drift apart.
 case "$CHANNEL" in v[0-9]*) ARGS+=(--image-tag "$CHANNEL") ;; esac

@@ -116,6 +116,13 @@ CORE="${MANTLE_CORE:-}"
 # box, 0=disable, empty=keep .env as-is. Only meaningful on the core shape;
 # the full shape always runs them.
 HELPERS="${MANTLE_HELPERS:-}"
+# Owner web UI (the separate client stack): 1=run it, 0=headless (API + MCP +
+# share pages only — no signup, no owner screens), empty=keep .env as-is
+# (missing from .env means ON, the pre-flag behaviour).
+CLIENT="${MANTLE_CLIENT:-}"
+# Owner UI image tag — its OWN version stream since the repo split (built by
+# the frontend repo, default `latest`). Empty=keep .env as-is.
+CLIENT_TAG="${MANTLE_CLIENT_IMAGE_TAG:-}"
 usage() {
   cat <<EOF
 ${B}Mantle installer${RS}
@@ -168,6 +175,16 @@ ${B}Options${RS}
                          Persists via COMPOSE_PROFILES in .env. No effect on
                          the full shape, which always runs both.
   --no-helpers           Shed the doc helpers again on a core box
+  --client               Run the owner web UI (the default; a separate small
+                         container on its own version stream)
+  --no-client            Headless box: API + MCP + share pages only. No owner
+                         UI means no signup and no owner screens — pair a
+                         headless brain from another brain or over MCP.
+                         Persists as MANTLE_CLIENT_ENABLED in .env; the
+                         updater and the sanity check honour it.
+  --client-image-tag <t> Pin the owner UI image tag (MANTLE_CLIENT_IMAGE_TAG,
+                         default: latest — it does NOT follow --image-tag
+                         since the repo split)
   -y, --yes              Non-interactive: accept defaults, never prompt
   --skip-up              Write .env only; don't bring the stack up
   --sanity, --check      Only run the post-install sanity check, then exit
@@ -200,6 +217,9 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --no-core) CORE=0; shift ;;
   --helpers) HELPERS=1; shift ;;
   --no-helpers) HELPERS=0; shift ;;
+  --client) CLIENT=1; shift ;;
+  --no-client) CLIENT=0; shift ;;
+  --client-image-tag) CLIENT_TAG="${2:-}"; shift 2 ;;
   -y|--yes|--non-interactive) ASSUME_YES=1; shift ;;
   --skip-up) SKIP_UP=1; shift ;;
   --sanity|--check) SANITY_ONLY=1; shift ;;
@@ -532,6 +552,68 @@ case "$ACCESS_MODE" in
   *)         ok "Site address: ${B}$OPEN_URL${RS} ${DIM}(HTTP, no certificate)${RS}" ;;
 esac
 
+# ── 2b. what to install ──────────────────────────────────────────────────────
+# Every component choice used to be flag-only, which meant an interactive
+# operator never saw it — the options may as well not have existed. Ask each
+# one, with the cost stated where the answer is given, so choosing is informed
+# rather than archaeological.
+#
+# Asked on a FRESH box only (same freshness rule as the generated DB secrets:
+# no postgres data dir yet). A re-run keeps .env exactly as-is unless a flag
+# says otherwise — an existing box must never flip a component because someone
+# re-ran the installer to add a domain. Flags and MANTLE_* env always win over
+# the questions (each question is skipped when its variable is already set).
+FRESH_BOX=0
+if [[ ! -d "$DATA_DIR/postgres" && ! -d "$STACK_DIR/data/postgres" ]]; then FRESH_BOX=1; fi
+# An aborted first run may have left an .env full of answers with no database
+# behind it yet — default each question to what was chosen last time, so
+# hitting enter through the re-run keeps the earlier answers instead of
+# silently reverting them. (getval proper is defined with the .env writers
+# below; questions only need this read-side.)
+envval() { [[ -f "$ENV_FILE" ]] && grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
+if [[ $INTERACTIVE -eq 1 && $FRESH_BOX -eq 1 ]]; then
+  hd "What to install"
+  # The shape first — it changes the right default for everything after it.
+  if [[ -z "$CORE" ]]; then
+    core_d=n
+    if [[ "$(envval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then core_d=y; fi
+    if [[ -n "${mem_mb:-}" && $mem_mb -lt 6000 ]]; then
+      warn "This box has $((mem_mb / 1024))GB RAM — the full stack wants 8GB+. The small core shape is built for boxes like this."
+      core_d=y
+    fi
+    inf "${DIM}Full = everything: chat, email/Telegram/calendar channels, background workers.${RS}"
+    inf "${DIM}Core = a small headless memory core (HTTP API, MCP, share pages, file ingest, backups) that fits 2 vCPU / 4 GB.${RS}"
+    if confirm "Install the SMALL core shape instead of the full stack?" "$core_d"; then CORE=1; else CORE=0; fi
+  fi
+  if [[ "$CORE" == 1 && -z "$HELPERS" ]]; then
+    hlp_d=n; if [[ "$(envval COMPOSE_PROFILES)" == *helpers* ]]; then hlp_d=y; fi
+    inf "${DIM}Doc helpers = tika (parses .odt/.pptx/.doc/.rtf — common formats parse without it) + the PDF-export browser (~2 GB image).${RS}"
+    if confirm "Add the doc helpers to the core?" "$hlp_d"; then HELPERS=1; else HELPERS=0; fi
+  fi
+  if [[ -z "$SANDBOXES" ]]; then
+    sbx_d=y; if [[ "$CORE" == 1 ]]; then sbx_d=n; fi
+    if [[ "$(envval COMPOSE_PROFILES)" == *sandboxes* ]]; then sbx_d=y; fi
+    inf "${DIM}CLI sandboxes give the coder agent isolated containers to work in (docs/sandboxes.md). One extra service + a base image pull.${RS}"
+    if confirm "Enable CLI sandboxes?" "$sbx_d"; then SANDBOXES=1; else SANDBOXES=0; fi
+  fi
+  if [[ -z "$LOCAL_EMBEDDER" ]]; then
+    emb_d=n; if [[ "$(envval COMPOSE_PROFILES)" == *local-embedder* ]]; then emb_d=y; fi
+    if [[ -n "${mem_mb:-}" && $mem_mb -lt 15000 ]]; then
+      inf "${DIM}Local embedder (Ollama + EmbeddingGemma, ~3.3 GB): needs a LARGE box — it degrades a 16GB/8-core server under multi-file ingest. This box is smaller; online embeddings (set up in onboarding) are the right choice here.${RS}"
+    else
+      inf "${DIM}Local embedder (Ollama + EmbeddingGemma, ~3.3 GB image + model): embeddings never leave the box. Skip it to use online embeddings, chosen during onboarding.${RS}"
+    fi
+    if confirm "Bundle the LOCAL embedder?" "$emb_d"; then LOCAL_EMBEDDER=1; else LOCAL_EMBEDDER=0; fi
+  fi
+  if [[ -z "$CLIENT" ]]; then
+    cli_d=y; if [[ "$(envval MANTLE_CLIENT_ENABLED)" == 0 ]]; then cli_d=n; fi
+    inf "${DIM}The owner web UI is a separate small container — signup and every owner screen live in it. Skip it only for a headless memory core driven over MCP/API.${RS}"
+    if confirm "Run the owner web UI?" "$cli_d"; then CLIENT=1; else CLIENT=0; fi
+  fi
+elif [[ $INTERACTIVE -eq 1 ]]; then
+  inf "Existing install — components stay as configured. ${DIM}(Change with --core/--sandboxes/--local-embedder/--helpers/--no-client; see --help.)${RS}"
+fi
+
 # ── 3. secrets + .env ────────────────────────────────────────────────────────
 hd "Configuration (.env)"
 getval() { [[ -f "$ENV_FILE" ]] && grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
@@ -713,6 +795,29 @@ if [[ -n "$HELPERS" ]]; then
     ok "Doc helpers OFF — tika + the PDF-export browser won't start on the core shape"
   fi
 fi
+# ── Owner web UI (the separate client stack) ─────────────────────────────────
+# Persisted as MANTLE_CLIENT_ENABLED so the bring-up below, the updater's
+# client roll and the sanity check all read ONE switch. Missing from .env
+# means ON — every box installed before this flag existed runs the UI and
+# must keep doing so. Flag not passed → keep .env as-is.
+if [[ -n "$CLIENT" ]]; then
+  if [[ "$CLIENT" == 1 ]]; then
+    upsert MANTLE_CLIENT_ENABLED 1
+    ok "Owner web UI ON"
+  else
+    upsert MANTLE_CLIENT_ENABLED 0
+    # Best-effort: stop + remove a running client container (its image stays).
+    if [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then
+      docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
+        -f "$STACK_DIR/docker-compose.client.yml" rm -sf client-web >/dev/null 2>&1 || true
+    fi
+    ok "Owner web UI OFF — headless: API + MCP + share pages only (no signup screen)"
+  fi
+fi
+if [[ -n "$CLIENT_TAG" ]]; then
+  upsert MANTLE_CLIENT_IMAGE_TAG "$CLIENT_TAG"
+  ok "Owner UI image pinned to ${B}$CLIENT_TAG${RS}"
+fi
 # ── CLI sandboxes (sandboxd + isolated sandbox networks) ─────────────────────
 # Part of the system on NEW boxes: defaults ON for a genuinely fresh install
 # (same freshness rule as the generated DB secrets — no postgres data dir yet).
@@ -794,6 +899,8 @@ row "Stack"       "$STACK_DIR"
 row "Version"     "$IMAGE_TAG"
 row "Embedder"    "$(if [[ "$(getval COMPOSE_PROFILES)" == *local-embedder* ]]; then printf 'bundled (local)'; else printf 'online — chosen during onboarding'; fi)"
 row "Shape"       "$(if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then if [[ "$(getval COMPOSE_PROFILES)" == *helpers* ]]; then printf 'core + doc helpers (channel workers off)'; else printf 'core (channel workers + doc helpers off)'; fi; else printf 'full'; fi)"
+row "Sandboxes"   "$(if [[ "$(getval COMPOSE_PROFILES)" == *sandboxes* ]]; then printf 'on (coder agent gets isolated containers)'; else printf 'off'; fi)"
+row "Owner UI"    "$(if [[ "$(getval MANTLE_CLIENT_ENABLED)" == 0 ]]; then printf 'off — headless (MCP / API only)'; else printf 'on (tag: %s)' "$(getval MANTLE_CLIENT_IMAGE_TAG | grep . || echo latest)"; fi)"
 if [[ "$DEBUG_PORT" != 3000 ]]; then row "Debug port" "127.0.0.1:$DEBUG_PORT  ${DIM}(3000 was taken)${RS}"; fi
 existing="$(docker ps -aq --filter "label=com.docker.compose.project=mantle" 2>/dev/null | head -1)"
 if [[ -n "$existing" ]]; then
@@ -829,8 +936,12 @@ inf "Bringing services up (waits for migrate + health)…"
 # The owner UI — a SEPARATE stack on its own version stream (jackdaw-built;
 # pinned by MANTLE_CLIENT_IMAGE_TAG, default `latest`).
 # Skipping this leaves a brain with no usable interface: signup and every
-# owner screen live here.
-if [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then
+# owner screen live here — which is exactly what a deliberate --no-client box
+# wants, and an accident everywhere else. MANTLE_CLIENT_ENABLED=0 is the one
+# switch; missing means ON.
+if [[ "$(getval MANTLE_CLIENT_ENABLED)" == 0 ]]; then
+  inf "Owner web UI disabled (MANTLE_CLIENT_ENABLED=0) — headless brain: no signup screen; drive it over MCP / the API."
+elif [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then
   inf "Bringing up the owner UI (client app)…"
   "${CLIENT_COMPOSE[@]}" pull -q 2>&1 | sed 's/^/    /' || warn "Client image pull failed — the owner UI will not start."
   "${CLIENT_COMPOSE[@]}" up -d --wait || warn "Client app did not become healthy — check 'docker logs mantle_client_web'."
