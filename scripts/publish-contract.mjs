@@ -24,8 +24,6 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const NPM_SCOPE = '@crossworks';
-// Order matters only for readability — pnpm rewrites workspace:* deps to the
-// stamped version on pack, so share-ui's deps resolve to this same release.
 const PACKAGES = ['client-types', 'content-core', 'voice-client', 'share-ui', 'app-build'];
 
 const version = (process.argv[2] ?? '').replace(/^v/, '');
@@ -48,12 +46,44 @@ try {
     delete j.private;
     j.license = 'SEE LICENSE IN LICENSE.md';
     j.repository = { type: 'git', url: 'https://github.com/crossworks-engineering/mantle' };
+    // Cross-package deps: keep the @mantle/* KEY (the shipped TS source
+    // imports that name) but point it at the published package via an npm
+    // alias — the exact shape the 0.230.43 release shipped with. Leaving
+    // `workspace:*` breaks the publish: by the time share-ui packs, its
+    // sibling manifests are already renamed to @crossworks/*, so pnpm finds
+    // no workspace project named @mantle/client-types and errors with
+    // CANNOT_RESOLVE_WORKSPACE_PROTOCOL (the v0.230.57 run).
+    for (const deps of [j.dependencies, j.peerDependencies, j.optionalDependencies]) {
+      if (!deps) continue;
+      for (const [dep, spec] of Object.entries(deps)) {
+        const name = dep.replace(/^@mantle\//, '');
+        if (dep !== name && PACKAGES.includes(name) && String(spec).startsWith('workspace:')) {
+          deps[dep] = `npm:${NPM_SCOPE}/${name}@${version}`;
+        }
+      }
+    }
     fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
     console.log(`→ ${j.name}@${version}${dryRun ? ' (dry run)' : ''}`);
-    execSync(`pnpm publish --access public --no-git-checks${dryRun ? ' --dry-run' : ''}`, {
-      cwd: path.join(ROOT, 'packages', pkg),
-      stdio: 'inherit',
-    });
+    try {
+      const out = execSync(`pnpm publish --access public --no-git-checks${dryRun ? ' --dry-run' : ''}`, {
+        cwd: path.join(ROOT, 'packages', pkg),
+        stdio: ['inherit', 'pipe', 'pipe'],
+        encoding: 'utf8',
+      });
+      process.stdout.write(out);
+    } catch (err) {
+      // npm versions are immutable, so a partially-published release makes
+      // every later run die on the first already-published package before it
+      // reaches the missing ones (the v0.230.57 run stopped at share-ui and
+      // could never be re-run). Treat "already published" as done, not fatal.
+      const msg = `${err.stdout ?? ''}${err.stderr ?? ''}`;
+      if (/cannot publish over|previously published|EPUBLISHCONFLICT/i.test(msg)) {
+        console.log(`↷ ${NPM_SCOPE}/${pkg}@${version} already on npm — skipping`);
+        continue;
+      }
+      process.stderr.write(msg);
+      throw err;
+    }
   }
 } catch (err) {
   failed = true;

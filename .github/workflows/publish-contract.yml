@@ -31,6 +31,14 @@ jobs:
           node-version: 26
           registry-url: 'https://registry.npmjs.org'
 
+      # pnpm rewrites `workspace:` deps to real versions at publish time, and
+      # can only do that against an installed workspace — without this step
+      # share-ui/app-build fail with ERR_PNPM_CANNOT_RESOLVE_WORKSPACE_PROTOCOL
+      # (the v0.230.57 run). --ignore-scripts: the packages ship TS source, no
+      # build output is needed, and skipping native postinstalls keeps it fast.
+      - name: Install workspace (resolves workspace: deps for publish)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
       # `secrets.*` is not readable inside `if:` on a step directly; stage it
       # through an env probe so a missing token skips instead of erroring.
       - name: Check for the npm token
