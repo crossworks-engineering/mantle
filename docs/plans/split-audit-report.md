@@ -18,17 +18,17 @@ clear-cut one is fixed in this branch.
 
 ## Fixes landed in this branch
 
-| ID | Was | Fix |
-|----|-----|-----|
-| E1 (HIGH) | `build-check.yml` still ran the moved e2e suite, **mantle CI red on every push to main since the split** (runs 31745360824 → 31747511424) | e2e job + `e2e:split` root script removed |
-| C1 (HIGH) | `pnpm verify` red at v0.230.48: prettier failure in `packages/content/src/invariants.test.ts` (introduced by dfefe0bb) | reformatted; verify's format gate green again |
-| B1/D1 (MED) | `invariants.test.ts` did NOT pin the default compose service set: gating `postgres` behind a profile passed silently, the exact hazard the P4 docs claim the test guards | two new assertions: the 22-name profile-less default set of `docker-compose.yml` is pinned, and `docker-compose.core.yml`'s gate set is pinned to tika/browser + the six channel workers. Both proven to trip |
-| E2 (MED) | Dockerfile deps stage missing `content-core`, `share-ui`, `voice-client` manifests; its own sync-check comment failed and cited dead trees | three COPY lines added; check command fixed; sync check passes |
-| E3 (LOW) | `scripts/fonts-import.mjs` wrote into the deleted `client/web` (hard ENOENT on next real run) | `APPS = ['server/web']`, comment updated |
-| E4 (LOW) | `pnpm-workspace.yaml` carried literal `electron: set this to true or false` placeholder junk from the cut commit | deleted |
-| D2/D3 (COSMETIC) | updater.sh + install.sh comments still claimed client/server tag lockstep | rewritten to describe the MANTLE_CLIENT_IMAGE_TAG stream |
-| D4 (COSMETIC) | `MANTLE_CLIENT_IMAGE_TAG` documented nowhere operator-facing | added to `.env.prod.example` + `docs/deploy.md` update snippet |
-| C5 (COSMETIC) | `docs/themes.md`/`docs/scripts.md` pointed at `packages/web-ui` for the theme generator (it lives in `packages/share-ui`); `docs/versioning.md` claimed the bump touches deleted client manifests; two live links to the deleted `db-less-dev.md` | paths corrected; links now point at the jackdaw copy |
+| ID               | Was                                                                                                                                                                                                                                               | Fix                                                                                                                                                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1 (HIGH)        | `build-check.yml` still ran the moved e2e suite, **mantle CI red on every push to main since the split** (runs 31745360824 → 31747511424)                                                                                                         | e2e job + `e2e:split` root script removed                                                                                                                                                                     |
+| C1 (HIGH)        | `pnpm verify` red at v0.230.48: prettier failure in `packages/content/src/invariants.test.ts` (introduced by dfefe0bb)                                                                                                                            | reformatted; verify's format gate green again                                                                                                                                                                 |
+| B1/D1 (MED)      | `invariants.test.ts` did NOT pin the default compose service set: gating `postgres` behind a profile passed silently, the exact hazard the P4 docs claim the test guards                                                                          | two new assertions: the 22-name profile-less default set of `docker-compose.yml` is pinned, and `docker-compose.core.yml`'s gate set is pinned to tika/browser + the six channel workers. Both proven to trip |
+| E2 (MED)         | Dockerfile deps stage missing `content-core`, `share-ui`, `voice-client` manifests; its own sync-check comment failed and cited dead trees                                                                                                        | three COPY lines added; check command fixed; sync check passes                                                                                                                                                |
+| E3 (LOW)         | `scripts/fonts-import.mjs` wrote into the deleted `client/web` (hard ENOENT on next real run)                                                                                                                                                     | `APPS = ['server/web']`, comment updated                                                                                                                                                                      |
+| E4 (LOW)         | `pnpm-workspace.yaml` carried literal `electron: set this to true or false` placeholder junk from the cut commit                                                                                                                                  | deleted                                                                                                                                                                                                       |
+| D2/D3 (COSMETIC) | updater.sh + install.sh comments still claimed client/server tag lockstep                                                                                                                                                                         | rewritten to describe the MANTLE_CLIENT_IMAGE_TAG stream                                                                                                                                                      |
+| D4 (COSMETIC)    | `MANTLE_CLIENT_IMAGE_TAG` documented nowhere operator-facing                                                                                                                                                                                      | added to `.env.prod.example` + `docs/deploy.md` update snippet                                                                                                                                                |
+| C5 (COSMETIC)    | `docs/themes.md`/`docs/scripts.md` pointed at `packages/web-ui` for the theme generator (it lives in `packages/share-ui`); `docs/versioning.md` claimed the bump touches deleted client manifests; two live links to the deleted `db-less-dev.md` | paths corrected; links now point at the jackdaw copy                                                                                                                                                          |
 
 ## A. Runtime truth: verified live (the split's untested half)
 
@@ -77,6 +77,23 @@ identically on a v0.230.27 control server run against the same brain):**
    browsers, on post-split AND pre-split servers. Needs a check on a
    production box (may be dev-server-specific); if it reproduces there it
    is a real bug, but it is not the split's.
+   **RESOLVED (follow-up, 2026-08-14):** reproduced on the dev box
+   (production image), so a real bug, and diagnosed live there. Root
+   cause: `AppSandbox` assigned `.srcdoc` to an iframe already in the
+   DOM; that assignment can race the element's initial `about:blank`
+   navigation, and on a busy cold load the srcdoc navigation is silently
+   dropped (attribute set, document blank — re-assigning the identical
+   srcdoc booted the app instantly, the lost-navigation signature). Fixed
+   in `packages/share-ui/src/app-sandbox.tsx` by rendering the iframe
+   with its srcdoc (keyed per attempt) so the element is created with the
+   document before insertion; the ready-watchdog now retries once and
+   then surfaces the error state instead of an eternal spinner. Also
+   found+fixed there: the sandbox CSP hardcoded `/_next/` for styles and
+   fonts, CSP-blocking `/share-runtime/styles.css` on the /s surface —
+   every shared app rendered unstyled; the allowlist now follows the
+   host page's actual stylesheet links. Remaining follow-up (chip
+   spawned): share-runtime styles.css doesn't scan the app kit /
+   app-authored classes, so shared apps are still only partially styled.
 2. **Detached-dev auth stand-in 500s instead of 401s**: unauthenticated
    API hits in dev's detached mode pass an undefined user into queries
    (`params: [undefined, …]`, postgres `UNDEFINED_VALUE`). Cosmetic noise

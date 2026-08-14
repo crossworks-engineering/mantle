@@ -69,16 +69,16 @@ function captureHostCss(): string {
  *  and inline only the small dynamic <style> tags (theme vars next-themes
  *  injects, etc.). Falls back to a full inline capture when the host exposes no
  *  <link> stylesheets (e.g. some dev setups inline everything). */
-function hostStyleMarkup(): string {
+function hostStyleMarkup(): { markup: string; styleHrefs: string[] } {
   const links = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
     .map((l) => l.href)
     .filter(Boolean);
-  if (links.length === 0) return `<style>${captureHostCss()}</style>`;
+  if (links.length === 0) return { markup: `<style>${captureHostCss()}</style>`, styleHrefs: [] };
   const inline = Array.from(document.querySelectorAll('style'))
     .map((s) => s.textContent || '')
     .join('\n');
   const linkTags = links.map((href) => `<link rel="stylesheet" href="${href}" />`).join('\n');
-  return `${linkTags}\n<style>${inline}</style>`;
+  return { markup: `${linkTags}\n<style>${inline}</style>`, styleHrefs: links };
 }
 
 // Host-injected "inspect mode" overlay. Lives in the iframe but is NOT part of
@@ -162,7 +162,7 @@ function buildSrcDoc(bundleCode: string, importMapJson: string, viewport: boolea
   const colorTheme = html.dataset.colorTheme
     ? ` data-color-theme="${html.dataset.colorTheme}"`
     : '';
-  const styleMarkup = hostStyleMarkup();
+  const { markup: styleMarkup, styleHrefs } = hostStyleMarkup();
   // CSP: the app may only render — NO network of its own. `connect-src 'none'`
   // blocks fetch/XHR/WebSocket, but img/font loads are network too, so they're
   // held to inline sources only (data:/blob:) — a wildcard there would be an
@@ -184,10 +184,27 @@ function buildSrcDoc(bundleCode: string, importMapJson: string, viewport: boolea
   // app rendering maths fell back to system fonts. This widens nothing: it
   // permits fonts from exactly the path already trusted for styles.
   const origin = location.origin;
+  // The style allowlist follows the stylesheets the host page ACTUALLY links:
+  // /_next/ on the owner app, /share-runtime/ on the /s surface. Hardcoding
+  // /_next/ alone CSP-blocked the linked sheet on shares, so every shared app
+  // rendered unstyled. Each linked sheet contributes its same-origin directory
+  // (a directory source also matches subpaths, e.g. katex's fonts/). font-src
+  // mirrors style-src (see above) plus /fonts/ — the share surface inlines the
+  // owner-font @font-face rules, whose URLs live under /fonts/library/.
+  const styleDirs = new Set([`${origin}/_next/`]);
+  for (const href of styleHrefs) {
+    try {
+      const u = new URL(href);
+      if (u.origin === origin) styleDirs.add(u.origin + u.pathname.replace(/[^/]*$/, ''));
+    } catch {
+      /* non-URL href — skip */
+    }
+  }
+  const styleSrc = [...styleDirs].join(' ');
   const csp =
-    `default-src 'none'; style-src 'unsafe-inline' ${origin}/_next/; ` +
+    `default-src 'none'; style-src 'unsafe-inline' ${styleSrc}; ` +
     `script-src 'unsafe-inline' ${origin}/app-runtime/; ` +
-    `img-src data: blob:; font-src data: ${origin}/_next/; ` +
+    `img-src data: blob:; font-src data: ${styleSrc} ${origin}/fonts/; ` +
     "connect-src 'none'; base-uri 'none'; form-action 'none'";
   return `<!doctype html>
 <html class="${cls}"${colorTheme}>
@@ -306,6 +323,16 @@ export function AppSandbox({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [height, setHeight] = useState(320);
+  // The built srcdoc, held in state so the iframe is RENDERED with it (keyed
+  // per attempt). Assigning `.srcdoc` to an iframe already in the DOM raced
+  // the element's initial about:blank navigation — under a busy first page
+  // load the srcdoc navigation was silently dropped, leaving the attribute
+  // set but the document blank and the share pinned on "Loading…" forever.
+  // Creating a fresh element that carries srcdoc before insertion can't race.
+  const [doc, setDoc] = useState<{ html: string; gen: number } | null>(null);
+  const genRef = useRef(0);
+  // One automatic remount before giving up (see the ready watchdog below).
+  const retriedRef = useRef(false);
   // Whether THIS bundle load ever reached ready — distinguishes a boot crash
   // (error before ready ⇒ load failure) from a runtime error after boot.
   const everReadyRef = useRef(false);
@@ -464,19 +491,33 @@ export function AppSandbox({
   // Ready watchdog: a bundle that FETCHES fine but never boots (module-level
   // throw, an import-map chunk failing inside the opaque iframe) leaves status
   // on 'loading' forever — the fetch error paths below never see it. Give the
-  // app a generous window to post `ready`, then report a load failure so a
-  // hub-surface parent can fall back instead of pinning members on a spinner.
+  // app a generous window to post `ready`, then remount the iframe once (a
+  // fresh element re-runs the whole srcdoc; recovers any residual dropped
+  // navigation), and if that also times out surface the error state + report
+  // a load failure so a hub-surface parent can fall back instead of pinning
+  // members on a spinner.
   useEffect(() => {
-    if (status !== 'loading') return;
-    const t = setTimeout(() => cbRef.current.onLoadFailure?.(), 10_000);
+    if (status !== 'loading' || doc === null) return;
+    const t = setTimeout(() => {
+      if (!retriedRef.current) {
+        retriedRef.current = true;
+        setDoc((d) => (d ? { ...d, gen: ++genRef.current } : d));
+        return;
+      }
+      setStatus('error');
+      cbRef.current.onError?.('the app never signalled ready');
+      cbRef.current.onLoadFailure?.();
+    }, 10_000);
     return () => clearTimeout(t);
-  }, [status, reloadKey, apiBase]);
+  }, [status, doc]);
 
   // Fetch the bundle and (re)render into the iframe.
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
+    setDoc(null);
     everReadyRef.current = false;
+    retriedRef.current = false;
     Promise.all([doFetch(`${apiBase}/bundle`), loadImportMap()])
       .then(async ([r, importMap]) => {
         if (cancelled) return;
@@ -492,8 +533,8 @@ export function AppSandbox({
           return;
         }
         const code = await r.text();
-        if (cancelled || !iframeRef.current) return;
-        iframeRef.current.srcdoc = buildSrcDoc(code, importMap, frame === 'viewport');
+        if (cancelled) return;
+        setDoc({ html: buildSrcDoc(code, importMap, frame === 'viewport'), gen: ++genRef.current });
       })
       .catch((err) => {
         if (cancelled) return;
@@ -531,15 +572,19 @@ export function AppSandbox({
           {isViewport ? 'Couldn’t load the app.' : 'Couldn’t load the app preview.'}
         </div>
       )}
-      <iframe
-        ref={iframeRef}
-        title={isViewport ? 'App' : 'App preview'}
-        sandbox="allow-scripts"
-        className={
-          status === 'ready' ? (isViewport ? 'block h-full w-full' : 'block w-full') : 'hidden'
-        }
-        style={isViewport ? { border: '0' } : { height, border: '0', width: '100%' }}
-      />
+      {doc !== null && (
+        <iframe
+          key={doc.gen}
+          ref={iframeRef}
+          title={isViewport ? 'App' : 'App preview'}
+          sandbox="allow-scripts"
+          srcDoc={doc.html}
+          className={
+            status === 'ready' ? (isViewport ? 'block h-full w-full' : 'block w-full') : 'hidden'
+          }
+          style={isViewport ? { border: '0' } : { height, border: '0', width: '100%' }}
+        />
+      )}
       {status === 'loading' && (
         <div
           className={`flex items-center justify-center p-6 text-sm text-muted-foreground ${isViewport ? 'h-full' : 'h-40'}`}
