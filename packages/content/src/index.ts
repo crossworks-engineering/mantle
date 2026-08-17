@@ -41,12 +41,36 @@ export {
   createTask,
   updateTask,
   deleteTask,
+  sanitizeTodos,
+  TASKS_CHANGED_CHANNEL,
+  TASK_TODOS_MAX,
+  TASK_TODO_TEXT_MAX,
   type TaskRow,
   type TaskStatus,
   type TaskPriority,
+  type TaskTodo,
+  type TaskTodoInput,
   type CreateTaskInput,
   type UpdateTaskInput,
 } from './tasks';
+
+export { isValidRank, rankBetween, ranksAfter, RANK_RE } from './rank';
+
+export {
+  COMMENT_BODY_MAX,
+  COMMENTS_CHANGED_CHANNEL,
+  addNodeComment,
+  deleteNodeComment,
+  getNodeComment,
+  isNodeTeamVisible,
+  listNodeComments,
+  toNodeCommentDto,
+  updateNodeComment,
+  type CommentAuthor,
+  type CommentViewer,
+  type NodeComment,
+  type NodeCommentAuthorKind,
+} from './node-comments';
 
 export {
   EVENTS_ROOT_LABEL,

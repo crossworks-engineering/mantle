@@ -685,9 +685,43 @@ export type TaskRow = {
   priority: TaskPriority;
   dueAt: string | null;
   tags: string[];
+  /** Checklist inside the task ("task breakup"). Stored in `data.todos`. */
+  todos: TaskTodo[];
+  /** Fractional ordering key for the board (within-column order). Stored in
+   *  `data.rank`; null on tasks never dragged — they sort after ranked ones. */
+  rank: string | null;
+  /** Comments on this task (node_comments rows). List/detail badge material. */
+  commentCount: number;
   summary: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+/** One checklist item inside a task. Server assigns `id` on write. */
+export type TaskTodo = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
+/** Mirrors @mantle/db `NodeCommentAuthorKind`. */
+export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent';
+
+/**
+ * A comment on a node (tasks first; the table is node-generic). `authorName`
+ * is a display snapshot at post time; `mine` is computed server-side per
+ * viewer (an owner login sees its own comments as mine, a team member sees
+ * theirs), so clients never reconcile the two auth worlds themselves.
+ */
+export type NodeComment = {
+  id: string;
+  nodeId: string;
+  authorKind: NodeCommentAuthorKind;
+  authorName: string;
+  mine: boolean;
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
 };
 
 export type JournalRow = {
@@ -1326,7 +1360,7 @@ export type TeamVisibleShare = {
 
 /** Task lifecycle vocabulary — mirrors content's TASK_STATUSES/TASK_PRIORITIES
  *  consts, which are `satisfies`-checked against these unions. */
-export type TaskStatus = 'open' | 'done';
+export type TaskStatus = 'open' | 'in_progress' | 'blocked' | 'done';
 export type TaskPriority = 'low' | 'normal' | 'high';
 
 /** Mirrors @mantle/db `ForumTopicKind`. */

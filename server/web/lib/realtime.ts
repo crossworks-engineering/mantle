@@ -1,6 +1,7 @@
 import postgres from 'postgres';
 import { eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
+import { COMMENTS_CHANGED_CHANNEL, TASKS_CHANGED_CHANNEL } from '@mantle/content';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
 import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
@@ -97,6 +98,25 @@ async function ensureListening(): Promise<void> {
     const subRuns = await sql.listen(RUNS_CHANGED_CHANNEL, (ownerId) => {
       broadcast({ ownerId, type: RUNS_CHANGED_TYPE, id: '' });
     });
+    // Task mutations the node_ingested trigger misses: deletes and
+    // rank/tags-only updates (migration 0148 — trigger, so no write path can
+    // forget it). Owner-id payload; the client refetches its task list.
+    const subTasks = await sql.listen(TASKS_CHANGED_CHANNEL, (ownerId) => {
+      broadcast({ ownerId, type: 'task', id: '' });
+    });
+    // Comment writes (migration 0149) — JSON {ownerId, nodeId} payload,
+    // broadcast typed 'comment' with the node id so a thread view can
+    // invalidate precisely.
+    const subComments = await sql.listen(COMMENTS_CHANGED_CHANNEL, (payload) => {
+      try {
+        const c = JSON.parse(payload) as { ownerId?: string; nodeId?: string };
+        if (c && c.ownerId) {
+          broadcast({ ownerId: c.ownerId, type: 'comment', id: c.nodeId ?? '' });
+        }
+      } catch {
+        /* malformed payload — drop it rather than crash the listener */
+      }
+    });
     // Conversation turns (any channel) — payload is JSON {ownerId, agentId,
     // direction}, broadcast to the chat-stream subscribers. Drives live chat.
     const subConversation = await sql.listen(CONVERSATION_CHANGED_CHANNEL, (payload) => {
@@ -125,6 +145,8 @@ async function ensureListening(): Promise<void> {
         await subIndexed.unlisten();
         await subPending.unlisten();
         await subRuns.unlisten();
+        await subTasks.unlisten();
+        await subComments.unlisten();
         await subConversation.unlisten();
         await subTurnStream.unlisten();
       } catch {

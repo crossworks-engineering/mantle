@@ -51,19 +51,27 @@ useEffect(() => setRows(initialRows), [initialRows]);
   `globalThis` singleton so Next.js dev HMR doesn't stack duplicates.
 - **Self-healing.** `EventSource` auto-reconnects on drop; a 25s heartbeat
   comment keeps idle connections off proxy/idle timeouts.
-- **Scope today:** two channels, both fanned out the same way,
+- **Scope today:** four node-flavoured channels, all fanned out the same way,
   `node_ingested` (migration 0018 trigger, every `nodes` insert: events, notes,
   files, emails, telegram, …) and `node_indexed` (the extractor's explicit
   `notifyNodeIndexed` after it writes `data.summary` + `embedding`). The second
   is what makes a freshly-summarised file repaint live; the insert alone has no
   summary yet. Other pure column updates still won't notify; emit on
   `node_indexed` (or add a table+channel) from the code that does the update.
+  Tasks add two such table+channel pairs: `tasks_changed` (migration 0148
+  triggers on task UPDATE/DELETE — covers deletes and rank/tags-only edits,
+  which deliberately don't re-ingest; owner-id payload, broadcast typed
+  `task`) and `comments_changed` (migration 0149 triggers on `node_comments`;
+  JSON `{ownerId, nodeId}` payload, broadcast typed `comment` with the node id
+  so a thread invalidates precisely).
 
 ## Source of truth
 
 | Concern | File |
 |---|---|
 | The `node_ingested` trigger | `packages/db/migrations/0018_node_ingested_trigger.sql` |
+| The `tasks_changed` triggers | `packages/db/migrations/0148_tasks_changed_notify.sql` |
+| The `comments_changed` triggers | `packages/db/migrations/0149_comments_changed_notify.sql` |
 | The `node_indexed` notify (extractor) | `packages/db/src/notify.ts` (`notifyNodeIndexed`) |
 | LISTEN bridge + fan-out (both channels) | `apps/web/lib/realtime.ts` |
 | SSE endpoint | `apps/web/app/api/realtime/route.ts` |

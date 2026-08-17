@@ -2,8 +2,11 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
+  RANK_RE,
   TASK_PRIORITIES,
   TASK_STATUSES,
+  TASK_TODOS_MAX,
+  TASK_TODO_TEXT_MAX,
   countTasks,
   createTask,
   listTasks,
@@ -12,6 +15,14 @@ import {
 } from '@/lib/tasks';
 
 const PAGE_SIZE = 50;
+/** The board view loads every column in one call — cap it, don't paginate it. */
+const PAGE_SIZE_MAX = 500;
+
+const TodoInput = z.object({
+  id: z.string().max(64).optional(),
+  text: z.string().min(1).max(TASK_TODO_TEXT_MAX),
+  done: z.boolean().optional(),
+});
 
 const CreateBody = z.object({
   title: z.string().min(1).max(200),
@@ -20,6 +31,8 @@ const CreateBody = z.object({
   priority: z.enum(TASK_PRIORITIES).optional(),
   dueAt: z.string().datetime().nullable().optional(),
   tags: z.array(z.string().max(40)).max(20).optional().default([]),
+  todos: z.array(TodoInput).max(TASK_TODOS_MAX).optional(),
+  rank: z.string().regex(RANK_RE).nullable().optional(),
 });
 
 export async function GET(req: Request) {
@@ -28,19 +41,37 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const statusParam = url.searchParams.get('status');
   const priorityParam = url.searchParams.get('priority');
-  const status: TaskStatus | 'all' =
+  // An unknown filter value is a caller bug — 400 with the vocabulary rather
+  // than silently widening to 'all' (the old behavior masked client drift).
+  if (
     statusParam &&
     statusParam !== 'all' &&
-    (TASK_STATUSES as readonly string[]).includes(statusParam)
-      ? (statusParam as TaskStatus)
-      : 'all';
-  const priority: TaskPriority | 'all' =
+    !(TASK_STATUSES as readonly string[]).includes(statusParam)
+  ) {
+    return NextResponse.json(
+      { error: `invalid status '${statusParam}' — use ${TASK_STATUSES.join('/')}/all` },
+      { status: 400 },
+    );
+  }
+  if (
     priorityParam &&
     priorityParam !== 'all' &&
-    (TASK_PRIORITIES as readonly string[]).includes(priorityParam)
-      ? (priorityParam as TaskPriority)
-      : 'all';
+    !(TASK_PRIORITIES as readonly string[]).includes(priorityParam)
+  ) {
+    return NextResponse.json(
+      { error: `invalid priority '${priorityParam}' — use ${TASK_PRIORITIES.join('/')}/all` },
+      { status: 400 },
+    );
+  }
+  const status: TaskStatus | 'all' = statusParam ? (statusParam as TaskStatus | 'all') : 'all';
+  const priority: TaskPriority | 'all' = priorityParam
+    ? (priorityParam as TaskPriority | 'all')
+    : 'all';
   const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+  const pageSize = Math.min(
+    PAGE_SIZE_MAX,
+    Math.max(1, Number.parseInt(url.searchParams.get('pageSize') ?? '', 10) || PAGE_SIZE),
+  );
   const opts = {
     query: url.searchParams.get('q') ?? undefined,
     status,
@@ -48,10 +79,10 @@ export async function GET(req: Request) {
     tag: url.searchParams.get('tag') ?? undefined,
   };
   const [tasks, total] = await Promise.all([
-    listTasks(user.id, { ...opts, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    listTasks(user.id, { ...opts, limit: pageSize, offset: (page - 1) * pageSize }),
     countTasks(user.id, opts),
   ]);
-  return NextResponse.json({ tasks, total, page, pageSize: PAGE_SIZE });
+  return NextResponse.json({ tasks, total, page, pageSize });
 }
 
 export async function POST(req: Request) {

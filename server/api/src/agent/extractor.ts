@@ -906,12 +906,20 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   if (node.type === 'task') {
     const d = (node.data ?? {}) as Record<string, unknown>;
     const body = typeof d.body === 'string' ? d.body : '';
+    // Checklist items surface as markdown checkboxes so the summary can say
+    // "3 of 5 steps done" and search hits the step text.
+    const todos = Array.isArray(d.todos)
+      ? (d.todos as Array<Record<string, unknown>>)
+          .filter((t) => typeof t?.text === 'string' && t.text)
+          .map((t) => `- [${t.done === true ? 'x' : ' '}] ${t.text as string}`)
+      : [];
     const lines = [
       node.title,
       `Status: ${d.status ?? 'open'}`,
       `Priority: ${d.priority ?? 'normal'}`,
       ...(typeof d.due_at === 'string' ? [`Due: ${d.due_at}`] : []),
       ...(body ? ['', body] : []),
+      ...(todos.length ? ['', ...todos] : []),
     ];
     return lines.join('\n');
   }

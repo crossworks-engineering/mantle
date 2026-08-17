@@ -58,20 +58,37 @@ task lists). Search is substring against title / body / summary.
 ```ts
 data = {
   body?: string,
-  status: 'open' | 'done',
+  status: 'open' | 'in_progress' | 'blocked' | 'done',
   priority: 'low' | 'normal' | 'high',
   due_at?: string,    // ISO timestamp
+  todos?: [{ id, text, done }],  // checklist inside the task (≤100 × ≤500 chars)
+  rank?: string,      // fractional board-order key (packages/content/src/rank.ts)
 }
 ```
 
-List sort order is `open` first, then `due_at` ascending (nulls last),
-then `updated_at` descending. The `/tasks` screen is **master-detail**
-(see [`ui-style-guide.md`](./ui-style-guide.md) §8): a filterable list
-on the left (search + status + priority; a checkbox toggles done
-optimistically) and a create / edit / detail pane on the right. Search,
-filters, and pagination are URL-driven (SSR), same for `/events` and
-`/secrets`, via `listTasks`/`countTasks` (and the `events`/`secrets`
-equivalents) with `limit`/`offset`.
+List sort order is not-done first, then `rank` ascending (nulls last —
+board order carries into the list), then `due_at` ascending (nulls
+last), then `updated_at` descending. The `/tasks` screen is
+**master-detail** (see [`ui-style-guide.md`](./ui-style-guide.md) §8)
+plus a **Kanban board** view (one column per status; a drag PATCHes
+`{status, rank}` — rank/tags-only edits deliberately do NOT re-index,
+so a drag can never trigger an LLM pass). Search, filters, and
+pagination are URL-driven (SSR), same for `/events` and `/secrets`, via
+`listTasks`/`countTasks` (and the `events`/`secrets` equivalents) with
+`limit`/`offset`. `GET /api/tasks` takes `pageSize` (≤500) so the board
+loads every column in one call; unknown `status`/`priority` filter
+values are a 400, not a silent widen.
+
+**Comments** hang off any node via the `node_comments` table (migration
+0147; tasks are the first surface). Three author voices — `owner` (an
+admin login), `member` (a team contact), `agent` — attributed
+server-side from the session/surface, never from a request body.
+Owner routes: `GET/POST /api/nodes/[id]/comments`,
+`PATCH/DELETE /api/comments/[id]` (edit is author-only; delete is any
+admin login). Member routes: `GET/POST /api/team/comments` (gated on an
+ACTIVE share — what a member may read, a member may comment on). Agent
+tools: `task_comments_list` / `task_comment_add`. `TaskRow.commentCount`
+rides on every list row; the thread DTO computes `mine` per viewer.
 
 ### Events (`type='event'`)
 
@@ -167,7 +184,7 @@ the new tools (apps/mcp/src/server.ts):
 | Surface | Tools                                                            |
 |---------|------------------------------------------------------------------|
 | notes   | `note_list`, `note_get`, `note_create`, `note_update`, `note_delete` |
-| tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete` |
+| tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete`, `task_comments_list`, `task_comment_add` |
 | events  | `event_list`, `event_get`, `event_create`, `event_update`, `event_delete` |
 
 Typical flows the assistant can now do without any custom plumbing:

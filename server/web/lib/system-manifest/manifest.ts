@@ -478,8 +478,16 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'tasks',
     name: 'Tasks',
-    description: 'Task CRUD.',
-    toolSlugs: ['task_list', 'task_get', 'task_create', 'task_update', 'task_delete'],
+    description: 'Task CRUD + the per-task comment thread.',
+    toolSlugs: [
+      'task_list',
+      'task_get',
+      'task_create',
+      'task_update',
+      'task_delete',
+      'task_comments_list',
+      'task_comment_add',
+    ],
   },
   {
     slug: 'pages',

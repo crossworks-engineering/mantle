@@ -194,7 +194,8 @@ Notes from the conversions so far:
   `listQuery.data` (+ the deep-linked row), keep the optimistic `setTasks`, and swap
   `router.refresh()` for `invalidateQueries(['tasks'])` (the refetch re-runs the seed effect to
   reconcile). Two traps: (1) the page defaulted `status='open'` while the GET defaults to `'all'`,
-  so the client must send `status` explicitly; (2) extracting a list filter to `const opts = {…}`
+  so the client must send `status` explicitly (and since the Kanban upgrade an UNKNOWN
+  `status`/`priority` value is a 400, no longer a silent widen to `'all'`); (2) extracting a list filter to `const opts = {…}`
   drops call-site contextual typing, annotate the narrowed union vars (`status: TaskStatus |
   'all'`) or the spread re-widens them to `string`.
 - **Server-only sanitisation at a security boundary** (`/inbox` `ReadingPane` rendered the

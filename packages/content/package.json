@@ -9,6 +9,8 @@
     ".": "./src/index.ts",
     "./notes": "./src/notes.ts",
     "./tasks": "./src/tasks.ts",
+    "./rank": "./src/rank.ts",
+    "./node-comments": "./src/node-comments.ts",
     "./events": "./src/events.ts",
     "./journal": "./src/journal.ts",
     "./journal-options": "./src/journal-options.ts",
