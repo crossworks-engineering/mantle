@@ -14,6 +14,7 @@ export {
   sanitizeTodos,
   type TaskRow,
   type TaskStatus,
+  type TaskStatusFilter,
   type TaskPriority,
   type TaskTodo,
   type TaskTodoInput,

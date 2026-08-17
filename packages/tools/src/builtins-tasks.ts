@@ -31,6 +31,7 @@ import {
   updateTask,
   type TaskPriority,
   type TaskStatus,
+  type TaskStatusFilter,
   type TaskTodoInput,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
@@ -98,8 +99,8 @@ const task_list: BuiltinToolDef = {
     properties: {
       status: {
         type: 'string',
-        enum: [...TASK_STATUSES, 'all'],
-        description: 'Filter by lifecycle state; omit to include everything.',
+        enum: [...TASK_STATUSES, 'active', 'all'],
+        description: "Filter by lifecycle state; 'active' = everything not done.",
       },
       priority: {
         type: 'string',
@@ -128,7 +129,7 @@ const task_list: BuiltinToolDef = {
       const limit = typeof input.limit === 'number' ? Math.min(500, Math.max(1, input.limit)) : 100;
       const offset = typeof input.offset === 'number' ? Math.max(0, input.offset) : 0;
       const opts = {
-        status: input.status as TaskStatus | 'all' | undefined,
+        status: input.status as TaskStatusFilter | undefined,
         priority: input.priority as TaskPriority | 'all' | undefined,
         query: strOpt(input.query),
         tag: strOpt(input.tag),

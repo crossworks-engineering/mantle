@@ -47,6 +47,7 @@ export {
   TASK_TODO_TEXT_MAX,
   type TaskRow,
   type TaskStatus,
+  type TaskStatusFilter,
   type TaskPriority,
   type TaskTodo,
   type TaskTodoInput,

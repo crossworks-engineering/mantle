@@ -10,8 +10,8 @@ import {
   countTasks,
   createTask,
   listTasks,
-  type TaskStatus,
   type TaskPriority,
+  type TaskStatusFilter,
 } from '@/lib/tasks';
 
 const PAGE_SIZE = 50;
@@ -46,10 +46,11 @@ export async function GET(req: Request) {
   if (
     statusParam &&
     statusParam !== 'all' &&
+    statusParam !== 'active' &&
     !(TASK_STATUSES as readonly string[]).includes(statusParam)
   ) {
     return NextResponse.json(
-      { error: `invalid status '${statusParam}' — use ${TASK_STATUSES.join('/')}/all` },
+      { error: `invalid status '${statusParam}' — use ${TASK_STATUSES.join('/')}/active/all` },
       { status: 400 },
     );
   }
@@ -63,7 +64,7 @@ export async function GET(req: Request) {
       { status: 400 },
     );
   }
-  const status: TaskStatus | 'all' = statusParam ? (statusParam as TaskStatus | 'all') : 'all';
+  const status: TaskStatusFilter = statusParam ? (statusParam as TaskStatusFilter) : 'all';
   const priority: TaskPriority | 'all' = priorityParam
     ? (priorityParam as TaskPriority | 'all')
     : 'all';

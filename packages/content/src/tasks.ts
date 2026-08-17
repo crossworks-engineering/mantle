@@ -115,9 +115,13 @@ async function ensureRoot(ownerId: string): Promise<void> {
     });
 }
 
+/** `active` = every not-done status — the natural default view now that the
+ *  lifecycle has four states ('open' alone would hide in_progress/blocked). */
+export type TaskStatusFilter = TaskStatus | 'all' | 'active';
+
 type ListTasksOpts = {
   query?: string;
-  status?: TaskStatus | 'all';
+  status?: TaskStatusFilter;
   priority?: TaskPriority | 'all';
   tag?: string;
 };
@@ -134,7 +138,9 @@ function taskConds(ownerId: string, opts: ListTasksOpts) {
     );
     if (c) conds.push(c);
   }
-  if (opts.status && opts.status !== 'all') {
+  if (opts.status === 'active') {
+    conds.push(sql`coalesce(${nodes.data}->>'status', 'open') <> 'done'`);
+  } else if (opts.status && opts.status !== 'all') {
     conds.push(sql`coalesce(${nodes.data}->>'status', 'open') = ${opts.status}`);
   }
   if (opts.priority && opts.priority !== 'all') {

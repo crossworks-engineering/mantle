@@ -76,7 +76,8 @@ so a drag can never trigger an LLM pass). Search, filters, and
 pagination are URL-driven (SSR), same for `/events` and `/secrets`, via
 `listTasks`/`countTasks` (and the `events`/`secrets` equivalents) with
 `limit`/`offset`. `GET /api/tasks` takes `pageSize` (≤500) so the board
-loads every column in one call; unknown `status`/`priority` filter
+loads every column in one call; `status=active` = every not-done state
+(the list default in the client); unknown `status`/`priority` filter
 values are a 400, not a silent widen.
 
 **Comments** hang off any node via the `node_comments` table (migration
