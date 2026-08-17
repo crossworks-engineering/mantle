@@ -66,11 +66,22 @@ export async function GET(req: Request) {
     PAGE_SIZE_MAX,
     Math.max(1, Number.parseInt(url.searchParams.get('pageSize') ?? '', 10) || PAGE_SIZE),
   );
+  // `?archived=only|all`; anything else (including absent) means live tasks.
+  // Defaulting to exclusion is the point of the flag — a caller that says
+  // nothing gets work in flight, not a decade of finished tasks.
+  const archivedParam = url.searchParams.get('archived');
+  if (archivedParam && archivedParam !== 'only' && archivedParam !== 'all') {
+    return NextResponse.json(
+      { error: `invalid archived '${archivedParam}' — use only/all, or omit for live tasks` },
+      { status: 400 },
+    );
+  }
   const opts = {
     query: url.searchParams.get('q') ?? undefined,
     status,
     priority,
     tag: url.searchParams.get('tag') ?? undefined,
+    archived: (archivedParam ?? 'exclude') as 'exclude' | 'only' | 'all',
   };
   const [tasks, total] = await Promise.all([
     listTasks(user.id, { ...opts, limit: pageSize, offset: (page - 1) * pageSize }),

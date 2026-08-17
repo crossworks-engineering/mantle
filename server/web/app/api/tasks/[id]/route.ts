@@ -22,6 +22,9 @@ const PatchBody = z.object({
   todos: TodosSchema.optional(),
   /** Board-order key (a drag writes status+rank together); null clears. */
   rank: z.string().regex(RANK_RE).nullable().optional(),
+  /** `true` files the task away, `false` restores it. A boolean rather than a
+   *  timestamp so a client cannot backdate the archive; the server stamps it. */
+  archived: z.boolean().optional(),
 });
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -45,7 +48,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 400 },
     );
   }
-  const row = await updateTask(user.id, id, parsed.data);
+  const { archived, ...rest } = parsed.data;
+  const row = await updateTask(user.id, id, {
+    ...rest,
+    // The server owns the clock: `archived: true` stamps now, `false` clears.
+    ...(archived === undefined ? {} : { archivedAt: archived ? new Date().toISOString() : null }),
+  });
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ task: row });
 }

@@ -693,6 +693,11 @@ export type TaskRow = {
   /** Comments on this task (node_comments rows). List/detail badge material. */
   commentCount: number;
   summary: string | null;
+  /** When the task was filed away, or null while it is live. Archived tasks are
+   *  excluded from every list, count and board unless explicitly requested —
+   *  it is what keeps a Done column from growing without bound. Orthogonal to
+   *  `status`: an archived task keeps the status it had. */
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };

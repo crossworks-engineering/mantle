@@ -63,8 +63,20 @@ data = {
   due_at?: string,    // ISO timestamp
   todos?: [{ id, text, done }],  // checklist inside the task (≤100 × ≤500 chars)
   rank?: string,      // fractional board-order key (packages/content/src/rank.ts)
+  archived_at?: string,  // ISO timestamp; absent while the task is live
 }
 ```
+
+**Archive is orthogonal to status.** An archived task keeps the status it
+had — it is "filed away", not a fifth lifecycle state. `taskConds` excludes
+archived rows from **every** list and count unless the caller passes
+`archived: 'only' | 'all'`, which is the single door that keeps a Done
+column from growing without bound (`GET /api/tasks?archived=only|all`,
+`task_list`'s `archived`). `PATCH` and `task_update` take a boolean
+`archived` and the SERVER stamps the timestamp, so a client cannot backdate
+it. Archiving is metadata: like rank and tags it is deliberately absent from
+`updateTask`'s `contentChanged` check, so filing a thousand finished tasks
+away costs zero embeddings and zero LLM calls.
 
 List sort order is not-done first, then `rank` ascending (nulls last —
 board order carries into the list), then `due_at` ascending (nulls

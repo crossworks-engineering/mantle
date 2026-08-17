@@ -4,6 +4,44 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — Tasks grows up: a board, a lifecycle, and somewhere to put finished work (branch claude/handover-tasks-kanban-04d026)
+
+`/tasks` was a checklist. It is now a project surface: a Kanban board, four
+states instead of two, a checklist inside each task, and comments from logins,
+team members and agents.
+
+### The board shows three columns, not four
+
+Blocked is a flag on work already under way, not a further stage, and a fourth
+column cost more width than it earned. Blocked tasks render under **In
+progress** with a badge, and you set the flag from the task form.
+
+Reordering a blocked card inside that column no longer clears the flag. The
+column a card lands in and the status written are two different things now,
+which they were not before — tidying a column used to unblock tasks as a side
+effect.
+
+### Archive: where a thousand finished tasks go
+
+A Done column grows forever. Archiving files a task away without deleting it:
+`data.archived_at` on the node, excluded from **every** list, count, board and
+tool unless asked for (`?archived=only|all`, `task_list`'s `archived`). The
+exclusion lives in `taskConds`, the one place every query already goes through,
+so no caller can forget it.
+
+Archive is orthogonal to status: an archived task keeps the status it had. And
+archiving is metadata — deliberately absent from `updateTask`'s
+`contentChanged` check, so filing a thousand tasks away costs zero embeddings
+and zero LLM calls.
+
+### Smaller things you will notice
+
+- The checkbox no longer flattens four states into two. Ticking a Blocked task
+  and unticking it restores **Blocked**, not To do.
+- The comment composer sits above the thread, newest comment first.
+- The task form, the detail view, the task list, the nav rail and the activity
+  column are all resizable, and each remembers its width.
+
 ## Unreleased: Four fonts, one library, every face variable (branch claude/variable-font-refactor)
 
 **A typeface library is not a list of decorations.** The old one had grown into

@@ -93,6 +93,7 @@ function rowOf(n: Node, commentCount = 0): TaskRow {
     rank: isValidRank(d.rank) ? d.rank : null,
     commentCount,
     summary: typeof d.summary === 'string' ? d.summary : null,
+    archivedAt: typeof d.archived_at === 'string' ? d.archived_at : null,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -124,6 +125,12 @@ type ListTasksOpts = {
   status?: TaskStatusFilter;
   priority?: TaskPriority | 'all';
   tag?: string;
+  /**
+   * Archived tasks are excluded by default — omit this and you get live work,
+   * which is what every existing caller already means. `'only'` is the archive
+   * view; `'all'` is for exports and integrity checks.
+   */
+  archived?: 'exclude' | 'only' | 'all';
 };
 
 /** Shared WHERE conditions for task list/count queries. */
@@ -145,6 +152,15 @@ function taskConds(ownerId: string, opts: ListTasksOpts) {
   }
   if (opts.priority && opts.priority !== 'all') {
     conds.push(sql`coalesce(${nodes.data}->>'priority', 'normal') = ${opts.priority}`);
+  }
+  // Archived tasks are hidden EVERYWHERE unless asked for. This is the single
+  // door — every list, count and tool goes through `taskConds`, so a caller
+  // cannot forget it. Without a default like this an archive is just a label,
+  // and the board still pays to fetch a thousand finished tasks.
+  if (opts.archived === 'only') {
+    conds.push(sql`${nodes.data}->>'archived_at' is not null`);
+  } else if (opts.archived !== 'all') {
+    conds.push(sql`${nodes.data}->>'archived_at' is null`);
   }
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
   return conds;
@@ -239,7 +255,15 @@ export async function createTask(ownerId: string, input: CreateTaskInput): Promi
   return rowOf(row);
 }
 
-export type UpdateTaskInput = Partial<CreateTaskInput>;
+export type UpdateTaskInput = Partial<CreateTaskInput> & {
+  /**
+   * ISO timestamp to archive, `null` to restore. Archiving is METADATA: it
+   * deliberately does not appear in `contentChanged` below, so it never clears
+   * the summary or the embedding and never queues an extractor pass. Filing a
+   * thousand finished tasks away must not cost a thousand LLM calls.
+   */
+  archivedAt?: string | null;
+};
 
 export async function updateTask(
   ownerId: string,
@@ -258,6 +282,10 @@ export async function updateTask(
   if (input.body !== undefined) newData.body = input.body;
   if (input.status !== undefined) newData.status = input.status;
   if (input.priority !== undefined) newData.priority = input.priority;
+  if (input.archivedAt !== undefined) {
+    if (input.archivedAt) newData.archived_at = input.archivedAt;
+    else delete newData.archived_at;
+  }
   if (input.dueAt !== undefined) {
     if (input.dueAt) newData.due_at = input.dueAt;
     else delete newData.due_at;

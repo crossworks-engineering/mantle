@@ -116,6 +116,12 @@ const task_list: BuiltinToolDef = {
       },
       query: { type: 'string', description: 'Optional substring filter against title/body.' },
       tag: { type: 'string', description: 'Only return tasks carrying this tag.' },
+      archived: {
+        type: 'string',
+        enum: ['only', 'all'],
+        description:
+          "Archived tasks are hidden by default. 'only' searches the archive, 'all' spans both. Omit unless the user asks about filed-away work.",
+      },
       limit: {
         type: 'number',
         minimum: 1,
@@ -140,6 +146,7 @@ const task_list: BuiltinToolDef = {
         priority: input.priority as TaskPriority | 'all' | undefined,
         query: strOpt(input.query),
         tag: strOpt(input.tag),
+        archived: input.archived as 'only' | 'all' | undefined,
       };
       const [rows, total] = await Promise.all([
         listTasks(ctx.ownerId, { ...opts, limit, offset }),
@@ -295,6 +302,11 @@ const task_update: BuiltinToolDef = {
         description:
           'Replaces the whole checklist; keep item `id`s when editing so history stays stable. [] clears it.',
       },
+      archived: {
+        type: 'boolean',
+        description:
+          'true files the task away (hidden from lists and the board without deleting it); false restores it. Archiving does not change the status. Prefer this over deleting finished work.',
+      },
     },
     required: ['id'],
   },
@@ -315,6 +327,10 @@ const task_update: BuiltinToolDef = {
         dueAt: input.dueAt === '' ? null : strOpt(input.dueAt),
         tags: Array.isArray(input.tags) ? strArr(input.tags) : undefined,
         todos: todos.todos,
+        // Server owns the clock, same as the HTTP route.
+        ...(typeof input.archived === 'boolean'
+          ? { archivedAt: input.archived ? new Date().toISOString() : null }
+          : {}),
       });
       if (!row) return notFound('task', id, 'task_list');
       ctx.step?.setMeta({ taskId: id, status: row.status });
