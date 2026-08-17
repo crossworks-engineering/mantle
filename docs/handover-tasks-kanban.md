@@ -2,13 +2,27 @@
 
 `/tasks` grew from a personal checklist into a project surface: a Kanban board,
 a four-state lifecycle, checklists inside a task, and comments from logins,
-team members and agents. The feature is **built, merged locally, and audited
-end to end**. It is **not pushed, not released, not deployed.**
+team members and agents.
 
-This document is for the session that picks up the polish. The feature itself
-is documented where it lives, [`content.md`](./content.md) §Tasks (data shape,
-routes, comments) and [`realtime.md`](./realtime.md) (the two new channels),
-so this file covers only **state, landmines, and what is left to do**.
+> ## ⚠ SUPERSEDED — 2026-08-17
+>
+> **The landing sequence below has happened.** mantle is released and pushed
+> (`v0.230.67`, contracts published); jackdaw's `file:` pins are gone and its
+> branch is merged to `main`. Most of the polish backlog is done too — the
+> quick-toggle, the board's Blocked column, the comment thread, plus archiving
+> and resizable panes that this document never anticipated.
+>
+> **The live handover is `docs/handover-ui-consistency.md` in the jackdaw
+> repo.** Read that instead. Landmines 2–5 below are still true and are
+> restated there; landmine 1 (the version field) is resolved.
+>
+> Kept for the audit trail and the throwaway-brain recipe at the end, which is
+> still the way to get a scratch environment up.
+
+The feature itself is documented where it lives,
+[`content.md`](./content.md) §Tasks (data shape, routes, comments, archive)
+and [`realtime.md`](./realtime.md) (the two new channels), so this file covers
+only **state, landmines, and what is left to do**.
 
 ## Current state
 
