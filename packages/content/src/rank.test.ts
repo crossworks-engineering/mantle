@@ -27,7 +27,7 @@ describe('rankBetween', () => {
   });
 
   it('never emits a key ending in 0 (keeps every gap divisible)', () => {
-    let lo: string | null = null;
+    const lo: string | null = null;
     let hi: string | null = 'z';
     for (let i = 0; i < 200; i++) {
       const mid: string = rankBetween(lo, hi);
@@ -40,7 +40,7 @@ describe('rankBetween', () => {
   it('survives repeated insertion at the same point', () => {
     // Simulates dragging many cards between the same two neighbours.
     let a: string = rankBetween(null, null);
-    let b: string = rankBetween(a, null);
+    const b: string = rankBetween(a, null);
     for (let i = 0; i < 100; i++) {
       const mid: string = rankBetween(a, b);
       expect(mid > a && mid < b).toBe(true);
