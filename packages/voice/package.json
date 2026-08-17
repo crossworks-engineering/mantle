@@ -14,9 +14,9 @@
   },
   "dependencies": {
     "@mantle/api-keys": "workspace:*",
+    "@mantle/voice-client": "workspace:*",
     "@openrouter/sdk": "^1.2.7",
-    "undici": "^8.8.0",
-    "@mantle/voice-client": "workspace:*"
+    "undici": "^8.10.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

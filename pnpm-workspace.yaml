@@ -20,7 +20,7 @@ allowBuilds:
 # process-global — so two copies in one process break whichever loads second.
 # pdf-to-png-converter pins its own (6.0.227); this pulls it onto ours.
 overrides:
-  pdfjs-dist: 6.1.200
+  pdfjs-dist: 6.2.108
   '@napi-rs/canvas': 1.0.2
 
   # Single `pg`. drizzle-orm peers on pg, so two pg versions make pnpm build two
@@ -28,6 +28,33 @@ overrides:
   # 273 typecheck errors that look nothing like their cause. pg-boss 12 requires
   # ^8.22.0 while the rest of the tree had settled on 8.20.0; this pins both to one.
   pg: 8.22.0
+
+  # ── Security backstops (Dependabot, 2026-08) ─────────────────────────────
+  # Parents that pin a vulnerable version exactly, or to a major with no
+  # patched release. Scoped to the pinning parent so the rest of the tree
+  # resolves normally. Drop each once the parent updates.
+  '@excalidraw/mermaid-to-excalidraw>nanoid': 5.1.16 # pins 4.0.2; no patched 4.x exists
+  'exceljs>uuid': 11.1.1 # pins ^8.3.0 (GHSA-w5hq); uuid 11 still ships CJS, exceljs only uses v4
+  'html-to-text>deepmerge-ts': 8.0.0 # pins ^7.1.5 (GHSA-ggr8); v8 still ships CJS
+  'lodash-es@4.17.21': 4.18.1 # chevrotain pins exactly (GHSA-r5fr _.template injection)
+
+  # Patch-level floors for transitively-resolved vulnerable versions the
+  # parents' own ranges already allow (pnpm update can't reach transitives;
+  # this is the same shape `pnpm audit --fix` emits). Each is a no-op once
+  # the tree naturally resolves past it — then delete the line.
+  'body-parser@<2.3.0': '^2.3.0'
+  'brace-expansion@<1.1.18': '^1.1.18'
+  'brace-expansion@>=2.0.0 <2.1.4': '^2.1.4'
+  'dompurify@<3.4.13': '^3.4.13'
+  'fast-uri@>=3.0.0 <3.1.5': '^3.1.5'
+  'hono@<4.12.34': '^4.12.34'
+  '@hono/node-server@<1.19.15': '^1.19.15'
+  'ip-address@<10.3.1': '^10.3.1'
+  'mermaid@>=11.0.0 <11.16.1': '^11.16.1'
+  'nanoid@<3.3.18': '^3.3.18'
+  'nanoid@>=5.0.0 <5.1.16': '^5.1.16'
+  'postcss@<8.5.23': '^8.5.23'
+  'qs@>=6.11.1 <6.15.2': '^6.15.2'
 
 patchedDependencies:
   katex@0.18.1: patches/katex@0.18.1.patch

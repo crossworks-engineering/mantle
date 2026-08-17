@@ -30,9 +30,9 @@
     "mammoth": "^1.12.0",
     "pdf-parse": "^2.4.5",
     "pdf-to-png-converter": "^4.1.1",
-    "pdfjs-dist": "^6.1.200",
+    "pdfjs-dist": "^6.2.108",
     "saxes": "^6.0.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@types/heic-convert": "^2.1.1",
