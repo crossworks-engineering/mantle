@@ -272,17 +272,22 @@ export async function updateTask(
     else delete newData.rank;
   }
   // Title/body/priority/due/status/todos all matter for the summary —
-  // invalidate when any of them moves so the next extractor pass
-  // re-summarises. Rank and tags deliberately do NOT re-index: a drag or a
-  // relabel must never trigger an LLM pass (cost safety); the tasks_changed
-  // trigger still repaints other tabs.
+  // invalidate when any of them CHANGES VALUE so the next extractor pass
+  // re-summarises. Compare, don't test presence: a board drag PATCHes
+  // {status, rank} with the status usually unchanged, and a presence test
+  // would wipe the summary + embedding and queue an LLM pass per drag
+  // (caught in review). Rank and tags deliberately never re-index (cost
+  // safety); the tasks_changed trigger still repaints other tabs.
+  const newTitle =
+    input.title !== undefined ? input.title.trim().slice(0, 200) || 'Untitled task' : node.title;
   const contentChanged =
-    input.title !== undefined ||
-    input.body !== undefined ||
-    input.status !== undefined ||
-    input.priority !== undefined ||
-    input.dueAt !== undefined ||
-    input.todos !== undefined;
+    newTitle !== node.title ||
+    (input.body !== undefined && input.body !== (oldData.body ?? '')) ||
+    (input.status !== undefined && input.status !== (oldData.status ?? 'open')) ||
+    (input.priority !== undefined && input.priority !== (oldData.priority ?? 'normal')) ||
+    (input.dueAt !== undefined && (input.dueAt || null) !== (oldData.due_at ?? null)) ||
+    (input.todos !== undefined &&
+      JSON.stringify(newData.todos ?? null) !== JSON.stringify(oldData.todos ?? null));
   if (contentChanged) {
     delete newData.summary;
     delete newData.summary_model;
@@ -292,9 +297,7 @@ export async function updateTask(
   const [updated] = await db
     .update(nodes)
     .set({
-      ...(input.title !== undefined
-        ? { title: input.title.trim().slice(0, 200) || 'Untitled task' }
-        : {}),
+      ...(input.title !== undefined ? { title: newTitle } : {}),
       ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
       data: newData,
       ...(contentChanged ? { embedding: null } : {}),

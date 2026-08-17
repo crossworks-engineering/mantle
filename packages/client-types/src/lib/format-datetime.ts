@@ -76,6 +76,22 @@ export function formatTime(input: Input, missing = 'never'): string {
   return new Intl.DateTimeFormat(LOCALE, TIME_OPTS).format(d);
 }
 
+const DAY_TIME_OPTS: Intl.DateTimeFormatOptions = {
+  day: 'numeric',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+};
+
+/** '17 Aug, 10:06' — compact stamp for feed/thread rows (comments, posts)
+ *  where the full numeric formatDateTime is too heavy. */
+export function formatDayTime(input: Input, missing = 'never'): string {
+  const d = toDate(input);
+  if (!d) return missing;
+  return new Intl.DateTimeFormat(LOCALE, DAY_TIME_OPTS).format(d);
+}
+
 /**
  * `YYYY-MM-DD` in the viewer's LOCAL timezone (defaults to now). Use this to
  * compare against day-bucketed date strings — `new Date().toISOString().slice(0,10)`

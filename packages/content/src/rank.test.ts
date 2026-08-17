@@ -76,4 +76,13 @@ describe('isValidRank', () => {
     expect(isValidRank(42)).toBe(false);
     expect(isValidRank('x'.repeat(65))).toBe(false);
   });
+
+  it('rejects keys ending in 0 — nothing fits between them and their prefix', () => {
+    expect(isValidRank('0')).toBe(false);
+    expect(isValidRank('a0')).toBe(false);
+    // And rankBetween refuses them as bounds rather than emitting a key
+    // outside the bound ('0i' > '0' — the review's zero-tail case).
+    expect(() => rankBetween(null, '0')).toThrow();
+    expect(() => rankBetween('a', 'a0')).toThrow();
+  });
 });

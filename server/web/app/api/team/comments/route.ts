@@ -20,6 +20,7 @@ import {
   toNodeCommentDto,
 } from '@mantle/content';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
+import { isUuid } from '@/lib/task-schemas';
 
 const PostBody = z.object({
   nodeId: z.string().uuid(),
@@ -31,6 +32,7 @@ export async function GET(req: Request) {
   if (!caller) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const nodeId = new URL(req.url).searchParams.get('nodeId') ?? '';
   if (!nodeId) return NextResponse.json({ error: 'nodeId required' }, { status: 400 });
+  if (!isUuid(nodeId)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   if (!(await isNodeTeamVisible(caller.ownerId, nodeId))) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }

@@ -13,7 +13,11 @@
 const DIGITS = '0123456789abcdefghijklmnopqrstuvwxyz';
 const BASE = DIGITS.length;
 
-export const RANK_RE = /^[0-9a-z]{1,64}$/;
+// No trailing '0': a key ending in the smallest digit admits nothing between
+// itself and its own prefix (rankBetween(null, '0') would emit '0i' > '0'),
+// so such keys are rejected at every validation door rather than special-cased
+// in the algorithm.
+export const RANK_RE = /^[0-9a-z]{0,63}[1-9a-z]$/;
 
 /** True when `value` is usable as a stored rank key. */
 export function isValidRank(value: unknown): value is string {

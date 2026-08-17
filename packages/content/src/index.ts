@@ -65,6 +65,7 @@ export {
   getNodeComment,
   isNodeTeamVisible,
   listNodeComments,
+  resolveAgentAuthor,
   toNodeCommentDto,
   updateNodeComment,
   type CommentAuthor,

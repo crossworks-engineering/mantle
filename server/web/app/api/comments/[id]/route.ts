@@ -11,6 +11,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { isUuid } from '@/lib/task-schemas';
 import {
   COMMENT_BODY_MAX,
   deleteNodeComment,
@@ -27,6 +28,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
+  if (!isUuid(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
@@ -49,6 +51,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
+  if (!isUuid(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const ok = await deleteNodeComment(user.id, id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });

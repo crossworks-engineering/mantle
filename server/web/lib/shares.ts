@@ -61,6 +61,8 @@ export type ShareView =
       status: string;
       priority: string;
       dueAt: string | null;
+      /** Read-only checklist snapshot — mirrors share-ui's view-payload. */
+      todos?: { text: string; done: boolean }[];
     }
   | {
       kind: 'event';
@@ -147,6 +149,11 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
         status: typeof d.status === 'string' ? d.status : 'open',
         priority: typeof d.priority === 'string' ? d.priority : 'normal',
         dueAt: typeof d.due_at === 'string' ? d.due_at : null,
+        todos: Array.isArray(d.todos)
+          ? (d.todos as Array<Record<string, unknown>>)
+              .filter((t) => typeof t?.text === 'string' && t.text)
+              .map((t) => ({ text: t.text as string, done: t.done === true }))
+          : [],
       };
     }
     case 'event': {

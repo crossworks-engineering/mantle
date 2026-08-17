@@ -43,6 +43,8 @@ export type ShareViewPayload =
       status: string;
       priority: string;
       dueAt: string | null;
+      /** Read-only checklist snapshot (absent on pre-upgrade payloads). */
+      todos?: { text: string; done: boolean }[];
     }
   | {
       kind: 'event';

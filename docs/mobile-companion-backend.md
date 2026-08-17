@@ -190,9 +190,12 @@ For the app-side architecture see
   **`GET /api/export/:id?format=md`** for content, so the app renders markdown
   and needs no ProseMirror. In-page images fetch through the authed files
   route with the Bearer header.
-- **Tasks (1.5).** `GET/POST /api/tasks`, `PATCH /api/tasks/:id`
-  (`status: open|done`), `DELETE`. The app renders in server order (open →
-  done, due asc, recency).
+- **Tasks (1.5).** `GET/POST /api/tasks`, `PATCH /api/tasks/:id`, `DELETE`.
+  Since the Kanban upgrade `status` is `open|in_progress|blocked|done`
+  (+ filter values `active`/`all`); the companion's binary done-toggle still
+  works (any not-done → done → open), and it flattens the two new states to
+  "not done" until it grows a status picker. Server order is not-done →
+  done, then board rank, due asc, recency.
 - **Journal (1.5).** `GET/POST /api/journal`; server derives the title.
   Voice capture reuses `POST /api/assistant/transcribe`.
 - **Events (1.6).** `GET/POST /api/events` (`window=upcoming|past|all`),

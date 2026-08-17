@@ -27,6 +27,7 @@ import {
   listNodeComments,
   listTasks,
   nodeUrl,
+  resolveAgentAuthor,
   toNodeCommentDto,
   updateTask,
   type TaskPriority,
@@ -48,21 +49,27 @@ function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
 
-/** Coerce a `todos` arg (full-replace checklist). `[]` clears the list. */
-function todosOpt(v: unknown): TaskTodoInput[] | undefined {
-  if (!Array.isArray(v)) return undefined;
+/** Coerce a `todos` arg (full-replace checklist). `[]` clears the list.
+ *  STRICT on malformed items: silently dropping them would wipe a checklist
+ *  when a model mis-names a field (e.g. `title` for `text`) and still report
+ *  success — instead the error names the fix so the model retries once. */
+function todosOpt(v: unknown): { todos?: TaskTodoInput[]; error?: string } {
+  if (!Array.isArray(v)) return {};
   const out: TaskTodoInput[] = [];
-  for (const raw of v) {
-    if (typeof raw !== 'object' || raw === null) continue;
-    const item = raw as Record<string, unknown>;
-    if (typeof item.text !== 'string' || !item.text.trim()) continue;
+  for (const [i, raw] of v.entries()) {
+    const item = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : null;
+    if (!item || typeof item.text !== 'string' || !item.text.trim()) {
+      return {
+        error: `todos[${i}] has no usable \`text\` — each checklist item is {text, done?, id?}; re-send the FULL edited list (read the task first with task_get)`,
+      };
+    }
     out.push({
       id: typeof item.id === 'string' ? item.id : undefined,
       text: item.text,
       done: item.done === true,
     });
   }
-  return out;
+  return { todos: out };
 }
 
 /** JSON-schema fragment for the `todos` param (shared by create/update). */
@@ -92,7 +99,7 @@ const task_list: BuiltinToolDef = {
   slug: 'task_list',
   name: 'List tasks',
   description:
-    "List the user's tasks, **sorted not-done-first then by board order and due date**. `status` filters by lifecycle state (open/in_progress/blocked/done); `priority` filters by low/normal/high; `query` substring-matches title/body/summary; `tag` narrows to a tag. " +
+    "List the user's tasks, **sorted not-done-first then by board order and due date**. `status` filters by lifecycle state ('active' = everything not done); `priority` filters by urgency; `query` substring-matches title/body/summary; `tag` narrows to a tag. " +
     "**Use this for the active task picture** — 'what's open', 'anything due this week', 'high-priority tasks'. For topic search across tasks ('tasks about the printer') use `search_nodes` with `type='task'` — that's similarity-ranked, not due-date-ordered. For a single task's full body use `task_get`.",
   inputSchema: {
     type: 'object',
@@ -194,7 +201,8 @@ const task_create: BuiltinToolDef = {
       status: {
         type: 'string',
         enum: [...TASK_STATUSES],
-        description: "Starting lifecycle state; defaults to 'open'.",
+        default: 'open',
+        description: 'Starting lifecycle state.',
       },
       priority: {
         type: 'string',
@@ -220,6 +228,8 @@ const task_create: BuiltinToolDef = {
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const title = str(input.title).trim();
     if (!title) return { ok: false, error: 'title required' };
+    const todos = todosOpt(input.todos);
+    if (todos.error) return { ok: false, error: todos.error };
     try {
       const row = await createTask(ctx.ownerId, {
         title,
@@ -228,7 +238,7 @@ const task_create: BuiltinToolDef = {
         priority: input.priority as TaskPriority | undefined,
         dueAt: strOpt(input.dueAt) ?? null,
         tags: strArrOpt(input.tags),
-        todos: todosOpt(input.todos),
+        todos: todos.todos,
       });
       ctx.step?.setMeta({ taskId: row.id, title, priority: row.priority, dueAt: row.dueAt });
       return { ok: true, output: row };
@@ -292,6 +302,8 @@ const task_update: BuiltinToolDef = {
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
+    const todos = todosOpt(input.todos);
+    if (todos.error) return { ok: false, error: todos.error };
     try {
       const row = await updateTask(ctx.ownerId, id, {
         title: strOpt(input.title),
@@ -302,7 +314,7 @@ const task_update: BuiltinToolDef = {
         priority: input.priority as TaskPriority | undefined,
         dueAt: input.dueAt === '' ? null : strOpt(input.dueAt),
         tags: Array.isArray(input.tags) ? strArr(input.tags) : undefined,
-        todos: todosOpt(input.todos),
+        todos: todos.todos,
       });
       if (!row) return notFound('task', id, 'task_list');
       ctx.step?.setMeta({ taskId: id, status: row.status });
@@ -392,12 +404,14 @@ const task_comment_add: BuiltinToolDef = {
     const body = str(input.body).trim();
     if (!id) return { ok: false, error: 'id required' };
     if (!body) return { ok: false, error: 'body required' };
-    // Attribution from the runtime context (never from model args): the
-    // calling agent's slug, or a neutral name on the MCP/background paths.
+    // Attribution from the runtime context (never from model args): resolve
+    // the calling agent's row so the FK + display name land; neutral name on
+    // the MCP/background paths where no agent row exists.
+    const author = ctx.agent?.slug ? await resolveAgentAuthor(ctx.ownerId, ctx.agent.slug) : null;
     const row = await addNodeComment(
       ctx.ownerId,
       id,
-      { kind: 'agent', name: ctx.agent?.slug ?? 'Assistant' },
+      { kind: 'agent', agentId: author?.agentId, name: author?.name ?? 'Assistant' },
       body,
     );
     if (!row) return notFound('task', id, 'task_list');

@@ -34,7 +34,12 @@ export async function listTeamRequests(
     sql`${TEAM_REQUEST_TAG} = ANY(${nodes.tags})`,
   ];
   const status = opts.status ?? 'open';
-  if (status !== 'all') {
+  // 'open' here means UNRESOLVED. Tasks carry a 4-state lifecycle since the
+  // Kanban upgrade, so equality on 'open' would silently drop a request the
+  // owner dragged to In progress/Blocked — the member is still waiting.
+  if (status === 'open') {
+    conds.push(sql`coalesce(${nodes.data}->>'status', 'open') <> 'done'`);
+  } else if (status !== 'all') {
     conds.push(sql`coalesce(${nodes.data}->>'status', 'open') = ${status}`);
   }
   if (opts.contactId) {

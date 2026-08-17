@@ -1,12 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { TodosSchema } from '@/lib/task-schemas';
 import {
   RANK_RE,
   TASK_PRIORITIES,
   TASK_STATUSES,
-  TASK_TODOS_MAX,
-  TASK_TODO_TEXT_MAX,
   countTasks,
   createTask,
   listTasks,
@@ -18,12 +17,6 @@ const PAGE_SIZE = 50;
 /** The board view loads every column in one call — cap it, don't paginate it. */
 const PAGE_SIZE_MAX = 500;
 
-const TodoInput = z.object({
-  id: z.string().max(64).optional(),
-  text: z.string().min(1).max(TASK_TODO_TEXT_MAX),
-  done: z.boolean().optional(),
-});
-
 const CreateBody = z.object({
   title: z.string().min(1).max(200),
   body: z.string().max(50_000).optional().default(''),
@@ -31,7 +24,7 @@ const CreateBody = z.object({
   priority: z.enum(TASK_PRIORITIES).optional(),
   dueAt: z.string().datetime().nullable().optional(),
   tags: z.array(z.string().max(40)).max(20).optional().default([]),
-  todos: z.array(TodoInput).max(TASK_TODOS_MAX).optional(),
+  todos: TodosSchema.optional(),
   rank: z.string().regex(RANK_RE).nullable().optional(),
 });
 

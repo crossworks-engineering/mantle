@@ -9,7 +9,7 @@
  * `toNodeCommentDto` computes `mine` from the viewer the route resolved.
  */
 import { and, asc, eq, gt, isNull, or } from 'drizzle-orm';
-import { db, nodeComments, nodes, shares, type NodeCommentDbRow } from '@mantle/db';
+import { agents, db, nodeComments, nodes, shares, type NodeCommentDbRow } from '@mantle/db';
 import type { NodeComment, NodeCommentAuthorKind } from '@mantle/client-types';
 export type { NodeComment, NodeCommentAuthorKind };
 
@@ -110,6 +110,25 @@ export async function addNodeComment(
     .returning();
   if (!row) throw new Error('addNodeComment: insert returned no row');
   return row;
+}
+
+/**
+ * Resolve a calling agent's row for comment attribution — id for the FK,
+ * display name for the snapshot. The tool context only carries the slug;
+ * without this lookup every agent comment would render its slug and leave
+ * `agent_id` NULL (dead FK). Null when the slug doesn't resolve (MCP or
+ * background callers with no agent row).
+ */
+export async function resolveAgentAuthor(
+  ownerId: string,
+  slug: string,
+): Promise<{ agentId: string; name: string } | null> {
+  const [row] = await db
+    .select({ id: agents.id, name: agents.name })
+    .from(agents)
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, slug)))
+    .limit(1);
+  return row ? { agentId: row.id, name: row.name || slug } : null;
 }
 
 /** Edit a comment's body (stamps edited_at). Caller enforces authorship. */

@@ -34,7 +34,18 @@ drop trigger if exists "tasks_changed_upd_trg" on "public"."nodes";
 create trigger "tasks_changed_upd_trg"
   after update on "public"."nodes"
   for each row
-  when (new.type = 'task' or old.type = 'task')
+  when (
+    (new.type = 'task' or old.type = 'task')
+    -- Skip writes that change nothing a task view renders — above all the
+    -- embedding backfill/re-embed paths, which write one row per autocommit
+    -- statement (nothing collapses) and would turn a 2k-task re-embed into
+    -- 2k notify frames per open tab.
+    and (
+      new.title is distinct from old.title
+      or new.data is distinct from old.data
+      or new.tags is distinct from old.tags
+    )
+  )
   execute function "public"."notify_tasks_changed"();
 --> statement-breakpoint
 drop trigger if exists "tasks_changed_del_trg" on "public"."nodes";
