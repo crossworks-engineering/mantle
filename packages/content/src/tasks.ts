@@ -51,8 +51,7 @@ export function sanitizeTodos(value: unknown): TaskTodo[] {
   for (const raw of value) {
     if (typeof raw !== 'object' || raw === null) continue;
     const item = raw as Record<string, unknown>;
-    const text =
-      typeof item.text === 'string' ? item.text.trim().slice(0, TASK_TODO_TEXT_MAX) : '';
+    const text = typeof item.text === 'string' ? item.text.trim().slice(0, TASK_TODO_TEXT_MAX) : '';
     if (!text) continue;
     out.push({
       id: typeof item.id === 'string' && item.id ? item.id : crypto.randomUUID(),

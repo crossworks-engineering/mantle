@@ -276,7 +276,8 @@ const task_update: BuiltinToolDef = {
       tags: {
         type: 'array',
         items: { type: 'string' },
-        description: "Replaces the whole tag list, e.g. ['work']; omit to keep current, [] to clear.",
+        description:
+          "Replaces the whole tag list, e.g. ['work']; omit to keep current, [] to clear.",
       },
       todos: {
         ...TODOS_SCHEMA,
@@ -367,7 +368,7 @@ const task_comment_add: BuiltinToolDef = {
   slug: 'task_comment_add',
   name: 'Comment on a task',
   description:
-    'Add a comment to a task\'s discussion thread — a progress note, a question, or an answer the owner and team members will see attributed to you. Use when reporting work done on a task or responding to the thread; for changing the task itself (status, checklist, due date) use `task_update` instead.',
+    "Add a comment to a task's discussion thread — a progress note, a question, or an answer the owner and team members will see attributed to you. Use when reporting work done on a task or responding to the thread; for changing the task itself (status, checklist, due date) use `task_update` instead.",
   inputSchema: {
     type: 'object',
     properties: {
