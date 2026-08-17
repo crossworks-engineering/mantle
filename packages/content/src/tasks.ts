@@ -63,9 +63,12 @@ export function sanitizeTodos(value: unknown): TaskTodo[] {
   return out;
 }
 
-/** Scalar subquery: live comment count for the row (see node-comments.ts). */
+/** Scalar subquery: live comment count for the row (see node-comments.ts).
+ *  The outer column must be table-qualified BY HAND — drizzle renders a bare
+ *  `${nodes.id}` as unqualified `"id"`, which inside the subquery resolves to
+ *  node_comments' own id and silently counts 0 (caught in the live audit). */
 const commentCountSql = sql<number>`(
-  select count(*)::int from node_comments nc where nc.node_id = ${nodes.id}
+  select count(*)::int from node_comments nc where nc.node_id = ${nodes}."id"
 )`;
 
 function rowOf(n: Node, commentCount = 0): TaskRow {
