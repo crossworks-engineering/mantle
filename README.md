@@ -245,7 +245,7 @@ provably stale, never a number someone typed once.
 ![migrations](https://img.shields.io/badge/migrations-150-336791?logo=postgresql&logoColor=white)
 ![built-in tools](https://img.shields.io/badge/built--in%20tools-199-6b4fbb)
 ![docs](https://img.shields.io/badge/docs-117%20guides-4c8eda)
-![releases](https://img.shields.io/badge/releases-189-blue)
+![releases](https://img.shields.io/badge/releases-190-blue)
 
 **Code & tests** — the suite runs on every push, DB-less, in CI. Test counts below are cases *declared*; parameterised tables (`it.each`) expand to more at run time, so the executed total is higher than the number shown.
 
@@ -256,7 +256,7 @@ provably stale, never a number someone typed once.
 | ⚖️ &nbsp;Test weight | 48,109 lines — 1 for every 3.5 of source |
 | 🗂️ &nbsp;Tracked files | 2,233 |
 | 🐘 &nbsp;SQL migrations | 150, replayed in order on every boot |
-| 📚 &nbsp;Docs | 117 engineering docs, 77 user-guide pages, 217 changelog entries (54,161 lines) |
+| 📚 &nbsp;Docs | 117 engineering docs, 77 user-guide pages, 217 changelog entries (54,175 lines) |
 | 🐳 &nbsp;Compose services | 25 (core + opt-in profiles) |
 
 **What a fresh brain ships with** — declared once in the [system manifest](./server/web/lib/system-manifest/), checked by CI and by a live integrity audit.
@@ -270,10 +270,10 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.230.67, 2,588 commits and 189 releases since 2026-05-14 (96 days, ~27.0 commits/day).
+**Velocity** — v0.230.68, 2,591 commits and 190 releases since 2026-05-14 (96 days, ~27.0 commits/day).
 
 ```
-commits/week, last 14 weeks   ▂▇▆▆▂▂█▄▃▅▇▆▅▄   peak 342
+commits/week, last 14 weeks   ▂▇▇▆▂▂█▄▃▅▇▅▄▄   peak 352
 ```
 
 ```mermaid
