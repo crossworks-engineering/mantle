@@ -81,7 +81,7 @@ away costs zero embeddings and zero LLM calls.
 List sort order is not-done first, then `rank` ascending (nulls last —
 board order carries into the list), then `due_at` ascending (nulls
 last), then `updated_at` descending. The `/tasks` screen is
-**master-detail** (see [`ui-style-guide.md`](./ui-style-guide.md) §8)
+**master-detail** (see `jackdaw/docs/ui-style-guide.md` §8)
 plus a **Kanban board** view (one column per status; a drag PATCHes
 `{status, rank}` — rank/tags-only edits deliberately do NOT re-index,
 so a drag can never trigger an LLM pass). Search, filters, and

@@ -1,7 +1,15 @@
 # server/web: UI conventions
 
-**Before any styling/UI work, read [`docs/ui-style-guide.md`](../../docs/ui-style-guide.md).**
-It's the rulebook; match existing screens (Notes + the settings screens) when unsure.
+**Before any styling/UI work, read the style guide — it lives in the JACKDAW
+repo now: `jackdaw/docs/ui-style-guide.md`** (GitHub:
+`crossworks-engineering/jackdaw`). The frontend left this monorepo on
+2026-08-13; the copy that used to sit at `docs/ui-style-guide.md` was a frozen
+fork and was deleted 2026-08-18. Match `/tasks`, the reference screen, when
+unsure.
+
+⚠ Most of this file predates the split and describes screens that are no
+longer here (only 5 `.tsx` files remain under `server/web`). Treat the
+jackdaw guide as authoritative wherever the two disagree.
 
 Non-negotiables (full detail in the guide):
 
