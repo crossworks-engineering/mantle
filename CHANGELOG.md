@@ -4,6 +4,48 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
+
+Every presenter in `@mantle/share-ui` was written for one surface: the
+anonymous public `/s` page, where the presenter *is* the page. `/team` then
+reused them inside a master-detail pane, and two of those choices became wrong
+at once.
+
+The pane draws the item's title in its own header, so the presenter's hero
+title was the second of three on screen. And the centred `max-w` cap meant
+dragging the pane divider only grew the empty margins while the content stayed
+a fixed narrow column — members read that as "the drag is broken". The handle
+was fine; the content was ignoring it. A non-previewable file was the worst of
+it: a `max-w-md` card, phone-width, marooned in the middle of a 2000px pane.
+
+### `chrome`, an optional prop on six presenters
+
+`chrome?: 'share' | 'embedded'` — Note, Event, Task, File, Table and Draw.
+
+`'share'` is the default and is byte-for-byte what shipped before, deliberately:
+the public page must not change because an embedder forgot a prop. `'embedded'`
+means the surrounding shell already owns the title and the padding, so the
+presenter drops its hero title, tightens the vertical rhythm, and stops
+centring.
+
+⚠ `'embedded'` is **not** a synonym for full-bleed. It means *the shell owns
+the chrome*; what to do with the width is still the content's call. A table, a
+media viewer and a file row all get better as they get wider, so they span the
+pane. A note does not — a 2000px line is unreadable in anyone's pane — so prose
+keeps its measure and simply stops being centred under a title it no longer
+draws. The bug was a floating box, not a reading measure.
+
+Event and Task also drop their card frame when embedded. On an empty page that
+border is what tells a reader where the item begins; inside a pane that already
+has a header rule and a border of its own, it is the box.
+
+### The folder listing can carry a Modified column
+
+`ShareFolderListing.files[]` gains an optional `updatedAt`, populated by
+`GET /s/[token]/view`. `FileRow` already carried it — it was simply not being
+passed on, so no consumer could show when a file last changed. Optional, so a
+client pinned to an older server still parses the payload.
+
 ## Unreleased — Tasks grows up: a board, a lifecycle, and somewhere to put finished work (branch claude/handover-tasks-kanban-04d026)
 
 `/tasks` was a checklist. It is now a project surface: a Kanban board, four

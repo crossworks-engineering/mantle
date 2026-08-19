@@ -101,6 +101,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
             filename: f.filename,
             mimeType: f.mimeType,
             sizeBytes: f.sizeBytes,
+            updatedAt: f.updatedAt,
           })),
         },
       };

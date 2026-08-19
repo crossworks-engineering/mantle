@@ -26,6 +26,7 @@
     "./ui/button": "./src/ui/button.tsx",
     "./ui/input": "./src/ui/input.tsx",
     "./ui/label": "./src/ui/label.tsx",
+    "./lib/presenter-chrome": "./src/lib/presenter-chrome.ts",
     "./lib/utils": "./src/lib/utils.ts",
     "./page-outline": "./src/page-outline.tsx",
     "./nav-items": "./src/nav-items.ts",

@@ -22,7 +22,16 @@ export type ShareFolderListing = {
   /** ltree path currently being listed (the shared root or a descendant). */
   currentPath: string;
   folders: Array<{ id: string; path: string; slug: string; fileCount: number }>;
-  files: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>;
+  files: Array<{
+    id: string;
+    filename: string;
+    mimeType: string;
+    sizeBytes: number;
+    /** ISO instant of the last write, so an embedded listing can carry a
+     *  Modified column. Optional because a client pinned to an older server
+     *  still gets a payload without it. */
+    updatedAt?: string;
+  }>;
 };
 
 export type ShareViewPayload =

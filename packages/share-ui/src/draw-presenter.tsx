@@ -1,3 +1,5 @@
+import { isEmbedded, type PresenterChrome } from './lib/presenter-chrome';
+
 /**
  * Public draw render — the committed SVG snapshot, static, no JS.
  *
@@ -14,14 +16,19 @@
 export function DrawPresenter({
   view,
   src,
+  chrome,
 }: {
   view: { title: string; hasSvg: boolean };
   /** URL of the snapshot image (`/s/<token>/draw`). */
   src: string;
+  chrome?: PresenterChrome;
 }) {
+  const embedded = isEmbedded(chrome);
   return (
-    <article className="mx-auto max-w-5xl px-6 py-12 md:py-16">
-      <h1 className="mb-8 text-3xl font-bold tracking-tight text-balance">{view.title}</h1>
+    <article className={embedded ? 'w-full px-6 py-6' : 'mx-auto max-w-5xl px-6 py-12 md:py-16'}>
+      {!embedded && (
+        <h1 className="mb-8 text-3xl font-bold tracking-tight text-balance">{view.title}</h1>
+      )}
       {view.hasSvg ? (
         <div className="overflow-hidden rounded-lg border border-border bg-white p-3">
           {/* eslint-disable-next-line @next/next/no-img-element -- a drawing

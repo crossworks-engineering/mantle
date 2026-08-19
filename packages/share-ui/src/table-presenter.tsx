@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Table2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { cn } from './lib/utils';
+import { isEmbedded, type PresenterChrome } from './lib/presenter-chrome';
 
 type CellValue = string | number | boolean | string[] | null;
 type PublicRow = { id: string; cells: Record<string, CellValue> };
@@ -23,6 +24,7 @@ const PAGE = 200;
 export function TablePresenter({
   view,
   token,
+  chrome,
 }: {
   view: {
     title: string;
@@ -31,6 +33,7 @@ export function TablePresenter({
     legacyDoc: { columns: PublicColumn[]; rows: PublicRow[] } | null;
   };
   token: string;
+  chrome?: PresenterChrome;
 }) {
   const tabs = view.tabs ?? [];
   const [tabId, setTabId] = useState<string | null>(tabs[0]?.id ?? null);
@@ -100,14 +103,21 @@ export function TablePresenter({
     [columns],
   );
 
+  const embedded = isEmbedded(chrome);
+
   return (
-    <div className="mx-auto max-w-6xl px-6 py-12">
-      <header className="mb-6 text-center">
-        <h1 className="text-xl font-semibold tracking-tight">
-          {view.icon ? `${view.icon} ` : ''}
-          {view.title}
-        </h1>
-        <p className="mt-1 text-xs text-muted-foreground">
+    // A table is the clearest case for the embedded shell: every extra pixel is
+    // another column a member can read without scrolling sideways, and the
+    // centred 6xl cap was throwing that width away.
+    <div className={embedded ? 'w-full px-6 py-6' : 'mx-auto max-w-6xl px-6 py-12'}>
+      <header className={embedded ? 'mb-3' : 'mb-6 text-center'}>
+        {!embedded && (
+          <h1 className="text-xl font-semibold tracking-tight">
+            {view.icon ? `${view.icon} ` : ''}
+            {view.title}
+          </h1>
+        )}
+        <p className={cn('text-xs text-muted-foreground', !embedded && 'mt-1')}>
           {totalRows} row{totalRows === 1 ? '' : 's'}
         </p>
       </header>
