@@ -480,20 +480,49 @@ export class NoGreenBuildError extends Error {
  * Refuses if the draft hasn't been built green. Returns the published detail, or
  * null if the app doesn't exist (or has nothing to publish).
  */
+/**
+ * Ship the staged draft — or, when nothing is staged, a REBUILD of what is
+ * already published.
+ *
+ * That second case is not a nicety. `app_build` compiles `draft ?? source`, so
+ * building an app with no draft produces a green build OF THE PUBLISHED SOURCE.
+ * Gating publish on the draft SOURCE left that build unpromotable: an app whose
+ * code has not changed but whose BUNDLE is stale had no path to a fresh one
+ * short of rewriting its own source back over itself.
+ *
+ * Which stopped being hypothetical the day per-app Tailwind CSS shipped
+ * (v0.230.57). Every app built before it carries a bundle with no CSS sidecar,
+ * the frame serves `appCss` from that sidecar, and so every app on every box
+ * rolled past that release renders with NO STYLESHEET until it is rebuilt. The
+ * repair is a rebuild, and the rebuild could not be published. Any future change
+ * to what a build EMITS — a source map, a second sidecar — strands every
+ * existing app the same way, so the gate belongs on the build, not the source.
+ *
+ * Safe because the two cases write different things: with a draft, source and
+ * bundle are promoted TOGETHER (they were built as a pair); without one, only
+ * the bundle moves and the source it was built from is already published. The
+ * pairing invariant that `apps-build-staleness.test.ts` guards — never ship new
+ * source beside an old bundle — is untouched in both.
+ */
 export async function publishApp(ownerId: string, id: string): Promise<AppDetail | null> {
   const app = await loadDetail(ownerId, id);
   if (!app) return null;
-  if (!app.draft) return app; // nothing staged — already published
+  // Nothing staged and no rebuild waiting — already published.
+  if (!app.draft && !app.draftBuild) return app;
   if (!app.draftBuild?.ok) throw new NoGreenBuildError();
 
   const published = app.draft;
   const build = app.draftBuild;
+  // Only when a draft is actually staged. A build-only publish must not touch
+  // the source — it was built from what is already there. Hoisted out of the
+  // `.set({…})` rather than spread inline: the staleness tripwire parses those
+  // payloads with a non-greedy match, and a nested `})` truncates what it sees.
+  const sourceFields = published ? { source: published, sourceText: sourceToText(published) } : {};
   await db.transaction(async (tx) => {
     await tx
       .update(apps)
       .set({
-        source: published,
-        sourceText: sourceToText(published),
+        ...sourceFields,
         publishedBuild: build,
         draftSource: null,
         draftUpdatedAt: null,

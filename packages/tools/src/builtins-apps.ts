@@ -580,7 +580,7 @@ const app_publish: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Publish a mini app',
   description:
-    'Publish the app draft: promote the draft source + its build to the live app. Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved.',
+    'Publish the app draft: promote the draft source + its build to the live app. Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved. With NO draft staged this promotes a rebuild instead — `app_build` compiles the published source when there is no draft, so app_build then app_publish refreshes a stale bundle (e.g. one predating per-app CSS) without touching the code.',
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string', description: "The app's id (UUID) — from `app_list`." } },
