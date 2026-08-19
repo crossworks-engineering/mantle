@@ -548,6 +548,7 @@ export {
   type AppendTeamMessageInput,
   type UpdateTeamMessageOutcomeInput,
   type TeamMemberActivity,
+  teamThreadHasAttachedNode,
 } from './team-messages';
 
 export {
@@ -609,6 +610,7 @@ export {
   type ForumMemberActivity,
   type ForumMemberPost,
   type ForumAuthoredTopic,
+  forumTopicsWithAttachedNode,
 } from './forum';
 
 export {

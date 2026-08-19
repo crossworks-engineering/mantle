@@ -67,6 +67,10 @@ export type UpdateTeamMessageOutcomeInput = {
   model?: string | null;
   traceId?: string | null;
   error?: string | null;
+  /** Media the turn's tools produced — node references only, never bytes. See
+   *  the note in run-team-turn.ts for why this is written HERE and not left to
+   *  the live channel. */
+  attachments?: ConversationAttachment[];
 };
 
 /** Finalize a pending outbound row (the durable "thinking…" bubble): fill the
@@ -83,6 +87,7 @@ export async function updateTeamMessageOutcome(
       ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.traceId !== undefined ? { traceId: args.traceId } : {}),
       ...(args.error !== undefined ? { error: args.error } : {}),
+      ...(args.attachments !== undefined ? { attachments: args.attachments } : {}),
     })
     .where(and(eq(teamMessages.ownerId, args.ownerId), eq(teamMessages.id, args.id)))
     .returning();
@@ -94,6 +99,34 @@ export async function updateTeamMessageOutcome(
  * returned in ASCENDING order for rendering. `before` is an ISO timestamp
  * cursor (the createdAt of the oldest message the caller already has).
  */
+/**
+ * Did an agent attach this file node to a message in THIS contact's thread?
+ *
+ * The authorization for `/api/team/messages/media/<nodeId>`. Simpler than the
+ * forum's: a team thread has exactly one member, so the contact id on the row
+ * IS the visibility rule — no topic to resolve. Asked of the messages rather
+ * than the file tree for the same reason (see forumTopicsWithAttachedNode).
+ */
+export async function teamThreadHasAttachedNode(
+  ownerId: string,
+  contactId: string,
+  nodeId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: teamMessages.id })
+    .from(teamMessages)
+    .where(
+      and(
+        eq(teamMessages.ownerId, ownerId),
+        eq(teamMessages.contactId, contactId),
+        eq(teamMessages.status, 'complete'),
+        dsql`${teamMessages.attachments} @> ${JSON.stringify([{ nodeId }])}::jsonb`,
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
 export async function listTeamThread(
   ownerId: string,
   contactId: string,

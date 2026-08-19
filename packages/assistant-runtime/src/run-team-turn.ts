@@ -54,6 +54,7 @@ import {
   TEAM_PRIVATE_READ_SLUGS,
 } from '@mantle/content';
 import { assembleResponderTurn } from './assemble-turn';
+import { durableAttachmentsFor } from './inline-images';
 import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
 import {
   startTrace,
@@ -335,6 +336,21 @@ export async function runTeamTurn(
   // its partial reply). Strip audio tags — the team surface is text-only.
   const reply = stripAudioTags(outcome.reply).text;
 
+  // Persist the turn's media onto the row — the same rule the owner turn
+  // follows (run-turn.ts), and for the same reason: the live `artifacts`
+  // channel only reaches a client on the legacy blocking response, so an
+  // artifact not written here is never rendered at all.
+  //
+  // Node reference only, never the base64. A member loads the bytes through
+  // `/api/team/messages/media/<nodeId>`, which authorizes off this
+  // very column — so an artifact WITHOUT a node id has nothing to point at and
+  // is dropped rather than written as an unreachable row.
+  //
+  // A reply can also PLACE a picture itself with `![alt](media:<id>)`. Anything
+  // it placed must not ALSO appear in the strip below; artifactsNotPlacedInline
+  // is the shared rule (inline-images.ts).
+  const durableAttachments = durableAttachmentsFor(outcome.loop.artifacts, reply);
+
   const finalized = await runDurableStep('finalize_team_outbound', () =>
     updateTeamMessageOutcome({
       ownerId,
@@ -343,6 +359,7 @@ export async function runTeamTurn(
       text: reply,
       model: agent.model,
       traceId: capturedTraceId,
+      ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
     }),
   );
   const outbound: TeamMessage = finalized ?? {

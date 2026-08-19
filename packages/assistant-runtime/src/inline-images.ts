@@ -16,6 +16,7 @@
  * call, long before a turn is finalized.
  */
 import { inlineMediaImageIds } from '@mantle/content/markdown-refs';
+import type { ConversationAttachment } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
 
 /**
@@ -33,4 +34,32 @@ export function artifactsNotPlacedInline<T extends Pick<ToolArtifact, 'kind' | '
   return artifacts.filter(
     (a) => !(a.kind === 'image' && typeof a.nodeId === 'string' && placed.has(a.nodeId)),
   );
+}
+
+/**
+ * The row's `attachments` column, from a turn's artifacts and its reply text.
+ *
+ * Every surface that persists a turn needs the identical three steps — drop
+ * what the reply already placed inline, keep only what has a node to point at,
+ * and carry the reference WITHOUT the bytes. Written once here because the
+ * owner turn, Team Chat and the Forum each learned it separately, and the two
+ * member surfaces had learned it as "not at all": `show_image` built good
+ * artifacts and they landed in an empty column.
+ *
+ * The nodeId filter is load-bearing, not defensive. An artifact without one has
+ * nothing a client could fetch — the bytes live only on the live channel — so a
+ * row written for it would render as a permanently broken picture.
+ */
+export function durableAttachmentsFor(
+  artifacts: readonly ToolArtifact[],
+  replyText: string,
+): ConversationAttachment[] {
+  return artifactsNotPlacedInline(artifacts, replyText)
+    .filter((a) => typeof a.nodeId === 'string' && a.nodeId.length > 0)
+    .map((a) => ({
+      kind: a.kind,
+      nodeId: a.nodeId!,
+      ...(a.mimeType ? { mime: a.mimeType } : {}),
+      ...(a.caption ? { caption: a.caption } : {}),
+    }));
 }

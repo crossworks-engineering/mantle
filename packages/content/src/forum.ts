@@ -368,6 +368,10 @@ export type FinalizeForumPostInput = {
   model?: string | null;
   traceId?: string | null;
   error?: string | null;
+  /** Media the turn's tools produced — node references only, never bytes. A
+   *  member reads these through /api/team/forum/media/<nodeId>, which
+   *  authorizes off THIS column. See run-forum-turn.ts. */
+  attachments?: ConversationAttachment[];
 };
 
 /** Finalize a pending agent post (the durable "thinking…" bubble): fill the
@@ -385,6 +389,7 @@ export async function finalizeForumPost(args: FinalizeForumPostInput): Promise<F
       ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.traceId !== undefined ? { traceId: args.traceId } : {}),
       ...(args.error !== undefined ? { error: args.error } : {}),
+      ...(args.attachments !== undefined ? { attachments: args.attachments } : {}),
     })
     .where(
       and(
@@ -398,8 +403,39 @@ export async function finalizeForumPost(args: FinalizeForumPostInput): Promise<F
 }
 
 /** The reader id a viewer's cursors are keyed by (owner cursors use ownerId). */
+/**
+ * Topics holding a COMPLETE agent post that attached this file node.
+ *
+ * The authorization question for `/api/team/forum/media/<nodeId>`, and it is
+ * deliberately asked of the POSTS and not of the file tree: "has the responder
+ * ever touched this file" would hand a member the whole store, while "is it on
+ * a post" is the same rule the forum already applies to an upload. Topic
+ * visibility is then checked per candidate by the caller, so a node posted into
+ * two topics is reachable through whichever one the member can actually see.
+ *
+ * `status = 'complete'` excludes a pending row mid-turn. Bounded because a node
+ * on more than a handful of topics is pathological, not a use case.
+ */
 function readerIdOf(ownerId: string, viewer: ForumViewer): string {
   return viewer.kind === 'owner' ? ownerId : viewer.contactId;
+}
+
+export async function forumTopicsWithAttachedNode(
+  ownerId: string,
+  nodeId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({ topicId: forumPosts.topicId })
+    .from(forumPosts)
+    .where(
+      and(
+        eq(forumPosts.ownerId, ownerId),
+        eq(forumPosts.status, 'complete'),
+        dsql`${forumPosts.attachments} @> ${JSON.stringify([{ nodeId }])}::jsonb`,
+      ),
+    )
+    .limit(20);
+  return [...new Set(rows.map((r) => r.topicId))];
 }
 
 /** Sort orders for the topic index. Pinned topics stay on top in every order
