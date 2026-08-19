@@ -58,7 +58,7 @@ import {
   unregisterTurnAbort,
 } from '@mantle/tracing';
 import { pickWebDefaultAgent } from './select';
-import { artifactsNotPlacedInline } from './inline-images';
+import { artifactsNotPlacedInline, durableAttachmentsFor } from './inline-images';
 import {
   assembleResponderTurn,
   base64Bytes,
@@ -577,14 +577,7 @@ export async function runAssistantTurn(
   // below. See inline-images.ts for the rule.
   const galleryArtifacts = artifactsNotPlacedInline(outcome.loop.artifacts, reply);
 
-  const durableAttachments: ConversationAttachment[] = galleryArtifacts
-    .filter((a) => typeof a.nodeId === 'string' && a.nodeId.length > 0)
-    .map((a) => ({
-      kind: a.kind,
-      nodeId: a.nodeId!,
-      ...(a.mimeType ? { mime: a.mimeType } : {}),
-      ...(a.caption ? { caption: a.caption } : {}),
-    }));
+  const durableAttachments = durableAttachmentsFor(outcome.loop.artifacts, reply);
 
   // Finalize the pending outbound row: fill the composed reply + flip the status
   // to 'complete'. Journaled, so a crash-resume re-applies it idempotently.
