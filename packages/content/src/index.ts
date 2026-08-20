@@ -672,6 +672,20 @@ export {
   type RenderXlsxSheet,
 } from './render-xlsx';
 export {
+  buildSheet,
+  validateWorkbookSpec,
+  SheetSpecError,
+  MAX_SHEETS,
+  MAX_ROWS_PER_SHEET,
+  MAX_ROWS_PER_WORKBOOK,
+  MAX_COLUMNS_PER_SHEET,
+  type WorkbookSpec,
+  type SheetSpec,
+  type SheetColumnSpec,
+  type SheetColumnType,
+  type SheetTotalKind,
+} from './build-sheet';
+export {
   resolveExport,
   EXPORT_MIME,
   EXPORTABLE_TYPES,

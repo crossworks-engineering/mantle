@@ -120,6 +120,7 @@ The seed taxonomy is pre-drawn: the `*_TOOLS` arrays in
 | `tasks` | `TASK_TOOLS` | |
 | `pages` | `PAGE_TOOLS` | authoring subset (no `page_delete`), decision 3; delete rides the escape hatch where intended |
 | `tables` | `TABLE_TOOLS` | |
+| `spreadsheets` | `SHEET_TOOLS` | `sheet_build` — compose a formatted .xlsx as the deliverable, as opposed to a table the user keeps querying |
 | `contacts` | `CONTACT_TOOLS` | the email gate ([contacts.md](contacts.md)) |
 | `journal` | `JOURNAL_TOOLS` | identity |
 | `recall` | `RECALL_TOOLS` | `find_window`, `recall_window` |

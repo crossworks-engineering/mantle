@@ -17,24 +17,33 @@
  * tab. `renderXlsxWorkbook` takes the tabs and writes one worksheet each;
  * `renderXlsx` is the one-tab convenience wrapper it is built from.
  *
- * ## Styling is deliberate, and deliberately restrained
+ * ## Styling
  *
  * The point of exporting to .xlsx rather than CSV is that the file should be
  * READABLE the moment it opens — a frozen, filterable header, columns wide
  * enough for their contents, numbers aligned and formatted, banded rows to
- * follow across. So this applies a fixed, neutral house style rather than
- * offering knobs. Two constraints shaped it:
- *
- *   - **It must print and photocopy.** Nothing carries meaning by colour alone;
- *     the header is legible in greyscale and the banding is a hairline tint.
- *   - **It must not fight the reader's theme.** Excel and Sheets have their own
- *     dark modes and their own default cell colour. Any fill we set is fixed,
- *     so we use only tints that keep dark text readable and leave the vast
- *     majority of cells unfilled.
+ * follow across. The palette and the sizing rules are shared with the other
+ * spreadsheet writer (`./build-sheet.ts`) and live in `./xlsx-style.ts`, which
+ * carries the reasoning; nothing here should define a colour of its own.
  *
  * Pure: no DB, no disk. Depends only on the table model + `exceljs`.
  */
 import ExcelJS from 'exceljs';
+import {
+  BAND_FILL,
+  HEADER_FILL,
+  HEADER_TEXT,
+  RULE_COLOR,
+  TOTALS_FILL,
+  WIDTH_SAMPLE_ROWS,
+  alignFor,
+  alignment,
+  clampWidth,
+  displayLength,
+  numFmtFor,
+  solidFill,
+  uniqueSheetName,
+} from './xlsx-style';
 import {
   applyView,
   cellIsEmpty,
@@ -53,73 +62,6 @@ export type RenderXlsxOptions = {
 
 /** One worksheet of a rendered workbook: a tab's name and its grid. */
 export type RenderXlsxSheet = { name: string; doc: TableDoc };
-
-// ── House style ──────────────────────────────────────────────────────────────
-// ARGB, exceljs's colour form. Chosen to read in greyscale and to keep black
-// text legible, because a fixed fill cannot adapt to the reader's theme.
-
-/** Header band: slate, near-black in greyscale, with white text over it. */
-const HEADER_FILL = 'FF1F2937';
-const HEADER_TEXT = 'FFFFFFFF';
-/** Banding on alternate data rows — a hairline tint, not a colour. */
-const BAND_FILL = 'FFF5F6F8';
-/** Totals band: one step darker than the banding so it reads as a rule. */
-const TOTALS_FILL = 'FFE9ECF1';
-const RULE_COLOR = 'FFBFC6D1';
-
-/** Widest column we will auto-size to, in Excel character units. Past this a
- *  long free-text cell stops being a column and starts being a wall; the text
- *  is all still there, the reader just widens it themselves if they care. */
-const MAX_AUTO_WIDTH = 60;
-const MIN_AUTO_WIDTH = 10;
-/** Rows sampled when measuring a column's natural width. Measuring every row
- *  of a 100k-row export to set one number is work nobody sees. */
-const WIDTH_SAMPLE_ROWS = 200;
-
-/** Excel number-format string for a typed column, or null to leave it General. */
-function numFmtFor(col: Column): string | null {
-  const dp = col.format?.decimals;
-  switch (col.type) {
-    case 'currency': {
-      const code = col.format?.currency ?? 'USD';
-      const digits = dp ?? 2;
-      return `"${code}" #,##0${digits > 0 ? '.' + '0'.repeat(digits) : ''}`;
-    }
-    case 'percent':
-      // Store the raw number (42 → "42%"), so use a literal % rather than
-      // Excel's "0%" which would multiply by 100.
-      return `#,##0${dp != null && dp > 0 ? '.' + '0'.repeat(dp) : ''}"%"`;
-    case 'number':
-      return dp != null ? `#,##0${dp > 0 ? '.' + '0'.repeat(dp) : ''}` : null;
-    // Without an explicit format a real date cell renders as whatever the
-    // reader's locale defaults to, which for a shared export means two people
-    // reading 03/04 as different days. ISO is unambiguous everywhere.
-    case 'date':
-      return 'yyyy-mm-dd';
-    case 'datetime':
-      return 'yyyy-mm-dd hh:mm';
-    default:
-      return null;
-  }
-}
-
-/** Horizontal alignment for a column's data cells. */
-function alignFor(col: Column): 'left' | 'right' | 'center' {
-  switch (col.type) {
-    case 'number':
-    case 'currency':
-    case 'percent':
-    case 'formula':
-      return 'right';
-    case 'checkbox':
-      return 'center';
-    case 'date':
-    case 'datetime':
-      return 'right'; // dates are ordinal; right-aligned they compare by eye
-    default:
-      return 'left';
-  }
-}
 
 function toNumber(v: CellValue): number | null {
   const n = typeof v === 'number' ? v : Number(v);
@@ -158,66 +100,6 @@ function cellValue(value: CellValue, col: Column): ExcelJS.CellValue {
     default:
       return String(value);
   }
-}
-
-/**
- * How wide a number will be once Excel has FORMATTED it, in characters.
- *
- * Sizing from the stored value is the trap here: `12500` is five characters,
- * but with a currency format it renders as `USD 12,500.00`, which is thirteen.
- * A column sized for the stored value is too narrow for what it displays, and
- * Excel's response to a too-narrow numeric cell is `#######` — the export looks
- * broken on open, and the number is not even wrong, just invisible.
- */
-function numericDisplayLength(n: number, col: Column): number {
-  const dp = col.format?.decimals ?? (col.type === 'currency' ? 2 : 0);
-  const digits = String(Math.floor(Math.abs(n))).length;
-  const separators = Math.max(0, Math.ceil(digits / 3) - 1);
-  let len = digits + separators + (dp > 0 ? dp + 1 : 0) + (n < 0 ? 1 : 0);
-  if (col.type === 'currency') len += (col.format?.currency ?? 'USD').length + 1;
-  if (col.type === 'percent') len += 1;
-  return len;
-}
-
-/** Rough display length of a stored value, for column sizing. */
-function displayLength(v: ExcelJS.CellValue, col: Column, formatted: boolean): number {
-  if (v === null || v === undefined) return 0;
-  // Matches the numFmt set above: `yyyy-mm-dd` or `yyyy-mm-dd hh:mm`.
-  if (v instanceof Date) return col.type === 'datetime' ? 16 : 10;
-  if (typeof v === 'object' && 'text' in v) return String(v.text ?? '').length;
-  if (typeof v === 'boolean') return 5;
-  if (typeof v === 'number' && formatted) return numericDisplayLength(v, col);
-  return String(v).length;
-}
-
-function sanitizeSheetName(name: string): string {
-  const cleaned = name.replace(/[\\/?*[\]:]/g, ' ').trim();
-  return (cleaned || 'Sheet1').slice(0, 31);
-}
-
-/**
- * Excel refuses two worksheets with the same name, so a workbook whose tabs
- * collide after sanitising (or after the 31-char clip) would throw on write.
- * Suffix duplicates rather than failing the export: the reader can rename a
- * tab, but cannot recover a download that never happened.
- */
-function uniqueSheetName(name: string, taken: Set<string>): string {
-  const base = sanitizeSheetName(name);
-  if (!taken.has(base.toLowerCase())) {
-    taken.add(base.toLowerCase());
-    return base;
-  }
-  for (let n = 2; n < 1000; n++) {
-    const suffix = ` (${n})`;
-    const candidate = base.slice(0, 31 - suffix.length) + suffix;
-    if (!taken.has(candidate.toLowerCase())) {
-      taken.add(candidate.toLowerCase());
-      return candidate;
-    }
-  }
-  /* c8 ignore next 2 -- 1000 identically-named tabs is not a reachable state */
-  taken.add(base.toLowerCase());
-  return base;
 }
 
 /** Write one tab onto one worksheet, fully styled. */
@@ -271,8 +153,7 @@ function writeSheet(ws: ExcelJS.Worksheet, doc: TableDoc): void {
   ws.columns = columns.map((c, i) => ({
     header: c.name,
     key: c.id,
-    // +3 for the header's filter button and a little breathing room.
-    width: Math.min(Math.max(widest[i]! + 3, MIN_AUTO_WIDTH), MAX_AUTO_WIDTH),
+    width: clampWidth(widest[i]!),
   }));
 
   const header = ws.getRow(1);
@@ -281,8 +162,8 @@ function writeSheet(ws: ExcelJS.Worksheet, doc: TableDoc): void {
   header.height = 22;
   for (let c = 1; c <= columns.length; c++) {
     const cell = header.getCell(c);
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_FILL } };
-    cell.alignment = { vertical: 'middle', horizontal: aligns[c - 1] };
+    cell.fill = solidFill(HEADER_FILL);
+    cell.alignment = alignment(aligns[c - 1]!);
   }
 
   records.forEach((record, r) => {
@@ -291,10 +172,8 @@ function writeSheet(ws: ExcelJS.Worksheet, doc: TableDoc): void {
     columns.forEach((_col, i) => {
       const cell = added.getCell(i + 1);
       if (formats[i]) cell.numFmt = formats[i]!;
-      cell.alignment = { vertical: 'middle', horizontal: aligns[i] };
-      if (banded) {
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BAND_FILL } };
-      }
+      cell.alignment = alignment(aligns[i]!);
+      if (banded) cell.fill = solidFill(BAND_FILL);
     });
   });
 
@@ -314,8 +193,8 @@ function writeSheet(ws: ExcelJS.Worksheet, doc: TableDoc): void {
       ) {
         cell.numFmt = formats[i]!;
       }
-      cell.alignment = { vertical: 'middle', horizontal: aligns[i] };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TOTALS_FILL } };
+      cell.alignment = alignment(aligns[i]!);
+      cell.fill = solidFill(TOTALS_FILL);
       cell.border = { top: { style: 'thin', color: { argb: RULE_COLOR } } };
     });
   }

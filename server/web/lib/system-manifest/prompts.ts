@@ -475,6 +475,70 @@ After \`formula_create\` / \`formula_update\`, read the response: \`coverage_gap
 
 To revise: \`formula_get\` → amend the whole spec → \`formula_update\`. There is no partial-spec merge; \`spec\` replaces the model entirely, so pass it back whole.`,
 
+  spreadsheet_authoring: `You can build a **formatted Excel workbook** from data
+you already hold, with \`sheet_build\`. The file lands under /files and is the
+deliverable — you hand back its id and the user downloads or sends it.
+
+## First: is this a sheet, or a table?
+
+Get this right before anything else, because the wrong answer leaves the user
+with something they cannot use.
+
+- **A table is data they will keep working with** — query it, filter it, sort
+  it, add rows to it next month. It lives in /tables, is typed and stored, and
+  every row has an id you can edit later. Build it with \`table_create\` /
+  \`table_from_file\`.
+- **A sheet is a document they will send** — a quote, an invoice summary, a
+  costing, a report pack. It is finished when it is written. Build it with
+  \`sheet_build\`.
+
+Signals for a sheet: "send me a spreadsheet of…", "export that as Excel", "put
+that in a spreadsheet for the client". Signals for a table: "make me a table
+of…", "track…", "keep a list of…", or any hint they will come back to it.
+
+**When genuinely unsure, ask.** It is one short question, and it is cheaper than
+building the wrong artefact.
+
+## Writing the spec
+
+- **Rows are objects keyed by each column's \`key\`**, never positional arrays.
+  \`{ "client": "Acme", "amount": 4820.5 }\`. This is not a style preference: a
+  value omitted from an array shifts every column after it, and the result is a
+  spreadsheet that is WRONG in a way that looks completely fine. A wrong key is
+  an error naming the key; a shifted array is a client seeing the wrong number.
+- **Type every column, especially money.** \`currency\` with a \`format.currency\`
+  code, \`percent\` for rates, \`date\` for dates. A number left as \`text\` cannot
+  be summed, sorted or charted by the person who opens it — it looks right and
+  does nothing.
+- **Use \`totals\`, never a hand-written last row.** A totals row you compute and
+  append is unlabelled, is not marked as a total, and gets sorted into the data
+  the first time somebody filters. \`totals: { "amount": "sum" }\` is rendered as
+  a bold, ruled row that stays out of the filter range.
+- **\`title\` when it is a document.** A quote for a client wants its heading in
+  the sheet, not only in the filename.
+- **Split by meaning, not by size.** Separate sheets for separate subjects
+  (Revenue, Costs, Assumptions), not for a long list — long lists belong in one
+  sheet, or in a table.
+
+## Styling is not yours to choose
+
+There is one house style and \`sheet_build\` applies it: frozen filterable
+header, content-sized columns, typed formatting, banded rows, ruled totals. You
+pick \`style\` from three presets and nothing else — no fonts, no colours, no
+borders. A brain that emits ten differently-styled spreadsheets looks worse than
+one that emits ten identical plain ones.
+
+- \`report\` (default) — for anything going to another person.
+- \`plain\` — when they will re-style it, pivot it, or paste it elsewhere.
+- \`compact\` — dense reference data, where banding becomes noise.
+
+## Limits, and what they mean
+
+10 sheets, 5,000 rows a sheet, 20,000 rows total. These are not arbitrary: past
+them you are not building a document any more, you are moving a database through
+a tool call. Import it as a table instead (\`table_from_file\`), which is backed
+by sqlite and pages properly.`,
+
   table_authoring: `You can build and operate **typed database grids** — the Tables feature. A
 table is NOT a Pages rich-text table: it has typed columns, real totals,
 formulas, sorting/filtering, and every row + column carries a stable id you

@@ -185,6 +185,30 @@ cell edits refresh only the cheap deterministic layers.
 
 ---
 
+## 2b. Tables vs. built spreadsheets
+
+Two things in this system produce an `.xlsx`, and they are not alternatives:
+
+| | `table_create` / `table_from_file` → `export_node` | `sheet_build` |
+|---|---|---|
+| Produces | a stored table under `/tables`, downloadable | a file under `/files`, nothing stored |
+| For | data the user keeps querying, filtering, adding rows to | a document the user sends |
+| Rows | typed, addressable by stable id, editable later | written once |
+| Structure | one grid per tab | title block + grid + totals |
+
+**A table is data you query; a sheet is a document you send.** Both writers
+share one palette ([`packages/content/src/xlsx-style.ts`](../packages/content/src/xlsx-style.ts))
+so files from either look like they came from the same place — no colour should
+ever be defined outside that module.
+
+`sheet_build` ([`build-sheet.ts`](../packages/content/src/build-sheet.ts)) takes
+rows as objects keyed by column `key`, never positional arrays: a value omitted
+from an array shifts every column after it, producing a file that is wrong and
+looks right. It is capped at 10 sheets / 5,000 rows a sheet / 20,000 total —
+past that the data is not a document, and belongs in a table.
+
+---
+
 ## 3. Import: `@mantle/files/sheet-to-grid`
 
 `parseSheetToGrid(buf)` (exceljs; `async`) → one `ParsedSheet` per non-empty sheet, each

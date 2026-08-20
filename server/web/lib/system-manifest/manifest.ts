@@ -237,6 +237,13 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['table_authoring']!,
   },
   {
+    slug: 'spreadsheet_authoring',
+    name: 'Spreadsheet authoring',
+    description:
+      'Build a formatted .xlsx as a deliverable: sheet vs table, typed columns, totals, the house style.',
+    instructions: SKILL_INSTRUCTIONS['spreadsheet_authoring']!,
+  },
+  {
     slug: 'app_authoring',
     name: 'App authoring',
     description:
@@ -607,6 +614,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['export_node'],
   },
   {
+    slug: 'spreadsheets',
+    name: 'Spreadsheet authoring',
+    description:
+      'Compose a formatted .xlsx from data in hand and save it under /files — for a spreadsheet that IS the deliverable, as opposed to a table the user will keep querying. Creates a file, changes nothing else.',
+    toolSlugs: ['sheet_build'],
+  },
+  {
     slug: 'curation',
     name: 'Content curation',
     description:
@@ -966,6 +980,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'location',
       'profile',
       'export',
+      'spreadsheets',
       'curation',
       'tables-import',
       'tables-read',
@@ -1067,8 +1082,8 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // P6: `tables` is the authoring subset (no `table-admin`/table_delete);
     // `files`/`memory-core` cover source reads + cross-context lookups. Page
     // sharing is Pages' job, not Ledger's — no `page-share` here.
-    toolGroupSlugs: ['tables', 'files', 'memory-core', 'export'],
-    skillSlugs: ['table_authoring', 'writing_style'],
+    toolGroupSlugs: ['tables', 'files', 'memory-core', 'export', 'spreadsheets'],
+    skillSlugs: ['table_authoring', 'spreadsheet_authoring', 'writing_style'],
     isDelegate: true,
     params: { temperature: 0.3, max_tokens: 16000 },
     // Grid work is tool-call heavy the same way page work is: a data load is a

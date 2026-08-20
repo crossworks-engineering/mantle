@@ -118,6 +118,59 @@ are left unfilled.
 - **A row COUNT inherited its column's money format**, so `count` on a currency
   column rendered the count as an amount.
 
+## Unreleased — an agent can build a spreadsheet, not just a table (branch feat/sheet-build)
+
+An agent could already produce a styled `.xlsx` in two steps: `table_create`
+then `export_node`. That is right when the thing being made is DATA. It is
+wrong when the thing being made is a DOCUMENT, because it creates a stored
+table nobody wanted in order to get a file.
+
+`sheet_build` writes straight to bytes and stores nothing. The line, for anyone
+extending either side: **a table is data you query, a sheet is a document you
+send.**
+
+### The spec is deliberately small
+
+The temptation was to expose exceljs. An agent given fonts, ARGB fills and a
+border API invents a different look every time, and a brain that emits ten
+differently-styled spreadsheets is worse than one that emits ten identical
+plain ones. So the spec carries CONTENT and INTENT (what the column means, what
+to total) and the renderer owns every visual decision.
+
+Styling is three presets and nothing else: `report` (default, for anything
+going to another person), `plain` (no fills, for a sheet the recipient will
+re-style or pivot), `compact` (dense reference data, where banding is noise).
+
+A sheet takes an optional `title`, written as a bold merged row above the grid
+with a spacer beneath it. The spacer is load-bearing: it stops Excel reading
+the title as part of the table the first time someone hits filter.
+
+### Rows are objects, not arrays
+
+Keyed by column, always. A positional array is rejected outright rather than
+accepted leniently, because a value omitted from an array shifts every column
+after it, and the result is a spreadsheet that is wrong in a way that looks
+completely fine. Keying turns that same mistake into a named error before a
+file is ever written.
+
+The whole spec is validated before any bytes are produced, and every message
+names the sheet and the key at fault: an agent that reads "unknown column key
+'amout' on sheet 'Revenue' (expected: client, amount)" fixes it next call.
+
+Capped at 10 sheets, 5,000 rows a sheet, 20,000 total. Past that you are not
+building a document, you are moving a database through a tool call, and the
+error says to import it as a table instead.
+
+### One house style, shared
+
+The palette, the sizing rules and the type-driven formatting moved to
+`packages/content/src/xlsx-style.ts`, and both spreadsheet writers import them.
+Two copies would have drifted, and the first person to notice would have been a
+client holding two files from the same brain that did not look related.
+
+Ships as a `spreadsheets` tool group granted to the persona and to Ledger, plus
+a `spreadsheet_authoring` skill on Ledger covering the sheet-versus-table call.
+
 ## Unreleased — the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
 
 Every presenter in `@mantle/share-ui` was written for one surface: the
