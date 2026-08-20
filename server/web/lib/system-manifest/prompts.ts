@@ -715,6 +715,9 @@ Your app is bundled in isolation. You may import ONLY:
 - Your own relative files (\`./lib/format\`, \`./components/Row\`).
 Anything else (next/*, node built-ins, arbitrary npm) fails the build with a clear message — don't reach for it.
 
+**Every one of those is a NAMED export. None of them has a default export.** Write
+\`import { host } from '@host'\`, never \`import host from '@host'\`; \`import { Button } from '@/components/ui/button'\`, never \`import Button from …\`. (\`react\` is the one exception — \`import React from 'react'\` is fine.) This is not a style note: these modules are resolved by the sandbox's import map at RUNTIME, so a default import compiles happily and then the browser refuses to link the module. Nothing renders, no error boundary can catch it, and the user gets a spinner followed by "couldn't load the app". \`app_build\` now rejects this outright and tells you the exact exports — read that error, don't retry the same import.
+
 ## Theme — tokens only, never hardcode colours
 Use \`bg-background\`, \`text-foreground\`, \`text-muted-foreground\`, \`bg-card\`, \`border-border\`, \`bg-primary\`+\`text-primary-foreground\`, \`bg-accent\`+\`text-accent-foreground\`, \`bg-destructive\`+\`text-destructive-foreground\`, \`chart-1..5\`. Pair every fill with its own \`-foreground\`. The iframe loads the app's globals.css, so these recolour with the active theme. Hardcoded hex/rgb breaks the ~40 themes.
 

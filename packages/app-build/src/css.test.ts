@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildApp, type AppSource } from './index';
+import { RUNTIME_EXPORTS_FIXTURE as RT } from './runtime-exports.fixture';
 
 function app(files: Record<string, string>, entry = 'App.tsx'): AppSource {
   return { entry, files };
@@ -18,6 +19,7 @@ describe('buildApp — per-app CSS', () => {
 }
 `,
       }),
+      { runtimeExports: RT },
     );
     expect(res.ok).toBe(true);
     expect(res.css).toBeTruthy();
@@ -41,6 +43,7 @@ describe('buildApp — per-app CSS', () => {
 export default function App() { return <Card>x</Card>; }
 `,
       }),
+      { runtimeExports: RT },
     );
     expect(res.ok).toBe(true);
     // rounded-xl comes from the kit Card source, not the app source.
@@ -48,7 +51,9 @@ export default function App() { return <Card>x</Card>; }
   });
 
   it('a failed JS build produces no css', async () => {
-    const res = await buildApp(app({ 'App.tsx': 'export default function App( {' }));
+    const res = await buildApp(app({ 'App.tsx': 'export default function App( {' }), {
+      runtimeExports: RT,
+    });
     expect(res.ok).toBe(false);
     expect(res.css).toBeUndefined();
   });

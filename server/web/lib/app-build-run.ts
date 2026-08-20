@@ -8,7 +8,7 @@
  * BuildRef on success); the errors are returned for the caller to surface.
  */
 import { getApp, workingSource, setDraftBuild } from '@mantle/content';
-import { buildApp, type BuildMessage } from '@mantle/app-build';
+import { buildApp, loadRuntimeExports, type BuildMessage } from '@mantle/app-build';
 import { putContent } from '@mantle/storage';
 // Apps now externalize React/kit/@host to the shared /app-runtime import map.
 
@@ -24,6 +24,7 @@ export async function runAppBuild(ownerId: string, id: string): Promise<AppBuild
   if (!app) return null;
   const res = await buildApp(workingSource(app), {
     declaredToolSlugs: app.manifest.toolSlugs ?? [],
+    runtimeExports: await loadRuntimeExports(),
   });
   if (res.ok && res.code) {
     const put = await putContent(Buffer.from(res.code, 'utf8'), 'application/javascript');

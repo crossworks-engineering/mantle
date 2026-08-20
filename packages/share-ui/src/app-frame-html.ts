@@ -129,6 +129,48 @@ function attr(v: string): string {
   return v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
+/**
+ * Error reporter, installed BEFORE the app module so it can see the app fail
+ * during boot.
+ *
+ * A module-level failure — a link error like `does not provide an export named
+ * 'default'`, or a throw at module scope — happens before any component
+ * renders, so the kit's ErrorBoundary cannot exist yet, let alone catch it.
+ * Nothing was reported, the app never posted `ready`, and the parent could only
+ * sit out its 10s watchdog, retry once, and show a causeless "couldn't load the
+ * app" some twenty seconds later — the same blank wall for a typo, a dead
+ * chunk, or a real crash. Now the parent has the actual reason in milliseconds.
+ *
+ * `error` on window catches both cases: module link/parse errors surface there
+ * even though no user code ran. Capture phase, because a module script's error
+ * event does not bubble.
+ *
+ * It deliberately does NOT try to decide whether the app had already booted —
+ * `ready` goes to the (cross-origin) parent, so this document never sees it,
+ * and `window.parent.postMessage` cannot be wrapped to eavesdrop. The PARENT
+ * already tracks that (`everReadyRef` in app-sandbox) and is the right place to
+ * classify: pre-ready error = load failure, post-ready = runtime hiccup. So
+ * this reports faithfully and lets the parent judge.
+ */
+const ERROR_REPORTER = `(function(){
+  var last = '';
+  function report(msg){
+    var text = String(msg || 'the app failed to start');
+    if (text === last) return;   // a repeating error must not become a message loop
+    last = text;
+    try { window.parent.postMessage({ v:1, kind:'error', message: text }, '*'); } catch (_) {}
+  }
+  window.addEventListener('error', function(e){
+    // Subresource load failures (img/link) target an element, not window, and
+    // are not app failures — ignore them.
+    if (e && e.target && e.target !== window && e.target.tagName) return;
+    report((e && (e.message || (e.error && e.error.message))) || 'the app failed to start');
+  }, true);
+  window.addEventListener('unhandledrejection', function(e){
+    report((e && e.reason && (e.reason.message || e.reason)) || 'the app failed to start');
+  });
+})();`;
+
 export function buildAppFrameHtml(opts: {
   /** The app's built module bundle (esbuild output; esbuild escapes any
    *  `</script` inside string literals, so inlining it is safe). */
@@ -194,6 +236,7 @@ body{overflow:auto}`
 </head>
 <body class="bg-background text-foreground">
 <div id="root"></div>
+<script>${ERROR_REPORTER}</script>
 <script type="module">${opts.bundleCode}</script>
 <script>${INSPECTOR}</script>
 </body>

@@ -100,6 +100,9 @@ export function AppSandbox({
   const apiBase = apiBaseOverride ?? (shareToken ? `/s/${shareToken}` : `/api/apps/${appId}`);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [status, setStatus] = useState<Status>('loading');
+  /** Why the app failed, when the frame could tell us. Shown under the
+   *  generic line so a load failure is diagnosable without the console. */
+  const [failReason, setFailReason] = useState<string | null>(null);
   const [height, setHeight] = useState(320);
   // The frame URL (ticket included), held in state so the iframe is RENDERED
   // with its src (keyed per attempt) — the element is created carrying the
@@ -239,10 +242,17 @@ export function AppSandbox({
       }
       if (m.kind === 'error') {
         cbRef.current.onError?.(m.message);
-        // An error BEFORE the app ever became ready is a mount/boot crash (the
-        // kit's ErrorBoundary posts it synchronously during the first render,
-        // ahead of the ready signal) — a load failure, not a runtime hiccup.
-        if (!everReadyRef.current) cbRef.current.onLoadFailure?.();
+        // An error BEFORE the app ever became ready is a mount/boot failure —
+        // the kit's ErrorBoundary for a render crash, or the frame's own
+        // reporter for a module-level link/parse error it could never catch.
+        // Either way the app is not coming up, so fail NOW with the reason
+        // instead of leaving the user on a spinner until the watchdog expires
+        // and then saying nothing useful.
+        if (!everReadyRef.current) {
+          setFailReason(m.message);
+          setStatus('error');
+          cbRef.current.onLoadFailure?.();
+        }
         return;
       }
       if (m.kind === 'select') {
@@ -299,6 +309,7 @@ export function AppSandbox({
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
+    setFailReason(null);
     setFrameSrc(null);
     everReadyRef.current = false;
     doFetch(`${apiBase}/frame-ticket`, { method: 'POST' })
@@ -358,7 +369,12 @@ export function AppSandbox({
         <div
           className={`flex items-center justify-center p-6 text-center text-sm text-destructive-ink ${isViewport ? 'h-full' : 'h-40'}`}
         >
-          {isViewport ? 'Couldn’t load the app.' : 'Couldn’t load the app preview.'}
+          <div>
+            <div>{isViewport ? 'Couldn’t load the app.' : 'Couldn’t load the app preview.'}</div>
+            {failReason && (
+              <div className="mt-1 font-mono text-xs break-words opacity-80">{failReason}</div>
+            )}
+          </div>
         </div>
       )}
       {frameSrc !== null && (

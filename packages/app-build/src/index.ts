@@ -207,13 +207,113 @@ export function lintToolRefs(source: AppSource, declaredSlugs: string[]): BuildM
   return out;
 }
 
+/** `import <what> from "<spec>"` — captures the clause and the specifier.
+ *  Covers the three ESM shapes esbuild leaves external: default, namespace,
+ *  and named (including a default+named combination). */
+const IMPORT_RE = /import\s+([^'";]+?)\s+from\s*['"]([^'"]+)['"]/g;
+
+/** Split an import clause into the names it binds FROM the module.
+ *  `Foo`               → default
+ *  `* as ns`           → namespace (binds nothing by name; nothing to check)
+ *  `{ a, b as c }`     → a, b
+ *  `Foo, { a }`        → default, a
+ *  Returns the names as the MODULE must provide them, not the local aliases. */
+function importedNames(clause: string): { names: string[]; namespace: boolean } {
+  const names: string[] = [];
+  let namespace = false;
+  const braced = clause.match(/\{([^}]*)\}/);
+  const head = clause
+    .slice(0, braced ? clause.indexOf('{') : undefined)
+    .replace(/,\s*$/, '')
+    .trim();
+  if (head) {
+    if (/^\*\s+as\s+/.test(head)) namespace = true;
+    else if (/^[A-Za-z_$][\w$]*$/.test(head)) names.push('default');
+  }
+  if (braced) {
+    for (const part of braced[1]!.split(',')) {
+      const name = (part.split(/\s+as\s+/)[0] ?? '').trim();
+      if (name) names.push(name);
+    }
+  }
+  return { names, namespace };
+}
+
+/**
+ * Static lint: every import of a SHARED RUNTIME specifier must name something
+ * that specifier actually exports.
+ *
+ * These specifiers are external — esbuild leaves them as bare imports for the
+ * sandbox's import map to resolve, so it never checks their shape, and a wrong
+ * name survives into a clean, publishable build. The browser then rejects the
+ * module while LINKING, before any code runs: no ErrorBoundary can catch it
+ * (there is nothing to render yet) and the app never signals ready, so the
+ * sandbox can only time out with a generic failure. `import host from '@host'`
+ * — where the export is named, not default — cost exactly that in the field:
+ * a green build, then a twenty-second spinner and "couldn't load the app".
+ *
+ * Errors, not warnings: the app is guaranteed not to run.
+ *
+ * Local/relative imports are the bundler's business and are skipped, as is a
+ * namespace import (`* as ns`), which binds no names and cannot mismatch.
+ */
+export function lintRuntimeImports(
+  source: AppSource,
+  runtimeExports: Record<string, string[]>,
+): BuildMessage[] {
+  const out: BuildMessage[] = [];
+  for (const [file, text] of Object.entries(source.files)) {
+    IMPORT_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = IMPORT_RE.exec(text)) !== null) {
+      const spec = m[2]!;
+      if (spec.startsWith('.') || spec.startsWith('/')) continue;
+      const available = runtimeExports[spec];
+      if (!available) continue; // not a shared-runtime specifier; esbuild will rule on it
+      const { names, namespace } = importedNames(m[1]!);
+      if (namespace) continue;
+      const have = new Set(available);
+      for (const name of names) {
+        if (have.has(name)) continue;
+        const pre = text.slice(0, m.index);
+        const line = pre.length - pre.replace(/\n/g, '').length + 1; // 1-based
+        const column = m.index - (pre.lastIndexOf('\n') + 1); // 0-based within line
+        const hint =
+          name === 'default'
+            ? `'${spec}' has no default export. Use a named import, e.g. import { ${available[0]} } from '${spec}'.`
+            : `'${spec}' does not export '${name}'.`;
+        out.push({
+          text: `${hint} It exports: ${available.join(', ')}. Left as-is the app builds but fails to load in the browser, with no error the app can catch.`,
+          location: { file, line, column },
+        });
+      }
+    }
+  }
+  return out;
+}
+
 /** Bundle an app's source tree into one self-mounting ESM module. When
  *  `declaredToolSlugs` is supplied, undeclared `host.tools.call` slugs are
  *  appended to the build's warnings (see lintToolRefs). */
+export { loadRuntimeExports } from './runtime-exports';
+
 export async function buildApp(
   source: AppSource,
-  opts: { declaredToolSlugs?: string[] } = {},
+  opts: {
+    declaredToolSlugs?: string[];
+    /** The shared runtime's export map (`loadRuntimeExports()` in production).
+     *  REQUIRED so the import check below cannot be skipped by forgetting it —
+     *  an app that fails this check cannot run at all, so silently omitting the
+     *  check would ship a guaranteed-broken app. */
+    runtimeExports: Record<string, string[]>;
+  },
 ): Promise<BuildResult> {
+  // Runtime-import mismatches are fatal and cheap to detect, so they short
+  // circuit ahead of esbuild: no point compiling an app that cannot link.
+  const importErrors = lintRuntimeImports(source, opts.runtimeExports);
+  if (importErrors.length) {
+    return { ok: false, errors: importErrors, warnings: [], esbuildVersion: ESBUILD_VERSION };
+  }
   const toolWarnings = opts.declaredToolSlugs ? lintToolRefs(source, opts.declaredToolSlugs) : [];
   const withToolWarnings = (r: BuildResult): BuildResult =>
     toolWarnings.length ? { ...r, warnings: [...r.warnings, ...toolWarnings] } : r;

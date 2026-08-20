@@ -26,7 +26,7 @@ import {
   NoGreenBuildError,
   type AppDetail,
 } from '@mantle/content';
-import { buildApp } from '@mantle/app-build';
+import { buildApp, loadRuntimeExports } from '@mantle/app-build';
 import {
   assertSafeScript,
   appDbReadQuery,
@@ -320,7 +320,10 @@ const app_build: BuiltinToolDef = {
     if (!app) return { ok: false, error: `app ${id} not found` };
     const source = workingSource(app);
     try {
-      const res = await buildApp(source, { declaredToolSlugs: app.manifest.toolSlugs ?? [] });
+      const res = await buildApp(source, {
+        declaredToolSlugs: app.manifest.toolSlugs ?? [],
+        runtimeExports: await loadRuntimeExports(),
+      });
       ctx.step?.setMeta({ ok: res.ok, errors: res.errors.length, warnings: res.warnings.length });
       if (res.ok && res.code) {
         const buf = Buffer.from(res.code, 'utf8');

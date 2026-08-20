@@ -108,6 +108,18 @@ function runtimePlugin(): esbuild.Plugin {
 export type RuntimeManifest = {
   /** specifier (as imported in app code) → hashed URL under `/app-runtime/`. */
   imports: Record<string, string>;
+  /** specifier → the export names that module actually provides ('default'
+   *  included when it has one). Taken from esbuild's metafile, so it is the
+   *  build's own account of the module rather than a parse of its output.
+   *
+   *  This exists so `buildApp` can REJECT an app that imports a name the
+   *  runtime does not export. Left unchecked, such an app builds and publishes
+   *  clean and then fails in the browser as a module-level SyntaxError — which
+   *  no ErrorBoundary can catch (linking precedes evaluation), so the app never
+   *  signals ready and the user waits out the sandbox watchdog for a generic
+   *  "couldn't load" with no cause. One `import host from '@host'` (the export
+   *  is named, not default) cost exactly that in the field. */
+  exports: Record<string, string[]>;
   builtAt: string;
   esbuildVersion: string;
 };
@@ -139,10 +151,10 @@ export async function buildRuntime(
     entryNames: '[name]-[hash]',
     chunkNames: 'chunk-[hash]',
     write: true,
+    metafile: true,
     logLevel: 'silent',
     plugins: [runtimePlugin()],
   });
-  void result;
 
   // Map each requested entry name → its hashed output file. esbuild names entry
   // outputs `<out>-<hash>.js`; the hash is alnum (no dashes), so the file for an
@@ -157,15 +169,29 @@ export async function buildRuntime(
     )!;
   }
 
+  // esbuild keys metafile outputs by path relative to cwd, not by basename.
+  const exportsByFile = new Map<string, string[]>();
+  for (const [outPath, meta] of Object.entries(result.metafile.outputs)) {
+    exportsByFile.set(path.basename(outPath), meta.exports ?? []);
+  }
+
   const imports: Record<string, string> = {};
+  const exports: Record<string, string[]> = {};
   for (const [specifier, name] of Object.entries(RUNTIME_SPECIFIERS)) {
     const file = nameToFile[name];
     if (!file) throw new Error(`runtime build produced no output for entry '${name}'`);
     imports[specifier] = urlPrefix + file;
+    const names = exportsByFile.get(file);
+    // A missing export list would silently disable the import check for this
+    // specifier — fail the runtime build instead, where it is one loud error at
+    // deploy time rather than a guard that quietly stopped guarding.
+    if (!names) throw new Error(`runtime build produced no metafile entry for '${file}'`);
+    exports[specifier] = names;
   }
 
   const manifest: RuntimeManifest = {
     imports,
+    exports,
     builtAt: new Date().toISOString(),
     esbuildVersion: esbuild.version,
   };
