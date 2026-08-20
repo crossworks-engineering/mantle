@@ -47,7 +47,7 @@ import {
 import { existsSync } from 'node:fs';
 import { tableSqlSurface } from '@mantle/content/table-storage';
 import { fileById, readFileById } from '@mantle/files';
-import { parseSheetToGrid, parseTextToGrid } from '@mantle/files/sheet-to-grid';
+import { parseSpreadsheetToGrid, parseTextToGrid } from '@mantle/files/sheet-to-grid';
 import {
   SQL_ROW_CAP_DEFAULT,
   SQL_ROW_CAP_MAX,
@@ -351,7 +351,7 @@ const table_from_file: BuiltinToolDef = {
   preconditions: FILE_ID_PRE,
   name: 'Create a table from a spreadsheet',
   description:
-    "Import a `.xlsx` / `.xls` / `.csv` file into ONE typed table — bytes go server-side from `files` → SheetJS → typed columns + rows, never round-tripping through your output (scales to large sheets). Column types are inferred (numbers, dates, checkboxes, text). **One workbook per file: every non-empty sheet becomes a TAB** of the same table (like Excel), addressable by name in the row/query tools and joinable across tabs with `table_sql`. Very large sheets import whole (sqlite-native storage) up to the box's import ceiling — beyond it the import errors with guidance and nothing partial is created. The table is committed + indexed immediately. Returns the table id and its tabs. Use this whenever the user hands you a spreadsheet.",
+    "Import a `.xlsx` / `.xls` / `.csv` file into ONE typed table — bytes go server-side from `files` → exceljs → typed columns + rows, never round-tripping through your output (scales to large sheets). Column types are inferred (numbers, dates, checkboxes, text). **One workbook per file: every non-empty sheet becomes a TAB** of the same table (like Excel), addressable by name in the row/query tools and joinable across tabs with `table_sql`. Very large sheets import whole (sqlite-native storage) up to the box's import ceiling — beyond it the import errors with guidance and nothing partial is created. The table is committed + indexed immediately. Returns the table id and its tabs. Use this whenever the user hands you a spreadsheet.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -387,7 +387,7 @@ const table_from_file: BuiltinToolDef = {
 
     let sheets;
     try {
-      sheets = parseSheetToGrid(res.bytes);
+      sheets = await parseSpreadsheetToGrid(res.bytes, ext);
     } catch (err) {
       return {
         ok: false,
@@ -473,7 +473,7 @@ const table_from_text: BuiltinToolDef = {
     if (!data.trim()) return { ok: false, error: 'data is required' };
     let sheets;
     try {
-      sheets = parseTextToGrid(data);
+      sheets = await parseTextToGrid(data);
     } catch (err) {
       return {
         ok: false,

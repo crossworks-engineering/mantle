@@ -78,7 +78,7 @@ See [tables.md](tables.md) §3.
 |---|---|---|---|
 | `ensureDatedUploadFolder` | `@mantle/files` | web /assistant, Telegram | ensure `files.<slug>.<YYYY-MM-DD>` exists, return its ltree path |
 | `upsertFile` / `syncFileFromDisk` | `@mantle/files` | all save paths | write bytes (disk first) + DB node; sanitise filename; sha dedup |
-| `parseDocumentBytes(bytes, ext)` | `@mantle/files` | extractor, `extractAttachmentForTurn` | three-tier dispatch: in-process parsers (pdf-parse/mammoth/SheetJS) → Tika fallback → empty string. `.xml` is the one **content-sniffed** branch: a Project plan renders via `@mantle/files/mspdi`, anything else falls to Tika. **Spreadsheets are bounded**: see note below. |
+| `parseDocumentBytes(bytes, ext)` | `@mantle/files` | extractor, `extractAttachmentForTurn` | three-tier dispatch: in-process parsers (pdf-parse/mammoth/exceljs) → Tika fallback → empty string. `.xml` is the one **content-sniffed** branch: a Project plan renders via `@mantle/files/mspdi`, anything else falls to Tika. **Spreadsheets are bounded**: see note below. |
 | `parseMspdi(bytes)` / `parseMspdiToGrids` / `renderMspdiText` | `@mantle/files/mspdi` | `parseDocumentBytes` (xml branch), extractor auto-table | Microsoft Project **MSPDI** (`.xml`, File → Save As → XML) → `ParsedSheet[]` (Tasks / Resources / Assignments) + a text rendering. Routed by **content, not extension**: `sniffMspdi` needs a `Project` root AND (the MSPDI namespace OR a `<Tasks>` element), because `.xml` is a container and a false positive would push an unrelated document through a task-grid mapper. Streaming (`saxes`), half a real plan's bytes are `<TimephasedData>` the importer discards. Never-throws: a file that sniffs as a plan but yields no rows falls through to Tika, so the worst case is a searchable document, never nothing. Traps handled: fractional-second durations, slack/lag in tenths of a minute, `Summary` roll-up rows (a naive total overstates ~5x on a 5-level outline), the `-65535` unassigned sentinel, and custom fields emitted only when a row populates them. |
 | `rasterizePdfToPngs(bytes, {maxPages})` | `@mantle/files/rasterize` | extractor (`ocrIngestPdfNode`) | render a textless PDF's pages → PNG for the OCR fallback (lazy `pdf-to-png-converter`; pdfjs + `@napi-rs/canvas`) |
 | `parseTikaBytes(bytes, {mimeType})` | `@mantle/files/tika` | `parseDocumentBytes` (tier 2) | PUT to `apache/tika:3.3.0.0` docker service → plain text. Never-throws: any failure (service down, timeout, unparseable) returns `''`. Handles .odt/.ods/.odp/.pptx/.ppt/.doc/.rtf/.epub. Tika's JVM heap is capped at **1 GB** (`JAVA_TOOL_OPTIONS=-Xmx1g`): headroom for large Office files (a ~24 MB .pptx unzips to many× its size as XML); was 512m, which OOM'd big real decks to an empty parse. Raise to `-Xmx2g` on an 8 GB+ box with heavy deck workloads. Tika extracts **slide/document text only**; its embedded images come out through the separate `/unpack/all` endpoint (see §3a), not this one. Single-file ceiling is `MAX_UPLOAD_BYTES` (64 MB), note that ceiling rose from 25 MB for Project/XML plans, so a 64 MB Office file can now be accepted at upload and still OOM a 1 GB heap. |
@@ -90,21 +90,38 @@ See [tables.md](tables.md) §3.
 | `MAX_UPLOAD_BYTES` (64 MB) | `@mantle/files` | Files UI, /assistant, MCP | single storage cap (distinct from the vision limit) |
 | `maxImageBytesFor(model)` | `@mantle/tracing` | responder routing | per-provider raw-image size limit |
 
-**Spreadsheets are bounded (`parseXlsx`).** xlsx/xls files routinely declare an
-inflated used-range, stray formatting or a deleted-but-not-cleared block pushes
-the sheet dimension out to row 1,048,576 / column XFD while the real data is a
-handful of cells. SheetJS's `sheet_to_csv` walks the **whole** declared range, so
-an unbounded parse iterates millions of phantom cells: minutes of synchronous,
-event-loop-blocking work on the single extractor (head-of-line-blocking the whole
-extract queue) ending in a multi-MB string. Two prod uploads (720 KB + 591 KB
-sheets) hung past the **10-minute trace watchdog** that way; the trace was
-opened but recorded **zero steps** (the stall is in the parse, *before* the first
-`llm_extract` step) and was reaped as `abandoned`, even though the process never
-crashed. [`packages/files/src/xlsx.ts`](../packages/files/src/xlsx.ts) now caps
-rows at read time (`sheetRows`, 5 000), clamps each sheet's column span (256),
-and caps total output (256 KB), appending a truncation marker when any limit
-bites. For recall text this is lossless in practice; a pathological workbook is
-truncated rather than stalling ingest.
+**Spreadsheets read through `exceljs`, and are bounded (`parseXlsx`).**
+SheetJS (`xlsx`) did this job until it left npm carrying two reachable
+advisories; `exceljs` replaced it, and is the same engine the export side
+already used, so read and write now share one library. `exceljs` reads OOXML
+only, so the legacy binaries (`.xls`, `.xlsb`) are **converted to `.xlsx` at
+the door** by [`packages/files/src/legacy-sheet.ts`](../packages/files/src/legacy-sheet.ts)
+— Apache Tika (already tier 2) renders the workbook as XHTML and we rebuild it
+with exceljs. That conversion loses boolean cells and turns dates into display
+text; the module comments say so in full.
+
+The old caps existed because xlsx files routinely declare an inflated
+used-range (dimension out to row 1,048,576 / column XFD while the real data is
+a handful of cells) and SheetJS's `sheet_to_csv` walked the **whole** declared
+range — minutes of synchronous, event-loop-blocking work on the single
+extractor, head-of-line-blocking the whole extract queue. Two prod uploads
+(720 KB + 591 KB sheets) hung past the **10-minute trace watchdog** that way;
+the trace opened but recorded **zero steps** and was reaped as `abandoned`.
+`exceljs` builds rows from the cells that exist and ignores `<dimension>`
+entirely, so **that failure mode is gone by construction** (measured: a
+workbook declaring `A1:XFD1048576` with 4 real rows loads in 6 ms).
+
+What survives, and why:
+- **Output caps** in [`xlsx.ts`](../packages/files/src/xlsx.ts) — 5 000 rows and
+  256 columns per sheet, 1 M chars total, with a truncation marker. These bound
+  what reaches the chunker and embedder, not the parse.
+- **A memory pre-flight** in [`sheet-read.ts`](../packages/files/src/sheet-read.ts)
+  replaces the old read-time cap: `exceljs`'s `load()` reads the whole workbook,
+  so we sum the uncompressed worksheet XML from the zip directory first and
+  refuse past 32 MB (~25x blow-up to RSS, measured). `parseXlsx` then falls
+  through to Tika, which parses out-of-process in its own capped JVM heap;
+  `parseSheetToGrid` raises instead, because a partial grid import would look
+  like a successful one.
 
 **The `node_ingested` contract:** migration `0018`'s trigger is **AFTER
 INSERT only**. A fresh insert notifies automatically; any code that *updates* a
@@ -293,7 +310,7 @@ Newest first, all on `main`.
 | `1d4d5b8` | **NUL sanitize (A) + `encrypted_pdf` disposition (B).** `cleanText` strips NUL bytes that Postgres text/jsonb can't store (a document read perfectly was being lost on the persist step). Password-protected PDFs now record `encrypted_pdf` (locked → supply a password), not the misleading `no_text_layer`. |
 | `9370527` | **Read attachment bytes from object storage.** The extractor only read bytes from local disk (via `data.filename`); email attachments store bytes in object storage by `data.sha256` with no filename, so **every** email attachment fell through to a hollow filename-only summary. New `loadFileBytes(node)` tries disk → then object storage (`contentKey(sha256)`); the vision/OCR/PDF trigger guards no longer require `data.filename`. Recovered the entire email-attachment corpus (invoices, statements, contracts). |
 | _(this change)_ | **Tika audit follow-ups**: capped JVM heap at 512 MB (`JAVA_OPTS=-Xmx512m -Xms128m`) so a pathological doc can't OOM the container (T1); wrapped the live conversational `parseDocumentBytes` call in the same `parse_document` step the durable extractor uses so chat-attachment Tika parses are visible in `responder_turn` traces (T8). T2–T7 documented in the audit table above. |
-| _(previous)_ | **Apache Tika fallback** (3rd tier in `parseDocumentBytes`) for formats the in-process parsers don't handle: `.odt`/`.ods`/`.odp` (LibreOffice), `.pptx`/`.ppt` (PowerPoint), `.doc` (legacy Word), `.rtf`, `.epub`. New `apache/tika:3.3.0.0` sibling docker service (`mantle_tika`, port 9998); `@mantle/files/tika` is a never-throws wrapper that PUTs bytes and returns plain text (or `''` on any failure → honest `no_text_layer` skip). `INGESTABLE_EXTS` grew to include the new types. Self-hosted; bytes never leave the VPS. Every binary parse now writes a **`parse_document` trace step** inside `extractor_run` with `parser: pdf-parse \| mammoth \| sheetjs \| utf8 \| tika`, `bytes_in`, `chars_out`, `empty`, so "Tika is down" vs "the doc really has no text" vs "pdf-parse silently gave nothing" are distinguishable from `/traces` instead of indistinguishable. |
+| _(previous)_ | **Apache Tika fallback** (3rd tier in `parseDocumentBytes`) for formats the in-process parsers don't handle: `.odt`/`.ods`/`.odp` (LibreOffice), `.pptx`/`.ppt` (PowerPoint), `.doc` (legacy Word), `.rtf`, `.epub`. New `apache/tika:3.3.0.0` sibling docker service (`mantle_tika`, port 9998); `@mantle/files/tika` is a never-throws wrapper that PUTs bytes and returns plain text (or `''` on any failure → honest `no_text_layer` skip). `INGESTABLE_EXTS` grew to include the new types. Self-hosted; bytes never leave the VPS. Every binary parse now writes a **`parse_document` trace step** inside `extractor_run` with `parser: pdf-parse \| mammoth \| exceljs \| legacy-sheet \| utf8 \| tika`, `bytes_in`, `chars_out`, `empty`, so "Tika is down" vs "the doc really has no text" vs "pdf-parse silently gave nothing" are distinguishable from `/traces` instead of indistinguishable. |
 | _(previous)_ | **OCR fallback for scanned/image-only PDFs.** A textless PDF (`parseDocumentBytes` → nothing, body falls back to the filename) is rasterized → run through the neutral vision worker page-by-page (`ocrIngestPdfNode`, `photo_ingest` `mode=pdf_ocr`, capped at `MAX_OCR_PAGES`). If OCR also yields nothing it records `skipped: no_text_layer` instead of a filename-only false `success`. New dep `pdf-to-png-converter` behind `@mantle/files/rasterize`. |
 | `91cf43f` | Add `heic-convert` as a direct web dep so Next externalizes it |
 | `a390b3a` | Preserve `data.vision_model`, merge the index write (V2) |

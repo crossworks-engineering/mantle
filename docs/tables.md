@@ -187,7 +187,7 @@ cell edits refresh only the cheap deterministic layers.
 
 ## 3. Import: `@mantle/files/sheet-to-grid`
 
-`parseSheetToGrid(buf)` (SheetJS) → one `ParsedSheet` per non-empty sheet, each
+`parseSheetToGrid(buf)` (exceljs; `async`) → one `ParsedSheet` per non-empty sheet, each
 with typed columns (value-sampled inference: number/checkbox/date/datetime/text,
 UTC-safe date detection) + aligned rows. `tableDocFromGrid` assembles a
 `TableDoc` per sheet. **One workbook per file: every sheet becomes a TAB** of
@@ -195,8 +195,13 @@ the same table (v2.1), no more sibling-table splitting. (CSV has no real
 types, so its `true`/`false` infer as text, retype in the UI; xlsx booleans
 infer as checkbox.)
 
+Ingest paths call **`parseSpreadsheetToGrid(buf, ext)`** instead — same thing,
+but it converts a legacy `.xls` / `.xlsb` to `.xlsx` first (via Tika, see
+`@mantle/files/legacy-sheet`) so every import path produces identical grids.
+
 `parseTextToGrid(text)` is the same path for **pasted tabular text** (markdown
-pipe table, TSV, or quote-aware CSV) → the `table_from_text` tool.
+pipe table, TSV, or quote-aware CSV, parsed with `fast-csv`) → the
+`table_from_text` tool.
 
 **Auto-import on ingest.** A spreadsheet uploaded *anywhere* (Files screen,
 chat attachment, email, Telegram) becomes ONE table with a tab per sheet

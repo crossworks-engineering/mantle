@@ -103,7 +103,7 @@ export const TIKA_EXTS = new Set<string>([
   'xml',
 ]);
 /** TEXT_EXTS + every binary type the extractor can pull readable text from.
- *  In-process: pdf-parse, mammoth, SheetJS. Tika-routed: TIKA_EXTS. Each
+ *  In-process: pdf-parse, mammoth, exceljs. Tika-routed: TIKA_EXTS. Each
  *  in-process binary type has a parser module under packages/files/src/
  *  and a branch in the extractor's readNodeBodyRaw; Tika-routed ones go
  *  through parseDocumentBytes → tika.ts. */
@@ -160,11 +160,20 @@ export function exportHintForExt(ext: string): string | undefined {
  *  (extractor + live conversational attachment) read from one source and
  *  the routing is unit-testable. `none` = no parser will try this ext (the
  *  caller will fall through to title fallback / `no_text_layer` skip). */
-export type ParserRoute = 'pdf-parse' | 'mammoth' | 'sheetjs' | 'utf8' | 'tika' | 'none';
+export type ParserRoute =
+  | 'pdf-parse'
+  | 'mammoth'
+  | 'exceljs'
+  /** Legacy .xls/.xlsb: converted to .xlsx via Tika, then read by exceljs. */
+  | 'legacy-sheet'
+  | 'utf8'
+  | 'tika'
+  | 'none';
 export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'pdf') return 'pdf-parse';
   if (ext === 'docx') return 'mammoth';
-  if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm' || ext === 'xlsb') return 'sheetjs';
+  if (ext === 'xls' || ext === 'xlsb') return 'legacy-sheet';
+  if (ext === 'xlsx' || ext === 'xlsm') return 'exceljs';
   if (TEXT_EXTS.has(ext)) return 'utf8';
   if (TIKA_EXTS.has(ext)) return 'tika';
   return 'none';

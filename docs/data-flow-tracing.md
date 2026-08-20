@@ -242,7 +242,7 @@ force it.
 - **Attachments are real `file` nodes** under `inbox.<user>.attachments`,
   linked back via `email_attachments.file_node_id`. They extract through
   the same path as any file (PDF via pdf-parse, Word via mammoth, Excel
-  via SheetJS). A **scanned / image-only PDF** (no text layer) is
+  via exceljs). A **scanned / image-only PDF** (no text layer) is
   rasterized to PNG and run through the vision worker (OCR), a
   `photo_ingest` trace with `data.mode='pdf_ocr'`, page-capped at
   `MAX_OCR_PAGES`; only if OCR yields nothing does the extractor record

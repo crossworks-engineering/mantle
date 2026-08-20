@@ -16,23 +16,25 @@
     "./embedded-images": "./src/embedded-images.ts",
     "./image-probe": "./src/image-probe.ts",
     "./ooxml-media": "./src/ooxml-media.ts",
-    "./mspdi": "./src/mspdi.ts"
+    "./mspdi": "./src/mspdi.ts",
+    "./legacy-sheet": "./src/legacy-sheet.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fast-csv/parse": "^5.0.7",
     "@mantle/db": "workspace:*",
     "@napi-rs/canvas": "^1.0.2",
     "drizzle-orm": "^0.45.2",
+    "exceljs": "^4.4.0",
     "heic-convert": "^2.1.0",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.0",
     "pdf-parse": "^2.4.5",
     "pdf-to-png-converter": "^4.1.1",
     "pdfjs-dist": "^6.2.108",
-    "saxes": "^6.0.0",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+    "saxes": "^6.0.0"
   },
   "devDependencies": {
     "@types/heic-convert": "^2.1.1",

@@ -22,7 +22,7 @@
  *
  * Separate entry point (`@mantle/files/mspdi`) so the parser only loads when a
  * Project export actually arrives. The `ParsedSheet` import is type-only on
- * purpose — pulling the value would drag SheetJS in with it.
+ * purpose — pulling the value would drag the spreadsheet engine in with it.
  */
 import { SaxesParser } from 'saxes';
 import type { InferredColumnType, ParsedColumn, ParsedSheet } from './sheet-to-grid';

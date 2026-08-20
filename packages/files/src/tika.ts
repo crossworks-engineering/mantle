@@ -1,7 +1,7 @@
 /**
  * Apache Tika client — the third-tier document parser.
  *
- * The first tier is our in-process parsers (pdf-parse / mammoth / SheetJS in
+ * The first tier is our in-process parsers (pdf-parse / mammoth / exceljs in
  * `./pdf`, `./docx`, `./xlsx`). The second tier is the vision worker (OCR for
  * scanned PDFs and images, see apps/agent/src/extractor.ts `ocrIngestPdfNode`).
  * This third tier handles the long tail of formats neither of those covers:
@@ -65,16 +65,22 @@ function tikaUrl(): string {
  * auto-detects from magic bytes when omitted, but supplying the type when we
  * know it (from the file extension) helps disambiguation on tricky formats
  * like .doc vs .docx.
+ *
+ * `accept` picks Tika's rendering. The default `text/plain` is what every
+ * text-extraction caller wants. `text/html` asks for Tika's XHTML instead,
+ * which keeps document STRUCTURE — headings, and one `<table>` per sheet for
+ * spreadsheets. `./legacy-sheet.ts` uses that to rebuild a legacy `.xls` as a
+ * real workbook; nothing else should need it.
  */
 export async function parseTikaBytes(
   bytes: Buffer,
-  opts?: { mimeType?: string; timeoutMs?: number },
+  opts?: { mimeType?: string; timeoutMs?: number; accept?: 'text/plain' | 'text/html' },
 ): Promise<string> {
   const url = `${tikaUrl()}/tika`;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
-    const headers: Record<string, string> = { Accept: 'text/plain' };
+    const headers: Record<string, string> = { Accept: opts?.accept ?? 'text/plain' };
     if (opts?.mimeType) headers['Content-Type'] = opts.mimeType;
     // TS 5.9 made Uint8Array generic in `ArrayBufferLike`, which doesn't
     // structurally match the DOM lib's `BodyInit` (it expects

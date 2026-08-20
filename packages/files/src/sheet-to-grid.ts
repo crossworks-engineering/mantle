@@ -7,13 +7,25 @@
  * Dependency-free of the TableDoc model on purpose — @mantle/files sits below
  * @mantle/content. This emits plain shapes (`ParsedSheet`); the caller turns
  * them into a TableDoc via `tableDocFromGrid` in @mantle/content. Column types
- * are inferred by sampling the actual JS values SheetJS yields (numbers,
+ * are inferred by sampling the actual JS values the reader yields (numbers,
  * booleans, Dates), defaulting to text.
  *
- * Separate entry point (`@mantle/files/sheet-to-grid`) so SheetJS only loads
- * when an import actually happens.
+ * Workbooks are read with `exceljs` via ./sheet-read.ts (that module carries
+ * the reasoning: why exceljs replaced SheetJS, why the non-streaming reader,
+ * and why an uncompressed-size pre-flight replaced the old read cap). Legacy
+ * binaries (.xls / .xlsb) are converted to .xlsx first — see ./legacy-sheet.ts
+ * — so there is one reader for every spreadsheet. Delimited text (CSV/TSV) has
+ * no workbook at all and goes through `fast-csv`.
+ *
+ * **Async since the exceljs move.** `workbook.xlsx.load()` is promise-based
+ * and legacy conversion is a network call to Tika, so both entry points return
+ * promises now. Every call site was already in an async context.
+ *
+ * Separate entry point (`@mantle/files/sheet-to-grid`) so the spreadsheet
+ * engine only loads when an import actually happens.
  */
-import * as XLSX from 'xlsx';
+import { parse as parseCsvString } from '@fast-csv/parse';
+import { loadWorkbook, worksheetToRows } from './sheet-read';
 
 /** A coarse column type, expressed as a plain string so this module needn't
  *  import @mantle/content. Validated/narrowed by `tableDocFromGrid`. */
@@ -120,25 +132,97 @@ function parseSheet(name: string, rowsAoA: unknown[][]): ParsedSheet[] {
 }
 
 /**
- * Parse a workbook (xlsx/xls/csv) into one ParsedSheet per non-empty sheet.
- * CSV yields a single sheet named "Sheet1". Returns an empty array if nothing
- * tabular is found.
+ * The entry point every INGEST path should use: bytes plus their extension →
+ * grids, converting a legacy binary first when there is one.
+ *
+ * `parseSheetToGrid` below stays pure (OOXML or delimited text, no network);
+ * this wrapper adds the one step that needs Tika. Having it here rather than
+ * repeated at each call site is what keeps the auto-table pass, the Tables
+ * import route and the `table_from_file` tool importing identical grids.
+ *
+ * Throws when a legacy file cannot be converted, so the caller reports a real
+ * reason rather than "no tabular data found".
  */
-export function parseSheetToGrid(buf: Buffer): ParsedSheet[] {
-  const wb = XLSX.read(buf, { type: 'buffer', cellDates: true });
+export async function parseSpreadsheetToGrid(buf: Buffer, ext: string): Promise<ParsedSheet[]> {
+  const { isLegacySheetExt, convertLegacySheetToXlsx } = await import('./legacy-sheet');
+  if (!isLegacySheetExt(ext)) return parseSheetToGrid(buf);
+
+  const { mimeForExt } = await import('./slug');
+  const converted = await convertLegacySheetToXlsx(buf, mimeForExt(ext));
+  if (!converted) {
+    throw new Error(
+      `could not convert legacy .${ext} workbook — the document service (Tika) is ` +
+        `unavailable or the file is not a readable spreadsheet`,
+    );
+  }
+  return parseSheetToGrid(converted);
+}
+
+/**
+ * Rows read per sheet for a grid import. Deliberately far above anything a
+ * person reviews as a table: the real ceiling for this path is the
+ * uncompressed-XML pre-flight in ./sheet-read.ts (~80k rows at the current
+ * limit), which fails LOUDLY, and above that the import layer's own
+ * TABLE_IMPORT_MAX_ROWS. This cap only exists so `worksheetToRows` has a
+ * number; it should never be the thing that bites.
+ */
+const GRID_MAX_ROWS_PER_SHEET = 1_000_000;
+/** Columns read per sheet. Excel's own hard ceiling is 16,384 (XFD). */
+const GRID_MAX_COLS_PER_SHEET = 16_384;
+
+/**
+ * Parse a spreadsheet into one ParsedSheet per non-empty sheet.
+ *
+ * Accepts modern workbooks (.xlsx / .xlsm) and delimited text (.csv / .tsv),
+ * which yields a single sheet named "Sheet1". Legacy binaries must be
+ * converted first (`convertLegacySheetToXlsx`) — `bytesLookLikeOoxml` tells
+ * them apart. Returns an empty array if nothing tabular is found.
+ *
+ * **Throws** rather than degrading: an unreadable workbook (encrypted,
+ * corrupt) or one past the in-process size ceiling raises, because a partial
+ * or empty grid import would silently look like a successful one. Both call
+ * sites already surface the message to the user.
+ */
+export async function parseSheetToGrid(buf: Buffer): Promise<ParsedSheet[]> {
+  if (bytesLookLikeLegacyBiff(buf)) {
+    throw new Error(
+      'legacy .xls/.xlsb workbook — convert it with convertLegacySheetToXlsx before importing',
+    );
+  }
+  if (!bytesLookLikeOoxml(buf)) return parseDelimited(buf.toString('utf-8'));
+  const wb = await loadWorkbook(buf);
   const out: ParsedSheet[] = [];
-  for (const name of wb.SheetNames) {
-    const sheet = wb.Sheets[name];
-    if (!sheet) continue;
-    const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-      header: 1,
-      raw: true,
-      blankrows: false,
-      defval: null,
+  for (const ws of wb.worksheets) {
+    const { rows } = worksheetToRows(ws, {
+      maxRows: GRID_MAX_ROWS_PER_SHEET,
+      maxCols: GRID_MAX_COLS_PER_SHEET,
     });
-    out.push(...parseSheet(name, aoa));
+    out.push(...parseSheet(ws.name, rows as unknown[][]));
   }
   return out;
+}
+
+/**
+ * True when the bytes are an OOXML package (a zip whose first entry starts
+ * `PK\x03\x04`). SheetJS used to sniff the format for us and hand back a
+ * workbook either way; exceljs reads only OOXML, so the CSV/TSV branch has to
+ * be chosen here instead. A legacy `.xls` (BIFF, magic `D0 CF 11 E0`) fails
+ * this check too and is correctly NOT treated as text — it never reaches this
+ * function, because ./parse.ts converts it upstream.
+ */
+function bytesLookLikeOoxml(buf: Buffer): boolean {
+  return (
+    buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04
+  );
+}
+
+/** OLE2 compound-file magic (`D0 CF 11 E0 A1 B1 1A E1`) — a legacy `.xls` or
+ *  `.xlsb`. Detected explicitly so such bytes raise a message that names the
+ *  fix, instead of being read as UTF-8 and yielding a grid of mojibake. */
+function bytesLookLikeLegacyBiff(buf: Buffer): boolean {
+  return (
+    buf.length >= 8 && buf.readUInt32BE(0) === 0xd0cf11e0 && buf.readUInt32BE(4) === 0xa1b11ae1
+  );
 }
 
 // ── Pasted tabular TEXT → grid ───────────────────────────────────────────────
@@ -179,25 +263,54 @@ function markdownTableToAoa(text: string): string[][] {
 }
 
 /**
+ * Read delimited text (CSV or TSV) as an array-of-arrays.
+ *
+ * `fast-csv` rather than a hand-rolled split, because the cases that break a
+ * naive parser are exactly the ones a pasted export hits: a quoted field
+ * containing the delimiter, a doubled `""` escape, and an embedded newline
+ * inside quotes. SheetJS used to cover this; fast-csv is the maintained,
+ * purpose-built replacement.
+ *
+ * Values come back as strings — no coercion here on purpose. `inferType` /
+ * `normalize` below do the typing for every source alike, so a CSV column and
+ * a workbook column are judged by the same rules.
+ */
+function readDelimited(text: string, delimiter: string): Promise<string[][]> {
+  return new Promise((resolve, reject) => {
+    const rows: string[][] = [];
+    parseCsvString({ delimiter, headers: false, ignoreEmpty: true, discardUnmappedColumns: false })
+      .on('data', (row: string[]) => rows.push(row))
+      .on('error', reject)
+      .on('end', () => resolve(rows))
+      .end(text);
+  });
+}
+
+/** CSV/TSV bytes-or-text → grid, delimiter sniffed from the first line. */
+async function parseDelimited(text: string): Promise<ParsedSheet[]> {
+  const t = text.trim();
+  if (!t) return [];
+  // Sniff on the FIRST line only: a tab anywhere later in a comma-separated
+  // file (inside a quoted note, say) must not flip the whole parse.
+  const firstLine = t.slice(0, t.indexOf('\n') === -1 ? t.length : t.indexOf('\n'));
+  const delimiter = firstLine.includes('\t') ? '\t' : ',';
+  return parseSheet('Sheet1', await readDelimited(t, delimiter));
+}
+
+/**
  * Parse a block of pasted tabular text into a grid (one ParsedSheet). Detects:
  *   - a markdown pipe table (`| a | b |` with a `|---|` separator)
  *   - TSV (tab-separated)
- *   - CSV (comma-separated, quote-aware via SheetJS)
+ *   - CSV (comma-separated, quote-aware via fast-csv)
  * Returns [] if no table is found. Type inference is the same as file import.
  */
-export function parseTextToGrid(text: string): ParsedSheet[] {
+export async function parseTextToGrid(text: string): Promise<ParsedSheet[]> {
   const t = (text ?? '').trim();
   if (!t) return [];
   if (looksLikeMarkdownTable(t)) {
     return parseSheet('Pasted', markdownTableToAoa(t));
   }
-  if (t.includes('\t')) {
-    const aoa = t
-      .split(/\r?\n/)
-      .filter((l) => l.length > 0)
-      .map((l) => l.split('\t'));
-    return parseSheet('Pasted', aoa);
-  }
-  // Default: CSV — SheetJS handles quoting/escapes from a buffer.
-  return parseSheetToGrid(Buffer.from(t, 'utf-8'));
+  const sheets = await parseDelimited(t);
+  // Pasted text keeps its historical sheet name; a .csv FILE keeps "Sheet1".
+  return sheets.map((s) => ({ ...s, name: 'Pasted' }));
 }

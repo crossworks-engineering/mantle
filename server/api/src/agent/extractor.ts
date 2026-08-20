@@ -65,7 +65,7 @@ import {
   upsertFile,
 } from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
-import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
+import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
 import {
   describeWorkbook,
   profileFile,
@@ -458,7 +458,7 @@ async function maybeAutoTableSpreadsheet(
 
   const loaded = await loadFileBytes(node);
   if (!loaded) return;
-  let sheets: ReturnType<typeof parseSheetToGrid>;
+  let sheets: Awaited<ReturnType<typeof parseSpreadsheetToGrid>>;
   /** Caveat the reader needs before querying — set only where the grid is
    *  genuinely misleading read the obvious way. */
   let description: string | undefined;
@@ -488,7 +488,7 @@ async function maybeAutoTableSpreadsheet(
           ` Rows are in plan order.`;
       }
     } else {
-      sheets = parseSheetToGrid(loaded.bytes);
+      sheets = await parseSpreadsheetToGrid(loaded.bytes, fileExt);
     }
   } catch {
     return; // unparseable as a grid — leave it as a plain file
@@ -1054,7 +1054,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     if (loaded && INGESTABLE_EXTS.has(loaded.ext)) {
       try {
         // Wrap the parse in a step so the trace shows WHICH tier ran
-        // (pdf-parse / mammoth / sheetjs / utf8 / tika), how long it took,
+        // (pdf-parse / mammoth / exceljs / legacy-sheet / utf8 / tika), how long it took,
         // and how many chars came out. Particularly important for Tika
         // since it's an HTTP call with its own failure modes (service down,
         // timeout, unparseable bytes — all swallowed to '' by design); the

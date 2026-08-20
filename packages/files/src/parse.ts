@@ -26,8 +26,21 @@ import { TEXT_EXTS, TIKA_EXTS, mimeForExt } from './slug';
 export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<string> {
   if (ext === 'pdf') return (await import('./pdf')).parsePdf(bytes);
   if (ext === 'docx') return (await import('./docx')).parseDocx(bytes);
-  if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm' || ext === 'xlsb')
+  // Spreadsheets. exceljs reads OOXML only, so the legacy binaries are
+  // CONVERTED to .xlsx at the door (via Tika — see ./legacy-sheet.ts) and then
+  // take the identical path as a modern workbook. One reader, one set of caps,
+  // one output shape. A conversion that fails falls through to Tika's plain
+  // text, which is still a searchable document rather than nothing.
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm' || ext === 'xlsb') {
+    const { isLegacySheetExt, convertLegacySheetToXlsx } = await import('./legacy-sheet');
+    if (isLegacySheetExt(ext)) {
+      const converted = await convertLegacySheetToXlsx(bytes, mimeForExt(ext));
+      if (!converted)
+        return (await import('./tika')).parseTikaBytes(bytes, { mimeType: mimeForExt(ext) });
+      return (await import('./xlsx')).parseXlsx(converted);
+    }
     return (await import('./xlsx')).parseXlsx(bytes);
+  }
   if (TEXT_EXTS.has(ext)) return bytes.toString('utf8');
   // `.xml` is a container, not a format — routing by extension alone would send
   // a Project plan through a generic text parser and lose every task name. So

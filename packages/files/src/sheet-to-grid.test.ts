@@ -1,26 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import * as XLSX from 'xlsx';
+import { workbookBuffer } from './sheet-fixtures.test-helper';
 import { parseSheetToGrid, parseTextToGrid } from './sheet-to-grid';
 
-/** Build an .xlsx buffer from an array-of-arrays per sheet. */
-function workbook(sheets: Record<string, unknown[][]>): Buffer {
-  const wb = XLSX.utils.book_new();
-  for (const [name, aoa] of Object.entries(sheets)) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), name);
-  }
-  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', cellDates: true }) as Buffer;
-}
-
 describe('parseSheetToGrid', () => {
-  it('infers column types from values', () => {
-    const buf = workbook({
+  it('infers column types from values', async () => {
+    const buf = await workbookBuffer({
       Items: [
         ['Item', 'Qty', 'Price', 'InStock', 'Added'],
-        ['Widget', 2, 9.5, true, new Date('2026-01-15')],
-        ['Gadget', 3, 4, false, new Date('2026-02-20')],
+        ['Widget', 2, 9.5, true, new Date(Date.UTC(2026, 0, 15))],
+        ['Gadget', 3, 4, false, new Date(Date.UTC(2026, 1, 20))],
       ],
     });
-    const [sheet] = parseSheetToGrid(buf);
+    const [sheet] = await parseSheetToGrid(buf);
     expect(sheet!.name).toBe('Items');
     expect(sheet!.columns.map((c) => `${c.name}:${c.type}`)).toEqual([
       'Item:text',
@@ -32,11 +23,11 @@ describe('parseSheetToGrid', () => {
     expect(sheet!.rows[0]).toEqual(['Widget', 2, 9.5, true, '2026-01-15']);
   });
 
-  it('emits big sheets WHOLE — part-splitting is dead (Tables v2)', () => {
+  it('emits big sheets WHOLE — part-splitting is dead (Tables v2)', async () => {
     const n = 10_005; // over the old 10k pagination ceiling
     const aoa: unknown[][] = [['Name', 'Value']];
     for (let i = 0; i < n; i++) aoa.push([`row-${i}`, i]);
-    const parts = parseSheetToGrid(workbook({ Big: aoa }));
+    const parts = await parseSheetToGrid(await workbookBuffer({ Big: aoa }));
     expect(parts.length).toBe(1);
     expect(parts[0]!.rows.length).toBe(n);
     expect(parts[0]!.part).toBeUndefined();
@@ -44,15 +35,15 @@ describe('parseSheetToGrid', () => {
     expect(parts[0]!.rows[n - 1]).toEqual([`row-${n - 1}`, n - 1]);
   });
 
-  it('emits a single grid for a small sheet', () => {
-    const parts = parseSheetToGrid(workbook({ Small: [['A'], [1], [2]] }));
+  it('emits a single grid for a small sheet', async () => {
+    const parts = await parseSheetToGrid(await workbookBuffer({ Small: [['A'], [1], [2]] }));
     expect(parts.length).toBe(1);
     expect(parts[0]!.part).toBeUndefined();
     expect(parts[0]!.partsTotal).toBeUndefined();
   });
 
-  it('returns one ParsedSheet per non-empty sheet', () => {
-    const buf = workbook({
+  it('returns one ParsedSheet per non-empty sheet', async () => {
+    const buf = await workbookBuffer({
       Income: [
         ['Source', 'Amount'],
         ['Salary', 1000],
@@ -63,23 +54,23 @@ describe('parseSheetToGrid', () => {
         ['Rent', 500],
       ],
     });
-    const sheets = parseSheetToGrid(buf);
+    const sheets = await parseSheetToGrid(buf);
     expect(sheets.map((s) => s.name)).toEqual(['Income', 'Expenses']);
   });
 
-  it('fills blank headers and pads short rows', () => {
-    const buf = workbook({
+  it('fills blank headers and pads short rows', async () => {
+    const buf = await workbookBuffer({
       S: [
-        ['A', '', 'C'],
+        ['A', null, 'C'],
         ['x', 'y'],
       ],
     });
-    const [sheet] = parseSheetToGrid(buf);
+    const [sheet] = await parseSheetToGrid(buf);
     expect(sheet!.columns.map((c) => c.name)).toEqual(['A', 'Column 2', 'C']);
     expect(sheet!.rows[0]).toEqual(['x', 'y', null]);
   });
 
-  it('drops phantom all-empty columns from a stray far cell', () => {
+  it('drops phantom all-empty columns from a stray far cell', async () => {
     // A real 2-column grid, but one body row has a lone value parked far out
     // (a formatted/merged stray cell), widening the sheet. The empty columns
     // between must be dropped, not imported as `Column 3..N`.
@@ -91,21 +82,21 @@ describe('parseSheetToGrid', () => {
     const strayRow: unknown[] = [];
     strayRow[10] = 'x'; // stray value at column 11 → width balloons to 11
     wide.push(strayRow);
-    const [sheet] = parseSheetToGrid(workbook({ S: wide }));
+    const [sheet] = await parseSheetToGrid(await workbookBuffer({ S: wide }));
     // Column 11 carries the stray value so it survives; the 8 empty columns
     // (3..10) between are dropped.
     expect(sheet!.columns.map((c) => c.name)).toEqual(['Name', 'Qty', 'Column 11']);
   });
 
-  it('keeps a real-header column whose body is entirely empty', () => {
-    const buf = workbook({
+  it('keeps a real-header column whose body is entirely empty', async () => {
+    const buf = await workbookBuffer({
       S: [
         ['Name', 'Notes'],
         ['Ada', null],
         ['Grace', null],
       ],
     });
-    const [sheet] = parseSheetToGrid(buf);
+    const [sheet] = await parseSheetToGrid(buf);
     expect(sheet!.columns.map((c) => c.name)).toEqual(['Name', 'Notes']);
     expect(sheet!.rows).toEqual([
       ['Ada', null],
@@ -113,9 +104,25 @@ describe('parseSheetToGrid', () => {
     ]);
   });
 
-  it('parses CSV bytes as a single sheet', () => {
+  it('resolves formula cells to their cached values', async () => {
+    const buf = await workbookBuffer({
+      S: [
+        ['a', 'total'],
+        [2, { formula: 'A2*2', result: 4 }],
+        [3, { formula: 'A3*2', result: 6 }],
+      ],
+    });
+    const [sheet] = await parseSheetToGrid(buf);
+    expect(sheet!.columns.map((c) => `${c.name}:${c.type}`)).toEqual(['a:number', 'total:number']);
+    expect(sheet!.rows).toEqual([
+      [2, 4],
+      [3, 6],
+    ]);
+  });
+
+  it('parses CSV bytes as a single sheet', async () => {
     const csv = 'Name,Age\nAda,36\nGrace,40\n';
-    const sheets = parseSheetToGrid(Buffer.from(csv, 'utf-8'));
+    const sheets = await parseSheetToGrid(Buffer.from(csv, 'utf-8'));
     expect(sheets).toHaveLength(1);
     expect(sheets[0]!.columns.map((c) => `${c.name}:${c.type}`)).toEqual([
       'Name:text',
@@ -126,17 +133,24 @@ describe('parseSheetToGrid', () => {
       ['Grace', 40],
     ]);
   });
+
+  it('names a legacy .xls as needing conversion instead of reading it as text', async () => {
+    // OLE2 magic. Without this branch the bytes would be decoded as UTF-8 and
+    // imported as a grid of mojibake, which looks like a successful import.
+    const ole2 = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x00]);
+    await expect(parseSheetToGrid(ole2)).rejects.toThrow(/legacy \.xls/);
+  });
 });
 
 describe('parseTextToGrid', () => {
-  it('parses a markdown pipe table, dropping the separator row', () => {
+  it('parses a markdown pipe table, dropping the separator row', async () => {
     const md = `
 | Item   | Qty | Price |
 |--------|----:|-------|
 | Widget | 2   | 9.5   |
 | Gadget | 3   | 4     |
 `;
-    const [sheet] = parseTextToGrid(md);
+    const [sheet] = await parseTextToGrid(md);
     expect(sheet!.columns.map((c) => `${c.name}:${c.type}`)).toEqual([
       'Item:text',
       'Qty:number',
@@ -148,8 +162,8 @@ describe('parseTextToGrid', () => {
     ]);
   });
 
-  it('parses TSV', () => {
-    const [sheet] = parseTextToGrid('Name\tAge\nAda\t36\nGrace\t40');
+  it('parses TSV', async () => {
+    const [sheet] = await parseTextToGrid('Name\tAge\nAda\t36\nGrace\t40');
     expect(sheet!.columns.map((c) => `${c.name}:${c.type}`)).toEqual(['Name:text', 'Age:number']);
     expect(sheet!.rows).toEqual([
       ['Ada', 36],
@@ -157,14 +171,27 @@ describe('parseTextToGrid', () => {
     ]);
   });
 
-  it('parses CSV (quote-aware)', () => {
-    const [sheet] = parseTextToGrid('City,Pop\n"Cape Town, ZA",433688\nOslo,700000');
+  it('parses CSV (quote-aware)', async () => {
+    const [sheet] = await parseTextToGrid('City,Pop\n"Cape Town, ZA",433688\nOslo,700000');
     expect(sheet!.columns.map((c) => c.name)).toEqual(['City', 'Pop']);
     expect(sheet!.rows[0]).toEqual(['Cape Town, ZA', 433688]);
   });
 
-  it('returns [] for non-tabular / empty text', () => {
-    expect(parseTextToGrid('')).toEqual([]);
-    expect(parseTextToGrid('just a sentence with no structure')).toHaveLength(1); // single column, still a (degenerate) table
+  it('keeps a newline embedded in a quoted CSV field', async () => {
+    // The case a line-splitting parser gets wrong, and the reason this path
+    // uses fast-csv rather than a hand-rolled split.
+    const [sheet] = await parseTextToGrid('Name,Note\nAda,"line one\nline two"\n');
+    expect(sheet!.rows).toEqual([['Ada', 'line one\nline two']]);
+  });
+
+  it('does not let a tab inside a quoted CSV field flip the delimiter', async () => {
+    const [sheet] = await parseTextToGrid('Name,Note\nAda,"a\tb"\n');
+    expect(sheet!.columns.map((c) => c.name)).toEqual(['Name', 'Note']);
+    expect(sheet!.rows).toEqual([['Ada', 'a\tb']]);
+  });
+
+  it('returns [] for non-tabular / empty text', async () => {
+    expect(await parseTextToGrid('')).toEqual([]);
+    expect(await parseTextToGrid('just a sentence with no structure')).toHaveLength(1); // single column, still a (degenerate) table
   });
 });

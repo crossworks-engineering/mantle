@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getTable, saveTableDraft } from '@/lib/tables';
-import { parseSheetToGrid } from '@mantle/files/sheet-to-grid';
+import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
 import { tableDocFromGrid } from '@mantle/content/table-model';
 
 /**
@@ -27,9 +27,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
+  const ext = file.name.slice(file.name.lastIndexOf('.') + 1).toLowerCase();
   let sheets;
   try {
-    sheets = parseSheetToGrid(buf);
+    sheets = await parseSpreadsheetToGrid(buf, ext);
   } catch (err) {
     return NextResponse.json(
       { error: `parse failed: ${err instanceof Error ? err.message : String(err)}` },

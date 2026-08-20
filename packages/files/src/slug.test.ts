@@ -209,11 +209,11 @@ describe('parserRouteForExt', () => {
     expect(parserRouteForExt('docx')).toBe('mammoth');
   });
 
-  it('routes the whole Excel family — xlsx, legacy xls, macro xlsm, binary xlsb — to SheetJS (tier 1)', () => {
-    expect(parserRouteForExt('xlsx')).toBe('sheetjs');
-    expect(parserRouteForExt('xls')).toBe('sheetjs');
-    expect(parserRouteForExt('xlsm')).toBe('sheetjs');
-    expect(parserRouteForExt('xlsb')).toBe('sheetjs');
+  it('routes modern Excel to exceljs and the legacy binaries to the converter', () => {
+    expect(parserRouteForExt('xlsx')).toBe('exceljs');
+    expect(parserRouteForExt('xls')).toBe('legacy-sheet');
+    expect(parserRouteForExt('xlsm')).toBe('exceljs');
+    expect(parserRouteForExt('xlsb')).toBe('legacy-sheet');
   });
 
   it('routes text-family extensions to utf8 (tier 1)', () => {

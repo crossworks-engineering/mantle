@@ -4,6 +4,74 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — one spreadsheet engine, and the old formats convert at the door (branch claude/sheetjs-xls-exports)
+
+SheetJS (`xlsx`) read every spreadsheet that entered the brain. It has not
+published to npm since 0.18.5, and that release carries a prototype-pollution
+and a ReDoS advisory — both reachable, because the code parses bytes a user
+uploaded. A vendor CDN tarball patched the advisories but left a dependency
+with no registry behind it, which is not a place to leave a parser.
+
+`exceljs` replaces it. It was already in the tree writing `.xlsx` on the export
+side, so this consolidates read and write onto one engine rather than adding
+anything.
+
+### The hang guard turned out to be unnecessary
+
+The caps in `parseXlsx` existed because SheetJS's `sheet_to_csv` walked a
+sheet's DECLARED dimension. Workbooks routinely declare a used range out to row
+1,048,576 / column XFD around a handful of real cells, so an unbounded parse
+iterated millions of phantom cells — two prod uploads hung ingest past the
+10-minute watchdog that way.
+
+`exceljs` builds rows from the cells that actually exist and ignores
+`<dimension>` entirely. A workbook declaring `A1:XFD1048576` around 4 real rows
+now loads in 6 ms. The row and column caps survive, but they are OUTPUT bounds
+now — what reaches the chunker and the embedder — not a defence against a
+stall, and a phantom range is no longer reported as truncation, because nothing
+was dropped.
+
+What did need replacing is the memory bound. `sheetRows` capped the read;
+`exceljs`'s `load()` has no equivalent, so `sheet-read.ts` pre-flights instead:
+sum the uncompressed worksheet XML straight from the zip directory, and refuse
+past 32 MB (measured blow-up is ~25x to RSS — 100k rows x 10 cols is 40.8 MB of
+XML and ~1 GB resident). Text extraction then falls through to Tika, which
+parses out-of-process in its own capped heap; a grid import raises instead,
+because a partial import that looks successful is worse than an error.
+
+### `.xls` and `.xlsb` convert on ingest
+
+`exceljs` reads OOXML only, and legacy auto-detection was the one thing SheetJS
+did that it does not. Rather than keep a second engine alive for two formats,
+those bytes are now converted to real `.xlsx` at the door and take the ordinary
+path from there — one reader, one set of caps, one output shape.
+
+The converter is Apache Tika, already a service in the compose stack: it is
+Apache POI underneath, so it reads BIFF properly, and using it costs no new
+container and no LibreOffice in the image. Honest about what it costs: Tika's
+XHTML is a rendering, so **boolean cells are lost** (they render empty, though
+column alignment survives) and **dates arrive as display text**. Numbers come
+through and re-infer cleanly. In practice this is theoretical — across the dev,
+prod and NATREF brains there is not a single `.xls` or `.xlsb` — and
+`legacy-sheet.ts` records exactly what degrades if one ever lands.
+
+### Smaller consequences
+
+- `parseSheetToGrid` and `parseTextToGrid` are **async** now (`load()` is
+  promise-based, and legacy conversion is a network call). Ingest paths should
+  call the new `parseSpreadsheetToGrid(bytes, ext)`, which handles the legacy
+  conversion, so the auto-table pass, the Tables import route and
+  `table_from_file` cannot drift apart.
+- Pasted and uploaded CSV/TSV parse with `fast-csv` rather than SheetJS —
+  quoted delimiters, doubled-quote escapes and newlines inside quoted fields
+  all keep working, and a tab inside a quoted CSV field no longer flips the
+  whole parse to TSV.
+- Dates in extracted text render ISO rather than whatever display format the
+  sheet happened to carry, so a date in a query can actually match one in a
+  spreadsheet.
+- The `parse_document` trace's `parser` field gains `exceljs` and
+  `legacy-sheet` in place of `sheetjs`.
+
 ## Unreleased — the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
 
 Every presenter in `@mantle/share-ui` was written for one surface: the
