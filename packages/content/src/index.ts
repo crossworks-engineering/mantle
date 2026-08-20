@@ -697,6 +697,7 @@ export {
 
 export { chunkDocText, type DocChunk } from './chunk';
 export { chunkSpreadsheetProfile, hasSheetMarkers, isSpreadsheetTitle } from './chunk-spreadsheet';
+export { clampPieces } from './chunk-clamp';
 export { fileFamilyKey } from './file-family';
 
 export {

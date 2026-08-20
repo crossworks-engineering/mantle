@@ -96,6 +96,7 @@ import { getChatAdapter, type ChatResult } from '@mantle/voice';
 import {
   chunkDocText,
   chunkSpreadsheetProfile,
+  clampPieces,
   fileFamilyKey,
   hasSheetMarkers,
   isSpreadsheetTitle,
@@ -2246,11 +2247,12 @@ async function writeRetrievalChunks(
       // returned "success", and the skip guard kept every retry away.
       // Now an embed failure throws (queue retries, old chunks intact)
       // and a crash mid-step can never destroy the previous rebuild.
-      const pieces =
+      const pieces = clampPieces(
         tableProfilePieces ??
-        (gridProfile
-          ? chunkSpreadsheetProfile(rawBody, { fileTitle: node.title })
-          : chunkDocText(rawBody));
+          (gridProfile
+            ? chunkSpreadsheetProfile(rawBody, { fileTitle: node.title })
+            : chunkDocText(rawBody)),
+      );
       if (pieces.length === 0) {
         await db.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
         h.setOutput({ chunks: 0 });
