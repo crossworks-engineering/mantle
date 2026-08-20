@@ -1356,6 +1356,20 @@ export type TeamVisibleShare = {
    *  the SHARED subset (an unshared parent leaves its children as roots). */
   parentId: string | null;
   tags: string[];
+  /**
+   * EVENTS ONLY — the event's own start, from `nodes.data.starts_at`.
+   *
+   * Every other field here describes the SHARE; this one describes the thing
+   * shared, and it is carried because for an event the two are not
+   * interchangeable. `updatedAt` says when the row was last written, which is
+   * the right meta line for a note or a table and useless for an event: a
+   * member scanning what is coming up needs WHEN IT HAPPENS, and an event
+   * edited this morning sorts above one starting tomorrow.
+   *
+   * Optional so a client pinned to an older server still parses the payload,
+   * and null for every non-event type.
+   */
+  startsAt?: string | null;
 };
 
 // ── Mirrors of @mantle/db jsonb/enum shapes (jackdaw split P0) ────────────────

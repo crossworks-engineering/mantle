@@ -46,6 +46,22 @@ has a header rule and a border of its own, it is the box.
 passed on, so no consumer could show when a file last changed. Optional, so a
 client pinned to an older server still parses the payload.
 
+## Unreleased — an event listing that says when, not when it was edited (branch feat/team-list-event-time)
+
+`TeamVisibleShare` gains an optional `startsAt`, read from `nodes.data.starts_at`
+and null for every non-event type.
+
+Every other field on that DTO describes the SHARE. This one describes the thing
+shared, and it is carried because for an event the two are not interchangeable.
+The `/team` section cards show `updatedAt` — right for a note or a table, and
+useless for an event. A member scanning what is coming up needs when it
+*happens*; an event edited this morning has no business sorting above one that
+starts tomorrow.
+
+The row query already selected `nodes.data`; the mapper simply read `icon` and
+`summary` out of it and dropped the rest, so no query changed. Optional on the
+type, so a client pinned to an older server still parses the payload.
+
 ## Unreleased — Tasks grows up: a board, a lifecycle, and somewhere to put finished work (branch claude/handover-tasks-kanban-04d026)
 
 `/tasks` was a checklist. It is now a project surface: a Kanban board, four

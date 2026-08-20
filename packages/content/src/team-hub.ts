@@ -336,6 +336,9 @@ function mapTeamShareRow(r: {
     mode: (r.settings as Record<string, unknown>)?.mode === 'team' ? 'team' : 'public',
     parentId: r.parentId,
     tags: r.tags ?? [],
+    // Only events carry one; `data.starts_at` is the same key the share view
+    // and packages/content/src/events.ts read.
+    startsAt: typeof r.data?.starts_at === 'string' ? (r.data.starts_at as string) : null,
   };
 }
 
