@@ -2,6 +2,13 @@ export * from './schema/index';
 export { db, closeDb, type Db } from './client';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export { bumpAgentUsage } from './agents-resolve';
+export {
+  resolveContextRef,
+  CONTEXT_KINDS,
+  type ContextKind,
+  type ContextRef,
+  type ResolvedContextRef,
+} from './context-ref-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
 export { isWriteRefused } from './write-refused';
 export {
