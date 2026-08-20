@@ -29,6 +29,13 @@ export default tseslint.config(
       // gitignored) — not ours to lint.
       '**/next-env.d.ts',
       'server/web/public/app-runtime/**',
+      // Same bundles under the client tree. `.gitignore` has covered this path
+      // since the kit landed, but the lint ignore only ever named server/web —
+      // so any checkout that had built the client once could not push: the
+      // pre-push `pnpm verify` walked 19 minified files and produced ~750
+      // errors in code nobody wrote. Untracked here in any case; the client
+      // lives in the jackdaw repo and lints itself there.
+      'client/web/public/app-runtime/**',
       // Generated share-surface bundle + route manifest (gitignored).
       'server/web/public/share-runtime/**',
       'server/web/server/route-manifest.gen.ts',
