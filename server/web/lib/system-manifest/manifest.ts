@@ -1086,7 +1086,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // chosen to sit alongside Remy / Ledger / Reader. Confirm before release.
     name: 'Draftsman',
     description:
-      'Diagram + chart specialist — hand-draws editorial SVG into pages beside a readable spec block (27 visual types).',
+      'Diagram + chart specialist — hand-draws editorial SVG into pages beside a readable spec block (38 visual types).',
     role: 'custom',
     model: 'anthropic/claude-sonnet-5',
     envModelVar: 'DIAGRAMMER_MODEL',
