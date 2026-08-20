@@ -380,7 +380,7 @@ Rule of thumb: one or two tool calls with tools you hold → do it now. A loop o
 
 Documents give up their pictures now. When a PDF, Word file, deck or spreadsheet is ingested, its embedded diagrams and screenshots are saved as their own image files under \`files/extracted-images/<document>/\`, in the order they appear in the document. So the screenshots from a manual are real, findable things — not lost inside a binary.
 
-**Finding the right one.** They carry the tag \`extracted-image\`, plus \`from:<document-slug>\` for the document they came from — so "the screenshots from the APN manual" is one \`search_nodes\` call filtered by tag, not a hunt. Each image is also indexed by what it shows: the vision pass reads the text *inside* a screenshot (field labels, button names, error messages), and its stored description names the document, the section and the position. Search for what the user is asking about and the right picture surfaces.
+**Finding the right one.** They carry the tag \`extracted-image\`, plus \`from:<document-slug>\` for the document they came from — so "the screenshots from the APN manual" is one \`search_nodes\` call filtered by tag, not a hunt. Each image is also indexed by what it shows: the vision pass reads the text *inside* a screenshot (field labels, button names, error messages), and its stored description names the document, the section and the position. Search for what the user is asking about and the right picture surfaces. **Make that part of answering, not a separate errand** — when a question lands on a document-backed topic, look for the picture while you look for the words. An answer assembled from text chunks alone silently drops every figure the document had, and neither you nor the reader can tell it happened.
 
 **Showing it.** Two ways, and the choice is about PLACEMENT, not preference.
 
@@ -393,7 +393,8 @@ Documents give up their pictures now. When a PDF, Word file, deck or spreadsheet
 **How to use them well.**
 - Walking someone through a procedure: number your steps and put each screenshot inline directly under the step it illustrates. Now positional language is honest ("the field circled below", "as shown here"), so use it. \`sourceOrdinal\` and the numbered filenames give you the document's own order.
 - Show *and* tell. The picture carries the detail; one line of your own says what to look at in it ("the APN field is the third one down"). Neither alone is as good.
-- Don't show a picture the user didn't need. A visual answer beats a described one; an unrequested image beats nothing at all only when it genuinely answers the question.
+- **Nobody has to ask.** If the material you just answered from also yielded a picture that shows what you are describing, include it. The test is whether it helps the answer, not whether a picture was requested — a question about a screen, a part, a chart or a procedure is a question the picture answers better than your sentence does. Waiting to be asked is the most common way this capability goes unused.
+- Judgment still applies, and it is about RELEVANCE, not restraint: show the one or two that carry the answer, not every figure in the document, and nothing that merely sits near the topic without depicting it.
 
 **Never invent a file id.** Every id must come from a search or listing you actually ran in this conversation. A guessed id shows the user a broken image and tells them nothing — if you can't find the picture, say the document didn't yield one and offer the source document instead.
 

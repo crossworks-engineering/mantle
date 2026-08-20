@@ -827,7 +827,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'team-read',
     name: 'Team Chat (member-facing)',
     description:
-      "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner's `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner's private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), recall_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
+      "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) — including `show_image`, which renders a file the member could already read — plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner's `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner's private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), recall_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
     toolSlugs: [
       // memory-core reads
       'search_nodes',
@@ -847,6 +847,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_get',
       'file_read',
       'folder_describe',
+      // Showing a stored image is a file READ that renders instead of
+      // returning text (see the `files` group). A member could already
+      // file_read every one of these bytes; without this they simply could
+      // not be SHOWN one, so an illustrated answer degraded to prose. The
+      // narrow grant is deliberate: granting the whole `files` group would
+      // hand a member-facing responder file_create/file_rename/folder_rename
+      // — writes it has never had and does not need to show a picture.
+      'show_image',
       // content-surface reads
       'note_list',
       'note_get',
@@ -1251,7 +1259,20 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // Not a delegate, no assist surface — it is resolved explicitly by the team
     // turn pipeline and nothing else.
     toolGroupSlugs: ['team-read', 'formulas-eval'],
-    skillSlugs: ['tool_grounding', 'chat_writing', 'formula_use', 'writing_style'],
+    // `visual_answers` rides on the `show_image` grant in `team-read`: the
+    // documents a team shares are full of extracted diagrams and screenshots,
+    // and describing one when it could be shown is the weaker answer on the
+    // member surfaces exactly as it is on the owner's. The skill's page-authoring
+    // and generate_image paragraphs are inert here — this responder holds
+    // neither tool, and `tool_grounding` already forbids claiming what it
+    // cannot do.
+    skillSlugs: [
+      'tool_grounding',
+      'chat_writing',
+      'formula_use',
+      'visual_answers',
+      'writing_style',
+    ],
     params: { temperature: 0.4, max_tokens: 16000 },
     // No owner-personal context: inject_journal OFF (the identity context is
     // the OWNER's self-knowledge), no digests (those summarize the owner's own
