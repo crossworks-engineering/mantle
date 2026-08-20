@@ -18,6 +18,7 @@ import {
   checkLookupCoverage,
   checkDimensions,
   signatureOf,
+  type AggregateKind,
   type Column,
   type Row,
   type FormulaSpec,
@@ -25,7 +26,7 @@ import {
   type CoverageGap,
   type DimensionIssue,
 } from '@mantle/content';
-import { describeWorkbook, resolveStoragePath } from '@mantle/tabledb';
+import { aggregateWindow, describeWorkbook, resolveStoragePath } from '@mantle/tabledb';
 import { fileById, folderById } from '@/lib/files';
 
 export {
@@ -87,9 +88,21 @@ export type ShareView =
         name: string;
         rowCount: number;
         columns: Array<{ id: string; name: string; type: string }>;
+        /** The owner's footer totals: which kind per column, and the value
+         *  computed HERE over every row. The value cannot be left to the
+         *  reader — it holds one 200-row window, so a total taken from it is
+         *  a wrong number wearing a right number's clothes. */
+        aggregates: Record<string, AggregateKind>;
+        aggregateValues: Record<string, number | null>;
       }> | null;
-      /** Legacy JSONB tables (pre-registry, small): the whole doc inline. */
-      legacyDoc: { columns: Column[]; rows: Row[] } | null;
+      /** Legacy JSONB tables (pre-registry, small): the whole doc inline.
+       *  Aggregate SETTINGS only — these arrive whole, so the reader can
+       *  compute its own totals and no round trip is involved. */
+      legacyDoc: {
+        columns: Column[];
+        rows: Row[];
+        aggregates: Record<string, AggregateKind>;
+      } | null;
     }
   | {
       kind: 'formula';
@@ -206,11 +219,26 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       if (row.storagePath) {
         let tabs: NonNullable<Extract<ShareView, { kind: 'table' }>['tabs']>;
         try {
-          tabs = describeWorkbook(resolveStoragePath(row.storagePath)).map((t) => ({
+          const abs = resolveStoragePath(row.storagePath);
+          tabs = describeWorkbook(abs).map((t) => ({
             id: t.tabId,
             name: t.name,
             rowCount: t.rowCount,
             columns: t.columns.map((c) => ({ id: c.colId, name: c.name, type: c.type })),
+            aggregates: t.aggregates,
+            // Computed HERE, in SQL over every row, because the reader only
+            // ever holds one 200-row window. A client-side sum over a partial
+            // page is not a smaller number, it is a wrong one — and wrong
+            // silently, which is the failure mode worth paying a query to
+            // avoid. `aggregateWindow` returns null for a column it cannot
+            // total (a formula column, or a non-numeric asked for a sum), and
+            // the footer leaves that cell blank rather than guessing.
+            aggregateValues: Object.fromEntries(
+              Object.entries(t.aggregates).map(([colId, kind]) => [
+                colId,
+                aggregateWindow(abs, { columnId: colId, kind, tabId: t.tabId }),
+              ]),
+            ),
           }));
         } catch {
           // Published file missing/unreadable (e.g. never committed) — treat
@@ -226,7 +254,9 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
         title: row.title,
         icon,
         tabs: null,
-        legacyDoc: { columns: doc.columns, rows: doc.rows },
+        // A legacy table arrives whole, so the reader computes its own totals
+        // with `computeAggregate` and no endpoint is involved. Settings only.
+        legacyDoc: { columns: doc.columns, rows: doc.rows, aggregates: doc.aggregates ?? {} },
       };
     }
     case 'formula': {

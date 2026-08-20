@@ -571,6 +571,11 @@ export type WorkbookTabRef = {
   ftsTable: string | null;
   rowCount: number;
   columns: WorkbookColumnRef[];
+  /** The owner's footer totals for this tab, `_aggregates` verbatim
+   *  (colId → kind). The SETTINGS only — a value has to be computed against
+   *  the rows, which for a file-backed tab means `aggregateWindow`, never a
+   *  sum over whatever window a reader happens to be holding. */
+  aggregates: Record<string, AggregateKind>;
 };
 
 /** The SQL surface of a workbook, for table_sql callers: display-named views,
@@ -608,6 +613,14 @@ export function describeWorkbook(absPath: string): WorkbookTabRef[] {
         physicalTable,
         ftsTable: fts ? `${physicalTable}_fts` : null,
         rowCount: Number(db.prepare(`SELECT count(*) AS n FROM ${physicalTable}`).get()?.n ?? 0),
+        aggregates: Object.fromEntries(
+          (
+            db.prepare(`SELECT col_id, kind FROM _aggregates WHERE tab_id = ?`).all(tabId) as {
+              col_id: string;
+              kind: string;
+            }[]
+          ).map((a) => [String(a.col_id), String(a.kind) as AggregateKind]),
+        ),
         columns: cols.map((c) => {
           const out: WorkbookColumnRef = {
             colId: String(c.col_id),

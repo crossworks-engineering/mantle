@@ -16,7 +16,7 @@ import type { TocEntry } from '@mantle/content-core/page-toc';
 import type { CoverageGap, FormulaSpec } from '@mantle/content-core/formula-spec';
 import type { TargetSignature } from '@mantle/content-core/formula-signature';
 import type { DimensionIssue } from '@mantle/content-core/formula-dimensions';
-import type { Column, Row } from '@mantle/content-core/table-model';
+import type { AggregateKind, Column, Row } from '@mantle/content-core/table-model';
 
 export type ShareFolderListing = {
   /** ltree path currently being listed (the shared root or a descendant). */
@@ -75,8 +75,29 @@ export type ShareViewPayload =
         name: string;
         rowCount: number;
         columns: Array<{ id: string; name: string; type: string }>;
+        /**
+         * The owner's footer totals for this tab: colId → kind, and the VALUE
+         * computed server-side over the whole tab.
+         *
+         * The value has to come from the server and this is the whole reason
+         * the field exists. A reader holds one 200-row window at a time, so a
+         * sum taken over what it happens to have loaded is not a smaller
+         * number — it is a WRONG one, and wrong quietly, which is worse than
+         * absent. `aggregateWindow` runs it in SQL over every row.
+         *
+         * Optional: an older server sends neither, and the footer simply does
+         * not render.
+         */
+        aggregates?: Record<string, AggregateKind>;
+        aggregateValues?: Record<string, number | null>;
       }> | null;
-      legacyDoc: { columns: Column[]; rows: Row[] } | null;
+      legacyDoc: {
+        columns: Column[];
+        rows: Row[];
+        /** Legacy tables arrive WHOLE, so the reader can compute these itself
+         *  with `computeAggregate` and no endpoint is involved. Settings only. */
+        aggregates?: Record<string, AggregateKind>;
+      } | null;
     }
   | {
       kind: 'formula';

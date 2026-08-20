@@ -46,6 +46,49 @@ has a header rule and a border of its own, it is the box.
 passed on, so no consumer could show when a file last changed. Optional, so a
 client pinned to an older server still parses the payload.
 
+## Unreleased — a shared table gets the owner's totals, and they are RIGHT (branch feat/team-tables-grid)
+
+`/team` tables were a centred `max-w-6xl` reader: a plain table, a "Load more"
+button every 200 rows, and no totals at all. The owner grid has had per-column
+aggregates and a sticky footer for a long time; none of it reached the people
+the table was shared with.
+
+### The totals had to come from the server, and that is the whole design
+
+A file-backed workbook pages 200 rows at a time. A sum computed from the rows a
+reader happens to be holding is not a smaller number — it is a **wrong** one,
+and it looks exactly as authoritative as a right one. So:
+
+- The share view now carries each tab's `aggregates` (the owner's settings) AND
+  `aggregateValues`, computed server-side by `aggregateWindow` in SQL across
+  every row. `describeWorkbook` grew an `aggregates` field to read the
+  workbook's `_aggregates` table.
+- **`GET /s/[token]/aggregate?tab=&col=&kind=`** answers a total the READER
+  picks. View-local, never persisted — nothing on this surface writes. `kind` is
+  validated against `AGGREGATE_KINDS` rather than cast, because it reaches a SQL
+  expression builder. Authorization and the uniform 404 are the rows route's,
+  verbatim.
+- Legacy JSONB tables are the one exception, and only because they genuinely
+  arrive whole: there the reader computes locally and no round trip happens.
+
+A column that cannot carry a total — a formula target, a sum over text —
+returns `null`, and the footer draws a blank. A `0` would be a statement about
+the data that nobody made.
+
+### The grid
+
+Embedded (`chrome="embedded"`, v0.231.0) the presenter now owns its height: the
+header and tab strip are fixed and the table scrolls in a bounded box, so the
+**sticky header and sticky footer have something to stick to**. Column headers
+carry the owner grid's own type icons. The "Load more" button is gone —
+an IntersectionObserver sentinel fetches the next page as the reader
+approaches it, and the header reads "N of M rows" so nobody wonders whether
+there is more.
+
+The footer row renders even when nothing is set, because the row IS the
+affordance: a member who wants a total needs somewhere to ask for one.
+
+The standalone `/s` page keeps its centred, growing, non-sticky layout.
 ## Unreleased — an event listing that says when, not when it was edited (branch feat/team-list-event-time)
 
 `TeamVisibleShare` gains an optional `startsAt`, read from `nodes.data.starts_at`
