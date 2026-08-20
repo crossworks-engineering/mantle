@@ -216,3 +216,53 @@ describe('buildAttachmentContextText attachment hint', () => {
     expect(out).not.toContain('auto-imported into Tables');
   });
 });
+
+describe('buildChatMessages — an image hit carries a usable marker', () => {
+  const IMG_ID = 'a4364443-db4c-4943-8cff-041fc3348c6b';
+
+  function withHits(hits: Parameters<typeof buildChatMessages>[0]['contentHits']): string {
+    const msgs = buildChatMessages({
+      model: 'anthropic/claude-sonnet-5',
+      systemPrompt: 'You are Saskia.',
+      personaNotes: [],
+      facts: [],
+      digests: [DIGEST],
+      contentHits: hits,
+      history: [],
+      newUserText: 'what APN should I use?',
+    });
+    return msgs
+      .filter((m) => m.role === 'system')
+      .map((m) => (typeof m.content === 'string' ? m.content : ''))
+      .join('\n');
+  }
+
+  it('hands over the FULL id so the model never rebuilds one from the 8-char tag', () => {
+    // The regression this locks: retrieval prints ids truncated for
+    // readability, and a model told to show a relevant picture emitted
+    // `media:a4364443` — not a missing row, not a valid uuid at all, so the
+    // reader got a broken image where the answer's evidence should have been.
+    const out = withHits([
+      {
+        nodeId: IMG_ID,
+        title: 'Network settings screen',
+        type: 'file',
+        summary: 'APN and MTU values for a commissioned unit.',
+        inlineRef: `![Network settings screen](media:${IMG_ID})`,
+      },
+    ]);
+    expect(out).toContain(`media:${IMG_ID}`);
+    // The short tag still rides along for reference — it just is no longer the
+    // ONLY identifier on the line.
+    expect(out).toContain('file#a4364443');
+  });
+
+  it('adds nothing for a hit that is not an image', () => {
+    const out = withHits([
+      { nodeId: IMG_ID, title: 'Commissioning guide', type: 'page', summary: null },
+    ]);
+    expect(out).toContain('Commissioning guide');
+    expect(out).not.toContain('show it with');
+    expect(out).not.toContain('media:');
+  });
+});

@@ -683,11 +683,19 @@ export async function loadConversationContext(args: {
       .filter((r) => (r.dist ?? 1) < 0.6) // salience-adjusted cutoff — drop non-matches + demoted bulk
       .map((r) => {
         const data = (r.data ?? {}) as Record<string, unknown>;
+        // `mime_type` is the stored key (snake), not `mimeType`. An extracted
+        // document image lands here as a plain `file` node, so the mime is the
+        // only thing that says "this hit is a picture, and showing it is a
+        // possible answer" — see ContentHit.inlineRef for why the finished
+        // marker travels with it.
+        const mime = typeof data.mime_type === 'string' ? data.mime_type : '';
+        const isImage = mime.startsWith('image/');
         return {
           nodeId: r.nodeId,
           title: r.title,
           type: r.type as string,
           summary: typeof data.summary === 'string' ? data.summary : null,
+          ...(isImage ? { inlineRef: `![${r.title}](media:${r.nodeId})` } : {}),
           ...(r.supersededBy ? { supersededBy: { id: r.supersededBy, title: '' } } : {}),
         };
       });

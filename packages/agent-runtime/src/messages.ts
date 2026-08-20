@@ -56,6 +56,16 @@ export type ContentHit = {
   type: string;
   summary: string | null;
   nodeId: string;
+  /** A ready-to-paste `![alt](media:<full-uuid>)` marker, set only when the hit
+   *  IS an image. Retrieval prints ids truncated to 8 chars for readability, and
+   *  a model told to show a relevant picture will reach for the only identifier
+   *  in front of it — producing `media:a4364443`, which is not merely a missing
+   *  row but not a valid uuid at all, so the reader gets a broken image where
+   *  the evidence should be. Handing over the finished marker removes the
+   *  temptation instead of relying on the skill's don't-rebuild-ids warning,
+   *  and mirrors `generate_image`, which returns an `inlineRef` for the same
+   *  reason. */
+  inlineRef?: string;
   /** Set when this node is SUPERSEDED: the living end of its supersession
    *  chain (content-currency layer). Rendering flags the hit so the model
    *  prefers the successor instead of presenting stale content as current. */
@@ -468,7 +478,11 @@ export function buildChatMessages(args: {
         const stale = h.supersededBy
           ? ` [SUPERSEDED by "${h.supersededBy.title}" (#${h.supersededBy.id.slice(0, 8)})]`
           : '';
-        return `• "${h.title}" (${tag})${summary}${stale}`;
+        // The tag above is a DISPLAY prefix. For an image that is not enough —
+        // showing it means emitting a marker, so the full one is handed over
+        // rather than left to be reconstructed from eight characters.
+        const show = h.inlineRef ? ` — show it with ${h.inlineRef}` : '';
+        return `• "${h.title}" (${tag})${summary}${stale}${show}`;
       })
       .join('\n');
     // The currency rule rides the block header (engine-owned, applies to every
