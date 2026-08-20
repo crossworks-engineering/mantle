@@ -46,6 +46,32 @@ has a header rule and a border of its own, it is the box.
 passed on, so no consumer could show when a file last changed. Optional, so a
 client pinned to an older server still parses the payload.
 
+## Unreleased — a member can see the drawing the reply is talking about (branch feat/team-forum-drawings)
+
+`![alt](draw:<node-id>)` in a reply now resolves, on both member surfaces.
+Pictures have worked since v0.4.1; drawings were the marker in the Forum plan's
+§5 table listed simply as "broken".
+
+Two routes, `forum/drawing/[nodeId]` and `messages/drawing/[nodeId]`, siblings
+of the media pair rather than a widening of it: `serveTeamMedia` streams file
+bytes and refuses any mime that is not an image, which a draw node is not. Same
+door, same gate, different thing behind it.
+
+**Authorization is the media routes', unchanged.** The question is asked of the
+POSTS — "is this node attached to something this member can already read?" —
+never of the drawings tree, because that second question answers "any drawing
+the responder ever touched". Absent, forbidden and malformed all answer 404.
+
+The hardened SVG response lives in `lib/team-media.ts` as `serveTeamDrawing`
+rather than in the two routes, so the Forum's copy and Team Chat's cannot drift
+apart on a security header. An SVG is markup: served as an image it is a
+separate script-disabled document, but this URL can also be opened directly, and
+the `sandbox` CSP is what makes that case inert. Copied from
+`/s/[token]/draw/route.ts` — if one changes, change both.
+
+Both surfaces get it, deliberately. A marker that rendered in the Forum and
+broke in Team Chat would be worse than not having one: the reply text does not
+know which surface it will be read on.
 ## Unreleased — a shared table gets the owner's totals, and they are RIGHT (branch feat/team-tables-grid)
 
 `/team` tables were a centred `max-w-6xl` reader: a plain table, a "Load more"

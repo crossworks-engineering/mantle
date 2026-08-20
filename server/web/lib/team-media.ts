@@ -21,7 +21,7 @@
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
-import { recordTeamAccess } from '@mantle/content';
+import { getDrawSvg, recordTeamAccess } from '@mantle/content';
 import { readFileById } from '@mantle/files';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -83,6 +83,42 @@ export async function serveTeamMedia(ownerId: string, nodeId: string): Promise<R
       ...safeDownloadHeaders(mimeType, filename),
       // Private and short-lived: the owner can unshare or delete at any time,
       // and revocation has to bite on the next request.
+      'cache-control': 'private, max-age=300',
+    },
+  });
+}
+
+/**
+ * Stream an authorized DRAWING's committed SVG snapshot.
+ *
+ * The sibling of `serveTeamMedia`, and separate from it because that one serves
+ * file bytes and refuses any mime that is not an image — which a draw node is
+ * not. Same door, same gate, different thing behind it.
+ *
+ * ⚠ The headers are the security, and they live HERE rather than in the two
+ * routes so the forum's copy and Team Chat's cannot drift apart. An SVG is
+ * markup: served as an image and referenced with `<img>` it is a separate,
+ * script-disabled document, but this URL can also be opened directly, and as a
+ * top-level document it would run its own scripts. `sandbox` with no
+ * `allow-scripts` plus a null `default-src` makes that case inert too.
+ * `acceptSceneSvg` still validates at commit — the point of both layers is that
+ * neither is load-bearing alone. Copied deliberately from
+ * `/s/[token]/draw/route.ts`; if one changes, change both.
+ */
+export async function serveTeamDrawing(ownerId: string, nodeId: string): Promise<Response> {
+  // Filters ownerId + type, so a node attached to a readable post that is not
+  // actually a drawing falls through to the same 404 as everything refused.
+  const svg = await getDrawSvg(ownerId, nodeId);
+  if (!svg) return mediaNotFound();
+
+  return new Response(svg, {
+    status: 200,
+    headers: {
+      'content-type': 'image/svg+xml; charset=utf-8',
+      'content-security-policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+      'x-content-type-options': 'nosniff',
+      // Private and short-lived: the owner can delete at any time, and
+      // revocation has to bite on the next request.
       'cache-control': 'private, max-age=300',
     },
   });
