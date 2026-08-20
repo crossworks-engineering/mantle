@@ -93,6 +93,7 @@ export {
   createFolder,
   ensureDatedUploadFolder,
   ensureExtractedImagesFolder,
+  ensureFolderPath,
   EXTRACTED_IMAGES_SLUG,
   updateFolderDescription,
   deleteFolder,

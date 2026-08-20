@@ -43,6 +43,7 @@ import {
   renameFolderById,
   updateFolderDescription,
   upsertFile,
+  ensureFolderPath,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
@@ -1259,6 +1260,12 @@ const file_create: BuiltinToolDef = {
       return { ok: false, error: 'parent_path + filename required' };
     }
     try {
+      // Bring the folder into existence rather than refusing the write. A skill
+      // can name a folder the brain has never had (the Draftsman's
+      // `files/diagrams` was one), and refusing sent the agent off to file the
+      // artifact somewhere the instructions never meant. Capped and confined to
+      // `files` inside the helper, so a malformed path is still an error.
+      await ensureFolderPath({ ownerId: ctx.ownerId, path: parentPath });
       const row = await upsertFile({
         ownerId: ctx.ownerId,
         parentPath,

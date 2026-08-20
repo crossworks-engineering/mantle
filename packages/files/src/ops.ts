@@ -304,6 +304,77 @@ export async function ensureExtractedImagesFolder(args: {
 /** Top-level folder holding every document's extracted pictures. */
 export const EXTRACTED_IMAGES_SLUG = 'extracted-images';
 
+/** How deep below `files` an agent may bring a folder chain into existence.
+ *  Generous for real filing, short enough that a malformed path cannot walk a
+ *  tree of empty folders into the store. */
+const MAX_ENSURED_DEPTH = 6;
+
+/**
+ * Bring every missing folder on an ltree path under `files` into existence and
+ * return the path. The `mkdir -p` every other writer here already performs for
+ * itself — {@link ensureDatedUploadFolder} for uploads,
+ * {@link ensureExtractedImagesFolder} for the extractor — lifted to one place so
+ * an AGENT writing a file gets it too.
+ *
+ * Why it is needed: a skill can name a folder ("save the SVG under
+ * `files/diagrams`") that nothing on a fresh brain ever creates, and `upsertFile`
+ * refuses an absent parent. The agent then either fails or improvises a
+ * different folder, and the artifact lands somewhere the instructions did not
+ * intend — measured on the Draftsman, whose every first diagram errored and then
+ * landed in the files ROOT instead.
+ *
+ * Deliberately narrow: `files` only (never a new top-level root), depth-capped,
+ * and each segment must survive {@link slugifyFolder}, so a malformed path is
+ * still an error rather than a tree of junk. Idempotent, and a concurrent create
+ * loses the race harmlessly — same contract as the two helpers above.
+ */
+export async function ensureFolderPath(args: {
+  ownerId: string;
+  path: string;
+  description?: string;
+}): Promise<string> {
+  const segments = args.path.split('.');
+  if (segments[0] !== 'files') {
+    throw new Error(`ensureFolderPath: '${args.path}' is not under 'files'`);
+  }
+  if (segments.length > MAX_ENSURED_DEPTH) {
+    throw new Error(
+      `ensureFolderPath: '${args.path}' is deeper than ${MAX_ENSURED_DEPTH} levels — create it deliberately with folder_create`,
+    );
+  }
+  let parent = 'files';
+  for (const label of segments.slice(1)) {
+    const childPath = `${parent}.${label}`;
+    const [exists] = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, args.ownerId),
+          eq(nodes.type, 'branch'),
+          sql`${nodes.path}::text = ${childPath}`,
+        ),
+      )
+      .limit(1);
+    if (!exists) {
+      try {
+        await createFolder({
+          ownerId: args.ownerId,
+          parentPath: parent,
+          // ltree labels use `_` where a slug uses `-`; createFolder slugifies
+          // again, so hand it the slug form rather than the stored label.
+          slug: label.replace(/_/g, '-'),
+          description: args.description ?? '',
+        });
+      } catch (err) {
+        if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
+      }
+    }
+    parent = childPath;
+  }
+  return args.path;
+}
+
 export async function updateFolderDescription(args: {
   ownerId: string;
   folderId: string;
