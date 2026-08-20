@@ -546,6 +546,9 @@ importers:
       '@mantle/client-types':
         specifier: workspace:*
         version: link:../client-types
+      '@mantle/content':
+        specifier: workspace:*
+        version: link:../content
       '@mantle/crypto':
         specifier: workspace:*
         version: link:../crypto
