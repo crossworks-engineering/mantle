@@ -66,6 +66,7 @@ import {
   CONTACT_TOOLS,
   WORKER_DELEGATION_TOOLS,
   EXPORT_TOOLS,
+  SHEET_TOOLS,
   PAGE_TOOLS,
   DRAW_TOOLS,
   TABLE_TOOLS,
@@ -1502,6 +1503,14 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   // Renders a page/note → .docx or a table → .xlsx into /files/exports and returns
   // the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
   registerBuiltinTools(EXPORT_TOOLS);
+
+  // ─── Spreadsheet authoring ───────────────────────────────────────────────────
+  // `sheet_build` composes a formatted .xlsx from data the client already holds
+  // and saves it under /files. Belongs on this surface for the same reason
+  // `export_node` does: an MCP client is often the one holding the numbers (a
+  // Claude Desktop session working through a costing) and wants a file back.
+  // Pure — writes one file node, no surface, no artifact.
+  registerBuiltinTools(SHEET_TOOLS);
 
   // ─── Apps (mini-app builder) ──────────────────────────────────────────────────
   // Author Mantle mini-apps end-to-end from an MCP client: create, write the TSX

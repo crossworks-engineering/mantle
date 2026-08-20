@@ -171,6 +171,17 @@ client holding two files from the same brain that did not look related.
 Ships as a `spreadsheets` tool group granted to the persona and to Ledger, plus
 a `spreadsheet_authoring` skill on Ledger covering the sheet-versus-table call.
 
+## Unreleased — sheet_build reaches MCP clients too (branch feat/sheet-build-mcp)
+
+`sheet_build` shipped to the in-app agents but was never registered on the MCP
+surface, so a Claude Desktop or Claude Code session could not call it. That is
+the surface most likely to want it: the client is often the one holding the
+numbers, working through a costing, and wanting a file back at the end.
+
+One line next to `export_node`, which is on that surface for exactly the same
+reason. Both transports (stdio and the HTTP route) build from the same builder,
+so both get it.
+
 ## Unreleased — the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
 
 Every presenter in `@mantle/share-ui` was written for one surface: the
