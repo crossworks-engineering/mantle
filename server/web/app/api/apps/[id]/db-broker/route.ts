@@ -4,6 +4,10 @@
  * app, resolved from the registry by the authenticated app id — no path input,
  * so an app structurally cannot reach another app's data). The app's declared
  * schema (manifest.sqlite) is applied lazily on first use.
+ *
+ * op:'query' runs on a READ-ONLY open (appDbQuery) — writes must go through
+ * op:'exec'. Same semantics as the share broker, where public links depend on
+ * query being unable to mutate.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';

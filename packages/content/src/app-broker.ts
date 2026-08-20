@@ -248,7 +248,16 @@ export async function ensureAppDatabase(
   return reg;
 }
 
-/** Run a read query against the app's own database. Returns row objects. */
+/** Run a read query against the app's own database. Returns row objects.
+ *
+ *  Opens READ-ONLY. This is load-bearing, not an optimisation: SQLite happily
+ *  executes DML through `prepare(sql).all()`, and both db-broker routes map
+ *  op:'query' here — including for PUBLIC share visitors, whose op:'exec' is
+ *  rejected with a "shared apps are read-only" promise. A read-write open would
+ *  let `{op:'query', sql:'DELETE FROM t'}` mutate the owner's app database
+ *  anyway. Engine-level read-only closes that for any SQL (same rationale as
+ *  openSqliteReadOnly: no SELECT-only regex to outsmart). Writes go through
+ *  appDbExec (op:'exec'), which the routes gate. */
 export async function appDbQuery(
   ownerId: string,
   appNodeId: string,
@@ -258,7 +267,15 @@ export async function appDbQuery(
 ): Promise<DbRows> {
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
-  const handle = await openSqlite(reg.storagePath);
+  // A read-only open never creates the file. On an app's very first query
+  // (no declared DDL applied, nothing written yet) provision the empty DB
+  // with a normal open first, so the read-only open has a file to attach.
+  try {
+    await stat(reg.storagePath);
+  } catch {
+    (await openSqlite(reg.storagePath)).close();
+  }
+  const handle = await openSqliteReadOnly(reg.storagePath);
   try {
     const rows = handle.prepare(sql).all(...params);
     return rows as DbRows;

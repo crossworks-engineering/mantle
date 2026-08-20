@@ -96,7 +96,7 @@ The app's only window onto the host. `import { host } from '@host'`:
 
 ```ts
 await host.tools.call(slug, input)   // call a DECLARED tool; returns its result
-await host.db.query(sql, params?)    // read from this app's own SQLite
+await host.db.query(sql, params?)    // read from this app's own SQLite (opened read-only — DML here fails)
 await host.db.exec(sql, params?)     // write to this app's own SQLite
 host.ui.resize(heightPx)             // legacy no-op — apps get a real full-screen viewport now (see Layout)
 host.ui.notifyError(message)         // surface an error to the host UI

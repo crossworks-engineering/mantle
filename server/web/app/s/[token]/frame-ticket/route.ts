@@ -12,9 +12,23 @@ import { resolveActiveShareByToken } from '@/lib/shares';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 import { buildAppFrameTicket } from '@/lib/auth';
 import { getApp } from '@mantle/content';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
+
+  // One ticket per frame load; a burst beyond this is a token-mint loop.
+  const { ok, retryAfterSec } = rateLimit(`share-frame-ticket:${clientIp(req)}`, {
+    max: 30,
+    windowMs: 60_000,
+  });
+  if (!ok) {
+    return new NextResponse('too many requests', {
+      status: 429,
+      headers: { 'retry-after': String(retryAfterSec) },
+    });
+  }
+
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'app') return new NextResponse('not found', { status: 404 });
 

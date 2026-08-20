@@ -16,6 +16,7 @@ import { resolveActiveShareByToken } from '@/lib/shares';
 import { getApp, recordAppAccess } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 const Body = z.object({
   op: z.enum(['query', 'exec']),
@@ -25,6 +26,20 @@ const Body = z.object({
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
+
+  // Generous — a running app is query-chatty — but bounded, like the other
+  // /s/[token] surfaces: this endpoint executes SQL for strangers.
+  const { ok, retryAfterSec } = rateLimit(`share-db-broker:${clientIp(req)}`, {
+    max: 300,
+    windowMs: 60_000,
+  });
+  if (!ok) {
+    return NextResponse.json(
+      { ok: false, error: 'too many requests' },
+      { status: 429, headers: { 'retry-after': String(retryAfterSec) } },
+    );
+  }
+
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'app') {
     return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });

@@ -11,9 +11,23 @@ import { resolveActiveShareByToken } from '@/lib/shares';
 import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
+
+  // The bundle streams from storage; cap fetches like the other share assets.
+  const { ok, retryAfterSec } = rateLimit(`share-bundle:${clientIp(req)}`, {
+    max: 30,
+    windowMs: 60_000,
+  });
+  if (!ok) {
+    return new NextResponse('too many requests', {
+      status: 429,
+      headers: { 'retry-after': String(retryAfterSec) },
+    });
+  }
+
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'app') return new NextResponse('not found', { status: 404 });
 
