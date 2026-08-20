@@ -167,6 +167,38 @@ reads it while the app writes), and it's **included in the backup**
 consistent `VACUUM INTO`). App-authored data is real data, and it's protected
 like the rest of the brain.
 
+## Exporting app data to a Table (the app as master)
+
+When a team manages data **inside** an app (Tier 3 SQLite with member writes),
+the brain can keep a **Table** as a live, read-only view of one app table:
+
+```
+app_table_export_set(id, table, title?)   → creates the Table + the link
+app_table_export_remove(id, table)        → dissolves the link
+```
+
+Direction of authority: **the app is the master.** After an app write
+(`host.db.exec`, member or owner, and `app_db_seed`) the platform
+re-materializes the Table from the SQLite rows — debounced, hash-gated (an
+unchanged table never re-commits), pure SQL, no LLM. Typed columns derive
+from the SQLite declared types (INTEGER/REAL → number, BOOLEAN → checkbox,
+DATE/DATETIME → date/datetime, else text).
+
+While linked, the Table is an **app table**: it refuses every grid edit from
+the Tables side (rows, cells, columns, tabs, delete — `AppBoundTableError`);
+title/tags/icon/sharing stay editable, and the `appLink` field on the table
+DTO carries the badge. Removing the link (or deleting the app) frees the
+Table as an ordinary editable table holding the last synced rows.
+
+Choose the direction deliberately, one master per table, ever:
+
+- Data managed **in the app** → export it out with `app_table_export_set`.
+- Data managed **in Tables** → keep the table ordinary and declare a read
+  tool for the app (the hub Tier-2 pattern). Never both on one table.
+
+(If the assistant only needs to *query* the data, no export is required at
+all — see the next section.)
+
 ## Reading app data from the brain (the assistant can query your apps)
 
 The user's **assistant can read any of their apps' databases**: the responder

@@ -1051,6 +1051,13 @@
       "when": 1786235300000,
       "tag": "0149_comments_changed_notify",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1786235400000,
+      "tag": "0150_app_table_exports",
+      "breakpoints": true
     }
   ]
 }

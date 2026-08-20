@@ -34,6 +34,11 @@ import {
   appDbSeedRows,
   listAppDatabaseSummaries,
 } from '@mantle/content/app-broker';
+import {
+  createAppTableExport,
+  removeAppTableExport,
+  scheduleAppTableExportSync,
+} from '@mantle/content/app-table-exports';
 import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './dispatch';
@@ -520,6 +525,8 @@ const app_db_seed: BuiltinToolDef = {
         app.manifest.sqlite,
       );
       ctx.step?.setOutput({ id, table, inserted: res.inserted, deleted: res.deleted });
+      // A seed may feed a linked app-table export — debounced, hash-gated.
+      scheduleAppTableExportSync(ctx.ownerId, id);
       return {
         ok: true,
         output: {
@@ -704,6 +711,86 @@ const app_db_query: BuiltinToolDef = {
   },
 };
 
+const app_table_export_set: BuiltinToolDef = {
+  slug: 'app_table_export_set',
+  preconditions: APP_ID_PRE,
+  name: "Export an app's table to Tables",
+  description:
+    "Create (or refresh) a brain Table as a live, read-only view of one table inside the app's own SQLite database; returns the Table's id. The APP stays the master: after app writes the Table re-materializes automatically, and while linked it refuses direct grid edits — data changes in the app only (title/tags/sharing stay editable). Use when the assistant or the Tables surface should see app-managed data; for data managed in Tables, keep an ordinary table and grant the app read tools instead. Idempotent per (app, table): calling again re-syncs. `app_table_export_remove` dissolves the link.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      table: {
+        type: 'string',
+        description: "The app's SQLite table to export, e.g. 'tasks' (see `app_db_list`).",
+      },
+      title: {
+        type: 'string',
+        description: "Display title for the new Table, e.g. 'Sprint tasks (live)'.",
+      },
+    },
+    required: ['id', 'table'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    const table = str(input.table).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    if (!table)
+      return { ok: false, error: 'table is required — see app_db_list for the app tables' };
+    try {
+      const res = await createAppTableExport(ctx.ownerId, id, table, {
+        title: str(input.title).trim() || undefined,
+      });
+      ctx.step?.setOutput({ table_id: res.tableId, rows: res.rows, created: res.created });
+      return {
+        ok: true,
+        output: {
+          table_id: res.tableId,
+          rows: res.rows,
+          created: res.created,
+          hint: res.created
+            ? 'The Table now mirrors the app table and refreshes after app writes.'
+            : 'Link already existed — re-synced from the current app data.',
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const app_table_export_remove: BuiltinToolDef = {
+  slug: 'app_table_export_remove',
+  preconditions: APP_ID_PRE,
+  name: 'Remove an app-table export',
+  description:
+    'Dissolve the export link between an app table and its brain Table; returns whether a link existed. The Table survives as an ordinary editable table holding the last synced rows — it stops refreshing and its grid unlocks. The app and its own database are untouched. Use before deleting a linked Table, or when the data should become hand-managed in Tables; re-create later with `app_table_export_set` (the next sync replaces the grid).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      table: { type: 'string', description: "The exported SQLite table name, e.g. 'tasks'." },
+    },
+    required: ['id', 'table'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    const table = str(input.table).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    if (!table) return { ok: false, error: 'table is required' };
+    const removed = await removeAppTableExport(ctx.ownerId, id, table);
+    if (!removed) {
+      return {
+        ok: false,
+        error: `no export link exists for app ${id} table '${table}' — nothing to remove`,
+      };
+    }
+    ctx.step?.setOutput({ id, table, removed: true });
+    return { ok: true, output: { id, table, removed: true } };
+  },
+};
+
 /** Read-only app-data tools for the responder (see block comment above). */
 export const APP_DATA_TOOLS: BuiltinToolDef[] = [app_db_list, app_db_query];
 export const APP_DATA_TOOL_SLUGS: string[] = APP_DATA_TOOLS.map((t) => t.slug);
@@ -718,6 +805,8 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_tools_set,
   app_db_schema_set,
   app_db_seed,
+  app_table_export_set,
+  app_table_export_remove,
   app_list,
   app_publish,
   app_delete,

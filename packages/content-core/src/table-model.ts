@@ -829,6 +829,15 @@ export type TableVisibility = 'private' | 'public';
 
 export type TableTabInfo = { id: string; name: string; rows: number; columns: number };
 
+/** Present when the table is an APP TABLE: a derived, read-only view of one
+ *  table inside a mini-app's own SQLite database. The app is the master — the
+ *  grid refuses edits here and re-materializes after app writes. */
+export type TableAppLink = {
+  appId: string;
+  appName: string | null;
+  sqliteTable: string;
+};
+
 export type TableRow = {
   id: string;
   title: string;
@@ -840,6 +849,8 @@ export type TableRow = {
    *  extractor generates and may replace. */
   description: string | null;
   visibility: TableVisibility;
+  /** Set when this is an app table (see `TableAppLink`); null/absent otherwise. */
+  appLink?: TableAppLink | null;
   /** Quick stats for the list (cheap to compute from the doc). */
   columnCount: number;
   rowCount: number;

@@ -18,7 +18,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
-import { db, nodes, tables, notifyNodeIngested, type Node } from '@mantle/db';
+import { db, nodes, tables, appTableExports, notifyNodeIngested, type Node } from '@mantle/db';
 import { existsSync, renameSync, rmSync, statSync } from 'node:fs';
 import {
   MATERIALIZE_MAX,
@@ -68,6 +68,53 @@ export type { TableRow, TableDetail, TableSort, TableVisibility, TableTabInfo };
 
 export const TABLES_ROOT_LABEL = 'tables';
 
+/** Thrown when a grid edit reaches an APP TABLE — a table linked to a mini-app
+ *  as a derived export view. The app's SQLite is the master; the only writer
+ *  here is the sync (which passes `appSync`). */
+export class AppBoundTableError extends Error {
+  constructor(appName: string | null) {
+    super(
+      `this is an app table — it mirrors the "${appName ?? 'linked'}" app's own database and is read-only here; edit the data in the app (the table refreshes automatically), or remove the export with app_table_export_remove`,
+    );
+    this.name = 'AppBoundTableError';
+  }
+}
+
+/** The export link for a table, or null. Authoritative (the `nodes.data.appLink`
+ *  mark is a denormalized copy for DTOs; the guard trusts only this row). */
+async function appExportLinkOf(tableNodeId: string) {
+  const [row] = await db
+    .select({ appNodeId: appTableExports.appNodeId, sqliteTable: appTableExports.sqliteTable })
+    .from(appTableExports)
+    .where(eq(appTableExports.tableNodeId, tableNodeId))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Refuse grid mutation on an app-bound table unless the caller is the export
+ *  sync itself. Metadata edits (updateTable) stay allowed and don't call this. */
+async function assertTableWritable(tableNodeId: string, appSync?: boolean): Promise<void> {
+  if (appSync) return;
+  const link = await appExportLinkOf(tableNodeId);
+  if (!link) return;
+  const [app] = await db
+    .select({ title: nodes.title })
+    .from(nodes)
+    .where(eq(nodes.id, link.appNodeId))
+    .limit(1);
+  throw new AppBoundTableError(app?.title ?? null);
+}
+
+function appLinkOf(d: Record<string, unknown>): TableRow['appLink'] {
+  const l = d.appLink as Record<string, unknown> | undefined;
+  if (!l || typeof l.appId !== 'string' || typeof l.sqliteTable !== 'string') return null;
+  return {
+    appId: l.appId,
+    appName: typeof l.appName === 'string' ? l.appName : null,
+    sqliteTable: l.sqliteTable,
+  };
+}
+
 function rowOf(n: Node, counts: { columnCount: number; rowCount: number }): TableRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   return {
@@ -78,6 +125,7 @@ function rowOf(n: Node, counts: { columnCount: number; rowCount: number }): Tabl
     summary: typeof d.summary === 'string' ? d.summary : null,
     description: typeof d.description === 'string' ? d.description : null,
     visibility: d.visibility === 'public' ? 'public' : 'private',
+    appLink: appLinkOf(d),
     columnCount: counts.columnCount,
     rowCount: counts.rowCount,
     createdAt: n.createdAt.toISOString(),
@@ -334,6 +382,7 @@ export async function applyTableOps(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!node) return null;
+  await assertTableWritable(id);
   return withTableRegistryLock(id, async (tx, locked) => {
     if (!locked) return null;
     if (opts.ifRev !== undefined && locked.draftRev !== opts.ifRev) {
@@ -580,7 +629,7 @@ export async function saveTableDraft(
   ownerId: string,
   id: string,
   data: TableDoc | WorkbookDoc,
-  opts: { ifRev?: number; replace?: boolean } = {},
+  opts: { ifRev?: number; replace?: boolean; appSync?: boolean } = {},
 ): Promise<SaveTableDraftResult | null> {
   const [row] = await db
     .select({ id: nodes.id, title: nodes.title })
@@ -588,6 +637,7 @@ export async function saveTableDraft(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return null;
+  await assertTableWritable(id, opts.appSync);
   const workbook = isWorkbook(data) ? ensureWorkbookDoc(data) : null;
   const doc = workbook ? null : ensureTableDoc(data as TableDoc);
   const totalRows = workbook
@@ -655,6 +705,7 @@ export async function discardTableDraft(ownerId: string, id: string): Promise<bo
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return false;
+  await assertTableWritable(id);
   await withTableRegistryLock(id, async (tx, locked) => {
     if (locked?.storagePath) removeTableFile(draftAbsFor(locked.storagePath));
     await tx
@@ -676,6 +727,7 @@ export async function commitTable(
   ownerId: string,
   id: string,
   data?: TableDoc | WorkbookDoc,
+  opts: { appSync?: boolean } = {},
 ): Promise<TableDetail | null> {
   const [node] = await db
     .select()
@@ -683,6 +735,7 @@ export async function commitTable(
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!node) return null;
+  await assertTableWritable(id, opts.appSync);
 
   // ── Promote path (P3): no doc posted — publish the SERVER draft file. ──
   // The op route is the writer; commit is: lock → checkpoint → atomic rename
@@ -869,6 +922,9 @@ export async function deleteTable(ownerId: string, id: string): Promise<boolean>
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'table')))
     .limit(1);
   if (!row) return false;
+  // An app table can't be deleted out from under its export link — remove the
+  // export first (or delete the app; the link cascades either way).
+  await assertTableWritable(id);
   await db.delete(nodes).where(eq(nodes.id, id)); // `tables` row cascades.
   // Workbook files go AFTER the registry delete commits (a failed delete must
   // never leave a registry row pointing at removed files). Best-effort; the
