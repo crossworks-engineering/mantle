@@ -72,6 +72,52 @@ prod and NATREF brains there is not a single `.xls` or `.xlsb` — and
 - The `parse_document` trace's `parser` field gains `exceljs` and
   `legacy-sheet` in place of `sheetjs`.
 
+## Unreleased — a table exports as the workbook it actually is (branch feat/xlsx-export-polish)
+
+Downloading a table gave you one worksheet. Since Tables v2.1 a table has been
+a WORKBOOK — every sheet of an imported spreadsheet becomes a tab of the same
+table — so a six-tab table downloaded as its first tab, silently. Nothing said
+so. `renderXlsxWorkbook` now writes one worksheet per tab, in tab order.
+
+Markdown and CSV still export the open tab alone, on purpose: they are
+single-grid formats, and flattening six tabs into one CSV would interleave
+unrelated grids under one header.
+
+Tabs whose names collide after sanitising get a numeric suffix rather than
+throwing. Excel refuses duplicate sheet names, and `Q1/Q2` and `Q1?Q2` sanitise
+to the same thing, so the alternative was a download that never happened.
+
+### The file should be readable the moment it opens
+
+That is the only reason to prefer .xlsx over CSV, so the export now applies a
+house style instead of shipping bare data:
+
+- A frozen, filterable header on a slate band, white and bold.
+- Columns sized from their contents, floor 10 and ceiling 60 characters.
+- Alternate rows banded with a hairline tint.
+- Numbers right, checkboxes centred, text left.
+- Dates as real date cells formatted `yyyy-mm-dd`, so a shared export cannot be
+  read as 3 April in one office and 4 March in another.
+- `url` columns become real hyperlinks, when the value is actually navigable.
+- The totals row banded and ruled off from the data.
+
+Two constraints shaped the palette. It has to survive greyscale printing, and
+it cannot fight the reader's own dark mode, since a fill we write is fixed
+forever. So nothing carries meaning by colour, and the great majority of cells
+are left unfilled.
+
+### Three bugs the polish surfaced
+
+- **A money column showed `#######`.** Widths were measured from the STORED
+  value, so `12500` was sized as 5 characters when it displays as
+  `USD 12,500.00`, 13. Totals are wider still than any row they sum, so they
+  are computed before the widths are set now.
+- **A leading total was replaced by the word "Totals".** The label was written
+  on a falsy check, so a first column whose sum came to 0 lost it. The label
+  now goes to the first column that has no aggregate of its own.
+- **A row COUNT inherited its column's money format**, so `count` on a currency
+  column rendered the count as an amount.
+
 ## Unreleased — the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
 
 Every presenter in `@mantle/share-ui` was written for one surface: the

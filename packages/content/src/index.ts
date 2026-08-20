@@ -665,7 +665,12 @@ export {
 } from './render-page-email';
 
 export { renderDocx, type RenderDocxOptions, type LoadedImage } from './render-docx';
-export { renderXlsx, type RenderXlsxOptions } from './render-xlsx';
+export {
+  renderXlsx,
+  renderXlsxWorkbook,
+  type RenderXlsxOptions,
+  type RenderXlsxSheet,
+} from './render-xlsx';
 export {
   resolveExport,
   EXPORT_MIME,

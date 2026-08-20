@@ -7,7 +7,7 @@
  * Dispatch by node type:
  *   - `page`  → .docx  (render the stored ProseMirror doc)
  *   - `note`  → .docx  (markdown → ProseMirror via `markdownToDoc`, then render)
- *   - `table` → .xlsx  (render the typed TableDoc)
+ *   - `table` → .xlsx  (the whole workbook: one worksheet per tab)
  *
  * Image embedding for pages is delegated to an injected `loadImage` callback so
  * this package stays free of a `@mantle/files` dependency (the caller wires it).
@@ -21,7 +21,7 @@ import { getTable } from './tables';
 import { markdownToDoc } from './markdown-to-doc';
 import { docToMarkdown } from './doc-to-markdown';
 import { renderDocx, type LoadedImage } from './render-docx';
-import { renderXlsx } from './render-xlsx';
+import { renderXlsx, renderXlsxWorkbook, type RenderXlsxSheet } from './render-xlsx';
 import { tableToText, tableToCsv } from './table-to-text';
 
 export type ExportFormat = 'docx' | 'xlsx' | 'md' | 'csv' | 'svg';
@@ -159,7 +159,30 @@ export async function resolveExport(
     if (opts.format === 'csv') {
       return result(Buffer.from(tableToCsv(table.data), 'utf8'), 'csv', 'table', table.title);
     }
-    const bytes = await renderXlsx(table.data, { title: table.title });
+    // .xlsx is the only format that can carry a whole workbook, so it does:
+    // one worksheet per tab, in tab order. Markdown and CSV are single-grid
+    // formats and keep rendering the open tab alone — flattening six tabs into
+    // one CSV would silently interleave unrelated grids.
+    //
+    // `getTable` materialises ONE tab per call (the sqlite file is only opened
+    // for the tab asked for), so a workbook costs one call per tab. A table
+    // with no tab list is a pre-v2.1 single-grid table; `table.data` is it.
+    const tabs = table.tabs ?? [];
+    if (tabs.length <= 1) {
+      const bytes = await renderXlsx(table.data, { title: table.title });
+      return result(bytes, 'xlsx', 'table', table.title);
+    }
+    const sheets: RenderXlsxSheet[] = [];
+    for (const tab of tabs) {
+      // Reuse the already-materialised doc for the tab we were handed, rather
+      // than opening the file a second time for it.
+      const doc =
+        tab.id === table.tabId
+          ? table.data
+          : (await getTable(ownerId, nodeId, { tabId: tab.id }))?.data;
+      if (doc) sheets.push({ name: tab.name, doc });
+    }
+    const bytes = await renderXlsxWorkbook(sheets);
     return result(bytes, 'xlsx', 'table', table.title);
   }
 
