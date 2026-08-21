@@ -16,10 +16,12 @@
  *
  * So an MCP client (Claude Code / Desktop) can talk to a responder agent as if
  * it were the user, exercise the real behaviour, and leave the agent's
- * conversation history untouched. Tool SIDE EFFECTS still happen (a note gets
- * created, an email queues on /pending) — only the conversation record is
- * suppressed. Multi-turn is caller-held: the caller passes prior turns in
- * `history` and resends them each call.
+ * conversation history untouched. By default tool SIDE EFFECTS still happen (a
+ * note gets created, an email queues on /pending) — only the conversation
+ * record is suppressed. Pass `readOnly` to narrow the allowlist to tools that
+ * mutate nothing and send nothing outward, which is what makes this safe to
+ * point at a live box as a post-deploy canary. Multi-turn is caller-held: the
+ * caller passes prior turns in `history` and resends them each call.
  *
  * The turn runs inside its own trace (kind 'manual', subject the agent) so the
  * LLM call + every tool dispatch is visible in /traces, exactly like a real
@@ -67,6 +69,11 @@ export type RunSimulatedResponderTurnOptions = {
   /** Slugs removed from the tool allowlist AFTER group resolution — lets the
    *  caller run the persona with a narrowed tool set. */
   excludeToolSlugs?: string[];
+  /** Read-only turn: narrow the resolved allowlist to tools the registry
+   *  marks as mutating nothing and sending nothing outward. Default-deny, so
+   *  anything unmarked (a new write builtin, any user-defined API tool) is
+   *  dropped. Combines with `excludeToolSlugs` — both are applied. */
+  readOnly?: boolean;
   /** Cap the tool-loop iteration ceiling for this turn. Clamped to a positive
    *  int ≤ 30 (matches the responder/delegation clamp). */
   maxIterations?: number;
@@ -152,6 +159,7 @@ export async function runSimulatedResponderTurn(
     prefs,
     logPrefix: '[mcp-sim]',
     ...(opts.excludeToolSlugs?.length ? { excludeToolSlugs: opts.excludeToolSlugs } : {}),
+    ...(opts.readOnly ? { readOnly: true } : {}),
   });
 
   // Apply the caller's iteration cap by overriding the assembly's loop
@@ -182,6 +190,7 @@ export async function runSimulatedResponderTurn(
         model: agent.model,
         agent_slug: agent.slug,
         tool_count: assembled.allowedTools.length,
+        read_only: opts.readOnly === true,
       },
     },
     async () => {

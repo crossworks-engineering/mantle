@@ -29,6 +29,7 @@ import type { Agent } from '@mantle/db';
 import {
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
+  isBuiltinReadOnly,
   resolveAgentSkills,
   resolveAgentToolGroups,
   resolveAgentTools,
@@ -114,6 +115,12 @@ export type AssembleResponderTurnOptions = {
    *  Enforced here at tool resolution so a manifest change that re-adds the
    *  slugs to a group can't bypass the switch. */
   excludeToolSlugs?: readonly string[];
+  /** Read-only turn: keep ONLY tools the registry marks safe (mutate nothing,
+   *  send nothing outward). Applied LAST, after every other add — including
+   *  the heartbeat affordance — so nothing can slip a write tool back in.
+   *  Default-deny, so an unmarked or user-defined tool is dropped. Used by
+   *  the MCP `read_only` preset; see `isBuiltinReadOnly`. */
+  readOnly?: boolean;
 };
 
 export type AssembledResponderTurn = {
@@ -246,6 +253,13 @@ export async function assembleResponderTurn(
         ...HEARTBEAT_RESPONDER_TOOLS.filter((s) => !allowedToolSlugs.includes(s)),
       ];
     }
+  }
+  // Read-only preset, applied LAST so it also strips anything the heartbeat
+  // affordance just added. Default-deny: only registry-marked reads survive,
+  // so a new write builtin — or any user-defined API/recipe tool — is out
+  // without this file ever being touched again.
+  if (opts.readOnly) {
+    allowedToolSlugs = allowedToolSlugs.filter((s) => isBuiltinReadOnly(s));
   }
   const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 

@@ -58,6 +58,7 @@ function recurOpt(v: unknown): RecurFreq | undefined {
 
 const event_list: BuiltinToolDef = {
   slug: 'event_list',
+  readOnly: true,
   name: 'List calendar events',
   description:
     "List the user's calendar events, **date-windowed**. `window` defaults to 'upcoming' — pass 'past' to look back or 'all' to include both. `query` substring-matches title/body/location/summary; `tag` narrows to events with that tag. Returns full event rows. " +
@@ -100,6 +101,7 @@ const event_list: BuiltinToolDef = {
 
 const event_get: BuiltinToolDef = {
   slug: 'event_get',
+  readOnly: true,
   name: 'Get a calendar event',
   description:
     'Read one event by id — full row including body, location, starts_at, ends_at. ' +

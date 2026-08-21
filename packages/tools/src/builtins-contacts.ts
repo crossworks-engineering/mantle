@@ -86,6 +86,7 @@ function compact(c: ContactRow) {
 
 const contact_find: BuiltinToolDef = {
   slug: 'contact_find',
+  readOnly: true,
   name: 'Find a contact',
   description:
     "Look up one of the user's contacts by name OR email (substring, case-insensitive). Use this FIRST whenever the user refers to someone by name ('email Modular', 'text Sarah') — it returns the contact's id, email, and cell so you can pass them to email_send / sms_send. Returns up to `limit` matches, most-recently-updated first; if you get more than one back, pick the obvious match or ask the user to disambiguate.",
@@ -118,6 +119,7 @@ const contact_find: BuiltinToolDef = {
 
 const contact_list: BuiltinToolDef = {
   slug: 'contact_list',
+  readOnly: true,
   name: 'List contacts',
   description:
     "Browse the user's contacts, newest-updated first. Useful when the user asks 'who do I know?' or 'show me my contacts'. For finding a specific person, prefer `contact_find` — it's narrower.",
@@ -150,6 +152,7 @@ const contact_list: BuiltinToolDef = {
 
 const contact_get: BuiltinToolDef = {
   slug: 'contact_get',
+  readOnly: true,
   preconditions: CONTACT_ID_PRE,
   name: 'Read a contact',
   description: 'Fetch one contact by its node id. Returns the full record including counters.',

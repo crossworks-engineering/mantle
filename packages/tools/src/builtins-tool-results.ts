@@ -16,6 +16,7 @@ import { readResultPage, grepResult, queryResult, DEFAULT_RESULT_HANDLING } from
 
 const read_result: BuiltinToolDef = {
   slug: 'read_result',
+  readOnly: true,
   name: 'Read a stored (large) tool result',
   description:
     "Read a tool result that was too large to inline and was stored under a handle (it came back as {_spilled:true, handle:'tr_…'}). Three modes: `query` for a semantic search within the result (best for 'find where it says X'), `grep` for an exact substring with surrounding context, or `page` to read linearly (1-indexed). Pass exactly one of query/grep/page; defaults to page 1. Don't answer from a cut-off preview — read the part you need first.",

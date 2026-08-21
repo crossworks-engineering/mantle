@@ -23,6 +23,10 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@mantle/agent-runtime', () => ({
+  // Arbitrary stand-in so these tests can control the split: '-tool-a' reads,
+  // everything else writes. The REAL classification is tested where it lives,
+  // in packages/tools/src/read-only.test.ts.
+  isBuiltinReadOnly: (slug: string) => slug.endsWith('-tool-a'),
   // Renders EVERY argument so a call site that silently drops one (the
   // house-style regression this mock previously could not see, and now the
   // agent name that `{{name}}` resolves from) goes red.
@@ -239,6 +243,39 @@ describe('assembleResponderTurn — tools', () => {
     });
     expect(h.resolvedToolSlugs[0]).toEqual(['team-read-tool-a']);
     expect(a.allowedTools.map((t) => t.slug)).toEqual(['team-read-tool-a']);
+  });
+
+  it('readOnly keeps only registry-marked reads', async () => {
+    const a = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ toolGroupSlugs: ['memory-core'] }),
+      readOnly: true,
+    });
+    expect(a.allowedTools.map((t) => t.slug)).toEqual(['memory-core-tool-a']);
+  });
+
+  it('readOnly is applied LAST — it strips the heartbeat write tools too', async () => {
+    // The heartbeat affordance is injected AFTER the exclude filter. If the
+    // read-only filter ran before it, a probe would silently regain
+    // heartbeat_update_state / _complete / _snooze — all writes.
+    h.hasHeartbeats = true;
+    const a = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ toolGroupSlugs: ['memory-core'] }),
+      heartbeatSurface: { kind: 'web' },
+      readOnly: true,
+    });
+    expect(a.allowedTools.map((t) => t.slug)).toEqual(['memory-core-tool-a']);
+  });
+
+  it('readOnly composes with excludeToolSlugs — both narrow', async () => {
+    const a = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ toolGroupSlugs: ['alpha', 'beta'] }),
+      excludeToolSlugs: ['alpha-tool-a'],
+      readOnly: true,
+    });
+    expect(a.allowedTools.map((t) => t.slug)).toEqual(['beta-tool-a']);
   });
 });
 

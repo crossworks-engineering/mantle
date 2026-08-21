@@ -127,6 +127,7 @@ const app_create: BuiltinToolDef = {
 
 const app_get: BuiltinToolDef = {
   slug: 'app_get',
+  readOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Get a mini app',
   description:
@@ -545,6 +546,7 @@ const app_db_seed: BuiltinToolDef = {
 
 const app_list: BuiltinToolDef = {
   slug: 'app_list',
+  readOnly: true,
   name: 'List mini apps',
   description:
     "List the owner's mini apps, newest first. Optional `query` substring-matches name/source/summary; `tag` filters. Source is omitted to stay small.",
@@ -645,6 +647,7 @@ const app_delete: BuiltinToolDef = {
 
 const app_db_list: BuiltinToolDef = {
   slug: 'app_db_list',
+  readOnly: true,
   name: 'List app databases',
   description:
     "List the user's mini apps that have their OWN database, each with its tables (the CREATE statements reveal the columns). Use this FIRST to discover what app data exists, then `app_db_query` to read rows. Read-only.",
@@ -667,6 +670,7 @@ const app_db_list: BuiltinToolDef = {
 
 const app_db_query: BuiltinToolDef = {
   slug: 'app_db_query',
+  readOnly: true,
   preconditions: APP_DB_ID_PRE,
   name: 'Query an app database',
   description:

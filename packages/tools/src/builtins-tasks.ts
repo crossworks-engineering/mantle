@@ -97,6 +97,7 @@ const TODOS_SCHEMA = {
 
 const task_list: BuiltinToolDef = {
   slug: 'task_list',
+  readOnly: true,
   name: 'List tasks',
   description:
     "List the user's tasks, **sorted not-done-first then by board order and due date**. `status` filters by lifecycle state ('active' = everything not done); `priority` filters by urgency; `query` substring-matches title/body/summary; `tag` narrows to a tag. " +
@@ -164,6 +165,7 @@ const task_list: BuiltinToolDef = {
 
 const task_get: BuiltinToolDef = {
   slug: 'task_get',
+  readOnly: true,
   name: 'Get a task',
   description:
     'Read one task by id — full row including body, status, priority, due_at. ' +
@@ -368,6 +370,7 @@ const task_delete: BuiltinToolDef = {
 
 const task_comments_list: BuiltinToolDef = {
   slug: 'task_comments_list',
+  readOnly: true,
   name: 'List task comments',
   description:
     "Read a task's comment thread, oldest first — who said what (`authorKind` owner/member/agent + `authorName`) and when. Use before commenting so you reply in context, or when the user asks what was discussed on a task. For the task's own fields use `task_get`.",

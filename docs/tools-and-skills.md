@@ -451,7 +451,7 @@ shipped writing guidance by recency.
 
 `composeSystemPromptWithSkills` is the single composition seam, so the block
 rides every path: the shared responder assembly (`assembleResponderTurn`,
-web, mobile, Telegram, team, forum, sim/`respond_as_agent`, durable-runner
+web, mobile, Telegram, team, forum, sim/`ask_responder`, durable-runner
 resume), delegated specialists (`invoke-agent`, which loads the owner's
 preferences itself and soft-fails so a preferences blip never sinks a
 delegation), heartbeat firing, the Studio sandbox, and Studio's

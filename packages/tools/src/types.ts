@@ -195,6 +195,21 @@ export type BuiltinToolDef = {
   inputSchema: Record<string, unknown>;
   /** Whether the tool-call loop should pause for operator approval. */
   requiresConfirm?: boolean;
+  /** Marks this builtin as SAFE FOR A READ-ONLY TURN: it mutates nothing the
+   *  owner owns and sends nothing outward. Consumed by the `read_only` turn
+   *  preset (see `isBuiltinReadOnly`), which is DEFAULT-DENY: a tool without
+   *  this flag is excluded, so a new write/egress builtin is locked out the
+   *  day it ships without anyone updating a list. That is the whole point —
+   *  do NOT invert it into a `writes: true` flag.
+   *
+   *  Set it only when ALL of these hold:
+   *    1. No write to the owner's data (no node/file/table/app row touched).
+   *    2. Nothing leaves the box — no email, no Telegram, no arbitrary URL.
+   *    3. No hand-off to something that could do either (`invoke_agent` is
+   *       NOT read-only: the child runs its own, possibly writing, grants).
+   *  If you are unsure, leave it off. Excluding a safe read costs a probe
+   *  some reach; including an unsafe one sends real mail. */
+  readOnly?: true;
   /** Referential requirements checked centrally pre-dispatch — see
    *  {@link ToolPrecondition}. */
   preconditions?: readonly ToolPrecondition[];

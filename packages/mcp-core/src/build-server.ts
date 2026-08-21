@@ -37,7 +37,7 @@ import {
   readSection,
 } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
-import { runSimulatedResponderTurn } from '@mantle/assistant-runtime';
+import { describeResponderPersona, runSimulatedResponderTurn } from '@mantle/assistant-runtime';
 import { accountForChat, editMessage, reactToMessage, sendMessage } from '@mantle/telegram';
 import {
   createFolder,
@@ -1394,105 +1394,179 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   const SIM_MAX_HISTORY = 40;
   const SIM_MAX_CONTENT = 8000;
   const SIM_ARGS_CLIP = 500;
+  /** Shared handler for `ask_responder` and its deprecated alias. */
+  async function askResponder(a: {
+    message: string;
+    agent_slug?: string;
+    history?: { role: 'user' | 'assistant'; content: string }[];
+    exclude_tools?: string[];
+    read_only?: boolean;
+    max_iterations?: number;
+    include_tool_calls?: boolean;
+    toolName: string;
+  }) {
+    // Cap the caller-held transcript before it reaches the model — an
+    // unbounded resend would blow the context budget. Reject with a corrective
+    // (say the limit + the fix) rather than silently truncating history.
+    if (a.message.length > SIM_MAX_CONTENT) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text:
+              `${a.toolName}: message is ${a.message.length} chars (max ${SIM_MAX_CONTENT}) — ` +
+              'shorten it, or put the bulk in a file/page and reference it.',
+          },
+        ],
+        isError: true,
+      };
+    }
+    if (a.history && a.history.length > SIM_MAX_HISTORY) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text:
+              `${a.toolName}: history has ${a.history.length} turns (max ${SIM_MAX_HISTORY}) — ` +
+              'drop the oldest turns and resend, or start a fresh transcript.',
+          },
+        ],
+        isError: true,
+      };
+    }
+    const tooLong = (a.history ?? []).findIndex((t) => t.content.length > SIM_MAX_CONTENT);
+    if (tooLong >= 0) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text:
+              `${a.toolName}: history entry ${tooLong} is ${a.history![tooLong]!.content.length} ` +
+              `chars (max ${SIM_MAX_CONTENT}) — shorten or summarise that turn and resend.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    try {
+      const res = await runSimulatedResponderTurn(ownerId, {
+        message: a.message,
+        ...(a.agent_slug ? { agentSlug: a.agent_slug } : {}),
+        ...(a.history ? { history: a.history } : {}),
+        ...(a.exclude_tools ? { excludeToolSlugs: a.exclude_tools } : {}),
+        ...(a.read_only ? { readOnly: true } : {}),
+        ...(typeof a.max_iterations === 'number' ? { maxIterations: a.max_iterations } : {}),
+      });
+      const withCalls = a.include_tool_calls !== false;
+      return jsonReply({
+        reply: res.reply,
+        agent: res.agent,
+        read_only: a.read_only === true,
+        ...(withCalls
+          ? {
+              tool_calls: res.toolCalls.map((tc) => ({
+                slug: tc.slug,
+                status: tc.status,
+                duration_ms: tc.durationMs,
+                // Clip args so a large payload doesn't blow the reply budget.
+                args:
+                  tc.argsJson.length > SIM_ARGS_CLIP
+                    ? `${tc.argsJson.slice(0, SIM_ARGS_CLIP)}…`
+                    : tc.argsJson,
+                ...(tc.error ? { error: tc.error } : {}),
+              })),
+            }
+          : {}),
+        tool_stats: res.toolStats,
+        pending_ids: res.pendingIds,
+        trace_id: res.traceId,
+        empty_reply_substituted: res.emptyReplySubstituted,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        content: [{ type: 'text' as const, text: `${a.toolName} failed: ${msg}` }],
+        isError: true,
+      };
+    }
+  }
+
+  const ASK_RESPONDER_SCHEMA = {
+    message: z.string().min(1),
+    agent_slug: z.string().optional(),
+    history: z
+      .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() }))
+      .optional(),
+    exclude_tools: z.array(z.string()).optional(),
+    read_only: z.boolean().optional(),
+    max_iterations: z.number().int().min(1).max(30).optional(),
+    include_tool_calls: z.boolean().optional(),
+  };
+
+  server.tool(
+    'ask_responder',
+    "Ask one of the user's responder agents a question and get ITS answer, routed through " +
+      'its own persona, memory and tools. Runs ONE real turn server-side: composed persona ' +
+      '(identity + skills), real retrieval, real granted tools, real delegation — with every ' +
+      "guard and confirm-gate ENFORCED. Writes nothing to the agent's conversation history, " +
+      "so it's safe to probe repeatedly. **Tools EXECUTE by default: side effects happen and " +
+      'confirm-gated calls land on /pending (`pending_ids`). Pass `read_only` for a probe that ' +
+      'cannot write or send anything** — the right default for a post-deploy canary. Multi-turn ' +
+      'is caller-held: keep the transcript and resend it in `history`. Omit `agent_slug` for the ' +
+      'default responder. To answer AS the responder in your own loop instead, use ' +
+      '`ask_as_responder`.',
+    ASK_RESPONDER_SCHEMA,
+    async (a) => askResponder({ ...a, toolName: 'ask_responder' }),
+  );
+
+  // Deprecated alias. The old name read as "respond AS the agent", which is
+  // what `ask_as_responder` does — this tool gets a response FROM the agent.
+  // Kept for one release so pinned MCP clients don't break on upgrade.
   server.tool(
     'respond_as_agent',
-    "Talk to one of the user's responder agents as if you were the user, and get its reply. " +
-      "Runs ONE real turn of that agent's pipeline — composed persona (identity + skills), real " +
-      'memory retrieval, and its real granted tools, which EXECUTE: side effects happen and ' +
-      'confirm-gated calls land on /pending (returned as `pending_ids`). Writes NOTHING to the ' +
-      "agent's conversation history, so it's safe to probe repeatedly. Multi-turn is caller-held " +
-      '— keep the transcript yourself and resend it in `history` every call. Omit `agent_slug` ' +
-      'for the default responder; set `include_tool_calls` false to drop the per-call trail.',
+    'DEPRECATED — renamed to `ask_responder`; use that instead. Identical behaviour, kept ' +
+      'for one release so existing clients keep working. The old name was backwards: this ' +
+      'gets a response FROM a responder, it does not let you respond AS one (that is ' +
+      '`ask_as_responder`).',
+    ASK_RESPONDER_SCHEMA,
+    async (a) => askResponder({ ...a, toolName: 'respond_as_agent' }),
+  );
+
+  server.tool(
+    'ask_as_responder',
+    "Adopt a responder's persona and answer as it YOURSELF, in your own loop. Returns the " +
+      'composed system prompt (identity + skills + house style), the skill list, the tool slugs ' +
+      'it would hold and its delegation edges — no model call, no tool run, nothing written. ' +
+      'Use when you want to sound and reason like the responder across a long stretch of your ' +
+      'own work. **What comes back is teaching, NOT permission: nothing here constrains you.** ' +
+      '`delegate_to` is a list rather than a gate, `tool_slugs` is what the responder would be ' +
+      'granted rather than what you can call, and confirm-gating, /pending parking and the loop ' +
+      'guards stay on the server. When the rules must actually be enforced, use `ask_responder` ' +
+      'and let the brain run the turn. Pass `read_only` to see the narrowed tool list a ' +
+      'read-only probe would get.',
     {
-      message: z.string().min(1),
       agent_slug: z.string().optional(),
-      history: z
-        .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() }))
-        .optional(),
-      exclude_tools: z.array(z.string()).optional(),
-      max_iterations: z.number().int().min(1).max(30).optional(),
-      include_tool_calls: z.boolean().optional(),
+      read_only: z.boolean().optional(),
     },
-    async ({ message, agent_slug, history, exclude_tools, max_iterations, include_tool_calls }) => {
-      // Cap the caller-held transcript before it reaches the model — an
-      // unbounded resend would blow the context budget. Reject with a corrective
-      // (say the limit + the fix) rather than silently truncating history.
-      if (message.length > SIM_MAX_CONTENT) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                `respond_as_agent: message is ${message.length} chars (max ${SIM_MAX_CONTENT}) — ` +
-                'shorten it, or put the bulk in a file/page and reference it.',
-            },
-          ],
-          isError: true,
-        };
-      }
-      if (history && history.length > SIM_MAX_HISTORY) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                `respond_as_agent: history has ${history.length} turns (max ${SIM_MAX_HISTORY}) — ` +
-                'drop the oldest turns and resend, or start a fresh transcript.',
-            },
-          ],
-          isError: true,
-        };
-      }
-      const tooLong = (history ?? []).findIndex((t) => t.content.length > SIM_MAX_CONTENT);
-      if (tooLong >= 0) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                `respond_as_agent: history entry ${tooLong} is ${history![tooLong]!.content.length} ` +
-                `chars (max ${SIM_MAX_CONTENT}) — shorten or summarise that turn and resend.`,
-            },
-          ],
-          isError: true,
-        };
-      }
+    async ({ agent_slug, read_only }) => {
       try {
-        const res = await runSimulatedResponderTurn(ownerId, {
-          message,
+        const p = await describeResponderPersona(ownerId, {
           ...(agent_slug ? { agentSlug: agent_slug } : {}),
-          ...(history ? { history } : {}),
-          ...(exclude_tools ? { excludeToolSlugs: exclude_tools } : {}),
-          ...(typeof max_iterations === 'number' ? { maxIterations: max_iterations } : {}),
+          ...(read_only ? { readOnly: true } : {}),
         });
-        const withCalls = include_tool_calls !== false;
         return jsonReply({
-          reply: res.reply,
-          agent: res.agent,
-          ...(withCalls
-            ? {
-                tool_calls: res.toolCalls.map((tc) => ({
-                  slug: tc.slug,
-                  status: tc.status,
-                  duration_ms: tc.durationMs,
-                  // Clip args so a large payload doesn't blow the reply budget.
-                  args:
-                    tc.argsJson.length > SIM_ARGS_CLIP
-                      ? `${tc.argsJson.slice(0, SIM_ARGS_CLIP)}…`
-                      : tc.argsJson,
-                  ...(tc.error ? { error: tc.error } : {}),
-                })),
-              }
-            : {}),
-          tool_stats: res.toolStats,
-          pending_ids: res.pendingIds,
-          trace_id: res.traceId,
-          empty_reply_substituted: res.emptyReplySubstituted,
+          agent: p.agent,
+          system_prompt: p.systemPrompt,
+          skills: p.skills,
+          tool_slugs: p.toolSlugs,
+          delegate_to: p.delegateTo,
+          read_only: p.readOnly,
+          advisory: p.advisory,
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return {
-          content: [{ type: 'text' as const, text: `respond_as_agent failed: ${msg}` }],
+          content: [{ type: 'text' as const, text: `ask_as_responder failed: ${msg}` }],
           isError: true,
         };
       }

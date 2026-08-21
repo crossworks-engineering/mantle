@@ -103,6 +103,7 @@ const note_create: BuiltinToolDef = {
 
 const note_list: BuiltinToolDef = {
   slug: 'note_list',
+  readOnly: true,
   name: 'List notes',
   description:
     "List the owner's notes, newest first. `query` substring-matches title/body/summary; `tag` " +
@@ -134,6 +135,7 @@ const note_list: BuiltinToolDef = {
 
 const note_get: BuiltinToolDef = {
   slug: 'note_get',
+  readOnly: true,
   name: 'Get one note by id',
   description:
     'Fetch a single note by id — full row including the markdown content. Use after `note_list` or ' +

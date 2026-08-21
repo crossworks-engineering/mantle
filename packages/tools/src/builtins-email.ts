@@ -394,6 +394,7 @@ const email_page: BuiltinToolDef = {
 
 const email_list: BuiltinToolDef = {
   slug: 'email_list',
+  readOnly: true,
   name: 'List recent emails',
   description:
     'Recent emails newest-first (sorted by `internal_date` desc, NOT by ingest time). ' +
@@ -489,6 +490,7 @@ export function htmlToPlainText(html: string): string {
 
 const email_get: BuiltinToolDef = {
   slug: 'email_get',
+  readOnly: true,
   name: 'Get one email by id',
   description:
     'Fetch a single email by id — headers (from/to/cc, subject, date, folder, flags) plus the ' +

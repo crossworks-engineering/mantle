@@ -52,3 +52,26 @@ export function redactArgsForLogging(
   }
   return out;
 }
+
+/** Is this slug a builtin explicitly marked safe for a read-only turn?
+ *
+ *  DEFAULT-DENY, and that is load-bearing: an unknown slug, a user-defined
+ *  API/recipe tool, or a brand-new builtin whose author never considered the
+ *  question all answer `false`. The read-only preset therefore never has to be
+ *  told about a new write tool — it already excludes everything it has not
+ *  been told is safe. Mirrors `getBuiltinRedactFields`: an O(1) registry
+ *  lookup for one piece of per-tool metadata. */
+export function isBuiltinReadOnly(slug: string): boolean {
+  return REGISTRY.get(slug)?.readOnly === true;
+}
+
+/** Every registered builtin currently marked read-only, sorted. Used by the
+ *  drift test and by `tool_catalog`-style introspection — NOT by the turn
+ *  path, which filters the agent's own resolved allowlist through
+ *  {@link isBuiltinReadOnly} instead of intersecting with this set. */
+export function listReadOnlyBuiltinSlugs(): string[] {
+  return Array.from(REGISTRY.values())
+    .filter((d) => d.readOnly === true)
+    .map((d) => d.slug)
+    .sort();
+}

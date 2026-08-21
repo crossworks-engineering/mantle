@@ -79,3 +79,8 @@ export {
   type VisionResult,
   type AttachmentExtract,
 } from './attachments';
+
+/** Re-exported from @mantle/tools so turn-assembly code can ask "is this tool
+ *  safe for a read-only turn?" without importing the whole builtin barrel
+ *  (which drags every domain package into the module graph). */
+export { isBuiltinReadOnly, listReadOnlyBuiltinSlugs } from '@mantle/tools';

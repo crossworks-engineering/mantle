@@ -128,6 +128,7 @@ const FOLDER_ID_PRE: readonly ToolPrecondition[] = [
 
 const search_nodes: BuiltinToolDef = {
   slug: 'search_nodes',
+  readOnly: true,
   name: 'Search nodes',
   description:
     "Hybrid full-text + semantic search across the user's entire Mantle (notes, files, emails, events, tasks, pages, telegram messages — everything). **Ranked by relevance, NOT by date.** " +
@@ -246,6 +247,7 @@ const search_nodes: BuiltinToolDef = {
 
 const search_chunks: BuiltinToolDef = {
   slug: 'search_chunks',
+  readOnly: true,
   name: 'Search document passages',
   description:
     'Semantic (vector) search over document passages — finds the most relevant *sections* inside long files, pages, emails, and documentation (not just whole-node hits). **Reach for this FIRST on a content question** ("what does the CoF procedure say about inventory grouping?"): it returns the exact passages, so you answer (and quote) without loading whole files into context. ' +
@@ -320,6 +322,7 @@ const search_chunks: BuiltinToolDef = {
 
 const read_section: BuiltinToolDef = {
   slug: 'read_section',
+  readOnly: true,
   name: 'Read a document section',
   description:
     "Read one SECTION of a long document in full and in order — the rung between `search_chunks` (scattered passages) and `file_read`/`node_read` (the entire document). Reach for this once you know WHERE the answer lives: feed a `search_chunks` hit's `nodeId` plus its `heading` (or an ordinal range) here to read the whole procedure / clause / table contiguously, WITHOUT loading the entire file into context. " +
@@ -385,6 +388,7 @@ const read_section: BuiltinToolDef = {
 
 const tree_list: BuiltinToolDef = {
   slug: 'tree_list',
+  readOnly: true,
   name: 'List tree children',
   description:
     "List children of a branch in the user's tree (the universal navigator — whatever kinds of nodes live under that branch). Pass `path` to scope (ltree, e.g. 'files.work'). Omit for top-level branches. " +
@@ -423,6 +427,7 @@ const tree_list: BuiltinToolDef = {
 
 const entity_search: BuiltinToolDef = {
   slug: 'entity_search',
+  readOnly: true,
   name: 'Search entities',
   description:
     'Resolve a name or alias to entities the user has accumulated (people, projects, places, orgs, events). Returns hits with similarity scores. Use this when the user mentions someone or something by name and you need their internal id.',
@@ -461,6 +466,7 @@ const entity_search: BuiltinToolDef = {
 
 const entity_neighbors: BuiltinToolDef = {
   slug: 'entity_neighbors',
+  readOnly: true,
   name: 'Walk entity neighbors',
   description:
     "Given an entity id, return connected entities one hop away (in both directions by default). Use after entity_search to expand context, e.g. 'who works with Sarah?' or 'what projects mention Lister?'.",
@@ -518,6 +524,7 @@ const entity_neighbors: BuiltinToolDef = {
 
 const graph_path: BuiltinToolDef = {
   slug: 'graph_path',
+  readOnly: true,
   name: 'Walk the entity graph (multi-hop)',
   description:
     "Multi-hop traversal of the knowledge graph — the relationships BETWEEN entities (e.g. 'Sarah works_at Lister', 'Lister supplies Acme'). Use for connection questions one hop can't answer: 'how is Sarah connected to Acme?' (pass from_id + to_id → shortest path) or 'what's within 2 hops of Lister?' (pass from_id only → reachable neighbourhood). Get ids from entity_search first. `relations` filters which verbs to follow; `directed:true` follows subject→object only (default treats edges as undirected for connectivity). For a single hop use entity_neighbors instead.",
@@ -584,6 +591,7 @@ const graph_path: BuiltinToolDef = {
 
 const entity_facts: BuiltinToolDef = {
   slug: 'entity_facts',
+  readOnly: true,
   name: 'List entity facts',
   description:
     'All facts the user has accumulated about a specific entity (what they KNOW about that person/place/thing). Returns currently-valid facts by default; set include_retired=true to see superseded history. ' +
@@ -627,6 +635,7 @@ const entity_facts: BuiltinToolDef = {
 
 const entity_mentions: BuiltinToolDef = {
   slug: 'entity_mentions',
+  readOnly: true,
   name: 'List entity mentions',
   description:
     'Content nodes (files, notes, emails, …) that mention a given entity, newest first. Returns title + per-node summary so the model can decide which to dig into. ' +
@@ -664,6 +673,7 @@ const entity_mentions: BuiltinToolDef = {
 
 const brain_capacity: BuiltinToolDef = {
   slug: 'brain_capacity',
+  readOnly: true,
   name: 'Check brain capacity',
   description:
     "Corpus size vs the split policy: document and passage-vector counts with a zone per axis — 'green' (no action), 'watch' (run recall checks, identify the growing category), 'split' (break the dominant category into a federated breakout brain). Use for capacity/health checks and scheduled monitoring; alert the user when the zone is not green. Read-only.",
@@ -679,6 +689,7 @@ const brain_capacity: BuiltinToolDef = {
 
 const folder_list: BuiltinToolDef = {
   slug: 'folder_list',
+  readOnly: true,
   name: 'List folders',
   description:
     "List folders (only) in the user's host-mirrored filesystem. Pass `parent` (ltree path, e.g. 'files.work') for that folder's immediate sub-folders; pass `tree: true` for every folder under the root. " +
@@ -713,6 +724,7 @@ const folder_list: BuiltinToolDef = {
 
 const file_list: BuiltinToolDef = {
   slug: 'file_list',
+  readOnly: true,
   name: 'List files in a folder',
   description:
     "List files (only) inside a specific folder. `parent_path` is the ltree path of the folder (e.g. 'files.work.lister-printer'). " +
@@ -739,6 +751,7 @@ const file_list: BuiltinToolDef = {
 
 const node_read: BuiltinToolDef = {
   slug: 'node_read',
+  readOnly: true,
   name: 'Read a node',
   description:
     'Universal reader — read the full content of any node by id. Returns title, type, tags, path, summary, and the full `data` blob (markdown body for notes, body+location+starts_at for events, status+due_at for tasks, etc.). ' +
@@ -1066,6 +1079,7 @@ const FILE_HEAD_CHARS = 4000;
 
 const file_read: BuiltinToolDef = {
   slug: 'file_read',
+  readOnly: true,
   name: 'Read a file',
   description:
     "Read a file's content by id. For text files (.md / .txt / .json / .yaml) returns the body as a utf-8 string. For binaries the extractor stores the parsed text (PDF / Word / Excel) as `data.text`, returned here so you can read or quote the document's actual contents. Returns `content: null` only when no text could be extracted (e.g. a scanned image with no OCR). " +
@@ -1170,6 +1184,7 @@ const file_read: BuiltinToolDef = {
 
 const file_get: BuiltinToolDef = {
   slug: 'file_get',
+  readOnly: true,
   name: 'Fetch file metadata',
   description:
     "Fetch a file's metadata (filename, mime type, size, sha) — no bytes. Use to confirm size/type before deciding to read a large/binary file. " +
@@ -1201,6 +1216,7 @@ const file_get: BuiltinToolDef = {
 
 const folder_get_by_path: BuiltinToolDef = {
   slug: 'folder_get_by_path',
+  readOnly: true,
   name: 'Look up folder by path',
   description:
     "Look up a folder's metadata + description by its ltree path. " +

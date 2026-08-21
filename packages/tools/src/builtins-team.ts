@@ -171,6 +171,7 @@ function memberSurfaceOf(
 
 const team_member_list: BuiltinToolDef = {
   slug: 'team_member_list',
+  readOnly: true,
   name: 'List team members you can notify',
   description:
     "List this brain's team members — display name and id only — so you can resolve a name the member mentioned ('let Deepthi know') to a `team_notify` recipient. Call it when you need an id, not routinely. Names may be ambiguous or absent: if you can't match one confidently, ASK the member which colleague they meant rather than guessing. For the owner-side view of team activity use `team_chat_list` instead.",
@@ -271,6 +272,7 @@ const team_notify: BuiltinToolDef = {
 
 const team_chat_list: BuiltinToolDef = {
   slug: 'team_chat_list',
+  readOnly: true,
   name: 'List team chat members',
   description:
     "List the brain's team members and their Team Chat activity: last message, thread size, membership since, token last used. Use for questions like 'who has been using team chat' or as the index before `team_chat_read`.",
@@ -287,6 +289,7 @@ const team_chat_list: BuiltinToolDef = {
 
 const team_chat_read: BuiltinToolDef = {
   slug: 'team_chat_read',
+  readOnly: true,
   preconditions: TEAM_CONTACT_ID_PRE,
   name: 'Read a team chat thread',
   description:
@@ -342,6 +345,7 @@ const team_chat_read: BuiltinToolDef = {
 
 const team_access_list: BuiltinToolDef = {
   slug: 'team_access_list',
+  readOnly: true,
   preconditions: TEAM_CONTACT_ID_PRE,
   name: 'List team access log',
   description:

@@ -17,6 +17,8 @@ export {
   getBuiltinHandler,
   listBuiltins,
   getBuiltinRedactFields,
+  isBuiltinReadOnly,
+  listReadOnlyBuiltinSlugs,
   redactArgsForLogging,
 } from './registry';
 

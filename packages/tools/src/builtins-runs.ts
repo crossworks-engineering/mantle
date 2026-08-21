@@ -767,6 +767,7 @@ export const RUN_TOOLS: BuiltinToolDef[] = [
   },
   {
     slug: 'run_state',
+    readOnly: true,
     name: 'Inspect runs',
     description:
       "With run_id: return the compiled state of one run — per-item status, one-line outcomes, costs — as text plus structured data. Without run_id: list this brain's recent runs (id, title, status). The compiled state is the ground truth to re-read at resume; never rely on remembered progress.",

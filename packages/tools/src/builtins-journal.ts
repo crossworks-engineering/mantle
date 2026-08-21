@@ -68,6 +68,7 @@ const CATEGORY_DESC = `Optional life area. Prefer one of: ${CATEGORY_KEYS.join('
 
 const journal_list: BuiltinToolDef = {
   slug: 'journal_list',
+  readOnly: true,
   name: 'List journal entries',
   description:
     "Browse the user's Journal — their own notes about who they are, their work, family, faith, health, goals, and feelings, newest first. Use to recall what the user has told you about themselves. Optional `mood` / `category` / `query` narrow the list. For a topic search across everything, `search_nodes` is broader.",
@@ -109,6 +110,7 @@ const journal_list: BuiltinToolDef = {
 
 const journal_get: BuiltinToolDef = {
   slug: 'journal_get',
+  readOnly: true,
   name: 'Read a journal entry',
   description: 'Fetch one journal entry by its node id. Returns the full entry.',
   inputSchema: {

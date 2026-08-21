@@ -394,6 +394,7 @@ const TEMPLATE_DOC =
 
 const api_tool_list: BuiltinToolDef = {
   slug: 'api_tool_list',
+  readOnly: true,
   name: 'List registered tools',
   description:
     'List every tool in the registry (builtin, http, shell): slug, kind, enabled, requires_confirm, and a short description. Use api_tool_get for full details of one tool.',
@@ -430,6 +431,7 @@ const api_tool_list: BuiltinToolDef = {
 
 const api_tool_get: BuiltinToolDef = {
   slug: 'api_tool_get',
+  readOnly: true,
   name: 'Get one tool',
   description:
     'Full definition of one tool by slug: description, input schema, and handler (url/method/headers/query/body templates for http tools).',
@@ -833,6 +835,7 @@ const api_tool_test: BuiltinToolDef = {
 
 const api_key_refs: BuiltinToolDef = {
   slug: 'api_key_refs',
+  readOnly: true,
   name: 'List vault key references',
   description:
     'List the encrypted API-key vault entries as {{secret:service/label}} reference strings for use in tool templates. Returns masked previews only — plaintext never leaves the vault. If the service the user wants is missing, ask them to add the key under Settings → API keys.',
@@ -975,6 +978,7 @@ const api_docs_set: BuiltinToolDef = {
 
 const api_docs_get: BuiltinToolDef = {
   slug: 'api_docs_get',
+  readOnly: true,
   name: "Read an integration's stored API docs",
   description:
     "Read back the API documentation stored on an integration group — the markdown `api_docs_set` saved, in slices (pass offset to continue). **Read this FIRST when adding a call to an existing integration**: it's this brain's captured copy, so it costs nothing and can't have moved. Use `web_fetch` only when a group has no stored docs or they don't cover the endpoint you need — then `api_docs_set` the refreshed copy back. Returns has_docs false (not an error) when nothing is stored, plus where the copy came from and when it was captured, so you can judge staleness.",
@@ -1199,6 +1203,7 @@ const api_skill_set: BuiltinToolDef = {
 
 const tool_catalog: BuiltinToolDef = {
   slug: 'tool_catalog',
+  readOnly: true,
   name: 'Browse composable tools',
   description:
     "List the tools you can COMPOSE into a recipe tool (recipe_tool_create) — the brain's own content/search/file/page/task/journal/event/table builtins plus your authored http tools. Returns each tool's slug, kind, full description, and input_schema so you know the exact slug + input shape to chain. Excludes tools recipes may not call (terminal, secrets, delegation, the tool-authoring kit, confirm-gated, shell). Filter with q. This is how you discover the steps for a new recipe.",
@@ -1446,6 +1451,7 @@ const recipe_tool_test: BuiltinToolDef = {
 
 const tool_group_list: BuiltinToolDef = {
   slug: 'tool_group_list',
+  readOnly: true,
   name: 'List tool groups',
   description:
     'List tool groups (capability bundles agents are granted): slug, tool slugs, and which agents currently grant each group. A group bound to an API also reports its integration — service, base URL, vault ref, whether documentation is stored, and its usage skill. Start here when extending an existing integration: find the group, then `api_docs_get` its stored docs.',
@@ -1664,6 +1670,7 @@ const tool_group_ensure: BuiltinToolDef = {
 
 const agent_list: BuiltinToolDef = {
   slug: 'agent_list',
+  readOnly: true,
   name: 'List agents',
   description:
     'Read-only list of the agents on this Mantle: slug, name, role, enabled, and which tool groups each grants. Use before agent_grant_tool_group.',

@@ -308,6 +308,7 @@ const sandbox_exec: BuiltinToolDef = {
 
 const sandbox_list: BuiltinToolDef = {
   slug: 'sandbox_list',
+  readOnly: true,
   name: 'List sandboxes',
   description:
     "List this owner's sandboxes: name, status, image, network tier, description and last-used " +
@@ -586,6 +587,7 @@ const sandbox_publish: BuiltinToolDef = {
 
 const sandbox_mcp_tools: BuiltinToolDef = {
   slug: 'sandbox_mcp_tools',
+  readOnly: true,
   name: 'List sandbox toolbelt',
   description:
     "List the tools of the sandbox's embedded Claude Code MCP server (Read, Grep, Glob, Edit, " +

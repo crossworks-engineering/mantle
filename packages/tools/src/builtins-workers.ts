@@ -284,6 +284,7 @@ const synthesize_speech: BuiltinToolDef = {
 
 const extract_from_image: BuiltinToolDef = {
   slug: 'extract_from_image',
+  readOnly: true,
   name: 'Read text from an image',
   description:
     "Run the owner's default vision worker over an image and return the extracted text. Use when the user asks to re-read a previously-sent photo, OCR a file in their notes, or extract content from a specific image they reference. For photos that JUST arrived in this conversation, the agent's auto-ingest pipeline has already saved the transcript as a note — search_nodes for it before re-extracting.",
@@ -415,6 +416,7 @@ const extract_from_image: BuiltinToolDef = {
 
 const summarize_text: BuiltinToolDef = {
   slug: 'summarize_text',
+  readOnly: true,
   name: 'Summarize a note or block of text',
   description:
     "Run the owner's default summarizer worker (a chat-shaped worker tuned for compression) over text — either inline content or a note's body. Use when the user asks for a TLDR, a recap of a long note, or a digest of something they pasted. For automatic chat-history summarization, the background summarizer already runs; don't call this for that.",

@@ -43,6 +43,11 @@ export {
   type SimHistoryTurn,
   type SimToolCall,
 } from './run-sim-turn';
+export {
+  describeResponderPersona,
+  type DescribeResponderPersonaOptions,
+  type ResponderPersonaDescription,
+} from './describe-persona';
 export { pickWebDefaultAgent, ROLE_TIEBREAK, type WebDefaultCandidate } from './select';
 export {
   runTeamTurn,

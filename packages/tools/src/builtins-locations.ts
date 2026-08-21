@@ -112,6 +112,7 @@ const location_save: BuiltinToolDef = {
 
 const location_nearby: BuiltinToolDef = {
   slug: 'location_nearby',
+  readOnly: true,
   name: 'Find saved places nearby',
   description:
     "Return the user's previously-saved `location` places within `radius_meters` of a point, nearest first (with the distance to each). Call this FIRST when you need an address for coordinates — if a saved place is close enough, reuse its address instead of calling the geocoding API. Also answers 'have I been near here before?' / 'what saved places are around me?'. Defaults to the device's current coordinates is NOT automatic — pass the lat/lon you care about (usually the Current location from context).",
@@ -157,6 +158,7 @@ const location_nearby: BuiltinToolDef = {
 
 const location_distance: BuiltinToolDef = {
   slug: 'location_distance',
+  readOnly: true,
   name: 'Distance between two points',
   description:
     "Great-circle (straight-line) distance in metres between two lat/lon points. Use this to answer 'how far is X from me' reliably — do NOT estimate distances from coordinates yourself. Note this is as-the-crow-flies, not travel distance; say so when it matters.",

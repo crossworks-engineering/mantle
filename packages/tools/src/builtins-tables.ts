@@ -628,6 +628,7 @@ const table_commit: BuiltinToolDef = {
 
 const table_sql: BuiltinToolDef = {
   slug: 'table_sql',
+  readOnly: true,
   preconditions: TABLE_ID_PRE,
   name: 'Query a table with SQL',
   description:
@@ -696,6 +697,7 @@ const table_sql: BuiltinToolDef = {
 
 const table_list: BuiltinToolDef = {
   slug: 'table_list',
+  readOnly: true,
   name: 'List tables',
   description:
     "List the owner's tables, newest first. Optional `query` substring-matches title/body/summary; `tag` filters. Grids are summarised (column + row counts), not returned in full. For a single table's content use `table_get` / `table_rows_list`. For semantic search use `search_nodes` with type='table'.",
@@ -737,6 +739,7 @@ const table_list: BuiltinToolDef = {
 
 const table_get: BuiltinToolDef = {
   slug: 'table_get',
+  readOnly: true,
   preconditions: TABLE_NODE_ID_PRE,
   name: 'Get a table',
   description:
@@ -853,6 +856,7 @@ const SCHEMA_TABLES_MAX = 20;
 
 const table_schema: BuiltinToolDef = {
   slug: 'table_schema',
+  readOnly: true,
   name: 'Table schemas (data dictionary)',
   description:
     "Data dictionary across tables in one call: every tab with its columns, types, row counts, and the table_sql surface (view + FTS shadow names). Pass `table_ids` for specific tables, or omit to survey the most recently updated (up to 20). Use this to pick the right table and write a table_sql query without fetching each table's rows via `table_get`. Legacy tables not yet file-backed are listed without a schema.",
@@ -1065,6 +1069,7 @@ const table_tab_delete: BuiltinToolDef = {
 
 const table_rows_list: BuiltinToolDef = {
   slug: 'table_rows_list',
+  readOnly: true,
   preconditions: TABLE_ID_PRE,
   name: 'List rows in a table',
   description:
@@ -1201,6 +1206,7 @@ const table_row_get: BuiltinToolDef = {
 
 const table_query: BuiltinToolDef = {
   slug: 'table_query',
+  readOnly: true,
   preconditions: TABLE_ID_PRE,
   name: 'Query rows by value',
   description:
@@ -1412,6 +1418,7 @@ const table_query: BuiltinToolDef = {
 
 const table_aggregate: BuiltinToolDef = {
   slug: 'table_aggregate',
+  readOnly: true,
   preconditions: TABLE_ID_PRE,
   name: 'Group + summarise rows',
   description:

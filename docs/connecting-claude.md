@@ -143,33 +143,82 @@ If instead you see `No account yet`, sign up in the web app first. If
 | Telegram | `telegram_pending`, `telegram_send` (allowlisted chats only), `telegram_react`, `telegram_edit`, `telegram_pair` |
 | Operator | `pending_list` / `pending_get` / `pending_approve` / `pending_reject` |
 | Federation | `peer_list`, `peer_query`, `peer_node_get` |
-| Responder | `respond_as_agent` (talk to a responder agent with its real persona + tools) |
+| Responder | `ask_responder` (ask a responder; it answers with its real persona + tools), `ask_as_responder` (adopt its persona and answer yourself) |
 
 Things to try: *"search my Mantle for …"*, *"any unanswered Telegram
 messages? draft replies"*, *"what do I know about \<person\>?"*, *"log a
 memory: …"*, *"approve the pending tool calls if they look sane"*.
 
-### Talking to a responder agent (`respond_as_agent`)
+### Talking to a responder agent
 
-Everything above is *persona-less* raw data access. `respond_as_agent` is the
-exception: it lets Claude send a message **as if it were the user talking to
-one of your responder agents**, and runs ONE real turn of that agent's
-pipeline, its composed persona (identity + skills), real memory retrieval,
-and its real granted tools, which **execute** (delegation via `invoke_agent`
-included). It's the "Agent Studio sandbox, but with the real tool loop".
+Everything above is *persona-less* raw data access. Two tools are the
+exception, and the difference between them matters.
+
+#### `ask_responder` — the brain answers, and the rules are enforced
+
+Sends a message **as if you were the user talking to one of your responder
+agents**, and runs ONE real turn of that agent's pipeline server-side: its
+composed persona (identity + skills), real memory retrieval, and its real
+granted tools, which **execute** (delegation via `invoke_agent` included).
+It's the "Agent Studio sandbox, but with the real tool loop".
 
 The one thing it does *not* do is persist: **nothing is written to the
 agent's conversation history** (no inbound/outbound rows, no usage bump) so
 you can probe a responder repeatedly without polluting its memory of talking
-to you. Tool **side effects still happen** (a note gets created; a
-confirm-gated call lands on `/pending`, returned as `pending_ids`), and the
-turn is traced like any other (the reply carries a `trace_id` for `/traces`).
+to you. The turn is traced like any other (the reply carries a `trace_id`
+for `/traces`).
 
 Because nothing is stored, **multi-turn is caller-held**: keep the transcript
 yourself and resend it in `history` on each call. Omit `agent_slug` for the
-default responder; pass `exclude_tools` to narrow the tool set, `max_iterations`
-to cap the loop, or `include_tool_calls: false` to drop the per-call trail from
-the reply. Contrast with the in-app Agent Studio sandbox
+default responder; pass `max_iterations` to cap the loop, or
+`include_tool_calls: false` to drop the per-call trail from the reply.
+
+> Renamed from `respond_as_agent`. The old name read as "respond *as* the
+> agent", which is what `ask_as_responder` does — this tool gets a response
+> *from* one. `respond_as_agent` still works as a deprecated alias for one
+> release.
+
+##### `read_only`: the flag to use for a canary
+
+By default **tool side effects are real** — a note gets created; a
+confirm-gated call lands on `/pending`, returned as `pending_ids`. That makes
+the obvious use (a post-deploy smoke test on a live box) unsafe: the model
+could decide to send mail.
+
+Pass **`read_only: true`** and the turn keeps only tools the registry marks as
+mutating nothing and sending nothing outward. It is **default-deny**: a tool
+is excluded unless it has been explicitly marked safe, so a new write or
+egress tool is locked out the day it ships, and user-defined API/recipe tools
+are never included. `invoke_agent` is deliberately excluded — a child agent
+carries its own write grants. The filter is applied last, after every other
+step, so nothing can add a write tool back.
+
+`exclude_tools` still works and composes with it: `read_only` sets the safe
+ceiling, `exclude_tools` narrows further.
+
+```jsonc
+// A canary that cannot write or send anything.
+{ "message": "Name three things you know about project X, with citations.",
+  "read_only": true }
+```
+
+#### `ask_as_responder` — you answer, and the rules are only advice
+
+Returns the responder's **composed system prompt**, its skill list, the tool
+slugs it would hold and its delegation edges, so *you* can answer as that
+persona in your own loop. No model call, no tool run, nothing written.
+
+Use it to sound and reason like the responder across a long stretch of your
+own work, with your own model, without a server round trip per turn.
+
+> ⚠️ **What comes back is teaching, not permission.** The composed prompt is
+> real, but nothing in the payload constrains you: `delegate_to` is a list
+> rather than a gate, `tool_slugs` is what the responder *would* be granted
+> rather than what you can call, and confirm-gating, `/pending` parking and
+> the loop guards all stay on the server. When the rules must actually hold,
+> use `ask_responder` and let the brain run the turn.
+
+Contrast both with the in-app Agent Studio sandbox
 ([`agent-studio.md`](./agent-studio.md)), which composes the same prompt but
 makes a plain model call with tools and memory OFF.
 
@@ -179,7 +228,8 @@ makes a plain model call with tools and memory OFF.
   launch); each call over SSH adds a network round trip. Fine for chat.
 - **Writes are real.** There is no sandbox: a `task_create` from Claude
   Desktop is the same row the web app shows, and the extractor will index
-  whatever Claude writes.
+  whatever Claude writes. For a responder probe that cannot write, use
+  `ask_responder` with `read_only: true`.
 - **One config per client machine.** stdio means there's nothing to
   centrally provision; each device that should reach the Mantle needs SSH
   access and the config blob once.

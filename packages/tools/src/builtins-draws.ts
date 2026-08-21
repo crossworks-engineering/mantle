@@ -21,6 +21,7 @@ const DRAW_ID_PRE: readonly ToolPrecondition[] = [
 
 const draw_list: BuiltinToolDef = {
   slug: 'draw_list',
+  readOnly: true,
   name: 'List drawings',
   description:
     "List the owner's whiteboard drawings (/draw), **newest first**. Optional `query` substring-matches title/body/summary; `tag` filters. Bodies are omitted. " +
@@ -65,6 +66,7 @@ const draw_list: BuiltinToolDef = {
 
 const draw_get: BuiltinToolDef = {
   slug: 'draw_get',
+  readOnly: true,
   preconditions: DRAW_ID_PRE,
   name: 'Get a drawing',
   description:

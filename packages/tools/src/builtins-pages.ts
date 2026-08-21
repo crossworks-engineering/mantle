@@ -530,6 +530,7 @@ const page_delete: BuiltinToolDef = {
 
 const page_list: BuiltinToolDef = {
   slug: 'page_list',
+  readOnly: true,
   name: 'List pages',
   description:
     "List the owner's pages, **newest first**. Optional `query` substring-matches title/body/summary; `tag` filters to pages carrying that tag. Bodies are omitted to keep the response small. " +
@@ -568,6 +569,7 @@ const page_list: BuiltinToolDef = {
 
 const page_get: BuiltinToolDef = {
   slug: 'page_get',
+  readOnly: true,
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Get a page',
   description:
@@ -1188,6 +1190,7 @@ const page_from_journal: BuiltinToolDef = {
 
 const page_blocks_list: BuiltinToolDef = {
   slug: 'page_blocks_list',
+  readOnly: true,
   preconditions: PAGE_ID_PRE,
   name: 'List the blocks in a page',
   description:
@@ -1311,6 +1314,7 @@ const draftConflict = (pageId: string): { ok: false; error: string } => ({
 
 const page_block_get: BuiltinToolDef = {
   slug: 'page_block_get',
+  readOnly: true,
   preconditions: PAGE_ID_PRE,
   name: 'Get one block from a page',
   description:
