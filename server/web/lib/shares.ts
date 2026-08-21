@@ -72,6 +72,9 @@ export type ShareView =
       startsAt: string | null;
       endsAt: string | null;
       location: string | null;
+      recur?: string | null;
+      recurUntil?: string | null;
+      tags?: string[];
     }
   | { kind: 'file'; fileId: string; filename: string; mimeType: string; size: number }
   | { kind: 'app'; appId: string; title: string }
@@ -120,11 +123,11 @@ export type ShareView =
   // carried none; the presenter shows a placeholder rather than 404ing a link
   // that was legitimately minted). The bytes are served separately, as an
   // image, by /s/<token>/draw.
-  | { kind: 'draw'; title: string; hasSvg: boolean };
+  | { kind: 'draw'; title: string; hasSvg: boolean; hasImage?: boolean };
 
 async function loadNode(ownerId: string, nodeId: string) {
   const [row] = await db
-    .select({ title: nodes.title, data: nodes.data })
+    .select({ title: nodes.title, data: nodes.data, tags: nodes.tags })
     .from(nodes)
     .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
     .limit(1);
@@ -180,6 +183,11 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
         startsAt: typeof d.starts_at === 'string' ? d.starts_at : null,
         endsAt: typeof d.ends_at === 'string' ? d.ends_at : null,
         location: typeof d.location === 'string' ? d.location : null,
+        // Recurrence + tags travel too — the team/share reader shows the same
+        // "nice details" as the owner pane. Reminders stay owner-private.
+        recur: typeof d.recur === 'string' ? d.recur : null,
+        recurUntil: typeof d.recur_until === 'string' ? d.recur_until : null,
+        tags: n.tags ?? [],
       };
     }
     case 'file': {
@@ -284,7 +292,16 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       // as page drafts / table draft files).
       const n = await loadNode(ownerId, nodeId);
       if (!n) return null;
-      return { kind: 'draw', title: n.title, hasSvg: (await getDrawSvg(ownerId, nodeId)) !== null };
+      const svg = await getDrawSvg(ownerId, nodeId);
+      return {
+        kind: 'draw',
+        title: n.title,
+        hasSvg: svg !== null,
+        // A raster <image> in the scene vetoes the dark-mode invert filter
+        // (one flat filter would show photos as negatives) — same rule the
+        // owner previews apply via snapshotPlacesImage().
+        hasImage: svg !== null && /<image[\s>]/i.test(svg),
+      };
     }
     case 'branch': {
       const folder = await folderById({ ownerId, folderId: nodeId });

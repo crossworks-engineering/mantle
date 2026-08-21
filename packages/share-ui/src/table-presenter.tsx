@@ -233,7 +233,10 @@ export function TablePresenter({
   const anyTotal = columns.some((c) => kindFor(c.id) !== 'none');
 
   const header = (
-    <header className={embedded ? 'mb-3 shrink-0' : 'mb-6 shrink-0 text-center'}>
+    // Embedded: a thin meta strip flush with the pane — the grid below is
+    // full-bleed (owner-grid parity), so the padding lives here, not on a
+    // wrapper.
+    <header className={embedded ? 'shrink-0 px-3 pb-2 pt-2' : 'mb-6 shrink-0 text-center'}>
       {!embedded && (
         <h1 className="text-xl font-semibold tracking-tight">
           {view.icon ? `${view.icon} ` : ''}
@@ -249,7 +252,7 @@ export function TablePresenter({
   );
 
   const tabStrip = tabs.length > 1 && (
-    <div className="mb-3 flex shrink-0 flex-wrap gap-1">
+    <div className={cn('flex shrink-0 flex-wrap gap-1', embedded ? 'px-3 pb-2' : 'mb-3')}>
       {tabs.map((t) => (
         <button
           key={t.id}
@@ -403,10 +406,14 @@ export function TablePresenter({
   // has nothing to do.
   if (embedded) {
     return (
-      <div className="flex h-full min-h-0 w-full flex-col px-6 py-6">
+      // Full-bleed (owner-grid parity): no wrapper padding, no border box —
+      // the pane's edges are the grid's edges and the cells draw the rules.
+      // The scroller keeps the bounded height so the sticky header/footer
+      // still have something to stick to.
+      <div className="flex h-full min-h-0 w-full flex-col">
         {header}
         {tabStrip}
-        <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border scrollbar-thin">
+        <div className="min-h-0 flex-1 overflow-auto border-t border-border scrollbar-thin">
           {grid}
           {foot}
         </div>

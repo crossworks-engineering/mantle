@@ -62,6 +62,11 @@ export type ShareViewPayload =
       startsAt: string | null;
       endsAt: string | null;
       location: string | null;
+      /** Recurrence rule name ('daily'|'weekly'|…) + optional end — optional:
+       *  an older brain omits them and the presenter simply shows nothing. */
+      recur?: string | null;
+      recurUntil?: string | null;
+      tags?: string[];
     }
   | { kind: 'file'; fileId: string; filename: string; mimeType: string; size: number }
   | { kind: 'app'; appId: string; title: string }

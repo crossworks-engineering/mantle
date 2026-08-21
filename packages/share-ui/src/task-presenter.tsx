@@ -44,7 +44,10 @@ export function TaskPresenter({
   const chips = (
     <div className={cn('flex flex-wrap items-center gap-2 text-xs', !embedded && 'mt-3')}>
       <span className="rounded-full border border-border px-2 py-0.5 text-muted-foreground">
-        {STATUS_LABEL[view.status] ?? view.status.replace(/_/g, ' ')}
+        {/* Guarded like `todos` above: a payload from an older brain may omit
+            status, and an unguarded deref here took down the whole /team
+            workspace (no boundary caught it). */}
+        {STATUS_LABEL[view.status ?? 'open'] ?? (view.status ?? 'open').replace(/_/g, ' ')}
       </span>
       <span className="rounded-full border border-border px-2 py-0.5 capitalize text-muted-foreground">
         {view.priority} priority
