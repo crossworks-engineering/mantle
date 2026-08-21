@@ -89,7 +89,10 @@ async function renderShare(c: Context): Promise<Response> {
       body = renderToStaticMarkup(<EventPresenter view={view} />);
       break;
     case 'app':
-      body = islandDiv('app', { view, token });
+      // Shell-less (see below), so the mount point paints the themed ground
+      // itself — without it the page flashes user-agent default until the
+      // island mounts and the frame boots.
+      body = islandDiv('app', { view, token }, 'h-dvh bg-background text-foreground');
       islands = true;
       break;
     case 'table':
@@ -135,7 +138,10 @@ async function renderShare(c: Context): Promise<Response> {
   }
   if (body === null) return c.notFound();
 
-  return c.html(htmlPage({ ...meta, islands }, shareShell(body)));
+  // Apps skip the share shell: the presenter is h-dvh and the app owns the
+  // whole viewport, so even the footer strip would sit below the fold as dead
+  // scroll. Every other kind keeps the shell (scroll container + footer).
+  return c.html(htmlPage({ ...meta, islands }, view.kind === 'app' ? body : shareShell(body)));
 }
 
 export function mountShare(app: Hono): void {
