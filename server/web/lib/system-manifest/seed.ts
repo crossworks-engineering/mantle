@@ -172,6 +172,10 @@ async function upsertSkill(ownerId: string, def: ManifestSkill, mode: ApplyMode)
           name: def.name,
           description: def.description,
           instructions: def.instructions,
+          // Converge the state template alongside the body it belongs to, but
+          // ONLY when the manifest declares one. Omitted means no opinion, so
+          // an operator's value survives rather than being wiped to {}.
+          ...(def.defaultState ? { defaultState: def.defaultState } : {}),
           enabled: true,
           updatedAt: new Date(),
         })
@@ -185,7 +189,7 @@ async function upsertSkill(ownerId: string, def: ManifestSkill, mode: ApplyMode)
     name: def.name,
     description: def.description,
     instructions: def.instructions,
-    defaultState: {},
+    defaultState: def.defaultState ?? {},
     enabled: true,
   });
 }

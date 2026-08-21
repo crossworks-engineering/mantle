@@ -56,6 +56,19 @@ export type ManifestSkill = {
   slug: string;
   name: string;
   description: string;
+  /** Seed value for `skills.default_state` — the template the heartbeat form
+   *  pre-fills its "Initial state" box from when an operator binds this skill.
+   *  A heartbeat's `state` is its running memory between fires; this declares
+   *  the SHAPE so the first fire starts from something rather than `{}`.
+   *
+   *  Only meaningful for task-shaped skills (a heartbeat's job). Behaviour
+   *  packs like `tool_grounding` have no state and omit it.
+   *
+   *  Converged on reconcile when declared, like the instructions body. Omitted
+   *  means "the manifest has no opinion", so an existing value is left alone
+   *  rather than wiped — which also means the manifest cannot REMOVE a
+   *  default_state, only set one. */
+  defaultState?: Record<string, unknown>;
   /** The skill body rendered into the system prompt (verbatim, from ./prompts).
    *  Skills are PURE TEACHING — they carry no tools (the skills.tool_slugs column
    *  was dropped in P4; capability lives on agents + tool groups). */
@@ -208,6 +221,9 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     description:
       'The weekly self-check: capacity against the split policy plus a retrieval-quality eval, reported ONLY when something needs attention.',
     instructions: SKILL_INSTRUCTIONS['brain_health_check']!,
+    // The skill's own state contract (see its instructions): last_run_at is
+    // absent until the first fire writes one, so only the status seeds.
+    defaultState: { last_status: 'green' },
   },
   {
     slug: 'formula_use',

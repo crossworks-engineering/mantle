@@ -78,6 +78,22 @@ describe('system manifest integrity', () => {
     }
   });
 
+  it('every skill a default heartbeat binds declares its state shape', () => {
+    // A heartbeat's `state` is its running memory between fires, and the
+    // create form pre-fills "Initial state" from the bound skill's
+    // defaultState. Ship the skill without one and the operator stares at a
+    // bare `{}` with no clue what shape belongs there — which is exactly what
+    // happened when brain_health_check first moved into the manifest.
+    // Declaring `{}` explicitly is a valid answer; forgetting is not.
+    for (const h of MANIFEST_HEARTBEATS) {
+      const skill = MANIFEST_SKILLS.find((sk) => sk.slug === h.skillSlug)!;
+      expect(
+        Object.prototype.hasOwnProperty.call(skill, 'defaultState'),
+        `skill '${skill.slug}' backs heartbeat '${h.slug}' and must declare defaultState (even {})`,
+      ).toBe(true);
+    }
+  });
+
   it('no heartbeat fires more often than daily, and every one jitters', () => {
     // Scheduled spend the user never asked for. A tight interval multiplied
     // across a fleet is the runaway-cost shape; jitter stops every brain in the
