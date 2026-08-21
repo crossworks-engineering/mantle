@@ -13,9 +13,12 @@
  *   skill: brain_health_check — instructions to call brain_capacity +
  *     recall_eval and report only when action is needed.
  *   heartbeat: brain_health — fires weekly ±6h, quiet hours respected.
- *   note: golden cases — if a scripts/eval/recall-cases.json exists AND no
- *     'recall-eval-cases' note exists yet, the repo golden set is imported so
- *     recall_eval has cases to run on day one.
+ *   note: golden cases — if a scripts/eval/recall-cases.json exists locally AND
+ *     no 'recall-eval-cases' note exists yet, that set is imported. The file is
+ *     gitignored and NOT shipped: a gold case pins node ids from one brain, so a
+ *     shared set names its owner's real pages and resolves to nothing anywhere
+ *     else. Without it the heartbeat still installs; recall_eval reports that it
+ *     has no cases until you write some (docs/recall-eval.md).
  *
  * Operator step: grant the `brain-health` tool group to the chosen agent at
  * /settings/agents (the manifest defines the group; grants stay explicit).
@@ -141,7 +144,9 @@ async function seedCasesNote(): Promise<void> {
     raw = readFileSync(new URL('./eval/recall-cases.json', import.meta.url), 'utf8');
   } catch {
     console.log(
-      '[seed] no scripts/eval/recall-cases.json — skipped cases import (create the note by hand)',
+      '[seed] no scripts/eval/recall-cases.json (it is local-only, never shipped) — ' +
+        "skipped cases import. Create a note tagged 'recall-eval-cases' holding a JSON " +
+        'array of your own cases; see docs/recall-eval.md.',
     );
     return;
   }

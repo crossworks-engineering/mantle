@@ -7,17 +7,24 @@ and scores `recall@k` + `MRR`. Run it before and after any retrieval change; the
 `--baseline` flag is the regression gate.
 
 Companion to [`memory.md`](./memory.md) (the layers) and the audit findings that
-motivated it. Lives at [`apps/web/scripts/eval-recall.ts`](../apps/web/scripts/eval-recall.ts);
-gold cases at [`apps/web/scripts/eval/recall-cases.json`](../apps/web/scripts/eval/recall-cases.json).
+motivated it. Lives at [`server/web/scripts/eval-recall.ts`](../server/web/scripts/eval-recall.ts).
+
+> **The gold set is yours, and it is local-only.** A case pins node ids from ONE
+> brain, so a shared set names its author's real pages and resolves to nothing on
+> anyone else's. `server/web/scripts/eval/recall-cases.json` is **gitignored and
+> not shipped** — write your own before the first run (see *Adding a case*). The
+> repo carried one until 2026-08-21; it leaked the owner's bank, a company
+> expense figure and their full name into a public repo, which is exactly the
+> failure this note exists to prevent.
 
 ## Run it
 
 ```bash
-ALLOWED_USER_ID=<uuid> pnpm -C apps/web eval:recall
-pnpm -C apps/web eval:recall --case=sermon-potter-clay      # one case
-pnpm -C apps/web eval:recall --rank-k=30                    # deeper candidate set
-pnpm -C apps/web eval:recall --baseline=scripts/eval/last-run.json   # Δ vs a prior run
-pnpm -C apps/web eval:recall --json                        # machine-readable
+ALLOWED_USER_ID=<uuid> pnpm -C server/web eval:recall
+pnpm -C server/web eval:recall --case=<your-case-id>      # one case
+pnpm -C server/web eval:recall --rank-k=30                    # deeper candidate set
+pnpm -C server/web eval:recall --baseline=scripts/eval/last-run.json   # Δ vs a prior run
+pnpm -C server/web eval:recall --json                        # machine-readable
 ```
 
 Read-only; it never writes to the brain, safe against prod. Needs the embedder
@@ -89,7 +96,7 @@ precise and more actionable:
    everything equally." The measured design is: **vector as the spine + FTS as a
    rare-term recall booster (down-weighted) + a reranker over the union.** The eval
    is what will tell us if that beats 0.90.
-4. **The `content_hit_limit=3` cap silently drops near-misses.** `car-licence` ranked
+4. **The `content_hit_limit=3` cap silently drops near-misses.** One case ranked
    #4 under vector, so prod never saw it (the only prod miss). A reranker or a slightly
    larger cap recovers it.
 
@@ -117,7 +124,7 @@ says otherwise, and re-run this eval to confirm.
 
 Three changes to `loadConversationContext` ([conversation.ts](../packages/agent-runtime/src/conversation.ts)), all in the one chokepoint both surfaces share:
 
-1. **Window widened 3 → 5.** A 3-hit window dropped genuinely relevant near-misses below the prompt. The eval's `prod` (what the responder actually sees) went **R@5 92%→100%, MRR 0.88→0.90** (now at the vector ceiling); the gold node reaches the prompt in **12/12** cases (was 11/12). Probed cause: for "when does my licence disc renew", the user's vehicle page ranked #4 (outside the old cap) beside the actual licence PDF (#3) and a related note (#1), all now included. The settings-form default and existing agent rows persisted `3` explicitly, so the code default never reached them; [`scripts/widen-content-hits.ts`](../apps/web/scripts/widen-content-hits.ts) (`pnpm -C apps/web widen:content-hits --apply`, dry-run by default) bumps existing rows, **run once per env (dev + prod)**.
+1. **Window widened 3 → 5.** A 3-hit window dropped genuinely relevant near-misses below the prompt. The eval's `prod` (what the responder actually sees) went **R@5 92%→100%, MRR 0.88→0.90** (now at the vector ceiling); the gold node reaches the prompt in **12/12** cases (was 11/12). Probed cause: for "when does my licence disc renew", the user's vehicle page ranked #4 (outside the old cap) beside the actual licence PDF (#3) and a related note (#1), all now included. The settings-form default and existing agent rows persisted `3` explicitly, so the code default never reached them; [`scripts/widen-content-hits.ts`](../server/web/scripts/widen-content-hits.ts) (`pnpm -C server/web widen:content-hits --apply`, dry-run by default) bumps existing rows, **run once per env (dev + prod)**.
 
 2. **System-docs hygiene.** Content hits now exclude `origin='system'` nodes (Mantle's own ~57 docs), a reference corpus, not personal memory. Verified: the "memory/brain architecture" query that used to surface memory.md now returns the user's own doc with 0 system-origin leaks. (Doesn't move the node-recall gold set; the gold cases are personal.)
 
@@ -131,7 +138,7 @@ Marketing/newsletters were embedded at full weight and crowded out real content 
 
 Salience source, in order of trust:
 1. **Header classifier** (`emails.delivery_kind`, already built, precise): `salienceForDeliveryKind` maps `marketing→0.25, list→0.5, automated→0.75, direct/unknown→1.0`. Set at ingest ([sync.ts](../packages/email/src/sync.ts)) + migration `0073` backfill. Covers new mail + 156 legacy.
-2. **Body fallback** ([`backfill-email-salience.ts`](../apps/web/scripts/backfill-email-salience.ts)) for the ~1,227 legacy `unknown` emails (synced before the classifier; raw headers aren't stored, so they can't be re-classified offline). Scores the stored body for unambiguous bulk tells (tracking-link density + unsubscribe) with a **transactional veto** (invoice/order/receipt/OTP → never demote). Tagged 568.
+2. **Body fallback** ([`backfill-email-salience.ts`](../server/web/scripts/backfill-email-salience.ts)) for the ~1,227 legacy `unknown` emails (synced before the classifier; raw headers aren't stored, so they can't be re-classified offline). Scores the stored body for unambiguous bulk tells (tracking-link density + unsubscribe) with a **transactional veto** (invoice/order/receipt/OTP → never demote). Tagged 568.
 
 Measured effect (`MANTLE_SALIENCE_LAMBDA=0` vs `0.15`, 13 cases incl. a noisy printer case):
 
@@ -146,7 +153,7 @@ Measured effect (`MANTLE_SALIENCE_LAMBDA=0` vs `0.15`, 13 cases incl. a noisy pr
 
 ## After step (e): precise header re-classification (2026-06-03)
 
-[`classify:backfill`](../apps/web/scripts/classify-backfill.ts) closes the coverage gap properly: it re-fetches the classification headers for legacy `unknown` emails over IMAP (`reclassifyByRefs` in [@mantle/email](../packages/email/src/providers/imap.ts), BODY.PEEK, one round trip per folder, never marks read), runs the **same** `classifyDelivery`, writes the true `delivery_kind`, and re-derives `nodes.salience` (clearing the fuzzy `body_bulk_heuristic` marker). Read-only against the mailbox; dry-run by default; idempotent (only touches `unknown` rows).
+[`classify:backfill`](../server/web/scripts/classify-backfill.ts) closes the coverage gap properly: it re-fetches the classification headers for legacy `unknown` emails over IMAP (`reclassifyByRefs` in [@mantle/email](../packages/email/src/providers/imap.ts), BODY.PEEK, one round trip per folder, never marks read), runs the **same** `classifyDelivery`, writes the true `delivery_kind`, and re-derives `nodes.salience` (clearing the fuzzy `body_bulk_heuristic` marker). Read-only against the mailbox; dry-run by default; idempotent (only touches `unknown` rows).
 
 Real run reclassified **1,162 / 1,227** legacy emails (65 moved/deleted/stale-uidvalidity): **667 marketing, 279 direct, 210 automated, 6 list**. The header classifier does what the body heuristic can't; it separates the 279 *direct* (real personal mail, restored to salience 1.0) from the 667 *marketing* (correctly demoted to 0.25), and fixes both directions of the body heuristic's mistakes.
 
@@ -261,7 +268,7 @@ follow-up/long-doc paths the gold set doesn't exercise).
 
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 
-The harness above is manual (`pnpm -C apps/web eval:recall`). The automated
+The harness above is manual (`pnpm -C server/web eval:recall`). The automated
 half runs the same idea inside the brain, on a schedule:
 
 - **Golden cases live in the brain**: a note tagged `recall-eval-cases` whose
@@ -275,7 +282,7 @@ half runs the same idea inside the brain, on a schedule:
   persists the run as a note tagged `recall-eval-run`, and reports drift vs
   the previous run, `alert: true` on MRR −0.05 or R@5 −0.10. Run notes are
   ordinary nodes, so the history is searchable and chartable later.
-- **The `brain_health` heartbeat** (seed: `ALLOWED_USER_ID=… pnpm -C apps/web
+- **The `brain_health` heartbeat** (seed: `ALLOWED_USER_ID=… pnpm -C server/web
   seed:brain-health`, optional `TG_CHAT_ID`/`AGENT_SLUG`) fires weekly ±6h
   with quiet hours, calls `brain_capacity` + `recall_eval` via the
   `brain_health_check` skill, and messages the user **only** when a capacity

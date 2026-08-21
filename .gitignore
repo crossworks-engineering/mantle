@@ -119,3 +119,11 @@ server/web/public/share-runtime/
 # never committed to this public repo. See .mantle-fleet.example.json.
 .mantle-fleet.json
 .impeccable/
+
+# Recall-eval gold cases are LOCAL ONLY — never commit them.
+# A gold case pairs a query with node ids from ONE brain, so the set is both
+# personal (it names the owner's real pages) and useless anywhere else (the
+# ids don't resolve). The repo shipped one until 2026-08-21; it carried the
+# owner's bank, a company expense figure and their full name into a public
+# repo. Build your own with docs/recall-eval.md.
+server/web/scripts/eval/recall-cases.json
