@@ -23,6 +23,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import {
   db,
   agents,
+  heartbeats,
   skills,
   toolGroups,
   tools,
@@ -32,9 +33,11 @@ import {
   type AiWorkerKind,
 } from '@mantle/db';
 import { seedBuiltinTools, createTool, updateTool } from '@mantle/tools';
+import { computeNextFireAt } from '@mantle/heartbeats';
 import { createAiWorker, updateAiWorker, listAiWorkers } from '@/lib/ai-workers';
 import {
   MANIFEST_AGENTS,
+  MANIFEST_HEARTBEATS,
   MANIFEST_HTTP_TOOLS,
   MANIFEST_SKILLS,
   MANIFEST_SKILL_SLUGS,
@@ -68,7 +71,13 @@ export type ApplyManifestOpts = {
    *  by this loop, so they're never touched. */
   skillMode?: ApplyMode;
 };
-export type ApplyManifestResult = { seededSkills: string[]; seededAgents: string[] };
+export type ApplyManifestResult = {
+  seededSkills: string[];
+  seededAgents: string[];
+  /** Heartbeats CREATED this run. Empty when they already existed — the seeder
+   *  is create-only, so this is "what's new", not "what's installed". */
+  seededHeartbeats: string[];
+};
 
 async function resolveOpenRouterKeyId(ownerId: string): Promise<string> {
   const rows = await db
@@ -429,6 +438,101 @@ export async function seedToolCapabilities(
   for (const def of MANIFEST_TOOL_GROUPS) await upsertToolGroup(ownerId, def, mode);
 }
 
+/**
+ * Seed the manifest heartbeats. **CREATE-ONLY, on purpose.**
+ *
+ * Every other manifest section converges: reconcile overwrites the body, the
+ * membership, the route. A heartbeat must not, because its row mixes three
+ * things the product does not own:
+ *
+ *   - an operator DECISION (`status` — paused means the owner switched it off),
+ *   - operator TUNING (`schedule`, `quiet_hours`, `surface`),
+ *   - live RUNTIME state (`next_fire_at`, `fire_count`, `last_fired_at`).
+ *
+ * Converging any of those on a boot reconcile is a bug with teeth: re-arming
+ * `next_fire_at` every boot means a box that redeploys weekly never fires at
+ * all, and resetting `status` silently un-pauses something the owner turned
+ * off. Both are worse than the heartbeat simply being out of date.
+ *
+ * So an existing row is left alone, with ONE exception: a `skill_slug` that no
+ * longer names a real skill is re-pointed, because the fire loop auto-pauses a
+ * heartbeat whose skill is missing (fire.ts) and a manifest rename would
+ * otherwise quietly kill it.
+ *
+ * The answering agent is the brain's EFFECTIVE persona, not the literal slug
+ * `assistant` — a brain whose persona was renamed still gets a working
+ * heartbeat instead of a dangling `agent_slug`.
+ */
+export async function seedManifestHeartbeats(ownerId: string): Promise<string[]> {
+  if (MANIFEST_HEARTBEATS.length === 0) return [];
+
+  const personaRows = await db
+    .select({
+      slug: agents.slug,
+      role: agents.role,
+      enabled: agents.enabled,
+      priority: agents.priority,
+    })
+    .from(agents)
+    .where(eq(agents.ownerId, ownerId));
+  const persona = resolveEffectivePersona(personaRows);
+  if (!persona) return []; // no responder yet (pre-onboarding) — nothing to attach to.
+
+  const created: string[] = [];
+  for (const def of MANIFEST_HEARTBEATS) {
+    const [existing] = await db
+      .select({ id: heartbeats.id, skillSlug: heartbeats.skillSlug })
+      .from(heartbeats)
+      .where(and(eq(heartbeats.ownerId, ownerId), eq(heartbeats.slug, def.slug)))
+      .limit(1);
+
+    if (existing) {
+      // Only heal a dangling skill reference. Everything else is the owner's.
+      if (existing.skillSlug !== def.skillSlug) {
+        const [skillRow] = await db
+          .select({ slug: skills.slug })
+          .from(skills)
+          .where(and(eq(skills.ownerId, ownerId), eq(skills.slug, existing.skillSlug)))
+          .limit(1);
+        if (!skillRow) {
+          await db
+            .update(heartbeats)
+            .set({ skillSlug: def.skillSlug, updatedAt: new Date() })
+            .where(eq(heartbeats.id, existing.id));
+        }
+      }
+      continue;
+    }
+
+    const schedule = {
+      kind: def.scheduleKind,
+      every_minutes: def.everyMinutes,
+      jitter_minutes: def.jitterMinutes,
+    } as const;
+    const now = new Date();
+    await db.insert(heartbeats).values({
+      ownerId,
+      slug: def.slug,
+      name: def.name,
+      description: def.description,
+      agentSlug: persona.slug,
+      skillSlug: def.skillSlug,
+      scheduleKind: def.scheduleKind,
+      schedule,
+      // Anchor on now, so a freshly provisioned brain waits a full interval
+      // before its first fire rather than firing into an empty brain on day one.
+      nextFireAt: computeNextFireAt({ schedule, anchor: now, seed: `${ownerId}:${def.slug}` }),
+      surface: { kind: 'web' },
+      minIdleMinutes: def.minIdleMinutes,
+      quietHours: def.quietHours,
+      cooldownMinutes: def.cooldownMinutes,
+      status: 'active',
+    });
+    created.push(def.slug);
+  }
+  return created;
+}
+
 export async function applyManifest(
   ownerId: string,
   opts: ApplyManifestOpts = {},
@@ -471,7 +575,11 @@ export async function applyManifest(
   //    add-only in gap-fill (onboarding / CLI).
   await syncPersonaSkills(ownerId, skillMode);
 
-  return { seededSkills: skillDefs.map((s) => s.slug), seededAgents };
+  // 6. Heartbeats — LAST, because the row points at the persona (step 3/5) and
+  //    the skill (step 2), both of which must exist first. Create-only.
+  const seededHeartbeats = await seedManifestHeartbeats(ownerId);
+
+  return { seededSkills: skillDefs.map((s) => s.slug), seededAgents, seededHeartbeats };
 }
 
 // ─── per-item adopt (the /settings/config "Adopt from template" action) ──────

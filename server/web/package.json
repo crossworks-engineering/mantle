@@ -36,7 +36,6 @@
     "rotate:master-key": "tsx --env-file-if-exists=./.env.local scripts/rotate-master-key.ts",
     "route-manifest": "tsx scripts/gen-route-manifest.ts",
     "seed:appsmith": "tsx --env-file-if-exists=./.env.local scripts/seed-appsmith-agent.ts",
-    "seed:brain-health": "tsx --env-file-if-exists=./.env.local scripts/seed-brain-health.ts",
     "seed:coder": "tsx --env-file-if-exists=./.env.local scripts/seed-coder-agent.ts",
     "seed:docs": "tsx --env-file-if-exists=./.env.local scripts/seed-docs.ts",
     "seed:heartbeat-demo": "tsx --env-file-if-exists=./.env.local scripts/seed-get-to-know-user.ts",

@@ -329,7 +329,11 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     if (prefs.lastReconciledVersion === APP_VERSION) return;
 
     await seedToolCapabilities(ownerId, 'overwrite');
-    await applyManifest(ownerId, { only: [], mode: 'gap-fill', skillMode: 'overwrite' });
+    const { seededHeartbeats } = await applyManifest(ownerId, {
+      only: [],
+      mode: 'gap-fill',
+      skillMode: 'overwrite',
+    });
     const personaChanges = await reconcilePersonaCapabilitiesByRole(ownerId);
     const provisioned = await provisionMissingSpecialists(ownerId);
     const specialistGrants = await grantSpecialistCapabilities(ownerId);
@@ -347,7 +351,8 @@ export async function reconcileManifestOnBoot(): Promise<void> {
         (provisioned.length ? `; provisioned ${provisioned.join(', ')}` : '') +
         (specialistGrants.length ? `; specialists ${specialistGrants.join('; ')}` : '') +
         (defsSynced.length ? `; defs synced ${defsSynced.join(', ')}` : '') +
-        (workersCreated.length ? `; workers +${workersCreated.map((w) => w.kind).join(',')}` : ''),
+        (workersCreated.length ? `; workers +${workersCreated.map((w) => w.kind).join(',')}` : '') +
+        (seededHeartbeats.length ? `; heartbeats +${seededHeartbeats.join(',')}` : ''),
     );
   } catch (err) {
     // Best-effort: a reconcile failure must never take the server down.

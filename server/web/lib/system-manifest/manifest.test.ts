@@ -5,6 +5,7 @@ import {
   MANIFEST_TOOL_GROUPS,
   MANIFEST_HTTP_TOOLS,
   MANIFEST_HTTP_TOOL_SLUGS,
+  MANIFEST_HEARTBEATS,
   MANIFEST_WORKERS,
   KNOWN_TOOL_SLUGS,
   KNOWN_TOOL_GROUP_SLUGS,
@@ -51,6 +52,40 @@ describe('system manifest integrity', () => {
     expect(MANIFEST_AGENTS.length).toBe(agentSlugs.size);
     const workerKinds = MANIFEST_WORKERS.map((w) => w.kind);
     expect(new Set(workerKinds).size).toBe(workerKinds.length);
+  });
+
+  it('every heartbeat references a real skill, a real tool group, and is uniquely slugged', () => {
+    const slugs = MANIFEST_HEARTBEATS.map((h) => h.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    for (const h of MANIFEST_HEARTBEATS) {
+      expect(skillSlugs.has(h.skillSlug), `${h.slug} → skill ${h.skillSlug}`).toBe(true);
+      expect(groupTools.has(h.requiresToolGroup), `${h.slug} → group ${h.requiresToolGroup}`).toBe(
+        true,
+      );
+    }
+  });
+
+  it('the persona holds every tool group its heartbeats need', () => {
+    // A heartbeat fires as the persona. Without the group it burns a turn and
+    // fails on the first tool call, which reads as a model fault, not a grant
+    // fault. `brain-health` shipped granted to NOBODY for exactly this reason.
+    const persona = MANIFEST_AGENTS.find((a) => a.isPersona)!;
+    for (const h of MANIFEST_HEARTBEATS) {
+      expect(
+        (persona.toolGroupSlugs ?? []).includes(h.requiresToolGroup),
+        `persona must hold '${h.requiresToolGroup}' for heartbeat '${h.slug}'`,
+      ).toBe(true);
+    }
+  });
+
+  it('no heartbeat fires more often than daily, and every one jitters', () => {
+    // Scheduled spend the user never asked for. A tight interval multiplied
+    // across a fleet is the runaway-cost shape; jitter stops every brain in the
+    // fleet hitting the provider on the same second.
+    for (const h of MANIFEST_HEARTBEATS) {
+      expect(h.everyMinutes, `${h.slug} interval`).toBeGreaterThanOrEqual(1440);
+      expect(h.jitterMinutes, `${h.slug} jitter`).toBeGreaterThan(0);
+    }
   });
 
   it('every tool group bundles only known builtin tools, with unique slugs', () => {

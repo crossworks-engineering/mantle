@@ -9,12 +9,23 @@
  * the corpus audit) — green when every vital link resolves.
  */
 
-import { db, agents, skills, toolGroups, tools, eq, and, type AgentMemoryConfig } from '@mantle/db';
+import {
+  db,
+  agents,
+  heartbeats,
+  skills,
+  toolGroups,
+  tools,
+  eq,
+  and,
+  type AgentMemoryConfig,
+} from '@mantle/db';
 import { listAiWorkers } from '@/lib/ai-workers';
 import type { SystemCheck, SystemReport, SystemSample } from '@mantle/client-types/types/integrity';
 import {
   MANIFEST_AGENTS,
   MANIFEST_TOOL_GROUPS,
+  MANIFEST_HEARTBEATS,
   MANIFEST_WORKERS,
   DELEGATE_SLUGS,
   PERSONA_SLUG,
@@ -305,6 +316,70 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
         samples.length === 0
           ? `${requiredKinds.join(' · ')} ready`
           : `${samples.length} required worker(s) missing`,
+      samples,
+    });
+  }
+
+  // 9. Baseline heartbeats — installed, pointed at a real agent + skill, and
+  //    the answering agent actually holds the tool group the heartbeat needs.
+  //    A heartbeat that fires without its tools burns a turn and fails on the
+  //    first call, which looks like a model problem and is a grant problem.
+  {
+    const rows = await db
+      .select({
+        slug: heartbeats.slug,
+        agentSlug: heartbeats.agentSlug,
+        skillSlug: heartbeats.skillSlug,
+        status: heartbeats.status,
+      })
+      .from(heartbeats)
+      .where(eq(heartbeats.ownerId, ownerId));
+    const bySlug = new Map(rows.map((r) => [r.slug, r]));
+    const skillSlugs = new Set(skillRows.map((sk) => sk.slug));
+    const samples: SystemSample[] = [];
+
+    for (const def of MANIFEST_HEARTBEATS) {
+      const row = bySlug.get(def.slug);
+      if (!row) {
+        samples.push({ id: def.slug, detail: `not installed — run reconcile or applyManifest` });
+        continue;
+      }
+      // A PAUSED heartbeat is an operator decision, not a defect. Never flag it.
+      if (row.status === 'paused') continue;
+      const agent = agentRows.find((a) => a.slug === row.agentSlug);
+      if (!agent) {
+        samples.push({
+          id: def.slug,
+          detail: `points at agent '${row.agentSlug}', which does not exist — it will auto-pause on the next fire`,
+        });
+        continue;
+      }
+      if (!skillSlugs.has(row.skillSlug)) {
+        samples.push({
+          id: def.slug,
+          detail: `skill '${row.skillSlug}' missing — the fire loop auto-pauses on a missing skill`,
+        });
+        continue;
+      }
+      if (!(agent.toolGroupSlugs ?? []).includes(def.requiresToolGroup)) {
+        samples.push({
+          id: def.slug,
+          detail: `agent '${row.agentSlug}' lacks the '${def.requiresToolGroup}' group — it will fire, then fail on its first tool call`,
+        });
+      }
+    }
+
+    checks.push({
+      key: 'heartbeats',
+      label: 'Baseline heartbeats',
+      // Medium, not high: a missing heartbeat degrades self-monitoring; it does
+      // not break a turn the user is waiting on.
+      severity: 'medium',
+      ok: samples.length === 0,
+      detail:
+        samples.length === 0
+          ? MANIFEST_HEARTBEATS.map((h) => h.slug).join(' · ') + ' ready'
+          : `${samples.length} heartbeat problem(s)`,
       samples,
     });
   }

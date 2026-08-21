@@ -1,6 +1,6 @@
 # Heartbeats: proactive Saskia
 
-Heartbeats are how an agent acts *without being prompted*. Instead of
+Heartbeats are how an agent acts _without being prompted_. Instead of
 the user asking and Saskia replying, a heartbeat row schedules Saskia
 to **initiate** (ask a question, send a nudge, run a checklist)
 and remember her state across firings until the goal is met.
@@ -27,29 +27,29 @@ Migration `0030_heartbeats.sql` adds two tables and one enum value.
 
 ### `heartbeats`
 
-| column              | type                            | notes                                              |
-|---------------------|---------------------------------|----------------------------------------------------|
-| `id`                | uuid                            | PK                                                 |
-| `owner_id`          | uuid → auth.users               | scoping                                            |
-| `slug`              | text (unique per owner)         | stable handle e.g. `get_to_know_user`              |
-| `name`              | text                            | human label                                        |
-| `description`      | text                            | optional                                           |
-| `agent_slug`        | text                            | resolved to `agents.slug` at fire time             |
-| `skill_slug`        | text                            | resolved to `skills.slug` at fire time             |
-| `schedule_kind`     | enum (once/interval/cron/manual)| `cron` reserved for v1.1; not implemented yet      |
-| `schedule`          | jsonb                           | shape varies by kind, see §2                       |
-| `next_fire_at`      | timestamptz                     | computed; null when status ≠ active                |
-| `last_fired_at`     | timestamptz                     | populated after every fire (including errors)      |
-| `fire_count`        | integer                         | only successful fires bump this                    |
-| `max_fires`         | integer                         | null = unbounded                                   |
-| `surface`           | jsonb                           | `{kind:'telegram',chat_id:...}` or `{kind:'web'}`  |
-| `min_idle_minutes`  | integer NULL                    | gate: skip if user just messaged                   |
-| `quiet_hours`       | jsonb NULL                      | `{from:'HH:MM',to:'HH:MM',tz:?}`; tz null = profile|
-| `earliest_at`       | timestamptz NULL                | hard floor before any fire                         |
-| `cooldown_minutes`  | integer NULL                    | gate: min wait between fires of THIS heartbeat     |
-| `state`             | jsonb                           | the skill's running memory; see §10 + §11          |
-| `status`            | enum (active/paused/completed/cancelled) |                                            |
-| `completion_reason` | text                            | free-text, e.g. `tool_call:all_topics_covered`     |
+| column              | type                                     | notes                                               |
+| ------------------- | ---------------------------------------- | --------------------------------------------------- |
+| `id`                | uuid                                     | PK                                                  |
+| `owner_id`          | uuid → auth.users                        | scoping                                             |
+| `slug`              | text (unique per owner)                  | stable handle e.g. `get_to_know_user`               |
+| `name`              | text                                     | human label                                         |
+| `description`       | text                                     | optional                                            |
+| `agent_slug`        | text                                     | resolved to `agents.slug` at fire time              |
+| `skill_slug`        | text                                     | resolved to `skills.slug` at fire time              |
+| `schedule_kind`     | enum (once/interval/cron/manual)         | `cron` reserved for v1.1; not implemented yet       |
+| `schedule`          | jsonb                                    | shape varies by kind, see §2                        |
+| `next_fire_at`      | timestamptz                              | computed; null when status ≠ active                 |
+| `last_fired_at`     | timestamptz                              | populated after every fire (including errors)       |
+| `fire_count`        | integer                                  | only successful fires bump this                     |
+| `max_fires`         | integer                                  | null = unbounded                                    |
+| `surface`           | jsonb                                    | `{kind:'telegram',chat_id:...}` or `{kind:'web'}`   |
+| `min_idle_minutes`  | integer NULL                             | gate: skip if user just messaged                    |
+| `quiet_hours`       | jsonb NULL                               | `{from:'HH:MM',to:'HH:MM',tz:?}`; tz null = profile |
+| `earliest_at`       | timestamptz NULL                         | hard floor before any fire                          |
+| `cooldown_minutes`  | integer NULL                             | gate: min wait between fires of THIS heartbeat      |
+| `state`             | jsonb                                    | the skill's running memory; see §10 + §11           |
+| `status`            | enum (active/paused/completed/cancelled) |                                                     |
+| `completion_reason` | text                                     | free-text, e.g. `tool_call:all_topics_covered`      |
 
 **Per-heartbeat-only gates.** There are no system-wide defaults.
 A null gate column means "no check of that kind". The UI form offers
@@ -70,14 +70,14 @@ preferable to either keeping traces forever or losing the audit row.
 Disposition vocabulary (operator triage at-a-glance, distinct colours
 on `/heartbeats/[id]`):
 
-| Disposition | Colour | Meaning |
-|---|---|---|
-| `fired` | emerald | LLM ran AND reply reached the surface (happy path) |
-| `completed` | sky | Same as fired, but a tool flipped `status=completed` (heartbeat met its goal) |
-| `fired_undelivered` | orange | LLM ran + reply text computed, but the surface refused (no enabled Telegram account; `sendMessage` threw). LLM cost was spent; user got nothing. State still updated. P1-1 fix. |
-| `skipped_idle` / `skipped_quiet` / `skipped_cooldown` / `skipped_earliest` | amber | Gate rejected. No work, no cost. |
-| `auto_paused` | rose | Config error caught BEFORE any LLM work (agent missing, skill missing, key undecryptable). Heartbeat moved to `status=paused`; operator must intervene. P1-2 split. |
-| `error` | purple | Transient runtime failure mid-fire. Will retry on the next tick after a short backoff. Distinct from `auto_paused` so the operator can tell "will fix itself" from "I need to look at this". |
+| Disposition                                                                | Colour  | Meaning                                                                                                                                                                                      |
+| -------------------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fired`                                                                    | emerald | LLM ran AND reply reached the surface (happy path)                                                                                                                                           |
+| `completed`                                                                | sky     | Same as fired, but a tool flipped `status=completed` (heartbeat met its goal)                                                                                                                |
+| `fired_undelivered`                                                        | orange  | LLM ran + reply text computed, but the surface refused (no enabled Telegram account; `sendMessage` threw). LLM cost was spent; user got nothing. State still updated. P1-1 fix.              |
+| `skipped_idle` / `skipped_quiet` / `skipped_cooldown` / `skipped_earliest` | amber   | Gate rejected. No work, no cost.                                                                                                                                                             |
+| `auto_paused`                                                              | rose    | Config error caught BEFORE any LLM work (agent missing, skill missing, key undecryptable). Heartbeat moved to `status=paused`; operator must intervene. P1-2 split.                          |
+| `error`                                                                    | purple  | Transient runtime failure mid-fire. Will retry on the next tick after a short backoff. Distinct from `auto_paused` so the operator can tell "will fix itself" from "I need to look at this". |
 
 ### trace_kind extension
 
@@ -90,10 +90,10 @@ trace detail pivots to `/heartbeats/[id]` via the subject link.
 
 ```ts
 type Schedule =
-  | { kind: 'once';     at: string /*ISO*/ }
+  | { kind: 'once'; at: string /*ISO*/ }
   | { kind: 'interval'; every_minutes: number; jitter_minutes?: number }
-  | { kind: 'cron';     expr: string /*5-field*/ }  // v1.1
-  | { kind: 'manual'                        };       // only via heartbeat_fire tool
+  | { kind: 'cron'; expr: string /*5-field*/ } // v1.1
+  | { kind: 'manual' }; // only via heartbeat_fire tool
 ```
 
 `jitter_minutes` is small but matters, keeps fires from feeling
@@ -151,7 +151,7 @@ For each eligible row:
    agent.toolSlugs ∪ persistentSkills.toolSlugs ∪
    heartbeatSkill.toolSlugs ∪ heartbeat-control tools.
 7. **Deliver reply** to surface inside a `step({name: 'deliver_surface',
-   kind: 'send'})` so a Telegram outage shows up distinctly in the
+kind: 'send'})` so a Telegram outage shows up distinctly in the
    trace graph (not buried inside the surrounding LLM step).
 8. **Reload heartbeat** to capture any state mutations from tools.
 9. **Compute next_fire_at** via `computeNextFireAt`, **preserving any
@@ -192,13 +192,13 @@ explicit `slug` arg  →  ALS context (fire path)  →  error
 
 Tool-by-tool:
 
-| Tool                       | Required args | Addressing |
-|----------------------------|---------------|------------|
-| `heartbeat_complete`       |, | slug or ALS |
-| `heartbeat_snooze`         | `for_hours` or `until` | slug or ALS |
-| `heartbeat_update_state`   | `patch`       | slug or ALS |
-| `heartbeat_list`           |, | no addressing (lists all) |
-| `heartbeat_fire`           | `slug`        | slug only (force-fire by id) |
+| Tool                     | Required args          | Addressing                   |
+| ------------------------ | ---------------------- | ---------------------------- |
+| `heartbeat_complete`     | ,                      | slug or ALS                  |
+| `heartbeat_snooze`       | `for_hours` or `until` | slug or ALS                  |
+| `heartbeat_update_state` | `patch`                | slug or ALS                  |
+| `heartbeat_list`         | ,                      | no addressing (lists all)    |
+| `heartbeat_fire`         | `slug`                 | slug only (force-fire by id) |
 
 Each tool's failure modes are surfaced as a `branch: '...'` value on
 the trace step's `meta` (no_target / bad_patch_shape / bad_delay /
@@ -230,12 +230,12 @@ adding them to an agent's allowlist persistently is safe.
 **Runtime affordance hygiene** (auto-exclusion): even though the
 operator granted these tools, the responder loops drop them from the
 per-turn tool list when `hasActiveHeartbeatsOnSurface()` returns
-false. The model never *sees* them when there's nothing for them to
+false. The model never _sees_ them when there's nothing for them to
 do, eliminates the small but real noise of the model confusedly
 calling a heartbeat tool on a turn with no relevant heartbeat. The
 grant in `tool_slugs` stays canonical; only the per-turn affordance
 is scoped to context. This is the mirror image of auto-injection
-(which would *grant* affordances the operator didn't): hiding what's
+(which would _grant_ affordances the operator didn't): hiding what's
 useless is fine, granting what wasn't asked for is not.
 
 `heartbeat_list` + `heartbeat_fire` are NOT auto-excluded; they're
@@ -245,7 +245,7 @@ heartbeats do you have for me?", "fire that one now").
 ## 5. The continuity trick
 
 If a heartbeat asks the user a question and the user replies an hour
-later, that reply hits the *normal* responder turn, not the heartbeat
+later, that reply hits the _normal_ responder turn, not the heartbeat
 fire loop. So how does Saskia stay in character?
 
 The responder, on every turn, calls `openHeartbeatsForSurface(ownerId, surface)`
@@ -374,11 +374,12 @@ felt like an interrogation, exactly the wrong vibe for an AI that's
 supposed to know you, not interview you.
 
 Two design failures in that v1:
+
 1. **The system already learns passively.** Extractor harvests entities
-   + facts from every message. Reflector appends persona notes. The
-   heartbeat doesn't need to drive the learning; it just needs to
-   open the door. Asking 8 questions duplicated work the rest of the
-   system was already doing for free.
+   - facts from every message. Reflector appends persona notes. The
+     heartbeat doesn't need to drive the learning; it just needs to
+     open the door. Asking 8 questions duplicated work the rest of the
+     system was already doing for free.
 2. **Multi-fire pestering risk.** Even with the relevance gate + stale-
    pending nudge, asking the same person N more questions over N more
    days felt like a CRM, not a friend.
@@ -463,6 +464,37 @@ new symptoms surface.
   heartbeats: the model never sees the tools, can't call them,
   can't be confused by them.
 
+## 7a. The one heartbeat that ships by default
+
+Everything above describes heartbeats the assistant or the operator creates.
+Exactly one ships in the system manifest (`MANIFEST_HEARTBEATS`): **`brain_health`**,
+weekly ±6h, which calls `brain_capacity` + `recall_eval` and stays silent unless
+a capacity zone left green or retrieval quality actually dropped. It installs on
+a new brain at onboarding and on an existing one at the next boot reconcile.
+
+**Seeding is create-only, and that is deliberate.** Every other manifest section
+converges on reconcile; a heartbeat must not, because its row mixes three things
+the product does not own:
+
+| what                                          | why converging it is wrong                                                                                       |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `status`                                      | Paused means the owner switched it off. Re-activating it on every deploy overrides a decision.                   |
+| `schedule`, `quiet_hours`, `surface`          | Operator tuning.                                                                                                 |
+| `next_fire_at`, `fire_count`, `last_fired_at` | Live runtime state. Re-arming `next_fire_at` each boot means a box that redeploys weekly **never fires at all**. |
+
+So `seedManifestHeartbeats` creates a missing heartbeat and then leaves it alone,
+with one exception: a `skill_slug` that no longer resolves gets re-pointed,
+because the fire loop auto-pauses on a missing skill (§3) and a manifest rename
+would otherwise quietly kill the heartbeat.
+
+The bar for adding a second default is high. A heartbeat is recurring LLM spend
+the user did not ask for on the day it fires, so it must watch something they
+cannot reasonably watch themselves, and it must be silent when nothing moved.
+`manifest.test.ts` enforces the mechanical half: no default heartbeat may fire
+more often than daily, every one must jitter, and the persona must hold the tool
+group the heartbeat needs (`brain-health` shipped for months granted to nobody,
+which is the failure that check exists to catch).
+
 ## 8. Operator surfaces
 
 - `/settings/heartbeats`, list, create/edit, pause/resume, fire-now,
@@ -502,9 +534,9 @@ operator (click "Create", nothing happens).
 `packages/heartbeats/src/notify.ts` adds `notifyHeartbeatDue(ownerId)`
 which fires `pg_notify('heartbeat_due', <ownerId>)`. Producers:
 
-  - `apps/web/lib/heartbeats.createHeartbeat` after every insert
-  - `apps/web/lib/heartbeats.updateHeartbeat` after every update
-    (covers schedule edits + resume-from-paused)
+- `apps/web/lib/heartbeats.createHeartbeat` after every insert
+- `apps/web/lib/heartbeats.updateHeartbeat` after every update
+  (covers schedule edits + resume-from-paused)
 
 Consumer: `apps/agent/src/main.ts` LISTENs on `heartbeat_due` and
 calls `tickHeartbeats(ownerId)` on each notification, same code path
@@ -538,11 +570,11 @@ heartbeats), it could feel like a notification storm.
 Mitigations (not implemented in v1, named here for the v1.1
 discussion):
 
-  - Lower `TICK_BATCH` to spread the flurry over more minutes
-  - Detect `now() - next_fire_at > stale_threshold` and **bump
-    forward** instead of firing the stale one (treat as missed-bus)
-  - Coalesce per-surface: don't send N Telegram messages in 2 minutes
-    even if N heartbeats are due, let the user breathe
+- Lower `TICK_BATCH` to spread the flurry over more minutes
+- Detect `now() - next_fire_at > stale_threshold` and **bump
+  forward** instead of firing the stale one (treat as missed-bus)
+- Coalesce per-surface: don't send N Telegram messages in 2 minutes
+  even if N heartbeats are due, let the user breathe
 
 For the dogfooded single-user scenario today, none worth doing. Worth
 knowing exists for capacity planning.
@@ -589,12 +621,12 @@ Skills are responsible for the vocabulary. The following keys are
 them in skills breaks behaviour silently. Treat them as a shared
 contract between the engine and skill authors:
 
-| Key                   | Type     | Read by | Purpose |
-|-----------------------|----------|---------|---------|
-| `expecting_reply`     | boolean  | `openHeartbeatsForSurface` (tick.ts) + stale-pending detector (prompt.ts) | Truthy means a fire asked something and is waiting. Gates the awareness-block injection on responder turns. |
-| `last_asked_at`       | ISO string | `lastAskedAgo` helper (prompt.ts) | Surfaces "asked Nh ago" in awareness block + stale-pending nudge. |
-| `last_question_topic` | string   | (display only, surfaced in awareness block state JSON) | Operator visibility + skill self-reference. |
-| `answered`            | string[] | (display only) | Skill-defined; convention is "topics already covered" for interview-style skills. |
+| Key                   | Type       | Read by                                                                   | Purpose                                                                                                     |
+| --------------------- | ---------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `expecting_reply`     | boolean    | `openHeartbeatsForSurface` (tick.ts) + stale-pending detector (prompt.ts) | Truthy means a fire asked something and is waiting. Gates the awareness-block injection on responder turns. |
+| `last_asked_at`       | ISO string | `lastAskedAgo` helper (prompt.ts)                                         | Surfaces "asked Nh ago" in awareness block + stale-pending nudge.                                           |
+| `last_question_topic` | string     | (display only, surfaced in awareness block state JSON)                    | Operator visibility + skill self-reference.                                                                 |
+| `answered`            | string[]   | (display only)                                                            | Skill-defined; convention is "topics already covered" for interview-style skills.                           |
 
 Skill conventions beyond these four (anything else the skill's
 instructions reference) are local to the skill, keep them
@@ -635,13 +667,13 @@ ship a heartbeat with a multi-fire skill, ask:
 
 **Pattern checklist for a well-designed heartbeat skill:**
 
-  - Single clear fire goal stated in the instructions
-  - State shape is minimal (often just `{expecting_reply, last_asked_at}`)
-  - Self-terminates on a clear completion signal (first substantive
-    reply / user_declined / max iterations reached)
-  - Schedule reflects intent: `once` for one-shot, `interval` only
-    when each fire genuinely covers new ground
-  - Tone matches a friend, not a survey
+- Single clear fire goal stated in the instructions
+- State shape is minimal (often just `{expecting_reply, last_asked_at}`)
+- Self-terminates on a clear completion signal (first substantive
+  reply / user_declined / max iterations reached)
+- Schedule reflects intent: `once` for one-shot, `interval` only
+  when each fire genuinely covers new ground
+- Tone matches a friend, not a survey
 
 The complex multi-fire flow stays available in the engine for skills
 that earn it (daily check-ins, weekly reviews, multi-step
@@ -655,10 +687,10 @@ it was just "instructions + tools you can attach to an agent."
 Heartbeats reuse it for the "what to do" axis. The same `skills`
 row can be referenced in two ways:
 
-| Activation | Set via | Lifetime | Use case |
-|---|---|---|---|
-| Always-on | `agents.skill_slugs[]` | Loaded into system prompt of EVERY turn that agent runs | Persistent behaviour packs ("format dates as en-GB", "use spoken style on voice notes") |
-| Situational | `heartbeats.skill_slug` | Loaded only into the synthetic user prompt during the fire | "Topics to cover in get_to_know_user" |
+| Activation  | Set via                 | Lifetime                                                   | Use case                                                                                |
+| ----------- | ----------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Always-on   | `agents.skill_slugs[]`  | Loaded into system prompt of EVERY turn that agent runs    | Persistent behaviour packs ("format dates as en-GB", "use spoken style on voice notes") |
+| Situational | `heartbeats.skill_slug` | Loaded only into the synthetic user prompt during the fire | "Topics to cover in get_to_know_user"                                                   |
 
 A skill referenced both ways would be injected twice (once in the
 system prompt, once in the fire's synthetic user prompt). Slightly
@@ -673,21 +705,21 @@ heartbeat fire (situational).
 
 ## 13. Files
 
-| Path                                            | Purpose                                  |
-|-------------------------------------------------|------------------------------------------|
-| `packages/db/migrations/0030_heartbeats.sql`    | Schema + enum extension                  |
-| `packages/db/src/schema/heartbeats.ts`          | Drizzle types                            |
-| `packages/heartbeats/src/schedule.ts`           | `computeNextFireAt` + `validateSchedule` |
-| `packages/heartbeats/src/gates.ts`              | `checkGates` (idle / quiet / cooldown / earliest) |
-| `packages/heartbeats/src/prompt.ts`             | Synthetic prompt + open-heartbeat block + last_asked_at age helper |
-| `packages/heartbeats/src/context.ts`            | AsyncLocalStorage for current heartbeat  |
-| `packages/heartbeats/src/inflight.ts`           | Per-process `Map<id, Promise>` lock (P0-2) |
-| `packages/heartbeats/src/fire.ts`               | Single-fire orchestration (inflight lock + snooze preservation + state reload) |
-| `packages/heartbeats/src/tick.ts`               | Tick loop + `openHeartbeatsForSurface`   |
-| `packages/heartbeats/src/tools.ts`              | 5 builtin control tools (dual-mode addressing) |
-| `apps/agent/src/main.ts`                        | Tick wiring + responder context inject   |
-| `apps/web/lib/heartbeats.ts`                    | CRUD lib                                  |
-| `apps/web/app/(app)/settings/heartbeats/*`      | CRUD UI                                  |
-| `apps/web/app/(app)/heartbeats/[id]/page.tsx`   | Detail / fire log                        |
-| `apps/web/scripts/seed-get-to-know-user.ts`     | Demo skill + heartbeat + tool grant      |
-| `apps/web/scripts/test-fire-heartbeat.ts`       | Diagnostic CLI: one-shot forceFire to compare in-process vs long-running agent |
+| Path                                          | Purpose                                                                        |
+| --------------------------------------------- | ------------------------------------------------------------------------------ |
+| `packages/db/migrations/0030_heartbeats.sql`  | Schema + enum extension                                                        |
+| `packages/db/src/schema/heartbeats.ts`        | Drizzle types                                                                  |
+| `packages/heartbeats/src/schedule.ts`         | `computeNextFireAt` + `validateSchedule`                                       |
+| `packages/heartbeats/src/gates.ts`            | `checkGates` (idle / quiet / cooldown / earliest)                              |
+| `packages/heartbeats/src/prompt.ts`           | Synthetic prompt + open-heartbeat block + last_asked_at age helper             |
+| `packages/heartbeats/src/context.ts`          | AsyncLocalStorage for current heartbeat                                        |
+| `packages/heartbeats/src/inflight.ts`         | Per-process `Map<id, Promise>` lock (P0-2)                                     |
+| `packages/heartbeats/src/fire.ts`             | Single-fire orchestration (inflight lock + snooze preservation + state reload) |
+| `packages/heartbeats/src/tick.ts`             | Tick loop + `openHeartbeatsForSurface`                                         |
+| `packages/heartbeats/src/tools.ts`            | 5 builtin control tools (dual-mode addressing)                                 |
+| `apps/agent/src/main.ts`                      | Tick wiring + responder context inject                                         |
+| `apps/web/lib/heartbeats.ts`                  | CRUD lib                                                                       |
+| `apps/web/app/(app)/settings/heartbeats/*`    | CRUD UI                                                                        |
+| `apps/web/app/(app)/heartbeats/[id]/page.tsx` | Detail / fire log                                                              |
+| `apps/web/scripts/seed-get-to-know-user.ts`   | Demo skill + heartbeat + tool grant                                            |
+| `apps/web/scripts/test-fire-heartbeat.ts`     | Diagnostic CLI: one-shot forceFire to compare in-process vs long-running agent |

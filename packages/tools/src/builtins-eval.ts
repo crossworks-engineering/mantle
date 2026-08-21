@@ -72,16 +72,28 @@ const recall_eval: BuiltinToolDef = {
   slug: 'recall_eval',
   name: 'Run the retrieval-quality eval',
   description:
-    "Run the brain's retrieval self-check: every golden case (a note tagged `recall-eval-cases` holding a JSON array of {id, query, expectNodeIds?|expectTitleIncludes?}) is searched via the shipped hybrid + passage retrievers, scored (recall@k, MRR), saved as a run note, and compared to the previous run. Returns scores, drift, and `alert: true` when quality dropped enough to tell the user. Writes one summary note per run. For a point-in-time capacity check use `brain_capacity`; this measures retrieval QUALITY.",
+    "Run the brain's retrieval self-check: every golden case (a note tagged `recall-eval-cases` holding a JSON array of {id, query, expectNodeIds?|expectTitleIncludes?}) is searched via the shipped hybrid + passage retrievers, scored (recall@k, MRR), saved as a run note, and compared to the previous run. Returns scores, drift, and `alert: true` when quality dropped enough to tell the user. Writes one summary note per run. Returns `skipped: true, alert: false` when no gold set exists yet — unmeasured, not degraded, so say nothing. For a point-in-time capacity check use `brain_capacity`; this measures retrieval QUALITY.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     const casesNote = await latestTaggedNoteJson(ctx.ownerId, CASES_TAG);
     if (!casesNote) {
+      // NOT an error: a brain with no gold set has nothing to measure yet, and
+      // the gold set is necessarily hand-written per brain (a case pins node
+      // ids, so no set can ship). Returning ok:false here made the weekly
+      // brain-health heartbeat alert every single fire on a fresh brain —
+      // nagging the owner about a self-check they never configured. `skipped`
+      // says "nothing to do", which the heartbeat skill treats as silence.
       return {
-        ok: false,
-        error:
-          `no golden-case note found — create a note tagged '${CASES_TAG}' whose content is a JSON array of ` +
-          `{id, query, expectNodeIds? | expectTitleIncludes?} cases (see docs/recall-eval.md), then re-run recall_eval`,
+        ok: true,
+        output: {
+          skipped: true,
+          reason: 'no_golden_cases',
+          alert: false,
+          detail:
+            `no note tagged '${CASES_TAG}' — retrieval quality is unmeasured, not degraded. ` +
+            `To start measuring, create a note tagged '${CASES_TAG}' whose content is a JSON array of ` +
+            `{id, query, expectNodeIds? | expectTitleIncludes?} cases (see docs/recall-eval.md).`,
+        },
       };
     }
     let cases;

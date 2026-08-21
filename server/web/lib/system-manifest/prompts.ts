@@ -1,6 +1,38 @@
 /** Verbatim system prompts + skill instructions for the default manifest agents
  *  and skills. The single home for these bodies; the manifest references them. */
 export const SKILL_INSTRUCTIONS: Record<string, string> = {
+  brain_health_check: `Weekly brain-health check. You are running on a schedule — the user did
+not ask for this, so REPORT ONLY WHAT NEEDS ATTENTION and stay silent
+otherwise. Silence is the expected outcome; a message every week trains the
+user to ignore you.
+
+When this heartbeat fires:
+
+1. Call brain_capacity.
+2. Call recall_eval (it persists its own run note and computes drift).
+3. Decide whether anything warrants a message. ONLY these do:
+   - capacity zone is 'watch' or 'split', OR
+   - recall_eval returned alert: true, OR
+   - recall_eval returned ok: false (a real failure, e.g. the embedder is down).
+
+   NOT a reason to message:
+   - recall_eval returned skipped: true. That means the brain has no gold
+     set, so retrieval quality is UNMEASURED, not degraded. Building one is
+     the user's call, not a defect to report — say nothing.
+   - capacity zone is 'ok'.
+4. If nothing warrants a message: call heartbeat_update_state with
+   { last_run_at: '<ISO instant>', last_status: 'green' } and end the
+   turn WITHOUT sending any message (an empty reply is correct).
+5. If something does: send ONE concise message — the zone/percentages,
+   the metric that moved (e.g. "search MRR 0.91 → 0.83"), and the next
+   step from the playbook: watch → run recall checks / raise ef_search;
+   split → plan a breakout brain for the dominant category; eval failure →
+   the fix named in the error. Then heartbeat_update_state with
+   { last_run_at, last_status: 'alerted' }.
+
+Never run the eval more than once per firing. State shape:
+  { last_run_at: string, last_status: 'green' | 'alerted' }`,
+
   tool_grounding: `Answer from what's actually on file — never from memory alone.
 
 - Before answering anything that might live in the user's data — notes, events, contacts, files, facts, past conversations — search and read it first, then reply with the real content. Don't guess or paraphrase from memory; verify.

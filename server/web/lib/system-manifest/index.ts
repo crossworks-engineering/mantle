@@ -1,6 +1,6 @@
 /**
  * System manifest — the single declarative source of truth for the default
- * agent/skill/tool/worker graph, plus the live config-integrity checker.
+ * agent/skill/tool/worker/heartbeat graph, plus the live config-integrity checker.
  * Server-only (imports @mantle/tools / @mantle/db). See ./manifest.ts.
  */
 export * from './manifest';
@@ -10,6 +10,7 @@ export {
   applyManifest,
   seedToolCapabilities,
   seedManifestWorkers,
+  seedManifestHeartbeats,
   adoptManifestItem,
   type ApplyManifestOpts,
   type ApplyManifestResult,

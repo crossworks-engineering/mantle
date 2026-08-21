@@ -7,14 +7,14 @@ runners, the code generators, the git hooks and CI, plus the raw
 
 The rule of thumb for **where a thing lives**:
 
-| Location | What lives there | How you run it |
-|---|---|---|
-| `scripts/` | Repo- and host-level operations, dev stack, worktrees, DB dump/restore, install/uninstall, version bump, fleet status | `bash scripts/<name>.sh`, mostly wrapped by a root `pnpm` alias |
-| `server/web/scripts/*.ts` | Everything that talks to **the brain's data**: seeds, backfills, evals, repairs | `pnpm maintain <slug>` (preferred) or `pnpm -C server/web <alias>` |
-| `packages/*/…` | Package-scoped tooling, migrations, the theme generator, the mini-app runtime build | `pnpm -C packages/<pkg> <alias>`, some re-exported at the root |
-| `e2e/scripts/` | The hermetic end-to-end stack | `pnpm e2e` |
-| `infra/updater/` | Ships **inside the image**: the in-app update sidecar | never invoked by hand |
-| `scripts/git-hooks/` | `commit-msg` + `pre-push` gates | `git config core.hooksPath scripts/git-hooks`, once per clone |
+| Location                  | What lives there                                                                                                      | How you run it                                                     |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `scripts/`                | Repo- and host-level operations, dev stack, worktrees, DB dump/restore, install/uninstall, version bump, fleet status | `bash scripts/<name>.sh`, mostly wrapped by a root `pnpm` alias    |
+| `server/web/scripts/*.ts` | Everything that talks to **the brain's data**: seeds, backfills, evals, repairs                                       | `pnpm maintain <slug>` (preferred) or `pnpm -C server/web <alias>` |
+| `packages/*/…`            | Package-scoped tooling, migrations, the theme generator, the mini-app runtime build                                   | `pnpm -C packages/<pkg> <alias>`, some re-exported at the root     |
+| `e2e/scripts/`            | The hermetic end-to-end stack                                                                                         | `pnpm e2e`                                                         |
+| `infra/updater/`          | Ships **inside the image**: the in-app update sidecar                                                                 | never invoked by hand                                              |
+| `scripts/git-hooks/`      | `commit-msg` + `pre-push` gates                                                                                       | `git config core.hooksPath scripts/git-hooks`, once per clone      |
 
 Two conventions hold almost everywhere:
 
@@ -40,7 +40,7 @@ stack:
 3. `docker compose -f docker-compose.dev.yml up -d --wait` (postgres + minio + tika),
 4. ensures the MinIO `mantle` bucket,
 5. `pnpm -C packages/db migrate`,
-6. `pnpm -C server/web pgboss:init`, creates the `pgboss` schema *before* the
+6. `pnpm -C server/web pgboss:init`, creates the `pgboss` schema _before_ the
    workers race each other to create it on a fresh DB,
 7. `exec pnpm dev`.
 
@@ -112,17 +112,17 @@ is wedged, or you need one service rather than the stack, you drop to these.
 Each compose file pins its project with a `name:` key, so the project is the
 same no matter which directory you run it from:
 
-| File | Project | Containers | What it is |
-|---|---|---|---|
-| `docker-compose.dev.yml` | `mantle-dev` | `mantle_dev_pg`, `mantle_dev_minio`, `mantle_dev_tika`, `mantle_dev_browser` | Local dev **infra only**: the app runs on your host under `pnpm dev` |
-| `docker-compose.yml` | `mantle` | `mantle_pg`, `mantle_minio`, `mantle_tika`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the *same* image differing only by `command:` |
-| `docker-compose.client.yml` | `mantle-client` | `mantle_client_web`, `mantle_client_caddy` | The zero-secret owner UI (split out at v0.200) |
-| `e2e/stack/docker-compose.yml` | `mantle-e2e` | `mantle_e2e_pg`, `mantle_e2e_minio`, `mantle_e2e_browser` | Throwaway stack for the Playwright suite |
+| File                           | Project         | Containers                                                                                                   | What it is                                                                                     |
+| ------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `docker-compose.dev.yml`       | `mantle-dev`    | `mantle_dev_pg`, `mantle_dev_minio`, `mantle_dev_tika`, `mantle_dev_browser`                                 | Local dev **infra only**: the app runs on your host under `pnpm dev`                           |
+| `docker-compose.yml`           | `mantle`        | `mantle_pg`, `mantle_minio`, `mantle_tika`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the _same_ image differing only by `command:` |
+| `docker-compose.client.yml`    | `mantle-client` | `mantle_client_web`, `mantle_client_caddy`                                                                   | The zero-secret owner UI (split out at v0.200)                                                 |
+| `e2e/stack/docker-compose.yml` | `mantle-e2e`    | `mantle_e2e_pg`, `mantle_e2e_minio`, `mantle_e2e_browser`                                                    | Throwaway stack for the Playwright suite                                                       |
 
 > **`-p` does not isolate a second stack.** Every service sets an explicit
 > `container_name:`, so running the same file under a different project name
 > collides on those names rather than creating a parallel stack. Dev and prod
-> can coexist on one host only because they use *different* container names.
+> can coexist on one host only because they use _different_ container names.
 
 ### Dev stack (`docker-compose.dev.yml`)
 
@@ -193,10 +193,10 @@ Two services are opt-in via `COMPOSE_PROFILES` in `.env` (set by
 `scripts/install.sh --local-embedder` / `--sandboxes`, so every later
 `pull`/`up` (including the updater's) keeps them):
 
-| Profile | Brings up |
-|---|---|
-| `local-embedder` | `ollama` + the `ollama_pull` one-shot (EmbeddingGemma) |
-| `sandboxes` | `sandboxd` and the isolated `mantle_sandbox` / `mantle_sandbox_restricted` networks |
+| Profile          | Brings up                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| `local-embedder` | `ollama` + the `ollama_pull` one-shot (EmbeddingGemma)                              |
+| `sandboxes`      | `sandboxd` and the isolated `mantle_sandbox` / `mantle_sandbox_restricted` networks |
 
 ### Client stack (`docker-compose.client.yml`)
 
@@ -286,10 +286,10 @@ Refuses when the tree is dirty unless you pass `-f`.
 
 Backs up **all three halves** of a running stack's state into `./backups`:
 
-| Output | What | Restore with |
-|---|---|---|
-| `mantle-<ts>.dump` | Postgres (`pg_dump -Fc --no-owner`) | `scripts/db-restore.sh` |
-| `mantle-app-dbs-<ts>.tgz` | per-app SQLite (`/apps` databases) | `scripts/app-dbs-restore.sh` |
+| Output                      | What                                         | Restore with                            |
+| --------------------------- | -------------------------------------------- | --------------------------------------- |
+| `mantle-<ts>.dump`          | Postgres (`pg_dump -Fc --no-owner`)          | `scripts/db-restore.sh`                 |
+| `mantle-app-dbs-<ts>.tgz`   | per-app SQLite (`/apps` databases)           | `scripts/app-dbs-restore.sh`            |
 | `mantle-table-dbs-<ts>.tgz` | file-backed table workbooks (`TABLE_DB_DIR`) | untar into `$MANTLE_DATA_DIR/table-dbs` |
 
 The SQLite halves live on a **separate volume from Postgres**, so `pg_dump`
@@ -328,7 +328,7 @@ exist), then `docker compose up -d --wait`, then this, with apps idle.
 
 ### `pnpm db:tunnel` / `db:tunnel:down` → `scripts/prod-db-tunnel.sh [up|down|status]`
 
-SSH-forwards a remote Mantle's **data plane** (Postgres *and* MinIO) to local
+SSH-forwards a remote Mantle's **data plane** (Postgres _and_ MinIO) to local
 ports, so a local dev server runs as a thin client over the deployed brain
 ([remote-db-dev.md](./remote-db-dev.md)). Those containers publish no host
 ports, so the script resolves their container IPs over SSH **every run** (they
@@ -375,7 +375,7 @@ The real installer, and the only thing that writes `.env`. Idempotent and safe
 to re-run: it generates only the secrets that are **missing**, so a re-run never
 rotates `MANTLE_MASTER_KEY` and orphans your sealed secrets. It asks how the
 brain should be reached and settles every consequence (listen address, origins,
-what to open at the end) in one place; for a domain it proves DNS points *here*
+what to open at the end) in one place; for a domain it proves DNS points _here_
 before enabling TLS, so a typo costs nothing instead of burning Let's Encrypt's
 issuance limit. It checks disk, memory and ports before the ~2 GB pull, and ends
 on the sanity check's verdict, exiting non-zero when it fails rather than
@@ -383,22 +383,22 @@ printing "complete" over a broken install.
 
 Key flags (`--help` for the full list):
 
-| Flag | Effect |
-|---|---|
-| `--domain <host>` | HTTPS via Caddy/Let's Encrypt |
-| `--localhost` | loopback only, HTTP on `127.0.0.1:80` |
-| `--lan` (`--no-domain`) | HTTP on `:80`, reachable on the network |
-| `--behind-proxy` | Caddy on `127.0.0.1:8080`; your nginx/apache terminates TLS |
-| `--data-dir` / `--stack-dir` / `--image-tag` | `MANTLE_DATA_DIR`, `MANTLE_STACK_DIR`, `MANTLE_IMAGE_TAG` |
-| `--local-embedder` / `--no-local-embedder` | bundled Ollama + EmbeddingGemma (persists via `COMPOSE_PROFILES`; needs a large box) |
-| `--sandboxes` / `--no-sandboxes` | CLI sandboxes for the coder agent ([sandboxes.md](./sandboxes.md)); on by default for a fresh install |
-| `-y`, `--skip-up`, `--sanity`/`--check` | scripted run, write-`.env`-only, health-check-only |
+| Flag                                         | Effect                                                                                                |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `--domain <host>`                            | HTTPS via Caddy/Let's Encrypt                                                                         |
+| `--localhost`                                | loopback only, HTTP on `127.0.0.1:80`                                                                 |
+| `--lan` (`--no-domain`)                      | HTTP on `:80`, reachable on the network                                                               |
+| `--behind-proxy`                             | Caddy on `127.0.0.1:8080`; your nginx/apache terminates TLS                                           |
+| `--data-dir` / `--stack-dir` / `--image-tag` | `MANTLE_DATA_DIR`, `MANTLE_STACK_DIR`, `MANTLE_IMAGE_TAG`                                             |
+| `--local-embedder` / `--no-local-embedder`   | bundled Ollama + EmbeddingGemma (persists via `COMPOSE_PROFILES`; needs a large box)                  |
+| `--sandboxes` / `--no-sandboxes`             | CLI sandboxes for the coder agent ([sandboxes.md](./sandboxes.md)); on by default for a fresh install |
+| `-y`, `--skip-up`, `--sanity`/`--check`      | scripted run, write-`.env`-only, health-check-only                                                    |
 
 ### `scripts/sanity.sh`: "is it actually serving?"
 
 Inspects every container in the compose project, reports health, treats the
 known one-shots (`migrate`, `createbuckets`, `ollama_pull`) as OK when they
-exited cleanly, flags services that were never *created* (a stack missing its
+exited cleanly, flags services that were never _created_ (a stack missing its
 web container otherwise reads as "all good"), folds in the separate
 `mantle-client` project (a healthy backend with no usable interface must not
 pass), then confirms the app answers over HTTP. Exit 0 = all good.
@@ -437,7 +437,7 @@ file and the baseline. Move any box-local customization into
 ### `infra/updater/updater.sh`: never run by hand
 
 The execution half of in-app updates, shipped inside the image. The web app
-*detects* a release and *requests* the update by writing `/signal/request.json`
+_detects_ a release and _requests_ the update by writing `/signal/request.json`
 to a private volume; this sidecar polls for it and performs exactly one fixed
 operation, `docker compose pull && up -d` for every service **except itself**
 (recreating its own container mid-command would SIGKILL the rollout). It holds
@@ -493,7 +493,7 @@ Point it at your own fleet with `MANTLE_FLEET="dev=https://a.example,…"` or an
 untracked `.mantle-fleet.json` (see `.mantle-fleet.example.json`). Without
 either, the fleet section is skipped.
 
-What the script deliberately does *not* carry: intent, decisions, what's
+What the script deliberately does _not_ carry: intent, decisions, what's
 waiting on a human, why something was parked. That belongs on the dev brain.
 
 ### `scripts/trace-node.sh [node-uuid]`
@@ -537,19 +537,19 @@ Registry kinds: **recurring hygiene** (`entities-dedupe`, `backup-app-dbs`,
 
 ### Operational scripts
 
-| Script / alias | What it does |
-|---|---|
-| `pgboss:init` | Materialises the `pgboss` schema once, before any worker starts, otherwise four queues race to create it on a fresh DB and lose |
-| `re-embed` | Re-embeds every stored vector after an embedding-model change (the text didn't change; the vectors are now in the wrong space) |
-| `rotate:master-key` | Re-seals every encrypted-at-rest column under a new key (set `MANTLE_MASTER_KEY_NEXT`, run, then promote) |
-| `sync-now` | One-shot synchronous IMAP sync of every enabled account, bypassing pg-boss |
-| `imap-folders` | Prints every folder on every account and marks which are in scope |
-| `extract:backfill` | Re-fires `node_ingested` for nodes with no summary/embedding |
-| `traces:reap` | Reaps abandoned traces for every owner (the cron-schedulable twin of the owner-scoped UI sweep) |
-| `entities:dedupe` | Near-duplicate entity consolidation, free, pure DB, **dry-run by default** |
-| `dedupe:edges` | Collapses duplicate `mentioned_in` edges from before the extractor became idempotent |
-| `apps:push` | Pushes a local directory of mini-app source in, builds it, optionally publishes, the headless twin of `/api/apps/import` |
-| `backup-app-dbs.ts` / `backup-table-dbs.ts` | `VACUUM INTO` snapshots; run **inside** the container by `db-dump.sh`, not by hand |
+| Script / alias                              | What it does                                                                                                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pgboss:init`                               | Materialises the `pgboss` schema once, before any worker starts, otherwise four queues race to create it on a fresh DB and lose |
+| `re-embed`                                  | Re-embeds every stored vector after an embedding-model change (the text didn't change; the vectors are now in the wrong space)  |
+| `rotate:master-key`                         | Re-seals every encrypted-at-rest column under a new key (set `MANTLE_MASTER_KEY_NEXT`, run, then promote)                       |
+| `sync-now`                                  | One-shot synchronous IMAP sync of every enabled account, bypassing pg-boss                                                      |
+| `imap-folders`                              | Prints every folder on every account and marks which are in scope                                                               |
+| `extract:backfill`                          | Re-fires `node_ingested` for nodes with no summary/embedding                                                                    |
+| `traces:reap`                               | Reaps abandoned traces for every owner (the cron-schedulable twin of the owner-scoped UI sweep)                                 |
+| `entities:dedupe`                           | Near-duplicate entity consolidation, free, pure DB, **dry-run by default**                                                      |
+| `dedupe:edges`                              | Collapses duplicate `mentioned_in` edges from before the extractor became idempotent                                            |
+| `apps:push`                                 | Pushes a local directory of mini-app source in, builds it, optionally publishes, the headless twin of `/api/apps/import`        |
+| `backup-app-dbs.ts` / `backup-table-dbs.ts` | `VACUUM INTO` snapshots; run **inside** the container by `db-dump.sh`, not by hand                                              |
 
 ### Seeds
 
@@ -564,7 +564,9 @@ Agents: `seed:remy` (recall), `seed:researcher` (web search), `seed:reader`
 `seed:toolsmith` (API integrations), `seed:appsmith` (mini-apps), `seed:coder`
 (terminal access).
 Skills/config: `seed:tables-skill`, `seed:rich-writing`, `seed:tool-groups`,
-`seed:location`, `seed:telegram`, `seed:heartbeat-demo`, `seed:brain-health`.
+`seed:location`, `seed:telegram`, `seed:heartbeat-demo`. (`seed:brain-health`
+was retired in v0.232.26 — the `brain_health` heartbeat now ships in the system
+manifest and installs via reconcile, so there is nothing to run by hand.)
 
 ### Backfills and one-off repairs
 
@@ -578,10 +580,10 @@ row look like that" question has an answer. Includes `relations-backfill`,
 
 ### Evals
 
-| Alias | Question it answers |
-|---|---|
+| Alias                            | Question it answers                                                                                                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm -C server/web eval:recall` | "Is the librarian any good?", a gold set of (query → expected node) run through the real retrieval code, scored recall@k + MRR ([recall-eval.md](./recall-eval.md)) |
-| `pnpm -C server/web eval:runs` | "Is the judge any good?", the runner-queue audit step, the quality gate of the whole runner |
+| `pnpm -C server/web eval:runs`   | "Is the judge any good?", the runner-queue audit step, the quality gate of the whole runner                                                                         |
 
 Case files live in `server/web/scripts/eval/`.
 
@@ -592,14 +594,14 @@ Case files live in `server/web/scripts/eval/`.
 These write files that are committed or built; you rarely invoke them directly
 because they're wired into `predev` / `prebuild` / `pretypecheck`.
 
-| Script | Emits | Wired into |
-|---|---|---|
-| `server/web/scripts/gen-route-manifest.ts` | `server/route-manifest.gen.ts` from the `app/**/route.ts` tree, the bridge from Next's file-per-route convention to Hono | `predev`, `build`, `pretypecheck` |
-| `server/web/scripts/build-share-runtime.ts` | `public/share-runtime/`, CSS + JS for the server-rendered `/s` share pages and `/print` | `predev`, `build` |
-| `packages/app-build/scripts/build-runtime.ts` | the shared mini-app runtime into each app's `public/app-runtime/` | `predev`/`prebuild` in both `server/web` and `client/web` |
-| `packages/share-ui/themes/generate.mjs` | `styles/themes.css` + the picker registry from `seeds.mjs` | `pnpm themes:build`; `--check` fails on drift (CI), `--report` prints per-token ΔE against a baseline |
-| `scripts/generate-notices.mjs` | `THIRD-PARTY-NOTICES.md` from the production dependency tree, with verbatim license texts | `pnpm licenses:notices`, re-run after any dependency change |
-| `scripts/readme-stats.mjs` | the **By the numbers** block in `README.md` (between the `<!-- stats:start -->` markers), LOC, test cases, migrations, manifest counts, commit cadence, the LOC-by-area pie | `pnpm readme:stats`; auto-run by `version:bump`, so every `release:` commit carries fresh numbers |
+| Script                                        | Emits                                                                                                                                                                       | Wired into                                                                                            |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `server/web/scripts/gen-route-manifest.ts`    | `server/route-manifest.gen.ts` from the `app/**/route.ts` tree, the bridge from Next's file-per-route convention to Hono                                                    | `predev`, `build`, `pretypecheck`                                                                     |
+| `server/web/scripts/build-share-runtime.ts`   | `public/share-runtime/`, CSS + JS for the server-rendered `/s` share pages and `/print`                                                                                     | `predev`, `build`                                                                                     |
+| `packages/app-build/scripts/build-runtime.ts` | the shared mini-app runtime into each app's `public/app-runtime/`                                                                                                           | `predev`/`prebuild` in both `server/web` and `client/web`                                             |
+| `packages/share-ui/themes/generate.mjs`       | `styles/themes.css` + the picker registry from `seeds.mjs`                                                                                                                  | `pnpm themes:build`; `--check` fails on drift (CI), `--report` prints per-token ΔE against a baseline |
+| `scripts/generate-notices.mjs`                | `THIRD-PARTY-NOTICES.md` from the production dependency tree, with verbatim license texts                                                                                   | `pnpm licenses:notices`, re-run after any dependency change                                           |
+| `scripts/readme-stats.mjs`                    | the **By the numbers** block in `README.md` (between the `<!-- stats:start -->` markers), LOC, test cases, migrations, manifest counts, commit cadence, the LOC-by-area pie | `pnpm readme:stats`; auto-run by `version:bump`, so every `release:` commit carries fresh numbers     |
 
 **Never hand-edit theme colours**: `themes.css` is generated. See
 [themes.md](./themes.md).
@@ -653,10 +655,10 @@ survive fresh worktrees.
 
 ### CI
 
-| Workflow | Trigger | What |
-|---|---|---|
-| `.github/workflows/build-check.yml` | push to `feat/**` or `main`, PRs to `main` | typecheck + lint + format + vitest + the **production build** (the webpack/edge-runtime gate `tsc` and vitest miss). Hermetic, no Postgres/MinIO. Does not build images. |
-| `.github/workflows/release.yml` | push of a `v*` tag | builds `mantle-server` + `mantle-client` for amd64 and arm64 on native runners in parallel, merges digests into multi-arch manifests on Docker Hub, and cuts a GitHub Release carrying the deploy bundle so compose and image are versioned together |
+| Workflow                            | Trigger                                    | What                                                                                                                                                                                                                                                 |
+| ----------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/build-check.yml` | push to `feat/**` or `main`, PRs to `main` | typecheck + lint + format + vitest + the **production build** (the webpack/edge-runtime gate `tsc` and vitest miss). Hermetic, no Postgres/MinIO. Does not build images.                                                                             |
+| `.github/workflows/release.yml`     | push of a `v*` tag                         | builds `mantle-server` + `mantle-client` for amd64 and arm64 on native runners in parallel, merges digests into multi-arch manifests on Docker Hub, and cuts a GitHub Release carrying the deploy bundle so compose and image are versioned together |
 
 Release needs the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets.
 
@@ -692,7 +694,7 @@ Playwright projects against an already-running stack.
 - **Register it, don't alias it.** New data scripts belong in
   `lib/maintenance/registry.ts` (with `kind`, cost, `requiresEnv`, and a dry-run
   or apply flag) rather than as another `package.json` line.
-- **Write the header block.** What it does, *why it exists*, usage, and the trap
+- **Write the header block.** What it does, _why it exists_, usage, and the trap
   that bit you. Every script here does; it's the reason this page can be a map
   instead of a manual.
 - **Default to safe.** Dry-run by default for anything that mutates in bulk;

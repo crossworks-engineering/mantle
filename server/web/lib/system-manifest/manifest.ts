@@ -139,6 +139,39 @@ export type ManifestWorker = {
   altParams?: AiWorkerParams;
 };
 
+/** A heartbeat the product ships: a scheduled, self-directed agent turn.
+ *
+ *  Unlike every other manifest section this one is **create-only**. A heartbeat
+ *  is the only manifest item that SPENDS on a timer, and its row carries
+ *  operator decisions (paused? rescheduled? muted at night?) plus live runtime
+ *  state (`next_fire_at`, `fire_count`). Converging it on every boot reconcile
+ *  would silently un-pause a heartbeat the owner switched off, and re-arming
+ *  `next_fire_at` each boot would mean a box that redeploys weekly never fires
+ *  at all. So: seed it if absent, then never touch it again except to re-point
+ *  a `skill_slug` the manifest renamed. See seedManifestHeartbeats. */
+export type ManifestHeartbeat = {
+  slug: string;
+  name: string;
+  description: string;
+  /** The skill body the fire loop composes for this turn. Loaded BY SLUG from
+   *  the skills table at fire time (fire.ts), so it does NOT need to be
+   *  attached to the agent — and should not be, or it would ride along on
+   *  every ordinary turn too. Must name a MANIFEST_SKILLS slug. */
+  skillSlug: string;
+  /** Tool group the answering agent needs for this heartbeat to do its job.
+   *  Checked by the integrity probe: a heartbeat whose agent lacks the group
+   *  fires and then fails on the first tool call. */
+  requiresToolGroup: string;
+  scheduleKind: 'interval';
+  /** Minutes between fires, plus the jitter that stops a fleet of brains all
+   *  firing on the same second. */
+  everyMinutes: number;
+  jitterMinutes: number;
+  minIdleMinutes: number;
+  quietHours: { from: string; to: string };
+  cooldownMinutes: number;
+};
+
 // ── Derived tool lists (match the seed scripts exactly) ──────────────────────
 
 /** Page authoring set for the `pages` group: every page tool except the
@@ -168,6 +201,13 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     name: 'Tool grounding',
     description: 'Search/verify before answering — never answer from memory alone.',
     instructions: SKILL_INSTRUCTIONS['tool_grounding']!,
+  },
+  {
+    slug: 'brain_health_check',
+    name: 'Brain health check',
+    description:
+      'The weekly self-check: capacity against the split policy plus a retrieval-quality eval, reported ONLY when something needs attention.',
+    instructions: SKILL_INSTRUCTIONS['brain_health_check']!,
   },
   {
     slug: 'formula_use',
@@ -992,6 +1032,13 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'app-data',
       'team-admin',
       'federation',
+      // Powers the brain_health heartbeat (brain_capacity + recall_eval). The
+      // group existed from the start and was granted to NOBODY, so its own
+      // description ("grant to the agent that runs the brain-health
+      // heartbeat") pointed at an agent that did not exist. Both tools are
+      // read-only self-inspection, so holding them costs nothing on an
+      // ordinary turn.
+      'brain-health',
     ],
     skillSlugs: [
       'tool_grounding',
@@ -1345,6 +1392,34 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
 // params are the single source — onboarding and reconcile both seed from here
 // (see resolveWorkerRoute + seedManifestWorkers). The tts `voice` is the female
 // default ('ara' = voiceForGender('female')); the personality step retunes it.
+/** Heartbeats every provisioned brain gets. Create-only — see ManifestHeartbeat.
+ *
+ *  Deliberately ONE entry. A heartbeat is recurring LLM spend that the user did
+ *  not ask for on the day it fires, so the bar for adding another is: it must
+ *  watch something the user cannot reasonably watch themselves, and it must be
+ *  silent unless that thing has actually moved. */
+export const MANIFEST_HEARTBEATS: readonly ManifestHeartbeat[] = [
+  {
+    slug: 'brain_health',
+    name: 'Brain health',
+    description:
+      'Weekly: corpus capacity against the split policy, plus a retrieval-quality eval. Silent unless something needs attention.',
+    skillSlug: 'brain_health_check',
+    requiresToolGroup: 'brain-health',
+    scheduleKind: 'interval',
+    // Weekly. Capacity moves over months and retrieval drift over weeks, so
+    // anything tighter spends more than it learns.
+    everyMinutes: 10_080,
+    // ±6h so a fleet of brains does not stampede the same OpenRouter minute.
+    jitterMinutes: 360,
+    minIdleMinutes: 15,
+    quietHours: { from: '22:00', to: '07:00' },
+    cooldownMinutes: 60,
+  },
+];
+
+export const MANIFEST_HEARTBEAT_SLUGS: readonly string[] = MANIFEST_HEARTBEATS.map((h) => h.slug);
+
 export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
   {
     kind: 'extractor',

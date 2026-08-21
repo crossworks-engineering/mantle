@@ -12,7 +12,7 @@ motivated it. Lives at [`server/web/scripts/eval-recall.ts`](../server/web/scrip
 > **The gold set is yours, and it is local-only.** A case pins node ids from ONE
 > brain, so a shared set names its author's real pages and resolves to nothing on
 > anyone else's. `server/web/scripts/eval/recall-cases.json` is **gitignored and
-> not shipped** — write your own before the first run (see *Adding a case*). The
+> not shipped** — write your own before the first run (see _Adding a case_). The
 > repo carried one until 2026-08-21; it leaked the owner's bank, a company
 > expense figure and their full name into a public repo, which is exactly the
 > failure this note exists to prevent.
@@ -35,13 +35,13 @@ up (local Ollama by default) and the dev/prod DB reachable via `DATABASE_URL`.
 Each case is scored against five rankers so you see both the current reality and
 the headroom in one run:
 
-| Retriever | What it is | Why it's here |
-|---|---|---|
-| `prod` | `loadConversationContext()` exactly as the responder runs it (content hits capped at `content_hit_limit`, 0.6 cosine cutoff) | The truest "what actually reaches the prompt" number |
-| `vector` | the same per-node vector ranker, top-`RANK_K`, **no** cutoff | Shows where the gold node ranks even when prod's cap drops it |
-| `fts` | `searchNodes()`, Postgres full-text | What the MCP/builtin **`search`** tool uses |
-| `chunks` | `searchChunks()`, passage-level vector | What **`search_chunks`** uses |
-| `rrf` | Reciprocal-Rank Fusion of vector+fts+chunks | A naive-hybrid baseline for the recommended Tier-0 upgrade |
+| Retriever | What it is                                                                                                                   | Why it's here                                                 |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `prod`    | `loadConversationContext()` exactly as the responder runs it (content hits capped at `content_hit_limit`, 0.6 cosine cutoff) | The truest "what actually reaches the prompt" number          |
+| `vector`  | the same per-node vector ranker, top-`RANK_K`, **no** cutoff                                                                 | Shows where the gold node ranks even when prod's cap drops it |
+| `fts`     | `searchNodes()`, Postgres full-text                                                                                          | What the MCP/builtin **`search`** tool uses                   |
+| `chunks`  | `searchChunks()`, passage-level vector                                                                                       | What **`search_chunks`** uses                                 |
+| `rrf`     | Reciprocal-Rank Fusion of vector+fts+chunks                                                                                  | A naive-hybrid baseline for the recommended Tier-0 upgrade    |
 
 **Metrics:** `recall@{1,3,5,10}` (fraction of cases whose gold node appears in
 top-k) and `MRR` (mean reciprocal rank of the first gold hit). A node counts as
@@ -50,7 +50,7 @@ gold if its id is in `expectNodeIds` **or** its title contains an
 
 ## Adding cases
 
-Append to `recall-cases.json`. Write the query the way *you'd actually ask it*,
+Append to `recall-cases.json`. Write the query the way _you'd actually ask it_,
 vague, paraphrased, avoiding the node's title words, that's the recall the
 product promises. Anchor with a stable node id and a title substring:
 
@@ -84,14 +84,14 @@ precise and more actionable:
 
 1. **Per-node vector recall is genuinely good on clean, well-summarised content**
    (pages, events): `vector` R@5 = 100%, MRR = 0.90. The audit's earlier "marketing
-   pollution" misses were on *noisy* content (bulk email); they don't generalise to
+   pollution" misses were on _noisy_ content (bulk email); they don't generalise to
    curated nodes. Honest correction.
 2. **The FTS-only `search` tool is the real villain: R@1 = 8%.** It found the gold
    node in only 1/12 cases, the one where the query happened to share words with the
    title. Since `search` is the **primary tool exposed to Claude over MCP**, the
    upstream brain is getting ~8% recall on natural-language queries. Giving the
    `search` tool a vector/hybrid path is now the highest-impact, best-evidenced fix.
-3. **Naive equal-weight RRF *regresses* vs pure vector** (MRR 0.76 < 0.90), the dead
+3. **Naive equal-weight RRF _regresses_ vs pure vector** (MRR 0.76 < 0.90), the dead
    FTS arm and noisy chunk arm drag the fusion down. So Tier-0 #1 is **not** "fuse
    everything equally." The measured design is: **vector as the spine + FTS as a
    rare-term recall booster (down-weighted) + a reranker over the union.** The eval
@@ -137,6 +137,7 @@ Deliberately **not** built: an LLM/cross-encoder reranker. The data says no, `pr
 Marketing/newsletters were embedded at full weight and crowded out real content (a "3d printer" query returned PiShop/Prusa newsletters). The fix wires a **node-level `salience`** (0..1) into ranking: effective distance = `cosine + λ·(1 − salience)`, `λ=0.15` (env `MANTLE_SALIENCE_LAMBDA`), applied in all three retrieval sites (content hits, `searchNodes`, `searchChunks`). A down-weight, never a filter; the email stays fully findable by explicit `search`.
 
 Salience source, in order of trust:
+
 1. **Header classifier** (`emails.delivery_kind`, already built, precise): `salienceForDeliveryKind` maps `marketing→0.25, list→0.5, automated→0.75, direct/unknown→1.0`. Set at ingest ([sync.ts](../packages/email/src/sync.ts)) + migration `0073` backfill. Covers new mail + 156 legacy.
 2. **Body fallback** ([`backfill-email-salience.ts`](../server/web/scripts/backfill-email-salience.ts)) for the ~1,227 legacy `unknown` emails (synced before the classifier; raw headers aren't stored, so they can't be re-classified offline). Scores the stored body for unambiguous bulk tells (tracking-link density + unsubscribe) with a **transactional veto** (invoice/order/receipt/OTP → never demote). Tagged 568.
 
@@ -155,7 +156,7 @@ Measured effect (`MANTLE_SALIENCE_LAMBDA=0` vs `0.15`, 13 cases incl. a noisy pr
 
 [`classify:backfill`](../server/web/scripts/classify-backfill.ts) closes the coverage gap properly: it re-fetches the classification headers for legacy `unknown` emails over IMAP (`reclassifyByRefs` in [@mantle/email](../packages/email/src/providers/imap.ts), BODY.PEEK, one round trip per folder, never marks read), runs the **same** `classifyDelivery`, writes the true `delivery_kind`, and re-derives `nodes.salience` (clearing the fuzzy `body_bulk_heuristic` marker). Read-only against the mailbox; dry-run by default; idempotent (only touches `unknown` rows).
 
-Real run reclassified **1,162 / 1,227** legacy emails (65 moved/deleted/stale-uidvalidity): **667 marketing, 279 direct, 210 automated, 6 list**. The header classifier does what the body heuristic can't; it separates the 279 *direct* (real personal mail, restored to salience 1.0) from the 667 *marketing* (correctly demoted to 0.25), and fixes both directions of the body heuristic's mistakes.
+Real run reclassified **1,162 / 1,227** legacy emails (65 moved/deleted/stale-uidvalidity): **667 marketing, 279 direct, 210 automated, 6 list**. The header classifier does what the body heuristic can't; it separates the 279 _direct_ (real personal mail, restored to salience 1.0) from the 667 _marketing_ (correctly demoted to 0.25), and fixes both directions of the body heuristic's mistakes.
 
 Result on the noisy printer case:
 
@@ -178,7 +179,7 @@ system-docs + telegram excluded) and `buildChatMessages` renders them as a
 
 **Why the node-recall eval is flat here (0.91, no Δ) and that's correct.** These
 gold cases already find their node via content hits, so chunks don't change node
-*discovery*; they change what the model can *say*. The value is putting the
+_discovery_; they change what the model can _say_. The value is putting the
 actual answer text in the prompt. Demonstrated: for "what does the company pay
 for rent and vehicle finance each month", the content hit gives only the summary
 ("This document details the monthly recurring expenses…"); the chunk hits deliver
@@ -205,7 +206,7 @@ much-more-relevant old item still beats a marginal recent one.
 don't decay at all** (stable identity, "Alex is a pastor" doesn't get staler);
 factual sits between (0.05). Anchor: `coalesce(valid_from, created_at)`.
 
-**Mild on content** (λ=0.06), and the date anchor is the content's *own* date when
+**Mild on content** (λ=0.06), and the date anchor is the content's _own_ date when
 it has one (an email's `internalDate`, not `created_at`) so an old email synced
 last month reads as old, not fresh. Recency only reorders content; the 0.6 cutoff
 stays on the salience distance, so a relevant-but-old doc is never dropped for age.
@@ -238,7 +239,7 @@ verified by probe not the recall number.
 **It also surfaced a real graph-quality issue** (pre-existing, not from this
 change): the same company appears as both `Cross-Works Engineering` and
 `CrossWorksEngineering`, entity fragmentation. The feature makes graph hygiene
-*consequential*: running `entities:dedupe` / the `/settings/entities` review
+_consequential_: running `entities:dedupe` / the `/settings/entities` review
 (audit item #10) is now a retrieval-quality lever, not just tidiness.
 
 ## After step (i): the backlog sweep (2026-06-04)
@@ -282,13 +283,19 @@ half runs the same idea inside the brain, on a schedule:
   persists the run as a note tagged `recall-eval-run`, and reports drift vs
   the previous run, `alert: true` on MRR −0.05 or R@5 −0.10. Run notes are
   ordinary nodes, so the history is searchable and chartable later.
-- **The `brain_health` heartbeat** (seed: `ALLOWED_USER_ID=… pnpm -C server/web
-  seed:brain-health`, optional `TG_CHAT_ID`/`AGENT_SLUG`) fires weekly ±6h
-  with quiet hours, calls `brain_capacity` + `recall_eval` via the
-  `brain_health_check` skill, and messages the user **only** when a capacity
-  zone left green or the eval alerted; a green week is silence.
-- **Grants**: the `brain-health` tool group (`brain_capacity`, `recall_eval`)
-  must be granted to the heartbeat's agent at `/settings/agents`.
+- **The `brain_health` heartbeat** ships in the system manifest, so every brain
+  gets it — new ones at onboarding, existing ones on the next boot reconcile.
+  It fires weekly ±6h with quiet hours, calls `brain_capacity` + `recall_eval`
+  via the `brain_health_check` skill, and messages the user **only** when a
+  capacity zone left green or the eval alerted; a green week is silence.
+  A brain with no gold set is silence too: `recall_eval` returns
+  `skipped: true` and the skill treats that as "unmeasured, not degraded".
+- **Grants** are automatic: the persona holds the `brain-health` tool group
+  (`brain_capacity`, `recall_eval`) by default, and `/debug/integrity` flags a
+  heartbeat whose agent lost it.
+- **Seeding is create-only.** Reconcile installs a missing heartbeat and never
+  touches an existing one, so a heartbeat you paused stays paused and your
+  schedule edits survive an upgrade.
 
 The capacity half (zones vs the split policy: watch 10k docs / 50k passage
 vectors, split 20k / 100k) is `corpusCapacity` in
