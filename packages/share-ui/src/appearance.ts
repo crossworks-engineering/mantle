@@ -55,6 +55,32 @@ export type BrainAppearance = {
   avatarStyle: string | null;
   avatarTint: string | null;
   backgrounds: string | null;
+  /**
+   * WHO this brain is — its own name, the name of the box, and whether an
+   * uploaded logo exists. Unlike everything above these are NOT stamped onto
+   * `<html>`: `resolveAppearanceAttrs` ignores them, because they are content a
+   * surface renders rather than a variable the CSS reads.
+   *
+   * They ride on this payload because the sign-in screen needs them and has no
+   * session to fetch /api/shell with — a brain must be able to say what it is
+   * before it asks who you are. On a fleet of many brains behind many domains
+   * that is the difference between an identifiable login and five identical
+   * ones. Nothing here is more private than the branding a share link already
+   * renders publicly.
+   *
+   * OPTIONAL on purpose: a client pinned to an older published contract may be
+   * talking to a newer brain or the reverse, so every reader must treat absence
+   * as "not set" and fall back — never assume the field arrived.
+   *
+   * The logo BYTES have always been public at `GET /api/appearance/logo`
+   * (`?variant=dark`); these are only the sha-addressed cache-busting versions,
+   * and their PRESENCE is how a caller learns an upload exists at all. Either
+   * variant may exist alone — renderers fall back dark → base → wordmark.
+   */
+  siteName?: string | null;
+  peerName?: string | null;
+  logoVersion?: string | null;
+  logoDarkVersion?: string | null;
 };
 
 export type AppearanceAttrs = {
