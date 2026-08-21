@@ -10,16 +10,88 @@ with a schedule, a memory, and a stop condition.**
 
 ```
 heartbeats (when + where + state)
-   └─→ skill   (what to do, with which tools)
-         └─→ agent  (whose voice, model, persona)
+   └─→ skill   (WHAT to do this fire — teaching only, no tools)
+         └─→ agent  (whose voice, model, persona — and whose TOOLS)
                 └─→ surface (telegram chat / web inbox)
 ```
 
+Note the split on that middle line. The skill says what to do; the **agent**
+supplies the tools to do it with. Skills stopped carrying tools in P4 (the
+`skills.tool_slugs` column is gone); capability now lives entirely on the
+agent's granted tool groups. See [`tools-and-skills.md`](./tools-and-skills.md).
+
 This doc covers the data model, lifecycle, gates, the worked
 "get_to_know_user" example, the conventions skills follow, and the
-soft-fail catalog. Cross-refs: [`architecture.md` §9j](./architecture.md)
+soft-fail catalog. If you are here because a form asked you something
+you could not answer, start at §0. Cross-refs: [`architecture.md` §9j](./architecture.md)
 for the high-level fit; [`ai-workers.md`](./ai-workers.md) for the
 adapter framework heartbeats use to talk to providers.
+
+## 0. The two questions everyone asks first
+
+Both are answered in detail further down (§10, §11, §12), but they come up the
+moment anyone opens the create form at `/settings/heartbeats`, so here they are
+up front.
+
+### "Why does a heartbeat need its own skill? The agent already has skills."
+
+Because the word "skill" covers two different jobs, and a heartbeat needs the
+second one:
+
+|                    | Example                         | Set via                 | Where it lands                                        | Lifetime                        |
+| ------------------ | ------------------------------- | ----------------------- | ----------------------------------------------------- | ------------------------------- |
+| **Behaviour pack** | `tool_grounding`, `voice_reply` | `agents.skill_slugs[]`  | The **system prompt**                                 | Every turn that agent ever runs |
+| **Task**           | `brain_health_check`            | `heartbeats.skill_slug` | A synthetic **user-role** message, built at fire time | That one fire                   |
+
+A behaviour pack is a trait: _who the agent is_. A task is a job: _what to do
+right now_. The heartbeat skill goes in as a user message on purpose, because
+it reads like someone walking up and saying "do this now" rather than like part
+of the agent's personality. `fire.ts` is explicit about it:
+
+> The HEARTBEAT skill is NOT injected here, it goes into the user-role synthetic
+> prompt below, because it's situational to this fire, not a persistent persona
+> trait.
+
+That is also why you should not attach a heartbeat's task skill to the agent:
+it would ride along on every ordinary chat turn, telling the agent to run a
+weekly check in the middle of a conversation about something else.
+
+**The picker does not yet tell these apart.** The create form lists every skill
+in the brain, most of which are behaviour packs and none of which are marked as
+such. Choosing one is accepted, saves fine, and then burns a scheduled turn
+every interval producing nothing coherent. Until that is fixed, pick a skill
+whose instructions read as a job with a beginning and an end. Full detail in
+§12.
+
+### "What is `state`, and what do I put in Initial state?"
+
+`state` is the heartbeat's **running memory between fires**. It is the only
+thing that survives from one fire to the next, and it is what stops a heartbeat
+repeating itself.
+
+Every fire, the prompt builder renders it into the message the agent sees:
+
+````
+Current state (your running memory for this heartbeat; mutate via heartbeat_update_state):
+```json
+{ "last_status": "green" }
+```
+````
+
+The agent reads it, does the work, then patches it with `heartbeat_update_state`.
+Nothing else writes it: the engine never sets `state` directly, only tools do.
+
+The load-bearing example is `expecting_reply`. If a fire asks the user something
+and sets it true, and the _next_ fire comes round while it is still true, the
+prompt adds a warning not to just ask again. Without that memory a heartbeat
+would re-issue the same question every week and read as pestering (§5).
+
+**"Initial state" is only the seed for fire #1.** For most heartbeats an empty
+`{}` is genuinely correct, because the agent writes the shape itself on its
+first run. It is worth filling in when the skill expects a key to already exist,
+or simply to show the operator what shape belongs there. The form pre-fills it
+from the bound skill's `default_state` (§10), and the well-known keys the engine
+itself reads are listed in §11.
 
 ## 1. Data model
 
@@ -598,19 +670,27 @@ heartbeats (it's a template, not a live reference). The skills CRUD
 form has its own `default_state` textarea so authors can declare
 what their skill needs.
 
-Example: `profile_interview` skill seeded with:
+**Manifest skills declare it too, since v0.232.27.** `ManifestSkill.defaultState`
+is seeded on insert and converged on reconcile alongside the instructions body,
+so a shipped skill carries its state shape onto every brain instead of arriving
+as a bare `{}`. Only when declared: omitting the field means the manifest has no
+opinion and an operator's value survives, which also means the manifest can set
+a `default_state` but never remove one. A drift test requires any skill bound to
+a manifest heartbeat to declare it explicitly (`{}` is a valid answer,
+forgetting is not).
+
+Live example, the one default heartbeat ships with (§7a):
 
 ```json
-{
-  "answered": [],
-  "expecting_reply": false
-}
+{ "last_status": "green" }
 ```
 
-Every heartbeat using `profile_interview` starts there unless the
-operator overrides. The `last_question_topic` + `last_asked_at`
-keys appear as the skill runs and the model populates them via
-`heartbeat_update_state`.
+`brain_health_check` seeds only the status. `last_run_at` is deliberately absent
+until the first fire writes one, so "has this ever run?" is answerable from the
+state itself rather than from a sentinel date. An interview-style skill would
+instead seed something like `{ "answered": [], "expecting_reply": false }`, and
+let `last_question_topic` and `last_asked_at` appear as the model populates them
+via `heartbeat_update_state`.
 
 ## 11. Conventions: well-known state keys
 
@@ -682,10 +762,12 @@ fire first, only branch out if you can defend why.
 
 ## 12. Skills: two activation models, one table
 
-`skills` predates `heartbeats` (migration 0023 vs 0030). Originally
-it was just "instructions + tools you can attach to an agent."
-Heartbeats reuse it for the "what to do" axis. The same `skills`
-row can be referenced in two ways:
+`skills` predates `heartbeats` (migration 0023 vs 0030). Originally it was
+"instructions **plus tools** you can attach to an agent" — the tools half is
+gone as of P4 (the `skills.tool_slugs` column was dropped; capability lives on
+the agent's tool groups). A skill is pure teaching now. Heartbeats reuse the
+table for the "what to do" axis. The same `skills` row can be referenced in two
+ways:
 
 | Activation  | Set via                 | Lifetime                                                   | Use case                                                                                |
 | ----------- | ----------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -698,10 +780,16 @@ wasteful, never broken. In practice: persistent skills should be
 short ("how to format dates") and heartbeat skills should be
 specific ("interview the user across these 8 topics"). Don't mix.
 
-The composition helpers `composeSystemPromptWithSkills` and
-`effectiveToolSlugs` live in `packages/agent-runtime/src/skills.ts`
-and are used by both the responder turn (always-on) and the
-heartbeat fire (situational).
+`composeSystemPromptWithSkills` (in `packages/agent-runtime/src/skills.ts`)
+folds always-on skills into the system prompt, and is used by both the responder
+turn and the heartbeat fire. `effectiveToolSlugs` lives in the same file but is
+NOT a skill helper despite the neighbourhood: it resolves an agent's granted
+tool GROUPS into a tool list. Skills contribute no tools to either path.
+
+**Nothing marks which activation a skill is written for**, which makes the
+heartbeat create form's skill picker misleading (see §0). Adding that marker is
+tracked as its own piece of work; until then the distinction lives only in how
+the instructions are written.
 
 ## 13. Files
 
