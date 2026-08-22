@@ -4,6 +4,22 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — YouTube ingests from a VPS: the cookies-file escape hatch (branch claude/media-cookies)
+
+Live testing surfaced the expected wall: YouTube blocks datacenter IPs
+outright ("Sign in to confirm you're not a bot"), captions included, while
+every other extractor works from the same box. The sidecar now honours an
+optional operator-supplied `cookies.txt` mounted read-only at
+`${MANTLE_DATA_DIR}/media/` — picked up per-request (no restart, delete to
+disable), handed to yt-dlp as a per-run working copy so rotations never
+write back and concurrent jobs can't clobber each other, and surfaced on
+`/healthz` as `cookies: true/false`. This is the one deliberate exception to
+the sidecar's holds-nothing posture, and the docs say so plainly: a scoped
+browser-session export, some account-flag risk, goes stale on YouTube's
+schedule. docs/video-ingest.md ("YouTube and the bot check") carries the
+export recipe and the trade-offs.
+
+
 ## Unreleased — client pair moves to jackdaw v0.6.5 (branch claude/client-pair-v0.6.5)
 
 Interface-only roll: the paired jackdaw client moves to v0.6.5, which adds

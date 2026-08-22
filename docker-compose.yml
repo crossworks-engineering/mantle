@@ -457,6 +457,13 @@ services:
     environment:
       MEDIA_TOKEN: ${MEDIA_SIDECAR_TOKEN:-}
       MEDIA_MAX_CONCURRENT: ${MEDIA_MAX_CONCURRENT:-2}
+    volumes:
+      # Optional YouTube cookies (datacenter-IP bot check): drop an exported
+      # cookies.txt at ${MANTLE_DATA_DIR}/media/cookies.txt and it is used
+      # read-only on the next request — no restart needed, remove the file to
+      # turn it off. The ONE operator-supplied credential this container may
+      # hold; see docs/video-ingest.md ("YouTube and the bot check").
+      - ${MANTLE_DATA_DIR:-./data}/media:/etc/media:ro
     healthcheck:
       # python-slim has no curl/wget; probe with the interpreter itself.
       test:

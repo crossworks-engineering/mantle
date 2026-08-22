@@ -85,6 +85,32 @@ on `127.0.0.1:8095` (see `.env.example`).
 Duration is checked at probe time, **before** any download — an over-cap
 video costs one metadata call. Captions have no duration cap (they're free).
 
+## YouTube and the bot check
+
+YouTube blocks most datacenter IPs outright ("Sign in to confirm you're not
+a bot"), captions included — a VPS-hosted brain hits this on YouTube while
+every other extractor (Vimeo, archive.org, news sites, podcast hosts) works
+normally. The sanctioned workaround is an **operator-supplied cookies file**:
+
+1. In a browser where you are logged in to YouTube, export cookies in
+   Netscape format (a "Get cookies.txt" extension, or locally
+   `yt-dlp --cookies-from-browser firefox --cookies cookies.txt --skip-download <any url>`).
+   Export from a **private/incognito window you then close** — an open
+   session keeps rotating the tokens and staleness arrives sooner.
+2. Drop it on the box at `${MANTLE_DATA_DIR}/media/cookies.txt`.
+
+It takes effect on the next request — no restart — and deleting the file
+turns it off. `/healthz` reports `cookies: true/false` so you can see the
+sidecar picked it up.
+
+Say the trade-off plainly: this is the ONE operator credential the otherwise
+secret-free sidecar may hold. It is mounted read-only, it is a scoped
+browser-session export (not a password, not a brain secret), and yt-dlp gets
+a per-run working copy so rotations are never written back — which also
+means the file goes stale on YouTube's schedule and needs re-exporting when
+ingests start failing again. Using your account's cookies from a server IP
+carries some account-flag risk; use a secondary account if that worries you.
+
 ## Failure honesty
 
 Every dead end is a structured error naming the recovery move, and a

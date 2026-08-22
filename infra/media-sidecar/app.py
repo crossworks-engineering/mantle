@@ -72,6 +72,11 @@ TIMEOUT_EXTRACT = 600
 TIMEOUT_VIDEO = 1500
 
 JSON_BODY_CAP = 64 * 1024  # JSON endpoints only; /extract-audio streams.
+# Optional operator-supplied cookies (YouTube's datacenter-IP bot check).
+# THE one exception to "this container holds nothing": a scoped, operator-
+# owned browser-session export, mounted READ-ONLY, never a brain secret.
+# Absent file = feature off; see docs/video-ingest.md for the trade-offs.
+COOKIES_FILE = os.environ.get("MEDIA_COOKIES_FILE", "/etc/media/cookies.txt")
 STDERR_TAIL = 2048  # extraction_failed carries at most this much stderr.
 CAPTIONS_CAP = 5 * 1024 * 1024  # a VTT bigger than this is not a transcript.
 
@@ -222,12 +227,36 @@ def run(cmd: list, timeout: int, cwd: str | None = None) -> subprocess.Completed
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
 
+def cookie_args(tmp: str) -> list:
+    """yt-dlp writes rotated cookies BACK to the file it is handed, so give it
+    a per-run working copy inside the op's tempdir — the mount stays
+    read-only and concurrent jobs can't clobber each other. Rotations are
+    therefore not persisted: the exported file goes stale on YouTube's own
+    schedule and the operator re-exports (docs/video-ingest.md)."""
+    try:
+        if not os.path.isfile(COOKIES_FILE) or os.path.getsize(COOKIES_FILE) == 0:
+            return []
+        work = os.path.join(tmp, "cookies.txt")
+        shutil.copyfile(COOKIES_FILE, work)
+        return ["--cookies", work]
+    except OSError:
+        return []
+
+
+def cookies_present() -> bool:
+    try:
+        return os.path.isfile(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0
+    except OSError:
+        return False
+
+
 def ytdlp_probe(url: str) -> dict:
     """`yt-dlp -J` metadata. The one call every URL operation starts with."""
-    proc = run(
-        ["yt-dlp", "-J", "--no-download", "--no-playlist", "--no-warnings", url],
-        TIMEOUT_PROBE,
-    )
+    with tempfile.TemporaryDirectory() as tmp:
+        proc = run(
+            ["yt-dlp", *cookie_args(tmp), "-J", "--no-download", "--no-playlist", "--no-warnings", url],
+            TIMEOUT_PROBE,
+        )
     try:
         info = json.loads(proc.stdout)
     except json.JSONDecodeError:
@@ -309,6 +338,7 @@ def fetch_captions(url: str, lang: str | None, prefer: str, tmp: str) -> dict:
             run(
                 [
                     "yt-dlp",
+                    *cookie_args(sub_tmp),
                     "--skip-download",
                     "--no-playlist",
                     "--no-warnings",
@@ -478,7 +508,7 @@ class Handler(BaseHTTPRequestHandler):
     # ── routes ──────────────────────────────────────────────────────────────
     def do_GET(self):  # noqa: N802
         if self.path == "/healthz":
-            payload: dict = {"ok": True, "versions": get_versions()}
+            payload: dict = {"ok": True, "versions": get_versions(), "cookies": cookies_present()}
             if not TOKEN:
                 # Degraded-but-visible beats a crash loop: with no token the
                 # container serves ONLY this route and says why it is useless.
@@ -563,6 +593,7 @@ class Handler(BaseHTTPRequestHandler):
             run(
                 [
                     "yt-dlp",
+                    *cookie_args(tmp),
                     "-f",
                     "bestaudio/best",
                     "--no-playlist",
@@ -636,6 +667,7 @@ class Handler(BaseHTTPRequestHandler):
             run(
                 [
                     "yt-dlp",
+                    *cookie_args(tmp),
                     "-f",
                     "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
                     "--merge-output-format",

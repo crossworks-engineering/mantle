@@ -152,6 +152,10 @@ services:
     mem_limit: 1g
     environment:
       MEDIA_TOKEN: mantle
+    volumes:
+      # Optional YouTube cookies for dev — ./data/media/cookies.txt (see the
+      # prod compose note + docs/video-ingest.md).
+      - ${MANTLE_DATA_DIR:-./data}/media:/etc/media:ro
     ports:
       - "127.0.0.1:8095:8095"
     healthcheck:
