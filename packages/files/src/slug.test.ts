@@ -140,6 +140,20 @@ describe('extOf', () => {
 });
 
 describe('mimeForExt', () => {
+  it('covers media and archive families (previously octet-stream)', () => {
+    // A Telegram voice note is ogg/opus and the transcriber's clips are m4a —
+    // both stored as application/octet-stream before this map learned audio,
+    // so the client could only ever show a generic binary icon.
+    expect(mimeForExt('opus')).toBe('audio/ogg');
+    expect(mimeForExt('m4a')).toBe('audio/mp4');
+    expect(mimeForExt('mp3')).toBe('audio/mpeg');
+    expect(mimeForExt('mp4')).toBe('video/mp4');
+    expect(mimeForExt('mov')).toBe('video/quicktime');
+    expect(mimeForExt('zip')).toBe('application/zip');
+    expect(mimeForExt('tiff')).toBe('image/tiff');
+    expect(mimeForExt('avif')).toBe('image/avif');
+  });
+
   it('maps the well-known text types', () => {
     expect(mimeForExt('md')).toMatch(/^text\/markdown/);
     expect(mimeForExt('txt')).toMatch(/^text\/plain/);

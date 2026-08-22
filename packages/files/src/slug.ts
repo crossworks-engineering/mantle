@@ -245,6 +245,55 @@ export function mimeForExt(ext: string): string {
       return 'application/vnd.ms-visio.drawing';
     case 'vsd':
       return 'application/vnd.visio';
+    // ── Audio. These arrive constantly (Telegram voice notes are ogg/opus,
+    // the transcriber's clips are m4a) and all fell through to octet-stream,
+    // which made every media file render as a generic binary in the client.
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'wav':
+      return 'audio/wav';
+    case 'ogg':
+    case 'oga':
+    case 'opus':
+      return 'audio/ogg';
+    case 'flac':
+      return 'audio/flac';
+    case 'aac':
+      return 'audio/aac';
+    // ── Video.
+    case 'mp4':
+      return 'video/mp4';
+    case 'mov':
+      return 'video/quicktime';
+    case 'webm':
+      return 'video/webm';
+    case 'mkv':
+      return 'video/x-matroska';
+    case 'avi':
+      return 'video/x-msvideo';
+    // ── Archives.
+    case 'zip':
+      return 'application/zip';
+    case 'tar':
+      return 'application/x-tar';
+    case 'gz':
+      return 'application/gzip';
+    case '7z':
+      return 'application/x-7z-compressed';
+    case 'rar':
+      return 'application/vnd.rar';
+    // ── Images the map missed.
+    case 'bmp':
+      return 'image/bmp';
+    case 'tif':
+    case 'tiff':
+      return 'image/tiff';
+    case 'ico':
+      return 'image/x-icon';
+    case 'avif':
+      return 'image/avif';
     default:
       return 'application/octet-stream';
   }
