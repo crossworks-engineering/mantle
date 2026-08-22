@@ -99,8 +99,14 @@ function isBracketOnly(text: string): boolean {
 export function captionsGarbageReason(
   cues: CaptionCue[],
   durationSeconds: number | null,
+  opts?: { trusted?: boolean },
 ): string | null {
   if (cues.length === 0) return 'caption track parsed to zero cues';
+  // Human-authored (manual) tracks are trusted: the vocabulary/density
+  // heuristics below are tuned for auto-caption junk and would wrongly
+  // reject a long, tersely-captioned real talk. Only the zero-cue check
+  // applies to a trusted track.
+  if (opts?.trusted) return null;
   const speech = cues.filter((c) => !isBracketOnly(c.text));
   if (cues.length >= 5 && speech.length / cues.length < 0.2) {
     return `captions are ${Math.round((1 - speech.length / cues.length) * 100)}% non-speech markers ([Music] etc.)`;

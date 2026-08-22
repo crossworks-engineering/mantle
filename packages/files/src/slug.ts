@@ -101,6 +101,12 @@ export const TIKA_EXTS = new Set<string>([
   // to work (matching `<title>` rather than titles). Project's MSPDI export is
   // recognised by content before this fallback — see parseDocumentBytes.
   'xml',
+  // Saved web pages. Same shape as .xml: mostly markup, real content inside,
+  // Tika strips the tags cleanly. Without this, .html routed 'none' and — once
+  // the hollow-body guard landed — went from degraded filename-indexing to a
+  // no_parser skip, which is a regression for a folder of saved articles.
+  'html',
+  'htm',
 ]);
 /** TEXT_EXTS + every binary type the extractor can pull readable text from.
  *  In-process: pdf-parse, mammoth, exceljs. Tika-routed: TIKA_EXTS. Each
@@ -239,6 +245,7 @@ export function mimeForExt(ext: string): string {
     case 'svg':
       return 'image/svg+xml';
     case 'html':
+    case 'htm':
       return 'text/html; charset=utf-8';
     case 'xml':
       return 'application/xml; charset=utf-8';

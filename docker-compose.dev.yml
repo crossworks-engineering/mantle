@@ -147,6 +147,8 @@ services:
       target: media
     container_name: mantle_dev_media
     restart: unless-stopped
+    # tini reaps group-killed yt-dlp/ffmpeg orphans (see prod compose note).
+    init: true
     mem_limit: 1g
     environment:
       MEDIA_TOKEN: mantle
@@ -163,4 +165,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      # The listener binds immediately (boot pip refresh is backgrounded);
+      # 60s is margin for a slow image start, not for PyPI.
+      start_period: 60s

@@ -127,3 +127,4 @@ server/web/public/share-runtime/
 # owner's bank, a company expense figure and their full name into a public
 # repo. Build your own with docs/recall-eval.md.
 server/web/scripts/eval/recall-cases.json
+__pycache__/

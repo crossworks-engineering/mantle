@@ -30,6 +30,7 @@ import { db, nodes, bumpWorkerUsage } from '@mantle/db';
 import {
   createFolder,
   dashToLtree,
+  fileById,
   mediaAudio,
   mediaCaptions,
   mediaExtractAudio,
@@ -46,6 +47,7 @@ import { getSttAdapter } from '@mantle/voice';
 import { recordIngest, step } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { assertFetchableUrl } from './ssrf-guard';
+import { notFound } from './errors';
 import { resolveDefaultWorker } from './builtins-workers';
 import { str } from './coerce';
 import {
@@ -162,6 +164,17 @@ const video_ingest: BuiltinToolDef = {
       },
     },
   },
+  // Checked centrally before the handler runs; catches the classic
+  // filename-instead-of-uuid mistake with a teaching error instead of a raw
+  // Postgres 22P02.
+  preconditions: [
+    {
+      kind: 'node_exists',
+      param: 'file_node_id',
+      nodeType: 'file',
+      lookup: 'file_list / search_nodes',
+    },
+  ],
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     // Belt-and-braces on top of the tool-group grant: an outbound fetch of an
     // arbitrary URL never runs for a team surface.
@@ -172,19 +185,31 @@ const video_ingest: BuiltinToolDef = {
       return {
         ok: false,
         error:
-          'Media ingestion is not enabled on this box — it needs the `media` compose profile plus MEDIA_SIDECAR_TOKEN (docs/deploy.md).',
+          'Media ingestion is not enabled on this box — it needs the `media` compose profile plus MEDIA_SIDECAR_TOKEN (see docs/video-ingest.md).',
       };
     }
-    const url = str(input.url);
-    const fileNodeId = str(input.file_node_id);
-    if (!!url === !!fileNodeId) {
-      return { ok: false, error: 'pass exactly one of url or file_node_id' };
+    const url = str(input.url).trim();
+    const fileNodeId = str(input.file_node_id).trim();
+    if (url && fileNodeId) {
+      return { ok: false, error: 'pass EITHER url OR file_node_id, not both' };
+    }
+    if (!url && !fileNodeId) {
+      return {
+        ok: false,
+        error:
+          "pass one of `url` (an http(s) link) or `file_node_id` (a file node's UUID from file_list / search_nodes)",
+      };
     }
     const language = str(input.language) || undefined;
     const forceStt = input.force_stt === true;
-    const keepVideo = input.keep_video === true;
-
+    let keepVideo = input.keep_video === true;
     const notes: string[] = [];
+    if (keepVideo && ctx.surface?.kind !== 'web') {
+      // A full video download can add 25 minutes to an already-long turn;
+      // off the web surface (Telegram especially) that reads as a hang.
+      keepVideo = false;
+      notes.push('keep_video ignored on this surface — re-run from the web app to store the video');
+    }
 
     if (url) {
       // ── URL path ────────────────────────────────────────────────
@@ -210,6 +235,13 @@ const video_ingest: BuiltinToolDef = {
       });
       if (!probe.ok) return mediaFail(probe);
       const info = probe.value;
+      if (info.isLive) {
+        return {
+          ok: false,
+          error:
+            'this is a LIVE stream — there is no bounded video to ingest. Try again after it ends.',
+        };
+      }
       const maxDuration = MAX_STT_DURATION_S();
       const hasCaptions = info.captions.manual.length > 0 || info.captions.auto.length > 0;
       const overCap = info.durationSeconds != null && info.durationSeconds > maxDuration;
@@ -235,7 +267,12 @@ const video_ingest: BuiltinToolDef = {
         );
         if (caps.ok) {
           const cues = parseVtt(caps.value.content);
-          const garbage = captionsGarbageReason(cues, info.durationSeconds);
+          const garbage = captionsGarbageReason(cues, info.durationSeconds, {
+            // Human-authored subtitles are never second-guessed on vocabulary
+            // or density — a 4h conference with terse captions must not be
+            // thrown away by a heuristic tuned for auto-caption junk.
+            trusted: caps.value.source === 'manual',
+          });
           if (garbage) {
             notes.push(`${caps.value.source} captions rejected: ${garbage}; falling back to STT`);
           } else {
@@ -357,6 +394,17 @@ const video_ingest: BuiltinToolDef = {
             tags: ['video', 'video-ingest'],
           });
           videoFileId = file.id;
+          if (audioFileId) {
+            // Derived-node convention: the video is the provenance ROOT.
+            // Re-stamp the audio clip so deleting the video reaps (or at
+            // least surfaces) its derived clip instead of orphaning it.
+            await db
+              .update(nodes)
+              .set({
+                data: sql`${nodes.data} || ${JSON.stringify({ sourceFileId: file.id })}::jsonb`,
+              })
+              .where(and(eq(nodes.id, audioFileId), eq(nodes.ownerId, ctx.ownerId)));
+          }
         } else {
           notes.push(
             `keep_video failed (${vid.code}: ${vid.message}); transcript and audio are unaffected`,
@@ -377,21 +425,26 @@ const video_ingest: BuiltinToolDef = {
     }
 
     // ── file-node path ────────────────────────────────────────────
-    const loaded = await readFileById({ ownerId: ctx.ownerId, fileId: fileNodeId! });
-    if (!loaded) return { ok: false, error: `file node ${fileNodeId} not found` };
-    const mime = String((loaded.row as { mimeType?: string }).mimeType ?? '');
+    // Metadata FIRST: mime + size gates must run before the bytes are read,
+    // or the size cap can only refuse an allocation that already happened
+    // (and >2 GiB throws out of fs.readFile before any guard runs).
+    const meta = await fileById({ ownerId: ctx.ownerId, fileId: fileNodeId });
+    if (!meta) return notFound('file', fileNodeId, 'file_list / search_nodes');
+    const mime = meta.mimeType ?? '';
     if (!mime.startsWith('video/') && !mime.startsWith('audio/')) {
       return {
         ok: false,
-        error: `node '${loaded.row.filename}' is ${mime || 'not a media file'} — video_ingest wants a video/* or audio/* file`,
+        error: `node '${meta.filename}' is ${mime || 'not a media file'} — video_ingest wants a video/* or audio/* file`,
       };
     }
-    if (loaded.bytes.length > MAX_VIDEO_BYTES()) {
+    if (meta.sizeBytes > MAX_VIDEO_BYTES()) {
       return {
         ok: false,
-        error: `file is ${loaded.bytes.length} bytes — over the ${MAX_VIDEO_BYTES()}-byte cap`,
+        error: `file is ${meta.sizeBytes} bytes — over the ${MAX_VIDEO_BYTES()}-byte cap`,
       };
     }
+    const loaded = await readFileById({ ownerId: ctx.ownerId, fileId: fileNodeId });
+    if (!loaded) return notFound('file', fileNodeId, 'file_list / search_nodes');
     const stt = await resolveDefaultWorker(ctx.ownerId, 'stt');
     if (!stt.ok) return { ok: false, error: stt.error };
     const adapter = getSttAdapter(stt.worker.provider);
@@ -413,22 +466,45 @@ const video_ingest: BuiltinToolDef = {
     if (!extracted.ok) return mediaFail(extracted);
 
     // The clip lives BESIDE its video (same folder), linked by sourceFileId.
+    // Named `<base>-audio.mp3` and NEVER overwriting: `<base>.mp3` would be
+    // the source file itself when the input is an mp3, and could be a user's
+    // own sibling file next to a video — both unrecoverable losses.
     const parentLtree = loaded.row.parentPath;
     const baseName = loaded.row.filename.replace(/\.[^.]+$/, '');
-    const savedFile = await upsertFile({
-      ownerId: ctx.ownerId,
-      parentPath: parentLtree,
-      filename: `${baseName}.mp3`,
-      bytes: extracted.value.bytes,
-      overwrite: true,
-      data: {
-        source: 'video_ingest',
-        sourceFileId: fileNodeId,
-        durationSeconds: extracted.value.durationSeconds,
-        indexing: 'metadata',
-      },
-      tags: ['audio', 'video-ingest'],
-    });
+    const audioData = {
+      source: 'video_ingest',
+      sourceFileId: fileNodeId,
+      durationSeconds: extracted.value.durationSeconds,
+      indexing: 'metadata',
+    };
+    let savedFile;
+    try {
+      savedFile = await upsertFile({
+        ownerId: ctx.ownerId,
+        parentPath: parentLtree,
+        filename: `${baseName}-audio.mp3`,
+        bytes: extracted.value.bytes,
+        overwrite: false,
+        data: audioData,
+        tags: ['audio', 'video-ingest'],
+      });
+    } catch (err) {
+      if (err instanceof Error && /already exists/i.test(err.message)) {
+        // A previous run (or a same-named user file) holds the slot — take a
+        // timestamped name instead of clobbering it.
+        savedFile = await upsertFile({
+          ownerId: ctx.ownerId,
+          parentPath: parentLtree,
+          filename: `${baseName}-audio-${Date.now()}.mp3`,
+          bytes: extracted.value.bytes,
+          overwrite: false,
+          data: audioData,
+          tags: ['audio', 'video-ingest'],
+        });
+      } else {
+        throw err;
+      }
+    }
     const text = await transcribeStep(extracted.value.bytes, {
       adapter,
       apiKey: stt.apiKey,
@@ -456,17 +532,18 @@ const video_ingest: BuiltinToolDef = {
       source: `stt:${stt.worker.provider}`,
       sttModel: stt.worker.model,
       info: {
-        title: loaded.row.title || loaded.row.filename,
+        title: meta.title || meta.filename,
         durationSeconds: extracted.value.durationSeconds,
         channel: null,
         uploadDate: null,
         extractor: null,
+        isLive: false,
         captions: { manual: [], auto: [] },
         filesizeApprox: null,
       },
       sourceUrl: null,
       audioFileId: savedFile.id,
-      videoFileId: fileNodeId!,
+      videoFileId: fileNodeId,
       notes,
     });
   },
@@ -594,12 +671,11 @@ async function finishWithPage(
         source: 'video_ingest',
         transcriptSource: args.source,
         ...(args.sourceUrl ? { sourceUrl: args.sourceUrl } : {}),
-        // Derived-node convention: link the page to the artifact it came
-        // from so reaping + the dangling_source_file audit see it. Prefer
-        // the video (the provenance root) over the audio.
-        ...(args.videoFileId || args.audioFileId
-          ? { sourceFileId: args.videoFileId ?? args.audioFileId }
-          : {}),
+        // Derived-node convention — but ONLY toward the VIDEO. The transcript
+        // is the durable knowledge and the mp3 is a disposable byproduct;
+        // pointing sourceFileId at the audio would let "tidy up the clips"
+        // reap the transcript page along with a 15 MB mp3.
+        ...(args.videoFileId ? { sourceFileId: args.videoFileId } : {}),
       },
     });
     pageId = page.id;

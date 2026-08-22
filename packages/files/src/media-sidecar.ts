@@ -6,12 +6,15 @@
  * the `video_ingest` TOOL, and the LLM needs to distinguish failure modes to
  * explain them ("no captions" vs "site broke" vs "too long"), so every call
  * returns a typed `MediaResult` with the sidecar's error code — it never
- * throws and never silently returns ''. Unconfigured (no URL/token) is its
- * own first-class state so the tool can say "not enabled on this box".
+ * throws and never silently returns ''. That contract covers the WHOLE
+ * exchange: body collection and JSON parsing are guarded too, and the abort
+ * timer stays armed until the body is fully consumed, not just until headers
+ * arrive. Unconfigured (no URL/token) is its own first-class state so the
+ * tool can say "not enabled on this box".
  *
- * Timeouts are the sidecar's own per-op budgets + a 30s transport backstop —
- * two layers on purpose: the sidecar kills its subprocess, and this abort
- * covers a hung connection the sidecar never got to answer.
+ * Wire contract: text headers (X-Media-Title) arrive percent-encoded as one
+ * single-line ASCII token; numeric headers are plain digits. (RFC 2047 was
+ * tried first — its folding produced multi-line headers undici rejects.)
  */
 
 export type MediaErrorCode =
@@ -19,6 +22,7 @@ export type MediaErrorCode =
   | 'unreachable'
   | 'unauthorized'
   | 'bad_request'
+  | 'blocked_url'
   | 'no_captions'
   | 'extraction_failed'
   | 'duration_exceeded'
@@ -35,6 +39,7 @@ export type MediaProbe = {
   channel: string | null;
   uploadDate: string | null;
   extractor: string | null;
+  isLive: boolean;
   captions: { manual: string[]; auto: string[] };
   filesizeApprox: number | null;
 };
@@ -75,27 +80,28 @@ const NOT_ENABLED: MediaResult<never> = {
   ok: false,
   code: 'not_enabled',
   message:
-    'Media ingestion is not enabled on this box. It needs the `media` compose profile plus MEDIA_SIDECAR_TOKEN (see docs/deploy.md).',
+    'Media ingestion is not enabled on this box. It needs the `media` compose profile plus MEDIA_SIDECAR_TOKEN (see docs/video-ingest.md).',
 };
 
-/** Decode the one RFC 2047 shape the sidecar emits (=?utf-8?b|q?…?=). */
+/** Sidecar text headers are percent-encoded single-line ASCII. */
 function decodeHeader(raw: string | null): string | null {
   if (!raw) return null;
-  const parts = raw.match(/=\?utf-8\?([bq])\?([^?]*)\?=/gi);
-  if (!parts) return raw;
   try {
-    return parts
-      .map((p) => {
-        const m = /=\?utf-8\?([bq])\?([^?]*)\?=/i.exec(p)!;
-        if (m[1]!.toLowerCase() === 'b') return Buffer.from(m[2]!, 'base64').toString('utf8');
-        return m[2]!
-          .replace(/_/g, ' ')
-          .replace(/=([0-9A-F]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
-      })
-      .join('');
+    return decodeURIComponent(raw);
   } catch {
     return raw;
   }
+}
+
+function asFailure(err: unknown, timeoutMs: number): MediaResult<never> {
+  const aborted = err instanceof Error && err.name === 'AbortError';
+  return {
+    ok: false,
+    code: aborted ? 'timeout' : 'unreachable',
+    message: aborted
+      ? `media sidecar did not answer within ${Math.round(timeoutMs / 1000)}s`
+      : `media sidecar unreachable: ${err instanceof Error ? err.message : String(err)}`,
+  };
 }
 
 /** Parse a non-2xx envelope into the typed result; tolerate junk bodies. */
@@ -112,11 +118,19 @@ async function envelopeError(res: Response): Promise<MediaResult<never>> {
   return { ok: false, code, message };
 }
 
-async function call(
+/**
+ * One full exchange: fetch + status check + `consume` (json parse or byte
+ * collection), all under ONE abort timer that is cleared only after the body
+ * has been consumed — a stalled body times out instead of hanging forever.
+ * Any throw anywhere becomes a typed failure; this function upholds the
+ * module's never-throws contract by construction.
+ */
+async function exchange<T>(
   path: string,
   init: RequestInit,
   timeoutMs: number,
-): Promise<MediaResult<Response>> {
+  consume: (res: Response) => Promise<MediaResult<T>>,
+): Promise<MediaResult<T>> {
   const cfg = config();
   if (!cfg) return NOT_ENABLED;
   const ctrl = new AbortController();
@@ -131,16 +145,9 @@ async function call(
       signal: ctrl.signal,
     });
     if (!res.ok) return await envelopeError(res);
-    return { ok: true, value: res };
+    return await consume(res);
   } catch (err) {
-    const aborted = err instanceof Error && err.name === 'AbortError';
-    return {
-      ok: false,
-      code: aborted ? 'timeout' : 'unreachable',
-      message: aborted
-        ? `media sidecar did not answer within ${Math.round(timeoutMs / 1000)}s`
-        : `media sidecar unreachable: ${err instanceof Error ? err.message : String(err)}`,
-    };
+    return asFailure(err, timeoutMs);
   } finally {
     clearTimeout(timer);
   }
@@ -169,12 +176,33 @@ async function collectBytes(res: Response, maxBytes: number): Promise<MediaResul
   return { ok: true, value: Buffer.concat(chunks) };
 }
 
-function mediaMeta(res: Response): { durationSeconds: number | null; title: string | null } {
-  const dur = res.headers.get('x-media-duration-seconds');
-  const parsed = dur == null ? NaN : Number(dur);
-  return {
-    durationSeconds: Number.isFinite(parsed) ? parsed : null,
-    title: decodeHeader(res.headers.get('x-media-title')),
+async function consumeJson<T>(
+  res: Response,
+  map: (body: Record<string, unknown>) => MediaResult<T>,
+): Promise<MediaResult<T>> {
+  let body: Record<string, unknown>;
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    return { ok: false, code: 'extraction_failed', message: 'sidecar returned non-JSON on a 200' };
+  }
+  return map(body);
+}
+
+function consumeMedia(maxBytes: number) {
+  return async (res: Response): Promise<MediaResult<MediaBytes>> => {
+    const bytes = await collectBytes(res, maxBytes);
+    if (!bytes.ok) return bytes;
+    const dur = res.headers.get('x-media-duration-seconds');
+    const parsed = dur == null ? NaN : Number(dur);
+    return {
+      ok: true,
+      value: {
+        bytes: bytes.value,
+        durationSeconds: Number.isFinite(parsed) ? parsed : null,
+        title: decodeHeader(res.headers.get('x-media-title')),
+      },
+    };
   };
 }
 
@@ -193,9 +221,14 @@ export async function mediaSidecarHealth(timeoutMs = 1_500): Promise<{
   try {
     const res = await fetch(`${cfg.url}/healthz`, { signal: ctrl.signal });
     if (!res.ok) return { up: false, ytDlpVersion: null, ffmpegVersion: null };
-    const body = (await res.json()) as { versions?: { yt_dlp?: string; ffmpeg?: string } };
+    const body = (await res.json()) as {
+      ok?: boolean;
+      versions?: { yt_dlp?: string; ffmpeg?: string };
+    };
     return {
-      up: true,
+      // A tokenless sidecar serves /healthz with ok:false — configured but
+      // unusable is DOWN, not up.
+      up: body.ok !== false,
       ytDlpVersion: body.versions?.yt_dlp ?? null,
       ffmpegVersion: body.versions?.ffmpeg ?? null,
     };
@@ -207,39 +240,39 @@ export async function mediaSidecarHealth(timeoutMs = 1_500): Promise<{
 }
 
 export async function mediaProbe(url: string): Promise<MediaResult<MediaProbe>> {
-  const res = await call(
+  return exchange(
     '/probe',
     { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ url }) },
     T_PROBE,
+    (res) =>
+      consumeJson(res, (body) => ({
+        ok: true,
+        value: {
+          title: typeof body.title === 'string' ? body.title : null,
+          durationSeconds: typeof body.durationSeconds === 'number' ? body.durationSeconds : null,
+          channel: typeof body.channel === 'string' ? body.channel : null,
+          uploadDate: typeof body.uploadDate === 'string' ? body.uploadDate : null,
+          extractor: typeof body.extractor === 'string' ? body.extractor : null,
+          isLive: body.isLive === true,
+          captions: {
+            manual: Array.isArray((body.captions as Record<string, unknown>)?.manual)
+              ? ((body.captions as Record<string, unknown>).manual as string[])
+              : [],
+            auto: Array.isArray((body.captions as Record<string, unknown>)?.auto)
+              ? ((body.captions as Record<string, unknown>).auto as string[])
+              : [],
+          },
+          filesizeApprox: typeof body.filesizeApprox === 'number' ? body.filesizeApprox : null,
+        },
+      })),
   );
-  if (!res.ok) return res;
-  const body = (await res.value.json()) as Record<string, unknown>;
-  return {
-    ok: true,
-    value: {
-      title: typeof body.title === 'string' ? body.title : null,
-      durationSeconds: typeof body.durationSeconds === 'number' ? body.durationSeconds : null,
-      channel: typeof body.channel === 'string' ? body.channel : null,
-      uploadDate: typeof body.uploadDate === 'string' ? body.uploadDate : null,
-      extractor: typeof body.extractor === 'string' ? body.extractor : null,
-      captions: {
-        manual: Array.isArray((body.captions as Record<string, unknown>)?.manual)
-          ? ((body.captions as Record<string, unknown>).manual as string[])
-          : [],
-        auto: Array.isArray((body.captions as Record<string, unknown>)?.auto)
-          ? ((body.captions as Record<string, unknown>).auto as string[])
-          : [],
-      },
-      filesizeApprox: typeof body.filesizeApprox === 'number' ? body.filesizeApprox : null,
-    },
-  };
 }
 
 export async function mediaCaptions(
   url: string,
   opts?: { lang?: string; prefer?: 'manual' | 'auto' | 'any' },
 ): Promise<MediaResult<MediaCaptions>> {
-  const res = await call(
+  return exchange(
     '/captions',
     {
       method: 'POST',
@@ -247,27 +280,32 @@ export async function mediaCaptions(
       body: JSON.stringify({ url, lang: opts?.lang, prefer: opts?.prefer ?? 'any' }),
     },
     T_CAPTIONS,
+    (res) =>
+      consumeJson(res, (body) => {
+        if (typeof body.content !== 'string' || !body.content.trim()) {
+          return {
+            ok: false,
+            code: 'no_captions',
+            message: 'sidecar returned an empty caption track',
+          };
+        }
+        return {
+          ok: true,
+          value: {
+            source: body.source === 'manual' ? 'manual' : 'auto',
+            lang: typeof body.lang === 'string' ? body.lang : 'unknown',
+            content: body.content,
+          },
+        };
+      }),
   );
-  if (!res.ok) return res;
-  const body = (await res.value.json()) as Record<string, unknown>;
-  if (typeof body.content !== 'string' || !body.content.trim()) {
-    return { ok: false, code: 'no_captions', message: 'sidecar returned an empty caption track' };
-  }
-  return {
-    ok: true,
-    value: {
-      source: body.source === 'manual' ? 'manual' : 'auto',
-      lang: typeof body.lang === 'string' ? body.lang : 'unknown',
-      content: body.content,
-    },
-  };
 }
 
 export async function mediaAudio(
   url: string,
   opts: { maxDurationSeconds: number; maxBytes: number },
 ): Promise<MediaResult<MediaBytes>> {
-  const res = await call(
+  return exchange(
     '/audio',
     {
       method: 'POST',
@@ -279,41 +317,40 @@ export async function mediaAudio(
       }),
     },
     T_AUDIO,
+    consumeMedia(opts.maxBytes),
   );
-  if (!res.ok) return res;
-  const bytes = await collectBytes(res.value, opts.maxBytes);
-  if (!bytes.ok) return bytes;
-  return { ok: true, value: { bytes: bytes.value, ...mediaMeta(res.value) } };
 }
 
 export async function mediaExtractAudio(
   video: Buffer,
   opts: { maxDurationSeconds: number; maxAudioBytes: number },
 ): Promise<MediaResult<MediaBytes>> {
-  const res = await call(
+  return exchange(
     '/extract-audio',
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/octet-stream',
-        'Content-Length': String(video.byteLength),
         'X-Media-Max-Duration-Seconds': String(opts.maxDurationSeconds),
+        // Sent so the SIDECAR refuses an over-cap transcode before doing it —
+        // the client-side collect cap alone would pay the full ffmpeg run
+        // and transfer first.
+        'X-Media-Max-Audio-Bytes': String(opts.maxAudioBytes),
       },
-      body: new Uint8Array(video),
+      // The Buffer itself — wrapping in `new Uint8Array(video)` would COPY
+      // the whole video a second time (Buffer is already a Uint8Array view).
+      body: video as unknown as BodyInit,
     },
     T_EXTRACT,
+    consumeMedia(opts.maxAudioBytes),
   );
-  if (!res.ok) return res;
-  const bytes = await collectBytes(res.value, opts.maxAudioBytes);
-  if (!bytes.ok) return bytes;
-  return { ok: true, value: { bytes: bytes.value, ...mediaMeta(res.value) } };
 }
 
 export async function mediaVideo(
   url: string,
   opts: { maxBytes: number },
 ): Promise<MediaResult<MediaBytes>> {
-  const res = await call(
+  return exchange(
     '/video',
     {
       method: 'POST',
@@ -321,9 +358,6 @@ export async function mediaVideo(
       body: JSON.stringify({ url, maxBytes: opts.maxBytes }),
     },
     T_VIDEO,
+    consumeMedia(opts.maxBytes),
   );
-  if (!res.ok) return res;
-  const bytes = await collectBytes(res.value, opts.maxBytes);
-  if (!bytes.ok) return bytes;
-  return { ok: true, value: { bytes: bytes.value, ...mediaMeta(res.value) } };
 }

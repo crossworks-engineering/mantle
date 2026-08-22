@@ -81,11 +81,27 @@ function shouldSync(absPath: string): boolean {
   return WATCHED_EXTS.has(ext);
 }
 
+/** Hard ceiling on what this worker will buffer for one file. The whole file
+ *  is read into memory (readFile + sha256), the container runs under a 1 GB
+ *  mem_limit, and chokidar fires upserts CONCURRENTLY — before media joined
+ *  WATCHED_EXTS the practical max was a 64 MB document, but a synced `.mkv`
+ *  can be many GB. Over the cap: log loudly and skip; the file stays on disk,
+ *  it just doesn't become a node. (Deliberately larger than MAX_UPLOAD_BYTES:
+ *  the operator placed this file on purpose.) */
+const WATCH_MAX_BYTES = 512 * 1024 * 1024;
+
 async function handleUpsert(absPath: string): Promise<void> {
   try {
     if (!shouldSync(absPath)) return;
     const loc = ltreeForDiskPath(absPath);
     if (!loc) return;
+    const st = await fs.stat(absPath);
+    if (st.size > WATCH_MAX_BYTES) {
+      console.warn(
+        `[files-watch] SKIPPED ${loc.parentPath}/${loc.filename}: ${st.size} bytes exceeds the ${WATCH_MAX_BYTES}-byte sync cap (file left on disk, no node created)`,
+      );
+      return;
+    }
     const bytes = await fs.readFile(absPath);
     const res = await syncFileFromDisk({
       ownerId: USER_ID!,

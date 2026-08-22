@@ -446,6 +446,10 @@ services:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-media:${MANTLE_IMAGE_TAG:-latest}
     container_name: mantle_media
     restart: unless-stopped
+    # tini as PID 1: a timed-out yt-dlp's group-killed ffmpeg reparents to
+    # init, which must reap it — the python server deliberately does NOT
+    # (SIGCHLD auto-reap would destroy subprocess return codes).
+    init: true
     logging: *default-logging
     profiles: ["media"]
     # Transcodes stream through temp files, never RAM; 1g covers ffmpeg peaks.
@@ -465,7 +469,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      # The listener binds immediately (boot pip refresh is backgrounded);
+      # 60s is margin for a slow image start, not for PyPI.
+      start_period: 60s
 
   # Ollama — serves the bundled local embedder (EmbeddingGemma, 768-dim) over an
   # OpenAI-compatible API. CPU-only; a small encoder (~300MB) that fits on the

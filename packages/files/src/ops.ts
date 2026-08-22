@@ -963,11 +963,30 @@ export async function syncFileFromDisk(args: {
     if (oldData.sha256 === sha256) {
       return { status: 'noop', nodeId: existing.id };
     }
+    // MERGE onto the existing data — never replace it. A wholesale
+    // `{...newData}` here silently destroyed everything the storage fields
+    // don't cover: the per-file `indexing: 'metadata'` privacy flag (a
+    // host-side re-save would revert a deliberately-excluded file to FULL
+    // indexing), video_ingest provenance (sourceUrl/sourceFileId), and the
+    // extractor's own summary/indexing_applied bookkeeping. The stale
+    // extraction fields ARE cleared — content changed, so they must be
+    // recomputed — but explicitly, not by omission.
     const [updated] = await db
       .update(nodes)
       .set({
         title: filename,
-        data: { ...newData },
+        data: {
+          ...oldData,
+          ...newData,
+          // Content changed: force a fresh extract pass (summary/embedding
+          // repopulate via the node_ingested notify below).
+          summary: undefined,
+          extract_completed_at: undefined,
+          indexing_applied: undefined,
+          // A cached body from the previous bytes must not shadow the new
+          // ones (newData carries `content` only for small text files).
+          ...(content == null ? { content: undefined, text: undefined } : {}),
+        },
         updatedAt: new Date(),
         embedding: null,
       })

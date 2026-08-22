@@ -53,7 +53,11 @@ policy, both scoped to this one container:
    (`assertFetchableUrl`) before the sidecar sees it, and the sidecar's
    isolation bounds what a hostile page could reach.
 
-Enable it per box:
+Enable it per box — **after updating the stack to a release that ships the
+`mantle-media` image (v0.232.34 or later)**. Enabling the profile on an older
+tag makes `docker compose pull` look for an image tag that was never
+published, and that failure aborts the WHOLE stack update, not just this
+service. Update first, then:
 
 ```sh
 # .env
@@ -61,9 +65,12 @@ COMPOSE_PROFILES=media            # or append to the existing list
 MEDIA_SIDECAR_TOKEN=<openssl rand -hex 32>
 ```
 
-Without the profile (or the token) the tool refuses cleanly with "not enabled
-on this box". Dev: `docker compose -f docker-compose.dev.yml up media` builds
-the stage locally on `127.0.0.1:8095` (see `.env.example`).
+Without the profile the tool refuses cleanly with "not enabled on this box".
+With the profile but no token, the container comes up degraded — it serves
+`/healthz` with the reason and nothing else, so the dashboard pill shows it
+down instead of a crash loop hiding the misconfiguration. Dev:
+`docker compose -f docker-compose.dev.yml up media` builds the stage locally
+on `127.0.0.1:8095` (see `.env.example`).
 
 ## Caps
 

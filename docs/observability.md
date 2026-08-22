@@ -264,6 +264,15 @@ reason. The current catalog (extend as new pipelines land):
   attachment indexed from headers whose body was never fetched). Distinct from
   `no_text_layer` (we HAVE the file but it's an unreadable scan): the fix is to
   re-fetch the source, not to OCR. `details` carries the sha256.
+- `unsupported_media`, an audio/video file (by extension OR mime). Stored and
+  playable but no parser reads it; transcription is only ever the explicit
+  `video_ingest` tool, never this sweep (cost-safety). Hint points at link
+  ingestion.
+- `no_parser`, any OTHER parserless non-image format whose body fell back to
+  its own filename (the generalised hollow-body guard, `isHollowFilenameBody`).
+  Before v0.232.32 a descriptive filename cleared `body_too_short` and indexed
+  as a filename-only `success` — the same false-success family as
+  `needs_export`, now closed for every extension, current and future.
 - `encrypted_pdf`, a password-protected PDF. The reader (native document
   worker + raster fallback) reports "password protected" / "No password given",
   so we record this distinct skip rather than the misleading `no_text_layer`,

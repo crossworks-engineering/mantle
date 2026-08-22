@@ -90,9 +90,14 @@ export const googleSttAdapter: SttDispatcher = {
     if (!audio || audio.length === 0) {
       throw new Error('google-stt: empty audio buffer');
     }
-    if (audio.length > INLINE_MAX_BYTES) {
+    // The 20 MB cap is on the REQUEST, and inline audio ships as base64 —
+    // 4/3 the raw size. Measuring raw bytes let ~16-20 MB clips through to a
+    // guaranteed 400 after the full upload; measure what actually goes on
+    // the wire.
+    const wireBytes = Math.ceil((audio.length * 4) / 3);
+    if (wireBytes > INLINE_MAX_BYTES) {
       throw new Error(
-        `google-stt: audio is ${(audio.length / 1024 / 1024).toFixed(1)} MB; Gemini's inline-data path caps at 20 MB. ` +
+        `google-stt: audio is ${(audio.length / 1024 / 1024).toFixed(1)} MB raw (${(wireBytes / 1024 / 1024).toFixed(1)} MB as base64); Gemini's inline-data path caps the request at 20 MB. ` +
           `Switch to OpenAI or Deepgram for this clip, or implement the Files API upload path.`,
       );
     }
@@ -117,9 +122,11 @@ export const googleSttAdapter: SttDispatcher = {
       generationConfig: {
         // Deterministic transcription, not creative paraphrase.
         temperature: 0,
-        // 8K output tokens covers ~6 min of normal-rate speech, well
-        // beyond our 3-min default cap.
-        maxOutputTokens: 8192,
+        // The model max. This adapter no longer serves only 3-minute voice
+        // notes — video_ingest sends up to an hour of speech, and a low cap
+        // here silently truncated the transcript mid-sentence (8192 tokens
+        // ≈ 6 minutes). Truncation is also DETECTED below, not assumed away.
+        maxOutputTokens: 65536,
       },
     };
 
@@ -137,6 +144,15 @@ export const googleSttAdapter: SttDispatcher = {
       throw new Error(`google-stt ${res.status}: ${errBody.slice(0, 400)}`);
     }
     const parsed = (await res.json()) as GeminiResponse;
+    // A MAX_TOKENS finish means the transcript stops mid-audio. Shipping the
+    // fragment as if complete is the silent-truncation failure this adapter's
+    // own size guard exists to prevent — fail loudly instead.
+    const finishReason = parsed.candidates?.[0]?.finishReason;
+    if (finishReason === 'MAX_TOKENS') {
+      throw new Error(
+        'google-stt: transcript truncated (MAX_TOKENS) — the audio is longer than one response can carry. Use a shorter clip or a dedicated STT provider (OpenAI/Deepgram) for this recording.',
+      );
+    }
     const text = (parsed.candidates?.[0]?.content?.parts ?? [])
       .map((p) => p.text ?? '')
       .join('')

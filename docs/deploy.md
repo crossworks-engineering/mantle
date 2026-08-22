@@ -189,6 +189,13 @@ docker compose up -d --wait
 
 # 3f. (optional) join the tailnet for remote inference
 TS_AUTHKEY=tskey-... docker compose --profile tailnet up -d --wait
+
+# 3g. (optional) video ingest — yt-dlp/ffmpeg sidecar for the video_ingest
+#     tool. Needs v0.232.34+ (the mantle-media image ships from that release;
+#     enabling earlier breaks `docker compose pull` for the whole stack).
+#     Full guide: docs/video-ingest.md
+MEDIA_SIDECAR_TOKEN=$(openssl rand -hex 32)   # persist it in .env
+docker compose --profile media up -d --wait
 ```
 
 Verify: `https://<MANTLE_PUBLIC_URL>` loads, `/debug` shows your traces, and the

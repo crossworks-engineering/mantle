@@ -91,6 +91,14 @@ describe('captionsGarbageReason', () => {
   it('flags an empty parse', () => {
     expect(captionsGarbageReason([], 100)).toMatch(/zero cues/);
   });
+
+  it('never second-guesses a trusted (manual) track beyond the zero-cue check', () => {
+    // The exact shape that trips the auto heuristics: long video, terse
+    // repetitive human captions. Trusted -> accepted.
+    const cues = Array.from({ length: 100 }, (_, i) => cue('la la la la la', i));
+    expect(captionsGarbageReason(cues, 14_400, { trusted: true })).toBeNull();
+    expect(captionsGarbageReason([], 100, { trusted: true })).toMatch(/zero cues/);
+  });
 });
 
 describe('buildTranscriptMarkdown', () => {

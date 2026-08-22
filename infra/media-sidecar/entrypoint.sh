@@ -9,20 +9,29 @@
 # binary lives in its own container with no DB, secrets, or file-store access.
 # Never curl|bash — pip from PyPI only. The running version is visible at
 # /healthz so a stale or failed update shows up in system health.
+#
+# The listener must bind IMMEDIATELY: on a box with slow/absent PyPI egress,
+# an unbounded synchronous pip would hold the port closed for minutes and the
+# healthcheck would mark the container unhealthy before it ever served. So
+# every refresh — the boot one included — runs in the background with tight
+# pip bounds, and the baked-in copy serves in the meantime.
 
 set -u
 
+# A SIGTERM'd python exits without running TemporaryDirectory finalizers, so
+# in-flight partial downloads (up to 1 GB each) survive restarts in the
+# writable layer. Sweep them before serving.
+rm -rf /tmp/* 2>/dev/null || true
+
 refresh() {
-  pip install --no-cache-dir --upgrade yt-dlp \
+  pip install --no-cache-dir --retries 2 --timeout 10 --upgrade yt-dlp \
     && echo "[media] yt-dlp now $(yt-dlp --version)" \
     || echo "[media] yt-dlp refresh failed; keeping $(yt-dlp --version)"
 }
 
-# Best-effort at boot: an offline start still serves with the baked-in copy.
-refresh
-
-# Daily refresh, in the background for the life of the container.
+# Boot refresh + daily loop, all backgrounded for the life of the container.
 (
+  refresh
   while true; do
     sleep 86400
     refresh

@@ -1786,12 +1786,14 @@ async function loadExtractableBody(
   // user only discovers when an answer is quietly wrong. The `!text/!content`
   // guard keeps a media node that DOES carry stored text (a future transcript
   // stamped onto it) indexable.
-  if (
-    node.type === 'file' &&
-    !existingData.text &&
-    !existingData.content &&
-    MEDIA_EXTS.has(fileExt)
-  ) {
+  const isMediaFile =
+    MEDIA_EXTS.has(fileExt) ||
+    // Extension alone misses email attachments, whose filename lives in the
+    // TITLE ('Voice Message') while the truth is in data.mimeType — resolved
+    // into fileMime above for exactly this case.
+    fileMime.startsWith('audio/') ||
+    fileMime.startsWith('video/');
+  if (node.type === 'file' && !existingData.text && !existingData.content && isMediaFile) {
     await recordSkippedTrace({
       kind: 'extractor_run',
       ownerId,

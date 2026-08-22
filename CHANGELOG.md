@@ -4,6 +4,65 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — video ingest hardened: the audit pass (branch claude/video-ingest-audit-fixes)
+
+A three-way adversarial audit of the v0.232.32 video-ingestion release, with
+every confirmed finding fixed. The two showstoppers were on the happy path:
+the sidecar folded long video titles into multi-line HTTP headers that undici
+rejects wholesale (every normal YouTube title made the client report
+"unreachable" after paying for the full download), and the same encoding made
+the duration header permanently unreadable. Headers now travel as single-line
+percent-encoded tokens.
+
+### Data safety
+
+`syncFileFromDisk` replaced a node's `data` wholesale on any watcher-observed
+byte change — silently erasing the per-file `indexing: 'metadata'` privacy
+flag (a host-side re-save reverted a deliberately-excluded file to FULL
+indexing) and video-ingest provenance. It now merges, clearing only the
+extraction bookkeeping that genuinely must recompute. The file-node ingest
+path could overwrite its own source (an `.mp3` input re-encoded onto itself)
+or a same-named sibling; clips now save as `<base>-audio.mp3`, never
+overwriting. The watcher gained a 512 MB sync cap so a dropped `.mkv` can no
+longer OOM-kill the worker, and transcript pages point their `sourceFileId`
+at the video only — deleting a disposable clip can no longer reap the
+transcript. Migration 0151 backfills the pre-existing filename-only false
+successes for media (LLM-free by construction).
+
+### Sidecar protocol and process hygiene
+
+Error responses close the connection (an unread request body no longer
+poisons the keep-alive stream — a 429 on a 1 GB upload now arrives as a 429,
+not "unreachable"); negative Content-Length can no longer wedge the
+concurrency slots; subprocesses run in their own process group and the whole
+group dies on timeout (compose runs the container with `init: true` so tini
+reaps the orphans — SIGCHLD auto-reap was rejected because it silently zeroes
+every child's exit code); the sidecar re-checks resolved addresses against
+private/link-local ranges before yt-dlp fetches anything; live streams are
+refused up front; the merged video is re-measured against the cap
+(`--max-filesize` is per-stream); probe/captions gained their own concurrency
+bound; malformed numerics are 400s, not 500s; and a missing token now serves
+a degraded `/healthz` naming the problem instead of crash-looping.
+
+### Pipeline honesty
+
+Manual (human-authored) captions are exempt from the auto-caption garbage
+heuristics — a tersely-captioned four-hour talk is no longer thrown away on a
+vocabulary ratio. Google STT measures its 20 MB cap on the base64 wire size
+and fails loudly on MAX_TOKENS truncation instead of shipping six minutes of
+a forty-minute transcript as if complete, with `maxOutputTokens` raised to
+the model max. `keep_video` now restamps the audio clip's provenance to the
+video and is ignored (with a note) off the web surface, where a 25-minute
+download reads as a hang. `.html`/`.htm` route to Tika instead of regressing
+to unindexed. `file_node_id` gets a real precondition (teaching error, not a
+Postgres 22P02) and size/mime gates run BEFORE the bytes are read. The ops
+surface caught up too: `.env.prod.example` documents the profile with its
+update-first ordering (enabling on a pre-media tag broke `docker compose
+pull` for the whole stack), `docs/deploy.md` and the disposition catalogues
+cover the new skips, and forks can build the `mantle-media` image via
+`scripts/docker-build-push.sh`.
+
+
 ## Unreleased — video ingestion: paste a link, get a searchable transcript (branch claude/mantle-video-extraction-650157)
 
 The brain can now ingest a video. `video_ingest` takes a link (or a video
