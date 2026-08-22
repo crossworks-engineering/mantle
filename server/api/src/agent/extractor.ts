@@ -63,6 +63,8 @@ import {
   exportHintForExt,
   slugifyFolder,
   upsertFile,
+  resolveEffectiveIndexing,
+  metadataSpineText,
 } from '@mantle/files';
 import { contentKey, getContent } from '@mantle/storage';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
@@ -3010,6 +3012,95 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
       },
     });
     return;
+  }
+
+  // Metadata-only files: the owner (or an ancestor folder's flag) asked for
+  // this file's CONTENT to stay out of the brain. Runs BEFORE the key
+  // pre-flight because it needs no LLM: the spine is deterministic text and
+  // the embedding is local. It also runs before the already_extracted guard,
+  // carrying its own idempotency (data.indexing_applied) — the guard's
+  // summary+embedding+marker check can't distinguish which MODE produced
+  // them, and a mode flip must re-run.
+  if (node.type === 'file') {
+    const { effective, source, sourcePath } = await resolveEffectiveIndexing(ownerId, node);
+    if (effective === 'metadata') {
+      const mdData = (node.data ?? {}) as Record<string, unknown>;
+      const alreadyMetadata =
+        mdData.indexing_applied === 'metadata' &&
+        typeof mdData.summary === 'string' &&
+        node.embedding &&
+        mdData.extract_completed_at;
+      if (alreadyMetadata) {
+        await recordSkippedTrace({
+          kind: 'extractor_run',
+          ownerId,
+          subjectId: node.id,
+          subjectKind: 'node',
+          disposition: 'metadata_only_current',
+          details: { worker_slug: worker.slug, node_type: node.type, title: node.title },
+        });
+        return;
+      }
+      const spine = metadataSpineText(node);
+      let vec: number[] | null = null;
+      try {
+        vec = await embed(ownerId, spine);
+      } catch (err) {
+        // No embedding this pass — keep going. The summary + FTS still index
+        // the spine; the completion marker is withheld below so the next
+        // notify retries the vector once the embedder is back.
+        console.error(
+          '[extractor] metadata-only embed failed:',
+          err instanceof Error ? err.message : err,
+        );
+      }
+      await db.transaction(async (tx) => {
+        // Reap content chunks — on a full→metadata flip they are exactly the
+        // content the owner just un-indexed, and search would keep serving
+        // them. A fresh upload has none; the delete is a no-op there.
+        await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
+        await tx
+          .update(nodes)
+          .set({
+            data: sql`${nodes.data} || ${JSON.stringify({
+              summary: spine,
+              summary_model: 'metadata-only',
+              indexing_applied: 'metadata',
+              ...(vec ? { extract_completed_at: new Date().toISOString() } : {}),
+            })}::jsonb`,
+            ...(vec ? { embedding: vec } : {}),
+          })
+          .where(eq(nodes.id, node.id));
+      });
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'metadata_only_indexed',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          indexing_source: source,
+          ...(sourcePath ? { inherited_from: sourcePath } : {}),
+          embedded: Boolean(vec),
+          hint: 'Content deliberately not read — indexed by name/type/tags only (data.indexing).',
+        },
+      });
+      return;
+    }
+    // Falling through to a FULL pass: stamp which mode this run applies so a
+    // later metadata flip knows there is content to reap. Stamped here (not in
+    // update_index) to anchor the contract next to its counterpart above.
+    // Harmless duplicate writes are avoided by only writing on change.
+    const fullData = (node.data ?? {}) as Record<string, unknown>;
+    if (fullData.indexing_applied !== 'full') {
+      await db
+        .update(nodes)
+        .set({ data: sql`${nodes.data} || '{"indexing_applied":"full"}'::jsonb` })
+        .where(eq(nodes.id, node.id));
+    }
   }
 
   // Key pre-flight via the shared resolver — keyless `local` passes, a

@@ -1,7 +1,14 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401, getOwnerForAsset } from '@/lib/auth';
-import { deleteFileById, fileById, readFileById, renameFileById, upsertFile } from '@/lib/files';
+import {
+  deleteFileById,
+  fileById,
+  readFileById,
+  renameFileById,
+  setIndexingMode,
+  upsertFile,
+} from '@/lib/files';
 import { recordIngest } from '@mantle/tracing';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 
@@ -9,6 +16,8 @@ const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
   z.object({ content: z.string().max(2_000_000) }),
   z.object({ rename: z.string().min(1).max(200) }),
+  // 'inherit' clears the file's own flag (the folder chain decides again).
+  z.object({ indexing: z.enum(['full', 'metadata', 'inherit']) }),
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -64,6 +73,16 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   try {
+    if ('indexing' in parsed.data) {
+      await setIndexingMode({
+        ownerId: user.id,
+        nodeId: idParsed.data.id,
+        mode: parsed.data.indexing,
+      });
+      const file = await fileById({ ownerId: user.id, fileId: idParsed.data.id });
+      if (!file) return NextResponse.json({ error: 'not found' }, { status: 404 });
+      return NextResponse.json({ file });
+    }
     if ('rename' in parsed.data) {
       const file = await renameFileById({
         ownerId: user.id,

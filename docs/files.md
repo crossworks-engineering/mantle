@@ -58,12 +58,12 @@ file isn't).
 ## 3. The package layout
 
 - [`packages/files`](../packages/files), host fs ops + slug helpers
-  + the high-level operations (`createFolder`, `upsertFile`,
-  `deleteFolder`, `listFiles`, …). Pure logic, no HTTP, no UI.
+  - the high-level operations (`createFolder`, `upsertFile`,
+    `deleteFolder`, `listFiles`, …). Pure logic, no HTTP, no UI.
 - [`apps/web/lib/files.ts`](../apps/web/lib/files.ts), thin re-export
   so the web's API routes can import from `@/lib/files` (convention).
 - [`apps/web/app/api/files/**`](../apps/web/app/api/files/), REST API.
-- [`apps/web/app/(app)/files/`](../apps/web/app/(app)/files/), UI.
+- [`apps/web/app/(app)/files/`](<../apps/web/app/(app)/files/>), UI.
 - [`apps/mcp/src/server.ts`](../apps/mcp/src/server.ts), MCP tools.
 - [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts),
   `readNodeBody` falls back to disk for `type='file'` nodes whose
@@ -138,11 +138,11 @@ files root directory is auto-created on first folder access via
 
 All three converge on the same `@mantle/files` ops:
 
-| Surface | Folder create | Folder describe | File upload | File edit | Delete |
-|---|---|---|---|---|---|
-| UI | New folder button | Inline edit on header | Drag-drop + Upload + New \* | Editor save | Toolbar buttons |
-| REST | `POST /api/files/folders` | `PATCH /api/files/folders/[id]` | `POST /api/files/files` (multipart or JSON) | `PATCH /api/files/files/[id]` | `DELETE …` |
-| MCP | `folder_create` | `folder_describe` | `file_upload` (`content_text` or `content_base64`) | `file_upload(overwrite=true)` | `folder_delete` · `file_delete` |
+| Surface | Folder create             | Folder describe                 | File upload                                        | File edit                     | Delete                          |
+| ------- | ------------------------- | ------------------------------- | -------------------------------------------------- | ----------------------------- | ------------------------------- |
+| UI      | New folder button         | Inline edit on header           | Drag-drop + Upload + New \*                        | Editor save                   | Toolbar buttons                 |
+| REST    | `POST /api/files/folders` | `PATCH /api/files/folders/[id]` | `POST /api/files/files` (multipart or JSON)        | `PATCH /api/files/files/[id]` | `DELETE …`                      |
+| MCP     | `folder_create`           | `folder_describe`               | `file_upload` (`content_text` or `content_base64`) | `file_upload(overwrite=true)` | `folder_delete` · `file_delete` |
 
 ---
 
@@ -166,23 +166,63 @@ which:
 Set `agent.memory_config.extract_cost_cap_micro_usd` on the extractor
 to bound spend per file (gap #1 from the previous round).
 
+### 8a. Metadata-only indexing — store it, share it, don't embed it
+
+Some files belong in the workspace for its plumbing and not in the brain: a
+photo gallery, temp files, the transcriber's audio clips. For those, flip
+`indexing` to `metadata` on the file or any ancestor folder:
+
+- The file stays fully stored, shareable, renameable — nothing about storage
+  changes.
+- It keeps a searchable **spine**: a deterministic summary + embedding built
+  from its name, type, folder path and tags (`metadataSpineText` in
+  `packages/files/src/indexing.ts`). "Find my December photos" still works.
+- Its **content is never read**: no passages (`content_chunks`), no entity or
+  fact extraction, no content-derived summary. `search_chunks` will not see
+  inside it, and the spine says so in as many words, so an agent quoting it
+  never presents a name-only index as if it had read the file.
+
+The flag is `data.indexing: 'full' | 'metadata'` on file and folder nodes;
+absent means inherit. Effective mode = own flag → nearest ancestor folder's
+flag → `full`, resolved at **extract time**, so moving files or re-flagging
+folders needs no stored denormalisation. `data.indexing_applied` records which
+mode the extractor last ran, and is what listings badge.
+
+Toggling has teeth in both directions:
+
+- **full → metadata** reaps the file's existing `content_chunks` and replaces
+  summary + embedding with the spine. No LLM call — flipping a thousand-file
+  gallery costs local embeddings only.
+- **metadata → full** clears the completion marker and re-queues real
+  extraction through the ordinary pg-boss pipeline, one job per file, never a
+  burst loop. This is real LLM spend in proportion to the file count — which
+  is exactly what turning content indexing ON means.
+- Flipping a flag to the value a file is already indexed under queues nothing.
+
+Surfaces: `file_set_indexing` / `folder_set_indexing` (builtin tools, `files`
+group), `indexing` param on the MCP `file_upload` / `folder_create`, and
+`PATCH {indexing}` on the file/folder API routes. Known limit: facts extracted
+BEFORE a flip to metadata stay in the graph until curation touches them — the
+flip stops future extraction and removes passages, it does not rewrite fact
+history.
+
 ---
 
 ## 9. MCP tools
 
 Wired in [`apps/mcp/src/server.ts`](../apps/mcp/src/server.ts):
 
-| Tool | Purpose |
-|---|---|
-| `folder_list` | Children of a folder, or the whole tree |
-| `folder_create` | Create folder + on-disk dir, optional description |
-| `folder_describe` | Set/clear folder description |
-| `folder_delete` | Delete an empty folder (root cannot be deleted) |
-| `file_list` | Files in a folder |
-| `file_upload` | Create/overwrite a file (`content_text` or `content_base64`) |
-| `file_get` | File metadata only |
-| `file_read` | File metadata + bytes (utf-8 for text, base64 for binary) |
-| `file_delete` | Delete a file (both DB row and disk) |
+| Tool              | Purpose                                                      |
+| ----------------- | ------------------------------------------------------------ |
+| `folder_list`     | Children of a folder, or the whole tree                      |
+| `folder_create`   | Create folder + on-disk dir, optional description            |
+| `folder_describe` | Set/clear folder description                                 |
+| `folder_delete`   | Delete an empty folder (root cannot be deleted)              |
+| `file_list`       | Files in a folder                                            |
+| `file_upload`     | Create/overwrite a file (`content_text` or `content_base64`) |
+| `file_get`        | File metadata only                                           |
+| `file_read`       | File metadata + bytes (utf-8 for text, base64 for binary)    |
+| `file_delete`     | Delete a file (both DB row and disk)                         |
 
 Same auth model as the other MCP tools; every query is scoped to
 `OWNER_ID = process.env.ALLOWED_USER_ID`.
@@ -199,11 +239,11 @@ drops a new PDF into the folder, the row updates without any UI action.
 
 **Three events**:
 
-| chokidar event | What the watcher does                                         |
-|----------------|---------------------------------------------------------------|
-| `add`          | `syncFileFromDisk`, insert a `file` node (or no-op if same sha256). |
+| chokidar event | What the watcher does                                                      |
+| -------------- | -------------------------------------------------------------------------- |
+| `add`          | `syncFileFromDisk`, insert a `file` node (or no-op if same sha256).        |
 | `change`       | `syncFileFromDisk`, update node, clear embedding, re-fire `node_ingested`. |
-| `unlink`       | `deleteFileByPath`, drop the DB row.                         |
+| `unlink`       | `deleteFileByPath`, drop the DB row.                                       |
 
 **Loop prevention** is built in: `syncFileFromDisk` only ever reads the
 disk, never writes back. So when the UI uploads a file, it updates the

@@ -44,6 +44,7 @@ import {
   updateFolderDescription,
   upsertFile,
   ensureFolderPath,
+  setIndexingMode,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
@@ -1438,6 +1439,103 @@ const folder_describe: BuiltinToolDef = {
   },
 };
 
+const INDEXING_MODE_SCHEMA = {
+  type: 'string',
+  enum: ['full', 'metadata', 'inherit'],
+  description:
+    "'metadata' = index name/type/tags only, never the content; 'full' = normal content indexing; 'inherit' = clear the own flag and follow the folder chain",
+};
+
+const file_set_indexing: BuiltinToolDef = {
+  slug: 'file_set_indexing',
+  name: 'Set file indexing mode',
+  description:
+    "Control whether ONE file's CONTENT is indexed into the brain. 'metadata' keeps the file fully stored, shareable and findable by name/type/tags, but its content is never read: no passages, no facts — search_chunks and content questions will not see inside it. 'full' restores normal indexing (re-extraction is queued and takes a moment). 'inherit' clears the file's own flag so the folder chain decides. For a whole folder use `folder_set_indexing`; this is the per-file override.",
+  preconditions: FILE_ID_PRE,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      file_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The file's id (UUID) — from `file_list` / `search_nodes`.",
+      },
+      mode: INDEXING_MODE_SCHEMA,
+    },
+    required: ['file_id', 'mode'],
+  },
+  handler: async (input, ctx) => {
+    const fileId = str(input.file_id);
+    const mode = str(input.mode) as 'full' | 'metadata' | 'inherit';
+    if (!fileId) return { ok: false, error: 'file_id required' };
+    try {
+      const { requeued } = await setIndexingMode({ ownerId: ctx.ownerId, nodeId: fileId, mode });
+      const row = await fileById({ ownerId: ctx.ownerId, fileId });
+      ctx.step?.setOutput({ fileId, mode, requeued });
+      return {
+        ok: true,
+        output: {
+          file: row,
+          requeued,
+          note:
+            requeued > 0
+              ? 're-indexing queued — the change takes effect when the extractor next runs'
+              : 'no re-indexing needed (the file was already indexed under this mode)',
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
+const folder_set_indexing: BuiltinToolDef = {
+  slug: 'folder_set_indexing',
+  name: 'Set folder indexing mode',
+  description:
+    "Control whether the CONTENT of every file under a folder is indexed into the brain. 'metadata' turns the subtree into a store-and-share area (a photo gallery, temp files, transcription clips): files stay fully stored and findable by name/type/tags, but their content is never read into search or the knowledge graph. 'full' restores content indexing for the subtree — NOTE this re-runs real extraction over every affected file, which costs LLM calls in proportion to the file count. 'inherit' clears the folder's own flag. Individual files can override either way with `file_set_indexing`. Returns how many files were queued for re-indexing.",
+  preconditions: FOLDER_ID_PRE,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      folder_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The folder's id (UUID) — from `folder_list` / `folder_get_by_path`.",
+      },
+      mode: INDEXING_MODE_SCHEMA,
+    },
+    required: ['folder_id', 'mode'],
+  },
+  handler: async (input, ctx) => {
+    const folderId = str(input.folder_id);
+    const mode = str(input.mode) as 'full' | 'metadata' | 'inherit';
+    if (!folderId) return { ok: false, error: 'folder_id required' };
+    try {
+      const { node, requeued } = await setIndexingMode({
+        ownerId: ctx.ownerId,
+        nodeId: folderId,
+        mode,
+      });
+      ctx.step?.setOutput({ folderId, mode, requeued });
+      return {
+        ok: true,
+        output: {
+          folder: { id: node.id, path: node.path, title: node.title },
+          mode,
+          requeued,
+          note:
+            requeued > 0
+              ? `${requeued} file(s) queued for re-indexing under the new mode`
+              : 'no files needed re-indexing',
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+};
+
 // ─── telegram ─────────────────────────────────────────────────────────────
 
 import { accountForChat, sendMessage } from '@mantle/telegram';
@@ -1731,6 +1829,8 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   file_rename,
   folder_rename,
   folder_describe,
+  file_set_indexing,
+  folder_set_indexing,
   telegram_send,
   process_extraction,
   invoke_agent,

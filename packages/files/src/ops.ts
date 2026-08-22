@@ -60,6 +60,9 @@ export type FolderRow = {
   title: string;
   slug: string;
   description: string;
+  /** The folder's OWN data.indexing flag; null = inherit from ancestors.
+   *  Effective resolution lives in ./indexing.ts (extract-time concern). */
+  indexing: 'full' | 'metadata' | null;
   childFolderCount: number;
   fileCount: number;
   createdAt: string;
@@ -78,6 +81,11 @@ export type FileRow = {
   isText: boolean;
   /** Indexed/embedded by the extractor when true. */
   summary: string | null;
+  /** The file's OWN data.indexing flag; null = inherit (folder chain decides). */
+  indexing: 'full' | 'metadata' | null;
+  /** Which mode the extractor LAST ran for this file ('metadata' spine vs full
+   *  content). Null until first extraction. What a listing should badge. */
+  indexingApplied: 'full' | 'metadata' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -513,6 +521,7 @@ function folderRowFromNode(row: Node, childFolderCount: number, fileCount: numbe
     title: row.title,
     slug: typeof data.slug === 'string' ? (data.slug as string) : (row.slug ?? row.title),
     description: typeof data.description === 'string' ? (data.description as string) : '',
+    indexing: data.indexing === 'metadata' ? 'metadata' : data.indexing === 'full' ? 'full' : null,
     childFolderCount,
     fileCount,
     createdAt: row.createdAt.toISOString(),
@@ -1222,6 +1231,13 @@ function fileRowFromNode(row: Node): FileRow {
     sha256: typeof data.sha256 === 'string' ? (data.sha256 as string) : null,
     isText: TEXT_EXTS.has(ext),
     summary: typeof data.summary === 'string' ? (data.summary as string) : null,
+    indexing: data.indexing === 'metadata' ? 'metadata' : data.indexing === 'full' ? 'full' : null,
+    indexingApplied:
+      data.indexing_applied === 'metadata'
+        ? 'metadata'
+        : data.indexing_applied === 'full'
+          ? 'full'
+          : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

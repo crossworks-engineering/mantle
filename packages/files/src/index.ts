@@ -117,3 +117,12 @@ export {
   type FolderRow,
   type FileRow,
 } from './ops';
+export {
+  ownIndexingMode,
+  resolveEffectiveIndexing,
+  metadataSpineText,
+  setIndexingMode,
+  type IndexingMode,
+  type IndexingSetting,
+  type EffectiveIndexing,
+} from './indexing';

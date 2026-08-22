@@ -511,6 +511,10 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_rename',
       'folder_rename',
       'folder_describe',
+      // The metadata-only switch: control whether a file/subtree's CONTENT
+      // is indexed, without touching storage or sharing. Non-destructive.
+      'file_set_indexing',
+      'folder_set_indexing',
       // Showing a stored image is a file READ that happens to render rather
       // than return text — it delegates to no worker and generates nothing,
       // so it belongs here rather than in `media-workers`.

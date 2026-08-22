@@ -1,12 +1,22 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { deleteFolder, folderById, renameFolderById, updateFolderDescription } from '@/lib/files';
+import {
+  deleteFolder,
+  folderById,
+  renameFolderById,
+  setIndexingMode,
+  updateFolderDescription,
+} from '@/lib/files';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
   z.object({ description: z.string().max(2000) }),
   z.object({ rename: z.string().min(1).max(64) }),
+  // 'inherit' clears the folder's own flag; descendants fall back to the
+  // nearest flagged ancestor (or full). Setting it re-queues extraction for
+  // every descendant file whose effective mode changed.
+  z.object({ indexing: z.enum(['full', 'metadata', 'inherit']) }),
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -37,6 +47,16 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
   try {
+    if ('indexing' in parsed.data) {
+      const { requeued } = await setIndexingMode({
+        ownerId: user.id,
+        nodeId: idParsed.data.id,
+        mode: parsed.data.indexing,
+      });
+      const folder = await folderById({ ownerId: user.id, folderId: idParsed.data.id });
+      if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
+      return NextResponse.json({ folder, requeued });
+    }
     if ('rename' in parsed.data) {
       const folder = await renameFolderById({
         ownerId: user.id,

@@ -55,6 +55,7 @@ import {
   updateFolderDescription,
   upsertFile,
   MAX_UPLOAD_BYTES,
+  setIndexingMode,
 } from '@mantle/files';
 import {
   ASK_HUMAN_FORM_LIMITS as FORM_LIMITS,
@@ -316,13 +317,14 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
 
   server.tool(
     'folder_create',
-    "Create a folder under `parent_path` (ltree, e.g. 'files.work'). Slug must be lowercase + dashes — anything else gets normalised. Description is optional but recommended so future agents know what the folder is for. Creates the directory on disk and the DB row in lockstep.",
+    "Create a folder under `parent_path` (ltree, e.g. 'files.work'). Slug must be lowercase + dashes — anything else gets normalised. Description is optional but recommended so future agents know what the folder is for. Creates the directory on disk and the DB row in lockstep. Pass `indexing: 'metadata'` to make it a store-and-share area whose files are indexed by name/type/tags but whose CONTENT is never read into the brain (galleries, temp files, transcription clips).",
     {
       parent_path: z.string().min(1).max(500),
       slug: z.string().min(1).max(64),
       description: z.string().max(2000).optional(),
+      indexing: z.enum(['full', 'metadata']).optional(),
     },
-    async ({ parent_path, slug, description }) => {
+    async ({ parent_path, slug, description, indexing }) => {
       await ensureFilesRootBranch(ownerId);
       try {
         const folder = await createFolder({
@@ -331,7 +333,12 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
           slug,
           description,
         });
-        return jsonReply(folder);
+        // Applied AFTER create so the flag write and the descendant sweep
+        // share one code path with the settings toggle.
+        if (indexing) {
+          await setIndexingMode({ ownerId, nodeId: folder.id, mode: indexing });
+        }
+        return jsonReply(indexing ? { ...folder, indexing } : folder);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return { content: [{ type: 'text', text: `folder_create failed: ${msg}` }], isError: true };
@@ -435,15 +442,16 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
 
   server.tool(
     'file_upload',
-    "Create or overwrite a file in a folder. Pass either `content_text` (utf-8) or `content_base64` (binary). Filename is lowercased + sanitised. The extractor agent will pick up text files (md/txt/json/yaml) automatically via pg_notify('node_ingested').",
+    "Create or overwrite a file in a folder. Pass either `content_text` (utf-8) or `content_base64` (binary). Filename is lowercased + sanitised. The extractor agent will pick up text files (md/txt/json/yaml) automatically via pg_notify('node_ingested'). Pass `indexing: 'metadata'` to store WITHOUT content indexing (findable by name/type/tags only).",
     {
       parent_path: z.string().min(1).max(500),
       filename: z.string().min(1).max(200),
       content_text: z.string().optional(),
       content_base64: z.string().optional(),
       overwrite: z.boolean().optional(),
+      indexing: z.enum(['full', 'metadata']).optional(),
     },
-    async ({ parent_path, filename, content_text, content_base64, overwrite }) => {
+    async ({ parent_path, filename, content_text, content_base64, overwrite, indexing }) => {
       if (content_text == null && content_base64 == null) {
         return {
           content: [{ type: 'text', text: 'file_upload: pass content_text or content_base64' }],
@@ -473,7 +481,14 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
           bytes,
           overwrite,
         });
-        return jsonReply(row);
+        // Best-effort ordering: the insert trigger may already have queued
+        // extraction, so a full pass CAN race this write. Harmless — the
+        // sweep inside setIndexingMode sees applied≠effective and re-queues,
+        // and the metadata pass reaps whatever the racing pass wrote.
+        if (indexing) {
+          await setIndexingMode({ ownerId, nodeId: row.id, mode: indexing });
+        }
+        return jsonReply(indexing ? { ...row, indexing } : row);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return { content: [{ type: 'text', text: `file_upload failed: ${msg}` }], isError: true };

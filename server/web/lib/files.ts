@@ -22,6 +22,7 @@ export {
   bulkDeleteFiles,
   listFiles,
   fileById,
+  setIndexingMode,
   ltreeToDash,
   type FolderRow,
   type FileRow,
