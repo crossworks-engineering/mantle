@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  blendedPerM,
-  buildComboDiff,
-  pickForPool,
-  resolveRoute,
-  type PoolEntry,
-} from './model-combos';
+import { buildComboDiff, pickForPool, resolveRoute, type PoolEntry } from './model-combos';
 
 const entry = (
   pool: string,
