@@ -14,6 +14,8 @@
  * deployment name). Prices are indicative $/M tokens (in · out) — shown to
  * the user as a class signal, not a quote.
  */
+import { CURATED_MODEL_POOLS } from './model-pools-data';
+
 export type ModelChoice = {
   /** OpenRouter model slug (`vendor/model`). */
   id: string;
@@ -29,8 +31,10 @@ export type ModelChoice = {
   recommended?: boolean;
 };
 
-/** Top-tier choices for the assistant (the persona/responder agent). */
-export const ASSISTANT_MODEL_CHOICES: readonly ModelChoice[] = [
+/** Hand-curated head of the assistant list — the recommended entry and the
+ *  azure-capable picks carry policy the curated template can't express. The
+ *  exported list below extends this with the shipped `agents` pool. */
+const BASE_ASSISTANT_CHOICES: readonly ModelChoice[] = [
   {
     id: 'anthropic/claude-sonnet-5',
     name: 'Claude Sonnet 5',
@@ -66,7 +70,7 @@ export const ASSISTANT_MODEL_CHOICES: readonly ModelChoice[] = [
 /** Fast/cheap choices for the background workers (indexing pipeline: the
  *  extractor, summarizer, reflector, document reader, and narrator). These
  *  process EVERYTHING the brain ingests, so price and speed dominate. */
-export const WORKER_MODEL_CHOICES: readonly ModelChoice[] = [
+const BASE_WORKER_CHOICES: readonly ModelChoice[] = [
   {
     id: 'google/gemini-3.1-flash-lite',
     name: 'Gemini 3.1 Flash Lite',
@@ -99,6 +103,58 @@ export const WORKER_MODEL_CHOICES: readonly ModelChoice[] = [
     price: '$1 · $5 /M',
   },
 ];
+
+// ── Extend the hand-written heads with the shipped curated template ─────────
+// The onboarding step shows (and the API route accepts) the union: policy
+// cards first — recommended + azure flags are hand-set and MUST stay — then
+// every template model not already present, priced from its snapshot. The
+// template ships with the repo (model-pools-data.ts), so new installs offer
+// the full curated range with no network call.
+
+function templatePrice(
+  p: {
+    inputPerM: number | null;
+    outputPerM: number | null;
+  } | null,
+): string {
+  if (!p || (p.inputPerM == null && p.outputPerM == null)) return 'price varies';
+  if (p.inputPerM === 0 && p.outputPerM === 0) return 'Free';
+  const f = (v: number | null) => (v == null ? '?' : `$${v}`);
+  return `${f(p.inputPerM)} · ${f(p.outputPerM)} /M`;
+}
+
+function extendFromPool(pool: string, base: readonly ModelChoice[]): readonly ModelChoice[] {
+  const seen = new Set(base.map((c) => c.id));
+  const out: ModelChoice[] = [...base];
+  for (const e of CURATED_MODEL_POOLS) {
+    if (e.pool !== pool) continue;
+    const route = e.routes.find((r) => r.provider === 'openrouter');
+    if (!route || seen.has(route.model)) continue;
+    seen.add(route.model);
+    out.push({
+      id: route.model,
+      name: e.name,
+      blurb: e.note
+        ? e.note.charAt(0).toUpperCase() + e.note.slice(1)
+        : 'From the shipped curated model pool.',
+      price: templatePrice(e.pricing),
+    });
+  }
+  return out;
+}
+
+/** Top-tier choices for the assistant: policy head + the curated `agents` pool. */
+export const ASSISTANT_MODEL_CHOICES: readonly ModelChoice[] = extendFromPool(
+  'agents',
+  BASE_ASSISTANT_CHOICES,
+);
+
+/** Fast/cheap worker choices: policy head + the curated `summarizer` pool
+ *  (the shared workhorse shortlist). */
+export const WORKER_MODEL_CHOICES: readonly ModelChoice[] = extendFromPool(
+  'summarizer',
+  BASE_WORKER_CHOICES,
+);
 
 /** Worker kinds the onboarding "worker model" pick applies to — the text
  *  indexing pipeline. Modality workers (tts/stt/vision/image_gen/search)

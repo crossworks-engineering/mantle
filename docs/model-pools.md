@@ -35,6 +35,22 @@ curation-time snapshot so brains connected directly to a provider can still
 render cost comparisons. Pool vocabulary: `packages/client-types/src/model-pools.ts`
 (drift-tripwire test against the worker-kind enum).
 
+## The repo-shipped template
+
+`packages/client-types/src/model-pools-data.ts` (GENERATED — re-export from a
+curated brain via `GET /api/model-pools/export`, don't hand-edit) is the
+canonical shipped list. Two consumers:
+
+- **Seeding**: `applyManifest` step 7 (`server/web/lib/model-pools-seed.ts`)
+  inserts it into `curated_models` for owners with ZERO curated entries —
+  fresh installs at onboarding, never-curated brains on the version-bump boot
+  reconcile. One existing entry anywhere = the owner's judgment, untouched.
+- **Onboarding choices**: `ASSISTANT_MODEL_CHOICES` / `WORKER_MODEL_CHOICES`
+  (model-choices.ts) = the hand-written policy head (recommended + azure
+  flags, unchanged) extended with the template's `agents` / `summarizer`
+  pools, deduped. The API route accepts the wider set immediately; the wider
+  cards appear when the jackdaw pin next moves.
+
 ## Roadmap context
 
 Phase plan lives on dev-brain task `2ae9fce8`: curator (done) → owner curates →

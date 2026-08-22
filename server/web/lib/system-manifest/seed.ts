@@ -54,6 +54,7 @@ import {
 import { convergeManifestSkills } from './reconcile-util';
 import { resolveWorkerRoute } from './worker-route';
 import { resolveEffectivePersona } from './persona';
+import { seedCuratedModelPools } from '../model-pools-seed';
 import type { AdoptKind } from '@mantle/client-types';
 export type { AdoptKind };
 
@@ -582,6 +583,15 @@ export async function applyManifest(
   // 6. Heartbeats — LAST, because the row points at the persona (step 3/5) and
   //    the skill (step 2), both of which must exist first. Create-only.
   const seededHeartbeats = await seedManifestHeartbeats(ownerId);
+
+  // 7. Curated model pools — the repo-shipped template, seeded ONLY when the
+  //    owner has zero curated entries (their curation is never touched).
+  //    Advisory data, so best-effort: a failure must not fail provisioning.
+  try {
+    await seedCuratedModelPools(ownerId);
+  } catch (err) {
+    console.warn('[applyManifest] curated-pool seed failed (non-fatal):', err);
+  }
 
   return { seededSkills: skillDefs.map((s) => s.slug), seededAgents, seededHeartbeats };
 }

@@ -28,3 +28,37 @@ describe('MODEL_POOLS', () => {
     }
   });
 });
+
+describe('curated template + onboarding choices', () => {
+  it('template pools are all known and entries are well-formed', async () => {
+    const { CURATED_MODEL_POOLS } = await import('@mantle/client-types/model-pools-data');
+    expect(CURATED_MODEL_POOLS.length).toBeGreaterThan(50);
+    for (const e of CURATED_MODEL_POOLS) {
+      expect(MODEL_POOL_IDS.has(e.pool), `template pool '${e.pool}' unknown`).toBe(true);
+      expect(e.routes.length).toBeGreaterThan(0);
+      for (const r of e.routes) {
+        expect(r.provider).toMatch(/^[a-z0-9_-]+$/);
+        expect(r.model.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('onboarding lists keep exactly one recommended (the manifest default) and no duplicate ids', async () => {
+    const { ASSISTANT_MODEL_CHOICES, WORKER_MODEL_CHOICES } =
+      await import('@mantle/client-types/model-choices');
+    for (const list of [ASSISTANT_MODEL_CHOICES, WORKER_MODEL_CHOICES]) {
+      const ids = list.map((c) => c.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(list.filter((c) => c.recommended).length).toBe(1);
+    }
+    expect(ASSISTANT_MODEL_CHOICES.find((c) => c.recommended)?.id).toBe(
+      'anthropic/claude-sonnet-5',
+    );
+    expect(WORKER_MODEL_CHOICES.find((c) => c.recommended)?.id).toBe(
+      'google/gemini-3.1-flash-lite',
+    );
+    // The extension actually widened the lists beyond the hand-written heads.
+    expect(ASSISTANT_MODEL_CHOICES.length).toBeGreaterThan(4);
+    expect(WORKER_MODEL_CHOICES.length).toBeGreaterThan(4);
+  });
+});
