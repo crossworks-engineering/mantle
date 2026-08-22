@@ -102,6 +102,34 @@ export async function renameFile(
   return { path: to };
 }
 
+/** Move a file BETWEEN folders. Both parents must resolve inside the files
+ *  root; the destination file must not already exist. fs.rename is atomic on
+ *  the same filesystem, which the files tree always is. */
+export async function moveFile(
+  fromParentLtree: string,
+  filename: string,
+  toParentLtree: string,
+): Promise<{ path: string }> {
+  const from = diskPathForFile(fromParentLtree, filename);
+  const to = diskPathForFile(toParentLtree, filename);
+  if (!from || !to) throw new Error('moveFile: path resolution failed');
+  if (from === to) return { path: from };
+  try {
+    await fs.access(to);
+    throw new Error(`moveFile: '${filename}' already exists in the destination folder`);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+  await fs.mkdir(path.dirname(to), { recursive: true });
+  await fs.rename(from, to);
+  return { path: to };
+}
+
+/** Copy a file's bytes to another folder (used by copyFileById — the DB row
+ *  is created by upsertFile, which writes the bytes itself, so this helper is
+ *  deliberately NOT exported; kept as a comment-anchor for why there is no
+ *  disk-level copy: upsertFile owns byte writes, one path only). */
+
 /** Rename a folder's directory in place (the whole subtree moves with it).
  *  `fromLtree`/`toLtree` are the OLD and NEW full ltree paths of the folder.
  *  Throws on collision; refuses to rename the root. The caller pairs this with

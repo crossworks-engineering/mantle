@@ -160,10 +160,27 @@ export async function setIndexingMode(args: {
             ),
           );
 
+  const requeued = await reconcileFilesIndexing(args.ownerId, affected);
+  return { node: updated, requeued };
+}
+
+/**
+ * Re-queue extraction for every file whose LAST-APPLIED indexing mode no
+ * longer matches its effective one. Shared by the flag toggle above and by
+ * MOVES — a file dragged into a name-only gallery must shed its content
+ * index, and one dragged out must gain it, exactly as if the flag had been
+ * flipped. Clears `extract_completed_at` (the already_extracted guard would
+ * swallow the re-run) and notifies through the ordinary queue, one job per
+ * file. Files already indexed the right way are untouched.
+ */
+export async function reconcileFilesIndexing(
+  ownerId: string,
+  files: readonly Node[],
+): Promise<number> {
   let requeued = 0;
-  for (const f of affected) {
+  for (const f of files) {
     const fData = (f.data ?? {}) as Record<string, unknown>;
-    const { effective } = await resolveEffectiveIndexing(args.ownerId, f);
+    const { effective } = await resolveEffectiveIndexing(ownerId, f);
     const applied = fData.indexing_applied === 'metadata' ? 'metadata' : 'full';
     if (effective === applied) continue; // already indexed the right way
     delete fData.extract_completed_at; // defeat the already_extracted guard
@@ -171,6 +188,5 @@ export async function setIndexingMode(args: {
     await notifyNodeIngested(f.id);
     requeued++;
   }
-
-  return { node: updated, requeued };
+  return requeued;
 }

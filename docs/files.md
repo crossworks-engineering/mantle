@@ -206,6 +206,29 @@ BEFORE a flip to metadata stay in the graph until curation touches them — the
 flip stops future extraction and removes passages, it does not rewrite fact
 history.
 
+### 8b. Move and copy
+
+`moveFileById` / `moveFolderById` / `copyFileById` / `copyFolderById`
+(`packages/files/src/move-copy.ts`) — the operations the two-pane manager
+stands on. The invariants:
+
+- **Disk and DB never diverge**: disk first (atomic rename within the tree),
+  DB in a transaction, disk rolled back if the DB write fails — the
+  `renameFolderById` discipline; folder moves reuse its ltree `CASE` rewrite.
+- **A move follows the indexing rules of where it lands** (§8a): after every
+  move, `reconcileFilesIndexing` re-queues any file whose effective mode
+  changed — moving into a name-only gallery sheds the content index, moving
+  out regains it.
+- **A copy is a new file**: fresh node, fresh bytes, fresh extraction under
+  the destination's mode. Nothing links to the original.
+- **Folder copies cap at 200 files** and refuse loudly with the count —
+  every copy re-extracts, so a big copy is a spend decision, not a default.
+  Flagging the destination name-only first makes the whole copy LLM-free.
+
+Surfaces: `file_move` / `file_copy` / `folder_move` / `folder_copy` builtins
+(`files` group); `PATCH {move}` and `POST {copy_to}` on the file/folder API
+routes; the two-pane view in the client.
+
 ---
 
 ## 9. MCP tools

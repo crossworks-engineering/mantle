@@ -8,6 +8,7 @@ import {
   setIndexingMode,
   updateFolderDescription,
 } from '@/lib/files';
+import { copyFolderById, moveFolderById } from '@mantle/files';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
@@ -17,6 +18,8 @@ const PatchBody = z.union([
   // nearest flagged ancestor (or full). Setting it re-queues extraction for
   // every descendant file whose effective mode changed.
   z.object({ indexing: z.enum(['full', 'metadata', 'inherit']) }),
+  // Move this folder (subtree included) under another parent.
+  z.object({ move: z.string().min(1).max(500) }),
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -47,6 +50,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
   try {
+    if ('move' in parsed.data) {
+      const { folder, requeued } = await moveFolderById({
+        ownerId: user.id,
+        folderId: idParsed.data.id,
+        destParentPath: parsed.data.move,
+      });
+      return NextResponse.json({ folder, requeued });
+    }
     if ('indexing' in parsed.data) {
       const { requeued } = await setIndexingMode({
         ownerId: user.id,
@@ -76,6 +87,36 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'rename failed' },
+      { status: 400 },
+    );
+  }
+}
+
+/** Copy this folder (subtree included) under another parent. Capped —
+ *  every copied file re-extracts, so a big copy is a deliberate act. */
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
+  const idParsed = IdParams.safeParse(await ctx.params);
+  if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  const raw = await req.json().catch(() => ({}));
+  const body = z.object({ copy_to: z.string().min(1).max(500) }).safeParse(raw);
+  if (!body.success) {
+    return NextResponse.json(
+      { error: body.error.issues[0]?.message ?? 'invalid input' },
+      { status: 400 },
+    );
+  }
+  try {
+    const result = await copyFolderById({
+      ownerId: user.id,
+      folderId: idParsed.data.id,
+      destParentPath: body.data.copy_to,
+    });
+    return NextResponse.json(result, { status: 201 });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'copy failed' },
       { status: 400 },
     );
   }

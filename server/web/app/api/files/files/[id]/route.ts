@@ -9,6 +9,7 @@ import {
   setIndexingMode,
   upsertFile,
 } from '@/lib/files';
+import { copyFileById, moveFileById } from '@mantle/files';
 import { thumbnailFor } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
@@ -19,6 +20,8 @@ const PatchBody = z.union([
   z.object({ rename: z.string().min(1).max(200) }),
   // 'inherit' clears the file's own flag (the folder chain decides again).
   z.object({ indexing: z.enum(['full', 'metadata', 'inherit']) }),
+  // Move to another folder (filename unchanged; rename is its own action).
+  z.object({ move: z.string().min(1).max(500) }),
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -108,6 +111,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 
   try {
+    if ('move' in parsed.data) {
+      const file = await moveFileById({
+        ownerId: user.id,
+        fileId: idParsed.data.id,
+        destPath: parsed.data.move,
+      });
+      return NextResponse.json({ file });
+    }
     if ('indexing' in parsed.data) {
       await setIndexingMode({
         ownerId: user.id,
@@ -172,6 +183,39 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       return NextResponse.json({ error: msg }, { status: 409 });
     }
     return NextResponse.json({ error: msg }, { status: 400 });
+  }
+}
+
+/** Copy this file into another folder — a new node with its own bytes and
+ *  its own extraction under the destination's indexing mode. */
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
+  const idParsed = IdParams.safeParse(await ctx.params);
+  if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  const raw = await req.json().catch(() => ({}));
+  const body = z
+    .object({ copy_to: z.string().min(1).max(500), new_filename: z.string().max(200).optional() })
+    .safeParse(raw);
+  if (!body.success) {
+    return NextResponse.json(
+      { error: body.error.issues[0]?.message ?? 'invalid input' },
+      { status: 400 },
+    );
+  }
+  try {
+    const file = await copyFileById({
+      ownerId: user.id,
+      fileId: idParsed.data.id,
+      destPath: body.data.copy_to,
+      newFilename: body.data.new_filename,
+    });
+    return NextResponse.json({ file }, { status: 201 });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'copy failed' },
+      { status: 400 },
+    );
   }
 }
 

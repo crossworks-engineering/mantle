@@ -515,6 +515,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       // is indexed, without touching storage or sharing. Non-destructive.
       'file_set_indexing',
       'folder_set_indexing',
+      // Relocation + duplication (P4). Non-destructive: a move keeps the id,
+      // a copy makes a new file; neither deletes anything.
+      'file_move',
+      'file_copy',
+      'folder_move',
+      'folder_copy',
       // Showing a stored image is a file READ that happens to render rather
       // than return text — it delegates to no worker and generates nothing,
       // so it belongs here rather than in `media-workers`.

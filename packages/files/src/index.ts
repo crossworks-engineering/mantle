@@ -150,3 +150,10 @@ export {
   thumbsRoot,
   THUMB_MAX_DIM,
 } from './thumbnail';
+export {
+  moveFileById,
+  moveFolderById,
+  copyFileById,
+  copyFolderById,
+  COPY_MAX_FILES,
+} from './move-copy';
