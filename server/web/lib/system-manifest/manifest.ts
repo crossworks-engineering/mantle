@@ -818,6 +818,15 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['synthesize_speech', 'extract_from_image', 'summarize_text', 'generate_image'],
   },
   {
+    slug: 'video-ingest',
+    name: 'Video ingest',
+    description:
+      'Fetch a video by URL (or read a stored video file), extract the audio and produce a ' +
+      'searchable transcript page via the media sidecar. Owner-only: this is an outbound ' +
+      'fetch of an arbitrary URL — NEVER granted to the team responder.',
+    toolSlugs: ['video_ingest'],
+  },
+  {
     slug: 'delegation',
     name: 'Delegation',
     description: 'Invoke specialist sub-agents.',
@@ -1030,6 +1039,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'email',
       'persona',
       'media-workers',
+      'video-ingest',
       'delegation',
       'messaging',
       'secrets',

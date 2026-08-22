@@ -50,6 +50,7 @@ import { recordIngest } from '@mantle/tracing';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
+import { VIDEO_TOOLS } from './builtins-video';
 import { IMAGE_TOOLS } from './builtins-images';
 import { EVENT_TOOLS } from './builtins-events';
 import { PROFILE_TOOLS } from './builtins-profile';
@@ -1839,6 +1840,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Saskia's agency to a configured ai_workers row — TTS, vision,
   // summarizer.
   ...WORKER_DELEGATION_TOOLS,
+  // video_ingest — link (or stored video file) → audio clip + timestamped
+  // transcript page, via the media sidecar (compose profile `media`).
+  // Captions-first, STT fallback. Owner-only (`video-ingest` tool group).
+  ...VIDEO_TOOLS,
   // Showing a stored image back to the user — the one image tool that turns
   // pixels into pixels rather than into words. The display half of the
   // extracted-document-images feature.

@@ -68,7 +68,7 @@ function num(v: unknown, dflt?: number): number | undefined {
  * LLM. Centralised so every worker tool reports the same shape of
  * "not configured" message.
  */
-async function resolveDefaultWorker(
+export async function resolveDefaultWorker(
   ownerId: string,
   kind: AiWorkerKind,
 ): Promise<

@@ -333,6 +333,12 @@ export type CreatePageInput = {
    *  `pages` root. The tree itself is built from `parent_id`; the path is the
    *  materialised mirror. The parent must be a page owned by the same user. */
   parentId?: string | null;
+  /** Extra `data` keys stamped on the node at creation — the provenance hook
+   *  (mirrors `upsertFile`'s `data` param). Derived pages use it for the
+   *  `sourceFileId` convention (packages/content/src/derived.ts) so reaping
+   *  and the `dangling_source_file` audit see them. Canonical fields
+   *  (visibility, icon) are applied AFTER the merge and always win. */
+  data?: Record<string, unknown>;
 };
 
 /** Thrown by `createPage` when `parentId` doesn't resolve to one of the
@@ -380,6 +386,7 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
         title: input.title.trim().slice(0, 200) || 'Untitled page',
         path,
         data: {
+          ...(input.data ?? {}),
           visibility: 'private',
           ...(input.icon ? { icon: input.icon } : {}),
         },
