@@ -127,6 +127,7 @@ export {
   renameFileById,
   bulkDeleteFiles,
   listFiles,
+  listRecentFiles,
   fileById,
   syncFileFromDisk,
   deleteFileByPath,

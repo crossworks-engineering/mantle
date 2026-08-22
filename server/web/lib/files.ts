@@ -21,6 +21,7 @@ export {
   renameFileById,
   bulkDeleteFiles,
   listFiles,
+  listRecentFiles,
   fileById,
   setIndexingMode,
   ltreeToDash,

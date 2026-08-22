@@ -1206,6 +1206,26 @@ export async function bulkDeleteFiles(args: { ownerId: string; fileIds: string[]
   return { deleted, hasDerived, refused };
 }
 
+/**
+ * The newest files across the WHOLE tree, most-recently-touched first.
+ * Powers the left pane's "Recent" entry — the answer to "where did that
+ * upload land", which per-folder listing can't give without a hunt. Ordered
+ * by updated_at so an edit resurfaces a file the way a fresh upload does.
+ */
+export async function listRecentFiles(args: {
+  ownerId: string;
+  limit?: number;
+}): Promise<FileRow[]> {
+  const limit = Math.min(200, Math.max(1, args.limit ?? 50));
+  const rows = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, args.ownerId), eq(nodes.type, 'file'), isNull(nodes.supersededBy)))
+    .orderBy(sql`${nodes.updatedAt} desc`)
+    .limit(limit);
+  return rows.map(fileRowFromNode);
+}
+
 export async function listFiles(args: { ownerId: string; parentPath: string }): Promise<FileRow[]> {
   const rows = await db
     .select()

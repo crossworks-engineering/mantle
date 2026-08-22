@@ -1,11 +1,16 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { ensureFilesRootBranch, listFiles, upsertFile } from '@/lib/files';
+import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import { MAX_UPLOAD_BYTES, MEDIA_EXTS, extOf } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 
-const ListQuery = z.object({ parent: z.string().min(1).max(500) });
+const ListQuery = z.union([
+  z.object({ parent: z.string().min(1).max(500) }),
+  // Cross-tree recency view — the left pane's "Recent" entry. Rows carry
+  // parentPath, so the client can show where each file lives.
+  z.object({ recent: z.literal('1'), limit: z.coerce.number().int().min(1).max(200).optional() }),
+]);
 
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
@@ -15,6 +20,10 @@ export async function GET(req: Request) {
   const parsed = ListQuery.safeParse(Object.fromEntries(url.searchParams));
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid query' }, { status: 400 });
+  }
+  if ('recent' in parsed.data) {
+    const files = await listRecentFiles({ ownerId: user.id, limit: parsed.data.limit });
+    return NextResponse.json({ files });
   }
   const files = await listFiles({ ownerId: user.id, parentPath: parsed.data.parent });
   return NextResponse.json({ files });
