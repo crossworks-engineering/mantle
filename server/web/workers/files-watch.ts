@@ -28,6 +28,7 @@ import { promises as fs } from 'node:fs';
 import chokidar from 'chokidar';
 import {
   INGESTABLE_EXTS,
+  MEDIA_EXTS,
   PREVIEWABLE_MARKDOWN_EXTS,
   TEXT_EXTS,
   deleteFileByPath,
@@ -52,6 +53,11 @@ const WATCHED_EXTS = new Set<string>([
   ...TEXT_EXTS,
   ...PREVIEWABLE_MARKDOWN_EXTS,
   ...INGESTABLE_EXTS, // includes pdf
+  // Media syncs as a stored, playable file node. The extractor records an
+  // honest unsupported_media skip for it — indexing (transcription) only ever
+  // happens through the explicit video_ingest tool, never from this watcher
+  // (cost-safety: a synced folder of recordings must not trigger LLM spend).
+  ...MEDIA_EXTS,
   'png',
   'jpg',
   'jpeg',

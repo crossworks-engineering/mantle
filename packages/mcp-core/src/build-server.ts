@@ -56,6 +56,8 @@ import {
   upsertFile,
   MAX_UPLOAD_BYTES,
   setIndexingMode,
+  MEDIA_EXTS,
+  extOf,
 } from '@mantle/files';
 import {
   ASK_HUMAN_FORM_LIMITS as FORM_LIMITS,
@@ -467,7 +469,7 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
           content: [
             {
               type: 'text',
-              text: `file_upload: too large (${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB > ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)`,
+              text: `file_upload: too large (${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB > ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)${MEDIA_EXTS.has(extOf(filename)) ? ' — for video, ingest the link instead (video_ingest)' : ''}`,
             },
           ],
           isError: true,

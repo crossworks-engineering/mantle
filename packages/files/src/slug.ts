@@ -119,6 +119,35 @@ export const INGESTABLE_EXTS = new Set<string>([
 ]);
 
 /**
+ * Audio + video containers Mantle STORES and PLAYS but does not (yet) index.
+ * Deliberately NOT in INGESTABLE_EXTS: no parser can pull text from these, and
+ * transcription is an explicit, paid action (the `video_ingest` tool) — never
+ * something the extract sweep triggers on its own. Mirrors the media families
+ * `mimeForExt` maps below. What this set drives:
+ *   - the extractor records an honest `unsupported_media` terminal skip
+ *     instead of indexing the filename as if it were the document;
+ *   - the disk-sync watcher stores these instead of silently skipping them;
+ *   - the upload-cap rejections point media at link ingestion.
+ */
+export const MEDIA_EXTS = new Set<string>([
+  // video
+  'mp4',
+  'mov',
+  'webm',
+  'mkv',
+  'avi',
+  // audio
+  'mp3',
+  'm4a',
+  'wav',
+  'ogg',
+  'oga',
+  'opus',
+  'flac',
+  'aac',
+]);
+
+/**
  * Formats we can NAME but deliberately cannot read, mapped to the action that
  * fixes it.
  *

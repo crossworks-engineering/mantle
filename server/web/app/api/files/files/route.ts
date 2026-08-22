@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { ensureFilesRootBranch, listFiles, upsertFile } from '@/lib/files';
-import { MAX_UPLOAD_BYTES } from '@mantle/files';
+import { MAX_UPLOAD_BYTES, MEDIA_EXTS, extOf } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 
 const ListQuery = z.object({ parent: z.string().min(1).max(500) });
@@ -44,8 +44,13 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'empty file' }, { status: 400 });
       }
       if (file.size > MAX_UPLOAD_BYTES) {
+        // A rejected video deserves a pointer to the path that DOES work —
+        // media is meant to enter by link (video_ingest), not by upload.
+        const mediaHint = MEDIA_EXTS.has(extOf(file.name))
+          ? ' For video, ask the assistant to ingest the link instead.'
+          : '';
         return NextResponse.json(
-          { error: `file too large (>${MAX_UPLOAD_BYTES / 1024 / 1024} MB)` },
+          { error: `file too large (>${MAX_UPLOAD_BYTES / 1024 / 1024} MB).${mediaHint}` },
           { status: 413 },
         );
       }

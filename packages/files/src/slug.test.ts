@@ -20,6 +20,7 @@ import {
   extOf,
   INGESTABLE_EXTS,
   ltreeToDash,
+  MEDIA_EXTS,
   mimeForExt,
   PREVIEWABLE_MARKDOWN_EXTS,
   sanitizeFilename,
@@ -178,6 +179,24 @@ describe('mimeForExt', () => {
   it('falls back to octet-stream for unknown', () => {
     expect(mimeForExt('xyz123')).toBe('application/octet-stream');
   });
+
+  it('maps media to real audio/video types (the inline players key on the prefix)', () => {
+    expect(mimeForExt('mp4')).toBe('video/mp4');
+    expect(mimeForExt('mov')).toBe('video/quicktime');
+    expect(mimeForExt('webm')).toBe('video/webm');
+    expect(mimeForExt('mkv')).toBe('video/x-matroska');
+    expect(mimeForExt('mp3')).toBe('audio/mpeg');
+    expect(mimeForExt('m4a')).toBe('audio/mp4');
+    expect(mimeForExt('wav')).toBe('audio/wav');
+    expect(mimeForExt('ogg')).toBe('audio/ogg');
+    expect(mimeForExt('flac')).toBe('audio/flac');
+  });
+
+  it('every MEDIA_EXTS entry resolves to an audio/ or video/ mime', () => {
+    for (const ext of MEDIA_EXTS) {
+      expect(mimeForExt(ext)).toMatch(/^(audio|video)\//);
+    }
+  });
 });
 
 describe('extension sets', () => {
@@ -209,6 +228,13 @@ describe('extension sets', () => {
 
   it('PREVIEWABLE_MARKDOWN_EXTS only contains markdown extensions', () => {
     expect([...PREVIEWABLE_MARKDOWN_EXTS].sort()).toEqual(['markdown', 'md']);
+  });
+
+  it('MEDIA_EXTS stays out of INGESTABLE_EXTS (no parser; transcription is an explicit action)', () => {
+    for (const ext of MEDIA_EXTS) {
+      expect(INGESTABLE_EXTS.has(ext)).toBe(false);
+      expect(parserRouteForExt(ext)).toBe('none');
+    }
   });
 });
 

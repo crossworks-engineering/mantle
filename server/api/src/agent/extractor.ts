@@ -56,6 +56,7 @@ import {
   mimeForExt,
   parseDocumentBytes,
   INGESTABLE_EXTS,
+  MEDIA_EXTS,
   parserRouteForExt,
   extractPdfTextWithPassword,
   effectiveBrainDepth,
@@ -253,7 +254,12 @@ Output STRICT JSON, no markdown:
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-import { parseExtractorOutput, type ExtractedFact, type ExtractorOutput } from './extractor-parse';
+import {
+  isHollowFilenameBody,
+  parseExtractorOutput,
+  type ExtractedFact,
+  type ExtractorOutput,
+} from './extractor-parse';
 
 /** A resolved entity mention (name + kind) as produced by the parser and
  *  threaded through the index + reconciliation stages. */
@@ -1770,6 +1776,41 @@ async function loadExtractableBody(
     return { ok: false };
   }
 
+  // Audio / video: stored and playable, but no parser can read them and
+  // transcription is an explicit paid action (the video_ingest tool), never
+  // something this sweep triggers on its own. Refuse HERE, before any byte
+  // read, for the same reason as needs_export above: without this the ladder
+  // falls through to the filename, and a descriptively-named recording
+  // ("standup-recording-2026-08-20.mp4") clears the ≥20-char body check and
+  // indexes its own filename as if it were the document — a false success the
+  // user only discovers when an answer is quietly wrong. The `!text/!content`
+  // guard keeps a media node that DOES carry stored text (a future transcript
+  // stamped onto it) indexable.
+  if (
+    node.type === 'file' &&
+    !existingData.text &&
+    !existingData.content &&
+    MEDIA_EXTS.has(fileExt)
+  ) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition: 'unsupported_media',
+      details: {
+        worker_slug: worker.slug,
+        node_type: node.type,
+        title: node.title,
+        filename: existingData.filename,
+        extension: fileExt,
+        mime: fileMime,
+        hint: "Audio/video files are stored and playable but not indexed yet. To get a searchable transcript, ask the assistant to ingest the video's link (video_ingest). The file stays findable by name.",
+      },
+    });
+    return { ok: false };
+  }
+
   const isImageNeedingVision =
     node.type === 'file' &&
     !existingData.text &&
@@ -1911,6 +1952,41 @@ async function loadExtractableBody(
     // Only replace the text-layer body if native produced something usable;
     // otherwise keep the text we already have (native is best-effort here).
     if (native.text && native.text.trim().length >= 20) rawBody = native.text;
+  }
+
+  // Generalised hollow-body guard. readNodeBodyRaw falls back to the TITLE for
+  // any file no parser handles, and the ≥20-char check below was the only gate
+  // — so a file with a long descriptive name indexed its own filename as the
+  // document and the trace said success. The PDF branch above catches this for
+  // PDFs (isPdfWithoutTextLayer); this catches every OTHER parserless format,
+  // including ones added in the future. Media never reaches here (refused
+  // early, unsupported_media); images never reach here (vision path above
+  // returns on both outcomes). Predicate is pure + tested in extractor-parse.
+  if (
+    node.type === 'file' &&
+    isHollowFilenameBody({
+      mime: fileMime,
+      parserRoute: parserRouteForExt(fileExt),
+      rawBody,
+      title: node.title,
+    })
+  ) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: node.id,
+      subjectKind: 'node',
+      disposition: 'no_parser',
+      details: {
+        worker_slug: worker.slug,
+        node_type: node.type,
+        title: node.title,
+        filename: existingData.filename,
+        extension: fileExt,
+        hint: `No parser reads .${fileExt || 'unknown'} files, so there is nothing to index beyond the filename. Convert the file to a supported format (pdf, docx, xlsx, text) and re-upload to make its content searchable.`,
+      },
+    });
+    return { ok: false };
   }
 
   if (!rawBody || rawBody.trim().length < 20) {

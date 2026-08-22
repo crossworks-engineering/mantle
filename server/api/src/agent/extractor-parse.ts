@@ -278,3 +278,29 @@ export function parseExtractorOutput(
       : [],
   };
 }
+
+/**
+ * The hollow-filename-body predicate — THE guard behind the "false success"
+ * defect. readNodeBodyRaw falls back to the node TITLE for any file no parser
+ * handles; before this predicate existed, the only downstream gate was a
+ * ≥20-char length check, so a file with a descriptive name
+ * ("standup-recording-2026-08-20.mp4") indexed its own filename as if it were
+ * the document, and the trace said success. Pure + exported so the decision is
+ * unit-testable without the DB: true means "this body is just the filename and
+ * no parser could ever have produced more — record an honest terminal skip".
+ *
+ * Deliberately narrow: routed formats (pdf/docx/…) are excluded even when the
+ * body equals the title, because for THOSE a title-body means a parse failure
+ * with its own recovery paths (OCR, passwords) handled elsewhere. Images are
+ * excluded because the vision path owns them and records its own skip.
+ */
+export function isHollowFilenameBody(opts: {
+  mime: string;
+  parserRoute: string;
+  rawBody: string;
+  title: string;
+}): boolean {
+  if (opts.parserRoute !== 'none') return false;
+  if (opts.mime.startsWith('image/')) return false;
+  return opts.rawBody.trim() === opts.title.trim();
+}
