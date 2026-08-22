@@ -29,9 +29,22 @@ const agentsPool = [
 ];
 
 describe('pickForPool', () => {
-  it('best-advanced takes the priciest; cheapest takes free', () => {
+  it('best-advanced takes the priciest; cheapest takes the cheapest PAID, never free', () => {
     expect(pickForPool('best-advanced', agentsPool, 'agents')?.name).toBe('flagship');
-    expect(pickForPool('cheapest', agentsPool, 'agents')?.name).toBe('free');
+    expect(pickForPool('cheapest', agentsPool, 'agents')?.name).toBe('budget');
+  });
+  it('cheapest prefers a well-rated paid model over a cheaper unrated one', () => {
+    const pool = [
+      { ...entry('agents', 0, 'rated-cheap', 0.5, 1), rating: 4 },
+      entry('agents', 1, 'unrated-cheaper', 0.1, 0.2),
+      entry('agents', 2, 'free', 0, 0),
+    ];
+    expect(pickForPool('cheapest', pool, 'agents')?.name).toBe('rated-cheap');
+  });
+  it('free picks only a $0 model, and yields null when the pool has none', () => {
+    expect(pickForPool('free', agentsPool, 'agents')?.name).toBe('free');
+    const noFree = [entry('agents', 0, 'paid', 1, 2)];
+    expect(pickForPool('free', noFree, 'agents')).toBeNull();
   });
   it('cost-aware agents = median priced; workers = cheapest PAID (never free)', () => {
     expect(pickForPool('cost-aware', agentsPool, 'agents')?.name).toBe('mid');

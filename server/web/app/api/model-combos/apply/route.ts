@@ -7,7 +7,7 @@ import { buildComboDiff, COMBO_DEFS } from '@/lib/model-combos';
 import { loadComboContext } from '@/lib/model-combos-context';
 
 const Body = z.object({
-  combo: z.enum(['best-advanced', 'cheapest', 'cost-aware']),
+  combo: z.enum(['best-advanced', 'cost-aware', 'cheapest', 'free']),
   /** Target ids ('agent:<uuid>' / 'worker:<uuid>') the owner unticked. */
   exclude: z.array(z.string()).max(200).default([]),
 });

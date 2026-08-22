@@ -26,7 +26,7 @@
 import type { CuratedModel, CuratedPricing, CuratedRoute } from '@mantle/db';
 import { MODEL_POOLS } from '@mantle/client-types/model-pools';
 
-export type ComboKey = 'best-advanced' | 'cheapest' | 'cost-aware';
+export type ComboKey = 'best-advanced' | 'cost-aware' | 'cheapest' | 'free';
 
 export const COMBO_DEFS: readonly { key: ComboKey; label: string; description: string }[] = [
   {
@@ -35,14 +35,21 @@ export const COMBO_DEFS: readonly { key: ComboKey; label: string; description: s
     description: 'The strongest model in every pool. Price no object.',
   },
   {
-    key: 'cheapest',
-    label: 'Cheapest',
-    description: 'Minimum viable spend across the board, free tiers included.',
-  },
-  {
     key: 'cost-aware',
     label: 'Smartest cost-aware',
-    description: 'A strong responder with cheap workhorse workers — the balanced default.',
+    description: 'A strong responder with cheap workhorse workers - the balanced default.',
+  },
+  {
+    key: 'cheapest',
+    label: 'Cheapest paid',
+    description:
+      'The lowest PAID spend that still performs: cheapest well-rated model per pool, never the free tier.',
+  },
+  {
+    key: 'free',
+    label: 'Free',
+    description:
+      'Zero spend wherever a credible free model is curated; pools without one are left unchanged.',
   },
 ];
 
@@ -75,9 +82,22 @@ export function pickForPool(key: ComboKey, entries: PoolEntry[], pool: string): 
     if (priced.length === 0) return sorted[0]!;
     return priced.reduce((m, x) => (x.b > m.b ? x : m)).e;
   }
+  if (key === 'free') {
+    // Only a genuinely free model qualifies; a pool without one yields no
+    // pick, and the diff reports it instead of quietly substituting a paid one.
+    const free = priced.filter((x) => x.b === 0);
+    return free.length ? free.map((x) => x.e).sort((a, b) => a.position - b.position)[0]! : null;
+  }
   if (key === 'cheapest') {
+    // Cheapest PAID that still performs: free tiers have their own combo, and
+    // among paid entries a well-rated one (>=3 stars) beats a cheaper unrated
+    // gamble. Fallbacks: any paid, any priced, then curator order (unpriced
+    // pools list best -> budget, so the tail is the budget fit).
     if (priced.length === 0) return sorted[sorted.length - 1]!;
-    return priced.reduce((m, x) => (x.b < m.b ? x : m)).e;
+    const paid = priced.filter((x) => x.b > 0);
+    const rated = paid.filter((x) => (x.e.rating ?? 0) >= 3);
+    const pickFrom = rated.length ? rated : paid.length ? paid : priced;
+    return pickFrom.reduce((m, x) => (x.b < m.b ? x : m)).e;
   }
   // cost-aware
   if (pool === 'agents') {
@@ -155,6 +175,7 @@ export function buildComboDiff(
   return targets.map((t) => {
     const pick = picks.get(t.pool) ?? null;
     if (!pick) {
+      const hasEntries = (byPool.get(t.pool) ?? []).length > 0;
       return {
         id: `${t.kind}:${t.id}`,
         targetKind: t.kind,
@@ -164,7 +185,9 @@ export function buildComboDiff(
         current: { provider: t.provider, model: t.model },
         next: null,
         changed: false,
-        reason: 'pool is empty — curate it first',
+        reason: hasEntries
+          ? 'no free model curated in this pool; left unchanged'
+          : 'pool is empty; curate it first',
       };
     }
     const next = resolveRoute(pick.routes, keyIdByService, t.provider);
