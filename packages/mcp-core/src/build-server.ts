@@ -81,6 +81,7 @@ import {
   JOURNAL_TOOLS,
   PEER_TOOLS,
   EMAIL_TOOLS,
+  FILE_MANAGE_TOOLS,
 } from '@mantle/tools';
 import type { BuiltinToolDef } from '@mantle/tools';
 import {
@@ -497,6 +498,12 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
       }
     },
   );
+
+  // File-manager verbs + the indexing switch: BRIDGED from @mantle/tools so
+  // MCP runs the same implementation as in-app agents (same teaching errors,
+  // same indexing reconciliation) — hand-written twins rot, see
+  // no-duplicate-tools.test.ts.
+  registerBuiltinTools(FILE_MANAGE_TOOLS);
 
   server.tool(
     'file_read',

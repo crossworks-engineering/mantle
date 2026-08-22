@@ -3135,10 +3135,16 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
         // content the owner just un-indexed, and search would keep serving
         // them. A fresh upload has none; the delete is a no-op there.
         await tx.delete(contentChunks).where(eq(contentChunks.nodeId, node.id));
+        // Strip the content CACHES too (`- 'text' - 'content'`), not just the
+        // chunks: `search_tsv` is a generated column over the whole data blob,
+        // so extracted text left in `data` keeps matching keyword search —
+        // exactly the leak this mode promises not to have (2026-08-22 audit).
+        // Disk keeps the bytes; a flip back to full re-reads from there
+        // (readNodeBodyRaw's documented fallback), so nothing is lost.
         await tx
           .update(nodes)
           .set({
-            data: sql`${nodes.data} || ${JSON.stringify({
+            data: sql`(${nodes.data} - 'text' - 'content') || ${JSON.stringify({
               summary: spine,
               summary_model: 'metadata-only',
               indexing_applied: 'metadata',

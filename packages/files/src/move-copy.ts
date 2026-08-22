@@ -233,6 +233,19 @@ export async function copyFileById(args: {
   if (!src) {
     throw new Error('copyFileById: file not found — find the id with file_list / search_nodes');
   }
+  // The raw node, for what FileRow doesn't carry: tags and the file's OWN
+  // indexing flag. A copy of a name-only file must stay name-only wherever
+  // it lands — dropping the flag would content-index something the owner
+  // explicitly marked don't-index, silently (2026-08-22 audit).
+  const [srcNode] = await db
+    .select({ tags: nodes.tags, data: nodes.data })
+    .from(nodes)
+    .where(and(eq(nodes.id, args.fileId), eq(nodes.ownerId, args.ownerId)))
+    .limit(1);
+  const srcData = (srcNode?.data ?? {}) as Record<string, unknown>;
+  const srcOwnIndexing =
+    srcData.indexing === 'metadata' ? 'metadata' : srcData.indexing === 'full' ? 'full' : null;
+  const srcTags = (srcNode?.tags ?? []).filter((t) => t !== 'file');
   const dest = await branchAt(args.ownerId, args.destPath);
   if (!dest) {
     throw new Error(
@@ -253,6 +266,8 @@ export async function copyFileById(args: {
     filename,
     bytes: src.bytes,
     title: src.row.title !== src.row.filename ? src.row.title : undefined,
+    tags: srcTags,
+    ...(srcOwnIndexing ? { data: { indexing: srcOwnIndexing } } : {}),
   });
 }
 
@@ -298,7 +313,12 @@ export async function copyFolderById(args: {
     .select()
     .from(nodes)
     .where(and(eq(nodes.ownerId, args.ownerId), sql`${nodes.path} <@ ${node.path}::ltree`))
-    .orderBy(sql`nlevel(${nodes.path}) asc`);
+    // nlevel asc puts parents before deeper children — but a FILE's path IS
+    // its parent folder's path (same nlevel), so at a tie the branch must
+    // come first or the file copies into a folder that doesn't exist yet
+    // ('branch' < 'file' happens to sort right; stated explicitly so nobody
+    // "simplifies" it away).
+    .orderBy(sql`nlevel(${nodes.path}) asc`, sql`${nodes.type} asc`);
   const fileCount = subtree.filter((n) => n.type === 'file').length;
   if (fileCount > COPY_MAX_FILES) {
     throw new Error(
@@ -326,6 +346,18 @@ export async function copyFolderById(args: {
         slug: destPath.split('.').at(-1)!,
         description: typeof nData.description === 'string' ? nData.description : undefined,
       });
+      // Carry the folder's OWN indexing flag so the copy of a name-only
+      // gallery is still a name-only gallery — set BEFORE its files copy in,
+      // so their ingest resolves the right effective mode from the start.
+      if (nData.indexing === 'metadata' || nData.indexing === 'full') {
+        await db
+          .update(nodes)
+          .set({
+            data: sql`${nodes.data} || ${JSON.stringify({ indexing: nData.indexing })}::jsonb`,
+            updatedAt: new Date(),
+          })
+          .where(eq(nodes.id, created.id));
+      }
       if (n.id === node.id) newRootId = created.id;
       copiedFolders++;
     } else if (n.type === 'file') {

@@ -42,7 +42,7 @@ export {
   type DynamicSchemaFn,
 } from './dynamic-schema';
 
-export { BUILTIN_TOOLS } from './builtins';
+export { BUILTIN_TOOLS, FILE_MANAGE_TOOLS } from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
 export { DRAW_TOOLS, DRAW_TOOL_SLUGS } from './builtins-draws';
 export { APP_TOOLS, APP_TOOL_SLUGS, APP_DATA_TOOLS, APP_DATA_TOOL_SLUGS } from './builtins-apps';

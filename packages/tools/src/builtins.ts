@@ -1966,6 +1966,19 @@ const invoke_agent: BuiltinToolDef = {
   },
 };
 
+/** The file-manager verbs + the indexing switch, exported as a group so the
+ *  MCP server can BRIDGE them (one implementation, one behaviour) instead of
+ *  hand-writing twins — see mcp-core's no-duplicate-tools test for why twins
+ *  rot. In-app registration still comes from BUILTIN_TOOLS below. */
+export const FILE_MANAGE_TOOLS: readonly BuiltinToolDef[] = [
+  file_move,
+  file_copy,
+  folder_move,
+  folder_copy,
+  file_set_indexing,
+  folder_set_indexing,
+];
+
 export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   search_nodes,
   search_chunks,

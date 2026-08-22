@@ -335,7 +335,9 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       .from(heartbeats)
       .where(eq(heartbeats.ownerId, ownerId));
     const bySlug = new Map(rows.map((r) => [r.slug, r]));
-    const skillSlugs = new Set(skillRows.map((sk) => sk.slug));
+    // Enabled only — the fire loop requires skills.enabled=true, so a
+    // disabled skill would read green here and auto-pause on the next fire.
+    const skillSlugs = new Set(skillRows.filter((sk) => sk.enabled).map((sk) => sk.slug));
     const samples: SystemSample[] = [];
 
     for (const def of MANIFEST_HEARTBEATS) {
@@ -357,7 +359,7 @@ export async function checkSystemIntegrity(ownerId: string): Promise<SystemRepor
       if (!skillSlugs.has(row.skillSlug)) {
         samples.push({
           id: def.slug,
-          detail: `skill '${row.skillSlug}' missing — the fire loop auto-pauses on a missing skill`,
+          detail: `skill '${row.skillSlug}' missing or disabled — the fire loop auto-pauses on it`,
         });
         continue;
       }
