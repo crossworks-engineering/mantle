@@ -27,8 +27,7 @@ export type MediaErrorCode =
   | 'busy';
 
 export type MediaResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; code: MediaErrorCode; message: string };
+  { ok: true; value: T } | { ok: false; code: MediaErrorCode; message: string };
 
 export type MediaProbe = {
   title: string | null;
@@ -89,9 +88,9 @@ function decodeHeader(raw: string | null): string | null {
       .map((p) => {
         const m = /=\?utf-8\?([bq])\?([^?]*)\?=/i.exec(p)!;
         if (m[1]!.toLowerCase() === 'b') return Buffer.from(m[2]!, 'base64').toString('utf8');
-        return m[2]!.replace(/_/g, ' ').replace(/=([0-9A-F]{2})/gi, (_, h) =>
-          String.fromCharCode(parseInt(h, 16)),
-        );
+        return m[2]!
+          .replace(/_/g, ' ')
+          .replace(/=([0-9A-F]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
       })
       .join('');
   } catch {
@@ -316,7 +315,11 @@ export async function mediaVideo(
 ): Promise<MediaResult<MediaBytes>> {
   const res = await call(
     '/video',
-    { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ url, maxBytes: opts.maxBytes }) },
+    {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ url, maxBytes: opts.maxBytes }),
+    },
     T_VIDEO,
   );
   if (!res.ok) return res;

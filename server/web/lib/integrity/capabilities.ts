@@ -95,7 +95,10 @@ export async function resolveCapabilities(ownerId: string): Promise<Capabilities
       mediaH.up === null
         ? { available: false, detail: 'not enabled (media compose profile off)' }
         : mediaH.up
-          ? { available: true, detail: `yt-dlp ${mediaH.ytDlpVersion ?? '?'} · ffmpeg ${mediaH.ffmpegVersion ?? '?'}` }
+          ? {
+              available: true,
+              detail: `yt-dlp ${mediaH.ytDlpVersion ?? '?'} · ffmpeg ${mediaH.ffmpegVersion ?? '?'}`,
+            }
           : { available: false, detail: 'configured but unreachable' },
   };
 }

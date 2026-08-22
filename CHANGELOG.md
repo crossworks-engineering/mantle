@@ -4,7 +4,45 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## Unreleased — one spreadsheet engine, and the old formats convert at the door (branch claude/sheetjs-xls-exports)
+## Unreleased — video ingestion: paste a link, get a searchable transcript (branch claude/mantle-video-extraction-650157)
+
+The brain can now ingest a video. `video_ingest` takes a link (or a video
+file already in Files), pulls the captions when the video has them — free and
+already timestamped — and only when it doesn't extracts a speech-grade audio
+clip and transcribes it through the owner's STT worker. The result is a real
+transcript page: summarised, embedded, chunked with `## [m:ss]` timestamp
+headings folded into each retrieval chunk, so "what did he say at 4:12" is
+answerable months later without the video. The audio clip is kept as a
+durable artifact beside its source, saved before transcription so a failed
+STT run is an explicit partial success with a retry path, never a silent
+nothing. Full design and caps: [docs/video-ingest.md](docs/video-ingest.md).
+
+### yt-dlp and ffmpeg live in their own container
+
+The fetch/transcode engine is a new sidecar (`infra/media-sidecar`, compose
+profile `media`, image `mantle-media`) with no database, secrets, or
+file-store access — because it runs the one dependency this repo refuses to
+pin. yt-dlp breaks whenever a site changes its player and upstream fixes land
+within days, so the sidecar refreshes it from PyPI at boot and daily, and the
+running version is surfaced on `/healthz`, the health panel, and the
+integrity readiness panel. URLs are SSRF-checked in the app before the
+sidecar ever sees them, and the tool is owner-only: the `video-ingest` group
+is never granted to the team responder.
+
+### The file layer stops lying about media
+
+An uploaded `.mp4` used to ingest as `application/octet-stream`, and — when
+its filename cleared a 20-character length check — the extractor indexed the
+FILENAME as the document body and recorded success. `mimeForExt` now emits
+real `audio/*`/`video/*` types (which alone lights up the inline players
+already built into chat, forums, and shares), media records an honest
+`unsupported_media` terminal skip, and a generalised hollow-body guard
+(`isHollowFilenameBody`, pure and tested) protects every parserless format —
+not just PDFs — from the filename-only false success. The disk-sync watcher
+now stores dropped media instead of silently ignoring it, and never
+transcribes on its own: transcription is only ever the explicit tool.
+
+
 
 SheetJS (`xlsx`) read every spreadsheet that entered the brain. It has not
 published to npm since 0.18.5, and that release carries a prototype-pollution

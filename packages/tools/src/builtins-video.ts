@@ -74,7 +74,12 @@ const MAX_VIDEO_BYTES = () => intEnv('MEDIA_MAX_VIDEO_BYTES', 1024 ** 3);
 const VIDEO_INGEST_FOLDER_SLUG = 'video-ingest';
 const VIDEO_INGEST_FOLDER_LTREE = `files.${dashToLtree(VIDEO_INGEST_FOLDER_SLUG)}`;
 
-async function ensureFolder(ownerId: string, parentPath: string, slug: string, description: string) {
+async function ensureFolder(
+  ownerId: string,
+  parentPath: string,
+  slug: string,
+  description: string,
+) {
   const path = `${parentPath}.${dashToLtree(slug)}`;
   const [exists] = await db
     .select({ id: nodes.id })
@@ -102,12 +107,7 @@ async function ensureVideoIngestDateFolder(ownerId: string): Promise<string> {
     'Audio + video pulled in by the video_ingest tool.',
   );
   const today = new Date().toISOString().slice(0, 10);
-  return ensureFolder(
-    ownerId,
-    VIDEO_INGEST_FOLDER_LTREE,
-    today,
-    `Video ingests from ${today}.`,
-  );
+  return ensureFolder(ownerId, VIDEO_INGEST_FOLDER_LTREE, today, `Video ingests from ${today}.`);
 }
 
 function slugBase(title: string | null, fallback: string): string {
@@ -194,23 +194,20 @@ const video_ingest: BuiltinToolDef = {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
 
-      const probe = await step(
-        { name: 'video_probe', kind: 'http', input: { url } },
-        async (h) => {
-          const r = await mediaProbe(url);
-          if (r.ok) {
-            h.setMeta({
-              title: r.value.title,
-              durationSeconds: r.value.durationSeconds,
-              captionsManual: r.value.captions.manual.length,
-              captionsAuto: r.value.captions.auto.length,
-            });
-          } else {
-            h.setMeta({ error: r.code });
-          }
-          return r;
-        },
-      );
+      const probe = await step({ name: 'video_probe', kind: 'http', input: { url } }, async (h) => {
+        const r = await mediaProbe(url);
+        if (r.ok) {
+          h.setMeta({
+            title: r.value.title,
+            durationSeconds: r.value.durationSeconds,
+            captionsManual: r.value.captions.manual.length,
+            captionsAuto: r.value.captions.auto.length,
+          });
+        } else {
+          h.setMeta({ error: r.code });
+        }
+        return r;
+      });
       if (!probe.ok) return mediaFail(probe);
       const info = probe.value;
       const maxDuration = MAX_STT_DURATION_S();
@@ -360,7 +357,9 @@ const video_ingest: BuiltinToolDef = {
           });
           videoFileId = file.id;
         } else {
-          notes.push(`keep_video failed (${vid.code}: ${vid.message}); transcript and audio are unaffected`);
+          notes.push(
+            `keep_video failed (${vid.code}: ${vid.message}); transcript and audio are unaffected`,
+          );
         }
       }
 
