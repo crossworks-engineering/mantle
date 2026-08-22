@@ -17,6 +17,7 @@
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
+    "@mantle/voice-client": "workspace:*",
     "@types/node": "^22.20.1",
     "typescript": "^5.7.2"
   }

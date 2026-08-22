@@ -2,12 +2,21 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listApiKeys, setApiKey } from '@/lib/api-keys';
+import { KNOWN_KEY_SERVICES } from '@mantle/api-keys';
 
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const keys = await listApiKeys(user.id);
-  return NextResponse.json({ keys });
+  // Known non-LLM services ride along so the UI can show an empty
+  // placeholder row per unconfigured service (discoverability — the user
+  // shouldn't need to know the slug to learn the capability exists).
+  const configured = new Set(keys.map((k) => k.service));
+  const knownServices = KNOWN_KEY_SERVICES.map((s) => ({
+    ...s,
+    configured: configured.has(s.service),
+  }));
+  return NextResponse.json({ keys, knownServices });
 }
 
 const CreateBody = z.object({

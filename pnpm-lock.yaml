@@ -125,6 +125,9 @@ importers:
         specifier: ^0.45.2
         version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
+      '@mantle/voice-client':
+        specifier: workspace:*
+        version: link:../voice-client
       '@types/node':
         specifier: ^22.20.1
         version: 22.20.1

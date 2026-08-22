@@ -162,3 +162,4 @@ export async function deleteApiKey(userId: string, id: string): Promise<boolean>
     .returning({ id: apiKeys.id });
   return rows.length > 0;
 }
+export * from './services';
