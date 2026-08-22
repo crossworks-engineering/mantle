@@ -352,6 +352,7 @@ const video_ingest: BuiltinToolDef = {
               source: 'video_ingest',
               sourceUrl: url,
               durationSeconds: info.durationSeconds,
+              indexing: 'metadata',
             },
             tags: ['video', 'video-ingest'],
           });
@@ -424,6 +425,7 @@ const video_ingest: BuiltinToolDef = {
         source: 'video_ingest',
         sourceFileId: fileNodeId,
         durationSeconds: extracted.value.durationSeconds,
+        indexing: 'metadata',
       },
       tags: ['audio', 'video-ingest'],
     });
@@ -491,6 +493,10 @@ async function saveAudio(
         sourceUrl: opts.sourceUrl,
         videoTitle: opts.videoTitle,
         durationSeconds: audio.durationSeconds,
+        // Metadata-only spine (name/type/tags, no content read): the clip's
+        // KNOWLEDGE lives in the transcript page; indexing the mp3 itself
+        // would be an unsupported_media skip at best.
+        indexing: 'metadata',
       },
       tags: ['audio', 'video-ingest'],
     });

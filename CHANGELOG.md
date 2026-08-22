@@ -31,16 +31,18 @@ is never granted to the team responder.
 
 ### The file layer stops lying about media
 
-An uploaded `.mp4` used to ingest as `application/octet-stream`, and — when
-its filename cleared a 20-character length check — the extractor indexed the
-FILENAME as the document body and recorded success. `mimeForExt` now emits
-real `audio/*`/`video/*` types (which alone lights up the inline players
-already built into chat, forums, and shares), media records an honest
-`unsupported_media` terminal skip, and a generalised hollow-body guard
-(`isHollowFilenameBody`, pure and tested) protects every parserless format —
-not just PDFs — from the filename-only false success. The disk-sync watcher
-now stores dropped media instead of silently ignoring it, and never
-transcribes on its own: transcription is only ever the explicit tool.
+When a media file's name cleared a 20-character length check, the extractor
+indexed the FILENAME as the document body and recorded success — the exact
+"filename-only false success" the `.mpp` handling exists to prevent, open for
+every other parserless format. A generalised hollow-body guard
+(`isHollowFilenameBody`, pure and tested) now closes it for all of them, and
+media specifically records an honest `unsupported_media` skip pointing at
+link ingestion. Building on v0.232.29's media MIME families and v0.232.30's
+metadata-only indexing: the clips this tool saves are stamped
+`indexing: 'metadata'` so they carry the deterministic name/type/tags spine,
+and the disk-sync watcher now stores dropped media instead of silently
+ignoring it — never transcribing on its own; transcription is only ever the
+explicit tool.
 
 
 
