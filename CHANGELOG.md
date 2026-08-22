@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — client pair moves to jackdaw v0.6.5 (branch claude/client-pair-v0.6.5)
+
+Interface-only roll: the paired jackdaw client moves to v0.6.5, which adds
+the Media pill to the dashboard's system vitals (the yt-dlp/ffmpeg sidecar's
+health + running versions, beside Tika/Chromium/Sandboxes) and ships the
+files workspace's two-pane view series. No server-side changes beyond the
+pair record.
+
+
 ## Unreleased — video ingest hardened: the audit pass (branch claude/video-ingest-audit-fixes)
 
 A three-way adversarial audit of the v0.232.32 video-ingestion release, with
