@@ -33,6 +33,7 @@ overrides:
   # Parents that pin a vulnerable version exactly, or to a major with no
   # patched release. Scoped to the pinning parent so the rest of the tree
   # resolves normally. Drop each once the parent updates.
+  '@esbuild-kit/core-utils>esbuild': ^0.25.0 # pins ^0.18.20 (GHSA-67mh dev-server CORS); parent is deprecated (merged into tsx), drizzle-kit still pulls it
   '@excalidraw/mermaid-to-excalidraw>nanoid': 5.1.16 # pins 4.0.2; no patched 4.x exists
   'exceljs>uuid': 11.1.1 # pins ^8.3.0 (GHSA-w5hq); uuid 11 still ships CJS, exceljs only uses v4
   'html-to-text>deepmerge-ts': 8.0.0 # pins ^7.1.5 (GHSA-ggr8); v8 still ships CJS
