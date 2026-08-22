@@ -2,7 +2,7 @@ import os from 'node:os';
 import { statfs } from 'node:fs/promises';
 import si from 'systeminformation';
 import { db, sql } from '@mantle/db';
-import { filesRoot, tikaVersion } from '@mantle/files';
+import { filesRoot, mediaSidecarHealth, tikaVersion } from '@mantle/files';
 import { sandboxdHealth } from './sandboxd';
 import { bucketReachable } from '@mantle/storage';
 import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
@@ -208,7 +208,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     }
   }
 
-  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, browserH, emb, net, sbx] =
+  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, browserH, emb, net, sbx, media] =
     await Promise.all([
       probe('host.cpu', () => si.currentLoad()),
       probe('host.mem', () => si.mem()),
@@ -231,6 +231,9 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       // sandboxdHealth never-throws (profile off ⇒ up:null; unreachable ⇒
       // up:false); the wrapper bounds a hung listing.
       probe('sandboxes', () => sandboxdHealth()),
+      // mediaSidecarHealth never-throws (profile off ⇒ up:null; unreachable ⇒
+      // up:false); its versions expose a stale/failed yt-dlp self-update.
+      probe('media', () => mediaSidecarHealth(1_500)),
     ]);
 
   const memInfo = mem
@@ -278,6 +281,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     browser: browserH ?? { up: false, version: null },
     embedder: emb ?? { up: null, provider: null, model: null, detail: null, scope: null },
     sandboxes: sbx ?? { up: null, total: null, running: null, disk: null },
+    media: media ?? { up: null, ytDlpVersion: null, ffmpegVersion: null },
     network: net ?? { up: null, detail: null },
     degraded,
   };

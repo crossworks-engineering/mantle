@@ -64,6 +64,9 @@ export type Capabilities = {
   summarizer: Capability;
   reflector: Capability;
   stt: Capability;
+  /** The media sidecar (yt-dlp + ffmpeg) behind video_ingest — profile-gated,
+   *  so "unavailable" is the normal resting state on a box without it. */
+  media: Capability;
 };
 
 // ─── live landed view ───────────────────────────────────────────────────────

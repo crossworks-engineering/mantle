@@ -24,6 +24,21 @@ export { extractPdfTextWithPassword, type PdfPasswordResult } from './pdf-passwo
 
 export { parseTikaBytes, tikaIsUp, tikaVersion } from './tika';
 
+export {
+  mediaSidecarEnabled,
+  mediaSidecarHealth,
+  mediaProbe,
+  mediaCaptions,
+  mediaAudio,
+  mediaExtractAudio,
+  mediaVideo,
+  type MediaResult,
+  type MediaErrorCode,
+  type MediaProbe,
+  type MediaCaptions,
+  type MediaBytes,
+} from './media-sidecar';
+
 export { MAX_UPLOAD_BYTES } from './limits';
 
 export {

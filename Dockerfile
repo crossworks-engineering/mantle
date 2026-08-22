@@ -95,6 +95,29 @@ RUN apt-get update \
 # Now copy sources.
 COPY . .
 
+# ── 1b. media: yt-dlp + ffmpeg sidecar (independent of the node stages) ─────
+# Deliberately NOT built on the node deps stage: this image runs a fast-moving,
+# auto-updating, network-facing binary (yt-dlp) that parses hostile input from
+# the open web, so it gets its own minimal Python base with no workspace code,
+# no DB drivers, and no secrets. Source + safety model: infra/media-sidecar/.
+# yt-dlp is baked in for offline boots, then refreshed from PyPI at start and
+# daily by the entrypoint (see entrypoint.sh for why "always latest" is a hard
+# requirement for this one dependency).
+FROM python:3.12-slim AS media
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -u 1001 media \
+  && python -m venv /opt/venv \
+  && chown -R media:media /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+USER media
+RUN pip install --no-cache-dir yt-dlp
+COPY infra/media-sidecar/app.py /srv/app.py
+COPY infra/media-sidecar/entrypoint.sh /srv/entrypoint.sh
+EXPOSE 8095
+ENTRYPOINT ["/bin/sh", "/srv/entrypoint.sh"]
+
 # ── 2. server: backend runtime image — workspace + generated assets ─────────
 # Carries source + node_modules + the generated runtime assets (app-runtime,
 # share-runtime, route manifest), so the SAME image can run the Hono web

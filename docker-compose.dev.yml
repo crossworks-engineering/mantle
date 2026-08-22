@@ -133,3 +133,34 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
+
+  # Media sidecar (yt-dlp + ffmpeg) — the video_ingest fetch/transcode engine.
+  # Built locally from the repo's `media` Dockerfile stage (prod pulls the
+  # published mantle-media image instead). Loopback-published like tika; the
+  # native-node dev server connects via
+  # MEDIA_SIDECAR_URL=http://127.0.0.1:8095 + MEDIA_SIDECAR_TOKEN=mantle in
+  # .env.local. Dev-only token — the port is loopback-published, so this is a
+  # formality the app requires, not a security boundary.
+  media:
+    build:
+      context: .
+      target: media
+    container_name: mantle_dev_media
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      MEDIA_TOKEN: mantle
+    ports:
+      - "127.0.0.1:8095:8095"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3).status==200 else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

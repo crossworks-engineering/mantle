@@ -44,7 +44,10 @@ jobs:
         # v0.202.0 shipped arm64-only manifests for both images exactly that
         # way. As original keys this is a true 4-job cross product, and the
         # includes merely attach the right runner to each platform.
-        target: [server]
+        # `media` is the yt-dlp/ffmpeg sidecar (infra/media-sidecar) — its own
+        # tiny python image, versioned with the release so compose + images
+        # stay one bundle. Published as <namespace>/mantle-media.
+        target: [server, media]
         platform: [linux/amd64, linux/arm64]
         include:
           - platform: linux/amd64
@@ -108,7 +111,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [server]
+        target: [server, media]
     runs-on: ubuntu-24.04
     permissions:
       contents: read

@@ -2099,6 +2099,16 @@ export type SystemHealth = {
     running: number | null;
     disk: { usedBytes: number | null; budgetBytes: number } | null;
   };
+  /** Media sidecar (yt-dlp + ffmpeg) — the video_ingest fetch/transcode
+   *  engine, profile-gated like sandboxes, so `up: null` (muted pill) is the
+   *  resting state on a box without the `media` compose profile. Versions
+   *  come from its /healthz — that is what makes a stale or failed yt-dlp
+   *  self-update VISIBLE instead of silently breaking downloads. */
+  media: {
+    up: boolean | null;
+    ytDlpVersion: string | null;
+    ffmpegVersion: string | null;
+  };
   /** Tailscale / local network — the optional tailnet that lets a cloud VPS
    *  reach a LAN model box by MagicDNS name. Profile-gated and off by default
    *  in dev, so `up: null` (a muted/disabled pill) is the normal resting state;

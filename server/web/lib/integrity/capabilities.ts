@@ -12,7 +12,7 @@
  * don't require a key, so those only check that a worker is configured.
  */
 import { db, sql, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
-import { tikaIsUp } from '@mantle/files';
+import { mediaSidecarHealth, tikaIsUp } from '@mantle/files';
 
 import type { Capability, Capabilities } from '@mantle/client-types/types/integrity';
 
@@ -69,15 +69,17 @@ async function embeddingCap(ownerId: string): Promise<Capability> {
 }
 
 export async function resolveCapabilities(ownerId: string): Promise<Capabilities> {
-  const [tikaUp, vision, extractor, embedding, summarizer, reflector, stt] = await Promise.all([
-    tikaIsUp().catch(() => false),
-    workerCap(ownerId, 'vision', true),
-    workerCap(ownerId, 'extractor', false),
-    embeddingCap(ownerId),
-    workerCap(ownerId, 'summarizer', false),
-    workerCap(ownerId, 'reflector', false),
-    workerCap(ownerId, 'stt', false),
-  ]);
+  const [tikaUp, vision, extractor, embedding, summarizer, reflector, stt, mediaH] =
+    await Promise.all([
+      tikaIsUp().catch(() => false),
+      workerCap(ownerId, 'vision', true),
+      workerCap(ownerId, 'extractor', false),
+      embeddingCap(ownerId),
+      workerCap(ownerId, 'summarizer', false),
+      workerCap(ownerId, 'reflector', false),
+      workerCap(ownerId, 'stt', false),
+      mediaSidecarHealth(1_500),
+    ]);
   return {
     tika: {
       available: tikaUp,
@@ -89,5 +91,11 @@ export async function resolveCapabilities(ownerId: string): Promise<Capabilities
     summarizer,
     reflector,
     stt,
+    media:
+      mediaH.up === null
+        ? { available: false, detail: 'not enabled (media compose profile off)' }
+        : mediaH.up
+          ? { available: true, detail: `yt-dlp ${mediaH.ytDlpVersion ?? '?'} · ffmpeg ${mediaH.ffmpegVersion ?? '?'}` }
+          : { available: false, detail: 'configured but unreachable' },
   };
 }

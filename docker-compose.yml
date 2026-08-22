@@ -170,6 +170,12 @@ x-app-env: &app-env
   # with the profile off (or the token unset) they refuse cleanly.
   SANDBOXD_URL: ${SANDBOXD_URL:-http://sandboxd:8090}
   SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:-}
+  # Media sidecar (compose profile `media`) — yt-dlp + ffmpeg for video_ingest.
+  # Same posture as sandboxd above: always present so the tool can say "not
+  # enabled on this box" cleanly; with the profile off (or the token unset) it
+  # refuses instead of guessing.
+  MEDIA_SIDECAR_URL: ${MEDIA_SIDECAR_URL:-http://media:8095}
+  MEDIA_SIDECAR_TOKEN: ${MEDIA_SIDECAR_TOKEN:-}
   # Runner queues (docs/runs.md) — DARK unless MANTLE_RUNS=1 in the host .env.
   # Read by THREE services off this shared anchor: web (run_* tools),
   # worker_runs (engine + sweep + claims), and api (the DBOS worker-turn
@@ -426,6 +432,40 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
+
+  # Media sidecar (yt-dlp + ffmpeg) — the video_ingest fetch/transcode engine,
+  # behind the `media` profile (opt-in, like sandboxes). This is the ONE
+  # container allowed to run an auto-updating, network-facing binary that
+  # parses hostile input from the open web, and that is exactly why it is a
+  # sidecar: no DB, no secrets, no file-store mounts, no published ports — it
+  # takes a URL (or raw video bytes) and hands back captions/audio/video over
+  # a bearer-authed internal-only HTTP interface. yt-dlp refreshes from PyPI
+  # at boot + daily (see infra/media-sidecar/entrypoint.sh for why "always
+  # latest" is a hard requirement); the running version is on /healthz.
+  media:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-media:${MANTLE_IMAGE_TAG:-latest}
+    container_name: mantle_media
+    restart: unless-stopped
+    logging: *default-logging
+    profiles: ["media"]
+    # Transcodes stream through temp files, never RAM; 1g covers ffmpeg peaks.
+    mem_limit: 1g
+    environment:
+      MEDIA_TOKEN: ${MEDIA_SIDECAR_TOKEN:-}
+      MEDIA_MAX_CONCURRENT: ${MEDIA_MAX_CONCURRENT:-2}
+    healthcheck:
+      # python-slim has no curl/wget; probe with the interpreter itself.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3).status==200 else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   # Ollama — serves the bundled local embedder (EmbeddingGemma, 768-dim) over an
   # OpenAI-compatible API. CPU-only; a small encoder (~300MB) that fits on the
