@@ -791,6 +791,9 @@ importers:
       '@mantle/voice':
         specifier: workspace:*
         version: link:../voice
+      '@mantle/voice-client':
+        specifier: workspace:*
+        version: link:../voice-client
       '@openrouter/sdk':
         specifier: ^1.2.7
         version: 1.2.7

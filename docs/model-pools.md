@@ -8,18 +8,18 @@ action.
 
 ## Two ways to curate
 
-1. **By hand** — /models (the explorer) → open a model → *Add to pool* (copies
+1. **By hand** — /models (the explorer) → open a model → _Add to pool_ (copies
    the pricing snapshot in), then manage order/ratings/routes at /models/pools.
 2. **By the Curator specialist** — delegate: "update the curated model pools".
    It reads live OpenRouter data and writes the pools:
 
-| tool | what it reads/writes |
-|---|---|
-| `openrouter_rankings` | real token usage per model (top-50 daily dataset), window-aggregated, category/modality filters |
-| `openrouter_benchmarks` | Artificial Analysis / Design Arena / OpenRouter eval scores |
-| `openrouter_task_classes` | 7-day traffic share by task type + top models per task |
-| `model_catalog` | slugs + live in/out $ per 1M (keyless, cached 5 min) |
-| `model_pool_list` / `model_pool_set` / `model_pool_remove` | the curated_models store behind /models/pools |
+| tool                                                       | what it reads/writes                                                                                                                                                                                                 |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `openrouter_rankings`                                      | real token usage per model (top-50 daily dataset), window-aggregated, category/modality filters                                                                                                                      |
+| `openrouter_benchmarks`                                    | Artificial Analysis / Design Arena / OpenRouter eval scores                                                                                                                                                          |
+| `openrouter_task_classes`                                  | 7-day traffic share by task type + top models per task                                                                                                                                                               |
+| `model_catalog`                                            | slugs + live in/out $ per 1M (keyless, cached 5 min), plus Mantle's wired voice catalogs (grok-voice, whisper, ElevenLabs, Deepgram, Gemini voices — `kind` tts/stt, pricing null: voice bills per character/minute) |
+| `model_pool_list` / `model_pool_set` / `model_pool_remove` | the curated_models store behind /models/pools                                                                                                                                                                        |
 
 Group `model-curation`, granted to the `curator` agent only (owner-side, never
 the team responder). The Data API needs the owner's OpenRouter key

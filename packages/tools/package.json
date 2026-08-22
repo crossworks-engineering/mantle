@@ -29,9 +29,10 @@
     "@mantle/telegram": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",
+    "@mantle/voice-client": "workspace:*",
     "@openrouter/sdk": "^1.2.7",
-    "firecrawl": "^4.35.0",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.2",
+    "firecrawl": "^4.35.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
