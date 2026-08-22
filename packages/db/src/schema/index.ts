@@ -29,6 +29,7 @@ export * from './draws';
 export * from './apps';
 export * from './app-databases';
 export * from './app-table-exports';
+export * from './model-pools';
 export * from './tables';
 export * from './doc-collections';
 export * from './shares';
