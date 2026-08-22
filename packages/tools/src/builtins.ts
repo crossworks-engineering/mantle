@@ -65,6 +65,7 @@ import { TERMINAL_TOOLS } from './builtins-terminal';
 import { SANDBOX_TOOLS } from './builtins-sandbox';
 import { RECALL_TOOLS } from './builtins-recall';
 import { RESEARCH_TOOLS } from './builtins-research';
+import { CRAWL_TOOLS } from './builtins-crawl';
 import { NOTE_TOOLS } from './builtins-notes';
 import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
@@ -2052,6 +2053,11 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // raw-search primitive for the `researcher` agent; the smart layer is
   // the agent that wraps it (plan → search → cross-check → synthesise).
   ...RESEARCH_TOOLS,
+  // Crawl — whole-site ingestion via the Firecrawl CLOUD API (map = discover
+  // URLs, crawl = fetch pages as markdown → documentation collection at
+  // retrieval depth). Owner-only (`crawl` tool group); spends the operator's
+  // Firecrawl credits, so never wired to a cron/trigger.
+  ...CRAWL_TOOLS,
   // Notes — persist a markdown note (auto-indexed into the brain). Lets
   // Saskia keep research findings she's decided are worth saving.
   ...NOTE_TOOLS,

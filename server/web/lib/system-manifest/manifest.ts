@@ -833,6 +833,16 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['video_ingest'],
   },
   {
+    slug: 'crawl',
+    name: 'Web crawl',
+    description:
+      'Ingest whole websites via the Firecrawl cloud API: web_map discovers URLs, web_crawl ' +
+      'fetches pages as markdown into a per-site documentation collection. Owner-only: ' +
+      'outbound fetches that spend the operator\'s Firecrawl credits — NEVER granted to the ' +
+      'team responder, and never wired to a cron or trigger.',
+    toolSlugs: ['web_map', 'web_crawl'],
+  },
+  {
     slug: 'delegation',
     name: 'Delegation',
     description: 'Invoke specialist sub-agents.',
@@ -1046,6 +1056,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'persona',
       'media-workers',
       'video-ingest',
+      'crawl',
       'delegation',
       'messaging',
       'secrets',
