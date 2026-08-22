@@ -2,7 +2,7 @@
  * CURATED MODEL POOLS — the repo-shipped template.
  *
  * GENERATED from a live curation pass (the Curator specialist on the primary
- * brain, 2026-08-22, OpenRouter rankings/benchmarks evidence, prices captured
+ * brain, 2026-08-22 incl. the voice-pool re-curation, OpenRouter rankings/benchmarks evidence, prices captured
  * at curation time). Do NOT hand-edit entries here: curate at /models/pools
  * (by hand or via the Curator) and re-export with GET /api/model-pools/export.
  *
@@ -1425,6 +1425,21 @@ export const CURATED_MODEL_POOLS: readonly CuratedTemplateEntry[] = [
   {
     pool: 'stt',
     position: 2,
+    name: 'Deepgram Nova 3',
+    vendor: 'Deepgram',
+    routes: [
+      {
+        provider: 'deepgram',
+        model: 'nova-3',
+      },
+    ],
+    pricing: null,
+    rating: 5,
+    note: 'flagship real-time STT, high accuracy',
+  },
+  {
+    pool: 'stt',
+    position: 3,
     name: 'Whisper-1',
     vendor: 'OpenAI',
     routes: [
@@ -1439,10 +1454,44 @@ export const CURATED_MODEL_POOLS: readonly CuratedTemplateEntry[] = [
   },
   {
     pool: 'stt',
-    position: 3,
+    position: 4,
+    name: 'Grok STT',
+    vendor: 'xAI',
+    routes: [
+      {
+        provider: 'xai',
+        model: 'grok-stt',
+      },
+    ],
+    pricing: null,
+    rating: 3,
+    note: 'new xAI transcription option',
+  },
+  {
+    pool: 'stt',
+    position: 5,
+    name: 'Gemini 2.5 Pro STT',
+    vendor: 'Google',
+    routes: [
+      {
+        provider: 'google',
+        model: 'gemini-2.5-pro',
+      },
+    ],
+    pricing: null,
+    rating: 4,
+    note: 'multimodal transcription via Gemini Pro',
+  },
+  {
+    pool: 'stt',
+    position: 6,
     name: 'GPT-4o Mini Transcribe',
     vendor: 'OpenAI',
     routes: [
+      {
+        provider: 'openrouter',
+        model: 'openai/gpt-4o-mini-transcribe',
+      },
       {
         provider: 'openai',
         model: 'gpt-4o-mini-transcribe',
@@ -1450,7 +1499,7 @@ export const CURATED_MODEL_POOLS: readonly CuratedTemplateEntry[] = [
     ],
     pricing: null,
     rating: 3,
-    note: "not in OpenRouter's catalog; budget dedicated transcription tier, gets the job done for short voice notes",
+    note: 'cheap, fast, gets the job done',
   },
   {
     pool: 'suggester',
@@ -1960,17 +2009,21 @@ export const CURATED_MODEL_POOLS: readonly CuratedTemplateEntry[] = [
   {
     pool: 'tts',
     position: 1,
-    name: 'ElevenLabs Multilingual v2',
-    vendor: 'ElevenLabs',
+    name: 'Grok Voice',
+    vendor: 'xAI',
     routes: [
       {
-        provider: 'elevenlabs',
-        model: 'eleven_multilingual_v2',
+        provider: 'openrouter',
+        model: 'x-ai/grok-voice-tts-1.0',
+      },
+      {
+        provider: 'xai',
+        model: 'grok-voice-latest',
       },
     ],
     pricing: null,
-    rating: 5,
-    note: "not in OpenRouter's catalog (direct provider endpoint, billed per character not per token); industry-standard voice quality, verify current price on ElevenLabs' own pricing page before adopting",
+    rating: 4,
+    note: 'flagship, new xAI voice line',
   },
   {
     pool: 'tts',
@@ -2000,32 +2053,62 @@ export const CURATED_MODEL_POOLS: readonly CuratedTemplateEntry[] = [
   {
     pool: 'tts',
     position: 3,
-    name: 'GPT-4o Mini TTS',
-    vendor: 'OpenAI',
+    name: 'ElevenLabs Eleven v3',
+    vendor: 'ElevenLabs',
     routes: [
       {
-        provider: 'openai',
-        model: 'gpt-4o-mini-tts',
+        provider: 'elevenlabs',
+        model: 'eleven_v3',
       },
     ],
     pricing: null,
-    rating: 3,
-    note: "not in OpenRouter's catalog (dedicated /audio/speech endpoint, not a chat model); OpenAI's cheap steerable-voice TTS tier, confirm live price on OpenAI's pricing page",
+    rating: 5,
+    note: 'most expressive, priced per character not token',
   },
   {
     pool: 'tts',
     position: 4,
-    name: 'TTS-1',
-    vendor: 'OpenAI',
+    name: 'ElevenLabs Multilingual v2',
+    vendor: 'ElevenLabs',
     routes: [
       {
-        provider: 'openai',
-        model: 'tts-1',
+        provider: 'elevenlabs',
+        model: 'eleven_multilingual_v2',
       },
     ],
     pricing: null,
-    rating: 2,
-    note: "not in OpenRouter's catalog (legacy dedicated TTS endpoint); cheapest OpenAI voice tier, fine for plain status-line speech, lower expressiveness than newer audio models",
+    rating: 4,
+    note: 'solid multilingual workhorse',
+  },
+  {
+    pool: 'tts',
+    position: 5,
+    name: 'Gemini 2.5 Pro Preview TTS',
+    vendor: 'Google',
+    routes: [
+      {
+        provider: 'google',
+        model: 'gemini-2.5-pro-preview-tts',
+      },
+    ],
+    pricing: null,
+    rating: 4,
+    note: "Google's current-gen TTS preview",
+  },
+  {
+    pool: 'tts',
+    position: 6,
+    name: 'ElevenLabs Flash v2.5',
+    vendor: 'ElevenLabs',
+    routes: [
+      {
+        provider: 'elevenlabs',
+        model: 'eleven_flash_v2_5',
+      },
+    ],
+    pricing: null,
+    rating: 3,
+    note: 'low-latency, gets the job done cheaply',
   },
   {
     pool: 'vision',
