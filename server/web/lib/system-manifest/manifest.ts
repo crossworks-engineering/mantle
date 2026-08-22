@@ -838,9 +838,27 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     description:
       'Ingest whole websites via the Firecrawl cloud API: web_map discovers URLs, web_crawl ' +
       'fetches pages as markdown into a per-site documentation collection. Owner-only: ' +
-      'outbound fetches that spend the operator\'s Firecrawl credits — NEVER granted to the ' +
+      "outbound fetches that spend the operator's Firecrawl credits — NEVER granted to the " +
       'team responder, and never wired to a cron or trigger.',
     toolSlugs: ['web_map', 'web_crawl'],
+  },
+  {
+    slug: 'model-curation',
+    name: 'Model curation',
+    description:
+      'The Curator’s kit: OpenRouter Data API reads (usage rankings, benchmarks, task ' +
+      'classifications, the priced model catalog) plus write access to the curated model ' +
+      'pools behind /models/pools. Advisory only — no tool here can change what any agent ' +
+      'or worker actually runs. Owner-side; never granted to the team responder.',
+    toolSlugs: [
+      'openrouter_rankings',
+      'openrouter_benchmarks',
+      'openrouter_task_classes',
+      'model_catalog',
+      'model_pool_list',
+      'model_pool_set',
+      'model_pool_remove',
+    ],
   },
   {
     slug: 'delegation',
@@ -1245,6 +1263,23 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     skillSlugs: [],
     isDelegate: true,
     params: { temperature: 0.3 },
+    priority: 100,
+  },
+  {
+    slug: 'curator',
+    name: 'Curator',
+    description:
+      'Model-market analyst — refreshes the curated model pools at /models/pools from live ' +
+      'OpenRouter usage rankings, benchmarks, and pricing. Advisory shortlists only; never ' +
+      'changes what any agent or worker runs.',
+    role: 'custom',
+    model: 'anthropic/claude-sonnet-5',
+    envModelVar: 'CURATOR_MODEL',
+    systemPrompt: AGENT_PROMPTS['curator']!,
+    toolGroupSlugs: ['model-curation'],
+    skillSlugs: [],
+    isDelegate: true,
+    params: { temperature: 0.2 },
     priority: 100,
   },
   {

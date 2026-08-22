@@ -43,7 +43,7 @@ const FALLBACK_SEARCH_MODEL = process.env.MANTLE_WEB_SEARCH_MODEL || 'perplexity
 
 /** An OpenRouter key for this owner — prefers the 'default' label, falls back
  *  to any openrouter key on file. */
-async function resolveOpenRouterKey(ownerId: string): Promise<string | null> {
+export async function resolveOpenRouterKey(ownerId: string): Promise<string | null> {
   const k = await getApiKey(ownerId, 'openrouter');
   if (k) return k;
   const [row] = await db

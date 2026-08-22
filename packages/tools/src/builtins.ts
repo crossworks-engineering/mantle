@@ -66,6 +66,7 @@ import { SANDBOX_TOOLS } from './builtins-sandbox';
 import { RECALL_TOOLS } from './builtins-recall';
 import { RESEARCH_TOOLS } from './builtins-research';
 import { CRAWL_TOOLS } from './builtins-crawl';
+import { CURATION_TOOLS } from './builtins-curation';
 import { NOTE_TOOLS } from './builtins-notes';
 import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
@@ -2058,6 +2059,10 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // retrieval depth). Owner-only (`crawl` tool group); spends the operator's
   // Firecrawl credits, so never wired to a cron/trigger.
   ...CRAWL_TOOLS,
+  // Model curation — OpenRouter Data API reads (rankings/benchmarks/task
+  // classes/catalog) + the curated_models pool store behind /models/pools.
+  // The Curator specialist's kit; advisory only, never touches live routing.
+  ...CURATION_TOOLS,
   // Notes — persist a markdown note (auto-indexed into the brain). Lets
   // Saskia keep research findings she's decided are worth saving.
   ...NOTE_TOOLS,

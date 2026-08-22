@@ -51,7 +51,7 @@ async function resolveFirecrawlKey(ownerId: string): Promise<string | null> {
 
 /** Belt-and-braces on top of the tool-group grant: outbound fetches that spend
  *  the owner's crawl credits never run for a team surface. */
-function refuseTeamSurface(ctx: { surface?: { kind?: string } }): ToolHandlerResult | null {
+export function refuseTeamSurface(ctx: { surface?: { kind?: string } }): ToolHandlerResult | null {
   if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
     return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
   }
