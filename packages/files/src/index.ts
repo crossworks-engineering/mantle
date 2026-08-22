@@ -126,3 +126,10 @@ export {
   type IndexingSetting,
   type EffectiveIndexing,
 } from './indexing';
+export {
+  isThumbable,
+  thumbnailFor,
+  deleteThumbnailsFor,
+  thumbsRoot,
+  THUMB_MAX_DIM,
+} from './thumbnail';

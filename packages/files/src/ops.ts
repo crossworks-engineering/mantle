@@ -43,6 +43,7 @@ import {
   deleteFile as deleteFileOnDisk,
 } from './index';
 import { derivedCountsOf, type DerivedCounts } from './derived-counts';
+import { deleteThumbnailsFor } from './thumbnail';
 import {
   db,
   draws,
@@ -851,6 +852,9 @@ export async function deleteFileById(args: {
   const filename = String(data.filename ?? '');
   await db.delete(nodes).where(eq(nodes.id, node.id));
   if (filename) await deleteFileOnDisk(node.path, filename);
+  // Reap the cached thumbnail derivatives too — keyed by content hash, so a
+  // deleted photo doesn't leave its preview behind. Best-effort.
+  void deleteThumbnailsFor(typeof data.sha256 === 'string' ? (data.sha256 as string) : null);
   // A filed forum upload points here by node_id (no FK — the node is a
   // derived artifact). Clear the pointer so its member serve route 404s
   // cleanly instead of chasing a deleted node. Cheap and almost always a

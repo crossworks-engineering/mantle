@@ -9,6 +9,7 @@ import {
   setIndexingMode,
   upsertFile,
 } from '@/lib/files';
+import { thumbnailFor } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 
@@ -31,6 +32,40 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
   const url = new URL(_req.url);
+  if (url.searchParams.get('thumb') === '1') {
+    // Cached image derivative for grid tiles. 404 = "no thumbnail possible"
+    // (not an image, decode failed, oversized) — the client falls back to the
+    // type icon; it must never treat this as an error state. Metadata first:
+    // a cache hit (disk or browser) must never read the original bytes.
+    const meta = await fileById({ ownerId: user.id, fileId: idParsed.data.id });
+    if (!meta) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    const sha = meta.sha256;
+    if (!sha) return NextResponse.json({ error: 'no thumbnail' }, { status: 404 });
+    const etag = `"${sha}.thumb"`;
+    if (_req.headers.get('if-none-match') === etag) {
+      return new Response(null, { status: 304, headers: { etag } });
+    }
+    const thumb = await thumbnailFor({
+      sha256: sha,
+      mimeType: meta.mimeType,
+      loadBytes: async () => {
+        const res = await readFileById({ ownerId: user.id, fileId: meta.id });
+        return res ? res.bytes : null;
+      },
+    });
+    if (!thumb) return NextResponse.json({ error: 'no thumbnail' }, { status: 404 });
+    return new Response(new Uint8Array(thumb), {
+      status: 200,
+      headers: {
+        'content-type': 'image/jpeg',
+        'content-length': String(thumb.byteLength),
+        // Keyed by content hash server-side; the URL is stable per file id, so
+        // cache privately and revalidate via etag when the content changes.
+        etag,
+        'cache-control': 'private, max-age=3600',
+      },
+    });
+  }
   if (url.searchParams.get('raw') === '1') {
     const res = await readFileById({ ownerId: user.id, fileId: idParsed.data.id });
     if (!res) return NextResponse.json({ error: 'not found' }, { status: 404 });
