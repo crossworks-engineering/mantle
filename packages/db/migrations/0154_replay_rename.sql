@@ -26,10 +26,31 @@ UPDATE "tool_groups" tg
       WHERE x."owner_id" = tg."owner_id" AND x."slug" = 'replay-search'
    );
 --> statement-breakpoint
-UPDATE "agents"
+-- The agent rewrites carry the SAME per-owner guard as the group renames
+-- above: they run only where the owner's `recall`/`recall-search` group was
+-- actually renamed (no old-slug row remains, a new-slug row exists). Where
+-- the guard skipped the rename, agents keep pointing at the owner's own
+-- surviving group instead of being silently repointed at a different one.
+UPDATE "agents" a
    SET "tool_group_slugs" = array_replace("tool_group_slugs", 'recall', 'replay')
- WHERE 'recall' = ANY("tool_group_slugs");
+ WHERE 'recall' = ANY("tool_group_slugs")
+   AND NOT EXISTS (
+     SELECT 1 FROM "tool_groups" tg
+      WHERE tg."owner_id" = a."owner_id" AND tg."slug" = 'recall'
+   )
+   AND EXISTS (
+     SELECT 1 FROM "tool_groups" tg
+      WHERE tg."owner_id" = a."owner_id" AND tg."slug" = 'replay'
+   );
 --> statement-breakpoint
-UPDATE "agents"
+UPDATE "agents" a
    SET "tool_group_slugs" = array_replace("tool_group_slugs", 'recall-search', 'replay-search')
- WHERE 'recall-search' = ANY("tool_group_slugs");
+ WHERE 'recall-search' = ANY("tool_group_slugs")
+   AND NOT EXISTS (
+     SELECT 1 FROM "tool_groups" tg
+      WHERE tg."owner_id" = a."owner_id" AND tg."slug" = 'recall-search'
+   )
+   AND EXISTS (
+     SELECT 1 FROM "tool_groups" tg
+      WHERE tg."owner_id" = a."owner_id" AND tg."slug" = 'replay-search'
+   );

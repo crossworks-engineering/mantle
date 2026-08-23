@@ -40,8 +40,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS "recall_nodes_map_slug_uq" ON "recall_nodes" (
 CREATE INDEX IF NOT EXISTS "recall_nodes_owner_kind_idx" ON "recall_nodes" ("owner_id","kind");
 --> statement-breakpoint
 -- Partial ANN index for recall_match: only prompt rows carry vectors, so the
--- index holds exactly the matchable set. ivfflat per repo convention; lists
--- is small because prompt pools are (tens, not thousands).
+-- index holds exactly the matchable set. HNSW, not ivfflat — migration 0060
+-- retired ivfflat everywhere precisely because it needs data to train, and
+-- this table is born empty; HNSW fills incrementally as prompts land.
 CREATE INDEX IF NOT EXISTS "recall_nodes_prompt_embedding_idx"
-  ON "recall_nodes" USING ivfflat ("embedding" vector_cosine_ops) WITH (lists = 10)
+  ON "recall_nodes" USING hnsw ("embedding" vector_cosine_ops)
   WHERE "kind" = 'prompt';

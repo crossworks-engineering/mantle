@@ -7,26 +7,30 @@
  *  - a map is a page tree whose ROOT carries the `recall` tag; a page tagged
  *    `prompt` compiles as a prompt (embedded for recall_match);
  *  - ANY member commit recompiles the WHOLE map — options cross-reference
- *    siblings, so single-page compiles cannot validate; maps are small by
- *    budget, so this is milliseconds;
+ *    siblings, so single-page compiles cannot validate; maps are capped at
+ *    RECALL_MAX_MAP_NODES members, so this stays milliseconds;
  *  - lint ERRORS block the COMPILE, never the commit: the pages publish, the
  *    map keeps serving its last good rev, and the report lands on the map row;
- *  - prompt embeddings are the one async step — rows land with a NULL vector
- *    (unmatchable but servable) and `embedPendingRecallPrompts` fills them in
- *    fire-and-forget after the write.
+ *  - the serving write is delete-then-one-batch-insert, so intra-map slug
+ *    handoffs (two pages swapping titles) can never trip the unique index
+ *    mid-transaction;
+ *  - prompt embeddings are the one async step — vectors are carried forward
+ *    for unchanged prompts and refilled fire-and-forget otherwise.
  *
  * Every entry point here is no-throw: a Recall failure must never take a
  * page write down with it.
  */
 
-import { and, eq, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
-import { db, recallMaps, recallNodes } from '@mantle/db';
+import { db, notifyNodeIngested, recallMaps, recallNodes } from '@mantle/db';
 import {
+  RECALL_MAX_MAP_NODES,
   RECALL_PROMPT_TAG,
   RECALL_TAG,
   assignRecallSlugs,
   parseRecallDoc,
+  recallSlug,
   type RecallLintIssue,
 } from '@mantle/content-core/recall-compile';
 
@@ -69,7 +73,8 @@ type MemberRow = {
 };
 
 /** Every page in the tree under `rootId` (inclusive), root first then by
- *  creation order — the order slugs are assigned in, so slugs stay stable. */
+ *  creation order (id as the tie-break, so bulk-imported same-instant pages
+ *  keep a deterministic slug order). */
 async function listMapMembers(ownerId: string, rootId: string): Promise<MemberRow[]> {
   const result = await db.execute(sql`
     with recursive down as (
@@ -78,13 +83,30 @@ async function listMapMembers(ownerId: string, rootId: string): Promise<MemberRo
       select n.id from nodes n join down d on n.parent_id = d.id
        where n.owner_id = ${ownerId} and n.type = 'page'
     )
-    select n.id, n.title, n.tags, p.doc, p.version, n.created_at
+    select n.id, n.title, n.tags, p.doc, p.version
       from down
       join nodes n on n.id = down.id
       join pages p on p.node_id = down.id
-     order by (down.id = ${rootId}) desc, n.created_at asc
+     order by (down.id = ${rootId}) desc, n.created_at asc, n.id asc
   `);
   return rowsOf<MemberRow>(result);
+}
+
+/** A map's public slug must be unique per owner (`recall_maps_owner_slug_uq`).
+ *  Two roots titled "Projects" would otherwise abort the second map's compile
+ *  transaction with no report — so the slug counts up until free, and a map
+ *  that already owns a slug for this base keeps it (stability over prettiness). */
+async function resolveMapSlug(ownerId: string, rootId: string, base: string): Promise<string> {
+  const taken = await db
+    .select({ id: recallMaps.id, slug: recallMaps.slug })
+    .from(recallMaps)
+    .where(eq(recallMaps.ownerId, ownerId));
+  const mine = taken.find((t) => t.id === rootId);
+  if (mine && (mine.slug === base || mine.slug.startsWith(`${base}-`))) return mine.slug;
+  const others = new Set(taken.filter((t) => t.id !== rootId).map((t) => t.slug));
+  let slug = base;
+  for (let n = 2; others.has(slug); n++) slug = `${base}-${n}`;
+  return slug;
 }
 
 export type RecallCompileResult = {
@@ -93,6 +115,34 @@ export type RecallCompileResult = {
   issues: RecallLintIssue[];
   nodeCount: number;
 };
+
+/** Record a failed compile on the map row without touching served nodes. */
+async function recordCompileFailure(
+  ownerId: string,
+  rootId: string,
+  title: string,
+  enterWhen: string,
+  issues: RecallLintIssue[],
+): Promise<void> {
+  const mapSlug = await resolveMapSlug(ownerId, rootId, recallSlug(title));
+  await db
+    .insert(recallMaps)
+    .values({
+      id: rootId,
+      ownerId,
+      slug: mapSlug,
+      title,
+      enterWhen,
+      nodeCount: 0,
+      lastCompileOk: false,
+      lastCompileReport: issues,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: recallMaps.id,
+      set: { lastCompileOk: false, lastCompileReport: issues, updatedAt: new Date() },
+    });
+}
 
 /**
  * Compile one map from its committed pages. Writes serving rows only when the
@@ -106,6 +156,19 @@ export async function compileRecallMap(
   const root = members[0];
   if (!root || root.id !== rootId) {
     return { ok: false, mapId: rootId, issues: [], nodeCount: 0 };
+  }
+
+  if (members.length > RECALL_MAX_MAP_NODES) {
+    const issues: RecallLintIssue[] = [
+      {
+        severity: 'error',
+        code: 'map-too-big',
+        message: `This tree has ${members.length} pages; a Recall map is capped at ${RECALL_MAX_MAP_NODES}. Split it, or untag pages that aren't part of the map.`,
+        pageId: rootId,
+      },
+    ];
+    await recordCompileFailure(ownerId, rootId, root.title, root.title, issues);
+    return { ok: false, mapId: rootId, issues, nodeCount: 0 };
   }
 
   const memberIds = new Set(members.map((m) => m.id));
@@ -177,58 +240,71 @@ export async function compileRecallMap(
 
   const errors = issues.filter((i) => i.severity === 'error');
   const enterWhen = compiled[0]!.parsed.useWhen ?? root.title;
-  const mapSlug = slugs.get(rootId)!;
 
   if (errors.length > 0) {
-    // Record the outcome; leave the served nodes exactly as they were.
-    await db
-      .insert(recallMaps)
-      .values({
-        id: rootId,
-        ownerId,
-        slug: mapSlug,
-        title: root.title,
-        enterWhen,
-        nodeCount: 0,
-        lastCompileOk: false,
-        lastCompileReport: issues,
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: recallMaps.id,
-        set: { lastCompileOk: false, lastCompileReport: issues, updatedAt: new Date() },
-      });
+    await recordCompileFailure(ownerId, rootId, root.title, enterWhen, issues);
     return { ok: false, mapId: rootId, issues, nodeCount: 0 };
   }
 
-  // Clean compile — carry forward embeddings whose inputs did not change.
+  const mapSlug = await resolveMapSlug(ownerId, rootId, recallSlug(root.title));
+  const isNewMap =
+    (
+      await db
+        .select({ id: recallMaps.id })
+        .from(recallMaps)
+        .where(eq(recallMaps.id, rootId))
+        .limit(1)
+    ).length === 0;
+
+  // Clean compile — carry forward vectors whose embed inputs did not change,
+  // THROUGH the delete-and-reinsert below (vectors ride the insert values).
   const existing = rowsOf<{
     id: string;
     title: string;
     body_md: string;
     use_when: string;
-    embedding: unknown;
+    embedding_text: string | null;
   }>(
     await db.execute(sql`
-      select id, title, body_md, use_when, (embedding is not null) as embedding
+      select id, title, body_md, use_when, embedding::text as embedding_text
         from recall_nodes where map_id = ${rootId} and owner_id = ${ownerId}
     `),
   );
-  const unchanged = new Set(
-    existing
-      .filter((e) => e.embedding === true)
-      .filter((e) => {
-        const c = compiled.find((x) => x.member.id === e.id);
-        return (
-          c &&
-          c.kind === 'prompt' &&
-          c.parsed.bodyMarkdown === e.body_md &&
-          (c.parsed.useWhen ?? '') === e.use_when &&
-          c.member.title === e.title
-        );
-      })
-      .map((e) => e.id),
-  );
+  const carried = new Map<string, number[]>();
+  for (const e of existing) {
+    if (!e.embedding_text) continue;
+    const c = compiled.find((x) => x.member.id === e.id);
+    if (
+      c &&
+      c.kind === 'prompt' &&
+      c.parsed.bodyMarkdown === e.body_md &&
+      (c.parsed.useWhen ?? '') === e.use_when &&
+      c.member.title === e.title
+    ) {
+      try {
+        carried.set(e.id, JSON.parse(e.embedding_text) as number[]);
+      } catch {
+        // Unparseable vector text — re-embed instead of carrying garbage.
+      }
+    }
+  }
+
+  const now = new Date();
+  const values = compiled.map((c) => ({
+    id: c.member.id,
+    ownerId,
+    mapId: rootId,
+    slug: slugs.get(c.member.id)!,
+    kind: c.kind,
+    title: c.member.title,
+    bodyMd: c.parsed.bodyMarkdown,
+    bodyChars: c.parsed.bodyMarkdown.length,
+    useWhen: c.parsed.useWhen ?? '',
+    options: c.options,
+    embedding: c.kind === 'prompt' ? (carried.get(c.member.id) ?? null) : null,
+    sourceVersion: c.member.version,
+    updatedAt: now,
+  }));
 
   await db.transaction(async (tx) => {
     await tx
@@ -242,7 +318,7 @@ export async function compileRecallMap(
         nodeCount: compiled.length,
         lastCompileOk: true,
         lastCompileReport: issues.length > 0 ? issues : null,
-        updatedAt: new Date(),
+        updatedAt: now,
       })
       .onConflictDoUpdate({
         target: recallMaps.id,
@@ -253,37 +329,59 @@ export async function compileRecallMap(
           nodeCount: compiled.length,
           lastCompileOk: true,
           lastCompileReport: issues.length > 0 ? issues : null,
-          updatedAt: new Date(),
+          updatedAt: now,
         },
       });
 
-    const keep = compiled.map((c) => c.member.id);
-    await tx
-      .delete(recallNodes)
-      .where(and(eq(recallNodes.mapId, rootId), notInArray(recallNodes.id, keep)));
+    // A root that got MOVED INSIDE this tree stops being a map of its own —
+    // without this its recall_maps row survives as a ghost catalog entry.
+    await tx.delete(recallMaps).where(
+      and(
+        eq(recallMaps.ownerId, ownerId),
+        inArray(
+          recallMaps.id,
+          members.filter((m) => m.id !== rootId).map((m) => m.id),
+        ),
+      ),
+    );
 
-    for (const c of compiled) {
-      const row = {
-        ownerId,
-        mapId: rootId,
-        slug: slugs.get(c.member.id)!,
-        kind: c.kind,
-        title: c.member.title,
-        bodyMd: c.parsed.bodyMarkdown,
-        bodyChars: c.parsed.bodyMarkdown.length,
-        useWhen: c.parsed.useWhen ?? '',
-        options: c.options,
-        sourceVersion: c.member.version,
-        updatedAt: new Date(),
-        // A changed prompt drops its vector; the pending-embed pass refills.
-        ...(c.kind !== 'prompt' || !unchanged.has(c.member.id) ? { embedding: null } : {}),
-      };
+    // Delete-then-batch-insert: clearing the map's rows first means an
+    // intra-map slug handoff (two pages swapping titles) can never trip the
+    // (map_id, slug) unique index mid-write. The ON CONFLICT (id) handles a
+    // page that moved IN from another map — its old row re-points here.
+    await tx.delete(recallNodes).where(eq(recallNodes.mapId, rootId));
+    if (values.length > 0) {
       await tx
         .insert(recallNodes)
-        .values({ id: c.member.id, ...row, embedding: null })
-        .onConflictDoUpdate({ target: recallNodes.id, set: row });
+        .values(values)
+        .onConflictDoUpdate({
+          target: recallNodes.id,
+          set: {
+            ownerId: sql`excluded.owner_id`,
+            mapId: sql`excluded.map_id`,
+            slug: sql`excluded.slug`,
+            kind: sql`excluded.kind`,
+            title: sql`excluded.title`,
+            bodyMd: sql`excluded.body_md`,
+            bodyChars: sql`excluded.body_chars`,
+            useWhen: sql`excluded.use_when`,
+            options: sql`excluded.options`,
+            embedding: sql`excluded.embedding`,
+            sourceVersion: sql`excluded.source_version`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        });
     }
   });
+
+  // A brand-new map pulls its members out of general content indexing (the
+  // extractor serves them metadata-only once the root is tagged) — re-ingest
+  // each once so already-indexed chunks are dropped. One-time, map-sized.
+  if (isNewMap) {
+    for (const m of members) {
+      void notifyNodeIngested(m.id);
+    }
+  }
 
   return { ok: true, mapId: rootId, issues, nodeCount: compiled.length };
 }
@@ -302,9 +400,33 @@ export async function removeRecallForPage(ownerId: string, pageId: string): Prom
     .where(and(eq(recallMaps.id, pageId), eq(recallMaps.ownerId, ownerId)));
 }
 
+/** Indexed probes: was anything ever compiled from these ids? Keeps the
+ *  non-recall fast path (every ordinary page write) at one or two cheap
+ *  queries instead of a fistful of no-op DELETEs. */
+async function hasCompiledRows(ownerId: string, ids: string[]): Promise<boolean> {
+  if (ids.length === 0) return false;
+  const [nodeHit] = await db
+    .select({ id: recallNodes.id })
+    .from(recallNodes)
+    .where(
+      and(
+        eq(recallNodes.ownerId, ownerId),
+        sql`(${inArray(recallNodes.id, ids)} or ${inArray(recallNodes.mapId, ids)})`,
+      ),
+    )
+    .limit(1);
+  if (nodeHit) return true;
+  const [mapHit] = await db
+    .select({ id: recallMaps.id })
+    .from(recallMaps)
+    .where(and(eq(recallMaps.ownerId, ownerId), inArray(recallMaps.id, ids)))
+    .limit(1);
+  return !!mapHit;
+}
+
 /** Embed prompt rows whose vector is missing. Fire-and-forget from the write
- *  hooks; also safe to call from a sweep. Dynamic import so the adapter
- *  registry stays out of module load (extractor convention). */
+ *  hooks; also safe to call from a sweep (none exists yet — S3 wires one).
+ *  Dynamic import so the adapter registry stays out of module load. */
 export async function embedPendingRecallPrompts(ownerId: string): Promise<number> {
   const pending = await db
     .select({
@@ -341,22 +463,22 @@ export async function embedPendingRecallPrompts(ownerId: string): Promise<number
 }
 
 /**
- * The write hook: called after a page commit / title / tag change. Finds the
- * tree root; compiles when the root carries `recall`, cleans up when it does
- * not. Never throws — Recall must not take a page write down.
+ * The write hook: called after a page create / commit / title / tag change.
+ * Finds the tree root; compiles when the root carries `recall`, cleans up
+ * when it does not. Never throws — Recall must not take a page write down.
  */
 export async function recallAfterPageWrite(ownerId: string, pageId: string): Promise<void> {
   try {
     const root = await findPageRoot(ownerId, pageId);
-    if (!root) {
-      await removeRecallForPage(ownerId, pageId);
-      return;
-    }
-    if (!root.tags.includes(RECALL_TAG)) {
-      // Not (or no longer) a map — clear anything previously compiled from
-      // this page or (if it was a root) its map.
-      await removeRecallForPage(ownerId, pageId);
-      if (root.id !== pageId) await removeRecallForPage(ownerId, root.id);
+    if (!root || !root.tags.includes(RECALL_TAG)) {
+      // Not (or no longer) a map member. The common case — an ordinary page
+      // write — exits after one existence probe; cleanup runs only when
+      // something was actually compiled from this page or its root before.
+      const ids = root && root.id !== pageId ? [pageId, root.id] : [pageId];
+      if (await hasCompiledRows(ownerId, ids)) {
+        await removeRecallForPage(ownerId, pageId);
+        if (root && root.id !== pageId) await removeRecallForPage(ownerId, root.id);
+      }
       return;
     }
     await compileRecallMap(ownerId, root.id);
@@ -411,4 +533,12 @@ export async function getRecallMap(ownerId: string, rootId: string) {
     .from(recallNodes)
     .where(and(eq(recallNodes.mapId, rootId), eq(recallNodes.ownerId, ownerId)));
   return { map, nodes: nodesRows };
+}
+
+/** Is this page inside a Recall map's tree? Used by the extractor to serve
+ *  such pages metadata-only — their content's serving surface is the compiled
+ *  rows, and full indexing would leak prompt text into general search. */
+export async function isRecallTreePage(ownerId: string, pageId: string): Promise<boolean> {
+  const root = await findPageRoot(ownerId, pageId);
+  return !!root && root.tags.includes(RECALL_TAG);
 }

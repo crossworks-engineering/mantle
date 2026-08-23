@@ -200,9 +200,11 @@ const recall_go: BuiltinToolDef = {
         .from(recallNodes)
         .where(eq(recallNodes.mapId, map.id))
         .orderBy(recallNodes.slug);
+      const shown = siblings.slice(0, 40);
+      const more = siblings.length > shown.length ? `, … (${siblings.length} total)` : '';
       return {
         ok: false,
-        error: `No node '${target}' in map '${map.slug}'. Its nodes: ${siblings.map((s) => s.slug).join(', ')}.`,
+        error: `No node '${target}' in map '${map.slug}'. Its nodes: ${shown.map((s) => s.slug).join(', ')}${more}.`,
       };
     }
     return { ok: true, output: nodePayload(map, row) };
@@ -243,16 +245,17 @@ const recall_match: BuiltinToolDef = {
     }
 
     const rows = (await db.execute(sql`
-      select n.slug, n.title, n.use_when, m.slug as map_slug,
-             1 - (n.embedding <=> ${vec}::vector) as score
-        from ${recallNodes} n
-        join ${recallMaps} m on m.id = n.map_id
+      select ${recallNodes.slug}, ${recallNodes.title}, ${recallNodes.useWhen},
+             ${recallMaps.slug} as map_slug,
+             1 - (${recallNodes.embedding} <=> ${vec}::vector) as score
+        from ${recallNodes}
+        inner join ${recallMaps} on ${recallMaps.id} = ${recallNodes.mapId}
        where ${and(
          eq(recallNodes.ownerId, ctx.ownerId),
          eq(recallNodes.kind, 'prompt'),
          isNotNull(recallNodes.embedding),
        )}
-       order by n.embedding <=> ${vec}::vector
+       order by ${recallNodes.embedding} <=> ${vec}::vector
        limit ${MATCH_LIMIT}
     `)) as unknown as
       | { slug: string; title: string; use_when: string; map_slug: string; score: number }[]

@@ -63,7 +63,21 @@ watch — inside and outside, from one store.**
   ROOT's use-when line becomes the catalog's `enter_when`.
 - **Budget** — a node body (rendered markdown, Options excluded) is capped
   at 6,000 characters (`RECALL_BODY_CHAR_BUDGET`). Character-based on
-  purpose; the repo has no tokenizer and does not want one.
+  purpose; the repo has no tokenizer and does not want one. A map is capped
+  at 100 members (`RECALL_MAX_MAP_NODES`) — the compiler recompiles the
+  whole map per member commit, and past that a "map" is a corpus.
+- **The `recall` tag is an OWNER GESTURE.** Agent-facing page tools strip
+  it (`builtins-pages.ts`, `stripOwnerOnlyTags`): agents may draft map
+  pages freely, but only the owner — in the editor — turns a tree into a
+  served map. That single human act is what backs the security model's
+  "owner-authored only" claim; without it, an injected agent could plant a
+  prompt that recall_match would then serve to every caller.
+- **Source pages leave general search.** Once a tree is a map, the
+  extractor indexes its pages metadata-only (title + tags — the secrets
+  posture), so prompt and map text never surfaces via `search_chunks`,
+  ambient team-turn retrieval, or node search. The compiled rows are the
+  ONLY serving surface for the content. New maps trigger a one-time
+  re-ingest of their members to drop already-indexed chunks.
 
 ## The compiler
 
@@ -80,8 +94,12 @@ malformed Options section, body over budget, prompt without use-when,
 index without options, option target outside the map's tree. Warnings
 (never block): orphan nodes, a prompt-tagged root with sub-pages.
 
-**Slugs** are kebab-cased titles, deduped `-2`, `-3` in tree order
-(root first, then creation order). The map's slug is its root's.
+**Slugs** are kebab-cased titles, deduped against every emitted slug
+(`-2`, `-3`, counting up until free) in tree order — root first, then
+creation order with id as tie-break. The map's own slug additionally
+dedupes against the owner's other maps. The serving write is
+delete-then-one-batch-insert, so slug handoffs between renamed pages can
+never trip the unique index mid-transaction.
 
 **Embeddings are the one async step.** Prompt rows land with a NULL vector
 — servable by slug immediately, matchable seconds later once
@@ -93,5 +111,7 @@ re-embeds; unchanged prompts keep theirs.
 
 Everything expensive happens at commit. A serving read (S2's
 `recall_open`/`recall_go`) is one indexed row — no ProseMirror parsing, no
-joins, no LLM. `recall_match` is one ANN probe on a partial ivfflat index
-that only contains prompt rows.
+joins, no LLM. `recall_match` is one ANN probe on a partial HNSW index
+that only contains prompt rows — plus one embed of the query line, which
+is the real latency variable (a provider call on cache miss; the DB side
+is sub-millisecond).

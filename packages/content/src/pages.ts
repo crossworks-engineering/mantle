@@ -381,7 +381,7 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
   const id = randomUUID();
   const path = parentId ? childPagePath(basePath, id) : PAGES_ROOT_LABEL;
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [node] = await tx
       .insert(nodes)
       .values({
@@ -403,6 +403,11 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
     await tx.insert(pages).values({ nodeId: node.id, doc, docText });
     return detailOf(node, doc);
   });
+
+  // Recall: a create lands a COMMITTED doc and tags in one write — a page
+  // born into a `recall` tree (or born as one) must compile like a commit.
+  await recallAfterPageWrite(ownerId, result.id);
+  return result;
 }
 
 /** Immediate children of a page — the tree's expand-one-level read, ordered by

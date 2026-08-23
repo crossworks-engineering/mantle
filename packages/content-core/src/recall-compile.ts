@@ -39,6 +39,12 @@ export const RECALL_PROMPT_TAG = 'prompt';
  *  keeps this package dependency-free. */
 export const RECALL_BODY_CHAR_BUDGET = 6000;
 
+/** Hard cap on members per map. The compiler recompiles the WHOLE map on any
+ *  member commit, so an unbounded tree turns every save into a bulk job —
+ *  past this, the lint refuses (last good rev keeps serving). A map this big
+ *  has stopped being a map anyway. */
+export const RECALL_MAX_MAP_NODES = 100;
+
 export type RecallOption = {
   label: string;
   /** The target page's node id, from `page:`/`mention:node:` refs or a
@@ -57,6 +63,7 @@ export type RecallLintIssue = {
     | 'prompt-no-use-when'
     | 'index-no-options'
     | 'target-outside-map'
+    | 'map-too-big'
     | 'orphan-node';
   message: string;
   /** Which page the issue is about (filled by the map-level compiler when it
@@ -113,28 +120,22 @@ function extractUseWhen(body: PMNode[]): string | null {
   return null;
 }
 
-/** Pull the option target out of one list item: a `page:` link mark, a
- *  `mention:node:` chip, or a child-page card — whichever appears first. */
-function findTarget(node: PMNode): { id: string; label: string } | null {
-  if (node.type === 'text') {
-    for (const mark of node.marks ?? []) {
-      if (mark.type !== 'link') continue;
-      const m = PAGE_HREF.exec(s(mark.attrs?.href));
-      if (m) return { id: m[1]!, label: s(node.text).trim() };
-    }
-    return null;
+/** Flatten a list item's leaf nodes in document order — the basis for the
+ *  positional label/use-when split (a string search would misfire when the
+ *  label's text also appears elsewhere in the item). */
+function flattenLeaves(node: PMNode, out: PMNode[] = []): PMNode[] {
+  if (node.type === 'text' || node.type === 'mention' || node.type === 'childPage') {
+    out.push(node);
+    return out;
   }
-  if (node.type === 'mention') {
-    const ref = s(node.attrs?.ref);
-    if (ref === 'node') return { id: s(node.attrs?.id), label: s(node.attrs?.label).trim() };
-    return null;
-  }
-  if (node.type === 'childPage') {
-    return { id: s(node.attrs?.pageId), label: s(node.attrs?.title).trim() };
-  }
-  for (const child of node.content ?? []) {
-    const hit = findTarget(child);
-    if (hit) return hit;
+  for (const child of node.content ?? []) flattenLeaves(child, out);
+  return out;
+}
+
+function pageLinkHref(node: PMNode): string | null {
+  if (node.type !== 'text') return null;
+  for (const mark of node.marks ?? []) {
+    if (mark.type === 'link' && PAGE_HREF.test(s(mark.attrs?.href))) return s(mark.attrs?.href);
   }
   return null;
 }
@@ -146,7 +147,42 @@ function parseOptionItem(
   item: PMNode,
   ordinal: number,
 ): { option?: RecallOption; issue?: RecallLintIssue } {
-  const target = findTarget(item);
+  const leaves = flattenLeaves(item);
+
+  // Find the target span: contiguous text runs sharing one page-link href,
+  // or a single mention chip / child-page card.
+  let target: { id: string; label: string } | null = null;
+  let afterAt = leaves.length;
+  for (let i = 0; i < leaves.length; i++) {
+    const leaf = leaves[i]!;
+    const href = pageLinkHref(leaf);
+    if (href) {
+      const id = PAGE_HREF.exec(href)![1]!;
+      let end = i;
+      while (end + 1 < leaves.length && pageLinkHref(leaves[end + 1]!) === href) end++;
+      target = {
+        id,
+        label: leaves
+          .slice(i, end + 1)
+          .map(inlineText)
+          .join('')
+          .trim(),
+      };
+      afterAt = end + 1;
+      break;
+    }
+    if (leaf.type === 'mention' && s(leaf.attrs?.ref) === 'node') {
+      target = { id: s(leaf.attrs?.id), label: s(leaf.attrs?.label).trim() };
+      afterAt = i + 1;
+      break;
+    }
+    if (leaf.type === 'childPage') {
+      target = { id: s(leaf.attrs?.pageId), label: s(leaf.attrs?.title).trim() };
+      afterAt = i + 1;
+      break;
+    }
+  }
+
   if (!target || !target.id) {
     return {
       issue: {
@@ -156,10 +192,7 @@ function parseOptionItem(
       },
     };
   }
-  const full = inlineText(item).trim();
-  const labelAt = target.label ? full.indexOf(target.label) : -1;
-  const after = labelAt >= 0 ? full.slice(labelAt + target.label.length) : full;
-  const useWhen = after.replace(SEPARATOR_RE, '').trim();
+  const useWhen = leaves.slice(afterAt).map(inlineText).join('').replace(SEPARATOR_RE, '').trim();
   if (!useWhen) {
     return {
       issue: {
@@ -256,15 +289,18 @@ export function recallSlug(title: string): string {
 }
 
 /** Assign unique slugs in tree order: first keeps the bare slug, collisions
- *  get -2, -3, … — stable as long as titles and order are stable. */
+ *  count up until FREE — checked against every emitted slug, so a literal
+ *  title like "Setup 2" can never collide with a generated "setup-2". Stable
+ *  as long as titles and order are stable. */
 export function assignRecallSlugs(titles: { id: string; title: string }[]): Map<string, string> {
-  const taken = new Map<string, number>();
+  const used = new Set<string>();
   const out = new Map<string, string>();
   for (const { id, title } of titles) {
     const base = recallSlug(title);
-    const n = taken.get(base) ?? 0;
-    taken.set(base, n + 1);
-    out.set(id, n === 0 ? base : `${base}-${n + 1}`);
+    let slug = base;
+    for (let n = 2; used.has(slug); n++) slug = `${base}-${n}`;
+    used.add(slug);
+    out.set(id, slug);
   }
   return out;
 }

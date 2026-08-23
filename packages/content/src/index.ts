@@ -468,6 +468,7 @@ export {
   recallAfterPageMove,
   recallAfterPageWrite,
   removeRecallForPage,
+  isRecallTreePage,
   type RecallCompileResult,
 } from './recall';
 

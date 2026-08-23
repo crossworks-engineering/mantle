@@ -127,3 +127,28 @@ describe('slugs', () => {
     expect(slugs.get('3')).toBe('setup-3');
   });
 });
+
+describe('audit regressions', () => {
+  it('slug dedupe never collides with a literal numbered title', () => {
+    const slugs = assignRecallSlugs([
+      { id: '1', title: 'Setup' },
+      { id: '2', title: 'Setup 2' },
+      { id: '3', title: 'Setup' },
+    ]);
+    expect(new Set(slugs.values()).size).toBe(3);
+    expect(slugs.get('1')).toBe('setup');
+    expect(slugs.get('2')).toBe('setup-2');
+    expect(slugs.get('3')).toBe('setup-3');
+  });
+
+  it('use-when survives the label text appearing before the link', () => {
+    const doc = markdownToDoc(
+      'Body.\n\n## Options\n\n- Deploy notes: [Deploy](page:aaa) — use when shipping\n',
+    );
+    const parsed = parseRecallDoc(doc);
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.options).toEqual([
+      { label: 'Deploy', targetPageId: 'aaa', useWhen: 'use when shipping' },
+    ]);
+  });
+});
