@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeAndSortTurns, parseWindowBound, type RecallTurn } from './builtins-recall';
+import { mergeAndSortTurns, parseWindowBound, type RecallTurn } from './builtins-replay';
 
 describe('parseWindowBound', () => {
   it('widens a bare date to the start of the UTC day', () => {

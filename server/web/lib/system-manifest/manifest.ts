@@ -765,17 +765,20 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['formula_delete'],
   },
   {
-    slug: 'recall',
-    name: 'Recall',
-    description: 'Replay a past conversation window (the responder-facing half of recall).',
+    // Renamed from `recall` 2026-08-23 (migration 0154 converges live rows):
+    // "Recall" now names the memory-map system (docs/recall.md); Remy's
+    // conversation-replay feature is "Replay" (docs/replay.md).
+    slug: 'replay',
+    name: 'Replay',
+    description: 'Replay a past conversation window (the responder-facing half of Replay).',
     // Just the replay tool — the persona holds this so it can quote past
     // conversations. Finding the window (find_window) is Remy's specialist job
-    // and rides the separate `recall-search` group (it's denied to the persona).
-    toolSlugs: ['recall_window'],
+    // and rides the separate `replay-search` group (it's denied to the persona).
+    toolSlugs: ['replay_window'],
   },
   {
-    slug: 'recall-search',
-    name: 'Recall search',
+    slug: 'replay-search',
+    name: 'Replay search',
     description: 'Locate the right past-conversation window to replay (Remy only).',
     toolSlugs: ['find_window'],
   },
@@ -944,7 +947,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'team-read',
     name: 'Team Chat (member-facing)',
     description:
-      "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) — including `show_image`, which renders a file the member could already read — plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner's `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner's private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), recall_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
+      "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) — including `show_image`, which renders a file the member could already read — plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner's `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner's private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), replay_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
     toolSlugs: [
       // memory-core reads
       'search_nodes',
@@ -1053,7 +1056,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // delegated to the Pages / Ledger specialists (no `pages`/`tables`/
     // `page-admin`; `page-share` kept so it can publish). The specialist_routing
     // skill carries the light-vs-heavy policy. NOT granted: the `*-admin`
-    // deletes (deliberate-only), `recall-search`/`research`/`terminal`
+    // deletes (deliberate-only), `replay-search`/`research`/`terminal`
     // (specialist — research/reader stay delegated ON PURPOSE: web content is
     // untrusted input, and the no-write-tools child is the injection firewall).
     // `federation` IS granted: peer reads are scoped by the answering side's
@@ -1069,7 +1072,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'tasks',
       'contacts',
       'journal',
-      'recall',
+      'replay',
       'email',
       'persona',
       'media-workers',
@@ -1242,9 +1245,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-sonnet-5',
     envModelVar: 'REMY_MODEL',
     systemPrompt: AGENT_PROMPTS['remy']!,
-    // P6: `recall` (replay) + `recall-search` (find_window, Remy's specialty) +
+    // P6: `replay` (replay_window) + `replay-search` (find_window, Remy's specialty) +
     // `memory-core` for the node lookups it cites.
-    toolGroupSlugs: ['recall', 'recall-search', 'memory-core'],
+    toolGroupSlugs: ['replay', 'replay-search', 'memory-core'],
     skillSlugs: [],
     isDelegate: true,
     params: { temperature: 0.2 },

@@ -240,7 +240,7 @@ describe('system manifest integrity', () => {
     // Deliberate exclusions (see team-read group description).
     for (const forbidden of [
       'export_node', // bulk exfiltration ease
-      'recall_window', // replays the OWNER's private conversations
+      'replay_window', // replays the OWNER's private conversations
       'invoke_agent', // no delegation
       'run_terminal',
       'sandbox_exec',

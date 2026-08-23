@@ -13,8 +13,8 @@ Companion docs:
 - [`architecture.md`](./architecture.md) §9b (Telegram responder), §9g (web
   `/assistant`), §9b' (digests), the per-surface detail, now pointing here for the
   unified model.
-- [`recall.md`](./recall.md), "Remy" reads `conversation-digest` notes; her
-  `find_window` matches by tag (re-key-safe) and `recall_window` reads web from
+- [`replay.md`](./replay.md), "Remy" reads `conversation-digest` notes; her
+  `find_window` matches by tag (re-key-safe) and `replay_window` reads web from
   `assistant_messages` (channel='web') + Telegram from `telegram_messages`.
 - [`ai-workers.md`](./ai-workers.md) §5, the `summarizer` worker, now driven from
   a single per-agent entry point (`summarizeAgentConversation`).
@@ -317,7 +317,7 @@ an agent to one login. Moving parts:
   thread payload carries `assigned: {slug, assignedAt}`; the client adopts a
   newer `assignedAt` once against a `localStorage` watermark.
 - **Not privacy.** Content stays keyed to the anchor, every login sees every
-  agent in the picker, and `recall_window` replays any thread. The brain is
+  agent in the picker, and `replay_window` replays any thread. The brain is
   still the trust boundary; this is thread separation only, and the UI says so.
 - **Releasing never deletes.** `DELETE /api/users/[id]/agent` only clears the
   binding; the agent and its archive stay, per the reasoning in migration 0127.
@@ -340,7 +340,7 @@ an agent to one login. Moving parts:
 - **Digest re-keying**: see §6; old digests must gain `agent_id` or be migrated.
 - **Recall / `find_window`**: VERIFIED: Remy's `find_window` matches digests purely by
   the `conversation-digest` tag + period + embedding (it only reads `data.source` as a
-  display label), so the re-key to `data.agent_id` is safe. `recall_window`, however,
+  display label), so the re-key to `data.agent_id` is safe. `replay_window`, however,
   replayed raw turns from BOTH `telegram_messages` AND `assistant_messages`, after
   cutover a Telegram turn lives in both, so `surface='all'` would double-count it. Fixed
   in Phase 3: the `assistant_messages` branch is now filtered to `channel='web'` (Telegram
@@ -368,7 +368,7 @@ committing per phase on `main` with `pnpm --filter @mantle/web run typecheck`:
 3  Telegram cutover               apps/agent/src/main.ts (inbound+outbound recordTurn,  ✅
                                    loadConversationContext) + summarizeChat removed
    + trigger swap                 0072_unified_conversation_triggers.sql                ✅
-   + recall_window double-count   packages/tools/src/builtins-recall.ts (channel='web') ✅
+   + replay_window double-count   packages/tools/src/builtins-recall.ts (channel='web') ✅
 5  UI: channel badge + attachments apps/web/.../assistant-client.tsx + messages API  ✅
 6  backfill + digest re-key       scripts/backfill-conversation.ts (pnpm backfill:conversation)  ✅
 7  docs                           promote this file from DESIGN → as-built; update architecture.md §9b/§9g

@@ -301,7 +301,7 @@ export async function setEnabled(
  * people typing at once from landing in one interleaved thread.
  *
  * Thread separation, NOT privacy: `userId` here is still the anchor, every
- * agent stays visible to every login, and recall_window replays any of them.
+ * agent stays visible to every login, and replay_window replays any of them.
  * ------------------------------------------------------------------------- */
 
 /**

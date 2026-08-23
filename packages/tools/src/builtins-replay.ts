@@ -9,14 +9,14 @@
  *
  *   find_window(topic, from?, to?)  → candidate time windows (from conversation
  *                                     digests; digests are the routing directory)
- *   recall_window(from, to)         → the raw turns in that window, chronological
+ *   replay_window(from, to)         → the raw turns in that window, chronological
  *
  * Design notes:
  * - The archive already exists: raw turns live permanently in
  *   `telegram_messages` (`sent_at`) and `assistant_messages` (`created_at`);
  *   digests summarise but never delete. So this is a read layer, nothing new
  *   to store.
- * - recall_window replays the DIALOGUE by default. Pass `include_traces` to
+ * - replay_window replays the DIALOGUE by default. Pass `include_traces` to
  *   ALSO fold in the trace rows for that window — what tools ran and what they
  *   returned — recovering some of the model's hidden working state that the
  *   dialogue alone doesn't show.
@@ -36,7 +36,7 @@ import { embed } from '@mantle/embeddings';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
 
-// ─── pure helpers (unit-tested in builtins-recall.test.ts) ──────────────────
+// ─── pure helpers (unit-tested in builtins-replay.test.ts) ──────────────────
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -179,7 +179,7 @@ const find_window: BuiltinToolDef = {
   readOnly: true,
   name: 'Find a conversation window',
   description:
-    "Locate WHEN a past topic was discussed. Semantic search over conversation digests (the rolled-up summaries of older chats), returning candidate time windows each with a topic, summary, and period_start/period_end. Use this first when the user vaguely remembers discussing something ('last week we talked about a Bible topic') but not exactly when — then call `recall_window` with the best window's dates to read the actual turns. Optional `from`/`to` (YYYY-MM-DD or ISO) narrow to a rough date range; omit them to search all of time.",
+    "Locate WHEN a past topic was discussed. Semantic search over conversation digests (the rolled-up summaries of older chats), returning candidate time windows each with a topic, summary, and period_start/period_end. Use this first when the user vaguely remembers discussing something ('last week we talked about a Bible topic') but not exactly when — then call `replay_window` with the best window's dates to read the actual turns. Optional `from`/`to` (YYYY-MM-DD or ISO) narrow to a rough date range; omit them to search all of time.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -274,17 +274,17 @@ const find_window: BuiltinToolDef = {
         windows,
         next:
           windows.length > 0
-            ? 'Pick the best window and call recall_window with its period_start and period_end to read the raw turns.'
-            : 'No matching digests. Conversations are only digested once a chat passes the summarize threshold, so very recent discussion may not be here yet — try recall_window directly with a rough date range.',
+            ? 'Pick the best window and call replay_window with its period_start and period_end to read the raw turns.'
+            : 'No matching digests. Conversations are only digested once a chat passes the summarize threshold, so very recent discussion may not be here yet — try replay_window directly with a rough date range.',
       },
     };
   },
 };
 
-// ─── recall_window ──────────────────────────────────────────────────────────
+// ─── replay_window ──────────────────────────────────────────────────────────
 
-const recall_window: BuiltinToolDef = {
-  slug: 'recall_window',
+const replay_window: BuiltinToolDef = {
+  slug: 'replay_window',
   readOnly: true,
   name: 'Recall a conversation window',
   description:
@@ -428,4 +428,4 @@ const recall_window: BuiltinToolDef = {
   },
 };
 
-export const RECALL_TOOLS: BuiltinToolDef[] = [find_window, recall_window];
+export const REPLAY_TOOLS: BuiltinToolDef[] = [find_window, replay_window];

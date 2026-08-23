@@ -143,7 +143,7 @@ seeds the shared skills first (`page_editing`/`tool_grounding`/`voice_reply`,
 |---|---|---|
 | **Pages** (`pages`) | document authoring/editing | backs the `/pages` Assist panel; Saskia delegate |
 | **Ledger** (`tables`) | typed-grid/data | backs the `/tables` Assist panel; Saskia delegate |
-| **Remy** (`remy`) | memory recall | Saskia delegate (`find_window` → `recall_window`) |
+| **Remy** (`remy`) | memory recall | Saskia delegate (`find_window` → `replay_window`) |
 | **Researcher** (`researcher`) | web search | Saskia delegate (Perplexity Sonar) |
 | **Coder** (`coder`) | code specialist | responder; delegates to pages/tables |
 

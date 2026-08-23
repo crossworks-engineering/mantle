@@ -63,8 +63,8 @@ Companion docs:
   agents who the user is. Indexed like notes **and** distilled into an
   always-on identity block (`buildIdentityContext`) injected into every agent
   turn (opt-out via `AgentMemoryConfig.inject_journal`). Deterministic, no LLM.
-- [`recall.md`](./recall.md), "Remy", the memory-recall agent: time-windowed
-  replay of past conversations (`find_window` → `recall_window`) via the
+- [`replay.md`](./replay.md), "Remy", the memory-recall agent: time-windowed
+  replay of past conversations (`find_window` → `replay_window`) via the
   `invoke_agent` delegation path. Lossless paging vs. lossy digests.
 - [`research.md`](./research.md), "Researcher", the web-search agent: the
   outward twin of Remy. `web_search` (Perplexity Sonar via OpenRouter) wrapped
@@ -830,7 +830,7 @@ Four guardrails ([`packages/tools/src/invoke-agent-guards.ts`](../packages/tools
 use of this path is the memory-recall agent: Saskia delegates an
 explicit "recall what we discussed last week" request to `remy`
 (slug), which uses two recall builtins (`find_window` over digests →
-`recall_window` over the raw message archive) to replay the actual
+`replay_window` over the raw message archive) to replay the actual
 turns and hand back a synthesis. Remy is an `agents` row precisely
 because recall needs a tool loop (`invoke_agent` only targets
 `agents`); it runs at depth 2 so it iterates sub-ranges itself rather
@@ -843,7 +843,7 @@ owner's OpenRouter key) and returns a cited synthesis. Saskia decides
 whether to keep it via `note_create` (then the extractor indexes it).
 Both targets are wired into the responder's `delegate_to` by their seed
 scripts (`pnpm -C apps/web seed:remy` / `seed:researcher`). Full detail
-in [`recall.md`](./recall.md).
+in [`replay.md`](./replay.md).
 
 **Shipped delegation target, "Pages" (document authoring + editing).**
 The third delegate, scoped to the `/pages` surface. Saskia hands off
