@@ -783,6 +783,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['find_window'],
   },
   {
+    slug: 'recall-read',
+    name: 'Recall',
+    description:
+      "Walk the brain's Recall maps and match its prompts — the owner-authored memory-map system (docs/recall.md). Read-only: the four tools serve compiled rows and never write.",
+    toolSlugs: ['recall_index', 'recall_open', 'recall_go', 'recall_match'],
+  },
+  {
     slug: 'research',
     name: 'Web research',
     description:
@@ -1073,6 +1080,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'contacts',
       'journal',
       'replay',
+      'recall-read',
       'email',
       'persona',
       'media-workers',

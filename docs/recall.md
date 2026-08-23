@@ -5,10 +5,33 @@
 > name, is now **[Replay](./replay.md)** (`replay_window`, groups `replay` /
 > `replay-search`; migration 0154).
 
-S1 (this document's scope): the serving tables and the compiler. The MCP
-tools, the flight recorder, internal auto-match, and the viewer are S2–S5 —
-see the design page "Recall — architecture plan v1" on the dev brain
-(roadmap task `97cf7850`).
+Built so far: S1 (serving tables + compiler, below) and S2 (the four
+serving tools + the tier-1 hook). The flight recorder, internal
+auto-match, and the viewer are S3–S5 — see the design page "Recall —
+architecture plan v1" on the dev brain (roadmap task `97cf7850`).
+
+## The serving tools (S2)
+
+Four read-only builtins (`packages/tools/src/builtins-recall.ts`), granted
+via the `recall-read` tool group (held by the persona; grantable to any
+agent) and registered on the MCP surface for external callers:
+
+- `recall_index()` — the catalog: each map's slug, title, `enter_when`.
+- `recall_open(map)` — the map's index node: content + options.
+- `recall_go(map, target)` — any node by slug: content + its options.
+- `recall_match(need)` — top ≤3 PROMPTS by meaning: pointers only
+  (`map`, `target`, `use_when`, score); open the winner with `recall_go`.
+
+All four accept an optional `intent` line — the flight-recorder field,
+recorded from S3. A map whose newest edits failed lint serves its last
+good rev with an honest note attached.
+
+**The tier-1 hook**: `MANTLE_MCP_INSTRUCTIONS` (packages/mcp-core) rides
+both MCP entry points (stdio + `/api/mcp`) — the ONE surface a client
+auto-loads besides the tool list. It tells every connecting agent that
+Recall exists, to `recall_match` before a distinct task, and to pass
+`intent`. Static by design: the live catalog is one `recall_index` call
+away, so a static string can never go stale against it.
 
 **The spec in one sentence: maps you walk, prompts you match, recalls you
 watch — inside and outside, from one store.**
