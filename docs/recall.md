@@ -66,10 +66,10 @@ watch — inside and outside, from one store.**
   purpose; the repo has no tokenizer and does not want one. A map is capped
   at 100 members (`RECALL_MAX_MAP_NODES`) — the compiler recompiles the
   whole map per member commit, and past that a "map" is a corpus.
-- **The `recall` tag is an OWNER GESTURE.** Agent-facing page tools strip
-  it (`builtins-pages.ts`, `stripOwnerOnlyTags`): agents may draft map
-  pages freely, but only the owner — in the editor — turns a tree into a
-  served map. That single human act is what backs the security model's
+- **The `recall` and `prompt` tags are OWNER GESTURES.** Agent-facing page
+  tools strip both (`builtins-pages.ts`, `stripOwnerOnlyTags`): agents may
+  draft map and prompt pages freely, but only the owner — in the editor —
+  turns a tree into a served map or a page into an auto-matchable prompt. That single human act is what backs the security model's
   "owner-authored only" claim; without it, an injected agent could plant a
   prompt that recall_match would then serve to every caller.
 - **Source pages leave general search.** Once a tree is a map, the

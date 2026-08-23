@@ -56,12 +56,14 @@ import type { ToolPrecondition } from './types';
 
 // Shared referential preconditions (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING page the owner holds.
-/** The `recall` tag is an OWNER GESTURE — it is what turns a page tree into
- *  a served Recall map, and the security model (docs/recall.md) rests on a
- *  human making that call in the editor. Agent-facing page tools therefore
- *  strip it: agents can DRAFT map pages freely; the owner grants map-hood by
- *  tagging the root themselves. */
-const OWNER_ONLY_TAGS = new Set(['recall']);
+/** The `recall` and `prompt` tags are OWNER GESTURES — `recall` turns a page
+ *  tree into a served map, `prompt` makes a page auto-matchable by
+ *  recall_match, and the security model (docs/recall.md) rests on a human
+ *  making both calls in the editor. Agent-facing page tools therefore strip
+ *  them: agents can DRAFT map and prompt pages freely; the owner activates
+ *  them by tagging. (S7's recall_propose_* tools will route activation
+ *  through pending approvals instead.) */
+const OWNER_ONLY_TAGS = new Set(['recall', 'prompt']);
 function stripOwnerOnlyTags(tags: string[]): { tags: string[]; stripped: string[] } {
   const stripped = tags.filter((x) => OWNER_ONLY_TAGS.has(x.trim().toLowerCase()));
   return {
