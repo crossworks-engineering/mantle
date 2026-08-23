@@ -1072,6 +1072,13 @@
       "when": 1787409926082,
       "tag": "0152_curated_models",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1787505923000,
+      "tag": "0153_recall_serving",
+      "breakpoints": true
     }
   ]
 }

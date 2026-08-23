@@ -28,6 +28,12 @@ import {
 } from '@mantle/db';
 import { docToText } from './doc-to-text';
 import { referencedDrawIds, referencedFileIds } from './doc-assets';
+import {
+  findPageRoot,
+  recallAfterPageDelete,
+  recallAfterPageMove,
+  recallAfterPageWrite,
+} from './recall';
 import { ensureBlockIds, repairTableRows } from './block-ids';
 import { childPagePath } from './page-path';
 import { insertAfterBlock, type PMBlockNode } from './block-edit';
@@ -515,6 +521,10 @@ export async function movePage(
   // Already where it's being asked to go — nothing to write.
   if ((node.parentId ?? null) === target) return rowOf(node);
 
+  // Recall: a move can carry a page out of one map and into another —
+  // remember the tree it is LEAVING so both maps recompile afterwards.
+  const recallOldRoot = await findPageRoot(ownerId, id).catch(() => null);
+
   await db.transaction(async (tx) => {
     await tx
       .update(nodes)
@@ -539,6 +549,8 @@ export async function movePage(
        WHERE ${nodes}.id = subtree.id AND subtree.id <> ${id}
     `);
   });
+
+  await recallAfterPageMove(ownerId, id, recallOldRoot?.id ?? null);
 
   const [updated] = await db.select().from(nodes).where(eq(nodes.id, id)).limit(1);
   return updated ? rowOf(updated) : null;
@@ -910,6 +922,11 @@ export async function updatePage(
   if (willReindex) {
     await notifyNodeIngested(id);
   }
+  // Recall: tags decide map membership, titles decide slugs, and a
+  // programmatic doc write changes the body — any of the three recompiles.
+  if (input.tags !== undefined || input.title !== undefined || docChanged) {
+    await recallAfterPageWrite(ownerId, id);
+  }
   return result;
 }
 
@@ -1156,7 +1173,12 @@ export async function commitPage(
     };
   });
 
-  if (result.ok) await notifyNodeIngested(id);
+  if (result.ok) {
+    await notifyNodeIngested(id);
+    // Recall: a commit is the compile moment for a map's serving rows. The
+    // hook is no-throw and skips instantly for pages outside a `recall` tree.
+    await recallAfterPageWrite(ownerId, id);
+  }
   return result;
 }
 
@@ -1192,7 +1214,10 @@ export async function deletePage(ownerId: string, id: string): Promise<boolean> 
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!row) return false;
+  // Recall needs the tree root BEFORE the delete severs `parent_id`.
+  const recallRoot = await findPageRoot(ownerId, id).catch(() => null);
   await db.delete(nodes).where(eq(nodes.id, id)); // `pages` row cascades.
+  await recallAfterPageDelete(ownerId, id, recallRoot?.id ?? null);
   return true;
 }
 
