@@ -199,6 +199,34 @@ export function projectBackgrounds(raw: unknown): string | undefined {
   return /^[a-z0-9-]+=[a-z0-9-]+(,[a-z0-9-]+=[a-z0-9-]+)*$/.test(t) ? t : undefined;
 }
 
+/**
+ * Project a stored `neatBackground` — the whole-surface animated gradient's
+ * spec, compact JSON `{v:1, seed, tone, speed}`.
+ *
+ * Shape-checked only, the projectBackgrounds contract: colours and the full
+ * shader parameter derivation live in the web layer
+ * (@mantle/web-ui/neat-background), and the client decodes defensively again
+ * on read, so a value that survives storage still never reaches WebGL
+ * unvalidated. The cap is a storage guard — a canonical spec is ~60 chars.
+ */
+export const NEAT_BACKGROUND_MAX = 200;
+
+export function projectNeatBackground(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim();
+  if (!t || t.length > NEAT_BACKGROUND_MAX) return undefined;
+  try {
+    const o = JSON.parse(t) as Record<string, unknown>;
+    if (!o || typeof o !== 'object' || o.v !== 1) return undefined;
+    if (typeof o.seed !== 'number' || !Number.isInteger(o.seed) || o.seed < 0) return undefined;
+    if (o.tone !== 'auto' && o.tone !== 'darker' && o.tone !== 'lighter') return undefined;
+    if (typeof o.speed !== 'number' || !Number.isFinite(o.speed) || o.speed < 0) return undefined;
+    return t;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Project a stored font size (the interface scale and the three local ones).
  *  A closed set like avatarTint, validated by value: an unknown size would
  *  rescale the entire interface and there is no registry to fall back through.
@@ -364,6 +392,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     avatarStyle: projectAvatarStyle(prefs.avatarStyle),
     avatarTint: projectAvatarTint(prefs.avatarTint),
     backgrounds: projectBackgrounds(prefs.backgrounds),
+    neatBackground: projectNeatBackground(prefs.neatBackground),
     avatarSeed:
       typeof prefs.avatarSeed === 'string' && prefs.avatarSeed.length > 0
         ? prefs.avatarSeed
@@ -567,6 +596,7 @@ export async function updateProfilePreferences(
     avatarStyle: projectAvatarStyle(merged.avatarStyle),
     avatarTint: projectAvatarTint(merged.avatarTint),
     backgrounds: projectBackgrounds(merged.backgrounds),
+    neatBackground: projectNeatBackground(merged.neatBackground),
     avatarSeed: merged.avatarSeed || undefined,
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
@@ -651,6 +681,7 @@ export const BRAIN_PREFERENCE_KEYS = [
   // Same argument as avatarStyle: which surfaces carry a generated background
   // is the brain's look, not one admin's preference.
   'backgrounds',
+  'neatBackground',
   'logoKey',
   'logoType',
   'logoDarkKey',

@@ -755,6 +755,8 @@ export {
   BRAIN_PREFERENCE_KEYS,
   loadPreferencesFor,
   savePreferencesFor,
+  projectNeatBackground,
+  NEAT_BACKGROUND_MAX,
   projectTeamHubAppId,
   projectTeamHubTags,
   TEAM_HUB_TAGS_MAX,

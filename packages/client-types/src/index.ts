@@ -861,6 +861,13 @@ export type ProfilePreferences = {
    *  on their default are omitted, so a default change still reaches brains
    *  that never chose. Read via projectBackgrounds, never raw. */
   backgrounds?: string;
+  /** The generated whole-surface Neat gradient (login screen, content area),
+   *  as a compact JSON spec `{v,seed,tone,speed}` — colours are DERIVED from
+   *  the live theme tokens client-side, never stored, so the background
+   *  follows every colour theme and mode. Brain-level for the same reason as
+   *  backgrounds: it is the look of the product. Unset ⇒ the plain themed
+   *  fill. Read via projectNeatBackground, never raw. */
+  neatBackground?: string;
   /** Seed for THIS user's avatar; the UI defaults it to the user id when unset
    *  so an avatar still renders. Personal — two admins share the brain's style
    *  but never the same avatar. */

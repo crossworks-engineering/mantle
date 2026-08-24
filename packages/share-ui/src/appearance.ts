@@ -55,6 +55,12 @@ export type BrainAppearance = {
   avatarStyle: string | null;
   avatarTint: string | null;
   backgrounds: string | null;
+  /** The generated whole-surface Neat gradient's spec, compact JSON
+   *  `{v,seed,tone,speed}` — colours derive from the live theme client-side.
+   *  NOT stamped onto `<html>`: it feeds a WebGL component, not the CSS.
+   *  Optional for the published-contract reason below: readers treat absence
+   *  as "not set" and paint the plain themed fill. */
+  neatBackground?: string | null;
   /**
    * WHO this brain is — its own name, the name of the box, and whether an
    * uploaded logo exists. Unlike everything above these are NOT stamped onto
