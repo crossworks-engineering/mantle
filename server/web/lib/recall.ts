@@ -12,7 +12,7 @@
  * the owner needs to see, and this API is the only place lint reports
  * become visible outside psql.
  */
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, recallMaps, recallNodes } from '@mantle/db';
 import type {
   RecallLintIssueDTO,
@@ -36,13 +36,38 @@ function toSummary(row: MapRow): RecallMapSummaryDTO {
   };
 }
 
-export async function listRecallMaps(ownerId: string): Promise<RecallMapSummaryDTO[]> {
-  const rows = await db
+function mapsWhere(ownerId: string, q?: string) {
+  const trimmed = q?.trim();
+  if (!trimmed) return eq(recallMaps.ownerId, ownerId);
+  const like = `%${trimmed}%`;
+  return and(
+    eq(recallMaps.ownerId, ownerId),
+    or(ilike(recallMaps.title, like), ilike(recallMaps.slug, like)),
+  );
+}
+
+export async function listRecallMaps(
+  ownerId: string,
+  opts: { q?: string; limit?: number; offset?: number } = {},
+): Promise<RecallMapSummaryDTO[]> {
+  let query = db
     .select()
     .from(recallMaps)
-    .where(eq(recallMaps.ownerId, ownerId))
-    .orderBy(asc(recallMaps.slug));
+    .where(mapsWhere(ownerId, opts.q))
+    .orderBy(asc(recallMaps.slug))
+    .$dynamic();
+  if (opts.limit !== undefined) query = query.limit(opts.limit);
+  if (opts.offset) query = query.offset(opts.offset);
+  const rows = await query;
   return rows.map(toSummary);
+}
+
+export async function countRecallMaps(ownerId: string, q?: string): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(recallMaps)
+    .where(mapsWhere(ownerId, q));
+  return row?.n ?? 0;
 }
 
 export async function getRecallMapDetail(
