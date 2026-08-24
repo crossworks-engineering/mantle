@@ -2406,3 +2406,15 @@ export type StudioWorkerDetail = {
   extractionPrompt: string | null;
   issues: string[];
 };
+
+// ── Recall (memory maps) ─────────────────────────────────────────────────────
+
+export type {
+  RecallLintIssueDTO,
+  RecallLintSeverity,
+  RecallMapDetailDTO,
+  RecallMapSummaryDTO,
+  RecallNodeDTO,
+  RecallOptionDTO,
+  RecallPageStateDTO,
+} from './types/recall';

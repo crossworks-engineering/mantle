@@ -5,6 +5,7 @@ import {
   RECALL_BODY_CHAR_BUDGET,
   assignRecallSlugs,
   parseRecallDoc,
+  recallOptionsMarkdown,
   recallSlug,
 } from './recall-compile';
 
@@ -149,6 +150,36 @@ describe('audit regressions', () => {
     expect(parsed.issues).toEqual([]);
     expect(parsed.options).toEqual([
       { label: 'Deploy', targetPageId: 'aaa', useWhen: 'use when shipping' },
+    ]);
+  });
+});
+
+describe('recallOptionsMarkdown', () => {
+  const OPTIONS = [
+    { label: 'Fleet access', targetPageId: 'aaa-fleet', useWhen: 'use when logging into a box' },
+    { label: 'Architecture', targetPageId: 'bbb-arch', useWhen: 'use when asking why' },
+  ];
+
+  it('round-trips through markdownToDoc + parseRecallDoc unchanged', () => {
+    const md = `Body text.\n\n${recallOptionsMarkdown(OPTIONS)}`;
+    const parsed = parseRecallDoc(markdownToDoc(md));
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.options).toEqual(OPTIONS);
+    expect(parsed.bodyMarkdown).toBe('Body text.');
+  });
+
+  it('emits nothing for an empty list (a node with no options has no section)', () => {
+    expect(recallOptionsMarkdown([])).toBe('');
+  });
+
+  it('normalizes whitespace and strips brackets that would break the link syntax', () => {
+    const md = `Body.\n\n${recallOptionsMarkdown([
+      { label: '  Fleet\n[access]  ', targetPageId: ' aaa ', useWhen: 'use  when\nlogging in' },
+    ])}`;
+    const parsed = parseRecallDoc(markdownToDoc(md));
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.options).toEqual([
+      { label: 'Fleet access', targetPageId: 'aaa', useWhen: 'use when logging in' },
     ]);
   });
 });

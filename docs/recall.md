@@ -79,6 +79,29 @@ watch — inside and outside, from one store.**
   ONLY serving surface for the content. New maps trigger a one-time
   re-ingest of their members to drop already-indexed chunks.
 
+## The owner HTTP API (the UI's read side)
+
+Session-auth routes for the jackdaw surfaces (roadmap tasks `073b322d` /
+`91c93428`); DTOs in `@mantle/client-types` (`types/recall.ts`):
+
+- `GET /api/recall/maps` — the catalog + compile state. Unlike
+  `recall_index`, it INCLUDES never-compiled maps: a failed compile is
+  exactly what the owner must see.
+- `GET /api/recall/maps/:id` — one compiled map: nodes + options + the
+  last lint report. Node ids are source page ids, so every row is a
+  click-through to the editor.
+- `GET /api/recall/pages/:id` — this page's place in Recall (or
+  `state: null`); backs the editor lint badge. Also finds pages that are
+  only NAMED in a failing report (a new page that broke its map has no
+  compiled row yet).
+
+Read-only by design: authoring writes go through the normal page
+draft/commit path — no separate Recall write surface. The one shared
+writer is `recallOptionsMarkdown` (content-core): every author path (the
+UI's routing editor, the future `recall_set_options` tools) emits the
+`## Options` section through it, so human- and agent-authored options are
+byte-identical and always round-trip through `parseRecallDoc`.
+
 ## The compiler
 
 `packages/content-core/src/recall-compile.ts` is the pure parse/lint core;

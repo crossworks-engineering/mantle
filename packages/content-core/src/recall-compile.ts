@@ -275,6 +275,25 @@ export function parseRecallDoc(
   return { bodyMarkdown, useWhen, options, issues };
 }
 
+/**
+ * The ONE writer for a node's `## Options` section. Every author path — the
+ * owner UI's routing editor and the agent-side authoring tools — must emit
+ * options through this, so human-authored and agent-authored options are
+ * byte-identical and always round-trip through `parseRecallDoc`. Compose a
+ * full body as `bodyMarkdown + '\n\n' + recallOptionsMarkdown(options)`.
+ */
+export function recallOptionsMarkdown(
+  options: { label: string; targetPageId: string; useWhen: string }[],
+): string {
+  if (options.length === 0) return '';
+  const line = (v: string) => v.replace(/\s+/g, ' ').trim();
+  const items = options.map((o) => {
+    const label = line(o.label).replace(/[[\]]/g, '') || 'Untitled';
+    return `- [${label}](page:${o.targetPageId.trim()}) — ${line(o.useWhen)}`;
+  });
+  return `## Options\n\n${items.join('\n')}\n`;
+}
+
 /** Kebab-case a title into a stable slug ('Fleet, access & MCP' → 'fleet-access-mcp'). */
 export function recallSlug(title: string): string {
   const slug = title
