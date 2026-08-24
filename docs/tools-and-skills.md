@@ -103,7 +103,9 @@ Through P3–P5 the formula *additionally* unioned `agent.tool_slugs` as a migra
 cushion + one-off escape hatch (Saskia kept her flat grant on day one; the persona
 carried `page_delete`). **P6 removed that arm** so the source of truth is
 undivided, the escape-hatch cases became dedicated groups (e.g. `page-admin`,
-`replay-search`, `research`). See the **Phase 6** section below.
+`replay-search`, `research`). See the **Phase 6** section below. Later
+features follow the same pattern — e.g. `recall-read`, the four read-only
+memory-map tools ([recall.md](./recall.md)), added 2026-08-23.
 
 ### Default groups already exist in code
 
@@ -315,7 +317,7 @@ Shipped in two commits (approach A, coarse groups, specialists expand):
 
 - ✅ **P6a** (`0.19.27`): every `MANIFEST_AGENTS` entry authored as an explicit
   `toolGroupSlugs` list (`toolSlugs: []`); taxonomy completed so every grantable
-  builtin lives in ≥1 group, `recall` split into `recall`/`replay-search`,
+  builtin lives in ≥1 group, `recall` split into `recall`/`recall-search` (both renamed 2026-08-23 to `replay`/`replay-search` when Recall came to mean the memory-map system — whose own group is `recall-read`, [recall.md](./recall.md)),
   `pages` trimmed, and `page-admin`/`page-share`/`table-admin`/`contacts-admin`/
   `journal-admin`/`secrets`/`ingest` added. Heartbeat-responder tools became a
   per-turn **affordance** (injected in `assistant.ts`/`main.ts` when

@@ -66,6 +66,10 @@ Companion docs:
 - [`replay.md`](./replay.md), "Remy", the memory-recall agent: time-windowed
   replay of past conversations (`find_window` → `replay_window`) via the
   `invoke_agent` delegation path. Lossless paging vs. lossy digests.
+- [`recall.md`](./recall.md), "Recall", the memory-map system: owner-authored
+  maps agents WALK by structure and prompts they MATCH by meaning, compiled
+  from pages at commit into single-row serving tables and exposed via the
+  `recall_*` tools (group `recall-read`) plus the MCP server instructions.
 - [`research.md`](./research.md), "Researcher", the web-search agent: the
   outward twin of Remy. `web_search` (Perplexity Sonar via OpenRouter) wrapped
   by a synthesising agent, reached through `invoke_agent` delegation.
