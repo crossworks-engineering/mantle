@@ -143,6 +143,10 @@ type ListJournalsOpts = {
   query?: string;
   /** Effective kind — matches legacy rows via their mapped category. */
   kind?: string;
+  /** Whole-lane filter: 'user' = identity/context/preference/goal (legacy rows
+   *  included via the category mapping), 'agent' = lesson/expectation/gap.
+   *  Drives the /journal view tabs; `kind` narrows further within a lane. */
+  lane?: 'user' | 'agent';
   author?: 'user' | 'agent';
   /** Gap lifecycle filter; meaningful with kind='gap'. */
   status?: string;
@@ -162,6 +166,11 @@ function journalConds(ownerId: string, opts: ListJournalsOpts) {
     if (c) conds.push(c);
   }
   if (opts.kind) conds.push(sql`${journalKindSql()} = ${opts.kind}`);
+  if (opts.lane === 'agent') {
+    conds.push(sql`${journalKindSql()} in ('lesson', 'expectation', 'gap')`);
+  } else if (opts.lane === 'user') {
+    conds.push(sql`${journalKindSql()} not in ('lesson', 'expectation', 'gap')`);
+  }
   if (opts.author) {
     conds.push(sql`coalesce(nullif(${nodes.data}->>'author', ''), 'user') = ${opts.author}`);
   }

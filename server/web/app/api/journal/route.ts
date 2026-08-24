@@ -22,9 +22,13 @@ export async function GET(req: Request) {
   const authorRaw = url.searchParams.get('author');
   const author: 'user' | 'agent' | undefined =
     authorRaw === 'user' || authorRaw === 'agent' ? authorRaw : undefined;
+  const laneRaw = url.searchParams.get('lane');
+  const lane: 'user' | 'agent' | undefined =
+    laneRaw === 'user' || laneRaw === 'agent' ? laneRaw : undefined;
   const opts = {
     query: url.searchParams.get('q') ?? undefined,
     kind: url.searchParams.get('kind') ?? undefined,
+    lane,
     author,
     status: url.searchParams.get('status') ?? undefined,
     tag: url.searchParams.get('tag') ?? undefined,
