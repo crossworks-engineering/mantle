@@ -4,7 +4,8 @@
  * tool loop. Extracted from the three parallel copies (audit #5c) so a fix to
  * the drift-prone middle lands once:
  *
- *   - identity block (Journal-derived, memory_config.inject_journal-gated)
+ *   - identity block (Journal user lane, memory_config.inject_journal-gated)
+ *   - working-notes block (Journal agent lane, inject_working_notes-gated)
  *   - skills → system prompt (+ an optional surface suffix, e.g. Telegram's
  *     audio-tag instructions)
  *   - volatile context: time line + surface extras + open-heartbeat awareness
@@ -37,6 +38,7 @@ import {
 } from '@mantle/agent-runtime';
 import {
   buildIdentityContext,
+  buildWorkingNotesContext,
   buildTimeContextLine,
   resolveThinkingBudget,
   resolveThinkingEffort,
@@ -154,6 +156,7 @@ export async function assembleResponderTurn(
   const { ownerId, agent, prefs, logPrefix } = opts;
   const memoryConfig = (agent.memoryConfig ?? {}) as {
     inject_journal?: boolean;
+    inject_working_notes?: boolean;
     delegate_to?: string[];
     max_iterations?: number;
     max_tool_calls?: number;
@@ -216,11 +219,30 @@ export async function assembleResponderTurn(
     }
   }
 
+  // Per-agent "# Working notes" — the agent lane of the Journal (lessons,
+  // expectations, open gap questions). Shares the includeIdentity gate: it is
+  // owner-internal context and must never reach an external team member. Opt
+  // out per-agent with memory_config.inject_working_notes=false. Deterministic
+  // and cached, same posture as the identity block.
+  let workingNotesBlock = '';
+  if ((opts.includeIdentity ?? true) && memoryConfig.inject_working_notes !== false) {
+    try {
+      const block = await buildWorkingNotesContext(ownerId, agent.slug);
+      if (block) workingNotesBlock = `${block}\n\n`;
+    } catch (err) {
+      console.error(
+        `${logPrefix} working-notes context skipped:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
   // Cached prefix (breakpoint 1): identity + persona + skills + suffix — all
   // stable across turns. The time line, per-turn surface extras, and the
   // heartbeat block ("asked Nmin ago" churns) go to the uncached volatile
   // slot instead.
-  const effectiveSystemPrompt = identityBlock + promptWithSkills + (opts.systemPromptSuffix ?? '');
+  const effectiveSystemPrompt =
+    identityBlock + workingNotesBlock + promptWithSkills + (opts.systemPromptSuffix ?? '');
   const volatileContext = [
     timeContextLine,
     ...(opts.volatileExtras ?? []),

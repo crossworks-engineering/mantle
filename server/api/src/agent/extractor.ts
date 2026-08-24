@@ -966,20 +966,25 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     ];
     return lines.join('\n');
   }
-  // ─── Journal — first-person identity statement + mood/category ─────
-  // A journal entry is the user describing who they are / what they do / how they
-  // feel. The body carries the semantic payload; mood + category give the
-  // extractor framing so the summary + facts read as durable self-knowledge
-  // ("works as …", "values …", "felt anxious about …") rather than an event.
+  // ─── Journal — two lanes: user self-knowledge / agent working notes ─────
+  // User-lane entries are the user describing who they are and what they
+  // expect; agent-lane entries (lesson/expectation/gap) are an agent's own
+  // operational learning. The body carries the semantic payload; the framing
+  // line makes the summary + facts read as durable knowledge ("works as …",
+  // "the user expects …", "open question: …") rather than an event. Legacy
+  // rows may carry mood/category — deliberately NOT framed anymore.
   if (node.type === 'journal') {
     const d = (node.data ?? {}) as Record<string, unknown>;
     const body = typeof d.body === 'string' ? d.body : '';
-    const lines = [
-      node.title,
-      ...(typeof d.category === 'string' && d.category ? [`Area: ${d.category}`] : []),
-      ...(typeof d.mood === 'string' && d.mood ? [`Mood: ${d.mood}`] : []),
-      ...(body ? ['', body] : []),
-    ];
+    const kind = typeof d.kind === 'string' && d.kind ? d.kind : null;
+    const agentSlug = typeof d.agent_slug === 'string' && d.agent_slug ? d.agent_slug : null;
+    const framing =
+      kind === 'lesson' || kind === 'expectation' || kind === 'gap'
+        ? [`Working note${agentSlug ? ` from agent ${agentSlug}` : ''} (${kind})`]
+        : kind
+          ? [`Kind: ${kind}`]
+          : [];
+    const lines = [node.title, ...framing, ...(body ? ['', body] : [])];
     return lines.join('\n');
   }
   // ─── Locations — resolved place: name + address + coordinates ─────────

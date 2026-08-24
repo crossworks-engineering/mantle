@@ -327,6 +327,13 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['sandbox-work']!,
   },
   {
+    slug: 'gap_questions',
+    name: 'Gap questions',
+    description:
+      'The gap loop: ask an open journal question when it fits the conversation, log a gap when knowledge is missing, and file every answer with journal_resolve_gap.',
+    instructions: SKILL_INSTRUCTIONS['gap_questions']!,
+  },
+  {
     slug: 'location_awareness',
     name: 'Location awareness',
     description:
@@ -1123,6 +1130,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       // makes it happen: show the picture instead of narrating it.
       'visual_answers',
       'writing_style',
+      // The gap loop: ask an open journal question when it fits the
+      // conversation, and file every answer with journal_resolve_gap.
+      'gap_questions',
     ],
     params: { temperature: 0.7, max_tokens: 16000 },
     // Context budgets for the generalist responder. Onboarding seeds these
@@ -1139,6 +1149,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       // Kept in sync with the runtime CHUNK_LIMIT_DEFAULT.
       chunk_limit: 8,
       inject_journal: true,
+      inject_working_notes: true,
       delegate_to: [],
       // The generalist isn't only a read-then-reply chat agent: real tasks are
       // "read N source docs → compile → author a page/note", which needs more
@@ -1418,10 +1429,12 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'writing_style',
     ],
     params: { temperature: 0.4, max_tokens: 16000 },
-    // No owner-personal context: inject_journal OFF (the identity context is
-    // the OWNER's self-knowledge), no digests (those summarize the owner's own
-    // conversations). History comes from the member's team thread, loaded by
-    // the team context loader — history_limit budgets that window.
+    // No owner-personal context: inject_journal AND inject_working_notes OFF
+    // (the identity context is the OWNER's self-knowledge, the working notes
+    // are the owner's agents' internal learning), no digests (those summarize
+    // the owner's own conversations). History comes from the member's team
+    // thread, loaded by the team context loader — history_limit budgets that
+    // window.
     memoryConfig: {
       history_limit: 20,
       digest_limit: 0,
@@ -1429,6 +1442,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       content_hit_limit: 5,
       chunk_limit: 8,
       inject_journal: false,
+      inject_working_notes: false,
       delegate_to: [],
       max_iterations: 15,
     },

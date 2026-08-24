@@ -76,6 +76,12 @@ export type AgentMemoryConfig = {
    *  set false on a utility/persona-light agent that shouldn't carry it.
    *  Deterministic, no LLM — a no-op when the user has no journal entries. */
   inject_journal?: boolean;
+  /** Responder/assistant-only: inject the per-agent "# Working notes" block —
+   *  the Journal's agent lane (lessons, expectations, open gap questions; see
+   *  @mantle/content buildWorkingNotesContext) into the cached system prompt.
+   *  Default true for conversational agents; false on the team responder
+   *  (owner-internal context) and utility agents. Deterministic, no LLM. */
+  inject_working_notes?: boolean;
   /** Summarizer-only: undigested-turn count that triggers a summarization.
    *  Default 30, capped at max(history_limit, summarize_batch) so no turn
    *  can age out of the live history window while still undigested. */

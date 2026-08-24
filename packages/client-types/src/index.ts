@@ -232,6 +232,7 @@ export interface AgentMemoryConfigDTO {
   content_hit_limit?: number;
   chunk_limit?: number;
   inject_journal?: boolean;
+  inject_working_notes?: boolean;
   summarize_threshold?: number;
   summarize_batch?: number;
   extract_types?: string[];
@@ -733,8 +734,15 @@ export type JournalRow = {
   id: string;
   title: string;
   body: string;
-  mood: string | null;
-  category: string | null;
+  /** Who wrote the entry. Stamped server-side; agent tool calls can't spoof it. */
+  author: 'user' | 'agent';
+  /** Authoring agent's slug when author='agent'; null for user-authored rows. */
+  agentSlug: string | null;
+  /** Kind key (see KINDS in journal-options). Legacy pre-v2 rows map their old
+   *  `category` to a kind at read time; free text is tolerated. */
+  kind: string | null;
+  /** Gap lifecycle — only entries with kind='gap' carry one ('open'|'resolved'). */
+  status: string | null;
   entryDate: string | null;
   tags: string[];
   summary: string | null;

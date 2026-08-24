@@ -16,7 +16,10 @@ const GROUP_TOOLS = new Map<string, readonly string[]>([
   ['persona', ['update_persona']],
   ['tasks', ['task_list', 'task_get', 'task_create', 'task_update', 'task_delete']],
   ['contacts', ['contact_create', 'contact_find', 'contact_get', 'contact_list', 'contact_update']],
-  ['journal', ['journal_create', 'journal_get', 'journal_list', 'journal_update']],
+  [
+    'journal',
+    ['journal_create', 'journal_get', 'journal_list', 'journal_update', 'journal_resolve_gap'],
+  ],
   ['notes', ['note_create', 'note_list', 'note_get']],
   ['email', ['email_send', 'email_page', 'email_list', 'email_get']],
   ['page-share', ['page_share', 'page_unshare']],

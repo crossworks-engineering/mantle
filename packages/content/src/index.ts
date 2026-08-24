@@ -832,15 +832,18 @@ export {
 export { loadContactGate, type ContactGate } from './contact-gate';
 
 export {
-  MOODS,
-  MOOD_KEYS,
-  CATEGORIES,
-  CATEGORY_KEYS,
-  moodDisplay,
-  categoryLabel,
+  KINDS,
+  KIND_KEYS,
+  USER_KIND_KEYS,
+  AGENT_KIND_KEYS,
+  GAP_STATUSES,
+  kindLabel,
+  kindLane,
+  legacyCategoryToKind,
   normalizeEntryDate,
-  type MoodKey,
-  type CategoryKey,
+  type KindKey,
+  type JournalLane,
+  type GapStatus,
 } from './journal-options';
 
 export {
@@ -852,9 +855,11 @@ export {
   createJournal,
   updateJournal,
   deleteJournal,
+  resolveGapEntry,
   type JournalRow,
   type CreateJournalInput,
   type UpdateJournalInput,
+  type ResolveGapInput,
 } from './journal';
 
 export {
@@ -890,7 +895,7 @@ export {
   type AutoTzDecision,
 } from './auto-timezone';
 
-export { buildIdentityContext } from './identity-context';
+export { buildIdentityContext, buildWorkingNotesContext } from './identity-context';
 
 export {
   PURPOSE_ARCHETYPES,

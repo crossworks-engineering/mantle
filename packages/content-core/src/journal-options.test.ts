@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { categoryLabel, moodDisplay, normalizeEntryDate } from './journal-options';
+import {
+  AGENT_KIND_KEYS,
+  KIND_KEYS,
+  USER_KIND_KEYS,
+  kindLabel,
+  kindLane,
+  legacyCategoryToKind,
+  normalizeEntryDate,
+} from './journal-options';
 
 describe('normalizeEntryDate', () => {
   it('passes through a full ISO timestamp (canonicalised)', () => {
@@ -32,26 +40,49 @@ describe('normalizeEntryDate', () => {
   });
 });
 
-describe('moodDisplay', () => {
-  it('maps a known mood key to emoji + label', () => {
-    expect(moodDisplay('grateful')).toEqual({ emoji: '🙏', label: 'Grateful' });
-  });
-  it('tolerates an unknown/free-text mood (no emoji, raw label)', () => {
-    expect(moodDisplay('zonked')).toEqual({ emoji: '', label: 'zonked' });
-  });
-  it('returns null for no mood', () => {
-    expect(moodDisplay(null)).toBeNull();
+describe('kind vocabulary', () => {
+  it('splits cleanly into the two lanes', () => {
+    expect(USER_KIND_KEYS).toEqual(['identity', 'context', 'preference', 'goal']);
+    expect(AGENT_KIND_KEYS).toEqual(['lesson', 'expectation', 'gap']);
+    expect(KIND_KEYS).toEqual([...USER_KIND_KEYS, ...AGENT_KIND_KEYS]);
   });
 });
 
-describe('categoryLabel', () => {
-  it('maps a known category key to its label', () => {
-    expect(categoryLabel('faith')).toBe('Faith');
+describe('kindLabel', () => {
+  it('maps a known kind key to its label', () => {
+    expect(kindLabel('expectation')).toBe('Expectation');
+    expect(kindLabel('gap')).toBe('Open question');
   });
-  it('title-cases an unknown/free-text category', () => {
-    expect(categoryLabel('hobbies')).toBe('Hobbies');
+  it('title-cases an unknown/free-text kind', () => {
+    expect(kindLabel('hobbies')).toBe('Hobbies');
   });
-  it('returns null for no category', () => {
-    expect(categoryLabel(null)).toBeNull();
+  it('returns null for no kind', () => {
+    expect(kindLabel(null)).toBeNull();
+  });
+});
+
+describe('kindLane', () => {
+  it('routes agent kinds to the agent lane', () => {
+    expect(kindLane('lesson')).toBe('agent');
+    expect(kindLane('expectation')).toBe('agent');
+    expect(kindLane('gap')).toBe('agent');
+  });
+  it('routes user kinds — and anything unknown — to the user lane', () => {
+    expect(kindLane('identity')).toBe('user');
+    expect(kindLane('made-up')).toBe('user');
+    expect(kindLane(null)).toBe('user');
+  });
+});
+
+describe('legacyCategoryToKind', () => {
+  it('carries identity and goal over', () => {
+    expect(legacyCategoryToKind('identity')).toBe('identity');
+    expect(legacyCategoryToKind('goal')).toBe('goal');
+  });
+  it('maps every other legacy life area (and none) to context', () => {
+    expect(legacyCategoryToKind('work')).toBe('context');
+    expect(legacyCategoryToKind('faith')).toBe('context');
+    expect(legacyCategoryToKind('emotion')).toBe('context');
+    expect(legacyCategoryToKind(null)).toBe('context');
   });
 });

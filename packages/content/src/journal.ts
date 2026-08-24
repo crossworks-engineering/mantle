@@ -1,40 +1,51 @@
 /**
  * Journal surface. A journal entry is a `nodes` row with type='journal':
  *
- *   nodes.title          short display title (auto-derived from body if blank)
- *   nodes.data.body      the entry — a short plain-text paragraph
- *   nodes.data.mood      optional mood (see MOODS); free text tolerated
- *   nodes.data.category  optional life area (see CATEGORIES); free text tolerated
+ *   nodes.title            short display title (auto-derived from body if blank)
+ *   nodes.data.body        the entry — a short plain-text paragraph
+ *   nodes.data.author      'user' | 'agent' — stamped server-side (never model-supplied)
+ *   nodes.data.agent_slug  authoring agent's slug when author='agent'
+ *   nodes.data.kind        optional kind (see KINDS); free text tolerated
+ *   nodes.data.status      gap lifecycle ('open'|'resolved'); kind='gap' only
+ *   nodes.data.resolved_at ISO timestamp set when a gap is resolved
  *   nodes.data.entry_date  optional ISO date the entry is "about" (defaults to created_at)
- *   nodes.tags           freeform tags
+ *   nodes.tags             freeform tags
  *
  * All under the `journal` ltree root. Lazy-created on first write. `journal`
  * is in the extractor's `DEFAULT_EXTRACT_TYPES`, so summary + 768-dim
  * embedding + facts land automatically on the next pg_notify('node_ingested').
  *
- * Unlike notes, journal entries are also distilled into the always-on "who you are"
- * identity block injected into every agent turn — see ./identity-context.ts.
- * That's the whole point: a journal entry teaches agents who the user is.
+ * Two lanes, one type (docs/journal.md): user-lane kinds feed the always-on
+ * "# About the user" block; agent-lane kinds (lesson/expectation/gap) feed the
+ * per-turn "# Working notes" block — see ./identity-context.ts. Gap entries
+ * are open questions the brain wants answered; `resolveGapEntry` closes one
+ * and records the answer as durable user-lane knowledge.
+ *
+ * Legacy pre-v2 rows carry `mood`/`category` in jsonb. Nothing reads `mood`
+ * anymore; `category` maps to a kind at read time (legacyCategoryToKind).
  */
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
-import { normalizeEntryDate } from './journal-options';
+import { legacyCategoryToKind, normalizeEntryDate } from './journal-options';
 
 export const JOURNAL_ROOT_LABEL = 'journal';
 
-// Mood + category option lists live in a browser-safe leaf (no @mantle/db) so
+// Kind/status option lists live in a browser-safe leaf (no @mantle/db) so
 // the client editor/filters can import them without bundling postgres.
 // Re-exported here for server callers that import from '@mantle/content'.
 export {
-  MOODS,
-  MOOD_KEYS,
-  CATEGORIES,
-  CATEGORY_KEYS,
-  moodDisplay,
-  categoryLabel,
+  KINDS,
+  KIND_KEYS,
+  USER_KIND_KEYS,
+  AGENT_KIND_KEYS,
+  GAP_STATUSES,
+  kindLabel,
+  kindLane,
+  legacyCategoryToKind,
   normalizeEntryDate,
-  type MoodKey,
-  type CategoryKey,
+  type KindKey,
+  type JournalLane,
+  type GapStatus,
 } from './journal-options';
 import type { JournalRow } from '@mantle/client-types';
 export type { JournalRow };
@@ -57,6 +68,20 @@ export function journalSortSql(): SQL {
   ) desc`;
 }
 
+/** Effective kind of a row in SQL, with the legacy `category` mapping applied
+ *  (rows written before kinds existed have no `kind`). Mirrors
+ *  `legacyCategoryToKind` — keep the two in step. */
+function journalKindSql(): SQL {
+  return sql`coalesce(
+    nullif(${nodes.data}->>'kind', ''),
+    case ${nodes.data}->>'category'
+      when 'identity' then 'identity'
+      when 'goal' then 'goal'
+      else 'context'
+    end
+  )`;
+}
+
 function str(d: Record<string, unknown>, k: string): string | null {
   const v = d[k];
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
@@ -64,12 +89,17 @@ function str(d: Record<string, unknown>, k: string): string | null {
 
 function rowOf(n: Node): JournalRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
+  const kind = str(d, 'kind');
   return {
     id: n.id,
     title: n.title,
     body: typeof d.body === 'string' ? d.body : '',
-    mood: str(d, 'mood'),
-    category: str(d, 'category'),
+    author: d.author === 'agent' ? 'agent' : 'user',
+    agentSlug: str(d, 'agent_slug'),
+    // Legacy rows (no kind) surface their old category mapped to a kind, so
+    // every consumer sees ONE vocabulary.
+    kind: kind ?? legacyCategoryToKind(str(d, 'category')),
+    status: str(d, 'status'),
     entryDate: str(d, 'entry_date'),
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
@@ -89,7 +119,7 @@ async function ensureRoot(ownerId: string): Promise<void> {
       path: JOURNAL_ROOT_LABEL,
       data: {
         description:
-          'My journal — who I am, what I do, how I feel. Indexed, embedded, and distilled into the assistant’s identity context.',
+          'The brain’s experience log — durable self-knowledge from the user, working notes and open questions from the agents. Indexed, embedded, and distilled into every agent turn.',
       },
     })
     .onConflictDoNothing({
@@ -111,8 +141,11 @@ export function deriveTitle(body: string): string {
 
 type ListJournalsOpts = {
   query?: string;
-  mood?: string;
-  category?: string;
+  /** Effective kind — matches legacy rows via their mapped category. */
+  kind?: string;
+  author?: 'user' | 'agent';
+  /** Gap lifecycle filter; meaningful with kind='gap'. */
+  status?: string;
   tag?: string;
 };
 
@@ -128,8 +161,11 @@ function journalConds(ownerId: string, opts: ListJournalsOpts) {
     );
     if (c) conds.push(c);
   }
-  if (opts.mood) conds.push(sql`${nodes.data}->>'mood' = ${opts.mood}`);
-  if (opts.category) conds.push(sql`${nodes.data}->>'category' = ${opts.category}`);
+  if (opts.kind) conds.push(sql`${journalKindSql()} = ${opts.kind}`);
+  if (opts.author) {
+    conds.push(sql`coalesce(nullif(${nodes.data}->>'author', ''), 'user') = ${opts.author}`);
+  }
+  if (opts.status) conds.push(sql`${nodes.data}->>'status' = ${opts.status}`);
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
   return conds;
 }
@@ -185,10 +221,13 @@ export async function getJournal(ownerId: string, id: string): Promise<JournalRo
 export type CreateJournalInput = {
   body: string;
   title?: string;
-  mood?: string;
-  category?: string;
+  kind?: string;
   entryDate?: string;
   tags?: string[];
+  /** Provenance — set by the SERVER from the calling context (tool loop agent
+   *  slug, REST session), never from model-supplied args. Defaults to 'user'. */
+  author?: 'user' | 'agent';
+  agentSlug?: string;
 };
 
 export async function createJournal(
@@ -198,10 +237,14 @@ export async function createJournal(
   await ensureRoot(ownerId);
   const body = (input.body ?? '').trim();
   const data: Record<string, unknown> = { body };
-  const mood = input.mood?.trim();
-  const category = input.category?.trim();
-  if (mood) data.mood = mood;
-  if (category) data.category = category;
+  const kind = input.kind?.trim();
+  if (kind) data.kind = kind;
+  data.author = input.author === 'agent' ? 'agent' : 'user';
+  if (input.author === 'agent' && input.agentSlug?.trim()) {
+    data.agent_slug = input.agentSlug.trim();
+  }
+  // A gap is born open — the lifecycle is create(open) → resolveGapEntry.
+  if (kind === 'gap') data.status = 'open';
   if (input.entryDate?.trim()) {
     // Validate before storing — a non-date string would poison the sort cast.
     const iso = normalizeEntryDate(input.entryDate);
@@ -224,7 +267,9 @@ export async function createJournal(
   return rowOf(row);
 }
 
-export type UpdateJournalInput = Partial<CreateJournalInput>;
+export type UpdateJournalInput = Partial<
+  Pick<CreateJournalInput, 'body' | 'title' | 'kind' | 'entryDate' | 'tags'>
+>;
 
 export async function updateJournal(
   ownerId: string,
@@ -241,16 +286,19 @@ export async function updateJournal(
   const bodyChanged = input.body !== undefined && input.body.trim() !== oldData.body;
   const newData: Record<string, unknown> = { ...oldData };
   if (input.body !== undefined) newData.body = input.body.trim();
-  // mood/category/entry_date are cleared when an empty string is passed.
-  if (input.mood !== undefined) {
-    const m = input.mood.trim();
-    if (m) newData.mood = m;
-    else delete newData.mood;
-  }
-  if (input.category !== undefined) {
-    const c = input.category.trim();
-    if (c) newData.category = c;
-    else delete newData.category;
+  // kind/entry_date are cleared when an empty string is passed. Changing kind
+  // away from 'gap' drops the gap lifecycle fields; changing TO 'gap' opens it.
+  if (input.kind !== undefined) {
+    const k = input.kind.trim();
+    const wasGap = oldData.kind === 'gap';
+    if (k) newData.kind = k;
+    else delete newData.kind;
+    if (k === 'gap' && !wasGap) {
+      newData.status = 'open';
+    } else if (k !== 'gap' && wasGap) {
+      delete newData.status;
+      delete newData.resolved_at;
+    }
   }
   if (input.entryDate !== undefined) {
     const e = input.entryDate.trim();
@@ -262,8 +310,8 @@ export async function updateJournal(
       delete newData.entry_date;
     }
   }
-  // A body change invalidates the extractor's prior summary/embedding. Mood /
-  // category / date are metadata only — they don't trigger re-extraction (the
+  // A body change invalidates the extractor's prior summary/embedding. Kind /
+  // status / date are metadata only — they don't trigger re-extraction (the
   // body carries the semantic payload), keeping edits cost-safe.
   if (bodyChanged) {
     delete newData.summary;
@@ -295,6 +343,60 @@ export async function updateJournal(
     await notifyNodeIngested(id);
   }
   return rowOf(updated);
+}
+
+export type ResolveGapInput = {
+  /** The user's answer — becomes a new user-lane entry. */
+  answer: string;
+  /** Kind for the answer entry; defaults to 'context'. */
+  answerKind?: string;
+  /** Provenance of the RECORDING (who filed the answer): the agent that heard
+   *  it in chat, or 'user' when answered in the UI. The knowledge itself is
+   *  the user's either way. */
+  author?: 'user' | 'agent';
+  agentSlug?: string;
+};
+
+/** Close one open question. Two writes: the gap entry gets status='resolved'
+ *  (+resolved_at, audit trail kept), and the answer lands as a NEW user-lane
+ *  entry so it flows into the "# About the user" block and the index. Returns
+ *  null when the id isn't an owner-held gap entry. */
+export async function resolveGapEntry(
+  ownerId: string,
+  id: string,
+  input: ResolveGapInput,
+): Promise<{ gap: JournalRow; answer: JournalRow } | null> {
+  const [node] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'journal')))
+    .limit(1);
+  if (!node) return null;
+  const d = (node.data ?? {}) as Record<string, unknown>;
+  if (d.kind !== 'gap') return null;
+  const answerBody = (input.answer ?? '').trim();
+  if (!answerBody) throw new Error('answer is required to resolve a gap');
+  const answerKind = input.answerKind?.trim() || 'context';
+
+  const newData: Record<string, unknown> = {
+    ...d,
+    status: 'resolved',
+    resolved_at: new Date().toISOString(),
+  };
+  const [updated] = await db
+    .update(nodes)
+    .set({ data: newData, updatedAt: new Date() })
+    .where(eq(nodes.id, id))
+    .returning();
+  if (!updated) throw new Error('resolveGapEntry: update returned no row');
+
+  const answer = await createJournal(ownerId, {
+    body: answerBody,
+    kind: answerKind,
+    author: input.author,
+    agentSlug: input.agentSlug,
+  });
+  return { gap: rowOf(updated), answer };
 }
 
 export async function deleteJournal(ownerId: string, id: string): Promise<boolean> {

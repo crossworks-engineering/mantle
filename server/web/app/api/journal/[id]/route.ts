@@ -6,9 +6,8 @@ import { deleteJournal, getJournal, updateJournal } from '@/lib/journal';
 const PatchBody = z.object({
   body: z.string().max(20_000).optional(),
   title: z.string().max(200).optional(),
-  // Empty string clears the field (mood/category/entryDate are optional).
-  mood: z.string().max(40).optional(),
-  category: z.string().max(40).optional(),
+  // Empty string clears the field (kind/entryDate are optional).
+  kind: z.string().max(40).optional(),
   entryDate: z.string().max(40).optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
 });
