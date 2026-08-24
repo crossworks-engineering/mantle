@@ -17,7 +17,7 @@
  * statelessly (no Redis / session store).
  */
 import { createMcpHandler } from 'mcp-handler';
-import { registerMantleTools } from '@mantle/mcp-core';
+import { MANTLE_MCP_INSTRUCTIONS, registerMantleTools } from '@mantle/mcp-core';
 import { isRemoteMcpEnabled, ownerFromBearer, wwwAuthenticateHeader } from '@/lib/mcp-oauth';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
@@ -58,7 +58,9 @@ async function handler(req: Request): Promise<Response> {
 
   const mcpHandler = createMcpHandler(
     (server) => registerMantleTools(server, ownerId),
-    {},
+    // Recall's tier-1 hook rides the server instructions — the one surface a
+    // client auto-loads besides the tool list (docs/recall.md).
+    { instructions: MANTLE_MCP_INSTRUCTIONS },
     { basePath: '/api' },
   );
   return mcpHandler(req);

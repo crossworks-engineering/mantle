@@ -27,7 +27,7 @@ const GROUP_TOOLS = new Map<string, readonly string[]>([
   ['delegation', ['invoke_agent']],
   // A few non-floor groups, to exercise the coverage path.
   ['files', ['file_list', 'file_get', 'file_read', 'file_create']],
-  ['recall', ['recall_window']],
+  ['replay', ['replay_window']],
 ]);
 
 describe('CORE_AUTO_GRANT_GROUP_SLUGS — floor membership', () => {
@@ -50,7 +50,7 @@ describe('CORE_AUTO_GRANT_GROUP_SLUGS — floor membership', () => {
   it('stays lean — no email/secrets/media over-grant beyond the functional minimum', () => {
     // The floor must NOT pull in the richer generalist groups (those are opt-in /
     // manifest-seeded), so a locked-down custom responder isn't blasted with them.
-    for (const g of ['secrets', 'ingest', 'media-workers', 'events', 'recall', 'files']) {
+    for (const g of ['secrets', 'ingest', 'media-workers', 'events', 'replay', 'files']) {
       expect(CORE_AUTO_GRANT_GROUP_SLUGS).not.toContain(g);
     }
   });

@@ -457,6 +457,21 @@ export {
 export { markdownToDoc } from './markdown-to-doc';
 export { docToMarkdown } from './doc-to-markdown';
 
+export {
+  RECALL_TAG,
+  RECALL_PROMPT_TAG,
+  compileRecallMap,
+  embedPendingRecallPrompts,
+  findPageRoot,
+  getRecallMap,
+  recallAfterPageDelete,
+  recallAfterPageMove,
+  recallAfterPageWrite,
+  removeRecallForPage,
+  isRecallTreePage,
+  type RecallCompileResult,
+} from './recall';
+
 export { ensureBlockIds, repairTableRows, allBlocksHaveIds, BLOCK_NODE_TYPES } from './block-ids';
 
 export { listBlocks, type BlockListEntry, type ListBlocksOptions } from './block-list';

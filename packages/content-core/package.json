@@ -9,6 +9,7 @@
   "exports": {
     "./markdown": "./src/markdown-to-doc.ts",
     "./markdown-refs": "./src/markdown-refs.ts",
+    "./recall-compile": "./src/recall-compile.ts",
     "./doc-to-markdown": "./src/doc-to-markdown.ts",
     "./block-ids": "./src/block-ids.ts",
     "./block-list": "./src/block-list.ts",

@@ -800,7 +800,7 @@ voice replies, `extractor` by `pg_notify('node_ingested')`, etc.),
    on `nodes.embedding`, `entities.embedding`, `facts.embedding`.
 2. **Responder + assistant**: embed the inbound message to retrieve
    semantic memory.
-3. **`recall_window` builtin (Remy)**: embeds the query for
+3. **`replay_window` builtin (Remy)**: embeds the query for
    time-windowed semantic search.
 4. **MCP `search_chunks`**: Claude Desktop's tool call.
 5. **Tool-result spill store `read_result query`**: embeds the query

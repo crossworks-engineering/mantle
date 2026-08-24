@@ -82,6 +82,7 @@ import {
   PEER_TOOLS,
   EMAIL_TOOLS,
   FILE_MANAGE_TOOLS,
+  RECALL_TOOLS,
 } from '@mantle/tools';
 import type { BuiltinToolDef } from '@mantle/tools';
 import {
@@ -1104,6 +1105,14 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   });
   registerBuiltinTools(TASK_TOOLS);
   registerBuiltinTools(EVENT_TOOLS);
+
+  // ─── Recall — the memory-map system (docs/recall.md) ─────────────────────
+  // The tier-1 hook for external agents: these four read-only tools plus the
+  // server instructions (MANTLE_MCP_INSTRUCTIONS) are the only surfaces an
+  // MCP client auto-loads, so their descriptions carry the "enter the map /
+  // match your task" nudge. Serving rows are compiled at page commit; every
+  // read here is one indexed row.
+  registerBuiltinTools(RECALL_TOOLS);
   registerBuiltinTools(JOURNAL_TOOLS);
   registerBuiltinTools(PEER_TOOLS, {
     only: new Set(['peer_list', 'peer_query', 'peer_node_get']),
@@ -1627,11 +1636,26 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   });
 }
 
+/** What every connecting MCP client auto-loads alongside the tool list — the
+ *  ONLY automatic surface the protocol gives a server, so it carries Recall's
+ *  tier-1 hook (docs/recall.md §"Automatic, honestly bounded"). Static by
+ *  design: the live catalog is one cheap `recall_index` call away, and a
+ *  static string can never go stale against it. */
+export const MANTLE_MCP_INSTRUCTIONS = [
+  'This brain carries Recall: owner-authored memory maps and prompts for agents.',
+  'Before starting a distinct task, call recall_match with one line describing it and apply a strong match.',
+  'When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind.',
+  "Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it.",
+].join(' ');
+
 /** Create a fresh `McpServer` with the full Mantle tool surface, scoped to
  *  `ownerId`. Used by the stdio entry; the HTTP route registers onto the
  *  adapter-provided server via `registerMantleTools`. */
 export function buildMantleMcpServer(ownerId: string): McpServer {
-  const server = new McpServer({ name: 'mantle', version: '0.0.1' });
+  const server = new McpServer(
+    { name: 'mantle', version: '0.0.1' },
+    { instructions: MANTLE_MCP_INSTRUCTIONS },
+  );
   registerMantleTools(server, ownerId);
   return server;
 }

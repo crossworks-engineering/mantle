@@ -111,6 +111,7 @@ import {
   tableDocFromGrid,
   parseFormulaSpec,
   formulaToText,
+  isRecallTreePage,
 } from '@mantle/content';
 import { isLikelyDifferentPerson } from './person-names';
 
@@ -1006,6 +1007,16 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   // The ProseMirror doc lives in `pages.doc`; `pages.doc_text` is its
   // flattened plaintext, computed on every save in @mantle/content.
   if (node.type === 'page') {
+    // ─── Recall maps — metadata only ───────────────────────────────────
+    // A page inside a `recall`-tagged tree is SERVED through the compiled
+    // recall_nodes rows (docs/recall.md); indexing its body here would leak
+    // prompt/map text into general search and team-turn retrieval, exactly
+    // what the design excludes. Title + tags only — same posture as secrets.
+    if (await isRecallTreePage(node.ownerId, node.id)) {
+      const tagLine =
+        Array.isArray(node.tags) && node.tags.length > 0 ? `\n\nTags: ${node.tags.join(', ')}` : '';
+      return `${node.title}\n\nRecall map page — content served via the recall tools.${tagLine}`.trim();
+    }
     const [row] = await db
       .select({ docText: pages.docText })
       .from(pages)

@@ -13,7 +13,7 @@ describe('stageLabelForStep', () => {
     expect(stageLabelForStep('tool: web_search')).toBe('Searching the web…');
     expect(stageLabelForStep('tool: search_nodes')).toBe('Searching your brain…');
     expect(stageLabelForStep('tool: find_window')).toBe('Searching your brain…');
-    expect(stageLabelForStep('tool: recall_window')).toBe('Searching your brain…');
+    expect(stageLabelForStep('tool: replay_window')).toBe('Searching your brain…');
     expect(stageLabelForStep('tool: entity_facts')).toBe('Searching your brain…');
   });
 

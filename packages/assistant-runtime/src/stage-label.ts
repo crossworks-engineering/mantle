@@ -145,7 +145,7 @@ function toolStage(slug: string, args?: Record<string, unknown>): StageLabel {
     return { label: q ? `Searching the web for “${q}”…` : 'Searching the web…', kind: 'web' };
   }
   if (slug === 'web_fetch') return { label: 'Reading a web page…', kind: 'web' };
-  if (/^(search|find|recall|entity_|graph_|peer_)/.test(slug)) {
+  if (/^(search|find|recall|replay|entity_|graph_|peer_)/.test(slug)) {
     const q = pickString(args, QUERY_KEYS);
     return {
       label: q ? `Searching your brain for “${q}”…` : 'Searching your brain…',

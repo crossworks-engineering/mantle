@@ -110,7 +110,7 @@ Agent `team-responder` + tool group `team-read` are declared in the system
 manifest, so fresh installs seed them and existing brains converge on upgrade
 (links reconcile by role). A drift-guard test locks the group's shape:
 **read-only brain-wide + exactly one write tool**, with `export_node`,
-`recall_window`, and all delegation excluded.
+`replay_window`, and all delegation excluded.
 
 The one write tool is **`team_request_create`**: it wraps task creation but
 stamps provenance (contactId, thread message, attachments) **from the surface,

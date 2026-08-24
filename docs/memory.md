@@ -37,8 +37,8 @@ where the layers above answer "what do I know about X" by *summary*,
 recall replays "what was *actually said*" from the raw message archive
 on demand, lossless paging vs. the lossy `conversation_digest`. The
 "Remy" agent does it via two builtins (`find_window` locates the window
-through digests, `recall_window` pulls the raw turns). See
-[`recall.md`](./recall.md).
+through digests, `replay_window` pulls the raw turns). See
+[`replay.md`](./replay.md).
 
 > **Embedding dimensions, read before trusting any `1536` below.** Since
 > 2026-05-31 every `vector` column is **`vector(768)`** with HNSW indexes.

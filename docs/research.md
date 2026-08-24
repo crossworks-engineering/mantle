@@ -1,13 +1,13 @@
 # Research: "Researcher", the web-search agent
 
-The outward-facing twin of [Remy](./recall.md). Where recall goes *inward* into
+The outward-facing twin of [Remy](./replay.md). Where recall goes *inward* into
 the user's own conversation archive, the **researcher** goes *outward* to the
 live internet: it plans queries, searches, cross-checks, and hands back a cited
 synthesis. Saskia delegates to it; Saskia decides whether to keep the result.
 
 Companion docs:
 - [`reader.md`](./reader.md), the page-reader sibling: *finds* pages here, *reads* a given URL there.
-- [`recall.md`](./recall.md), the inward twin (memory recall).
+- [`replay.md`](./replay.md), the inward twin (memory recall).
 - [`architecture.md` §9b'](./architecture.md#9b-agent-delegation-invoke_agent)
 , the `invoke_agent` delegation path both agents ride on.
 - [`email-send.md`](./email-send.md), the send half of "research X and email it to me".

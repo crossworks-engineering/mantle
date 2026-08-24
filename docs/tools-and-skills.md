@@ -103,7 +103,7 @@ Through P3–P5 the formula *additionally* unioned `agent.tool_slugs` as a migra
 cushion + one-off escape hatch (Saskia kept her flat grant on day one; the persona
 carried `page_delete`). **P6 removed that arm** so the source of truth is
 undivided, the escape-hatch cases became dedicated groups (e.g. `page-admin`,
-`recall-search`, `research`). See the **Phase 6** section below.
+`replay-search`, `research`). See the **Phase 6** section below.
 
 ### Default groups already exist in code
 
@@ -123,7 +123,7 @@ The seed taxonomy is pre-drawn: the `*_TOOLS` arrays in
 | `spreadsheets` | `SHEET_TOOLS` | `sheet_build` — compose a formatted .xlsx as the deliverable, as opposed to a table the user keeps querying |
 | `contacts` | `CONTACT_TOOLS` | the email gate ([contacts.md](contacts.md)) |
 | `journal` | `JOURNAL_TOOLS` | identity |
-| `recall` | `RECALL_TOOLS` | `find_window`, `recall_window` |
+| `recall` | `RECALL_TOOLS` | `find_window`, `replay_window` |
 | `research` | `RESEARCH_TOOLS` | `web_search` |
 | `email` | `EMAIL_TOOLS` | send/list/get |
 | `persona` | `PERSONA_TOOLS` | `update_persona` |
@@ -315,7 +315,7 @@ Shipped in two commits (approach A, coarse groups, specialists expand):
 
 - ✅ **P6a** (`0.19.27`): every `MANIFEST_AGENTS` entry authored as an explicit
   `toolGroupSlugs` list (`toolSlugs: []`); taxonomy completed so every grantable
-  builtin lives in ≥1 group, `recall` split into `recall`/`recall-search`,
+  builtin lives in ≥1 group, `recall` split into `recall`/`replay-search`,
   `pages` trimmed, and `page-admin`/`page-share`/`table-admin`/`contacts-admin`/
   `journal-admin`/`secrets`/`ingest` added. Heartbeat-responder tools became a
   per-turn **affordance** (injected in `assistant.ts`/`main.ts` when

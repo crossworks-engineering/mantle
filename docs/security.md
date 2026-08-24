@@ -107,7 +107,7 @@ knowledge* but *never trusted to write*, and everything they do must be
 attributable.
 
 - **Read-only by construction.** The team responder's tool group is read-only
-  brain-wide, with `export_node`, `recall_window`, and all delegation excluded
+  brain-wide, with `export_node`, `replay_window`, and all delegation excluded
 , locked by a manifest drift-guard test, so a future manifest edit can't
   silently widen it.
 - **Private corpus excluded by default.** Email and journal reads require an

@@ -64,6 +64,7 @@ import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
 import { SANDBOX_TOOLS } from './builtins-sandbox';
 import { RECALL_TOOLS } from './builtins-recall';
+import { REPLAY_TOOLS } from './builtins-replay';
 import { RESEARCH_TOOLS } from './builtins-research';
 import { CRAWL_TOOLS } from './builtins-crawl';
 import { CURATION_TOOLS } from './builtins-curation';
@@ -143,7 +144,7 @@ const search_nodes: BuiltinToolDef = {
     "Use for topic/content questions — 'find emails about the Lister contract', 'notes mentioning the printer', 'anything about Alice's passport'. " +
     'This finds whole NODES (returns their spine — title/tags/summary). To pull the relevant *passages* from inside long documents — the cheaper move for a "what does X say about Y" question, and the one that avoids reading whole files into context — use `search_chunks`. ' +
     "For **time-windowed** questions ('what arrived today', 'last 5 days of email', 'this week's events') use the dedicated list tools — `email_list`, `event_list`, `task_list`, `note_list`, `page_list`, `file_list` — which ARE date-sorted and accept `since` / `window`. " +
-    'For past **conversation** recall (replaying what was actually said) use `find_window` + `recall_window`. For the **public web** use `web_search`. ' +
+    'For past **conversation** recall (replaying what was actually said) use `find_window` + `replay_window`. For the **public web** use `web_search`. ' +
     "Optional `branch` (ltree prefix, e.g. 'files.work') scopes; `type` filters to one node kind; `tags` narrows further. " +
     'Each hit carries a `url` permalink — when you surface an item to the user, link it as a markdown `[title](url)` so they can click straight through to it.',
   inputSchema: {
@@ -2048,8 +2049,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...SANDBOX_TOOLS,
   // Recall — time-windowed replay of past conversations from the
   // permanent message archive. The toolset for the `remy` recall agent
-  // (find_window locates via digests, recall_window pulls raw turns).
+  // (find_window locates via digests, replay_window pulls raw turns).
   ...RECALL_TOOLS,
+  ...REPLAY_TOOLS,
   // Research — outward to the live internet via Perplexity Sonar. The
   // raw-search primitive for the `researcher` agent; the smart layer is
   // the agent that wraps it (plan → search → cross-check → synthesise).
@@ -2138,4 +2140,4 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
 // DEFAULT_ASSISTANT_TOOL_SLUGS / ASSISTANT_TOOL_DENY pair was removed with the
 // `agents.tool_slugs` column (migration 0083); the specialist/destructive split
 // it encoded now lives in the group taxonomy (terminal / research / federation /
-// recall-search groups + the `*-admin` delete groups).
+// replay-search groups + the `*-admin` delete groups).
