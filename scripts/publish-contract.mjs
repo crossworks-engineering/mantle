@@ -33,6 +33,26 @@ if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) {
   process.exit(1);
 }
 
+// Tag-vs-tree guard (the v0.232.59 incident): a tag created on the wrong
+// commit publishes a STALE tree under a new version, and npm versions are
+// immutable, so the mistake is permanent (0.232.59 is forever a byte-for-byte
+// duplicate of 0.232.58). bump-version.mjs keeps these files in lockstep with
+// the release, so the checked-out tree must already carry the version the tag
+// names; on mismatch, fail before anything is packed or published.
+for (const f of ['package.json', 'server/web/package.json']) {
+  const treeVersion = JSON.parse(fs.readFileSync(path.join(ROOT, f), 'utf8')).version;
+  if (treeVersion !== version) {
+    console.error(
+      `✗ tag/tree mismatch: ${f} is at ${treeVersion}, but the requested publish version is ${version}.`,
+    );
+    console.error('  The tag points at the wrong commit. Nothing was published.');
+    console.error(
+      '  Delete the mispointed tag, then re-tag the correct release commit (scripts/tag-release.sh).',
+    );
+    process.exit(1);
+  }
+}
+
 const backups = new Map();
 let failed = false;
 try {

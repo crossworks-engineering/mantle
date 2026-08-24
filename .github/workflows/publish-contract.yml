@@ -30,7 +30,30 @@ jobs:
   publish:
     runs-on: ubuntu-24.04
     steps:
+      # For workflow_dispatch, check out the TAG being re-published, not the
+      # default branch the dispatch happens to run on: re-running a partial
+      # publish must pack the tag's tree, not whatever main looks like today.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      # Tag-vs-tree tripwire (the v0.232.59 incident): a tag pushed onto the
+      # wrong commit publishes a stale tree, and npm versions are immutable, so
+      # the bad publish can never be corrected in place. Fail here, before the
+      # install, while nothing has been packed. publish-contract.mjs repeats
+      # this check so local runs are covered too.
+      - name: Assert tag matches the checked-out version
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          want="${tag#v}"
+          for f in package.json server/web/package.json; do
+            have="$(jq -r .version "$f")"
+            if [ "$have" != "$want" ]; then
+              echo "::error::tag $tag points at a tree whose $f is at $have: the tag is on the wrong commit. Nothing was published. Delete the tag and re-tag the correct release commit (scripts/tag-release.sh)."
+              exit 1
+            fi
+          done
+          echo "✓ $tag matches the checked-out tree"
 
       - uses: pnpm/action-setup@v4
 

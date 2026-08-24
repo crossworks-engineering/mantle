@@ -14,7 +14,8 @@
 // tag — pass it back explicitly (e.g. `0.20.0-alpha`) to keep it. See
 // docs/versioning.md.
 //
-// Then commit and tag:  git tag v<new>
+// Then commit, and tag with scripts/tag-release.sh (it asserts the release
+// commit before tagging — never `git tag` by hand chained onto a merge).
 //
 // GUARD: refuses to run on any branch other than main (--force overrides).
 // Bumping on a feature branch was the old ritual, and it made every concurrent
@@ -94,4 +95,5 @@ try {
   console.warn('⚠ README stats not regenerated (run `pnpm readme:stats` by hand)');
 }
 
-console.log(`  Next:  git commit -am "release: v${next}" && git tag v${next}`);
+console.log(`  Next:  git commit -am "release: v${next}"`);
+console.log('         scripts/tag-release.sh   (asserts the release commit, then tags + pushes)');

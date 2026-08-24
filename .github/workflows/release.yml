@@ -34,7 +34,33 @@ env:
   IMAGE_BASE: ${{ secrets.DOCKERHUB_USERNAME }}/mantle
 
 jobs:
+  # Tag-vs-tree tripwire (the v0.232.59 incident): a tag created on the wrong
+  # commit ships a stale tree under a new version number: wrong Docker images,
+  # a wrong GitHub Release, and (via publish-contract) a permanently wrong npm
+  # publish. bump-version.mjs keeps these package.json files in lockstep with
+  # the tag, so any mismatch means the tag is mispointed. Fail here, before a
+  # single image layer is pushed.
+  guard:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assert tag matches the checked-out version
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          for f in package.json server/web/package.json; do
+            have="$(jq -r .version "$f")"
+            if [ "$have" != "$want" ]; then
+              echo "::error::tag $GITHUB_REF_NAME points at a tree whose $f is at $have: the tag is on the wrong commit. Nothing was built or published. Delete the tag and re-tag the correct release commit (scripts/tag-release.sh)."
+              exit 1
+            fi
+          done
+          echo "✓ $GITHUB_REF_NAME matches the checked-out tree"
+
   build:
+    needs: guard
     strategy:
       fail-fast: false
       matrix:
