@@ -94,4 +94,14 @@ describe('buildAppFrameHtml — the Neat backdrop', () => {
     expect(withNeat('k-1')).toContain('data-neat-license="k-1"');
     expect(withNeat()).not.toContain('data-neat-license');
   });
+
+  it('makes --card translucent over a Neat ground, and ONLY then', () => {
+    // The derived token sits on :root and the override on body — a custom
+    // property may not reference itself on the same element. No spec ⇒ no
+    // override, so apps on a plain brain stay pixel-identical.
+    const html = withNeat();
+    expect(html).toContain('--card-on-neat:color-mix(in oklab,var(--card) 70%,transparent)');
+    expect(html).toContain('body{--card:var(--card-on-neat)}');
+    expect(frame('console.log(1)')).not.toContain('--card-on-neat');
+  });
 });

@@ -250,6 +250,22 @@ body{overflow:auto}`
 .min-h-screen,.min-h-dvh,.min-h-svh,.min-h-lvh{min-height:0!important}
 .h-screen,.h-dvh,.h-svh,.h-lvh{height:auto!important}`
 }</style>
+${
+  /* Translucent card surfaces — ONLY when a Neat ground is painted below
+     (no spec ⇒ no override, existing apps stay pixel-identical). 70% is the
+     workspace ListCard's idle alpha, so app cards and host cards read as one
+     system. Token-level on purpose: apps consume the card colour through
+     var(--card) (Tailwind bg-card), so one override restyles them all with no
+     per-app opt-in. The derived token lives on html and the override on body
+     because a custom property may not reference itself on the same element —
+     html still sees the theme's solid --card, body swaps in the mix, and a
+     live theme flip recomputes both. --popover stays solid: floating layers
+     need an opaque ground, same as the host app. */
+  opts.neatSpec
+    ? `<style>:root{--card-on-neat:color-mix(in oklab,var(--card) 70%,transparent)}body{--card:var(--card-on-neat)}</style>
+`
+    : ''
+}
 </head>
 <body class="text-foreground">
 ${
