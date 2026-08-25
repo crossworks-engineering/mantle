@@ -53,6 +53,23 @@ await esbuild.build({
   logLevel: 'warning',
 });
 
+// ── 2b. Share-page chrome (mode toggle + Neat backdrop) ──────────────────────
+// Separate from islands.js on purpose: this loads on EVERY shelled /s page,
+// so it must not drag React along. `splitting` keeps the Neat WebGL lib in a
+// lazy chunk that is only fetched when a brain actually saved a background.
+await esbuild.build({
+  entryPoints: { 'share-page': join(webRoot, 'server/share-page/entry.ts') },
+  outdir: outDir,
+  bundle: true,
+  splitting: true,
+  format: 'esm',
+  platform: 'browser',
+  minify: true,
+  sourcemap: false,
+  define: { 'process.env.NODE_ENV': '"production"' },
+  logLevel: 'warning',
+});
+
 // ── 3. KaTeX css + fonts ─────────────────────────────────────────────────────
 const katexCss = require.resolve('katex/dist/katex.min.css');
 const katexDist = dirname(katexCss);

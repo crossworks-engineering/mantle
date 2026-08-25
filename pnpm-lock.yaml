@@ -641,6 +641,9 @@ importers:
       '@dicebear/styles':
         specifier: ^10.3.0
         version: 10.3.0
+      '@firecms/neat':
+        specifier: 1.0.2
+        version: 1.0.2
       '@mantle/client-types':
         specifier: workspace:*
         version: link:../client-types
@@ -1019,6 +1022,9 @@ importers:
       '@excalidraw/excalidraw':
         specifier: 0.18.1
         version: 0.18.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(immer@11.1.15)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@firecms/neat':
+        specifier: 1.0.2
+        version: 1.0.2
       '@hono/node-server':
         specifier: ^2.1.1
         version: 2.1.1(hono@4.13.2)
@@ -1993,6 +1999,9 @@ packages:
 
   '@fast-csv/parse@5.0.7':
     resolution: {integrity: sha512-MeuDeQj0DVmIGWky8STaKtvj232Gpq8kjrOGplHJ99Os7OO5CetVfXvUGqX/3GHYFOUsz6FK8isWtDY2XTFNWw==}
+
+  '@firecms/neat@1.0.2':
+    resolution: {integrity: sha512-hP9Qqz3mPEgwMKOZygjkFMqDyKjrQwuSYt352+QJfg1SfAlGOfHzpQSeIAgeeLmdtSjE45zekBpnJPgtRhxclA==}
 
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
@@ -8008,6 +8017,8 @@ snapshots:
       lodash.escaperegexp: 4.1.2
       lodash.groupby: 4.6.0
       lodash.uniq: 4.5.0
+
+  '@firecms/neat@1.0.2': {}
 
   '@floating-ui/core@1.8.0':
     dependencies:

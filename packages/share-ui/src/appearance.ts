@@ -61,6 +61,18 @@ export type BrainAppearance = {
    *  Optional for the published-contract reason below: readers treat absence
    *  as "not set" and paint the plain themed fill. */
   neatBackground?: string | null;
+  /** The brain's default light/dark mode for surfaces where the visitor has
+   *  not chosen one (the public /s share reader): 'light' | 'dark' | 'system'.
+   *  NOT stamped onto `<html>` by resolveAppearanceAttrs — the share renderer
+   *  applies it as the `.dark` class itself, and the client app ignores it
+   *  (in-app mode stays the visitor's own next-themes choice). Optional for
+   *  the published-contract reason below; absence reads as 'light', the share
+   *  surface's historical rendering. */
+  defaultMode?: string | null;
+  /** Whether shared surfaces (/s, the team workspace) paint the saved Neat
+   *  gradient at all — false is the printable plain fallback. NOT stamped onto
+   *  `<html>`; readers treat absence as true (the default). */
+  shareNeat?: boolean | null;
   /**
    * WHO this brain is — its own name, the name of the box, and whether an
    * uploaded logo exists. Unlike everything above these are NOT stamped onto

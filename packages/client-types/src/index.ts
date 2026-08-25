@@ -868,6 +868,20 @@ export type ProfilePreferences = {
    *  backgrounds: it is the look of the product. Unset ⇒ the plain themed
    *  fill. Read via projectNeatBackground, never raw. */
   neatBackground?: string;
+  /** The brain's default light/dark mode for surfaces where the visitor has
+   *  not chosen one themselves — today the public /s share reader, which stamps
+   *  it server-side and lets the visitor's own toggle override it locally.
+   *  'light' | 'dark' | 'system'; unset ⇒ 'light' (the share surface's
+   *  historical rendering, so an unset brain looks exactly as before). Brain-
+   *  level like colorTheme: it is the look of the product's public face. Read
+   *  via projectDefaultMode, never raw. */
+  defaultMode?: string;
+  /** Whether the public /s share reader paints the saved Neat gradient at all.
+   *  Default ON (only an explicit `false` disables, the streamThoughts
+   *  contract): the switch exists for owners who want share links to stay on
+   *  the plain themed surface — the printable rendering — while the app keeps
+   *  its background. Brain-level like neatBackground itself. */
+  shareNeat?: boolean;
   /** Seed for THIS user's avatar; the UI defaults it to the user id when unset
    *  so an avatar still renders. Personal — two admins share the brain's style
    *  but never the same avatar. */

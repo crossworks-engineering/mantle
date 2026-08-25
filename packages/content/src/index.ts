@@ -757,6 +757,7 @@ export {
   savePreferencesFor,
   projectNeatBackground,
   NEAT_BACKGROUND_MAX,
+  projectDefaultMode,
   projectTeamHubAppId,
   projectTeamHubTags,
   TEAM_HUB_TAGS_MAX,

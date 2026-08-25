@@ -1,7 +1,7 @@
 import type { Context, Hono } from 'hono';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { shareModeOf } from '@mantle/content';
-import { loadAppearanceAttrs } from './appearance';
+import { loadShareAppearance } from './appearance';
 import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
 import { resolveShareVisitor } from '@/lib/team-gate';
 import { PagePresenter } from '@/components/share/page-presenter';
@@ -37,7 +37,13 @@ async function renderShare(c: Context): Promise<Response> {
   const heading = 'title' in view ? view.title : view.filename;
   // The owner's brand renders into the <html> tag — a share page is the
   // BRAIN's surface, so the owner's theme + fonts are the only appearance.
-  const appearance = await loadAppearanceAttrs(share.ownerId);
+  // The owner also sets the DEFAULT mode and the Neat backdrop; the visitor's
+  // own mode toggle (share-page.js) overlays the default, locally only.
+  const {
+    attrs: appearance,
+    defaultMode,
+    neatBackground,
+  } = await loadShareAppearance(share.ownerId);
   const gated = shareModeOf(share) === 'team';
 
   // Team-mode shares gate on a live team session; without one the visitor
@@ -54,10 +60,21 @@ async function renderShare(c: Context): Promise<Response> {
     appearance,
   };
 
+  // One reader chrome for every shelled body — the token prompt included, so
+  // the gate is already branded the way the content behind it will be. The
+  // licence key is the same env var the client app uses, so one box config
+  // serves both surfaces.
+  const shareMeta = {
+    defaultMode,
+    neat: neatBackground,
+    neatLicense: process.env.NEXT_PUBLIC_NEAT_LICENSE_KEY,
+    readerChrome: true,
+  };
+
   if (!visitor) {
     return c.html(
       htmlPage(
-        { ...meta, islands: true },
+        { ...meta, islands: true, share: shareMeta },
         islandDiv('team-token-prompt', { shareToken: token, title: heading }),
       ),
     );
@@ -140,8 +157,17 @@ async function renderShare(c: Context): Promise<Response> {
 
   // Apps skip the share shell: the presenter is h-dvh and the app owns the
   // whole viewport, so even the footer strip would sit below the fold as dead
-  // scroll. Every other kind keeps the shell (scroll container + footer).
-  return c.html(htmlPage({ ...meta, islands }, view.kind === 'app' ? body : shareShell(body)));
+  // scroll (it also gets mode stamping only — no toggle, no backdrop; the app
+  // paints its own ground). Every other kind keeps the shell (scroll container
+  // + footer) and the full reader chrome.
+  return c.html(
+    view.kind === 'app'
+      ? htmlPage({ ...meta, islands, share: { defaultMode, readerChrome: false } }, body)
+      : htmlPage(
+          { ...meta, islands, share: shareMeta },
+          shareShell(body, { neat: neatBackground !== null }),
+        ),
+  );
 }
 
 export function mountShare(app: Hono): void {

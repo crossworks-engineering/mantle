@@ -4,6 +4,7 @@ import {
   appearanceFontVars,
   type AppearanceAttrs,
 } from '@mantle/share-ui/appearance';
+import { SHARE_MODE_STORAGE_KEY } from '@mantle/share-ui/share-mode';
 
 /**
  * HTML shells for the server-rendered surfaces (/s, /print, stubs) — the
@@ -67,6 +68,32 @@ export type PageMeta = {
   /** Load /share-runtime/islands.js at the end of <body>. */
   islands?: boolean;
   /**
+   * The /s reader's mode + backdrop behaviour. When present, the page:
+   *  - stamps the owner's default mode server-side (`.dark` on `<html>` for
+   *    'dark'), so a no-JS visitor and a crawler see the owner's choice;
+   *  - runs a tiny pre-paint inline script that applies the VISITOR's own
+   *    stored toggle choice (localStorage) over that default — before first
+   *    paint, so switching never flashes ('system' resolves there too, since
+   *    only the browser knows it);
+   *  - with `readerChrome` (everything except the full-viewport app kind), loads
+   *    /share-runtime/share-page.js — the mode toggle button plus the Neat
+   *    gradient mount — and, when a background is saved, renders the fixed
+   *    `-z-10` host div the gradient paints into.
+   * Absent (print, stubs) ⇒ none of this: those surfaces stay mode-less.
+   */
+  share?: {
+    defaultMode: 'light' | 'dark' | 'system';
+    /** Canonical encoded Neat spec, or null/absent for the plain themed fill. */
+    neat?: string | null;
+    /** Neat licence key (watermark removal on deployed domains) — rides to the
+     *  browser on the host div, exactly like the client app's
+     *  NEXT_PUBLIC_NEAT_LICENSE_KEY. Unset is fine on localhost. */
+    neatLicense?: string;
+    /** Mode toggle + Neat backdrop (false: mode stamping only — the app kind,
+     *  which owns the whole viewport). */
+    readerChrome: boolean;
+  };
+  /**
    * The brain OWNER's appearance, rendered as attributes + inline style on the
    * `<html>` tag (see @mantle/web-ui/appearance). These are BRANDED surfaces:
    * the owner's theme is the only theme — there is no visitor-localStorage
@@ -102,6 +129,21 @@ function htmlAttrs(a: AppearanceAttrs | undefined): string {
   return [' data-color-theme-owner="1"', ...parts].join(' ');
 }
 
+/** Applies the visitor's stored mode (or resolves 'system') before first
+ *  paint. Inline and dependency-free on purpose: it must run before the body
+ *  exists, and a failed localStorage read (private mode) must fall through to
+ *  the server-stamped default, never throw. */
+function sharePrePaintScript(): string {
+  return (
+    `<script>(()=>{try{var d=document.documentElement,` +
+    `o=d.getAttribute('data-share-mode-default')||'light',s=null;` +
+    `try{s=localStorage.getItem('${SHARE_MODE_STORAGE_KEY}')}catch(e){}` +
+    `var m=s==='light'||s==='dark'?s:` +
+    `o==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):o;` +
+    `d.classList.toggle('dark',m==='dark')}catch(e){}})()</script>`
+  );
+}
+
 export function htmlPage(meta: PageMeta, bodyHtml: string): string {
   const head = [
     `<meta charset="utf-8"/>`,
@@ -133,29 +175,52 @@ export function htmlPage(meta: PageMeta, bodyHtml: string): string {
     // as <html> attributes/inline style via meta.appearance, not a script.
     `<style>${displayFontFaceCss()}</style>`,
     meta.extraHead ?? '',
+    // After the stylesheets: the class it toggles only matters once the theme
+    // rules exist, and running late in <head> still beats first paint.
+    meta.share ? sharePrePaintScript() : '',
   ]
     .filter(Boolean)
     .join('\n');
 
-  const islands = meta.islands
-    ? `<script type="module" src="/share-runtime/islands.js"></script>`
+  const share = meta.share;
+  const htmlClass = share?.defaultMode === 'dark' ? 'h-full dark' : 'h-full';
+  const shareAttr = share ? ` data-share-mode-default="${escapeHtml(share.defaultMode)}"` : '';
+  // The Neat host sits at -z-10: above the html/body background (which paints
+  // on the root canvas, beneath everything) and below ALL in-flow content —
+  // which is why shareShell drops its own bg when a gradient is active.
+  const neatLicense = share?.neatLicense
+    ? ` data-neat-license="${escapeHtml(share.neatLicense)}"`
     : '';
+  const neatHost =
+    share?.readerChrome && share.neat
+      ? `<div data-neat-spec="${escapeHtml(share.neat)}"${neatLicense} class="pointer-events-none fixed inset-0 -z-10" aria-hidden="true"></div>\n`
+      : '';
+  const scripts = [
+    share?.readerChrome ? `<script type="module" src="/share-runtime/share-page.js"></script>` : '',
+    meta.islands ? `<script type="module" src="/share-runtime/islands.js"></script>` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
   return `<!DOCTYPE html>
-<html lang="en" class="h-full"${htmlAttrs(meta.appearance)}>
+<html lang="en" class="${htmlClass}"${shareAttr}${htmlAttrs(meta.appearance)}>
 <head>
 ${head}
 </head>
 <body class="h-full font-sans antialiased">
-${bodyHtml}
-${islands}
+${neatHost}${bodyHtml}
+${scripts}
 </body>
 </html>`;
 }
 
 /** The /s share shell (was app/s/layout.tsx): clean centered surface, quiet
- *  footer, its own scroll container (globals.css pins html/body overflow). */
-export function shareShell(inner: string): string {
-  return `<div class="flex h-dvh flex-col overflow-y-auto scrollbar-thin bg-background text-foreground">
+ *  footer, its own scroll container (globals.css pins html/body overflow).
+ *  With `neat`, the shell's own ground goes transparent: the fixed -z-10
+ *  gradient canvas must show through, and body already paints bg-background
+ *  beneath it as the no-WebGL/no-JS fallback. */
+export function shareShell(inner: string, opts?: { neat?: boolean }): string {
+  const ground = opts?.neat ? '' : ' bg-background';
+  return `<div class="flex h-dvh flex-col overflow-y-auto scrollbar-thin${ground} text-foreground">
 <main class="flex-1">${inner}</main>
 <footer class="border-t border-border/60 py-6"><p class="text-center text-xs text-muted-foreground">Shared via <span class="wordmark-brand lowercase">mantle</span></p></footer>
 </div>`;

@@ -53,6 +53,8 @@ export async function GET() {
     avatarTint: null,
     backgrounds: null,
     neatBackground: null,
+    defaultMode: null,
+    shareNeat: true,
   };
   const headers = { 'Cache-Control': 'public, max-age=30' };
 
@@ -87,6 +89,8 @@ export async function GET() {
         avatarTint: prefs.avatarTint ?? null,
         backgrounds: prefs.backgrounds ?? null,
         neatBackground: prefs.neatBackground ?? null,
+        defaultMode: prefs.defaultMode ?? null,
+        shareNeat: prefs.shareNeat !== false,
       },
       { headers },
     );

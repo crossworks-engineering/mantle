@@ -75,6 +75,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@excalidraw/excalidraw": "0.18.1",
+    "@firecms/neat": "1.0.2",
     "@hono/node-server": "^2.1.1",
     "@mantle/agent-runtime": "workspace:*",
     "@mantle/api-keys": "workspace:*",

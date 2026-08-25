@@ -32,6 +32,9 @@
     "./nav-items": "./src/nav-items.ts",
     "./help-topics": "./src/help-topics.ts",
     "./appearance": "./src/appearance.ts",
+    "./neat-background": "./src/neat-background.ts",
+    "./neat-mount": "./src/neat-mount.ts",
+    "./share-mode": "./src/share-mode.ts",
     "./backgrounds": "./src/backgrounds.ts",
     "./avatar": "./src/avatar.ts",
     "./lib/themes": "./src/lib/themes.ts",
@@ -39,6 +42,7 @@
     "./styles/app.css": "./styles/app.css"
   },
   "dependencies": {
+    "@firecms/neat": "1.0.2",
     "@mantle/client-types": "workspace:*",
     "@mantle/content-core": "workspace:*",
     "@radix-ui/react-label": "^2.1.12",

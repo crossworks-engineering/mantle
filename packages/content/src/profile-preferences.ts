@@ -227,6 +227,17 @@ export function projectNeatBackground(raw: unknown): string | undefined {
   }
 }
 
+/** Project a stored `defaultMode` — the brain's default light/dark mode for
+ *  surfaces without a visitor choice (the public /s share reader). A closed
+ *  set like avatarTint, validated by value: there is no registry to fall back
+ *  through, and an unknown value would flip a public page's entire palette.
+ *  Anything else ⇒ unset ⇒ 'light' (the share surface's historical look). */
+export function projectDefaultMode(raw: unknown): 'light' | 'dark' | 'system' | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim().toLowerCase();
+  return t === 'light' || t === 'dark' || t === 'system' ? t : undefined;
+}
+
 /** Project a stored font size (the interface scale and the three local ones).
  *  A closed set like avatarTint, validated by value: an unknown size would
  *  rescale the entire interface and there is no registry to fall back through.
@@ -393,6 +404,9 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     avatarTint: projectAvatarTint(prefs.avatarTint),
     backgrounds: projectBackgrounds(prefs.backgrounds),
     neatBackground: projectNeatBackground(prefs.neatBackground),
+    defaultMode: projectDefaultMode(prefs.defaultMode),
+    // Default ON: only an explicit `false` disables (the streamThoughts contract).
+    shareNeat: prefs.shareNeat !== false,
     avatarSeed:
       typeof prefs.avatarSeed === 'string' && prefs.avatarSeed.length > 0
         ? prefs.avatarSeed
@@ -597,6 +611,8 @@ export async function updateProfilePreferences(
     avatarTint: projectAvatarTint(merged.avatarTint),
     backgrounds: projectBackgrounds(merged.backgrounds),
     neatBackground: projectNeatBackground(merged.neatBackground),
+    defaultMode: projectDefaultMode(merged.defaultMode),
+    shareNeat: merged.shareNeat !== false,
     avatarSeed: merged.avatarSeed || undefined,
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
@@ -682,6 +698,11 @@ export const BRAIN_PREFERENCE_KEYS = [
   // is the brain's look, not one admin's preference.
   'backgrounds',
   'neatBackground',
+  // The share reader's default mode is the public face of the brand, exactly
+  // like the theme it applies to — and so is whether its background paints
+  // at all.
+  'defaultMode',
+  'shareNeat',
   'logoKey',
   'logoType',
   'logoDarkKey',
