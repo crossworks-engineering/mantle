@@ -40,8 +40,10 @@ function storedMode(): 'light' | 'dark' | null {
 }
 
 function applyMode(mode: 'light' | 'dark'): void {
+  // Just the class — the observer below owns the repaint, so EVERY way the
+  // mode can change (this toggle, the OS scheme, an app frame's parent-posted
+  // theme sync rewriting className) funnels through one repaint path.
   root.classList.toggle('dark', mode === 'dark');
-  repaintNeat();
 }
 
 // ── The Neat backdrop ────────────────────────────────────────────────────────
@@ -127,16 +129,32 @@ function mountToggle(): void {
   document.body.appendChild(button);
 }
 
+// One repaint path for every mode change: the class attribute is the truth,
+// whoever writes it. Covers the toggle, the OS-scheme listener, AND an app
+// frame's theme sync (the frame boot script rewrites className when the
+// parent posts {kind:'theme'} — this observer is what repaints the gradient
+// there, since no toggle exists inside a frame).
+let lastDark = currentMode() === 'dark';
+new MutationObserver(() => {
+  const dark = currentMode() === 'dark';
+  if (dark === lastDark) return;
+  lastDark = dark;
+  repaintNeat();
+  const button = document.querySelector<HTMLButtonElement>('[data-share-mode-toggle]');
+  if (button) paintToggle(button);
+}).observe(root, { attributes: true, attributeFilter: ['class'] });
+
 // A 'system' default keeps following the OS until the visitor chooses.
 if (root.dataset.shareModeDefault === 'system' && !storedMode()) {
   const scheme = window.matchMedia('(prefers-color-scheme: dark)');
   scheme.addEventListener('change', () => {
     if (storedMode()) return; // a choice has been made since — it wins
     applyMode(scheme.matches ? 'dark' : 'light');
-    const button = document.querySelector<HTMLButtonElement>('[data-share-mode-toggle]');
-    if (button) paintToggle(button);
   });
 }
 
-mountToggle();
+// The toggle belongs to the /s READER, whose template stamps the default-mode
+// attribute. App frames load this bundle for the backdrop alone and lack the
+// attribute, so no toggle ever floats over an app's own UI.
+if (root.dataset.shareModeDefault !== undefined) mountToggle();
 repaintNeat();

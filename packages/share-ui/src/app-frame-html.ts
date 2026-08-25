@@ -38,7 +38,10 @@ export function buildAppFrameCsp(origin: string): string {
     // inside the AppSandbox iframe it composes with the identical attribute.
     `sandbox allow-scripts; ` +
     `default-src 'none'; style-src 'unsafe-inline' ${origin}/share-runtime/; ` +
-    `script-src 'unsafe-inline' ${origin}/app-runtime/; ` +
+    // share-runtime scripts joined app-runtime for the Neat backdrop
+    // (share-page.js + its lazy WebGL chunk) — same-origin built assets,
+    // no new capability.
+    `script-src 'unsafe-inline' ${origin}/app-runtime/ ${origin}/share-runtime/; ` +
     `img-src data: blob: ${origin}; ` +
     `font-src data: ${origin}/share-runtime/ ${origin}/fonts/; ` +
     "connect-src 'none'; base-uri 'none'; form-action 'none'"
@@ -185,6 +188,14 @@ export function buildAppFrameHtml(opts: {
   colorTheme: string | null;
   /** Viewport frame (iframe IS the viewport) vs card frame (auto-sized). */
   viewport: boolean;
+  /** The brain's saved Neat background spec (canonical encoding), or
+   *  null/absent for the plain themed ground. Resolved server-side by the
+   *  frame route — owner frames from the prefs alone, shared frames gated by
+   *  the shareNeat switch. */
+  neatSpec?: string | null;
+  /** Neat licence key for watermark removal — same env-sourced value the
+   *  other surfaces ride. */
+  neatLicense?: string | null;
 }): string {
   const colorThemeAttr = opts.colorTheme ? ` data-color-theme="${attr(opts.colorTheme)}"` : '';
   return `<!doctype html>
@@ -205,8 +216,14 @@ export function buildAppFrameHtml(opts: {
 <style>/* Paint the iframe canvas with the theme background, NOT transparent: a
    sandboxed (opaque-origin) iframe renders WHITE where it's transparent, so any
    gap between the app content and the iframe height showed a white strip. With
-   the themed background, any such gap is invisible (matches the app + host). */
-html,body{margin:0;background:var(--background)}#root{padding:0}
+   the themed background, any such gap is invisible (matches the app + host).
+   The ground lives on BODY with html left transparent — the /s reader's exact
+   arrangement, and load-bearing for the Neat backdrop: a body background on a
+   transparent html PROPAGATES to the canvas, painted beneath everything
+   including the backdrop's z-index:-1 host, while a background on html (or a
+   non-propagating body background) paints in the normal layers, above the
+   backdrop, and hides it. */
+html,body{margin:0}body{background:var(--background)}#root{padding:0}
 /* Themed scrollbars for the WHOLE app. The host only styles scrollbars behind an
    opt-in .scrollbar-thin class, so an app's own scroll containers otherwise fall
    back to the default wide OS scrollbar with a white/grey track that clashes with
@@ -234,11 +251,27 @@ body{overflow:auto}`
 .h-screen,.h-dvh,.h-svh,.h-lvh{height:auto!important}`
 }</style>
 </head>
-<body class="bg-background text-foreground">
-<div id="root"></div>
+<body class="text-foreground">
+${
+  /* The brain's saved Neat gradient, rendered INSIDE the frame document —
+     the iframe is opaque-origin (sandbox without allow-same-origin), so
+     transparency renders WHITE and the host page's backdrop can never show
+     through; the only way the background "transfers" into an app is to
+     paint it here. Same host-div + share-page.js contract as the /s reader
+     (no mode toggle mounts — that requires the reader's
+     data-share-mode-default, which frames deliberately lack), and the
+     runtime's class observer repaints it when the parent posts a theme
+     change. z-index:-1 sits above the html ground (the canvas layer) and
+     below all app content. */
+  opts.neatSpec
+    ? `<div data-neat-spec="${attr(opts.neatSpec)}"${
+        opts.neatLicense ? ` data-neat-license="${attr(opts.neatLicense)}"` : ''
+      } style="position:fixed;inset:0;z-index:-1;pointer-events:none" aria-hidden="true"></div>\n`
+    : ''
+}<div id="root"></div>
 <script>${ERROR_REPORTER}</script>
 <script type="module">${opts.bundleCode}</script>
 <script>${INSPECTOR}</script>
-</body>
+${opts.neatSpec ? `<script type="module" src="/share-runtime/share-page.js"></script>\n` : ''}</body>
 </html>`;
 }

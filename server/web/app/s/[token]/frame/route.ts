@@ -35,5 +35,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   const build = app?.publishedBuild?.ok ? app.publishedBuild : null;
   if (!build) return new NextResponse('no build', { status: 404 });
 
-  return renderAppFrame(req, build);
+  // Shared surface: the Neat backdrop honours the shareNeat switch here.
+  return renderAppFrame(req, build, { shared: true });
 }

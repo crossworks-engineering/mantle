@@ -9,6 +9,9 @@ import { readFile } from 'node:fs/promises';
 import { NextResponse } from '@/server/http-compat';
 import { getContent } from '@mantle/storage';
 import { buildAppFrameCsp, buildAppFrameHtml } from '@mantle/share-ui/app-frame-html';
+import { decodeNeatSpec, encodeNeatSpec } from '@mantle/share-ui/neat-background';
+import { loadProfilePreferences } from '@mantle/content';
+import { resolveSingleOwnerId } from '@mantle/db';
 import { requestOrigin } from '@/lib/auth-constants';
 import type { Readable } from 'node:stream';
 
@@ -42,14 +45,39 @@ async function streamToString(body: Readable): Promise<string> {
  *  sidecar (absent on builds that predate per-app CSS). */
 export type FrameBuild = { storageKey: string; css?: { storageKey: string } | null };
 
+/** The brain's saved Neat spec for a frame document, resolved from the anchor
+ *  prefs (the same source /api/appearance serves). Shared frames additionally
+ *  honour the shareNeat switch — OFF keeps shared apps on the plain themed
+ *  ground. Fail-soft: an unreadable prefs row means no backdrop, never a
+ *  failed frame. */
+async function resolveFrameNeat(shared: boolean): Promise<string | null> {
+  try {
+    const ownerId = await resolveSingleOwnerId();
+    if (!ownerId) return null;
+    const prefs = await loadProfilePreferences(ownerId);
+    if (shared && prefs.shareNeat === false) return null;
+    const spec = decodeNeatSpec(prefs.neatBackground);
+    return spec ? encodeNeatSpec(spec) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Render the frame document for an already-authorized build. Query params
  * carry PRESENTATION only (theme class/attr + frame mode) — they are baked
- * into the document but grant nothing, so they ride the URL unverified.
+ * into the document but grant nothing, so they ride the URL unverified. The
+ * Neat backdrop is deliberately NOT a param: it resolves server-side from the
+ * prefs, so a hand-edited frame URL can change how the page looks but never
+ * what the brain has chosen to show.
  */
-export async function renderAppFrame(req: Request, build: FrameBuild): Promise<Response> {
+export async function renderAppFrame(
+  req: Request,
+  build: FrameBuild,
+  opts: { shared?: boolean } = {},
+): Promise<Response> {
   const url = new URL(req.url);
-  const [bundleCode, appCss, importMapJson] = await Promise.all([
+  const [bundleCode, appCss, importMapJson, neatSpec] = await Promise.all([
     getContent(build.storageKey).then(({ body }) => streamToString(body)),
     build.css
       ? getContent(build.css.storageKey)
@@ -57,6 +85,7 @@ export async function renderAppFrame(req: Request, build: FrameBuild): Promise<R
           .catch(() => '')
       : Promise.resolve(''),
     loadImportMapJson(),
+    resolveFrameNeat(opts.shared === true),
   ]);
   const html = buildAppFrameHtml({
     bundleCode,
@@ -65,6 +94,8 @@ export async function renderAppFrame(req: Request, build: FrameBuild): Promise<R
     cls: url.searchParams.get('cls') ?? '',
     colorTheme: url.searchParams.get('ct'),
     viewport: url.searchParams.get('vp') === '1',
+    neatSpec,
+    neatLicense: process.env.NEXT_PUBLIC_NEAT_LICENSE_KEY ?? null,
   });
   return new NextResponse(html, {
     status: 200,
