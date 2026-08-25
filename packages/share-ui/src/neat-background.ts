@@ -109,7 +109,20 @@ function mulberry32(seed: number): () => number {
 }
 
 function hexToRgb(hex: string): [number, number, number] | null {
-  const digits = /^#?([0-9a-f]{6})$/i.exec(hex.trim())?.[1];
+  const t = hex.trim();
+  // Shorthand #rgb MUST parse: the compiled stylesheets minify hex custom
+  // properties (#ffffff → #fff, #eeeeee → #eee), so this is what
+  // getComputedStyle actually returns on deployed builds. Rejecting it made
+  // mixHex silently return the RAW brand colour — no wash, a saturated
+  // poster instead of a tint — on exactly the themes whose tokens shorten,
+  // and only in production (dev CSS is unminified). Light modes were hit
+  // hardest because near-white grounds (#ffffff/#eeeeee) all shorten.
+  const short = /^#?([0-9a-f]{3})$/i.exec(t)?.[1];
+  if (short) {
+    const c = (i: number) => parseInt(short.charAt(i) + short.charAt(i), 16);
+    return [c(0), c(1), c(2)];
+  }
+  const digits = /^#?([0-9a-f]{6})$/i.exec(t)?.[1];
   if (!digits) return null;
   const n = parseInt(digits, 16);
   return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
@@ -148,6 +161,18 @@ function shadeHex(hex: string, factor: number): string {
   ]);
 }
 
+/** Canonical #rrggbb for any hex this module can parse; unparseable values
+ *  pass through untouched. EVERY colour handed to the shader goes through
+ *  this: Neat's own parser is `parseInt(hex, 16)` on whatever it gets, so a
+ *  shorthand `#fff` reads as the 24-bit int 0x000fff — rgb(0, 15, 255), an
+ *  electric blue poster where the page ground should be. That is precisely
+ *  what deployed light themes produced, because minified stylesheets shorten
+ *  near-white tokens to #fff/#eee. */
+function normalizeHex(hex: string): string {
+  const rgb = hexToRgb(hex);
+  return rgb ? rgbToHex(rgb) : hex;
+}
+
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -166,32 +191,40 @@ export function neatConfigFromSpec(
   const range = (lo: number, hi: number) => lo + rnd() * (hi - lo);
   const darker = spec.tone === 'darker' || (spec.tone === 'auto' && mode === 'dark');
 
+  // Tokens arrive as whatever getComputedStyle returns — on deployed builds
+  // that includes minifier shorthand. Normalized ONCE here, so both our wash
+  // math and the raw pass-throughs below hand the shader canonical hex.
+  const background = normalizeHex(tokens.background);
+  const primary = normalizeHex(tokens.primary);
+  const accent = normalizeHex(tokens.accent);
+  const secondary = normalizeHex(tokens.secondary);
+
   // A wash: pull the brand colour part-way into the page background, then
   // nudge the result off the surface in the chosen direction. Enough colour
   // to read as a real gradient, close enough to the surface that content
   // sitting on it never fights it.
   const wash = (hex: string, towardBg: number) =>
-    shadeHex(mixHex(hex, tokens.background, towardBg), darker ? 0.88 : 1.08);
+    shadeHex(mixHex(hex, background, towardBg), darker ? 0.88 : 1.08);
 
   return {
     colors: [
-      { color: tokens.background, enabled: true, influence: round2(range(0.3, 0.6)) },
+      { color: background, enabled: true, influence: round2(range(0.3, 0.6)) },
       {
-        color: wash(tokens.primary, round2(range(0.25, 0.5))),
+        color: wash(primary, round2(range(0.25, 0.5))),
         enabled: true,
         influence: round2(range(0.5, 0.9)),
       },
       {
-        color: wash(tokens.accent, round2(range(0.25, 0.55))),
+        color: wash(accent, round2(range(0.25, 0.55))),
         enabled: true,
         influence: round2(range(0.45, 0.85)),
       },
       {
-        color: wash(tokens.secondary, round2(range(0.35, 0.6))),
+        color: wash(secondary, round2(range(0.35, 0.6))),
         enabled: true,
         influence: round2(range(0.35, 0.75)),
       },
-      { color: tokens.background, enabled: true, influence: round2(range(0.25, 0.55)) },
+      { color: background, enabled: true, influence: round2(range(0.25, 0.55)) },
     ],
     speed: spec.speed,
     horizontalPressure: round1(range(2, 5)),
@@ -210,7 +243,7 @@ export function neatConfigFromSpec(
     grainIntensity: round2(range(0.02, 0.1)),
     grainSpeed: 0.3,
     wireframe: false,
-    backgroundColor: tokens.background,
+    backgroundColor: background,
     backgroundAlpha: 1,
   };
 }
